@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FREE FREELY — 비행 시뮬레이터</title>
+<meta name="description" content="비행기·전투기·우주선·열기구를 직접 설계하고 실제 물리로 비행하는 웹 비행 시뮬레이터">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles/ui.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body data-screen="screen-loading">
+
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+
+<!-- 화면 효과 오버레이 -->
+<div id="cloud-overlay" class="fx-overlay"></div>
+<div id="underwater-overlay" class="fx-overlay"></div>
+<div id="damage-overlay" class="fx-overlay"></div>
+<div id="flash-overlay" class="fx-overlay"></div>
+<div id="vignette" class="fx-overlay"></div>
+
+<!-- ───────────────── 로딩 ───────────────── -->
+<section id="screen-loading" class="screen active">
+  <div class="load-wrap">
+    <h1 class="brand">FREE<span>FREELY</span></h1>
+    <p class="brand-sub">FLIGHT · BUILD · EXPLORE — 물리 기반 비행 시뮬레이터</p>
+    <div class="load-bar"><div id="loading-bar"></div></div>
+    <div id="loading-label" class="load-label">엔진 초기화</div>
+    <div id="loading-tip" class="load-tip"></div>
+  </div>
+</section>
+
+<!-- ───────────────── 메인 메뉴 ───────────────── -->
+<section id="screen-menu" class="screen">
+  <div class="menu-grid">
+    <div class="menu-left">
+      <h1 class="brand big">FREE<span>FREELY</span></h1>
+      <p class="brand-sub">당신이 설계한 기체로, 원하는 하늘을</p>
+      <nav class="menu-nav">
+        <button class="nav-btn primary" data-nav="fly">
+          <b>자유 비행</b><span>선택한 기체로 즉시 이륙</span></button>
+        <button class="nav-btn" data-nav="builder">
+          <b>기체 제작</b><span>설계도에서 나만의 기체를 만든다</span></button>
+        <button class="nav-btn" data-nav="hangar">
+          <b>격납고</b><span>기본 기체 8종 · 내 설계 목록</span></button>
+        <button class="nav-btn" data-nav="missions">
+          <b>도전 과제</b><span>링 코스 · 착함 · 우주 도달 등 8종</span></button>
+        <button class="nav-btn" data-nav="settings">
+          <b>설정</b><span>그래픽 · 사운드 · 날씨 · 조작</span></button>
+        <button class="nav-btn" data-nav="controls">
+          <b>조작법</b><span>키보드 · 게임패드 · 화면 버튼</span></button>
+      </nav>
+      <p class="menu-foot">v1.0 · WebGL2 · 절차적 지형 20 km² · 실시간 합성 사운드</p>
+    </div>
+    <aside class="menu-right">
+      <div id="menu-craft-info" class="craft-info"></div>
+      <div class="menu-hint">
+        <b>처음이라면?</b><br>
+        ① 격납고에서 <em>CIRRUS-1 경비행기</em> 선택 → ② 스로틀(Shift)을 100%까지 올리고<br>
+        ③ 속도 120 km/h 에서 W 키로 기수를 살짝 들면 이륙합니다.
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ───────────────── 격납고 ───────────────── -->
+<section id="screen-hangar" class="screen">
+  <header class="screen-head">
+    <h2>격납고</h2>
+    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+  </header>
+  <div id="hangar-grid" class="hangar-grid-main"></div>
+</section>
+
+<!-- ───────────────── 도전 과제 ───────────────── -->
+<section id="screen-missions" class="screen">
+  <header class="screen-head">
+    <h2>도전 과제</h2>
+    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+  </header>
+  <div id="mission-grid" class="mission-grid"></div>
+</section>
+
+<!-- ───────────────── 설정 ───────────────── -->
+<section id="screen-settings" class="screen">
+  <header class="screen-head">
+    <h2>설정</h2>
+    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+  </header>
+  <div id="settings-body" class="settings-body"></div>
+</section>
+
+<!-- ───────────────── 조작법 ───────────────── -->
+<section id="screen-controls" class="screen">
+  <header class="screen-head">
+    <h2>조작법</h2>
+    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+  </header>
+  <div id="controls-body" class="controls-body"></div>
+</section>
+
+<!-- ───────────────── 설계실 (동적 생성) ───────────────── -->
+<div id="builder-root"></div>
+
+<!-- ───────────────── 비행 UI ───────────────── -->
+<div id="flight-ui" hidden>
+  <div id="flight-top" class="flight-top"></div>
+
+  <div class="stick-wrap">
+    <div id="stick-pad" class="stick-pad">
+      <div class="stick-ring"></div>
+      <div class="stick-knob"></div>
+      <span class="stick-label">피치 / 롤</span>
+    </div>
+  </div>
+
+  <div class="throttle-wrap">
+    <span class="tw-label">스로틀</span>
+    <input id="throttle-slider" type="range" min="0" max="1" step="0.01" value="0" orient="vertical">
+    <span class="tw-hint">Shift / Ctrl</span>
+  </div>
+
+  <div id="flight-buttons" class="flight-buttons"></div>
+</div>
+
+<!-- ───────────────── 일시정지 ───────────────── -->
+<div id="screen-pause" class="overlay-panel" hidden>
+  <div class="panel">
+    <h3>일시정지</h3>
+    <div class="panel-btns">
+      <button class="btn btn-primary" data-pause-act="resume">계속 비행</button>
+      <button class="btn btn-ghost" data-pause-act="respawn">기체 리스폰</button>
+      <button class="btn btn-ghost" data-pause-act="builder">설계실 열기</button>
+      <button class="btn btn-ghost" data-pause-act="settings">설정</button>
+      <button class="btn btn-ghost" data-pause-act="menu">메인 메뉴</button>
+    </div>
+    <p class="hint">ESC 로 계속 비행할 수 있습니다.</p>
+  </div>
+</div>
+
+<!-- ───────────────── 추락 ───────────────── -->
+<div id="screen-crash" class="overlay-panel crash" hidden>
+  <div class="panel">
+    <h3 class="crash-title">기체 상실</h3>
+    <div id="crash-body"></div>
+    <div class="panel-btns">
+      <button class="btn btn-primary" data-crash-act="respawn">다시 비행 (O)</button>
+      <button class="btn btn-ghost" data-crash-act="menu">메인 메뉴</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast-wrap"></div>
+
+<noscript><p style="color:#fff;padding:2rem">이 게임은 JavaScript 와 WebGL2 가 필요합니다.</p></noscript>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
