@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SpaceSim — 천체물리 시뮬레이션</title>
+<meta name="description" content="N체 중력 적분, 케플러 궤도역학, 항성물리, 우주론 계산을 한 화면에서 다루는 웹 기반 천체물리 시뮬레이션 소프트웨어">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@600;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles/spacesim.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/three.module.min.js",
+    "three/addons/": "../vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<canvas id="overlay"></canvas>
+
+<!-- ───────────── 로딩 ───────────── -->
+<div id="boot">
+  <div class="boot-inner">
+    <h1>SPACE<span>SIM</span></h1>
+    <p>ASTROPHYSICAL SIMULATION SOFTWARE</p>
+    <div class="boot-bar"><div id="boot-fill"></div></div>
+    <div id="boot-msg">중력 커널 초기화</div>
+  </div>
+</div>
+
+<!-- ───────────── 상단 바 ───────────── -->
+<header id="topbar">
+  <div class="brand">SPACE<span>SIM</span><em>v1.0</em></div>
+  <div class="top-readout">
+    <div class="ro"><label>시각</label><b id="ro-time">—</b></div>
+    <div class="ro"><label>경과</label><b id="ro-elapsed">—</b></div>
+    <div class="ro"><label>천체</label><b id="ro-count">0</b></div>
+    <div class="ro"><label>ΔE/E</label><b id="ro-err">0</b></div>
+    <div class="ro"><label>스텝/프레임</label><b id="ro-sps">0</b></div>
+    <div class="ro"><label>FPS</label><b id="ro-fps">0</b></div>
+  </div>
+  <div class="top-actions">
+    <button id="btn-left" class="icon-btn" title="설정 패널">◧</button>
+    <button id="btn-right" class="icon-btn" title="분석 패널">◨</button>
+    <button id="btn-help" class="icon-btn" title="도움말">?</button>
+  </div>
+</header>
+
+<!-- ───────────── 좌측 패널 ───────────── -->
+<aside id="left" class="panel">
+  <section class="block">
+    <h2>시나리오</h2>
+    <div id="scenario-list" class="scenario-list"></div>
+    <p id="scenario-desc" class="desc"></p>
+  </section>
+
+  <section class="block">
+    <h2>적분 설정</h2>
+    <div class="row">
+      <label>적분기</label>
+      <select id="in-integrator">
+        <option value="euler">심플렉틱 오일러 (1차)</option>
+        <option value="verlet">속도 베를레 (2차·심플렉틱)</option>
+        <option value="forestruth">Forest-Ruth (4차·심플렉틱)</option>
+        <option value="pefrl">PEFRL (4차·심플렉틱)</option>
+        <option value="rk4">Runge-Kutta 4 (비심플렉틱)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>시간간격 Δt<b id="v-dt"></b></label>
+      <input id="in-dt" type="range" min="-4" max="1.7" step="0.01">
+    </div>
+    <div class="row">
+      <label>프레임당 스텝<b id="v-sub"></b></label>
+      <input id="in-sub" type="range" min="1" max="400" step="1">
+    </div>
+    <div class="row">
+      <label>소프트닝 ε<b id="v-soft"></b></label>
+      <input id="in-soft" type="range" min="-7" max="0" step="0.05">
+    </div>
+    <div class="row toggles">
+      <label class="chk"><input id="in-bh" type="checkbox"> Barnes-Hut 트리</label>
+      <label class="chk"><input id="in-pn" type="checkbox"> 1PN 상대론 보정</label>
+      <label class="chk"><input id="in-col" type="checkbox"> 충돌 병합</label>
+      <label class="chk"><input id="in-auto" type="checkbox"> Δt 자동 추정</label>
+    </div>
+    <div class="row">
+      <label>트리 열림각 θ<b id="v-theta"></b></label>
+      <input id="in-theta" type="range" min="0.2" max="1.2" step="0.05">
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>표시</h2>
+    <div class="row">
+      <label>공간 스케일</label>
+      <select id="in-scale">
+        <option value="linear">선형</option>
+        <option value="log">로그 (내·외행성 동시 관측)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>천체 크기 배율<b id="v-bodyscale"></b></label>
+      <input id="in-bodyscale" type="range" min="0" max="3.2" step="0.02">
+    </div>
+    <div class="row toggles">
+      <label class="chk"><input id="in-trails" type="checkbox" checked> 궤적</label>
+      <label class="chk"><input id="in-orbit" type="checkbox" checked> 예측 궤도</label>
+      <label class="chk"><input id="in-grid" type="checkbox" checked> 기준면 격자</label>
+      <label class="chk"><input id="in-labels" type="checkbox" checked> 라벨</label>
+      <label class="chk"><input id="in-bloom" type="checkbox" checked> 블룸</label>
+      <label class="chk"><input id="in-com" type="checkbox"> 질량중심 고정</label>
+    </div>
+  </section>
+</aside>
+
+<!-- ───────────── 우측 패널 ───────────── -->
+<aside id="right" class="panel">
+  <nav class="tabs">
+    <button class="tab active" data-tab="bodies">천체</button>
+    <button class="tab" data-tab="diag">진단</button>
+    <button class="tab" data-tab="stars">항성</button>
+    <button class="tab" data-tab="cosmo">우주론</button>
+    <button class="tab" data-tab="tools">도구</button>
+  </nav>
+
+  <!-- 천체 -->
+  <section class="tabpage active" data-page="bodies">
+    <div class="block">
+      <h2>천체 목록 <span id="body-count" class="hint"></span></h2>
+      <input id="body-filter" class="text-in" type="text" placeholder="이름 검색…">
+      <div id="body-list" class="body-list"></div>
+    </div>
+    <div class="block">
+      <h2>선택 천체</h2>
+      <div id="inspector" class="kv"></div>
+      <div class="row btn-row">
+        <button id="btn-focus" class="btn">카메라 추적</button>
+        <button id="btn-frame">기준 천체로</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 진단 -->
+  <section class="tabpage" data-page="diag">
+    <div class="block">
+      <h2>보존량</h2>
+      <div id="diag-kv" class="kv"></div>
+      <canvas id="chart-cons" class="chart"></canvas>
+      <p class="desc">심플렉틱 적분기는 에너지 오차가 유계로 진동하지만, RK4 는 단조 증가하는 드리프트를 보입니다. 적분기를 바꿔 비교해 보세요.</p>
+    </div>
+    <div class="block">
+      <h2>계 전체량</h2>
+      <div id="diag-sys" class="kv"></div>
+    </div>
+    <div class="block">
+      <h2>이벤트 로그</h2>
+      <div id="event-log" class="log"></div>
+    </div>
+  </section>
+
+  <!-- 항성 -->
+  <section class="tabpage" data-page="stars">
+    <div class="block">
+      <h2>항성 계산기</h2>
+      <div class="row">
+        <label>질량 M / M☉<b id="v-smass"></b></label>
+        <input id="in-smass" type="range" min="-1.1" max="2" step="0.01" value="0">
+      </div>
+      <div class="row">
+        <label>나이 [Gyr]<b id="v-sage"></b></label>
+        <input id="in-sage" type="range" min="0" max="14" step="0.05" value="4.6">
+      </div>
+      <div id="star-kv" class="kv"></div>
+    </div>
+    <div class="block">
+      <h2>HR 도표</h2>
+      <canvas id="chart-hr" class="chart tall"></canvas>
+    </div>
+    <div class="block">
+      <h2>흑체 스펙트럼</h2>
+      <canvas id="chart-bb" class="chart"></canvas>
+    </div>
+  </section>
+
+  <!-- 우주론 -->
+  <section class="tabpage" data-page="cosmo">
+    <div class="block">
+      <h2>우주 모형</h2>
+      <div class="row">
+        <label>프리셋</label>
+        <select id="in-cosmo">
+          <option value="planck">Planck 2018</option>
+          <option value="wmap">WMAP9</option>
+          <option value="eds">아인슈타인-드지터 (Ω_m=1)</option>
+          <option value="open">열린 우주 (Λ=0)</option>
+        </select>
+      </div>
+      <div class="row"><label>H₀ [km/s/Mpc]<b id="v-h0"></b></label><input id="in-h0" type="range" min="50" max="90" step="0.1"></div>
+      <div class="row"><label>Ω_m<b id="v-om"></b></label><input id="in-om" type="range" min="0" max="1.2" step="0.005"></div>
+      <div class="row"><label>Ω_Λ<b id="v-ol"></b></label><input id="in-ol" type="range" min="0" max="1.2" step="0.005"></div>
+      <div class="row"><label>적색편이 z (로그)<b id="v-z"></b></label><input id="in-z" type="range" min="-3" max="3.2" step="0.01" value="0"></div>
+      <div id="cosmo-kv" class="kv"></div>
+    </div>
+    <div class="block">
+      <h2>척도인자 이력 a(t)</h2>
+      <canvas id="chart-af" class="chart"></canvas>
+    </div>
+    <div class="block">
+      <h2>거리-적색편이</h2>
+      <canvas id="chart-dz" class="chart"></canvas>
+    </div>
+    <div class="block">
+      <h2>우주사 이정표</h2>
+      <div id="epoch-list" class="log"></div>
+    </div>
+  </section>
+
+  <!-- 도구 -->
+  <section class="tabpage" data-page="tools">
+    <div class="block">
+      <h2>천체 추가</h2>
+      <div class="row"><label>이름</label><input id="add-name" class="text-in" type="text" value="새 천체"></div>
+      <div class="row"><label>질량 [계 단위]</label><input id="add-mass" class="text-in" type="text" value="3e-6"></div>
+      <div class="row"><label>장반경 a</label><input id="add-a" class="text-in" type="text" value="2.5"></div>
+      <div class="row"><label>이심률 e</label><input id="add-e" class="text-in" type="text" value="0.1"></div>
+      <div class="row"><label>경사각 i [°]</label><input id="add-i" class="text-in" type="text" value="5"></div>
+      <div class="row"><label>승교점 Ω [°]</label><input id="add-O" class="text-in" type="text" value="0"></div>
+      <div class="row"><label>근점편각 ω [°]</label><input id="add-w" class="text-in" type="text" value="0"></div>
+      <div class="row"><label>평균근점이각 M [°]</label><input id="add-M" class="text-in" type="text" value="0"></div>
+      <div class="row btn-row">
+        <button id="btn-add" class="btn">궤도에 투입</button>
+        <button id="btn-remove">선택 천체 제거</button>
+      </div>
+      <p class="desc">기준 천체(현재 선택된 프레임) 중심의 케플러 요소로 상태벡터를 계산해 투입합니다.</p>
+    </div>
+    <div class="block">
+      <h2>데이터 내보내기</h2>
+      <div class="row btn-row">
+        <button id="btn-csv" class="btn">현재 상태 CSV</button>
+        <button id="btn-elements">궤도요소 CSV</button>
+      </div>
+      <div class="row btn-row">
+        <button id="btn-json">시나리오 JSON</button>
+        <button id="btn-shot">스크린샷 PNG</button>
+      </div>
+    </div>
+    <div class="block">
+      <h2>단위 환산</h2>
+      <div id="unit-kv" class="kv"></div>
+    </div>
+  </section>
+</aside>
+
+<!-- ───────────── 하단 트랜스포트 ───────────── -->
+<footer id="transport">
+  <button id="btn-play" class="tbtn primary">▶︎ 실행</button>
+  <button id="btn-step" class="tbtn">▮▶ 스텝</button>
+  <button id="btn-reset" class="tbtn">↺ 초기화</button>
+  <div class="speed">
+    <label>속도</label>
+    <input id="in-speed" type="range" min="-2" max="2.4" step="0.01" value="0">
+    <b id="v-speed">1×</b>
+  </div>
+  <div class="tstat"><label>적분기</label><b id="ro-integrator">—</b></div>
+  <div class="tstat"><label>Δt</label><b id="ro-dt">—</b></div>
+  <div class="tstat"><label>계산</label><b id="ro-cost">—</b></div>
+</footer>
+
+<!-- ───────────── 도움말 ───────────── -->
+<div id="help" class="modal">
+  <div class="modal-box">
+    <h2>SpaceSim 사용법</h2>
+    <div class="help-grid">
+      <div>
+        <h3>카메라</h3>
+        <ul>
+          <li>드래그 — 궤도 회전</li>
+          <li>휠 / 핀치 — 줌</li>
+          <li>Shift+드래그 · 우클릭 드래그 — 이동</li>
+          <li>천체 클릭 — 선택 / 더블클릭 — 추적</li>
+        </ul>
+        <h3>단축키</h3>
+        <ul>
+          <li><kbd>Space</kbd> 실행·정지</li>
+          <li><kbd>.</kbd> 한 스텝 / <kbd>R</kbd> 초기화</li>
+          <li><kbd>[</kbd> <kbd>]</kbd> 속도 조절</li>
+          <li><kbd>T</kbd> 궤적 · <kbd>L</kbd> 라벨 · <kbd>G</kbd> 격자</li>
+          <li><kbd>F</kbd> 선택 천체 추적 · <kbd>C</kbd> 질량중심</li>
+          <li><kbd>1</kbd>–<kbd>5</kbd> 우측 탭 전환</li>
+        </ul>
+      </div>
+      <div>
+        <h3>수치 모형</h3>
+        <ul>
+          <li>단위계: AU · 일 · 태양질량 (G = 2.9591e-4)</li>
+          <li>심플렉틱 적분기(베를레/PEFRL)는 에너지 오차가 유계</li>
+          <li>1PN 보정: a = GM/(c²r³)[(4GM/r − v²)r + 4(r·v)v]</li>
+          <li>Barnes-Hut: θ 가 작을수록 정확하고 느림</li>
+          <li>우주론: 프리드만 방정식 E(z) 수치적분</li>
+        </ul>
+        <h3>주의</h3>
+        <ul>
+          <li>Δt 가 너무 크면 근접 조우에서 에너지가 폭주합니다.</li>
+          <li>로그 스케일은 표시 전용이며 물리에 영향이 없습니다.</li>
+        </ul>
+      </div>
+    </div>
+    <button id="help-close" class="btn">닫기</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

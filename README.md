@@ -170,3 +170,19 @@ WebGL2 지원 브라우저(Chrome, Edge, Firefox, Safari 16+)에서 동작합니
 - 물리와 렌더는 분리되어 있으며, 물리는 120 Hz 고정 스텝(최대 6 서브스텝)으로 적분합니다.
 - 지형 하이트맵은 CPU에서 생성되어 충돌 판정과 렌더 형상이 **완전히 일치**합니다.
 - 콘솔에서 `__FREEFREELY__` 로 게임 인스턴스에 접근할 수 있고, `__FREEFREELY__.debugStep(초)` 로 렌더 없이 물리만 진행시켜 비행 특성을 검증할 수 있습니다.
+
+---
+
+## 9. 함께 들어있는 프로젝트
+
+### SpaceSim 🪐 — 천체물리 시뮬레이션 (`spacesim/`)
+
+같은 저장소의 `vendor/three` 를 재사용하는 별도 애플리케이션입니다.
+N체 중력 적분(베를레·Forest-Ruth·PEFRL·RK4·Barnes-Hut·1PN 상대론 보정), 케플러 궤도역학,
+항성물리(HR 도표·흑체복사), 우주론(프리드만 방정식 거리 척도)을 한 화면에서 다룹니다.
+
+```
+http://localhost:8080/spacesim/
+```
+
+자세한 내용은 [`spacesim/README.md`](spacesim/README.md) 를 참고하세요.
