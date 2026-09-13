@@ -824,7 +824,7 @@ export class Game {
   updateFlightDom() {
     const v = this.vessel;
     if (!v || !this.dom.missionPanel) return;
-    if (!this.missions.active) {
+    if (!this.missions.active || this.mapOpen) {
       this.dom.missionPanel.hidden = true;
       return;
     }
@@ -931,6 +931,9 @@ export class Game {
       this.dom.mapCanvas.hidden = true;
       this.dom.mapToolbar.hidden = true;
     }
+    // 지도에서는 비행 로그·임무 패널이 궤도를 가린다
+    if (this.dom.flightLog) this.dom.flightLog.hidden = this.mapOpen;
+    if (this.dom.missionPanel && this.mapOpen) this.dom.missionPanel.hidden = true;
   }
 
   /** 기동 노드 추가 */
@@ -1062,6 +1065,7 @@ export class Game {
           target: this.target,
           warp: WARP_LEVELS[this.warpIndex].rate,
           settings: this.settings,
+          mapOpen: this.mapOpen,
         });
         break;
       case 'builder':

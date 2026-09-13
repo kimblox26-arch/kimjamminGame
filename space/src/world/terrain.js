@@ -439,16 +439,21 @@ export class SurfaceProps {
     this.flags = [];
   }
 
-  /** 발사장 구조물 생성 */
+  /**
+   * 발사장 구조물 생성.
+   * 위치는 미터 단위 오프셋으로 지정하고 각도로 환산한다 —
+   * 라디안으로 직접 적으면 천체 크기에 따라 수 km 씩 벌어진다.
+   */
   addLaunchSite(site) {
     const base = site.angle;
+    const A = (meters) => base + meters / this.body.radius;
     this.props.push(
-      { type: 'pad', angle: base, width: 0.00012, height: 14 },
-      { type: 'tower', angle: base - 0.00016, height: 82 },
-      { type: 'tank', angle: base + 0.00022, height: 34 },
-      { type: 'building', angle: base + 0.0004, height: 26, width: 0.00018 },
-      { type: 'building', angle: base - 0.0005, height: 18, width: 0.00014 },
-      { type: 'dish', angle: base - 0.0008, height: 22 }
+      { type: 'pad', angle: A(0), width: 34, height: 5 },
+      { type: 'tower', angle: A(-15), height: 48 },
+      { type: 'tank', angle: A(26), height: 13 },
+      { type: 'building', angle: A(46), height: 17, width: 24 },
+      { type: 'building', angle: A(-52), height: 12, width: 19 },
+      { type: 'dish', angle: A(-78), height: 15 }
     );
     return this;
   }

@@ -1232,7 +1232,8 @@ export class Vessel {
         this.splashed = false;
         this.situation = SITUATION.LANDED;
       }
-      if (!wasLanded) {
+      // 발사대 위에서 대기 중인 상태는 "착륙" 이 아니다
+      if (!wasLanded && this.hasLaunched) {
         this.landingSpeed = impactSpeed;
         this.landedSlope = slope;
         this.landedTheta = theta - this.body.rotationAt(t);
@@ -1453,6 +1454,10 @@ export class Vessel {
   updateSituation() {
     if (this.destroyed) {
       this.situation = SITUATION.DESTROYED;
+      return;
+    }
+    if (!this.hasLaunched && (this.landed || this.splashed)) {
+      this.situation = SITUATION.PRELAUNCH;
       return;
     }
     if (this.landed) {

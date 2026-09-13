@@ -428,48 +428,62 @@ export function drawSurfaceProps(ctx, camera, body, worldPos, props, time) {
 
     switch (prop.type) {
       case 'pad': {
-        const w = Math.max(h * 2.6, 6);
-        ctx.fillStyle = '#4a4f55';
-        ctx.fillRect(-w / 2, -h, w, h);
+        const w = Math.max((prop.width ?? 30) * camera.zoom, 6);
+        // 넓은 콘크리트 에이프런 + 그 위의 발사대
+        ctx.fillStyle = '#3a3f45';
+        ctx.fillRect(-w / 2, -h * 0.35, w, h * 0.35);
+        ctx.fillStyle = '#565c63';
+        ctx.fillRect(-w * 0.22, -h, w * 0.44, h);
         ctx.fillStyle = '#2f3338';
-        ctx.fillRect(-w / 2, -h, w, h * 0.25);
+        ctx.fillRect(-w * 0.22, -h, w * 0.44, Math.max(h * 0.18, 1));
         break;
       }
       case 'tower': {
+        const half = h * 0.045;
         ctx.strokeStyle = '#9aa2aa';
-        ctx.lineWidth = Math.max(1, h * 0.04);
+        ctx.lineWidth = Math.max(1, h * 0.014);
         ctx.beginPath();
-        ctx.moveTo(-h * 0.08, 0);
-        ctx.lineTo(-h * 0.08, -h);
-        ctx.moveTo(h * 0.08, 0);
-        ctx.lineTo(h * 0.08, -h);
+        ctx.moveTo(-half, 0);
+        ctx.lineTo(-half, -h);
+        ctx.moveTo(half, 0);
+        ctx.lineTo(half, -h);
         ctx.stroke();
-        ctx.lineWidth = Math.max(0.5, h * 0.02);
+        ctx.lineWidth = Math.max(0.5, h * 0.008);
         ctx.beginPath();
-        for (let i = 0; i < 8; i++) {
-          const y0 = -(h * i) / 8;
-          const y1 = -(h * (i + 1)) / 8;
-          ctx.moveTo(-h * 0.08, y0);
-          ctx.lineTo(h * 0.08, y1);
+        for (let i = 0; i < 10; i++) {
+          const y0 = -(h * i) / 10;
+          const y1 = -(h * (i + 1)) / 10;
+          ctx.moveTo(-half, y0);
+          ctx.lineTo(half, y1);
+          ctx.moveTo(-half, y1);
+          ctx.lineTo(half, y1);
         }
         ctx.stroke();
         // 항공 장애등
         ctx.fillStyle = '#ff4a3a';
-        ctx.fillRect(-1, -h - 2, 2.5, 2.5);
+        ctx.fillRect(-Math.max(1, h * 0.012), -h - h * 0.02, Math.max(2, h * 0.024), Math.max(2, h * 0.02));
         break;
       }
       case 'tank': {
-        ctx.fillStyle = '#dfe4e9';
+        const r = h * 0.42;
+        ctx.fillStyle = '#c8ced5';
         ctx.beginPath();
-        ctx.arc(0, -h * 0.5, h * 0.5, 0, TAU);
+        ctx.arc(0, -h * 0.55, r, 0, TAU);
         ctx.fill();
         ctx.strokeStyle = '#8d949c';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = Math.max(1, h * 0.02);
+        ctx.stroke();
+        // 지지 다리
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.6, 0);
+        ctx.lineTo(-r * 0.35, -h * 0.55);
+        ctx.moveTo(r * 0.6, 0);
+        ctx.lineTo(r * 0.35, -h * 0.55);
         ctx.stroke();
         break;
       }
       case 'building': {
-        const w = Math.max((prop.width ?? 0.0002) * body.radius * camera.zoom, 4);
+        const w = Math.max((prop.width ?? 20) * camera.zoom, 4);
         ctx.fillStyle = '#6b7279';
         ctx.fillRect(-w / 2, -h, w, h);
         ctx.fillStyle = withAlpha('#ffd97a', 0.55);

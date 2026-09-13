@@ -131,6 +131,16 @@ export class HUD {
       return;
     }
 
+    // 지도 화면에서는 계기 패널이 궤도를 가리므로 최소한만 남긴다
+    if (o.mapOpen) {
+      this.renderTopBar(o);
+      this.renderOrbitInfo(o);
+      this.renderWarnings(o);
+      this.renderAutopilot(o);
+      this.renderMessages(o);
+      return;
+    }
+
     this.renderTopBar(o);
     this.renderAltitudeTape(o);
     this.renderSpeedTape(o);
@@ -453,10 +463,9 @@ export class HUD {
   /* 스테이지 목록 */
   renderStages(o) {
     const v = o.vessel;
-    const summaries = stageSummaries(
-      v,
-      v.body.atmo.exists ? v.body.atmo.pressureAt(v.altitude) : 0
-    );
+    // 상단 스테이지는 대부분 진공에서 쓰이므로 Δv 는 진공 기준으로 보여준다.
+    // (해면 기준으로 계산하면 진공 엔진이 쓸모없어 보인다)
+    const summaries = stageSummaries(v, 0);
     if (!summaries.length) return;
 
     const w = 186;
@@ -468,7 +477,7 @@ export class HUD {
 
     this.panel(x, y, w, h, 6);
     this.label(
-      `스테이지 ${v.stageIndex + 1}/${summaries.length}`,
+      `스테이지 ${v.stageIndex + 1}/${summaries.length} · 진공 기준`,
       x + 8,
       y + 16,
       { size: 10 }

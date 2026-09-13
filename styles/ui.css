@@ -126,7 +126,7 @@ canvas#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
   padding: 13px 18px; border-radius: 12px; cursor: pointer;
   border: 1px solid var(--line); background: linear-gradient(100deg, rgba(11, 27, 41, 0.9), rgba(8, 20, 32, 0.72));
   color: var(--text); font-family: var(--font); transition: 0.15s ease;
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden; text-decoration: none;
 }
 .nav-btn::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;

@@ -481,8 +481,9 @@ export class MapView {
     if (!body) return;
     const w = 240;
     const h = 168;
-    const x = 20;
-    const y = cam.height - h - 20;
+    // 오른쪽 아래 — 왼쪽은 오토파일럿 바가 쓴다
+    const x = cam.width - w - 20;
+    const y = cam.height - h - 56;
 
     ctx.fillStyle = 'rgba(8,13,20,0.78)';
     ctx.strokeStyle = 'rgba(120,160,200,0.25)';
