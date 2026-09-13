@@ -19,10 +19,74 @@ import { G0, RESOURCES, LF_OX_RATIO } from '../physics/constants.js';
  * @param {import('./vessel.js').VesselPart[]} parts
  * @returns {StageAction[]}
  */
+/** 설계실(CraftPart: x/y)과 비행(VesselPart: localX/localY) 양쪽에서 쓰기 위한 접근자 */
+const px = (p) => (p.localX !== undefined ? p.localX : p.x);
+const py = (p) => (p.localY !== undefined ? p.localY : p.y);
+
 export function buildStages(parts) {
   if (!parts.length) return [];
   const maxStage = Math.max(...parts.map((p) => p.stage));
   const stages = [];
+
+  // 어떤 부품이 이미 어느 분리기에 "예약" 되었는지 추적한다.
+  const claimed = new Set();
+
+  /**
+   * 스택 분리기: 자기보다 아래(y 가 작은) 부품 전부를 떨궈낸다.
+   * 방사형 분리기: 같은 쪽에 붙어 있는 측면 부스터만 떨궈낸다.
+   */
+  const jettisonSetFor = (dec) => {
+    const out = [dec.uid];
+    claimed.add(dec.uid);
+    const radial = dec.def.decoupler?.radial;
+    const fairing = dec.def.decoupler?.fairing;
+    if (fairing) return out; // 페어링은 자기 자신만 열린다
+
+    for (const p of parts) {
+      if (claimed.has(p.uid) || p === dec) continue;
+      if (p.def.clamp || p.def.chute) continue;
+      if (radial) {
+        // 같은 방향(좌/우)에 있고 중심축에서 떨어진 부품
+        if (Math.abs(px(p)) < 0.4) continue;
+        if (Math.sign(px(p)) !== Math.sign(px(dec))) continue;
+        if (Math.abs(px(p) - px(dec)) > Math.max(2.5, p.def.size.w)) continue;
+        out.push(p.uid);
+        claimed.add(p.uid);
+      } else {
+        // 스택 분리기: 자기보다 낮은 위치의 부품
+        if (py(p) < py(dec) - 0.01) {
+          out.push(p.uid);
+          claimed.add(p.uid);
+        }
+      }
+    }
+    return out;
+  };
+
+  // 분리기를 낮은 스테이지 → 낮은 높이 순으로 처리해야
+  // 아래쪽 단이 먼저 예약된다.
+  const decouplers = parts
+    .filter((p) => p.def.decoupler && !p.def.decoupler.optional && !p.def.clamp)
+    .sort((a, b) => a.stage - b.stage || py(a) - py(b));
+
+  const jettisonMap = new Map();
+  for (const dec of decouplers) {
+    jettisonMap.set(dec.uid, jettisonSetFor(dec));
+  }
+
+  // 부품별 "연료 그룹" — 같은 분리기에 함께 떨어져 나가는 부품끼리 묶는다.
+  // 엔진은 자기 그룹의 탱크에서만 연료를 뽑는다 (분리기를 넘는 크로스피드 없음).
+  const fuelGroups = new Map();
+  for (const dec of decouplers) {
+    const gid = dec.stage;
+    for (const uid of jettisonMap.get(dec.uid) ?? []) {
+      if (!fuelGroups.has(uid)) fuelGroups.set(uid, gid);
+    }
+  }
+  for (const p of parts) {
+    if (!fuelGroups.has(p.uid)) fuelGroups.set(p.uid, Infinity);
+  }
+  for (const p of parts) p.fuelGroup = fuelGroups.get(p.uid);
 
   for (let i = 0; i <= maxStage; i++) {
     const inStage = parts.filter((p) => p.stage === i);
@@ -49,7 +113,9 @@ export function buildStages(parts) {
         action.decouple.push(p.uid);
         action.icons.push({ type: 'fairing', name: def.name });
       } else if (def.decoupler && !def.decoupler.optional) {
-        action.decouple.push(p.uid);
+        for (const uid of jettisonMap.get(p.uid) ?? [p.uid]) {
+          if (!action.decouple.includes(uid)) action.decouple.push(uid);
+        }
         action.icons.push({ type: 'decoupler', name: def.name });
       } else if (def.engine) {
         action.ignite.push(p.uid);
@@ -57,16 +123,11 @@ export function buildStages(parts) {
       }
     }
 
-    // 분리기가 있으면 그보다 아래(같은 스테이지) 부품도 함께 떨어진다
-    if (action.decouple.length) {
-      for (const p of inStage) {
-        if (action.decouple.includes(p.uid)) continue;
-        if (p.def.clamp || p.def.chute) continue;
-        // 같은 스테이지의 엔진/탱크는 분리기와 함께 버려진다
-        if (!action.ignite.includes(p.uid)) {
-          action.decouple.push(p.uid);
-        }
-      }
+    // 같은 스테이지에서 점화하는 엔진은 그 스테이지에 버려지지 않는다
+    if (action.ignite.length && action.decouple.length) {
+      action.decouple = action.decouple.filter(
+        (uid) => !action.ignite.includes(uid)
+      );
     }
 
     stages.push(action);
@@ -99,15 +160,19 @@ export function stageSummaries(vessel, pressureAtm = 0) {
       flow += t / (e.ispAt(pressureAtm) * G0);
     }
 
-    // 이 스테이지에서 함께 버려지는 부품의 연료
-    const stageParts = parts.filter((p) => p.stage === i && !p.destroyed);
+    // 이 단의 엔진이 실제로 뽑아 쓸 수 있는 연료 (같은 분리 그룹)
     let propMass = 0;
     if (engines.length) {
       const prop = engines[0].def.engine.propellant;
+      const group = engines[0].fuelGroup;
+      const pool =
+        prop === 'sf'
+          ? engines
+          : parts.filter((p) => !p.destroyed && p.fuelGroup === group);
       if (prop === 'lfox') {
         let lf = 0;
         let ox = 0;
-        for (const p of stageParts) {
+        for (const p of pool) {
           lf += p.resources.lf ?? 0;
           ox += p.resources.ox ?? 0;
         }
@@ -117,7 +182,7 @@ export function stageSummaries(vessel, pressureAtm = 0) {
           (LF_OX_RATIO.lf * RESOURCES.lf.density +
             LF_OX_RATIO.ox * RESOURCES.ox.density);
       } else if (RESOURCES[prop]) {
-        for (const p of stageParts) {
+        for (const p of pool) {
           propMass += (p.resources[prop] ?? 0) * RESOURCES[prop].density;
         }
       }

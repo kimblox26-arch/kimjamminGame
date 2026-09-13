@@ -223,12 +223,12 @@ export class Camera {
       vessel.pos.y + vessel.vel.y * lead * 0.05
     );
 
-    if (opts.lockRotation ?? this.mode === CAMERA_MODE.LOCKED) {
+    if (opts.lockRotation) {
       this.setRotation(vessel.angle - Math.PI / 2);
-    } else if (opts.alignToBody) {
-      // 지표면이 항상 아래로 오도록
-      const up = Math.atan2(vessel.pos.y, vessel.pos.x);
-      this.setRotation(up - Math.PI / 2);
+    } else if (opts.alignToBody && opts.upAngle !== undefined) {
+      // 지표면이 항상 화면 아래로 오도록.
+      // upAngle 은 반드시 "천체 중심 기준" 각도여야 한다 (절대 좌표 아님).
+      this.setRotation(opts.upAngle - Math.PI / 2);
     }
 
     if (this.autoZoom && (opts.autoZoom ?? true)) {

@@ -116,12 +116,16 @@ export class InputManager {
     this._add(t, 'keyup', (e) => this._onKeyUp(e));
     this._add(t, 'blur', () => this.clearAll());
 
-    const surface = this.canvas || t;
+    // 포인터 이벤트는 항상 window 에 붙인다.
+    // 캔버스 하나에만 붙이면 화면을 전환했을 때(설계실 등) 입력이 끊긴다.
+    const surface = window;
     this._add(surface, 'mousemove', (e) => this._onMouseMove(e));
     this._add(surface, 'mousedown', (e) => this._onMouseDown(e));
     this._add(t, 'mouseup', (e) => this._onMouseUp(e));
     this._add(surface, 'wheel', (e) => this._onWheel(e), { passive: false });
-    this._add(surface, 'contextmenu', (e) => e.preventDefault());
+    this._add(surface, 'contextmenu', (e) => {
+      if (e.target && e.target.tagName === 'CANVAS') e.preventDefault();
+    });
 
     this._add(surface, 'touchstart', (e) => this._onTouchStart(e), {
       passive: false,
@@ -254,13 +258,20 @@ export class InputManager {
 
   /* ── 마우스 ───────────────────────────────────────────── */
 
+  /**
+   * 포인터 좌표는 "뷰포트 기준 CSS 픽셀" 로 통일한다.
+   * 전체화면 비행 캔버스는 뷰포트와 일치하고,
+   * 설계실처럼 레이아웃 안에 놓인 캔버스는 자기 rect 를 빼서 쓰면 된다.
+   */
   _localPos(e) {
-    const el = this.canvas || document.body;
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  /** 특정 요소 기준 좌표로 변환 */
+  posIn(el) {
+    if (!el) return { x: this.mouse.x, y: this.mouse.y };
     const r = el.getBoundingClientRect();
-    return {
-      x: (e.clientX - r.left) * (el.width ? el.width / r.width / (window.devicePixelRatio || 1) : 1),
-      y: (e.clientY - r.top) * (el.height ? el.height / r.height / (window.devicePixelRatio || 1) : 1),
-    };
+    return { x: this.mouse.x - r.left, y: this.mouse.y - r.top };
   }
 
   _onMouseMove(e) {
@@ -279,6 +290,8 @@ export class InputManager {
 
   _onMouseDown(e) {
     const p = this._localPos(e);
+    // 버튼·패널 위를 눌렀는지 기록해 두면 장면 쪽에서 무시할 수 있다
+    this.mouse.overUI = !(e.target && e.target.tagName === 'CANVAS');
     this.mouse.x = p.x;
     this.mouse.y = p.y;
     this.mouse.downX = p.x;
@@ -312,7 +325,13 @@ export class InputManager {
   }
 
   _onWheel(e) {
-    e.preventDefault();
+    // 캔버스 위에서만 기본 스크롤을 막는다 (UI 목록은 스크롤되어야 한다)
+    const onCanvas = e.target && e.target.tagName === 'CANVAS';
+    if (onCanvas) e.preventDefault();
+    else if (!e.target?.closest?.('#screen-flight')) {
+      // 패널 스크롤은 그대로 두고 게임 입력으로도 쓰지 않는다
+      return;
+    }
     // 브라우저별 delta 정규화
     let d = e.deltaY;
     if (e.deltaMode === 1) d *= 16;
@@ -328,15 +347,14 @@ export class InputManager {
   /* ── 터치 ─────────────────────────────────────────────── */
 
   _onTouchStart(e) {
+    this.mouse.overUI = !(e.target && e.target.tagName === 'CANVAS');
     for (const t of e.changedTouches) {
-      const el = this.canvas || document.body;
-      const r = el.getBoundingClientRect();
       this.touches.set(t.identifier, {
         id: t.identifier,
-        x: t.clientX - r.left,
-        y: t.clientY - r.top,
-        startX: t.clientX - r.left,
-        startY: t.clientY - r.top,
+        x: t.clientX,
+        y: t.clientY,
+        startX: t.clientX,
+        startY: t.clientY,
         dx: 0,
         dy: 0,
         age: 0,
@@ -366,13 +384,11 @@ export class InputManager {
   }
 
   _onTouchMove(e) {
-    const el = this.canvas || document.body;
-    const r = el.getBoundingClientRect();
     for (const t of e.changedTouches) {
       const rec = this.touches.get(t.identifier);
       if (!rec) continue;
-      const nx = t.clientX - r.left;
-      const ny = t.clientY - r.top;
+      const nx = t.clientX;
+      const ny = t.clientY;
       rec.dx += nx - rec.x;
       rec.dy += ny - rec.y;
       rec.x = nx;

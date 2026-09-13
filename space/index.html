@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ORBITER — 우주비행 시뮬레이터</title>
+<meta name="description" content="로켓을 직접 설계하고 실제 궤도역학으로 항성계를 탐사하는 웹 우주비행 시뮬레이터">
+<meta name="theme-color" content="#050a12">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@400;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles/orbiter.css">
+</head>
+<body data-screen="screen-loading">
+
+<!-- ═══════════════ 캔버스 ═══════════════ -->
+<canvas id="flight-canvas"></canvas>
+<canvas id="map-canvas" hidden></canvas>
+<canvas id="hud-canvas"></canvas>
+
+<!-- ═══════════════ 로딩 ═══════════════ -->
+<section id="screen-loading" class="screen">
+  <div class="loading-wrap">
+    <h1 class="brand">ORB<span>ITER</span></h1>
+    <p class="brand-sub">BUILD · LAUNCH · ORBIT — 궤도역학 기반 우주비행 시뮬레이터</p>
+    <div class="load-track"><div id="loading-bar"></div></div>
+    <div id="loading-label" class="load-label">초기화</div>
+    <div id="loading-tip" class="load-tip"></div>
+  </div>
+</section>
+
+<!-- ═══════════════ 메인 메뉴 ═══════════════ -->
+<section id="screen-menu" class="screen">
+  <div class="menu-layout">
+    <div class="menu-left">
+      <h1 class="brand big">ORB<span>ITER</span></h1>
+      <p class="brand-sub">당신이 만든 로켓으로, 아직 아무도 밟지 않은 곳까지</p>
+      <div id="menu-funds" class="menu-funds"></div>
+
+      <nav class="menu-nav">
+        <button class="nav-btn primary" data-nav="quickstart">
+          <b>바로 발사</b><span>기본 로켓으로 즉시 궤도 도전</span>
+        </button>
+        <button class="nav-btn" data-nav="builder">
+          <b>설계실</b><span>부품을 조립해 나만의 발사체를 만든다</span>
+        </button>
+        <button class="nav-btn" data-nav="hangar">
+          <b>격납고</b><span>기본 기체 12종 · 내 설계도</span>
+        </button>
+        <button class="nav-btn" data-nav="missions">
+          <b>임무</b><span>첫 비행부터 대여행까지 12개 임무</span>
+        </button>
+        <button class="nav-btn" data-nav="bodies">
+          <b>천체 도감</b><span>헬리오스 항성계 16개 천체 정보</span>
+        </button>
+        <button class="nav-btn" data-nav="continue">
+          <b>이어하기</b><span>마지막 빠른 저장 불러오기</span>
+        </button>
+        <button class="nav-btn" data-nav="settings">
+          <b>설정</b><span>그래픽 · 사운드 · 난이도 · 세이브</span>
+        </button>
+      </nav>
+      <div id="menu-stats" class="menu-stats"></div>
+    </div>
+
+    <aside class="menu-right">
+      <h3>조작</h3>
+      <dl class="keymap">
+        <dt>Space</dt><dd>스테이지 (점화 · 분리)</dd>
+        <dt>W / S</dt><dd>스로틀 미세 조정</dd>
+        <dt>A / D</dt><dd>좌우 회전 (짐벌 · 휠 · 핀)</dd>
+        <dt>Shift / Ctrl</dt><dd>스로틀 증가 / 감소</dd>
+        <dt>Z / X</dt><dd>스로틀 최대 / 정지</dd>
+        <dt>T</dt><dd>SAS 자세 안정</dd>
+        <dt>R</dt><dd>RCS 추력기</dd>
+        <dt>G</dt><dd>착륙 다리</dd>
+        <dt>P</dt><dd>낙하산 전개</dd>
+        <dt>M</dt><dd>궤도 지도</dd>
+        <dt>, / .</dt><dd>시간 가속 감소 / 증가</dd>
+        <dt>1~6</dt><dd>SAS 방향 (진행 · 역행 · 구심 · 원심 · 목표 · 지표역행)</dd>
+        <dt>C</dt><dd>카메라 전환</dd>
+        <dt>F5 / F9</dt><dd>빠른 저장 / 불러오기</dd>
+        <dt>Esc</dt><dd>일시정지</dd>
+      </dl>
+      <h3>알아두면 좋은 것</h3>
+      <ul class="tips">
+        <li>궤도는 "높이" 가 아니라 "옆으로 가는 속도" 입니다. 저궤도까지 약 3,400 m/s.</li>
+        <li>고도 10 km 부터 동쪽으로 조금씩 눕히면 연료가 크게 절약됩니다.</li>
+        <li>핀은 반드시 무게중심 아래에. 위에 달면 로켓이 뒤집힙니다.</li>
+        <li>재진입은 각도 싸움입니다. 얕으면 튕기고 가파르면 탑니다.</li>
+      </ul>
+    </aside>
+  </div>
+</section>
+
+<!-- ═══════════════ 격납고 ═══════════════ -->
+<section id="screen-hangar" class="screen">
+  <header class="screen-head">
+    <button class="back" data-nav="menu">← 메뉴</button>
+    <h2>격납고</h2>
+    <button class="ghost" data-nav="builder">설계실 열기</button>
+  </header>
+  <div id="hangar-list" class="hangar-list scroll"></div>
+</section>
+
+<!-- ═══════════════ 설계실 ═══════════════ -->
+<section id="screen-builder" class="screen">
+  <header class="screen-head">
+    <button class="back" data-nav="menu">← 메뉴</button>
+    <input id="build-name" type="text" maxlength="40" placeholder="기체 이름" value="새 기체">
+    <div class="head-actions">
+      <button id="build-new">새로 만들기</button>
+      <button id="build-import">불러오기</button>
+      <input id="build-import-file" type="file" accept=".json" hidden>
+      <button id="build-export">내보내기</button>
+      <button id="build-save">저장</button>
+      <button id="build-launch" class="primary">발사대로</button>
+    </div>
+  </header>
+
+  <div class="builder-layout">
+    <aside class="builder-parts">
+      <input id="part-search" type="search" placeholder="부품 검색…">
+      <div id="part-categories" class="cat-list"></div>
+      <div id="part-palette" class="palette scroll"></div>
+    </aside>
+
+    <div class="builder-stage">
+      <canvas id="build-canvas"></canvas>
+      <div class="builder-toolbar">
+        <button id="build-undo" title="실행 취소 (Ctrl+Z)">↶</button>
+        <button id="build-redo" title="다시 실행 (Ctrl+Y)">↷</button>
+        <button id="build-fit" title="화면 맞춤 (F)">⤢</button>
+        <button id="build-symmetry" class="active">대칭 켜짐</button>
+        <button id="build-stages">스테이지 보기</button>
+        <button id="build-autostage">자동 스테이징</button>
+        <button id="stage-up" title="선택 부품 스테이지 ↑">단 ↑</button>
+        <button id="stage-down" title="선택 부품 스테이지 ↓">단 ↓</button>
+      </div>
+      <div class="builder-hint">
+        좌클릭: 배치 / 선택 · 드래그: 부품 이동 · 우클릭: 삭제 · 휠: 확대 ·
+        우클릭 드래그: 화면 이동 · X: 좌우 대칭 복제
+      </div>
+    </div>
+
+    <aside class="builder-stats">
+      <h3>해석</h3>
+      <div id="build-stats" class="scroll"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ═══════════════ 임무 ═══════════════ -->
+<section id="screen-missions" class="screen">
+  <header class="screen-head">
+    <button class="back" data-nav="menu">← 메뉴</button>
+    <h2>임무</h2>
+    <span class="head-note">임무를 수락하면 비행 중 목표가 추적됩니다</span>
+  </header>
+  <div id="mission-list" class="mission-list scroll"></div>
+</section>
+
+<!-- ═══════════════ 천체 도감 ═══════════════ -->
+<section id="screen-bodies" class="screen">
+  <header class="screen-head">
+    <button class="back" data-nav="menu">← 메뉴</button>
+    <h2>헬리오스 항성계</h2>
+    <span class="head-note">반지름은 실제의 약 1/10 로 압축되어 있습니다</span>
+  </header>
+  <div id="body-list" class="body-list scroll"></div>
+</section>
+
+<!-- ═══════════════ 설정 ═══════════════ -->
+<section id="screen-settings" class="screen">
+  <header class="screen-head">
+    <button class="back" data-nav="menu">← 메뉴</button>
+    <h2>설정</h2>
+    <div class="head-actions">
+      <button id="settings-reset">설정 초기화</button>
+      <button id="progress-reset" class="danger">진행도 초기화</button>
+    </div>
+  </header>
+
+  <div class="settings-grid scroll">
+    <fieldset>
+      <legend>그래픽</legend>
+      <label>품질
+        <select id="set-quality">
+          <option value="auto">자동</option>
+          <option value="low">낮음</option>
+          <option value="medium">보통</option>
+          <option value="high">높음</option>
+        </select>
+      </label>
+      <label class="row"><input id="set-starfield" type="checkbox"> 별하늘 표시</label>
+      <label class="row"><input id="set-trajectory" type="checkbox"> 궤도 예측선 표시</label>
+      <label>화면 흔들림 <input id="set-shake" type="range" min="0" max="2" step="0.1"></label>
+      <label class="row"><input id="set-fps" type="checkbox"> FPS 표시</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>사운드</legend>
+      <label>마스터 <input id="set-master" type="range" min="0" max="1" step="0.05"></label>
+      <label>효과음 <input id="set-sfx" type="range" min="0" max="1" step="0.05"></label>
+      <label>음악 <input id="set-music" type="range" min="0" max="1" step="0.05"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>난이도</legend>
+      <label>프리셋
+        <select id="set-difficulty">
+          <option value="sandbox">샌드박스</option>
+          <option value="easy">쉬움</option>
+          <option value="normal">보통</option>
+          <option value="hard">어려움</option>
+          <option value="realistic">현실</option>
+        </select>
+      </label>
+      <label class="row"><input id="set-heat" type="checkbox"> 재진입 가열</label>
+      <label class="row"><input id="set-drag" type="checkbox"> 대기 항력</label>
+      <label>조종 감도 <input id="set-sensitivity" type="range" min="0.2" max="2" step="0.05"></label>
+    </fieldset>
+
+    <fieldset class="wide">
+      <legend>저장된 비행</legend>
+      <div id="save-list" class="save-list"></div>
+    </fieldset>
+  </div>
+</section>
+
+<!-- ═══════════════ 비행 ═══════════════ -->
+<section id="screen-flight" class="screen overlay">
+  <div class="flight-top-right">
+    <button id="flight-map">지도 (M)</button>
+    <button id="flight-hud" class="active">HUD</button>
+    <button id="flight-quicksave">저장 (F5)</button>
+    <button id="flight-recover">회수</button>
+    <button id="flight-abort" class="danger">중단</button>
+  </div>
+
+  <div class="autopilot-bar">
+    <span>오토파일럿</span>
+    <button id="ap-ascent">상승</button>
+    <button id="ap-circularize">원형화</button>
+    <button id="ap-node">노드 실행</button>
+    <button id="ap-land">착륙</button>
+    <button id="ap-hover">호버</button>
+    <button id="ap-kill">회전 정지</button>
+  </div>
+
+  <div id="mission-panel" class="mission-panel" hidden></div>
+  <div id="flight-log" class="flight-log"></div>
+  <div id="fps-counter" class="fps-counter"></div>
+
+  <div id="map-toolbar" class="map-toolbar" hidden>
+    <button id="map-add-node">기동 노드 추가</button>
+    <button id="map-clear-nodes">노드 삭제</button>
+    <button id="map-focus-vessel">기체로 이동</button>
+    <button id="map-set-target">목표 지정</button>
+  </div>
+
+  <!-- 터치 컨트롤 -->
+  <div class="touch-controls">
+    <div class="touch-left">
+      <button class="touch-btn" data-hold="rollLeft">◀</button>
+      <button class="touch-btn" data-hold="rollRight">▶</button>
+    </div>
+    <div class="touch-right">
+      <input id="touch-throttle" class="throttle-slider" type="range" min="0" max="100" value="0" orient="vertical">
+      <button class="touch-btn big" data-hold="stage">STAGE</button>
+    </div>
+  </div>
+
+  <div id="pause-menu" class="pause-menu" hidden>
+    <div class="pause-box">
+      <h2>일시정지</h2>
+      <button id="pause-resume" class="primary">계속하기</button>
+      <button id="pause-save">빠른 저장</button>
+      <button id="pause-load">빠른 불러오기</button>
+      <button id="pause-menu-exit" class="danger">임무 중단</button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 결과 ═══════════════ -->
+<section id="screen-results" class="screen">
+  <div class="results-wrap">
+    <div id="results-body" class="results-body"></div>
+    <div class="results-actions">
+      <button id="results-retry" class="primary">같은 기체로 재도전</button>
+      <button id="results-hangar">격납고</button>
+      <button id="results-menu">메인 메뉴</button>
+    </div>
+  </div>
+</section>
+
+<script type="module" src="./src/main.js"></script>
+<noscript>
+  <p style="color:#fff;padding:2rem">이 시뮬레이터는 자바스크립트가 필요합니다.</p>
+</noscript>
+</body>
+</html>

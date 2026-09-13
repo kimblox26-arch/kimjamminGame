@@ -156,12 +156,13 @@ export function computeAero(vessel, atmo, altitude, surfaceVelocity, out) {
     -q * baseArea * Math.sin(out.aoa) * cpOffset * bodyLength * 0.5;
   out.torque += restoring;
 
-  // 핀(그리드핀/안정날개)의 추가 안정성
+  // 핀(그리드핀/안정날개)의 추가 안정성.
+  // 무게중심 뒤쪽 날개는 받음각을 줄이는 방향(= 본체 복원 모멘트와 같은 부호)으로 작용한다.
   if (aero.finArea > 0) {
     const finCl = liftCoefficient(out.aoa, 0.32, 5.0);
     const finLift = q * aero.finArea * finCl;
     const arm = aero.finArm ?? bodyLength * 0.45;
-    out.torque -= finLift * arm;
+    out.torque += finLift * arm;
     out.force.x += lhat.x * finLift * 0.35;
     out.force.y += lhat.y * finLift * 0.35;
   }

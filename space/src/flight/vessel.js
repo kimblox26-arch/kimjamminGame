@@ -296,8 +296,14 @@ export class Vessel {
     this.inertia = Math.max(I, 1);
   }
 
+  /**
+   * 공력 특성 갱신.
+   *
+   * 항력은 "전면 단면적 × 항력계수" 하나로 계산한다.
+   * 부품마다 옆면적을 더하면 탱크를 길게 쌓을수록 항력이 폭증해
+   * (실제와 반대로) 로켓이 궤도에 오르지 못한다.
+   */
   updateAeroProperties() {
-    let cdArea = 0;
     let finArea = 0;
     let noseRadius = 0.5;
     let minY = Infinity;
@@ -308,15 +314,18 @@ export class Vessel {
     let cpy = 0;
     let areaSum = 0;
     let extraDrag = 0;
+    /** 기류를 정면으로 맞는 폭 — 코어 지름과 측면 부스터까지 */
+    let frontalWidth = 0.5;
+    let topPart = null;
 
     for (const p of this.parts) {
       if (p.destroyed) continue;
       const d = p.def.drag;
-      let a = 0;
-      if (d) {
-        cdArea += d.cd * Math.abs(d.area);
-        a = Math.abs(d.area) * Math.max(d.cd, 0.02);
-      }
+      const hh = p.def.size.h / 2;
+      const hw = p.def.size.w / 2;
+
+      // 압력중심 가중치 — 항력·양력을 만드는 면적
+      let a = d ? Math.abs(d.area) * Math.max(d.cd, 0.02) : 0.05;
       if (p.def.fin) {
         finArea += p.def.fin.area;
         a += p.def.fin.area * 2.2;
@@ -330,8 +339,16 @@ export class Vessel {
       cpy += p.localY * a;
       areaSum += a;
 
-      const hh = p.def.size.h / 2;
-      const hw = p.def.size.w / 2;
+      // 전면 폭: 날개·다리·안테나 같은 얇은 부속은 제외한다
+      const bulky =
+        !p.def.fin && !p.def.leg && !p.def.solar && !p.def.antenna && !p.def.light;
+      if (bulky) {
+        frontalWidth = Math.max(frontalWidth, (Math.abs(p.localX) + hw) * 2);
+      }
+      if (!p.def.radialOnly && (!topPart || p.localY > topPart.localY)) {
+        topPart = p;
+      }
+
       minY = Math.min(minY, p.localY - hh);
       maxY = Math.max(maxY, p.localY + hh);
       minX = Math.min(minX, p.localX - hw);
@@ -346,13 +363,25 @@ export class Vessel {
     }
     const length = Math.max(maxY - minY, 1);
     const width = Math.max(maxX - minX, 0.5);
-    const frontalArea = Math.max(width * 0.62, 0.4);
+    const frontalArea = Math.max(frontalWidth * 0.85, 0.4);
+
+    // 선두 부품의 모양이 항력계수를 결정한다
+    let cd = 0.34;
+    const topDef = topPart?.def;
+    if (topDef) {
+      if (topDef.drag && topDef.drag.cd < 0) cd = 0.18; // 노즈콘·페어링
+      else if (topDef.chute) cd = 0.42;
+      else if (topDef.category === 'pod') cd = 0.3;
+    }
+    // 측면 부속과 펼친 에어브레이크가 더하는 항력
+    cd += (extraDrag + finArea * 0.09) / frontalArea;
+
     const cop = areaSum > 0 ? new Vec2(cpx / areaSum, cpy / areaSum) : new Vec2();
 
     this.bounds = { minX, maxX, minY, maxY, length, width };
     this.aero = {
       area: frontalArea,
-      cd: clamp((cdArea + extraDrag) / frontalArea, 0.05, 2.2),
+      cd: clamp(cd, 0.12, 1.6),
       length,
       finArea,
       finArm: Math.max(Math.abs(cop.y - this.com.y), length * 0.25),
@@ -670,16 +699,24 @@ export class Vessel {
       const massFlow = wantedThrust / (isp * G0);
 
       // 추진제 소비
+      // 연료는 같은 분리 그룹 안에서만 흐른다 (분리기를 넘는 크로스피드 없음)
       let result;
       const mult = this._difficulty.fuelMult ?? 1;
+      const group = { group: part.fuelGroup };
       if (e.propellant === 'lfox') {
-        result = this.net.drawBipropellant(massFlow * mult, dt, { stage: 0 });
+        result = this.net.drawBipropellant(massFlow * mult, dt, group);
       } else if (e.propellant === 'sf') {
+        // 고체 부스터는 자기 몸통 안의 추진제만 태운다
         result = this.net.drawMonopropellant('sf', massFlow * mult, dt, {
           fromParts: [part],
         });
       } else {
-        result = this.net.drawMonopropellant(e.propellant, massFlow * mult, dt);
+        result = this.net.drawMonopropellant(
+          e.propellant,
+          massFlow * mult,
+          dt,
+          group
+        );
       }
 
       // 이온 엔진은 전기도 먹는다
@@ -709,9 +746,11 @@ export class Vessel {
       totalFlow += massFlow;
 
       // 짐벌
+      // 짐벌: 노즐을 명령 방향으로 꺾으면 무게중심 뒤에서 밀기 때문에
+      // 기체는 반대로 돈다. 반작용 휠(-cmd)과 부호를 맞추기 위해 +cmd 로 꺾는다.
       let dir = fwd;
       if (e.gimbal > 0) {
-        const target = (-gimbalCmd * e.gimbal * Math.PI) / 180;
+        const target = (gimbalCmd * e.gimbal * Math.PI) / 180;
         part.gimbalAngle += (target - part.gimbalAngle) * Math.min(1, dt * 10);
         const ga = part.gimbalAngle;
         dir = new Vec2(
@@ -858,7 +897,9 @@ export class Vessel {
       if (p.destroyed || !p.def.fin?.controllable) continue;
       const fin = p.def.fin;
       const maxDef = ((fin.maxDeflect ?? 20) * Math.PI) / 180;
-      const target = -cmd * maxDef;
+      // 핀은 무게중심 아래(arm < 0)에 있으므로 +cmd 로 꺾어야
+      // 반작용 휠(-cmd·토크)과 같은 방향으로 기체가 돈다.
+      const target = cmd * maxDef;
       p.finDeflection += (target - p.finDeflection) * Math.min(1, dt * 9);
       const arm = p.localY - this.com.y;
       const lift = q * fin.area * 2.2 * Math.sin(p.finDeflection) * (fin.authority ?? 1);
@@ -1505,7 +1546,14 @@ export class Vessel {
     if (flow <= 0) return 0;
     const isp = thrust / (flow * G0);
     const prop = engines[0].def.engine.propellant;
-    const propMass = this.net.stagePropellantMass(0, prop);
+    // 고체 부스터는 자기 몸통 안의 추진제만 쓴다
+    const propMass =
+      prop === 'sf'
+        ? engines.reduce(
+            (a, e) => a + (e.resources.sf ?? 0) * RESOURCES.sf.density,
+            0
+          )
+        : this.net.groupPropellantMass(engines[0].fuelGroup, prop);
     const m0 = this.mass;
     const m1 = Math.max(m0 - propMass, 1);
     return m0 > m1 ? isp * G0 * Math.log(m0 / m1) : 0;

@@ -55,15 +55,22 @@ class Stacker {
     return out;
   }
 
-  /** 측면 부스터 스택 한 쌍 */
-  boosterPair(defIds, baseY, offset, stage) {
+  /**
+   * 측면 부스터 스택 한 쌍.
+   * @param {Array<string|[string, number]>} defIds 부품 id, 또는 [id, stage]
+   * @param {number} defaultStage [id, stage] 형태가 아닐 때 쓰는 스테이지
+   */
+  boosterPair(defIds, baseY, offset, defaultStage) {
     const group = nextUid();
     const made = [];
     for (const side of [-1, 1]) {
       let y = baseY;
       let parent = null;
-      for (const defId of defIds) {
+      for (const entry of defIds) {
+        const defId = Array.isArray(entry) ? entry[0] : entry;
+        const stage = Array.isArray(entry) ? entry[1] : defaultStage;
         const def = PART_BY_ID.get(defId);
+        if (!def) throw new Error(`프리셋 오류: 부품 ${defId} 없음`);
         const part = new CraftPart(defId, side * offset, y + def.size.h / 2, {
           stage,
           parentUid: parent?.uid ?? null,
@@ -94,12 +101,11 @@ function makeSounding() {
   craft.description =
     '가장 단순한 고체 로켓. 고도 기록을 세우고 낙하산으로 돌아온다. 첫 발사에 딱 맞다.';
   const s = new Stacker(craft);
-  s.stage = 0;
-  s.push('engine_srb_small');
-  s.stage = 1;
-  s.push('pod_mk1');
-  s.push('chute_small', { stage: 2 });
-  craft.rootUid = craft.parts[1].uid;
+  s.push('engine_srb_small', { stage: 0 });
+  s.push('decoupler_small', { stage: 1 });
+  s.push('pod_mk1', { stage: 2 });
+  s.push('chute_small', { stage: 3 });
+  craft.rootUid = craft.parts.find((p) => p.defId === 'pod_mk1').uid;
   craft.normalizeStages();
   return craft;
 }
@@ -112,12 +118,14 @@ function makeFirstOrbit() {
   s.stage = 0;
   s.push('engine_swivel');
   s.push('tank_t800', { stage: 0 });
+  s.push('tank_t400', { stage: 0 });
   s.radialPair('fin_basic', 1.2, 1.0, { stage: 0 });
   s.stage = 1;
   s.push('decoupler_small', { stage: 1 });
   s.push('engine_terrier', { stage: 2 });
   s.push('tank_t400', { stage: 2 });
   s.stage = 3;
+  s.push('heatshield_small', { stage: 3 });
   s.push('pod_mk1', { stage: 3 });
   s.push('chute_small', { stage: 4 });
   craft.rootUid = craft.parts.find((p) => p.defId === 'pod_mk1').uid;
@@ -134,19 +142,18 @@ function makeMunRocket() {
   s.push('engine_skipper');
   s.push('tank_x200_16', { stage: 0 });
   s.radialPair('fin_control', 2.0, 1.6, { stage: 0 });
-  s.boosterPair(['engine_srb_large', 'decoupler_radial'], 0, 1.9, 0);
-  s.stage = 1;
-  s.push('decoupler_medium', { stage: 1 });
-  s.push('engine_poodle', { stage: 2 });
-  s.push('tank_x200_8', { stage: 2 });
-  s.push('adapter_s_m', { stage: 2 });
-  s.stage = 3;
-  s.push('decoupler_small', { stage: 3 });
-  s.push('engine_terrier', { stage: 4 });
-  s.push('tank_t400', { stage: 4 });
-  s.push('heatshield_small', { stage: 5 });
-  s.push('pod_mk1', { stage: 5 });
-  s.push('chute_small', { stage: 6 });
+  // 고체 부스터는 0단에서 함께 점화하고, 1단에서 방사형 분리기로 떨군다
+  s.boosterPair([['engine_srb_large', 0], ['decoupler_radial', 1]], 0, 1.9, 0);
+  s.push('decoupler_medium', { stage: 2 });
+  s.push('engine_poodle', { stage: 3 });
+  s.push('tank_x200_8', { stage: 3 });
+  s.push('adapter_s_m', { stage: 3 });
+  s.push('decoupler_small', { stage: 4 });
+  s.push('engine_terrier', { stage: 5 });
+  s.push('tank_t400', { stage: 5 });
+  s.push('heatshield_small', { stage: 6 });
+  s.push('pod_mk1', { stage: 6 });
+  s.push('chute_small', { stage: 7 });
   craft.rootUid = craft.parts.find((p) => p.defId === 'pod_mk1').uid;
   craft.normalizeStages();
   return craft;
@@ -181,16 +188,14 @@ function makeHeavyLifter() {
   s.push('engine_mainsail');
   s.push('tank_s3_7200', { stage: 0 });
   s.radialPair('fin_control', 3.0, 2.3, { stage: 0 });
-  s.boosterPair(['engine_srb_kickback', 'decoupler_radial'], 0, 2.8, 0);
-  s.stage = 1;
-  s.push('adapter_m_l', { stage: 1 });
-  s.push('decoupler_medium', { stage: 1 });
-  s.push('engine_poodle', { stage: 2 });
-  s.push('tank_x200_32', { stage: 2 });
-  s.stage = 3;
+  s.boosterPair([['engine_srb_kickback', 0], ['decoupler_radial', 1]], 0, 2.8, 0);
+  s.push('adapter_m_l', { stage: 2 });
   s.push('decoupler_medium', { stage: 3 });
-  s.push('payload_station', { stage: 4 });
-  s.push('fairing', { stage: 3 });
+  s.push('engine_poodle', { stage: 4 });
+  s.push('tank_x200_32', { stage: 4 });
+  s.push('decoupler_medium', { stage: 5 });
+  s.push('payload_station', { stage: 6 });
+  s.push('fairing', { stage: 5 });
   craft.rootUid = craft.parts.find((p) => p.defId === 'payload_station').uid;
   craft.normalizeStages();
   return craft;
@@ -403,7 +408,9 @@ export const PRESET_BUILDERS = [
     difficulty: '보통',
     tag: '착륙',
     build: makeLander,
-    hint: '수평 속도를 먼저 없애고, 마지막 500 m 에서 역추진을 시작하세요.',
+    // 발사체가 아니라 착륙선이다 — 루나 궤도에서 시작해 바로 착륙을 연습한다
+    start: { body: 'luna', altitude: 25000 },
+    hint: '루나 궤도에서 시작합니다. 수평 속도를 먼저 없애고, 마지막 500 m 에서 역추진하세요.',
   },
   {
     id: 'satellite',
@@ -443,7 +450,8 @@ export const PRESET_BUILDERS = [
     difficulty: '어려움',
     tag: '도킹',
     build: makeStationCore,
-    hint: '먼저 궤도에 올린 뒤, 두 번째 기체로 랑데부·도킹을 시도하세요.',
+    start: { body: 'terra', altitude: 120000 },
+    hint: '테라 저궤도에서 시작합니다. 두 번째 기체로 랑데부·도킹을 시도하세요.',
   },
   {
     id: 'nuclear',
@@ -451,7 +459,8 @@ export const PRESET_BUILDERS = [
     difficulty: '전문가',
     tag: '행성간',
     build: makeNuclearShip,
-    hint: '핵열 엔진은 추력이 낮습니다. 긴 분사를 근점에서 나눠 실행하세요.',
+    start: { body: 'terra', altitude: 150000 },
+    hint: '테라 궤도에서 시작합니다. 핵열 엔진은 추력이 낮으니 근점에서 나눠 분사하세요.',
   },
   {
     id: 'plane',

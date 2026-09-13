@@ -38,6 +38,29 @@ export class ResourceNetwork {
     }
   }
 
+  /**
+   * draw() 와 똑같은 필터를 적용한 실제 가용량.
+   * 이걸 쓰지 않으면 "탱크에는 있는데 내 그룹에는 없는" 상황을
+   * 가용한 것으로 오판해 엔진이 연소 종료되지 않는다.
+   */
+  available(key, opts = {}) {
+    let list = opts.fromParts ?? this.byResource.get(key);
+    if (!list) return 0;
+    if (opts.stage !== undefined) {
+      const filtered = list.filter((p) => p.stage >= opts.stage);
+      if (filtered.length) list = filtered;
+    }
+    if (opts.group !== undefined) {
+      list = list.filter((p) => p.fuelGroup === opts.group);
+    }
+    let t = 0;
+    for (const p of list) {
+      if (p.destroyed) continue;
+      t += p.resources[key] ?? 0;
+    }
+    return t;
+  }
+
   /** 자원 총량 */
   total(key) {
     const list = this.byResource.get(key);
@@ -81,6 +104,12 @@ export class ResourceNetwork {
     if (opts.stage !== undefined) {
       const filtered = list.filter((p) => p.stage >= opts.stage);
       if (filtered.length) list = filtered;
+    }
+    // 연료 그룹 제한 — 분리기를 넘어선 크로스피드를 막는다.
+    // 폴백 없이 엄격하게 거른다(빈 그룹이면 그대로 연소 종료).
+    if (opts.group !== undefined) {
+      list = list.filter((p) => p.fuelGroup === opts.group);
+      if (!list.length) return 0;
     }
 
     let remaining = amount;
@@ -139,8 +168,8 @@ export class ResourceNetwork {
     const lfWant = wantedUnits * LF_OX_RATIO.lf;
     const oxWant = wantedUnits * LF_OX_RATIO.ox;
 
-    const lfAvail = this.total('lf');
-    const oxAvail = this.total('ox');
+    const lfAvail = this.available('lf', opts);
+    const oxAvail = this.available('ox', opts);
     const ratio = Math.min(
       1,
       lfWant > 0 ? lfAvail / lfWant : 1,
@@ -151,7 +180,7 @@ export class ResourceNetwork {
     const oxGot = this.draw('ox', oxWant * ratio, opts);
     const consumed =
       lfGot * RESOURCES.lf.density + oxGot * RESOURCES.ox.density;
-    return { consumed, starved: ratio < 0.999 };
+    return { consumed, starved: consumed < wanted * 0.999 };
   }
 
   /** 단일 추진제 인출 (고체·핵열·이온·모노) */
@@ -206,6 +235,34 @@ export class ResourceNetwork {
       }
     }
     return m;
+  }
+
+  /**
+   * 특정 연료 그룹이 쓸 수 있는 추진제 질량.
+   * 엔진이 실제로 뽑아 쓸 수 있는 양과 정확히 일치한다.
+   */
+  groupPropellantMass(group, propellant) {
+    const sumOf = (key) => {
+      let n = 0;
+      for (const p of this.byResource.get(key) ?? []) {
+        if (p.destroyed || p.fuelGroup !== group) continue;
+        n += p.resources[key] ?? 0;
+      }
+      return n;
+    };
+    if (propellant === 'lfox') {
+      const units = Math.min(
+        sumOf('lf') / LF_OX_RATIO.lf,
+        sumOf('ox') / LF_OX_RATIO.ox
+      );
+      return (
+        units *
+        (LF_OX_RATIO.lf * RESOURCES.lf.density +
+          LF_OX_RATIO.ox * RESOURCES.ox.density)
+      );
+    }
+    if (!RESOURCES[propellant]) return 0;
+    return sumOf(propellant) * RESOURCES[propellant].density;
   }
 
   /** 특정 스테이지가 쓸 수 있는 추진제 질량 */

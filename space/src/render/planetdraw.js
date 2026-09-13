@@ -313,8 +313,11 @@ export function drawTerrain(ctx, camera, body, worldPos, opts = {}) {
     if (i === 0) ctx.moveTo(sp.x, sp.y);
     else ctx.lineTo(sp.x, sp.y);
   }
-  // 안쪽으로 닫는다 (천체 중심 방향)
-  const closeR = Math.max(body.radius * 0.2, 1);
+  // 안쪽으로 닫는다 (천체 중심 방향).
+  // 천체 중심까지 내려가면 화면 밖 수백만 픽셀짜리 경로가 되어
+  // 브라우저가 칠하지 못하는 경우가 있다. 화면을 덮을 만큼만 내려간다.
+  const viewSpan = Math.hypot(camera.width, camera.height) / camera.zoom;
+  const closeR = Math.max(body.radius * 0.02, camR - viewSpan * 1.5);
   for (let i = pts.length - 1; i >= 0; i -= Math.max(1, Math.floor(segments / 8))) {
     const p = pts[i];
     const wx = worldPos.x + Math.cos(p.theta) * closeR;
@@ -333,24 +336,34 @@ export function drawTerrain(ctx, camera, body, worldPos, opts = {}) {
   ctx.fillStyle = g;
   ctx.fill();
 
-  // 표면 색 디테일 — 각 세그먼트를 짧은 선으로
-  if (camera.zoom * body.radius > camera.width * 2) {
-    ctx.lineWidth = Math.max(1, camera.zoom * 6);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i];
-      const b = pts[i + 1];
-      const ax = worldPos.x + Math.cos(a.theta) * a.r;
-      const ay = worldPos.y + Math.sin(a.theta) * a.r;
-      const bx = worldPos.x + Math.cos(b.theta) * b.r;
-      const by = worldPos.y + Math.sin(b.theta) * b.r;
-      const s1 = camera.worldToScreen(ax, ay);
-      const s2 = camera.worldToScreen(bx, by);
-      ctx.strokeStyle = shade(a.color, (light - 0.7) * 0.4);
-      ctx.beginPath();
-      ctx.moveTo(s1.x, s1.y);
-      ctx.lineTo(s2.x, s2.y);
-      ctx.stroke();
+  // 표면 "껍질" — 지형선을 따라가는 얇은 밝은 선.
+  // 두꺼운 선분으로 칠하면 줄무늬가 생기므로 얇게 한 번만 긋는다.
+  ctx.lineWidth = clamp(camera.zoom * 0.6, 1.2, 4);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const crustStep = Math.max(1, Math.floor(segments / 120));
+  for (let i = 0; i < pts.length - 1 - crustStep; i += crustStep) {
+    const a = pts[i];
+    const b = pts[i + crustStep];
+    const s1 = camera.worldToScreen(
+      worldPos.x + Math.cos(a.theta) * a.r,
+      worldPos.y + Math.sin(a.theta) * a.r
+    );
+    const s2 = camera.worldToScreen(
+      worldPos.x + Math.cos(b.theta) * b.r,
+      worldPos.y + Math.sin(b.theta) * b.r
+    );
+    if (
+      (s1.x < -50 && s2.x < -50) ||
+      (s1.x > camera.width + 50 && s2.x > camera.width + 50)
+    ) {
+      continue;
     }
+    ctx.strokeStyle = shade(a.color, 0.12 + (light - 0.7) * 0.25);
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y);
+    ctx.lineTo(s2.x, s2.y);
+    ctx.stroke();
   }
 
   // 바다

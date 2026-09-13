@@ -79,6 +79,8 @@ export class TerrainGenerator {
     this._cacheResolution = 4096;
     this.gasGiant = !!body.def.gasGiant;
     this.oceanLevel = body.def.ocean ? body.def.ocean.level ?? 0 : null;
+    /** 발사장처럼 인위적으로 평탄화된 구역 */
+    this.flatZones = [];
 
     if (!this.gasGiant) {
       this._generateCraters();
@@ -268,9 +270,33 @@ export class TerrainGenerator {
       h = this.oceanLevel - (this.oceanLevel - h) * 0.55;
     }
 
+    // 평탄화 구역 — 중심은 지정 고도로, 바깥은 자연 지형으로 부드럽게 잇는다
+    for (const zone of this.flatZones) {
+      const d = Math.abs(wrapTau(t - zone.center + Math.PI) - Math.PI);
+      if (d > zone.outer) continue;
+      const blend =
+        d <= zone.inner
+          ? 1
+          : 1 - smoothstep((d - zone.inner) / (zone.outer - zone.inner));
+      h = lerp(h, zone.elevation, blend);
+    }
+
     if (this._cache.size > 20000) this._cache.clear();
     this._cache.set(key, h);
     return h;
+  }
+
+  /**
+   * 평탄화 구역 등록 — 발사장/착륙장처럼 지형을 고르게 만든다.
+   * @param {number} center 천체 고정 좌표계 각도
+   * @param {number} inner  완전 평탄한 반경(rad)
+   * @param {number} outer  자연 지형으로 이어지는 반경(rad)
+   * @param {number} elevation 목표 고도(m)
+   */
+  addFlatZone(center, inner, outer, elevation = 60) {
+    this.flatZones.push({ center, inner, outer, elevation });
+    this._cache.clear();
+    return this;
   }
 
   /** 표면 반지름 */

@@ -18,6 +18,7 @@ import {
   partTotalCost,
   sizesCompatible,
 } from './partdefs.js';
+import { buildStages } from '../flight/staging.js';
 
 let _uid = 1;
 export const nextUid = () => `p${(_uid++).toString(36)}`;
@@ -606,24 +607,42 @@ export class Craft {
     this._statsCache = null;
   }
 
-  /** 자동 스테이징 — 아래에서 위로 분리기 기준으로 묶는다 */
+  /**
+   * 자동 스테이징 — 아래에서 위로 훑으며 분리기를 만날 때마다 단을 나눈다.
+   *
+   * 분리기는 "자기보다 아래의 모든 것" 을 떨궈내므로 반드시 자기만의
+   * 스테이지를 가져야 한다. 그래서 분리기를 만나면 단을 두 번 올린다.
+   */
   autoStage() {
     const sorted = [...this.parts].sort((a, b) => a.y - b.y);
     let stage = 0;
     const assigned = new Set();
+
     for (const p of sorted) {
       if (assigned.has(p.uid)) continue;
+      const isDecoupler = p.def.decoupler && !p.def.decoupler.optional && !p.def.clamp;
+      if (isDecoupler) {
+        stage++;
+        p.stage = stage;
+        assigned.add(p.uid);
+        stage++;
+        continue;
+      }
       p.stage = stage;
       assigned.add(p.uid);
-      // 측면 부품은 부모와 같은 스테이지
+      // 측면에 붙은 부품은 부모와 같은 스테이지
       for (const c of this.parts) {
         if (c.parentUid === p.uid && c.def.radialOnly && !assigned.has(c.uid)) {
+          if (c.def.decoupler && !c.def.decoupler.optional) continue;
           c.stage = stage;
           assigned.add(c.uid);
         }
       }
-      if (p.def.decoupler && !p.def.decoupler.optional) stage++;
-      else if (p.def.engine && p.def.engine.propellant === 'sf') stage++;
+    }
+
+    // 발사 클램프는 항상 첫 스테이지
+    for (const p of this.parts) {
+      if (p.def.clamp) p.stage = 0;
     }
     // 낙하산은 마지막 스테이지
     const last = this.stageCount;
@@ -649,12 +668,15 @@ export class Craft {
     const n = groups.length;
     const results = [];
 
-    // 스테이지 i 시작 시점의 총질량 = 모든 부품 중 아직 버려지지 않은 것
-    // (스테이지 s 인 부품은 스테이지 s 가 끝날 때 분리된다고 본다)
+    // 각 부품이 "몇 번째 단에서 떨어져 나가는가"(fuelGroup)를 먼저 계산한다.
+    // 비행 중에 쓰는 것과 똑같은 규칙이라 설계실 Δv 가 실제와 일치한다.
+    buildStages(this.parts);
+
     for (let i = 0; i < n; i++) {
+      // 이 단 시작 시점에 아직 붙어 있는 부품의 총질량
       let startMass = 0;
       for (const p of this.parts) {
-        if (p.stage >= i) startMass += p.mass;
+        if ((p.fuelGroup ?? Infinity) >= i) startMass += p.mass;
       }
 
       const engines = groups[i].filter((p) => p.def.engine);
@@ -677,13 +699,20 @@ export class Craft {
         continue;
       }
 
-      // 이 스테이지가 쓸 수 있는 연료: 같은 스테이지의 탱크
+      // 이 단이 쓸 수 있는 연료: 엔진과 같은 분리 그룹의 탱크
+      const prop0 = activeEngines[0].def.engine.propellant;
+      const group = activeEngines[0].fuelGroup ?? Infinity;
+      const pool =
+        prop0 === 'sf'
+          ? activeEngines
+          : this.parts.filter((p) => (p.fuelGroup ?? Infinity) === group);
+
       let lf = 0;
       let ox = 0;
       let sf = 0;
       let mono = 0;
       let xe = 0;
-      for (const p of groups[i]) {
+      for (const p of pool) {
         lf += p.resources.lf ?? 0;
         ox += p.resources.ox ?? 0;
         sf += p.resources.sf ?? 0;
@@ -702,7 +731,7 @@ export class Craft {
       const effIsp = massFlow > 0 ? thrust / (massFlow * G0) : 0;
 
       // 사용 가능한 추진제 질량
-      const prop = activeEngines[0].def.engine.propellant;
+      const prop = prop0;
       let usableMass = 0;
       if (prop === 'sf') {
         usableMass = sf * RESOURCES.sf.density;
@@ -797,7 +826,12 @@ export class Craft {
    * 발사 가능 여부 점검.
    * @returns {{ok:boolean, errors:string[], warnings:string[]}}
    */
-  validate(body = null) {
+  /**
+   * 발사 가능 여부 점검.
+   * @param {CelestialBody|null} body 발사할 천체
+   * @param {object} opts { orbital } — 궤도에서 시작하는 기체는 추중비 제약을 받지 않는다
+   */
+  validate(body = null, opts = {}) {
     const errors = [];
     const warnings = [];
     if (!this.parts.length) {
@@ -813,9 +847,9 @@ export class Craft {
       errors.push('엔진이 하나도 없습니다.');
     }
     if (s.liftoffTwr > 0 && s.liftoffTwr < 1.0) {
-      errors.push(
-        `이륙 추중비가 ${s.liftoffTwr.toFixed(2)} 입니다. 1.0 을 넘어야 떠오릅니다.`
-      );
+      const msg = `이륙 추중비가 ${s.liftoffTwr.toFixed(2)} 입니다. 지표에서 떠오르려면 1.0 을 넘어야 합니다.`;
+      if (opts.orbital) warnings.push(`${msg} (궤도 전용 기체)`);
+      else errors.push(msg);
     }
     if (s.liftoffTwr > 4.5) {
       warnings.push(
@@ -838,14 +872,24 @@ export class Craft {
     if (s.electricity <= 0 && this.parts.some((p) => p.def.probe)) {
       warnings.push('전기가 없습니다. 탐사 코어가 곧 꺼집니다.');
     }
-    // 고아 부품 (연결되지 않은 부품)
+    // 고아 부품 — 결합은 방향이 없으므로 부모/자식 양쪽으로 따라간다
+    const byUid = new Map(this.parts.map((p) => [p.uid, p]));
+    const children = new Map();
+    for (const p of this.parts) {
+      if (!p.parentUid) continue;
+      if (!children.has(p.parentUid)) children.set(p.parentUid, []);
+      children.get(p.parentUid).push(p.uid);
+    }
     const connected = new Set();
-    const walk = (uid) => {
-      if (!uid || connected.has(uid)) return;
+    const stack = [this.rootUid];
+    while (stack.length) {
+      const uid = stack.pop();
+      if (!uid || connected.has(uid) || !byUid.has(uid)) continue;
       connected.add(uid);
-      for (const c of this.childrenOf(uid)) walk(c.uid);
-    };
-    walk(this.rootUid);
+      const parent = byUid.get(uid).parentUid;
+      if (parent) stack.push(parent);
+      for (const c of children.get(uid) ?? []) stack.push(c);
+    }
     const orphans = this.parts.filter((p) => !connected.has(p.uid));
     if (orphans.length) {
       warnings.push(`연결되지 않은 부품이 ${orphans.length}개 있습니다.`);

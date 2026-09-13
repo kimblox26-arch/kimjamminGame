@@ -118,6 +118,20 @@ export class CelestialBody {
     return this.radius + this.atmo.height;
   }
 
+  /** 지형 최고점 고도 (한 번만 계산해 캐시) */
+  get maxTerrainElevation() {
+    if (this._maxElev === undefined) {
+      this._maxElev = this.terrain.extremes(1024).maxH;
+      if (!Number.isFinite(this._maxElev)) this._maxElev = 0;
+    }
+    return this._maxElev;
+  }
+
+  /** 어느 각도에서도 지형에 닿지 않는 최소 안전 궤도 반지름 */
+  safeOrbitRadius(margin = 2000) {
+    return this.radius + Math.max(this.maxTerrainElevation + margin, margin);
+  }
+
   /** 고도 → 반지름 */
   radiusAtAltitude(alt) {
     return this.radius + alt;
@@ -466,11 +480,13 @@ export class LaunchSite {
     this.pads = def.pads ?? ['패드 A'];
   }
 
-  /** 시각 t 에서의 관성 좌표 위치 */
+  /**
+   * 시각 t 에서의 관성 좌표 위치.
+   * 지형 생성기에 평탄화 구역이 등록되어 있으면 그 고도가 곧 발사대 높이다.
+   */
   positionAt(t) {
     const theta = this.angle + this.body.rotationAt(t);
-    const r =
-      this.body.terrain.radiusAt(this.angle) + this.altitude;
+    const r = this.body.terrain.radiusAt(this.angle);
     return new Vec2(r * Math.cos(theta), r * Math.sin(theta));
   }
 

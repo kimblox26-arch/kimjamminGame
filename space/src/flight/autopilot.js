@@ -37,15 +37,18 @@ export const AP_MODE = {
 export class AscentProfile {
   constructor(body, opts = {}) {
     this.body = body;
-    /** 수직 상승 유지 고도 */
-    this.verticalUntil = opts.verticalUntil ?? Math.max(body.radius * 0.0025, 400);
+    /** 발사 시점 고도 — 프로파일은 이 고도를 0 으로 본다 */
+    this.baseAltitude = opts.baseAltitude ?? 0;
+    /** 수직 상승 유지 고도 (발사대 기준) — 너무 오래 수직이면 중력 손실이 커진다 */
+    this.verticalUntil = opts.verticalUntil ?? Math.max(body.radius * 0.0008, 400);
     /** 선회 종료 고도 (여기서 목표각이 0도 = 수평) */
-    this.turnEnd = opts.turnEnd ?? (body.atmo.exists ? body.atmo.height * 0.92 : body.radius * 0.06);
-    /** 목표 원점 고도 */
+    this.turnEnd =
+      opts.turnEnd ?? (body.atmo.exists ? body.atmo.height * 0.88 : body.radius * 0.05);
+    /** 목표 원점 고도 (절대 고도) */
     this.targetApoapsis =
-      opts.targetApoapsis ?? (body.atmo.exists ? body.atmo.height + 15000 : body.radius * 0.08);
+      opts.targetApoapsis ?? (body.atmo.exists ? body.atmo.height + 10000 : body.radius * 0.06);
     /** 선회 곡선 지수 — 작을수록 빨리 눕는다 */
-    this.curve = opts.curve ?? 0.62;
+    this.curve = opts.curve ?? 0.56;
     /** 동쪽(+1) / 서쪽(-1) 발사 */
     this.direction = opts.direction ?? (body.rotationRate >= 0 ? 1 : -1);
     /** 최대 동압 제한 */
@@ -98,7 +101,10 @@ export class Autopilot {
 
     switch (mode) {
       case AP_MODE.ASCENT:
-        this.profile = new AscentProfile(this.vessel.body, opts);
+        this.profile = new AscentProfile(this.vessel.body, {
+          baseAltitude: this.vessel.altitude,
+          ...opts,
+        });
         this.status = '상승 프로파일 실행';
         this.phase = 'liftoff';
         break;
@@ -193,13 +199,14 @@ export class Autopilot {
     const p = this.profile;
     if (!p) return;
 
-    const alt = v.altitude;
+    const alt = v.altitude - p.baseAltitude;
     const up = v.up;
     const upAngle = Math.atan2(up.y, up.x);
 
-    // 목표 피치 → 관성각
+    // 목표 피치 → 관성각.
+    // pitch = 90° 면 천정 방향(수직), 0° 면 자전 방향으로 수평.
     const pitch = p.targetPitch(alt);
-    const target = upAngle + p.direction * (Math.PI / 2 - pitch) * -1;
+    const target = upAngle + p.direction * (Math.PI / 2 - pitch);
     this.steerTo(target, dt);
 
     // 스로틀 제어 — max Q 제한 + 원점 목표
@@ -207,15 +214,21 @@ export class Autopilot {
     if (v.dynamicPressure > p.maxQ) {
       throttle = clamp(1 - (v.dynamicPressure - p.maxQ) / (p.maxQ * 0.5), 0.35, 1);
       this.phase = 'maxq';
-    } else if (v.apoapsis > p.targetApoapsis * 0.98) {
+    } else if (v.apoapsis > p.targetApoapsis * 0.9) {
+      // 목표 원점에 가까워지면 스로틀을 줄여 오버슈트를 막는다.
+      // 0.5 % 안까지 들어오면 곧바로 원형화 단계로 넘긴다 —
+      // 그러지 않으면 목표 바로 아래에서 미세 분사를 반복하며 연료를 태운다.
       throttle = clamp(
-        mapRange(v.apoapsis, p.targetApoapsis * 0.98, p.targetApoapsis, 1, 0),
+        mapRange(v.apoapsis, p.targetApoapsis * 0.9, p.targetApoapsis, 1, 0.2),
         0,
         1
       );
       this.phase = 'apoapsis';
-      if (v.apoapsis >= p.targetApoapsis) {
-        throttle = 0;
+      // 이미 원점을 지나 하강 중이라면 더 밀어 올릴 이유가 없다
+      const pastApoapsis =
+        v.verticalSpeed < 0 && v.apoapsis > v.body.atmo.height;
+      if (v.apoapsis >= p.targetApoapsis * 0.99 || pastApoapsis) {
+        v.setThrottle(0);
         this.note('목표 원점 도달 — 원형화로 전환');
         this.setMode(AP_MODE.CIRCULARIZE, { altitude: v.apoapsis });
         return;
@@ -247,9 +260,10 @@ export class Autopilot {
 
     const orbit = v.orbit;
     const rAp = orbit.apoapsis;
-    const now = v.missionTime;
+    // 궤도 요소의 기준시각(epoch)은 우주 시간이므로 반드시 같은 시계를 써야 한다
+    const now = v.universeTime ?? 0;
     // 원점까지 남은 시간
-    const tAp = orbit.timeToTrueAnomaly(Math.PI, 0);
+    const tAp = orbit.timeToTrueAnomaly(Math.PI, now);
     const dvNeeded =
       circularVelocity(v.body.mu, rAp) - visViva(v.body.mu, rAp, orbit.a);
 
@@ -262,28 +276,43 @@ export class Autopilot {
         : Infinity;
     this.burnRemaining = burnTime;
 
-    // 진행방향으로 정렬
-    const vel = v.vel;
-    const targetAngle = Math.atan2(vel.y, vel.x);
-    this.steerTo(targetAngle, dt);
-
     const lead = burnTime / 2;
-    if (tAp <= lead + 0.5 || v.periapsis > v.body.atmo.height) {
-      // 분사 구간
-      const currentPe = v.periapsis;
-      const targetPe = this.targetAltitude * 0.98;
-      if (currentPe >= targetPe) {
+    // 이미 원점을 지나 떨어지고 있다면 기다릴 것 없이 바로 근점을 끌어올린다.
+    const descendingInSpace =
+      v.verticalSpeed < 0 && v.altitude > v.body.atmo.height * 0.8;
+
+    if (tAp <= lead + 0.5 || descendingInSpace || v.periapsis > v.body.atmo.height) {
+      // 분사 구간 — "지금 높이에서의 원궤도" 를 목표로 잡는다.
+      // 수평속도를 원궤도 속도까지 올리고 수직속도를 0 으로 만드는 방향으로 민다.
+      const r = vLen(v.pos);
+      const vCirc = circularVelocity(v.body.mu, r);
+      const up = vNorm(v.pos);
+      // 진행 방향의 수평 단위벡터
+      const spin = Math.sign(v.pos.x * v.vel.y - v.pos.y * v.vel.x) || 1;
+      const tangent = new Vec2(-up.y * spin, up.x * spin);
+
+      const dvH = vCirc - Math.abs(vDot(v.vel, tangent));
+      const dvV = -vDot(v.vel, up);
+      const need = Math.hypot(dvH, dvV);
+
+      const dirX = tangent.x * dvH + up.x * dvV;
+      const dirY = tangent.y * dvH + up.y * dvV;
+      if (need > 1e-6) this.steerTo(Math.atan2(dirY, dirX), dt);
+
+      if (need < 2.5 && v.periapsis > v.body.atmo.height) {
         v.setThrottle(0);
         this.note('원형화 완료');
         bus.emit(EVT.TOAST, { text: '궤도 원형화 완료', kind: 'success' });
         this.disable();
         return;
       }
-      const remaining = clamp01((targetPe - currentPe) / Math.max(targetPe * 0.1, 1));
-      v.setThrottle(clamp(remaining * 4, 0.08, 1));
-      this.status = `원형화 분사 (Δv ${dvNeeded.toFixed(0)} m/s)`;
+      // 남은 Δv 에 비례해 스로틀을 줄여 오버슈트를 막는다
+      v.setThrottle(clamp(need / 30, 0.04, 1));
+      this.status = `원형화 분사 (Δv ${need.toFixed(0)} m/s)`;
       if (this.stageAuto) this.autoStage();
     } else {
+      // 대기 중에는 진행 방향으로 정렬해 둔다
+      this.steerTo(Math.atan2(v.vel.y, v.vel.x), dt);
       v.setThrottle(0);
       this.status = `원점까지 ${Math.max(0, tAp - lead).toFixed(0)}초 대기`;
     }
@@ -381,22 +410,39 @@ export class Autopilot {
     // 다리 전개
     if (alt < 400 && !v.gearDown) v.toggleGear();
 
+    // 아직 궤도에 머물러 있으면 먼저 역행 분사로 궤도를 떨어뜨려야 한다.
+    // (이 단계가 없으면 영원히 자유낙하만 기다리게 된다)
+    const deorbitTargetPe = v.body.atmo.exists
+      ? v.body.atmo.height * 0.3
+      : -v.body.radius * 0.05;
+    const needDeorbit = v.periapsis > deorbitTargetPe && alt > 3000;
+
+    // 실제로 지면까지 남은 거리(다리 길이까지 고려)
+    const clearance = Number.isFinite(v.groundClearance)
+      ? Math.max(v.groundClearance, 0)
+      : alt;
+
     // 스로틀 결정
     let throttle = 0;
-    if (alt < 20) {
+    if (clearance < 60) {
       this.phase = 'touchdown';
-      // 아주 천천히 내려앉기
-      const targetVs = -1.5;
-      const err = targetVs - v.verticalSpeed;
-      throttle = clamp01(0.5 + err * -0.35);
-      if (vDown < 0.6) throttle = clamp01(throttle * 0.6);
+      // 호버에 필요한 스로틀을 먼저 깔고(피드포워드), 목표 강하율과의
+      // 오차만큼만 더하거나 뺀다. 이러지 않으면 튕겨 오르며 진동한다.
+      const hover = thrust > 1 ? clamp01((v.mass * g) / thrust) : 1;
+      const targetVs = -clamp(0.8 + clearance * 0.12, 0.8, 8);
+      const err = v.verticalSpeed - targetVs; // 음수면 너무 빨리 내려가는 중
+      throttle = clamp01(hover - err * 0.35);
+      if (v.landed || v.splashed) throttle = 0;
     } else if (stopDistance > alt * 0.82) {
       this.phase = 'suicideBurn';
       throttle = 1;
     } else if (stopDistance > alt * 0.6) {
       this.phase = 'suicideBurn';
       throttle = clamp01((stopDistance / (alt * 0.82)) * 1.2);
-    } else if (speed > 40 && alt < 8000) {
+    } else if (needDeorbit) {
+      this.phase = 'deorbit';
+      throttle = 1;
+    } else if (speed > 40 && alt < Math.max(12000, v.body.radius * 0.06)) {
       this.phase = 'braking';
       throttle = clamp01((speed - 40) / 200);
     } else {
