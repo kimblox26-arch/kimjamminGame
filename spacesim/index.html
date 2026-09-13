@@ -57,6 +57,13 @@
     <h2>시나리오</h2>
     <div id="scenario-list" class="scenario-list"></div>
     <p id="scenario-desc" class="desc"></p>
+    <div class="row epoch-row" id="epoch-row">
+      <label>초기 날짜 (실측 궤도요소)<b id="v-epoch"></b></label>
+      <div class="inline">
+        <input id="in-epoch" type="date" class="text-in" value="2000-01-01" min="1800-01-01" max="2050-12-31">
+        <button id="btn-today">오늘</button>
+      </div>
+    </div>
   </section>
 
   <section class="block">
@@ -115,6 +122,10 @@
       <label class="chk"><input id="in-labels" type="checkbox" checked> 라벨</label>
       <label class="chk"><input id="in-bloom" type="checkbox" checked> 블룸</label>
       <label class="chk"><input id="in-com" type="checkbox"> 질량중심 고정</label>
+      <label class="chk"><input id="in-spheres" type="checkbox" checked> 구체 렌더링</label>
+      <label class="chk"><input id="in-milkyway" type="checkbox" checked> 은하수</label>
+      <label class="chk"><input id="in-const" type="checkbox"> 별자리선</label>
+      <label class="chk"><input id="in-starnames" type="checkbox"> 별 이름</label>
     </div>
   </section>
 </aside>
@@ -153,6 +164,11 @@
       <div id="diag-kv" class="kv"></div>
       <canvas id="chart-cons" class="chart"></canvas>
       <p class="desc">심플렉틱 적분기는 에너지 오차가 유계로 진동하지만, RK4 는 단조 증가하는 드리프트를 보입니다. 적분기를 바꿔 비교해 보세요.</p>
+    </div>
+    <div class="block" id="dist-block">
+      <h2>장반경 분포</h2>
+      <canvas id="chart-adist" class="chart"></canvas>
+      <p class="desc">주 소행성대에서는 목성과 평균운동 공명을 이루는 위치(점선)에서 천체가 쓸려나가 커크우드 간극이 생깁니다.</p>
     </div>
     <div class="block">
       <h2>계 전체량</h2>
@@ -303,6 +319,8 @@
           <li>1PN 보정: a = GM/(c²r³)[(4GM/r − v²)r + 4(r·v)v]</li>
           <li>Barnes-Hut: θ 가 작을수록 정확하고 느림</li>
           <li>우주론: 프리드만 방정식 E(z) 수치적분</li>
+          <li>태양계는 JPL 근사 궤도요소(1800–2050) 로 임의 날짜 초기화</li>
+          <li>하늘의 별은 J2000 실측 적경·적위 (163개)</li>
         </ul>
         <h3>주의</h3>
         <ul>

@@ -78,6 +78,9 @@ export class NBody {
       drawScale: b.drawScale ?? 1,
       parent: b.parent ?? null,
       temperature: b.temperature ?? null,
+      data: b.data ?? null,       // 실측 물리 제원 (있으면 구체로 렌더링)
+      key: b.key ?? null,
+      rotPhase: b.rotPhase ?? 0,
       index: i,
     };
     return i;

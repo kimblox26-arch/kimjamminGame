@@ -7,6 +7,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { clamp } from '../core/constants.js';
+import { Sky } from './sky.js';
+import { BodyMeshes } from './bodies.js';
 
 const MAX_TRAILS = 80;
 const TRAIL_LEN = 900;
@@ -38,9 +40,12 @@ void main() {
   vec2 uv = gl_PointCoord * 2.0 - 1.0;
   float r = length(uv);
   if (r > 1.0) discard;
-  float core = smoothstep(1.0, 0.55, r);
+  // vGlow >= 2.0 이면 코로나 전용 — 구체로 이미 그려진 항성의 바깥 광환만 남긴다
+  float corona = step(1.5, vGlow);
+  float g = vGlow - corona * 2.0;
+  float core = smoothstep(1.0, 0.55, r) * (1.0 - corona);
   float halo = pow(max(0.0, 1.0 - r), 2.0);
-  float a = core + halo * vGlow * 0.9;
+  float a = mix(core + halo * g * 0.9, pow(max(0.0, 1.0 - r), 2.6) * 0.9, corona);
   vec3 c = mix(vColor, vColor + vec3(0.45), core * 0.55);
   gl_FragColor = vec4(c, clamp(a, 0.0, 1.0));
   if (gl_FragColor.a < 0.01) discard;
@@ -70,7 +75,9 @@ export class View {
     this.showOrbits = true;
     this.showGrid = true;
 
-    this._buildStars();
+    this.sky = new Sky(this.scene);
+    this.bodies = new BodyMeshes(this.scene);
+    this.showSpheres = true;
     this._buildGrid();
     this._buildPoints(4096);
     this._buildTrails();
@@ -81,35 +88,6 @@ export class View {
   }
 
   // ───────── 씬 구성 ─────────
-
-  _buildStars() {
-    const N = 4000;
-    const pos = new Float32Array(N * 3);
-    const col = new Float32Array(N * 3);
-    const size = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      const u = 2 * Math.random() - 1, th = Math.random() * Math.PI * 2;
-      const s = Math.sqrt(1 - u * u), R = 3000;
-      pos[i * 3] = R * s * Math.cos(th);
-      pos[i * 3 + 1] = R * s * Math.sin(th);
-      pos[i * 3 + 2] = R * u;
-      const t = Math.random();
-      col[i * 3] = 0.7 + 0.3 * t;
-      col[i * 3 + 1] = 0.75 + 0.25 * Math.random();
-      col[i * 3 + 2] = 0.85 + 0.15 * (1 - t);
-      size[i] = Math.pow(Math.random(), 3) * 2.2 + 0.35;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const m = new THREE.PointsMaterial({
-      size: 1.6, sizeAttenuation: false, vertexColors: true,
-      transparent: true, opacity: 0.85, depthWrite: false,
-    });
-    this.starfield = new THREE.Points(g, m);
-    this.starfield.frustumCulled = false;
-    this.scene.add(this.starfield);
-  }
 
   _buildGrid() {
     this.gridGroup = new THREE.Group();
@@ -210,7 +188,8 @@ export class View {
   _setupComposer() {
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.6, 0.5, 0.15);
+    // 문턱값을 높여 실제로 밝은 것(항성·코로나)만 번지게 한다
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.45, 0.80);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.bloomEnabled = true;
@@ -357,8 +336,16 @@ export class View {
       C[k * 3 + 1] = ((c >> 8) & 255) / 255;
       C[k * 3 + 2] = (c & 255) / 255;
       const r = Math.hypot(x - this.origin[0], y - this.origin[1], z - this.origin[2]);
-      S[k] = sim.radius[i] * this.localScale(r) * (m.drawScale || 1) * this.bodyScale;
-      GL[k] = m.glow || 0;
+      const rr = sim.radius[i] * this.localScale(r) * (m.drawScale || 1) * this.bodyScale;
+      if (this.bodies.rendered.has(i)) {
+        // 이미 구체로 그렸다 — 항성이면 바깥 코로나만 남기고, 나머지는 생략
+        if (m.type !== 'star') continue;
+        S[k] = rr * 3.2;
+        GL[k] = 2.0;
+      } else {
+        S[k] = rr;
+        GL[k] = m.glow || 0;
+      }
       this.visibleIndex[k] = i;
       k++;
     }
@@ -373,6 +360,12 @@ export class View {
     this.trailGroup.visible = this.showTrails;
     this.gridGroup.visible = this.showGrid;
     this._updateGrid();
+  }
+
+  /** 구체 LOD 갱신 — updateCamera 뒤, sync 앞에 호출한다 */
+  updateBodies(sim) {
+    if (!this.showSpheres) { this.bodies.hide(); return; }
+    this.bodies.update(sim, this, 4);
   }
 
   assignTrails(sim) {
@@ -453,6 +446,18 @@ export class View {
     this.gridStep = step;
   }
 
+  /** 추적 중인 천체의 렌더 반지름 */
+  drawRadiusOf(sim, i) {
+    if (i < 0 || i >= sim.count) return 0;
+    const i3 = i * 3;
+    const r = Math.hypot(
+      sim.pos[i3] - this.origin[0],
+      sim.pos[i3 + 1] - this.origin[1],
+      sim.pos[i3 + 2] - this.origin[2],
+    );
+    return sim.radius[i] * this.localScale(r) * (sim.meta[i].drawScale || 1) * this.bodyScale;
+  }
+
   /** 카메라 위치 갱신 */
   updateCamera(sim, dtSmooth = 1) {
     if (this.follow && this.focusIndex >= 0 && sim.active[this.focusIndex]) {
@@ -460,6 +465,9 @@ export class View {
       const tmp = this._tmp4 || (this._tmp4 = [0, 0, 0]);
       this.mapPos(sim.pos[i3], sim.pos[i3 + 1], sim.pos[i3 + 2], tmp);
       this.target.set(tmp[0], tmp[1], tmp[2]);
+      // 표면 안쪽으로 들어가지 않도록 최소 거리를 유지한다
+      const minR = this.drawRadiusOf(sim, this.focusIndex) * 1.25;
+      if (minR > 0) this.spherical.radius = Math.max(this.spherical.radius, minR);
     }
     const s = this.spherical;
     const sp = Math.sin(s.phi);
@@ -473,7 +481,8 @@ export class View {
     this.camera.near = Math.max(1e-6, s.radius * 1e-4);
     this.camera.far = Math.max(100, s.radius * 400 + 6000);
     this.camera.updateProjectionMatrix();
-    this.starfield.position.copy(this.camera.position);
+    this.camera.updateMatrixWorld();
+    this.sky.update(this.camera, Math.min(window.devicePixelRatio || 1, 2));
   }
 
   render() {
@@ -486,8 +495,8 @@ export class View {
     const v = new THREE.Vector3();
     const tmp = [0, 0, 0];
     let best = -1, bestD = radiusPx;
-    for (let k = 0; k < (this.drawn || 0); k++) {
-      const i = this.visibleIndex[k];
+    for (let i = 0; i < sim.count; i++) {
+      if (!sim.active[i]) continue;
       const i3 = i * 3;
       this.mapPos(sim.pos[i3], sim.pos[i3 + 1], sim.pos[i3 + 2], tmp);
       v.set(tmp[0], tmp[1], tmp[2]).project(this.camera);
@@ -498,6 +507,16 @@ export class View {
       if (d < bestD) { bestD = d; best = i; }
     }
     return best;
+  }
+
+  /** 렌더 좌표를 그대로 화면에 투영 (하늘처럼 스케일 변환이 필요 없는 대상) */
+  projectRender(x, y, z, out) {
+    const v = this._pv2 || (this._pv2 = new THREE.Vector3());
+    v.set(x, y, z).project(this.camera);
+    out[0] = (v.x * 0.5 + 0.5) * this.width;
+    out[1] = (-v.y * 0.5 + 0.5) * this.height;
+    out[2] = v.z;
+    return out;
   }
 
   /** 월드 → 화면 좌표 (라벨용) */

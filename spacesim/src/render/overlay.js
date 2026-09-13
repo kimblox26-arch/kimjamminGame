@@ -7,6 +7,7 @@ export class Overlay {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.showLabels = true;
+    this.showStarNames = false;
     this.p = [0, 0, 0];
   }
 
@@ -23,6 +24,7 @@ export class Overlay {
   draw(sim, view, state) {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.w, this.h);
+    if (this.showStarNames) this._starLabels(view);
     if (this.showLabels) this._labels(sim, view, state);
     this._scaleBar(view, state);
     if (state.selected >= 0 && sim.active[state.selected]) this._reticle(sim, view, state.selected);
@@ -58,6 +60,26 @@ export class Overlay {
       ctx.arc(p[0], p[1], 1.6, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillText(m.name, p[0] + 7, p[1] - 7);
+    }
+  }
+
+  /** 밝은 항성 이름 — 실측 카탈로그 기준 */
+  _starLabels(view) {
+    const ctx = this.ctx;
+    const cam = view.camera;
+    const R = 1200;
+    ctx.font = '600 10px Rajdhani, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    for (const st of view.sky.brightStars(2.2)) {
+      const p = view.projectRender(
+        cam.position.x + st.dir[0] * R,
+        cam.position.y + st.dir[1] * R,
+        cam.position.z + st.dir[2] * R,
+        this.p,
+      );
+      if (p[2] > 1 || p[0] < 0 || p[0] > this.w || p[1] < 0 || p[1] > this.h) continue;
+      ctx.fillStyle = 'rgba(150,190,225,0.5)';
+      ctx.fillText(st.name, p[0] + 6, p[1] + 6);
     }
   }
 
@@ -181,6 +203,52 @@ export function drawConservation(cv, series) {
   plot('angular', '#7de2ff');
   ctx.fillStyle = '#ff9a5c'; ctx.fillText('ΔE/E', w - 60, pad.t + 10);
   ctx.fillStyle = '#7de2ff'; ctx.fillText('ΔL/L', w - 60, pad.t + 22);
+}
+
+/**
+ * 장반경 분포 히스토그램 — 공명 간극을 눈으로 확인하는 용도.
+ * @param {number[]} values  각 천체의 a
+ * @param {{a:number,res:string}[]} marks  표시할 공명 위치
+ */
+export function drawDistribution(cv, values, marks = [], range = null) {
+  const { ctx, w, h } = setupCanvas(cv);
+  const pad = { l: 28, r: 8, t: 10, b: 20 };
+  axes(ctx, w, h, pad, { xlabel: '장반경 a [AU]', ylabel: '개수' });
+  if (!values.length) return;
+  let lo = range ? range[0] : Infinity, hi = range ? range[1] : -Infinity;
+  if (!range) for (const v of values) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (!(hi > lo)) return;
+  const NB = 90;
+  const bins = new Array(NB).fill(0);
+  for (const v of values) {
+    const b = Math.floor(((v - lo) / (hi - lo)) * NB);
+    if (b >= 0 && b < NB) bins[b]++;
+  }
+  const max = Math.max(...bins) || 1;
+  const X = (v) => pad.l + ((v - lo) / (hi - lo)) * (w - pad.l - pad.r);
+  const bw = (w - pad.l - pad.r) / NB;
+
+  // 공명 위치 표시
+  ctx.font = '600 9px Rajdhani, system-ui, sans-serif';
+  for (const m of marks) {
+    if (m.a < lo || m.a > hi) continue;
+    const x = X(m.a);
+    ctx.strokeStyle = 'rgba(255,154,92,0.55)';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,178,124,0.85)';
+    ctx.fillText(m.res, x - 7, pad.t + 9);
+  }
+
+  ctx.fillStyle = 'rgba(125,226,255,0.72)';
+  for (let i = 0; i < NB; i++) {
+    const bh = (bins[i] / max) * (h - pad.t - pad.b);
+    ctx.fillRect(pad.l + i * bw, h - pad.b - bh, Math.max(1, bw - 0.6), bh);
+  }
+  ctx.fillStyle = 'rgba(190,220,240,0.5)';
+  ctx.fillText(lo.toFixed(2), pad.l, h - pad.b + 11);
+  ctx.fillText(hi.toFixed(2), w - pad.r - 20, h - pad.b + 11);
 }
 
 /** HR 도표 */

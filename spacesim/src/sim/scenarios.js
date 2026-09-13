@@ -4,6 +4,9 @@
 import { G_SIM, KM_PER_AU, MSUN_PER_MEARTH, DAY_PER_YEAR, DEG } from '../core/constants.js';
 import { stateFromElements } from '../physics/kepler.js';
 import { blackbodyHex } from '../astro/stars.js';
+import {
+  PLANET_ELEMENTS, BODY_DATA, MOONS, SMALL_BODIES, KIRKWOOD, elementsAt,
+} from '../data/bodies.js';
 
 const km = (x) => x / KM_PER_AU;
 
@@ -18,40 +21,91 @@ function rng(seed) {
   };
 }
 
-// ─────────────── 태양계 데이터 (J2000 평균 궤도요소, JPL) ───────────────
-// a[AU], e, i[deg], Ω[deg], ϖ(근일점 황경)[deg], L(평균황경)[deg]
-const PLANETS = [
-  { name: '수성', a: 0.38709927, e: 0.20563593, i: 7.00497902, O: 48.33076593, pi: 77.45779628, L: 252.25032350, m: 1.66014e-7, R: 2440, color: 0x9c8f84 },
-  { name: '금성', a: 0.72333566, e: 0.00677672, i: 3.39467605, O: 76.67984255, pi: 131.60246718, L: 181.97909950, m: 2.44784e-6, R: 6052, color: 0xe8c98a },
-  { name: '지구', a: 1.00000261, e: 0.01671123, i: -0.00001531, O: 0.0, pi: 102.93768193, L: 100.46457166, m: 3.00349e-6, R: 6371, color: 0x4f9dea },
-  { name: '화성', a: 1.52371034, e: 0.09339410, i: 1.84969142, O: 49.55953891, pi: -23.94362959, L: -4.55343205, m: 3.22716e-7, R: 3390, color: 0xd1603d },
-  { name: '목성', a: 5.20288700, e: 0.04838624, i: 1.30439695, O: 100.47390909, pi: 14.72847983, L: 34.39644051, m: 9.54792e-4, R: 69911, color: 0xd9b48f },
-  { name: '토성', a: 9.53667594, e: 0.05386179, i: 2.48599187, O: 113.66242448, pi: 92.59887831, L: 49.95424423, m: 2.85886e-4, R: 58232, color: 0xe3d3a0 },
-  { name: '천왕성', a: 19.18916464, e: 0.04725744, i: 0.77263783, O: 74.01692503, pi: 170.95427630, L: 313.23810451, m: 4.36624e-5, R: 25362, color: 0x8fd6e0 },
-  { name: '해왕성', a: 30.06992276, e: 0.00859048, i: 1.77004347, O: 131.78422574, pi: 44.96476227, L: -55.12002969, m: 5.15139e-5, R: 24622, color: 0x4062d6 },
-  { name: '명왕성', a: 39.48211675, e: 0.24882730, i: 17.14001206, O: 110.30393684, pi: 224.06891629, L: 238.92903833, m: 6.55e-9, R: 1188, color: 0xbda58c },
-];
+// ─────────────── 태양계 구성 헬퍼 ───────────────
+// 궤도요소·물리량은 src/data/bodies.js (JPL / NASA Fact Sheet) 한 곳에서 온다.
 
-const SUN = {
-  name: '태양', mass: 1, radius: km(696000), color: blackbodyHex(5772),
-  type: 'star', glow: 1, temperature: 5772, trail: false,
-};
+const PLANETS = PLANET_ELEMENTS.map((p) => {
+  const d = BODY_DATA[p.key];
+  return {
+    key: p.key, name: p.name, data: d,
+    a: p.el[0], e: p.el[1], i: p.el[2], L: p.el[3], pi: p.el[4], O: p.el[5],
+    m: d.mass, R: d.R, color: d.color,
+  };
+});
 
 function addSun(sim, over = {}) {
-  return sim.add({ ...SUN, pos: [0, 0, 0], vel: [0, 0, 0], ...over });
+  const d = BODY_DATA.sun;
+  return sim.add({
+    name: d.name, mass: 1, pos: [0, 0, 0], vel: [0, 0, 0],
+    radius: km(d.R), color: d.color, type: 'star', glow: 1,
+    temperature: d.T, trail: false, data: d, key: 'sun', ...over,
+  });
 }
 
-function addPlanet(sim, p, opts = {}) {
-  const mu = G_SIM * (1 + p.m);
-  const { r, v } = stateFromElements(mu, {
-    a: p.a, e: p.e, i: p.i, Omega: p.O,
-    omega: p.pi - p.O, M0: p.L - p.pi,
-  });
+/** 행성 추가. T = J2000 이후 율리우스 세기 (0 이면 J2000 그대로) */
+function addPlanet(sim, p, opts = {}, T = 0) {
+  const src = PLANET_ELEMENTS.find((x) => x.key === p.key);
+  const el = (src && T) ? elementsAt(src, T) : {
+    a: p.a, e: p.e, i: p.i, Omega: p.O, omega: p.pi - p.O, M0: p.L - p.pi,
+  };
+  const { r, v } = stateFromElements(G_SIM * (1 + p.m), el);
   return sim.add({
     name: p.name, mass: p.m, pos: r, vel: v,
     radius: km(p.R), color: p.color, type: 'planet',
-    drawScale: opts.drawScale ?? 1, ...opts,
+    data: p.data, key: p.key, drawScale: opts.drawScale ?? 1, ...opts,
   });
+}
+
+/** 모행성 인덱스 기준으로 위성 추가 */
+function addMoon(sim, parentIdx, spec, over = {}) {
+  const d = BODY_DATA[spec.key];
+  const p3 = parentIdx * 3;
+  const mu = G_SIM * (sim.mass[parentIdx] + d.mass);
+  const { r, v } = stateFromElements(mu, spec);
+  return sim.add({
+    name: d.name, mass: d.mass,
+    pos: [sim.pos[p3] + r[0], sim.pos[p3 + 1] + r[1], sim.pos[p3 + 2] + r[2]],
+    vel: [sim.vel[p3] + v[0], sim.vel[p3 + 1] + v[1], sim.vel[p3 + 2] + v[2]],
+    radius: km(d.R), color: d.color, type: 'moon',
+    parent: sim.meta[parentIdx].name, data: d, key: spec.key, ...over,
+  });
+}
+
+/** 태양 기준 소천체 (소행성·혜성) */
+function addSmall(sim, spec, over = {}) {
+  const d = BODY_DATA[spec.key];
+  const { r, v } = stateFromElements(G_SIM * (1 + (d.mass || 0)), spec);
+  return sim.add({
+    name: d.name, mass: d.mass || 0, pos: r, vel: v,
+    radius: km(d.R), color: d.color,
+    type: d.type === 'comet' ? 'dust' : 'planet',
+    data: d, key: spec.key, drawScale: d.type === 'comet' ? 400 : 60, ...over,
+  });
+}
+
+/**
+ * 주 소행성대. 목성과의 평균운동 공명 위치(커크우드 간극)에서 확률을 떨어뜨려
+ * 실제 관측되는 a 분포를 재현한다.
+ */
+function addBelt(sim, N, R, over = {}) {
+  for (let k = 0; k < N; k++) {
+    let a = 2.7;
+    for (let t = 0; t < 60; t++) {
+      a = 2.06 + R() * 1.26;
+      let keep = 0.32 + 0.68 * Math.exp(-(((a - 2.72) / 0.42) ** 2));
+      for (const g of KIRKWOOD) keep *= 1 - 0.96 * Math.exp(-(((a - g.a) / g.w) ** 2));
+      if (R() < keep) break;
+    }
+    const s = stateFromElements(G_SIM, {
+      a, e: R() * 0.24, i: (R() - 0.5) * 26,
+      Omega: R() * 360, omega: R() * 360, M0: R() * 360,
+    });
+    sim.add({
+      name: `소행성 ${k + 1}`, mass: 0, pos: s.r, vel: s.v,
+      radius: km(25), color: k % 5 === 0 ? 0xb0a08c : 0x8f8474,
+      type: 'dust', drawScale: 140, trail: false, ...over,
+    });
+  }
 }
 
 // ─────────────── 시나리오 정의 ───────────────
@@ -59,27 +113,23 @@ function addPlanet(sim, p, opts = {}) {
 export const SCENARIOS = [
   {
     id: 'solar',
-    name: '태양계 (J2000)',
+    name: '태양계 (실측 궤도요소)',
     group: '태양계',
-    desc: 'JPL J2000 평균 궤도요소로 초기화한 태양 + 8행성 + 명왕성 + 달. 실제 이체 섭동이 모두 포함된 완전 N체 적분입니다.',
+    desc: 'JPL 근사 궤도요소(1800–2050년 유효)로 임의 날짜에 초기화하는 태양계 모델. 8행성·명왕성·달·세레스·베스타·팔라스·핼리/엔케 혜성과 소행성대를 완전 N체로 적분합니다. 행성은 실제 반지름·자전주기·자전축 기울기로 자전하며, 태양 방향에 따라 위상이 생깁니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
     dt: 0.5, integrator: 'pefrl', softening: 1e-5, collisions: false,
-    camera: 35, scale: 'log',
-    build(sim) {
+    camera: 35, scale: 'log', epochAware: true,
+    build(sim, opt = {}) {
+      const epoch = opt.epoch ?? 0;
+      const T = epoch / 36525;
       addSun(sim);
-      for (const p of PLANETS) addPlanet(sim, p);
-      // 달 — 지구 상대 궤도
-      const ei = 3;
-      const mMoon = 3.69432e-8;
-      const { r, v } = stateFromElements(G_SIM * (PLANETS[2].m + mMoon), {
-        a: 0.00257, e: 0.0549, i: 5.145, Omega: 125.08, omega: 318.15, M0: 135.27,
-      });
-      sim.add({
-        name: '달', mass: mMoon,
-        pos: [sim.pos[ei * 3] + r[0], sim.pos[ei * 3 + 1] + r[1], sim.pos[ei * 3 + 2] + r[2]],
-        vel: [sim.vel[ei * 3] + v[0], sim.vel[ei * 3 + 1] + v[1], sim.vel[ei * 3 + 2] + v[2]],
-        radius: km(1737), color: 0xc8c8c8, type: 'moon', parent: '지구',
-      });
+      const idx = {};
+      for (const p of PLANETS) idx[p.key] = addPlanet(sim, p, {}, T);
+      // 달만 포함한다 — 목성·토성 위성은 주기가 짧아 전용 시나리오에서 다룬다
+      for (const m of MOONS.earth) addMoon(sim, idx.earth, m);
+      for (const sb of SMALL_BODIES) addSmall(sim, sb, { trail: sb.key === 'halley' });
+      addBelt(sim, 240, rng(2024));
+      sim.time = epoch;
     },
   },
 
@@ -166,6 +216,44 @@ export const SCENARIOS = [
         radius: km(450000), color: blackbodyHex(3600), type: 'star', glow: 0.8,
         temperature: 3600,
       });
+    },
+  },
+
+  {
+    id: 'jupiter',
+    name: '목성계 — 갈릴레이 위성',
+    group: '위성계',
+    desc: '갈릴레오가 1610년에 발견한 네 위성. 이오·유로파·가니메데는 평균운동이 n₁ − 3n₂ + 2n₃ = 0 을 만족하는 라플라스 공명에 갇혀 있어(주기비 약 1:2:4) 세 위성이 동시에 한쪽에 모이는 일이 절대 없습니다. 이 공명이 유지하는 이심률이 조석가열을 일으켜 이오의 화산활동과 유로파의 지하 바다를 만듭니다.',
+    units: { length: 'AU', time: 'day', mass: 'M☉' },
+    dt: 0.002, integrator: 'pefrl', softening: 1e-7, collisions: false,
+    camera: 0.02, scale: 'linear',
+    build(sim) {
+      const d = BODY_DATA.jupiter;
+      const ji = sim.add({
+        name: d.name, mass: d.mass, pos: [0, 0, 0], vel: [0, 0, 0],
+        radius: km(d.R), color: d.color, type: 'planet',
+        data: d, key: 'jupiter', trail: false,
+      });
+      for (const m of MOONS.jupiter) addMoon(sim, ji, m);
+      sim.recenter();
+    },
+  },
+
+  {
+    id: 'kirkwood',
+    name: '소행성대 & 커크우드 간극',
+    group: '태양계',
+    desc: '소행성 1400개의 장반경 분포. 목성과 4:1·3:1·5:2·7:3·2:1 평균운동 공명을 이루는 위치에서는 섭동이 누적돼 소행성이 쓸려나가고, 실제 관측되는 커크우드 간극이 그대로 나타납니다. 소행성을 하나 선택해 궤도요소 패널에서 a 를 확인해 보세요.',
+    units: { length: 'AU', time: 'day', mass: 'M☉' },
+    dt: 2, integrator: 'pefrl', softening: 1e-4, collisions: false,
+    camera: 6, scale: 'linear',
+    build(sim) {
+      addSun(sim);
+      addPlanet(sim, PLANETS.find((p) => p.key === 'earth'));
+      addPlanet(sim, PLANETS.find((p) => p.key === 'mars'));
+      addPlanet(sim, PLANETS.find((p) => p.key === 'jupiter'));
+      for (const sb of SMALL_BODIES.slice(0, 3)) addSmall(sim, sb);
+      addBelt(sim, 1400, rng(77));
     },
   },
 
@@ -469,7 +557,7 @@ export function getScenario(id) {
 }
 
 /** 시나리오를 시뮬레이터에 적용 */
-export function loadScenario(sim, sc) {
+export function loadScenario(sim, sc, opts = {}) {
   sim.clear();
   sim.G = sc.G ?? G_SIM;
   sim.softening = sc.softening ?? 1e-5;
@@ -479,7 +567,7 @@ export function loadScenario(sim, sc) {
   sim.collisions = sc.collisions ?? false;
   sim.relativistic = sc.relativistic ?? false;
   sim._primed = false;
-  sc.build(sim);
+  sc.build(sim, opts);
   sim.markBaseline();
   return sim;
 }

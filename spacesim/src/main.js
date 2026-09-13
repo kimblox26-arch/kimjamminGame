@@ -5,13 +5,14 @@ import { NBody } from './physics/nbody.js';
 import { elementsFromState, sampleOrbit, hillRadius, stateFromElements } from './physics/kepler.js';
 import { SCENARIOS, loadScenario, getScenario } from './sim/scenarios.js';
 import { View } from './render/view.js';
-import { Overlay, drawConservation } from './render/overlay.js';
+import { Overlay, drawConservation, drawDistribution } from './render/overlay.js';
 import { StarPanel, CosmoPanel, renderUnitTable } from './ui/tools.js';
 import {
   fmt, fmtDuration, julianToDate, auday2kms, clamp,
   KM_PER_AU, MSUN_PER_MEARTH, MSUN_PER_MJUP,
 } from './core/constants.js';
 import { blackbodyHex } from './astro/stars.js';
+import { daysSinceJ2000, KIRKWOOD } from './data/bodies.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,6 +27,7 @@ const state = {
   substeps: 20,
   autoDt: false,
   selected: -1,
+  epoch: 0,               // J2000 이후 경과일 — 실측 궤도요소 초기화 시점
   frameMode: 'none',      // none | com | body
   frameBody: -1,
   scenario: SCENARIOS[0],
@@ -81,7 +83,9 @@ function buildScenarioList() {
 function selectScenario(id) {
   const sc = getScenario(id);
   state.scenario = sc;
-  loadScenario(sim, sc);
+  loadScenario(sim, sc, { epoch: sc.epochAware ? state.epoch : 0 });
+  $('epoch-row').classList.toggle('off', !sc.epochAware);
+  $('v-epoch').textContent = sc.epochAware ? julianToDate(state.epoch) : '';
 
   for (const b of document.querySelectorAll('.sc-item')) {
     b.classList.toggle('active', b.dataset.id === id);
@@ -111,6 +115,8 @@ function selectScenario(id) {
   state.frameMode = 'none';
   state.frameBody = sim.primaryIndex();
   state.cons.length = 0;
+  state.filter = '';
+  $('body-filter').value = '';
 
   $('in-integrator').value = sim.integrator;
   $('in-dt').value = Math.log10(state.dt);
@@ -184,9 +190,10 @@ function frame(now) {
   state.stepsPerFrame = stepsDone;
 
   updateOrigin();
+  view.updateCamera(sim);   // 구체 LOD 계산에 카메라 위치가 필요하다
+  view.updateBodies(sim);
   view.sync(sim);
   updateOrbitPreview();
-  view.updateCamera(sim);
   view.render();
   overlay.draw(sim, view, state);
 
@@ -317,7 +324,41 @@ function updateInspector() {
       });
     }
   }
-  if (m.temperature) {
+  // 실측 물리 제원
+  const d = m.data;
+  if (d) {
+    rows.push({ sep: '물리 제원 (실측)' });
+    if (d.rot) {
+      const retro = d.rot < 0;
+      const h = Math.abs(d.rot) * 24;
+      rows.push({
+        k: '자전주기',
+        v: `${h < 48 ? h.toFixed(3) + ' 시간' : Math.abs(d.rot).toFixed(3) + ' 일'}${retro ? ' (역행)' : ''}`,
+        cls: retro ? 'warn' : '',
+      });
+    }
+    if (d.tilt != null) rows.push({ k: '자전축 기울기', v: `${d.tilt}°` });
+    if (d.rho) rows.push({ k: '평균밀도', v: `${d.rho} g/cm³` });
+    if (d.g) rows.push({ k: '표면중력', v: `${d.g} m/s² (${(d.g / 9.807).toFixed(3)} g)` });
+    if (d.vesc) rows.push({ k: '탈출속도', v: `${d.vesc} km/s` });
+    if (d.albedo != null) rows.push({ k: '기하 알베도', v: String(d.albedo) });
+    if (d.T) rows.push({ k: d.type === 'star' ? '유효온도' : '평균 표면온도', v: `${d.T} K (${(d.T - 273.15).toFixed(0)} ℃)` });
+    if (d.moons != null) rows.push({ k: '알려진 위성', v: `${d.moons}개` });
+    if (d.atmosphere) rows.push({ k: '대기', v: d.atmosphere });
+    // 항성으로부터 받는 복사 (태양 상수 대비)
+    const star = sim.primaryIndex();
+    if (star >= 0 && star !== i && sim.mass[star] > 0.02) {
+      const rel0 = sim.relative(i, star);
+      const dist = Math.hypot(...rel0.r);
+      if (dist > 0) {
+        const S = sim.mass[star] / (dist * dist);
+        const Teq = 278.6 * Math.pow(sim.mass[star] * (1 - (d.albedo ?? 0.3)) / (dist * dist), 0.25);
+        rows.push({ k: '일사량 (지구=1)', v: fmt(S, 4) });
+        rows.push({ k: '평형온도', v: `${Teq.toFixed(1)} K (${(Teq - 273.15).toFixed(0)} ℃)` });
+      }
+    }
+    if (d.note) rows.push({ note: d.note });
+  } else if (m.temperature) {
     rows.push({ sep: '항성' });
     rows.push({ k: '유효온도', v: `${m.temperature} K` });
   }
@@ -330,9 +371,11 @@ const TYPE_KO = {
 };
 
 function kvRender(el, rows) {
-  el.innerHTML = rows.map((r) => r.sep
-    ? `<div class="sep">${r.sep}</div>`
-    : `<div class="k">${r.k}</div><div class="v${r.cls ? ' ' + r.cls : ''}">${r.v}</div>`).join('');
+  el.innerHTML = rows.map((r) => {
+    if (r.sep) return `<div class="sep">${r.sep}</div>`;
+    if (r.note) return `<div class="note">${r.note}</div>`;
+    return `<div class="k">${r.k}</div><div class="v${r.cls ? ' ' + r.cls : ''}">${r.v}</div>`;
+  }).join('');
 }
 
 function updateDiagnostics() {
@@ -369,8 +412,31 @@ function updateDiagnostics() {
   if (state.cons.length > 260) state.cons.shift();
   drawConservation($('chart-cons'), state.cons);
 
+  updateDistribution();
+
   $('event-log').innerHTML = sim.events.map((e) =>
     `<div><span class="t">${isAstro() ? fmtDuration(e.t) : fmt(e.t, 4)}</span> · ${e.text}</div>`).join('');
+}
+
+/** 장반경 분포 — 소행성대 공명 간극 확인용 */
+function updateDistribution() {
+  const ref = sim.primaryIndex();
+  const show = isAstro() && ref >= 0 && sim.activeCount() > 30 && sim.activeCount() <= 3000;
+  $('dist-block').style.display = show ? '' : 'none';
+  if (!show) return;
+  const vals = [];
+  for (let i = 0; i < sim.count; i++) {
+    if (!sim.active[i] || i === ref) continue;
+    const rel = sim.relative(i, ref);
+    const a = elementsFromState(rel.mu, rel.r, rel.v).a;
+    if (isFinite(a) && a > 0 && a < 60) vals.push(a);
+  }
+  if (vals.length < 20) { $('dist-block').style.display = 'none'; return; }
+  vals.sort((x, y) => x - y);
+  // 이상치를 제외한 5~95 백분위 구간
+  const lo = vals[Math.floor(vals.length * 0.02)];
+  const hi = vals[Math.floor(vals.length * 0.98)];
+  drawDistribution($('chart-adist'), vals, KIRKWOOD, [lo, hi]);
 }
 
 // ───────────────────────── 천체 목록 ─────────────────────────
@@ -415,8 +481,9 @@ function focusOn(i) {
   const i3 = i * 3;
   const dist = Math.hypot(sim.pos[i3] - view.origin[0], sim.pos[i3 + 1] - view.origin[1], sim.pos[i3 + 2] - view.origin[2]);
   const drawR = sim.radius[i] * view.localScale(dist) * (sim.meta[i].drawScale || 1) * view.bodyScale;
-  const want = Math.max(drawR * 90, view.spherical.radius * 0.15);
-  view.spherical.radius = Math.min(view.spherical.radius, Math.max(want, 1e-5));
+  // 천체가 화면을 적당히 채우는 거리로 '설정' 한다 (이전 추적 거리를 물려받지 않도록)
+  const want = drawR > 0 ? drawR * 7 : view.spherical.radius * 0.15;
+  view.spherical.radius = Math.max(want, 1e-6);
   $('btn-focus').classList.add('on');
   renderBodyList();
   toast(`${sim.meta[i].name} 추적`);
@@ -479,6 +546,22 @@ function bindControls() {
   $('in-grid').addEventListener('change', (e) => { view.showGrid = e.target.checked; });
   $('in-labels').addEventListener('change', (e) => { overlay.showLabels = e.target.checked; });
   $('in-bloom').addEventListener('change', (e) => { view.bloomEnabled = e.target.checked; });
+  $('in-spheres').addEventListener('change', (e) => { view.showSpheres = e.target.checked; });
+  $('in-milkyway').addEventListener('change', (e) => { view.sky.showMilkyWay = e.target.checked; });
+  $('in-const').addEventListener('change', (e) => { view.sky.showConstellations = e.target.checked; });
+  $('in-starnames').addEventListener('change', (e) => { overlay.showStarNames = e.target.checked; });
+  $('in-epoch').addEventListener('change', (e) => {
+    state.epoch = daysSinceJ2000(e.target.value);
+    selectScenario(state.scenario.id);
+  });
+  $('btn-today').addEventListener('click', () => {
+    const d = new Date();
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    $('in-epoch').value = iso;
+    state.epoch = daysSinceJ2000(iso);
+    selectScenario(state.scenario.id);
+    toast(`${iso} 의 실제 행성 배치로 초기화`);
+  });
   $('in-com').addEventListener('change', (e) => {
     state.frameMode = e.target.checked ? 'com' : 'none';
     view.clearTrails();
