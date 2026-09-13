@@ -10,6 +10,8 @@
 > `file://` 로 직접 열면 ES 모듈 보안 정책 때문에 실행되지 않습니다.
 > three.js 는 저장소의 `vendor/` 를 재사용하므로 **인터넷 없이 동작**합니다.
 
+설치 없이 바로 쓰려면 GitHub Pages 배포본을 여세요 — **https://kimblox26-arch.github.io/kimjamminGame/spacesim/**
+
 ---
 
 ## 1. 수치 모형

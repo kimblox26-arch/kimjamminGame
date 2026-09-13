@@ -11,6 +11,13 @@ index.html 을 로컬 웹서버로 열면 바로 실행됩니다.
 > 파일을 더블클릭(`file://`)하면 ES 모듈 보안 정책 때문에 실행되지 않습니다. 반드시 웹서버로 여세요.
 > 필요 라이브러리(three.js)는 `vendor/` 에 포함되어 있어 **인터넷 없이도 동작**합니다.
 
+**설치 없이 바로 실행** — GitHub Pages 로 배포되어 있습니다.
+
+| | 주소 |
+|---|---|
+| ✈️ FREE FREELY (비행 시뮬레이터) | https://kimblox26-arch.github.io/kimjamminGame/ |
+| 🪐 SpaceSim (천체물리 시뮬레이션) | https://kimblox26-arch.github.io/kimjamminGame/spacesim/ |
+
 ---
 
 ## 1. 무엇이 들어있나

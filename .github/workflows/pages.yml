@@ -1,0 +1,43 @@
+name: Deploy to GitHub Pages
+
+# 정적 사이트라 빌드 과정이 없다. 저장소를 그대로 업로드해 배포한다.
+on:
+  push:
+    branches:
+      - main
+      - claude/spacesim-astrophysical-sim-sxln6j
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 동시에 하나만. 진행 중인 실행은 취소하지 않는다.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          # 저장소 설정에서 Pages 가 꺼져 있으면 자동으로 켠다
+          enablement: true
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
