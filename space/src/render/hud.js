@@ -149,9 +149,95 @@ export class HUD {
     this.renderResources(o);
     if (this.showStageList) this.renderStages(o);
     this.renderOrbitInfo(o);
+    this.renderDocking(o);
+    this.renderRover(o);
     this.renderWarnings(o);
     this.renderAutopilot(o);
     this.renderMessages(o);
+  }
+
+  /**
+   * 도킹 보조 — 가까운 대상까지의 거리·접근속도·방향.
+   *
+   * 도킹의 어려움은 "지금 다가가고 있나 멀어지고 있나" 를 모르는 데서
+   * 온다. 그래서 접근속도의 부호를 색으로 구분해서 보여준다.
+   */
+  renderDocking(o) {
+    const info = o.docking;
+    if (!info || info.distance > 500) return;
+    const ctx = this.ctx;
+    const w = this.width;
+    const x = w / 2 - 110;
+    const y = 150;
+
+    this.panel(x, y, 220, 78, 8);
+    this.label('도킹 대상', x + 12, y + 18, { size: 10 });
+    this.value(info.target.name ?? '미상', x + 12, y + 33, { size: 12 });
+
+    // 접근속도 부호 — 음수면 가까워지는 중
+    const dx = info.dx;
+    const dy = info.dy;
+    const d = Math.max(info.distance, 1e-6);
+    const rvx = info.target.vel.x - o.vessel.vel.x;
+    const rvy = info.target.vel.y - o.vessel.vel.y;
+    const closing = -((rvx * dx + rvy * dy) / d);
+
+    this.label('거리', x + 12, y + 52, { size: 10 });
+    this.value(
+      info.distance < 1000
+        ? `${info.distance.toFixed(1)} m`
+        : `${(info.distance / 1000).toFixed(2)} km`,
+      x + 12,
+      y + 68,
+      { size: 14 }
+    );
+
+    this.label('접근속도', x + 116, y + 52, { size: 10 });
+    const color = closing > 0.05 ? COLOR.good : closing < -0.05 ? COLOR.warn : COLOR.text;
+    this.value(`${closing >= 0 ? '+' : ''}${closing.toFixed(2)} m/s`, x + 116, y + 68, {
+      size: 14,
+      color,
+    });
+
+    // 방향 화살표 — 대상이 어느 쪽인지
+    const ang = Math.atan2(-dy, dx);
+    const ax = x + 190;
+    const ay = y + 22;
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(-ang);
+    ctx.fillStyle = closing > 0.05 ? COLOR.good : COLOR.accent;
+    ctx.beginPath();
+    ctx.moveTo(11, 0);
+    ctx.lineTo(-7, 6);
+    ctx.lineTo(-4, 0);
+    ctx.lineTo(-7, -6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /** 로버 주행 상태 — 바퀴가 접지 중일 때만 */
+  renderRover(o) {
+    const v = o.vessel;
+    if (!v) return;
+    const wheels = v.parts.filter(
+      (p) => !p.destroyed && p.def.wheel && p.legExtended
+    );
+    if (!wheels.length || !v.landed) return;
+
+    const x = this.width / 2 - 90;
+    const y = this.height - 200;
+    this.panel(x, y, 180, 52, 8);
+    this.label('주행', x + 12, y + 17, { size: 10 });
+    this.value(`${Math.abs(v.groundSpeed ?? 0).toFixed(1)} m/s`, x + 12, y + 36, {
+      size: 15,
+    });
+    this.label('브레이크', x + 106, y + 17, { size: 10 });
+    this.value(v.brakes ? 'ON' : 'off', x + 106, y + 36, {
+      size: 13,
+      color: v.brakes ? COLOR.warn : COLOR.dim,
+    });
   }
 
   /* 상단 바 — 임무 시간, 상황, 타임워프 */

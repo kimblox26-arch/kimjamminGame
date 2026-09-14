@@ -317,6 +317,26 @@ export class Builder {
       this.craft.mirrorPart(this.selectedPart.uid);
       this.markChanged();
     }
+    // 부품 자유 회전 — Q/E 로 15° 씩, Shift 를 누르면 1° 씩
+    if (this.selectedPart) {
+      const fine = input.isDown('ShiftLeft') || input.isDown('ShiftRight');
+      const step = (fine ? 1 : 15) * (Math.PI / 180);
+      let d = 0;
+      if (input.wasPressed('KeyQ')) d += step;
+      if (input.wasPressed('KeyE')) d -= step;
+      if (d !== 0) {
+        this.pushHistory();
+        this.selectedPart.rot += d;
+        // 한 바퀴 돌면 정확히 0 으로 맞춰 준다
+        if (Math.abs(this.selectedPart.rot) < 1e-6) this.selectedPart.rot = 0;
+        this.markChanged();
+      }
+      if (input.wasPressed('KeyR') && this.selectedPart.rot !== 0) {
+        this.pushHistory();
+        this.selectedPart.rot = 0;
+        this.markChanged();
+      }
+    }
     // 크기 조절 단축키 — 미세 조정
     if (this.selectedPart && partResizeLimits(this.selectedPart.def)) {
       const p = this.selectedPart;

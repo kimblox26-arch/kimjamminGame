@@ -311,6 +311,11 @@ export class FlightRenderer {
       this.renderVessel(ctx, camera, vessel, bodyWorld, lit);
     }
 
+    /* 7b. 엔진 불빛 — 어두울 때 화염이 주변을 밝힌다 */
+    if (vessel && this.quality >= 1) {
+      this._renderEngineLight(ctx, camera, vessel, bodyWorld, lit);
+    }
+
     /* 8. 파티클 */
     this.particles.setLight(
       Math.cos(lit.sunAngle - camera.rotation),
@@ -416,7 +421,7 @@ export class FlightRenderer {
    * 착륙/발사 때 기체가 지면에 "붙어 있다" 는 느낌을 준다.
    */
   _drawGroundShadow(ctx, camera, vessel, sp, lit) {
-    const alt = vessel.altitude ?? 1e9;
+    const alt = vessel.terrainAltitude ?? vessel.altitude ?? 1e9;
     const body = vessel.body;
     if (!body || alt > 400) return;
     const len = vessel.bounds?.length ?? 10;
@@ -609,6 +614,37 @@ export class FlightRenderer {
       const dirX = -Math.cos(vessel.angle + ga);
       const dirY = -Math.sin(vessel.angle + ga);
 
+      // 지면 충돌 — 화염이 지표에 부딪히면 옆으로 퍼지는 연기 기둥이 생긴다.
+      // 발사 순간의 화염 편향(flame trench) 이 로켓의 상징적인 그림이다.
+      // 노즐 자체의 지표 고도를 직접 잰다. vessel.altitude 는 기준 반지름
+      // 기준이고 terrainAltitude 도 기체 원점 기준이라, 맨 아래 달린
+      // 노즐의 실제 지면까지 거리와는 한 단 높이만큼 어긋난다.
+      // 실제 발사에서는 화염이 닿지 않는 높이까지도 연기 구름이 따라 올라온다
+      const plumeReach = Math.max((e.plumeLength ?? 2.5) * 3.5 * power, 26 * power);
+      if (atmoDensity > 0.02 && vessel.body?.terrain) {
+        const bdx = wx - bodyWorld.x;
+        const bdy = wy - bodyWorld.y;
+        const theta =
+          Math.atan2(bdy, bdx) - vessel.body.rotationAt(vessel.universeTime ?? 0);
+        const nozzleAlt =
+          Math.hypot(bdx, bdy) - vessel.body.terrain.radiusAt(theta);
+        if (nozzleAlt >= -3 && nozzleAlt < plumeReach) {
+          const drop = Math.max(nozzleAlt, 0);
+          const gx = wx + dirX * drop;
+          const gy = wy + dirY * drop;
+          const up = vessel.up;
+          const strength = power * clamp01(1 - drop / Math.max(plumeReach, 0.1));
+          this.particles.groundDust(
+            gx,
+            gy,
+            up.x,
+            up.y,
+            strength * 2.4,
+            part.def.size.w * (part.scaleW ?? 1) * 1.6
+          );
+        }
+      }
+
       drawPlume(ctx, camera, {
         x: wx,
         y: wy,
@@ -635,6 +671,57 @@ export class FlightRenderer {
         vy: vessel.vel.y * 0.15,
       });
     }
+  }
+
+  /**
+   * 엔진 불빛 — 화염 근처를 따뜻한 빛으로 물들인다.
+   * 밤이나 우주에서 로켓이 자기 빛을 받는 느낌을 만든다.
+   */
+  _renderEngineLight(ctx, camera, vessel, bodyWorld, lit) {
+    let power = 0;
+    let cx = 0;
+    let cy = 0;
+    let total = 0;
+    for (const part of vessel.parts) {
+      if (part.destroyed || !part.isEngine || !part.running || part.flameout) continue;
+      const p = part.throttleActual * (part.scaleW ?? 1);
+      if (p < 0.02) continue;
+      power += p;
+      cx += part.localX * p;
+      cy += part.localY * p;
+      total += p;
+    }
+    if (total < 0.02) return;
+    cx /= total;
+    cy /= total;
+
+    // 밝은 대낮에는 거의 보이지 않는다
+    const ambientDark = 1 - clamp01(lit.sunFactor * 0.55 + lit.atmoDensity * 0.5);
+    const strength = clamp01(power * 0.5) * ambientDark;
+    if (strength < 0.03) return;
+
+    const lx = cx - vessel.com.x;
+    const ly = cy - vessel.com.y;
+    const a = vessel.angle - Math.PI / 2;
+    const rx = lx * Math.cos(a) - ly * Math.sin(a);
+    const ry = lx * Math.sin(a) + ly * Math.cos(a);
+    const sp = camera.worldToScreen(
+      bodyWorld.x + vessel.pos.x + rx,
+      bodyWorld.y + vessel.pos.y + ry
+    );
+    const r = clamp((vessel.bounds?.length ?? 10) * camera.zoom * 1.6, 30, 900);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r);
+    g.addColorStop(0, withAlpha('#ffb45a', 0.3 * strength));
+    g.addColorStop(0.35, withAlpha('#ff8a3a', 0.12 * strength));
+    g.addColorStop(1, withAlpha('#ff6a2a', 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, r, 0, TAU);
+    ctx.fill();
+    ctx.restore();
   }
 
   /* ── 화면 효과 ────────────────────────────────────────── */

@@ -772,6 +772,12 @@ export class Game {
     if (input.wasPressed('Period')) this.setWarp(this.warpIndex + 1);
     if (input.wasPressed('Comma')) this.setWarp(this.warpIndex - 1);
 
+    // 시간 건너뛰기 — 노드 / 원점 / 근점
+    if (input.actionPressed('timeSkip')) {
+      if (this.planner.nodes?.length) this.warpToNode();
+      else this.warpToApsis('apoapsis');
+    }
+
     // 카메라
     if (input.actionPressed('cameraNext')) this.cycleCamera();
     if (!this.mapOpen) {
@@ -949,6 +955,102 @@ export class Game {
     this.loop.setTimeScale(level.rate);
     addRecord(this.progress, 'totalTimeWarped', 0);
     bus.emit(EVT.TIMEWARP_CHANGE, { rate: level.rate });
+  }
+
+  /**
+   * 특정 시각까지 시간을 건너뛴다 (SFS 의 "warp to" 와 같은 역할).
+   *
+   * 배속을 올려 기다리는 대신, 목표 시각 직전까지 큰 스텝으로 적분한다.
+   * 대기권 안이나 엔진 가동 중에는 궤적이 달라지므로 거부한다.
+   * @param {number} targetTime 절대 시각
+   * @param {string} label 토스트에 쓸 이름
+   */
+  warpTo(targetTime, label = '목표 시각') {
+    const v = this.vessel;
+    if (!v || v.destroyed) return false;
+    const remain = targetTime - this.universeTime;
+    if (remain <= 1) {
+      bus.emit(EVT.TOAST, { text: `${label} 이 이미 지났습니다`, kind: 'warn' });
+      return false;
+    }
+    if (v.currentThrust > 0) {
+      bus.emit(EVT.TOAST, { text: '엔진을 끄고 건너뛰세요', kind: 'warn' });
+      return false;
+    }
+    if (v.body.atmo.exists && v.altitude < v.body.atmo.height) {
+      bus.emit(EVT.TOAST, { text: '대기권 안에서는 건너뛸 수 없습니다', kind: 'warn' });
+      return false;
+    }
+    if (v.landed) {
+      bus.emit(EVT.TOAST, { text: '착륙 상태에서는 건너뛸 수 없습니다', kind: 'warn' });
+      return false;
+    }
+
+    // 도착 30초 전까지만 간다 — 마지막은 실시간으로 다듬게 둔다
+    const span = Math.max(remain - 30, 0);
+    if (span < 1) {
+      bus.emit(EVT.TOAST, { text: `${label} 이 코앞입니다` });
+      return false;
+    }
+
+    // 스텝 수를 제한해 한 프레임이 멈추지 않게 한다
+    const MAX_STEPS = 4000;
+    const step = Math.max(span / MAX_STEPS, 1 / 90);
+    let done = 0;
+    let steps = 0;
+    while (done < span && steps < MAX_STEPS) {
+      const dt = Math.min(step, span - done);
+      this.universeTime += dt;
+      this.system.setTime(this.universeTime);
+      v.universeTime = this.universeTime;
+      v.update(dt, this.universeTime, this.system);
+      for (const other of this.vessels) {
+        if (other === v || other.destroyed || other.merged) continue;
+        other.update(dt, this.universeTime, this.system);
+      }
+      if (v.destroyed) break;
+      done += dt;
+      steps++;
+    }
+    if (v.orbit) this.planner.rebase(v.orbit);
+    this.setWarp(0);
+    bus.emit(EVT.TOAST, {
+      text: `${label} 30초 전으로 이동`,
+      kind: 'good',
+    });
+    this.log(`시간 건너뛰기 → ${label}`);
+    return true;
+  }
+
+  /** 다음 기동 노드 직전으로 */
+  warpToNode() {
+    const node = this.planner.nodes?.[0];
+    const t = node?.time;
+    if (t === undefined) {
+      bus.emit(EVT.TOAST, { text: '기동 노드가 없습니다', kind: 'warn' });
+      return false;
+    }
+    // 연소는 노드 시각 기준 절반 앞에서 시작한다
+    const lead = (node.burnDuration ?? 0) / 2;
+    return this.warpTo(t - lead, '기동 노드');
+  }
+
+  /** 원점 / 근점으로 */
+  warpToApsis(which = 'apoapsis') {
+    const v = this.vessel;
+    if (!v?.orbit) {
+      bus.emit(EVT.TOAST, { text: '궤도 정보가 없습니다', kind: 'warn' });
+      return false;
+    }
+    const t =
+      which === 'apoapsis'
+        ? v.orbit.timeOfApoapsis(this.universeTime)
+        : v.orbit.timeOfPeriapsis(this.universeTime);
+    if (!Number.isFinite(t) || t <= this.universeTime) {
+      bus.emit(EVT.TOAST, { text: '도달 시각을 계산할 수 없습니다', kind: 'warn' });
+      return false;
+    }
+    return this.warpTo(t, which === 'apoapsis' ? '원점(Ap)' : '근점(Pe)');
   }
 
   checkWarpSafety() {
@@ -1265,6 +1367,7 @@ export class Game {
           warp: WARP_LEVELS[this.warpIndex].rate,
           settings: this.settings,
           mapOpen: this.mapOpen,
+          docking: this.nearbyDockingInfo(),
         });
         break;
       case 'builder':
