@@ -1165,6 +1165,78 @@ const UTILITY = [
     description: '고속·고고도에서도 펼 수 있는 감속용 소형 낙하산.',
   }),
   P({
+    id: 'rover_wheel',
+    name: 'RW-1 로버 바퀴',
+    category: 'utility',
+    tier: 'landing',
+    cost: 460,
+    mass: 45,
+    size: { w: 0.52, h: 0.52 },
+    art: 'roverwheel',
+    nodes: [{ x: -0.26, y: 0, dir: 'side', size: 'micro' }],
+    radialOnly: true,
+    wheel: {
+      radius: 0.26,
+      motorTorque: 900,
+      maxSpeed: 14,
+      brakeTorque: 1400,
+      stiffness: 30000,
+      damping: 2600,
+      maxCompression: 0.18,
+      steering: false,
+      powerDraw: 1.2,
+    },
+    leg: {
+      length: 0.3,
+      stiffness: 30000,
+      damping: 2600,
+      maxCompression: 0.18,
+      footWidth: 0.52,
+    },
+    drag: { cd: 0.1, area: 0.15 },
+    crashTolerance: 16,
+    maxTemp: 1600,
+    action: 'gear',
+    description:
+      '전동 로버 바퀴. W/S 로 주행한다. 전기를 쓰고, 브레이크(B)로 멈춘다.',
+  }),
+  P({
+    id: 'rover_wheel_large',
+    name: 'RW-3 대형 로버 바퀴',
+    category: 'utility',
+    tier: 'landing',
+    cost: 1180,
+    mass: 120,
+    size: { w: 0.9, h: 0.9 },
+    art: 'roverwheel',
+    artOpts: { large: true },
+    nodes: [{ x: -0.45, y: 0, dir: 'side', size: 'small' }],
+    radialOnly: true,
+    wheel: {
+      radius: 0.45,
+      motorTorque: 2600,
+      maxSpeed: 22,
+      brakeTorque: 3600,
+      stiffness: 58000,
+      damping: 4800,
+      maxCompression: 0.3,
+      steering: false,
+      powerDraw: 3.4,
+    },
+    leg: {
+      length: 0.5,
+      stiffness: 58000,
+      damping: 4800,
+      maxCompression: 0.3,
+      footWidth: 0.9,
+    },
+    drag: { cd: 0.12, area: 0.35 },
+    crashTolerance: 20,
+    maxTemp: 1600,
+    action: 'gear',
+    description: '무거운 로버용 대형 바퀴. 험지에서도 접지력을 유지한다.',
+  }),
+  P({
     id: 'leg_small',
     name: 'LT-1 착륙 다리',
     category: 'utility',
@@ -1768,7 +1840,7 @@ export function partWetMass(def) {
 }
 
 /** 부품 총비용 (본체 + 자원) */
-export function partTotalCost(def) {
+export function partTotalCost(def, sizeFactor = 1) {
   let c = def.cost;
   if (def.fuel) {
     for (const key in def.fuel) {
@@ -1776,7 +1848,34 @@ export function partTotalCost(def) {
       if (res) c += def.fuel[key] * res.cost;
     }
   }
-  return Math.round(c);
+  return Math.round(c * sizeFactor);
+}
+
+/**
+ * 크기 조절 한계.
+ *
+ * Spaceflight Simulator 처럼 탱크와 구조물은 자유롭게 늘릴 수 있고,
+ * 엔진은 지름만(길이는 비례해서 따라온다), 조종부·과학 장비처럼
+ * 내용물이 정해진 부품은 고정이다.
+ * @returns {{w:[number,number], h:[number,number], uniform:boolean}|null}
+ */
+export function partResizeLimits(def) {
+  if (def.noResize) return null;
+  if (def.resize) return def.resize;
+  switch (def.category) {
+    case 'tank':
+      return { w: [0.4, 4], h: [0.25, 8], uniform: false };
+    case 'structural':
+      return { w: [0.4, 4], h: [0.3, 6], uniform: false };
+    case 'engine':
+      return { w: [0.5, 3], h: [0.5, 3], uniform: true };
+    case 'aero':
+      return { w: [0.5, 3], h: [0.5, 3], uniform: false };
+    case 'payload':
+      return { w: [0.6, 2.5], h: [0.6, 2.5], uniform: true };
+    default:
+      return null;
+  }
 }
 
 /** 검색 */

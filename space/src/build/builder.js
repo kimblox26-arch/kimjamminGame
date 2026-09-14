@@ -19,6 +19,7 @@ import {
   PART_BY_ID,
   partTotalCost,
   searchParts,
+  partResizeLimits,
 } from './partdefs.js';
 import { CATEGORIES } from '../physics/constants.js';
 import { drawPart, drawPartIcon } from '../render/partsdraw.js';
@@ -58,6 +59,13 @@ export class Builder {
     this.selectedPart = null;
     this.snap = null;
     this.symmetry = true;
+    /** 크기 조절 중인 핸들 ('w' | 'h' | 'wh' | null) */
+    this.resizeHandle = null;
+    this.resizeStart = null;
+    /** 부품 클리핑 허용 (치트) */
+    this.allowClipping = false;
+    /** 최근 사용 도색 */
+    this.paintColor = null;
     this.snapToGrid = false;
     this.showCoM = true;
     this.showCoP = true;
@@ -241,19 +249,45 @@ export class Builder {
       this.hoverPart = this.pickPart(this.mouseWorld.x, this.mouseWorld.y);
     }
 
+    // 크기 조절 드래그 진행
+    if (this.resizeHandle && m.left) {
+      this._dragResize();
+    } else if (this.resizeHandle && !m.left) {
+      this.resizeHandle = null;
+      this.resizeStart = null;
+      this.markChanged();
+    }
+
     // 좌클릭 — UI 버튼을 누른 경우는 무시한다
-    if (m.leftPressed && inside && !m.overUI) {
-      if (this.heldPart) {
+    if (m.leftPressed && inside && !m.overUI && !this.resizeHandle) {
+      // 선택된 부품의 크기 조절 핸들을 먼저 검사한다
+      const hit = this._hitResizeHandle(mx, my);
+      if (hit) {
+        const p = this.selectedPart;
+        this.pushHistory();
+        this.resizeHandle = hit;
+        this.resizeStart = {
+          sw: p.scaleW,
+          sh: p.scaleH,
+          mouse: new Vec2(this.mouseWorld.x, this.mouseWorld.y),
+          x: p.x,
+          y: p.y,
+        };
+      } else if (this.heldPart) {
         this.placeHeld();
       } else {
         const p = this.pickPart(this.mouseWorld.x, this.mouseWorld.y);
         if (p) {
+          const changed = this.selectedPart !== p;
           this.selectedPart = p;
+          if (changed) this.onChange?.();
           // 드래그로 집어들기
           this.grabCandidate = p;
           this.grabStart = new Vec2(m.x, m.y);
         } else {
+          const had = !!this.selectedPart;
           this.selectedPart = null;
+          if (had) this.onChange?.();
         }
       }
     }
@@ -283,17 +317,136 @@ export class Builder {
       this.craft.mirrorPart(this.selectedPart.uid);
       this.markChanged();
     }
+    // 크기 조절 단축키 — 미세 조정
+    if (this.selectedPart && partResizeLimits(this.selectedPart.def)) {
+      const p = this.selectedPart;
+      const step = input.isDown('ShiftLeft') ? 0.01 : 0.05;
+      let sw = p.scaleW;
+      let sh = p.scaleH;
+      if (input.wasPressed('BracketRight')) sh += step;
+      if (input.wasPressed('BracketLeft')) sh -= step;
+      if (input.wasPressed('Equal')) sw += step;
+      if (input.wasPressed('Minus')) sw -= step;
+      if (sw !== p.scaleW || sh !== p.scaleH) {
+        this._applyScale(p, sw, sh);
+        this.markChanged();
+      }
+    }
     if (input.wasPressed('Escape')) this.cancelHeld();
     if (input.isDown('ControlLeft') && input.wasPressed('KeyZ')) this.undo();
     if (input.isDown('ControlLeft') && input.wasPressed('KeyY')) this.redo();
     if (input.wasPressed('KeyF')) this.fitView();
   }
 
+  /* ── 크기 조절 ────────────────────────────────────────── */
+
+  /** 선택된 부품의 핸들 위치 (화면 좌표) */
+  _resizeHandles() {
+    const p = this.selectedPart;
+    if (!p) return null;
+    const lim = partResizeLimits(p.def);
+    if (!lim) return null;
+    const hw = p.width / 2;
+    const hh = p.height / 2;
+    const c = this.worldToScreen(p.x, p.y);
+    const right = this.worldToScreen(p.x + hw, p.y);
+    const top = this.worldToScreen(p.x, p.y + hh);
+    const corner = this.worldToScreen(p.x + hw, p.y + hh);
+    return {
+      uniform: lim.uniform,
+      w: { x: right.x, y: c.y },
+      h: { x: c.x, y: top.y },
+      wh: { x: corner.x, y: corner.y },
+    };
+  }
+
+  _hitResizeHandle(mx, my) {
+    const h = this._resizeHandles();
+    if (!h) return null;
+    const R = 13;
+    const near = (p) => Math.hypot(mx - p.x, my - p.y) < R;
+    if (near(h.wh)) return 'wh';
+    if (!h.uniform) {
+      if (near(h.w)) return 'w';
+      if (near(h.h)) return 'h';
+    }
+    return null;
+  }
+
+  /** 크기와 함께 위치도 옮겨 붙은 부모에서 떨어지지 않게 한다 */
+  _applyScale(part, sw, sh) {
+    const lim = partResizeLimits(part.def);
+    if (!lim) return;
+    const snap = (v) => Math.round(v / 0.05) * 0.05;
+    let nw = clamp(snap(sw), lim.w[0], lim.w[1]);
+    let nh = clamp(snap(sh), lim.h[0], lim.h[1]);
+    if (lim.uniform) nh = nw;
+    const oldH = part.height;
+    part.setScale(nw, nh);
+    // 아래쪽 면을 고정 — 아래에 붙은 부품과 어긋나지 않는다
+    const grow = part.height - oldH;
+    part.y += grow / 2;
+    // 위에 쌓인 부품들은 늘어난 만큼 통째로 올린다
+    this.craft.reflowAfterResize(part, grow);
+  }
+
+  _dragResize() {
+    const p = this.selectedPart;
+    const st = this.resizeStart;
+    if (!p || !st) return;
+    const dx = this.mouseWorld.x - st.mouse.x;
+    const dy = this.mouseWorld.y - st.mouse.y;
+    const baseW = p.def.size.w;
+    const baseH = p.def.size.h;
+    let sw = st.sw;
+    let sh = st.sh;
+    if (this.resizeHandle === 'w' || this.resizeHandle === 'wh') {
+      sw = st.sw + (dx * 2) / baseW;
+    }
+    if (this.resizeHandle === 'h' || this.resizeHandle === 'wh') {
+      sh = st.sh + (dy * 2) / baseH;
+    }
+    if (this.resizeHandle === 'wh' && partResizeLimits(p.def).uniform) {
+      sw = st.sw + (dx * 2) / baseW;
+      sh = sw;
+    }
+    p.x = st.x;
+    this._applyScale(p, sw, sh);
+    this.craft._statsCache = null;
+  }
+
+  /** 선택된 부품에 도색 */
+  paintSelected(color) {
+    const p = this.selectedPart;
+    if (!p) return;
+    this.pushHistory();
+    p.tint = color;
+    this.paintColor = color;
+    // 대칭 짝도 함께
+    if (p.symmetryGroup) {
+      for (const q of this.craft.parts) {
+        if (q.symmetryGroup === p.symmetryGroup) q.tint = color;
+      }
+    }
+    this.markChanged();
+  }
+
+  /** 기체 전체 도색 */
+  paintAll(color) {
+    this.pushHistory();
+    for (const p of this.craft.parts) p.tint = color;
+    this.paintColor = color;
+    this.markChanged();
+  }
+
   placeHeld() {
     const def = this.heldPart;
     if (!def) return;
     const pos = this.previewPos;
-    if (this.craft.overlaps(def.id, pos.x, pos.y, this.heldFromCraft?.uid)) {
+    if (
+      !this.allowClipping &&
+      this.craft.overlaps(def.id, pos.x, pos.y, this.heldFromCraft?.uid)
+    ) {
       bus.emit(EVT.TOAST, { text: '다른 부품과 겹칩니다', kind: 'warn' });
       return;
     }
@@ -437,6 +590,7 @@ export class Builder {
     }
     if (this.selectedPart) {
       this.outlinePart(ctx, this.selectedPart, '#ffd24a');
+      this.drawResizeHandles(ctx);
       this.drawPartInfo(ctx, this.selectedPart);
     }
 
@@ -530,6 +684,10 @@ export class Builder {
       deployed: true,
       legExtended: part.def.leg ? true : false,
       chuteState: 'stowed',
+      uid: part.uid,
+      scaleW: part.scaleW,
+      scaleH: part.scaleH,
+      tint: part.tint,
     });
     ctx.restore();
   }
@@ -599,6 +757,48 @@ export class Builder {
           ctx.stroke();
         }
       }
+    }
+  }
+
+  /** 크기 조절 핸들 — 오른쪽(폭) · 위(길이) · 모서리(둘 다) */
+  drawResizeHandles(ctx) {
+    const h = this._resizeHandles();
+    if (!h) return;
+    const p = this.selectedPart;
+    const draw = (pt, active, label) => {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, active ? 8 : 6, 0, TAU);
+      ctx.fillStyle = active ? '#ffd24a' : 'rgba(20,26,34,0.9)';
+      ctx.fill();
+      ctx.strokeStyle = '#ffd24a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (label) {
+        ctx.fillStyle = '#ffd24a';
+        ctx.font = '10px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, pt.x, pt.y - 12);
+      }
+    };
+    if (!h.uniform) {
+      draw(h.w, this.resizeHandle === 'w', '↔');
+      draw(h.h, this.resizeHandle === 'h', '↕');
+    }
+    draw(h.wh, this.resizeHandle === 'wh', h.uniform ? '⤢' : '');
+
+    // 배율 표시
+    if (p.scaleW !== 1 || p.scaleH !== 1) {
+      const sp = this.worldToScreen(p.x, p.y);
+      ctx.fillStyle = 'rgba(10,14,20,0.8)';
+      const txt = `${p.scaleW.toFixed(2)}× ${p.scaleH.toFixed(2)}`;
+      ctx.font = '11px ui-monospace, monospace';
+      const tw = ctx.measureText(txt).width + 10;
+      ctx.fillRect(sp.x - tw / 2, sp.y - 8, tw, 16);
+      ctx.fillStyle = '#ffd24a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(txt, sp.x, sp.y);
+      ctx.textBaseline = 'alphabetic';
     }
   }
 

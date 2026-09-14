@@ -52,6 +52,14 @@ export class VesselPart {
     this.mirrored = craftPart.mirrored;
     this.stage = craftPart.stage;
     this.parentUid = craftPart.parentUid;
+    // 크기 조절 — 질량·연료·추력·단면적이 전부 이 배율을 따른다
+    this.scaleW = craftPart.scaleW ?? 1;
+    this.scaleH = craftPart.scaleH ?? 1;
+    this.sizeFactor = this.scaleW * this.scaleW * this.scaleH;
+    this.areaFactor = this.scaleW * this.scaleW;
+    this.width = this.def.size.w * this.scaleW;
+    this.height = this.def.size.h * this.scaleH;
+    this.tint = craftPart.tint ?? null;
 
     this.resources = { ...craftPart.resources };
     this.disabledResources = new Set(craftPart.disabledResources);
@@ -94,7 +102,7 @@ export class VesselPart {
       this.shield = null;
     }
 
-    this.thermalArea = Math.max(this.def.size.w * this.def.size.h, 0.4);
+    this.thermalArea = Math.max(this.width * this.height, 0.4);
     this.specificHeat = 900;
     this.emissivity = 0.65;
     this.mass = 0;
@@ -102,7 +110,7 @@ export class VesselPart {
   }
 
   updateMass() {
-    let m = this.def.mass;
+    let m = this.def.mass * this.sizeFactor;
     for (const k in this.resources) {
       const r = RESOURCES[k];
       if (r) m += this.resources[k] * r.density;
@@ -129,7 +137,7 @@ export class VesselPart {
     const e = this.def.engine;
     if (!e) return 0;
     const t = clamp01(pressureAtm);
-    return lerp(e.thrust, e.thrustSL, t);
+    return lerp(e.thrust, e.thrustSL, t) * this.areaFactor;
   }
 
   ispAt(pressureAtm) {
@@ -209,6 +217,10 @@ export class Vessel {
     /* 비행 상태 */
     this.situation = SITUATION.PRELAUNCH;
     this.landed = false;
+    /** 로버 주행 입력 (-1 후진 … 1 전진). null 이면 피치 입력을 쓴다 */
+    this.wheelInput = null;
+    this.wheelDrive = 0;
+    this.groundSpeed = 0;
     this.splashed = false;
     this.destroyed = false;
     this.missionTime = 0;
@@ -275,7 +287,7 @@ export class Vessel {
       if (p.destroyed) continue;
       p.updateMass();
       m += p.mass;
-      dry += p.def.mass;
+      dry += p.def.mass * p.sizeFactor;
       cx += p.localX * p.mass;
       cy += p.localY * p.mass;
     }
@@ -286,8 +298,8 @@ export class Vessel {
     let I = 0;
     for (const p of this.parts) {
       if (p.destroyed) continue;
-      const w = p.def.size.w;
-      const h = p.def.size.h;
+      const w = p.width;
+      const h = p.height;
       const own = (p.mass * (w * w + h * h)) / 12;
       const dx = p.localX - this.com.x;
       const dy = p.localY - this.com.y;
@@ -321,14 +333,15 @@ export class Vessel {
     for (const p of this.parts) {
       if (p.destroyed) continue;
       const d = p.def.drag;
-      const hh = p.def.size.h / 2;
-      const hw = p.def.size.w / 2;
+      const hh = p.height / 2;
+      const hw = p.width / 2;
 
       // 압력중심 가중치 — 항력·양력을 만드는 면적
-      let a = d ? Math.abs(d.area) * Math.max(d.cd, 0.02) : 0.05;
+      let a = (d ? Math.abs(d.area) * Math.max(d.cd, 0.02) : 0.05) * p.areaFactor;
       if (p.def.fin) {
-        finArea += p.def.fin.area;
-        a += p.def.fin.area * 2.2;
+        const fa = p.def.fin.area * p.scaleW * p.scaleH;
+        finArea += fa;
+        a += fa * 2.2;
       }
       if (p.def.airbrake && p.airbrakeOpen) {
         extraDrag += p.def.airbrake.extraDrag;
@@ -539,6 +552,77 @@ export class Vessel {
       bus.emit(EVT.LAUNCH, { vessel: this });
     }
     return true;
+  }
+
+  /**
+   * 부품 목록이 바뀐 뒤(도킹·분리) 파생 값을 전부 다시 만든다.
+   */
+  rebuildAfterStructureChange() {
+    this.net = new ResourceNetwork(this.parts);
+    this.stages = buildStages(this.parts);
+    this.stageIndex = Math.min(this.stageIndex, this.stages.length);
+    this.recomputeMass();
+    this.updateAeroProperties();
+    this.net.rebuild();
+  }
+
+  /**
+   * 부품 일부를 떼어 새 기체를 만든다 (도킹 해제용).
+   * 위치·속도는 원본을 이어받고, 질량중심 차이만큼 위치를 보정한다.
+   */
+  static fromParts(parts, origin, opts = {}) {
+    if (!parts.length) return null;
+    const v = Object.create(Vessel.prototype);
+    // 최소 구성으로 초기화 — 생성자를 쓰지 않고 원본 상태를 복사한다
+    v.id = `v${_vesselId++}`;
+    v.name = opts.name ?? `${origin.name} 분리체`;
+    v.craftName = origin.craftName;
+    v.parts = parts;
+    v.rootUid = parts[0].uid;
+    v.body = origin.body;
+    v.pos = new Vec2(origin.pos.x, origin.pos.y);
+    v.vel = new Vec2(origin.vel.x, origin.vel.y);
+    v.angle = origin.angle;
+    v.angularVelocity = origin.angularVelocity;
+    v.throttle = 0;
+    v.targetThrottle = 0;
+    v.control = { pitch: 0, roll: 0, translateX: 0, translateY: 0 };
+    v.sas = false;
+    v.sasMode = 'off';
+    v.rcs = false;
+    v.gearDown = origin.gearDown;
+    v.lightsOn = origin.lightsOn;
+    v.brakes = false;
+    v.stagedParts = new Set();
+    v.stageIndex = 0;
+    v.mass = 0;
+    v.dryMass = 0;
+    v.com = new Vec2();
+    v.inertia = 1;
+    v.difficulty = origin.difficulty;
+    v.destroyed = false;
+    v.destroyReason = null;
+    v.merged = false;
+    v.docked = false;
+    v.clamped = false;
+    v.hasLaunched = true;
+    v.missionTime = origin.missionTime;
+    v.fuelBurned = 0;
+    // 원본과 같은 프로토타입 필드를 안전하게 채운다
+    for (const k of Object.keys(origin)) {
+      if (k in v) continue;
+      const val = origin[k];
+      if (val instanceof Vec2) v[k] = new Vec2(val.x, val.y);
+      else if (val && typeof val === 'object' && !Array.isArray(val)) v[k] = val;
+      else if (Array.isArray(val)) v[k] = [];
+      else v[k] = val;
+    }
+    v.net = new ResourceNetwork(v.parts);
+    v.stages = buildStages(v.parts);
+    v.recomputeMass();
+    v.updateAeroProperties();
+    v.net.rebuild();
+    return v;
   }
 
   /** 부품 분리 — 잔해로 만든다 */
@@ -902,7 +986,9 @@ export class Vessel {
       const target = cmd * maxDef;
       p.finDeflection += (target - p.finDeflection) * Math.min(1, dt * 9);
       const arm = p.localY - this.com.y;
-      const lift = q * fin.area * 2.2 * Math.sin(p.finDeflection) * (fin.authority ?? 1);
+      const lift =
+        q * fin.area * p.scaleW * p.scaleH * 2.2 *
+        Math.sin(p.finDeflection) * (fin.authority ?? 1);
       const torque = lift * arm;
       torqueRef.value += torque;
       total += Math.abs(torque);
@@ -1125,7 +1211,7 @@ export class Vessel {
       const s = Math.sin(this.angle - Math.PI / 2);
       const wx = dx * c - dy * s;
       const wy = dx * s + dy * c;
-      let along = wx * up.x + wy * up.y - p.def.size.h / 2;
+      let along = wx * up.x + wy * up.y - p.height / 2;
       if (p.def.leg && p.legExtended) along -= p.def.leg.length * 0.8;
       if (along < lowest) {
         lowest = along;
@@ -1247,6 +1333,86 @@ export class Vessel {
     }
   }
 
+  /**
+   * 로버 바퀴 — 지면에 닿아 있을 때만 구동력을 낸다.
+   *
+   * 실제 바퀴처럼 "접지면에서 지표에 평행한 힘" 을 만든다. 그래서
+   * 언덕을 오르면 느려지고, 브레이크를 밟으면 미끄러지며 멈춘다.
+   */
+  applyWheels(dt, force, torqueRef) {
+    const wheels = this.parts.filter(
+      (p) => !p.destroyed && p.def.wheel && p.legExtended
+    );
+    if (!wheels.length) {
+      this.wheelDrive = 0;
+      return;
+    }
+    if (!this.landed) {
+      // 공중에서는 회전만 서서히 멈춘다
+      for (const p of wheels) p.wheelSpin = (p.wheelSpin ?? 0) * 0.98;
+      this.wheelDrive = 0;
+      return;
+    }
+
+    // 지표에 평행한 단위벡터 (진행 방향 = 로컬 +x 쪽)
+    const up = this.up;
+    const fwd = new Vec2(up.y, -up.x);
+    const surfVel = this.surfaceVelocity();
+    const alongSpeed = surfVel.x * fwd.x + surfVel.y * fwd.y;
+
+    // 입력: 로버 주행은 피치(W/S) 축을 쓴다
+    let drive = clamp(this.wheelInput ?? -this.control.pitch, -1, 1);
+    if (Math.abs(drive) < 0.03) drive = 0;
+    const braking = this.brakes || drive === 0;
+
+    let totalForce = 0;
+    let powerNeed = 0;
+    for (const p of wheels) {
+      const wdef = p.def.wheel;
+      const scale = p.areaFactor ?? 1;
+      const maxSpeed = wdef.maxSpeed;
+      // 속도가 최대에 가까울수록 토크가 줄어든다 (모터 특성)
+      const speedFrac = clamp01(Math.abs(alongSpeed) / maxSpeed);
+      const avail = wdef.motorTorque * scale * (1 - speedFrac * speedFrac);
+      if (drive !== 0) {
+        // 진행 방향과 반대로 밟으면 강한 제동
+        const opposing = alongSpeed * drive < -0.5;
+        totalForce += (drive * avail * (opposing ? 1.7 : 1)) / Math.max(wdef.radius, 0.1);
+        powerNeed += wdef.powerDraw * scale * Math.abs(drive);
+      } else if (braking) {
+        const brakeF = (wdef.brakeTorque * scale) / Math.max(wdef.radius, 0.1);
+        const stop = -Math.sign(alongSpeed) * Math.min(
+          brakeF,
+          (Math.abs(alongSpeed) * this.mass) / Math.max(dt, 1e-4)
+        );
+        totalForce += stop;
+      }
+      // 바퀴 회전 각속도 — 시각용
+      p.wheelSpin = (p.wheelSpin ?? 0) + (alongSpeed / Math.max(wdef.radius, 0.1)) * dt;
+      p.wheelDrive = Math.abs(drive);
+    }
+
+    // 전력 소모
+    if (powerNeed > 0) {
+      const got = this.net.draw('ec', powerNeed * dt);
+      if (got < powerNeed * dt * 0.5) {
+        totalForce *= 0.15;
+        for (const p of wheels) p.wheelDrive = 0;
+      }
+    }
+
+    // 최대 속도 제한
+    const vMax = Math.max(...wheels.map((p) => p.def.wheel.maxSpeed));
+    if (Math.abs(alongSpeed) > vMax && Math.sign(totalForce) === Math.sign(alongSpeed)) {
+      totalForce = 0;
+    }
+
+    force.x += fwd.x * totalForce;
+    force.y += fwd.y * totalForce;
+    this.wheelDrive = drive;
+    this.groundSpeed = alongSpeed;
+  }
+
   crash(speed, water = false) {
     this.crashSpeed = speed;
     bus.emit(EVT.CRASH, {
@@ -1290,6 +1456,7 @@ export class Vessel {
 
     /* 1. 중력 */
     const g = this.body.gravityAt(this.pos, new Vec2());
+    if (this.cheats?.noGravity) g.zero();
     force.x += g.x * this.mass;
     force.y += g.y * this.mass;
 
@@ -1300,7 +1467,7 @@ export class Vessel {
     this.applyRcs(force, torqueRef, dt);
 
     /* 4. 공력 */
-    if (atmo.exists && alt < atmo.height) {
+    if (atmo.exists && alt < atmo.height && !this.cheats?.noDrag) {
       computeAero(
         {
           pos: this.pos,
@@ -1368,6 +1535,9 @@ export class Vessel {
     /* 8. 지면 */
     this.handleGroundContact(dt, t, force, torqueRef);
     if (this.destroyed) return;
+
+    /* 8b. 로버 주행 */
+    this.applyWheels(dt, force, torqueRef);
 
     /* 9. 적분 */
     const ax = force.x / this.mass;

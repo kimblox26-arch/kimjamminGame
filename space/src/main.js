@@ -332,6 +332,8 @@ function wireMissions(game, dom) {
 
 function wireFlight(game, dom) {
   $('flight-map')?.addEventListener('click', () => game.toggleMap());
+  $('flight-undock')?.addEventListener('click', () => game.undockActive());
+  $('flight-switch')?.addEventListener('click', () => game.switchVessel(1));
   $('flight-recover')?.addEventListener('click', () => game.recover());
   $('flight-abort')?.addEventListener('click', () => {
     if (confirm('임무를 중단하고 우주센터로 돌아갈까요?')) {

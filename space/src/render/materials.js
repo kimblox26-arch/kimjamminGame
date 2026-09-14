@@ -10,6 +10,7 @@
 // 모든 함수는 "1 단위 = 1 미터, +y 가 위" 인 부품 로컬 좌표계에서 동작한다.
 
 import { clamp, clamp01, lerp, mixHex, withAlpha, shade, TAU } from '../core/math.js';
+import { paintTexture } from './textures.js';
 
 /* ──────────────────────────────────────────────────────────────
  * 노이즈 패턴 — 한 번만 만들어 재사용
@@ -249,16 +250,105 @@ export function rivetRow(ctx, w, y, count, size, lightX = -0.55) {
  * 미세 표면 결 — 노이즈 패턴을 아주 옅게 덮는다.
  * 순색 면이 사라져서 "플라스틱 느낌" 이 줄어든다.
  */
-export function surfaceGrain(ctx, w, h, amount = 0.06, scale = 0.02) {
-  const pat = noisePattern(ctx);
-  if (!pat) return;
+/**
+ * 현재 그리는 부품 정보. drawPart 가 부품마다 갱신하면 surfaceGrain 이
+ * 재질 종류와 고유 시드를 알아서 고른다 (아트 함수 44개를 고치지 않아도 된다).
+ */
+let _surfCtx = { material: 'brushed', seed: 0, wear: 1 };
+export function setSurfaceContext(def, state) {
+  const o = def?.artOpts ?? {};
+  let material = o.material;
+  if (!material) {
+    const art = def?.art ?? '';
+    if (art === 'solar' || art === 'probe' || art === 'battery') material = 'foil';
+    else if (art === 'fairing' || art === 'nosecone' || art === 'heatshield') material = 'paint';
+    else if (art === 'wing' || art === 'fin' || art === 'strut') material = 'carbon';
+    else material = 'brushed';
+  }
+  // 부품 uid 로 시드를 만들어 같은 종류라도 얼룩 위치가 다르게
+  let seed = 0;
+  const id = state?.uid ?? def?.id ?? '';
+  for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) % 997;
+  _surfCtx = {
+    material,
+    seed: seed / 997,
+    wear: clamp01(0.35 + (state?.soot ?? 0) * 0.9 + (state?.wear ?? 0)),
+  };
+}
+
+export function surfaceGrain(ctx, w, h, amount = 0.06, scale = 0.02, opts = {}) {
+  if (amount <= 0.004) return;
+  // 호출부는 "약간" 을 뜻하는 작은 값을 넘긴다. 실제 표면 정보가
+  // 눈에 보이려면 그보다 강해야 한다.
+  const a = clamp01(amount * 2.8);
+  opts = { ..._surfCtx, ...opts };
+  // 1) 재질 고유의 결 — 압연 금속 / 도장 오렌지필 / 탄소 위브 / 금박 주름
+  const kind = opts.material ?? 'brushed';
+  const grain = {
+    brushed: { tex: 'brushed', alpha: 1.9, scale: 0.0042, rotate: 0 },
+    paint: { tex: 'paint', alpha: 1.4, scale: 0.0038, rotate: 0 },
+    carbon: { tex: 'carbon', alpha: 1.8, scale: 0.0022, rotate: 0.4 },
+    foil: { tex: 'foil', alpha: 2.2, scale: 0.006, rotate: 0.2 },
+    rough: { tex: 'regolith', alpha: 1.7, scale: 0.005, rotate: 0 },
+  }[kind] ?? { tex: 'brushed', alpha: 1.9, scale: 0.0042, rotate: 0 };
+
+  paintTexture(ctx, grain.tex, w, h, {
+    alpha: a * grain.alpha,
+    scale: grain.scale * (opts.grainScale ?? 1),
+    rotate: grain.rotate,
+    mode: 'overlay',
+  });
+
+  // 2) 때·얼룩 — 큰 스케일이라 같은 부품이라도 면마다 달라 보인다
+  paintTexture(ctx, 'grime', w, h, {
+    alpha: a * (opts.grime ?? 1.1),
+    scale: Math.max(w, h) * 0.012,
+    mode: 'overlay',
+    offsetX: (opts.seed ?? 0) * 0.37,
+    offsetY: (opts.seed ?? 0) * 0.61,
+  });
+
+  // 3) 긁힘 — 사용 흔적
+  if ((opts.wear ?? 1) > 0.01) {
+    paintTexture(ctx, 'scratch', w, h, {
+      alpha: a * 1.0 * (opts.wear ?? 1),
+      scale: 0.0035,
+      mode: 'overlay',
+    });
+  }
+}
+
+/**
+ * 모서리 마모 — 실제 기체는 각진 모서리의 도장이 벗겨져 금속이 드러난다.
+ */
+export function edgeWear(ctx, w, h, amount = 0.3, color = '#cfd6dd') {
+  if (amount <= 0.01) return;
+  const t = Math.min(w, h) * 0.06;
   ctx.save();
-  ctx.globalAlpha = amount;
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.translate(-w / 2, -h / 2);
-  ctx.scale(scale, scale);
-  ctx.fillStyle = pat;
-  ctx.fillRect(0, 0, w / scale, h / scale);
+  ctx.globalAlpha = clamp01(amount) * 0.5;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = t * 0.5;
+  ctx.setLineDash([t * 2.5, t * 5.5, t * 1.2, t * 7]);
+  ctx.strokeRect(-w / 2 + t * 0.25, -h / 2 + t * 0.25, w - t * 0.5, h - t * 0.5);
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+/**
+ * 접촉 그림자 — 부품이 맞닿은 곳은 빛이 들어가지 못해 어둡다.
+ * 위/아래 양쪽으로 좁고 진한 그라디언트를 깐다.
+ */
+export function contactShadow(ctx, w, h, opts = {}) {
+  const depth = opts.depth ?? Math.min(h * 0.12, w * 0.22);
+  const strength = opts.strength ?? 0.3;
+  if (depth <= 0) return;
+  ctx.save();
+  const g = ctx.createLinearGradient(0, h / 2, 0, h / 2 - depth);
+  g.addColorStop(0, `rgba(0,0,0,${strength})`);
+  g.addColorStop(0.5, `rgba(0,0,0,${strength * 0.28})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(-w / 2, h / 2 - depth, w, depth);
   ctx.restore();
 }
 

@@ -40,6 +40,11 @@ export const DEFAULT_BINDINGS = {
   navTarget: ['Digit5'],
   navSurface: ['Digit6'],
   timeSkip: ['Backslash'],
+  undock: ['KeyO'],
+  fuelTransfer: ['KeyF'],
+  brakes: ['KeyB'],
+  vesselPrev: ['BracketLeft'],
+  vesselNext: ['BracketRight'],
   help: ['F1'],
 };
 

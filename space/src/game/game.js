@@ -14,6 +14,16 @@ import {
 } from '../core/math.js';
 import { GameLoop, Scheduler } from '../core/loop.js';
 import { bus, EVT, StateMachine } from '../core/events.js';
+import { Cheats, CHEAT_DEFS, applyFlightCheats } from './cheats.js';
+import {
+  updateDocking,
+  dockingInfo,
+  undock,
+  transferBetweenParts,
+  freePorts,
+} from '../flight/docking.js';
+import { craftToCode, codeToCraft, copyToClipboard } from '../build/blueprint.js';
+import { partResizeLimits } from '../build/partdefs.js';
 import { InputManager } from '../core/input.js';
 import {
   loadSettings,
@@ -88,6 +98,10 @@ export class Game {
       onChange: () => this.refreshBuildPanels(),
     });
 
+    /* 치트 / 샌드박스 */
+    this.cheats = Cheats.fromJSON(this.settings.cheats ?? {});
+    this.builder.allowClipping = this.cheats.get('partClipping');
+
     /* 비행 상태 */
     this.vessel = null;
     this.autopilot = null;
@@ -155,6 +169,7 @@ export class Game {
           this.builder.renderCategories(this.dom.buildCategories);
           this.builder.paletteEl = this.dom.buildPalette;
           this.builder.renderPalette(this.dom.buildPalette);
+          this.setupBuilderTools();
           this.refreshBuildPanels();
         },
       })
@@ -174,6 +189,7 @@ export class Game {
         enter: () => {
           setScreen('screen-settings');
           this.refreshSettingsPanel();
+          this.refreshCheatPanel();
         },
       })
       .add('results', {
@@ -582,7 +598,26 @@ export class Game {
     // 오토파일럿
     if (this.autopilot?.enabled) this.autopilot.update(dt);
 
+    // 치트 효과 (무한 연료 · 파괴 불가 등)
+    v.cheats = this.cheats.state;
+    applyFlightCheats(v, this.cheats);
+
     v.update(dt, this.universeTime, this.system);
+
+    // 근처의 다른 기체들도 함께 시뮬레이션한다
+    for (const other of this.vessels) {
+      if (other === v || other.destroyed || other.merged) continue;
+      other.universeTime = this.universeTime;
+      other.update(dt, this.universeTime, this.system);
+    }
+
+    // 도킹 검사 — 흡수된 기체는 목록에서 뺀다
+    const absorbed = updateDocking(v, this.vessels);
+    if (absorbed) {
+      this.vessels = this.vessels.filter((x) => x !== absorbed);
+      if (this.target === absorbed) this.target = null;
+      bus.emit(EVT.DOCKED, { vessel: v, other: absorbed });
+    }
 
     // 기동 노드 실행 추적
     this.planner.updateExecution(v, dt);
@@ -713,6 +748,26 @@ export class Game {
     if (input.actionPressed('navTarget')) v.setSasMode('target');
     if (input.actionPressed('navSurface')) v.setSasMode('surfaceRetrograde');
 
+    // 로버 주행 — 바퀴가 달려 있고 접지 중이면 W/S 가 주행 입력이 된다
+    const hasWheels = v.parts.some(
+      (p) => !p.destroyed && p.def.wheel && p.legExtended
+    );
+    v.wheelInput = hasWheels && v.landed ? -fi.pitch : null;
+    if (input.actionPressed('brakes')) {
+      v.brakes = !v.brakes;
+      bus.emit(EVT.TOAST, { text: `브레이크 ${v.brakes ? '켜짐' : '꺼짐'}` });
+    }
+
+    // 도킹 해제 (O)
+    if (input.actionPressed('undock')) this.undockActive();
+
+    // 기체 전환 ( [ / ] )
+    if (input.actionPressed('vesselPrev')) this.switchVessel(-1);
+    if (input.actionPressed('vesselNext')) this.switchVessel(1);
+
+    // 연료 이송 (F) — 도킹된 상대와 균등하게 맞춘다
+    if (input.actionPressed('fuelTransfer')) this.balanceDockedFuel();
+
     // 타임워프
     if (input.wasPressed('Period')) this.setWarp(this.warpIndex + 1);
     if (input.wasPressed('Comma')) this.setWarp(this.warpIndex - 1);
@@ -823,7 +878,22 @@ export class Game {
 
   updateFlightDom() {
     const v = this.vessel;
-    if (!v || !this.dom.missionPanel) return;
+    if (!v) return;
+
+    // 도킹 해제 · 기체 전환 버튼은 필요할 때만 보인다
+    const undockBtn = document.getElementById('flight-undock');
+    if (undockBtn) {
+      undockBtn.hidden = !v.parts.some(
+        (p) => !p.destroyed && p.def.dock && p.dockedTo
+      );
+    }
+    const switchBtn = document.getElementById('flight-switch');
+    if (switchBtn) {
+      switchBtn.hidden =
+        this.vessels.filter((x) => !x.destroyed && !x.merged).length < 2;
+    }
+
+    if (!this.dom.missionPanel) return;
     if (!this.missions.active || this.mapOpen) {
       this.dom.missionPanel.hidden = true;
       return;
@@ -937,6 +1007,135 @@ export class Game {
   }
 
   /** 기동 노드 추가 */
+  /* ── 도킹 · 기체 전환 · 자원 이송 ────────────────────── */
+
+  /** 현재 기체에서 도킹을 푼다 */
+  undockActive() {
+    const v = this.vessel;
+    if (!v) return false;
+    const port = v.parts.find((p) => !p.destroyed && p.def.dock && p.dockedTo);
+    if (!port) {
+      bus.emit(EVT.TOAST, { text: '도킹된 포트가 없습니다', kind: 'warn' });
+      return false;
+    }
+    const child = undock(v, port, (parts, origin) =>
+      Vessel.fromParts(parts, origin)
+    );
+    if (!child) {
+      bus.emit(EVT.TOAST, { text: '분리할 수 없습니다', kind: 'warn' });
+      return false;
+    }
+    child.cheats = this.cheats.state;
+    this.vessels.push(child);
+    bus.emit(EVT.UNDOCKED, { vessel: v, child });
+    this.log(`도킹 해제 — ${child.name}`);
+    return true;
+  }
+
+  /**
+   * 다른 기체로 조종을 넘긴다.
+   * @param {number} dir +1 다음 / -1 이전
+   */
+  switchVessel(dir = 1) {
+    const alive = this.vessels.filter((x) => !x.destroyed && !x.merged);
+    if (alive.length < 2) {
+      bus.emit(EVT.TOAST, { text: '전환할 다른 기체가 없습니다', kind: 'warn' });
+      return false;
+    }
+    const idx = alive.indexOf(this.vessel);
+    const next = alive[(idx + dir + alive.length) % alive.length];
+    if (next === this.vessel) return false;
+
+    this.vessel = next;
+    next.cheats = this.cheats.state;
+    if (this.autopilot) {
+      this.autopilot.setMode('off');
+      this.autopilot.vessel = next;
+    }
+    this.planner.clear?.();
+    this.camera.follow?.(next);
+    bus.emit(EVT.VESSEL_SWITCH, { vessel: next });
+    bus.emit(EVT.TOAST, { text: `조종 전환 — ${next.name}`, kind: 'good' });
+    this.log(`조종 전환: ${next.name}`);
+    this.updateFlightDom();
+    return true;
+  }
+
+  /**
+   * 도킹으로 붙은 기체 사이에서 연료를 균등하게 맞춘다.
+   * 실제 SFS 의 "연료 이송" 과 같은 목적이지만, 조작은 한 번으로 끝난다.
+   */
+  balanceDockedFuel() {
+    const v = this.vessel;
+    if (!v) return 0;
+    const ports = v.parts.filter((p) => !p.destroyed && p.def.dock && p.dockedTo);
+    if (!ports.length) {
+      bus.emit(EVT.TOAST, { text: '도킹 상태가 아닙니다', kind: 'warn' });
+      return 0;
+    }
+    // 도킹으로 넘어온 부품들과 원래 부품들을 나눈다
+    const joint = ports.find((p) => p.dockJoint?.movedUids?.length);
+    if (!joint) {
+      bus.emit(EVT.TOAST, { text: '이송할 대상이 없습니다', kind: 'warn' });
+      return 0;
+    }
+    const movedSet = new Set(joint.dockJoint.movedUids);
+    const groupA = v.parts.filter((p) => !p.destroyed && !movedSet.has(p.uid));
+    const groupB = v.parts.filter((p) => !p.destroyed && movedSet.has(p.uid));
+
+    let total = 0;
+    for (const key of ['lf', 'ox', 'mp']) {
+      const fracA = this._groupFraction(groupA, key);
+      const fracB = this._groupFraction(groupB, key);
+      if (fracA === null || fracB === null) continue;
+      if (Math.abs(fracA - fracB) < 0.01) continue;
+      // 많은 쪽에서 적은 쪽으로, 비율이 같아질 만큼만
+      const [from, to] = fracA > fracB ? [groupA, groupB] : [groupB, groupA];
+      const capFrom = this._groupCapacity(from, key);
+      const capTo = this._groupCapacity(to, key);
+      const have = this._groupAmount(from, key) + this._groupAmount(to, key);
+      const target = (have * capTo) / Math.max(capFrom + capTo, 1e-9);
+      const move = Math.max(0, target - this._groupAmount(to, key));
+      total += transferBetweenParts(from, to, key, move);
+    }
+    if (total > 0) {
+      v.recomputeMass();
+      v.net.rebuild();
+      bus.emit(EVT.RESOURCE_TRANSFER, { vessel: v, amount: total });
+      bus.emit(EVT.TOAST, {
+        text: `연료 이송 ${total.toFixed(0)} 단위`,
+        kind: 'good',
+      });
+    } else {
+      bus.emit(EVT.TOAST, { text: '이미 균등합니다' });
+    }
+    return total;
+  }
+
+  _groupAmount(parts, key) {
+    let a = 0;
+    for (const p of parts) a += p.resources[key] ?? 0;
+    return a;
+  }
+
+  _groupCapacity(parts, key) {
+    let c = 0;
+    for (const p of parts) c += (p.def.fuel?.[key] ?? 0) * (p.sizeFactor ?? 1);
+    return c;
+  }
+
+  _groupFraction(parts, key) {
+    const cap = this._groupCapacity(parts, key);
+    if (cap <= 0) return null;
+    return this._groupAmount(parts, key) / cap;
+  }
+
+  /** 근처 도킹 대상 정보 (HUD 용) */
+  nearbyDockingInfo() {
+    if (!this.vessel) return null;
+    return dockingInfo(this.vessel, this.vessels);
+  }
+
   addManeuverNode(offsetSeconds = null) {
     const v = this.vessel;
     if (!v || !v.orbit) return null;
@@ -1083,6 +1282,7 @@ export class Game {
   refreshBuildPanels() {
     if (this.dom.buildStats) this.builder.renderStats(this.dom.buildStats);
     if (this.dom.buildName) this.dom.buildName.value = this.builder.craft.name;
+    this._syncResizePanel?.();
   }
 
   refreshHangar() {
@@ -1228,6 +1428,166 @@ export class Game {
     set('set-heat', s.gameplay.reentryHeat);
     set('set-drag', s.gameplay.atmosphericDrag);
     set('set-sensitivity', s.controls.controlSensitivity);
+  }
+
+  /* ── 치트 패널 ────────────────────────────────────────── */
+
+  refreshCheatPanel() {
+    const host = document.getElementById('cheat-list');
+    if (!host) return;
+    const resetBtn = document.getElementById('cheat-reset');
+    if (resetBtn && !resetBtn._wired) {
+      resetBtn._wired = true;
+      resetBtn.addEventListener('click', () => {
+        this.cheats.reset();
+        this.settings.cheats = this.cheats.toJSON();
+        saveSettings(this.settings);
+        this.builder.allowClipping = false;
+        if (this.vessel) this.vessel.cheats = this.cheats.state;
+        this.refreshCheatPanel();
+      });
+    }
+    host.innerHTML = '';
+    for (const def of CHEAT_DEFS) {
+      const row = document.createElement('label');
+      row.className = 'cheat-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = this.cheats.get(def.key);
+      cb.addEventListener('change', () => {
+        this.cheats.set(def.key, cb.checked);
+        this.settings.cheats = this.cheats.toJSON();
+        saveSettings(this.settings);
+        this.builder.allowClipping = this.cheats.get('partClipping');
+        if (this.vessel) this.vessel.cheats = this.cheats.state;
+        this.refreshBuildPanels();
+      });
+      const txt = document.createElement('span');
+      txt.innerHTML = `<b>${def.name}</b><small>${def.desc}</small>`;
+      row.append(cb, txt);
+      host.appendChild(row);
+    }
+  }
+
+  /* ── 설계실: 도색 · 크기 · 청사진 ────────────────────── */
+
+  setupBuilderTools() {
+    if (this._builderToolsReady) {
+      this._syncResizePanel?.();
+      return;
+    }
+    this._builderToolsReady = true;
+    const $ = (id) => document.getElementById(id);
+    const PAINT = [
+      '#e8ecef', '#c9ced4', '#8d959d', '#3b4148', '#1b1e22',
+      '#c0392b', '#e07a3a', '#e8c341', '#3f9e54', '#2f7fc4',
+      '#6b4fb0', '#b04f8e', '#8a6a3a', '#d9b154',
+    ];
+
+    // 도색 팔레트
+    const sw = $('paint-swatches');
+    if (sw && !sw.childElementCount) {
+      for (const color of PAINT) {
+        const b = document.createElement('button');
+        b.className = 'swatch';
+        b.style.background = color;
+        b.title = color;
+        b.addEventListener('click', () => {
+          if (this.builder.selectedPart) this.builder.paintSelected(color);
+          else this.builder.paintAll(color);
+        });
+        sw.appendChild(b);
+      }
+    }
+    $('build-paint')?.addEventListener('click', () => {
+      const panel = $('paint-panel');
+      if (panel) panel.hidden = !panel.hidden;
+    });
+    $('paint-custom')?.addEventListener('input', (e) => {
+      const c = e.target.value;
+      if (this.builder.selectedPart) this.builder.paintSelected(c);
+    });
+    $('paint-apply-all')?.addEventListener('click', () => {
+      const c = $('paint-custom')?.value ?? '#d94a3d';
+      this.builder.paintAll(c);
+    });
+    $('paint-clear')?.addEventListener('click', () => {
+      const b = this.builder;
+      b.pushHistory();
+      if (b.selectedPart) b.selectedPart.tint = null;
+      else for (const p of b.craft.parts) p.tint = null;
+      b.markChanged();
+    });
+
+    // 크기 슬라이더
+    const syncResize = () => {
+      const panel = $('resize-panel');
+      const p = this.builder.selectedPart;
+      const lim = p ? partResizeLimits(p.def) : null;
+      if (!panel) return;
+      panel.hidden = !lim;
+      if (!lim) return;
+      const w = $('resize-w');
+      const h = $('resize-h');
+      if (w) {
+        w.min = lim.w[0];
+        w.max = lim.w[1];
+        w.value = p.scaleW;
+      }
+      if (h) {
+        h.min = lim.h[0];
+        h.max = lim.h[1];
+        h.value = p.scaleH;
+        h.disabled = !!lim.uniform;
+      }
+      const wv = $('resize-w-val');
+      const hv = $('resize-h-val');
+      if (wv) wv.textContent = `${p.scaleW.toFixed(2)}×`;
+      if (hv) hv.textContent = `${p.scaleH.toFixed(2)}×`;
+    };
+    this._syncResizePanel = syncResize;
+
+    const onSlide = () => {
+      const p = this.builder.selectedPart;
+      if (!p) return;
+      const w = parseFloat($('resize-w')?.value ?? '1');
+      const h = parseFloat($('resize-h')?.value ?? '1');
+      this.builder._applyScale(p, w, h);
+      this.builder.markChanged(false);
+      syncResize();
+    };
+    $('resize-w')?.addEventListener('input', onSlide);
+    $('resize-h')?.addEventListener('input', onSlide);
+    $('resize-reset')?.addEventListener('click', () => {
+      const p = this.builder.selectedPart;
+      if (!p) return;
+      this.builder.pushHistory();
+      this.builder._applyScale(p, 1, 1);
+      this.builder.markChanged();
+      syncResize();
+    });
+
+    // 청사진 공유 코드
+    $('build-blueprint')?.addEventListener('click', async () => {
+      const code = craftToCode(this.builder.craft);
+      const ok = await copyToClipboard(code);
+      const pasted = window.prompt(
+        ok
+          ? '청사진 코드를 클립보드에 복사했습니다.\n다른 코드를 붙여 넣으면 불러옵니다.'
+          : '아래 코드를 복사해 두세요. 다른 코드를 붙여 넣으면 불러옵니다.',
+        code
+      );
+      if (pasted && pasted !== code) {
+        try {
+          const craft = codeToCraft(pasted);
+          this.builder.loadCraft(craft);
+          this.refreshBuildPanels();
+          bus.emit(EVT.TOAST, { text: `청사진 불러옴 — ${craft.name}`, kind: 'good' });
+        } catch (err) {
+          bus.emit(EVT.TOAST, { text: `청사진 오류: ${err.message}`, kind: 'bad' });
+        }
+      }
+    });
   }
 
   saveSettingsFromPanel() {

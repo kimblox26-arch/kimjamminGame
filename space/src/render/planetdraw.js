@@ -19,6 +19,7 @@ import {
   hash01,
   Vec2,
 } from '../core/math.js';
+import { paintTexture } from './textures.js';
 
 /* ──────────────────────────────────────────────────────────────
  * 원거리 — 천체 원반
@@ -691,6 +692,43 @@ export function drawTerrain(ctx, camera, body, worldPos, opts = {}) {
     ctx.moveTo(sp.x, sp.y);
     ctx.lineTo(sp2.x, sp2.y);
     ctx.stroke();
+  }
+
+  /* 2a. 지표 텍스처 — 흙/암반 결. 지형 실루엣 안쪽에만 깔린다 */
+  if (!opts.lowDetail && camera.zoom > 0.01) {
+    ctx.save();
+    ctx.beginPath();
+    for (let i = 0; i <= segments; i++) {
+      const p = pts[i];
+      camera.worldToScreen(
+        worldPos.x + Math.cos(p.theta) * p.r,
+        worldPos.y + Math.sin(p.theta) * p.r,
+        sp
+      );
+      if (i === 0) ctx.moveTo(sp.x, sp.y);
+      else ctx.lineTo(sp.x, sp.y);
+    }
+    ctx.lineTo(camera.width + 40, camera.height + 40);
+    ctx.lineTo(-40, camera.height + 40);
+    ctx.closePath();
+    ctx.clip();
+    // 텍스처 스케일을 화면 기준으로 잡아 어느 고도에서도 결이 보인다
+    const tScale = clamp(camera.width / 900, 0.35, 2.2);
+    paintTexture(ctx, 'regolith', camera.width * 2, camera.height * 2, {
+      alpha: 0.3,
+      scale: 1.6 * tScale,
+      mode: 'overlay',
+      offsetX: camera.width / 2,
+      offsetY: camera.height / 2,
+    });
+    paintTexture(ctx, 'grime', camera.width * 2, camera.height * 2, {
+      alpha: 0.17,
+      scale: 6 * tScale,
+      mode: 'overlay',
+      offsetX: camera.width / 2,
+      offsetY: camera.height / 2,
+    });
+    ctx.restore();
   }
 
   /* 2b. 지표 얼룩 — 흙/식생 반점. 회전과 무관한 해시라 화면에서 헤엄치지 않는다 */

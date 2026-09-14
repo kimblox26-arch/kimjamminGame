@@ -1182,3 +1182,89 @@ input[type='range'] {
     font-size: 0.72rem;
   }
 }
+
+/* ═══════════════ 치트 패널 ═══════════════ */
+.cheat-box .hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted, #8b97a6);
+}
+.cheat-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 6px 14px;
+  margin-bottom: 10px;
+}
+.cheat-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(120, 160, 200, 0.14);
+  border-radius: 6px;
+  background: rgba(12, 18, 26, 0.5);
+  cursor: pointer;
+}
+.cheat-row:hover { border-color: rgba(120, 180, 240, 0.35); }
+.cheat-row input { margin-top: 3px; flex: none; }
+.cheat-row span { display: flex; flex-direction: column; line-height: 1.35; }
+.cheat-row b { font-size: 13px; font-weight: 600; }
+.cheat-row small { font-size: 11px; color: var(--muted, #8b97a6); }
+
+/* ═══════════════ 도색 · 크기 패널 ═══════════════ */
+.paint-panel,
+.resize-panel {
+  position: absolute;
+  top: 54px;
+  left: 12px;
+  z-index: 6;
+  padding: 10px 12px;
+  border: 1px solid rgba(120, 160, 200, 0.22);
+  border-radius: 8px;
+  background: rgba(10, 15, 22, 0.94);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+}
+.resize-panel { top: auto; bottom: 56px; left: 12px; min-width: 220px; }
+.resize-title { font-size: 12px; color: var(--muted, #8b97a6); margin-bottom: 6px; }
+.resize-panel label {
+  display: grid;
+  grid-template-columns: 38px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.resize-panel span { font-family: ui-monospace, monospace; font-size: 11px; text-align: right; }
+.resize-panel button { width: 100%; margin-top: 4px; }
+
+.paint-row {
+  display: grid;
+  grid-template-columns: repeat(7, 26px);
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.swatch:hover { transform: scale(1.12); border-color: #fff; }
+.paint-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.paint-actions label { display: flex; align-items: center; gap: 6px; }
+.paint-actions input[type='color'] {
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}

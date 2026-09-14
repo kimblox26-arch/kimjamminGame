@@ -224,6 +224,13 @@ export const EVT = {
 
   // UI
   TOAST: 'ui:toast',
+
+  // 치트 / 도킹 / 기체 전환
+  CHEAT_CHANGED: 'cheat:changed',
+  DOCKED: 'flight:docked',
+  UNDOCKED: 'flight:undocked',
+  VESSEL_SWITCH: 'flight:vesselSwitch',
+  RESOURCE_TRANSFER: 'flight:transfer',
   ALERT: 'ui:alert',
   CONFIRM: 'ui:confirm',
   LOG: 'ui:log',

@@ -147,6 +147,17 @@ export const DEFAULT_SETTINGS = {
     unitSystem: 'metric',
     language: 'ko',
   },
+  cheats: {
+    infiniteFuel: false,
+    infinitePower: false,
+    noGravity: false,
+    noDrag: false,
+    unbreakable: false,
+    partClipping: false,
+    unlockAllParts: false,
+    freeBuild: false,
+    everUsed: false,
+  },
   controls: {
     bindings: null, // null 이면 기본값
     invertPitch: false,

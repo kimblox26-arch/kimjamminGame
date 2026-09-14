@@ -411,6 +411,49 @@ export class FlightRenderer {
 
   /* ── 기체 ─────────────────────────────────────────────── */
 
+  /**
+   * 지면 그림자 — 태양 방향 반대쪽으로 기체 실루엣을 눕혀 깐다.
+   * 착륙/발사 때 기체가 지면에 "붙어 있다" 는 느낌을 준다.
+   */
+  _drawGroundShadow(ctx, camera, vessel, sp, lit) {
+    const alt = vessel.altitude ?? 1e9;
+    const body = vessel.body;
+    if (!body || alt > 400) return;
+    const len = vessel.bounds?.length ?? 10;
+    const wid = vessel.bounds?.width ?? 3;
+    const zoom = camera.zoom;
+    if (len * zoom < 6) return;
+
+    // 고도가 높을수록 흐리고 멀어진다
+    const near = clamp01(1 - alt / 400);
+    const alpha = 0.42 * near * near * clamp01(lit.sunFactor) *
+      clamp01(Math.sin(lit.sunElevation ?? 1) * 2);
+    if (alpha < 0.015) return;
+
+    // 태양의 화면상 방향 (그림자는 반대쪽으로 눕는다)
+    const sunElev = clamp(lit.sunElevation ?? 1, 0.08, Math.PI / 2);
+    const stretch = clamp(1 / Math.tan(sunElev), 0.4, 6);
+    const dir = lit.sunScreenX > camera.width / 2 ? -1 : 1;
+
+    // 지면 y — 기체 바로 아래
+    const groundY = sp.y + (alt + len * 0.5) * zoom;
+    const shW = wid * zoom * 0.55;
+    const shL = len * zoom * stretch * 0.5;
+
+    ctx.save();
+    ctx.translate(sp.x + dir * shL * 0.45, groundY);
+    ctx.scale(1, 0.26);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(shL, shW));
+    g.addColorStop(0, `rgba(0,0,0,${alpha})`);
+    g.addColorStop(0.55, `rgba(0,0,0,${alpha * 0.5})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, Math.max(shL, shW * 1.6), shW * 1.8, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
   renderVessel(ctx, camera, vessel, bodyWorld, lit) {
     const wx = bodyWorld.x + vessel.pos.x;
     const wy = bodyWorld.y + vessel.pos.y;
@@ -431,6 +474,9 @@ export class FlightRenderer {
       ctx.stroke();
       return;
     }
+
+    // 지면에 드리우는 그림자 — 지표 가까이 있을 때만
+    this._drawGroundShadow(ctx, camera, vessel, sp, lit);
 
     // 기체 로컬 좌표계에서의 광원 방향
     const ang = -(vessel.angle - Math.PI / 2);
@@ -493,6 +539,10 @@ export class FlightRenderer {
           y: ly,
           ambient: lit.ambient,
         },
+        uid: part.uid,
+        scaleW: part.scaleW ?? 1,
+        scaleH: part.scaleH ?? 1,
+        tint: part.tint ?? null,
         detail: clamp01(partPx / 45),
         fuelFraction: this._partFuelFraction(part),
         heat,

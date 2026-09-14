@@ -56,19 +56,37 @@ export class CraftPart {
     this.label = opts.label ?? null;
     /** 심볼 대칭 그룹 */
     this.symmetryGroup = opts.symmetryGroup ?? null;
+    /** 크기 조절 — 1 이 기본. 탱크·구조물은 자유롭게 늘릴 수 있다 */
+    this.scaleW = opts.scaleW ?? 1;
+    this.scaleH = opts.scaleH ?? 1;
+    /** 사용자 도색 (hex) */
+    this.tint = opts.tint ?? null;
   }
 
   get width() {
-    return this.def.size.w;
+    return this.def.size.w * this.scaleW;
   }
 
   get height() {
-    return this.def.size.h;
+    return this.def.size.h * this.scaleH;
+  }
+
+  /**
+   * 부피 배율. 2D 로 그리지만 실제로는 원통이므로 지름의 제곱에 비례한다.
+   * 질량·연료용량·비용이 전부 이 값을 따른다.
+   */
+  get sizeFactor() {
+    return this.scaleW * this.scaleW * this.scaleH;
+  }
+
+  /** 추력·항력 배율 — 노즐/단면적은 지름의 제곱 */
+  get areaFactor() {
+    return this.scaleW * this.scaleW;
   }
 
   /** 건조질량 */
   get dryMass() {
-    return this.def.mass;
+    return this.def.mass * this.sizeFactor;
   }
 
   /** 현재 자원 질량 */
@@ -88,7 +106,7 @@ export class CraftPart {
 
   /** 최대 자원량 */
   maxResource(key) {
-    return this.def.fuel?.[key] ?? 0;
+    return (this.def.fuel?.[key] ?? 0) * this.sizeFactor;
   }
 
   /** 자원 비율 */
@@ -103,19 +121,44 @@ export class CraftPart {
     for (const k in this.def.fuel) {
       this.resources[k] = this.disabledResources.has(k)
         ? 0
-        : this.def.fuel[k] * fraction;
+        : this.maxResource(k) * fraction;
     }
   }
 
-  /** 노드의 기체 좌표 위치 */
+  /**
+   * 크기를 바꾼다. 자원은 비율을 유지한 채 새 용량에 맞춰 다시 채워진다.
+   */
+  setScale(sw, sh) {
+    const fracs = {};
+    for (const k in this.resources) fracs[k] = this.resourceFraction(k);
+    this.scaleW = clamp(sw, 0.25, 6);
+    this.scaleH = clamp(sh, 0.25, 8);
+    for (const k in this.resources) {
+      this.resources[k] = this.maxResource(k) * (fracs[k] ?? 0);
+    }
+  }
+
+  /** 노드의 기체 좌표 위치 — 크기 조절을 반영한다 */
   nodeWorldPos(node) {
-    const mx = this.mirrored ? -node.x : node.x;
+    const nx = node.x * this.scaleW;
+    const ny = node.y * this.scaleH;
+    const mx = this.mirrored ? -nx : nx;
     const c = Math.cos(this.rot);
     const s = Math.sin(this.rot);
     return new Vec2(
-      this.x + mx * c - node.y * s,
-      this.y + mx * s + node.y * c
+      this.x + mx * c - ny * s,
+      this.y + mx * s + ny * c
     );
+  }
+
+  /** 크기 조절된 결합 노드 목록 */
+  scaledNodes() {
+    return (this.def.nodes ?? []).map((n) => ({
+      ...n,
+      x: n.x * this.scaleW,
+      y: n.y * this.scaleH,
+      size: n.size,
+    }));
   }
 
   /** 바운딩 박스 */
@@ -139,7 +182,7 @@ export class CraftPart {
     const e = this.def.engine;
     if (!e) return 0;
     const t = clamp(pressureAtm, 0, 1.6);
-    return e.thrust + (e.thrustSL - e.thrust) * Math.min(t, 1);
+    return (e.thrust + (e.thrustSL - e.thrust) * Math.min(t, 1)) * this.areaFactor;
   }
 
   /** 해면/진공 비추력 */
@@ -159,6 +202,9 @@ export class CraftPart {
       attachNode: this.attachNode,
       disabledResources: [...this.disabledResources],
       label: this.label,
+      scaleW: this.scaleW,
+      scaleH: this.scaleH,
+      tint: this.tint,
       ...opts,
     });
     for (const k in this.resources) p.resources[k] = this.resources[k];
@@ -179,6 +225,9 @@ export class CraftPart {
       disabled: [...this.disabledResources],
       label: this.label,
       symmetryGroup: this.symmetryGroup,
+      sw: this.scaleW === 1 ? undefined : +this.scaleW.toFixed(3),
+      sh: this.scaleH === 1 ? undefined : +this.scaleH.toFixed(3),
+      tint: this.tint ?? undefined,
     };
   }
 
@@ -193,6 +242,9 @@ export class CraftPart {
       disabledResources: o.disabled,
       label: o.label,
       symmetryGroup: o.symmetryGroup,
+      scaleW: o.sw ?? 1,
+      scaleH: o.sh ?? 1,
+      tint: o.tint ?? null,
     });
     return p;
   }
@@ -285,6 +337,21 @@ export class Craft {
   }
 
   /** 부품 이동 (서브트리 포함) */
+  /**
+   * 부품 크기가 바뀐 뒤, 그 위에 쌓인 부품들을 함께 올려 틈이 생기지 않게 한다.
+   * @param {CraftPart} part  크기가 바뀐 부품
+   * @param {number} dTop     윗면이 이동한 거리
+   */
+  reflowAfterResize(part, dTop) {
+    if (!dTop || Math.abs(dTop) < 1e-6) return;
+    for (const c of this.subtree(part.uid)) {
+      if (c.uid === part.uid) continue;
+      // 위쪽에 붙은 것만 따라 올린다 (측면 부스터는 제자리)
+      if (c.y > part.y) c.y += dTop;
+    }
+    this._statsCache = null;
+  }
+
   movePart(uid, dx, dy) {
     for (const p of this.subtree(uid)) {
       p.x += dx;

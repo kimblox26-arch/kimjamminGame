@@ -82,6 +82,10 @@
         <dt>, / .</dt><dd>시간 가속 감소 / 증가</dd>
         <dt>1~6</dt><dd>SAS 방향 (진행 · 역행 · 구심 · 원심 · 목표 · 지표역행)</dd>
         <dt>C</dt><dd>카메라 전환</dd>
+        <dt>O</dt><dd>도킹 해제</dd>
+        <dt>[ / ]</dt><dd>조종할 기체 전환</dd>
+        <dt>F</dt><dd>도킹된 기체와 연료 이송</dd>
+        <dt>B</dt><dd>브레이크 (로버)</dd>
         <dt>F5 / F9</dt><dd>빠른 저장 / 불러오기</dd>
         <dt>Esc</dt><dd>일시정지</dd>
       </dl>
@@ -139,10 +143,34 @@
         <button id="build-autostage">자동 스테이징</button>
         <button id="stage-up" title="선택 부품 스테이지 ↑">단 ↑</button>
         <button id="stage-down" title="선택 부품 스테이지 ↓">단 ↓</button>
+        <button id="build-paint" title="도색">🎨 도색</button>
+        <button id="build-blueprint" title="청사진 코드로 공유">청사진</button>
       </div>
+
+      <!-- 도색 팔레트 -->
+      <div id="paint-panel" class="paint-panel" hidden>
+        <div class="paint-row" id="paint-swatches"></div>
+        <div class="paint-actions">
+          <label>직접 선택 <input type="color" id="paint-custom" value="#d94a3d"></label>
+          <button id="paint-apply-all">전체에 적용</button>
+          <button id="paint-clear">도색 제거</button>
+        </div>
+      </div>
+
+      <!-- 크기 조절 패널 -->
+      <div id="resize-panel" class="resize-panel" hidden>
+        <div class="resize-title">크기</div>
+        <label>지름 <input type="range" id="resize-w" min="0.25" max="4" step="0.05" value="1">
+          <span id="resize-w-val">1.00×</span></label>
+        <label>길이 <input type="range" id="resize-h" min="0.25" max="8" step="0.05" value="1">
+          <span id="resize-h-val">1.00×</span></label>
+        <button id="resize-reset">기본 크기</button>
+      </div>
+
       <div class="builder-hint">
         좌클릭: 배치 / 선택 · 드래그: 부품 이동 · 우클릭: 삭제 · 휠: 확대 ·
-        우클릭 드래그: 화면 이동 · X: 좌우 대칭 복제
+        우클릭 드래그: 화면 이동 · X: 좌우 대칭 복제 ·
+        선택 후 노란 손잡이를 끌면 크기 조절 ( +/− 지름, [ ] 길이 )
       </div>
     </div>
 
@@ -224,6 +252,13 @@
       <label>조종 감도 <input id="set-sensitivity" type="range" min="0.2" max="2" step="0.05"></label>
     </fieldset>
 
+    <fieldset class="wide cheat-box">
+      <legend>치트 · 샌드박스</legend>
+      <p class="hint">실험용 설정입니다. 하나라도 켜면 기록에 표시됩니다.</p>
+      <div id="cheat-list" class="cheat-list"></div>
+      <button id="cheat-reset" class="ghost">전부 끄기</button>
+    </fieldset>
+
     <fieldset class="wide">
       <legend>저장된 비행</legend>
       <div id="save-list" class="save-list"></div>
@@ -234,6 +269,8 @@
 <!-- ═══════════════ 비행 ═══════════════ -->
 <section id="screen-flight" class="screen overlay">
   <div class="flight-top-right">
+    <button id="flight-undock" hidden>도킹 해제 (O)</button>
+    <button id="flight-switch" hidden>기체 전환 (])</button>
     <button id="flight-map">지도 (M)</button>
     <button id="flight-hud" class="active">HUD</button>
     <button id="flight-quicksave">저장 (F5)</button>

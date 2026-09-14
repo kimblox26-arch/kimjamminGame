@@ -33,6 +33,9 @@ import {
   rectPath,
   roundRectPath,
   polyPath,
+  setSurfaceContext,
+  edgeWear,
+  contactShadow,
 } from './materials.js';
 
 const ART = {};
@@ -1151,6 +1154,104 @@ ART.chute = (ctx, def, s) => {
   outline(ctx, 0.25);
 };
 
+/** 로버 바퀴 — 타이어 트레드 + 허브 + 서스펜션 암 */
+ART.roverwheel = (ctx, def, s) => {
+  const L = lightOf(s);
+  const d = detailOf(s);
+  const r = Math.min(def.size.w, def.size.h) / 2;
+  const comp = (s?.legCompression ?? 0) * (def.wheel?.maxCompression ?? 0.2);
+  const spin = s?.wheelSpin ?? 0;
+
+  // 서스펜션 암 — 본체 쪽으로
+  ctx.strokeStyle = shade(MAT.darkMetal, -0.1 + L.ambient * 0.2);
+  ctx.lineWidth = r * 0.22;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-r * 1.5, r * 0.35);
+  ctx.lineTo(0, comp * 0.5);
+  ctx.moveTo(-r * 1.5, -r * 0.25);
+  ctx.lineTo(0, comp * 0.5);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(0, -comp * 0.5);
+
+  // 타이어
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.fillStyle = sphereShade(ctx, r, '#2b2f34', {
+    lightX: L.x,
+    lightY: 0.5,
+    ambient: L.ambient + 0.06,
+  });
+  ctx.fill();
+
+  // 트레드 — 회전에 따라 돈다
+  if (d > 0.25) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, TAU);
+    ctx.clip();
+    ctx.rotate(spin);
+    const lugs = 14;
+    ctx.strokeStyle = 'rgba(12,14,17,0.85)';
+    ctx.lineWidth = r * 0.1;
+    for (let i = 0; i < lugs; i++) {
+      const a = (i / lugs) * TAU;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r * 0.76, Math.sin(a) * r * 0.76);
+      ctx.lineTo(Math.cos(a) * r * 1.02, Math.sin(a) * r * 1.02);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // 접지면 광택
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = r * 0.06;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.93, -2.6, -0.8);
+    ctx.stroke();
+  }
+
+  // 허브
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.46, 0, TAU);
+  ctx.fillStyle = sphereShade(ctx, r * 0.46, MAT.aluminium, {
+    lightX: L.x,
+    lightY: 0.5,
+    ambient: L.ambient,
+  });
+  ctx.fill();
+  if (d > 0.4) {
+    ctx.save();
+    ctx.rotate(spin);
+    ctx.fillStyle = 'rgba(30,36,42,0.6)';
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * r * 0.28, Math.sin(a) * r * 0.28, r * 0.07, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 구동 중이면 허브가 살짝 빛난다
+  if ((s?.wheelDrive ?? 0) > 0.05) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = withAlpha('#6ad8ff', 0.2 * clamp01(s.wheelDrive));
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.5, 0, TAU);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // 결은 타이어 원 안쪽에만 — 클립 없이 깔면 사각형 얼룩이 남는다
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, TAU);
+  ctx.clip();
+  surfaceGrain(ctx, r * 2, r * 2, 0.07 * d, 0.02, { material: 'rough' });
+  ctx.restore();
+};
+
 ART.leg = (ctx, def, s) => {
   const w = def.size.w;
   const h = def.size.h;
@@ -1878,17 +1979,118 @@ ART.default = (ctx, def, s) => {
  *   detail 0..1 — 화면에서 작으면 잔디테일 생략
  *   heat / soot / fuelFraction / deployed / ...
  */
-export function drawPart(ctx, def, state = null) {
-  const fn = ART[def.art] ?? ART.default;
-  ctx.save();
-  try {
-    fn(ctx, def, state);
-  } catch (e) {
-    ctx.restore();
-    ctx.save();
-    ART.default(ctx, def, state);
+/** 크기 조절된 부품을 위한 임시 def — 아트 함수는 def.size 만 보면 된다 */
+const _scaledDefCache = new Map();
+function scaledDef(def, sw, sh) {
+  if (Math.abs(sw - 1) < 1e-4 && Math.abs(sh - 1) < 1e-4) return def;
+  const key = `${def.id}|${sw.toFixed(3)}|${sh.toFixed(3)}`;
+  let d = _scaledDefCache.get(key);
+  if (d) return d;
+  d = Object.create(def);
+  d.size = { ...def.size, w: def.size.w * sw, h: def.size.h * sh };
+  if (def.nodes) {
+    d.nodes = def.nodes.map((n) => ({ ...n, x: n.x * sw, y: n.y * sh }));
   }
+  if (_scaledDefCache.size > 400) _scaledDefCache.clear();
+  _scaledDefCache.set(key, d);
+  return d;
+}
+
+export function drawPart(ctx, def, state = null) {
+  const sw = state?.scaleW ?? 1;
+  const sh = state?.scaleH ?? 1;
+  const d = scaledDef(def, sw, sh);
+  const fn = ART[d.art] ?? ART.default;
+  setSurfaceContext(d, state);
+
+  const paint = (target) => {
+    target.save();
+    try {
+      fn(target, d, state);
+    } catch (e) {
+      target.restore();
+      target.save();
+      ART.default(target, d, state);
+    }
+    target.restore();
+  };
+
+  if (state?.tint && drawTintedPart(ctx, d, state, paint)) return;
+  paint(ctx);
+
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * 사용자 도색
+ *
+ * source-atop 은 "이미 칠해진 픽셀 위에만" 그리지만, 대상이 장면
+ * 캔버스면 하늘·지형까지 함께 물든다. 그래서 부품만 담긴 오프스크린
+ * 버퍼에 그린 뒤 거기서 색을 입히고 합성한다.
+ * ────────────────────────────────────────────────────────────── */
+
+let _tintBuf = null;
+let _tintCtx = null;
+
+function tintBuffer(w, h) {
+  if (!_tintBuf) {
+    _tintBuf = document.createElement('canvas');
+    _tintCtx = _tintBuf.getContext('2d');
+  }
+  if (_tintBuf.width < w || _tintBuf.height < h) {
+    _tintBuf.width = Math.max(_tintBuf.width, w);
+    _tintBuf.height = Math.max(_tintBuf.height, h);
+  }
+  _tintCtx.setTransform(1, 0, 0, 1, 0, 0);
+  _tintCtx.clearRect(0, 0, w, h);
+  return _tintCtx;
+}
+
+/** 도색된 부품을 그린다 */
+function drawTintedPart(ctx, def, state, drawFn) {
+  const m = ctx.getTransform ? ctx.getTransform() : null;
+  const w = def.size.w;
+  const h = def.size.h;
+  if (!m) return false;
+
+  // 부품 네 모서리를 장치 좌표로 옮겨 바운딩 박스를 구한다
+  const pad = 6;
+  const pts = [
+    [-w / 2, -h / 2], [w / 2, -h / 2], [-w / 2, h / 2], [w / 2, h / 2],
+  ];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [px, py] of pts) {
+    const dx = m.a * px + m.c * py + m.e;
+    const dy = m.b * px + m.d * py + m.f;
+    if (dx < minX) minX = dx;
+    if (dx > maxX) maxX = dx;
+    if (dy < minY) minY = dy;
+    if (dy > maxY) maxY = dy;
+  }
+  // 부품 밖으로 나가는 요소(다리·낙하산·화염)까지 담도록 넉넉히
+  const grow = Math.max(maxX - minX, maxY - minY) * 1.3 + pad;
+  minX -= grow; minY -= grow; maxX += grow; maxY += grow;
+  const bw = Math.ceil(maxX - minX);
+  const bh = Math.ceil(maxY - minY);
+  // 너무 작거나 너무 크면 버퍼를 쓰지 않는다
+  if (bw < 2 || bh < 2 || bw > 2400 || bh > 2400) return false;
+
+  const bctx = tintBuffer(bw, bh);
+  bctx.setTransform(m.a, m.b, m.c, m.d, m.e - minX, m.f - minY);
+  drawFn(bctx);
+
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  bctx.globalCompositeOperation = 'source-atop';
+  bctx.globalAlpha = state?.tintStrength ?? 0.5;
+  bctx.fillStyle = state.tint;
+  bctx.fillRect(0, 0, bw, bh);
+  bctx.globalCompositeOperation = 'source-over';
+  bctx.globalAlpha = 1;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(_tintBuf, 0, 0, bw, bh, minX, minY, bw, bh);
   ctx.restore();
+  return true;
 }
 
 /** 과열 글로우 오버레이 */
