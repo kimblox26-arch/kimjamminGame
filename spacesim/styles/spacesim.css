@@ -122,6 +122,14 @@ html, body {
 input[type=date] { font-family: var(--mono); font-size: 11.5px; color-scheme: dark; }
 .epoch-row { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
 .epoch-row.off { display: none; }
+#edit-block.off { display: none; }
+#launch-hint {
+  position: fixed; z-index: 6; pointer-events: none;
+  padding: 5px 9px; border-radius: 6px; font-family: var(--mono); font-size: 11px;
+  background: rgba(8, 18, 30, .92); border: 1px solid var(--line-2); color: var(--amber);
+  transform: translate(12px, 12px); display: none; white-space: pre;
+}
+#launch-hint.on { display: block; }
 .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; }
 .kv .note { grid-column: 1 / -1; font-size: 11px; line-height: 1.55; color: var(--dim);
   background: rgba(125,226,255,.06); border-left: 2px solid var(--line-2);
@@ -247,11 +255,17 @@ button.on { background: rgba(125, 255, 176, .22); border-color: rgba(125, 255, 1
 #transport::-webkit-scrollbar { display: none; }
 .tbtn { flex: none; min-width: 84px; }
 .tbtn.primary { background: rgba(125, 255, 176, .16); border-color: rgba(125, 255, 176, .4); color: var(--green); }
-.speed { display: flex; align-items: center; gap: 8px; min-width: 210px; flex: none; }
+.speed { display: flex; align-items: center; gap: 8px; min-width: 250px; flex: none; }
 .speed label { font-size: 10px; letter-spacing: .14em; color: var(--dimmer); text-transform: uppercase; }
 .speed input { width: 130px; }
-.speed b { font-family: var(--mono); font-size: 12px; color: var(--amber); min-width: 52px; }
-.tstat { display: flex; flex-direction: column; line-height: 1.15; flex: none; white-space: nowrap; }
+.speed b { font-family: var(--mono); font-size: 12px; color: var(--amber); min-width: 96px; white-space: nowrap; }
+.rate-chips { display: flex; gap: 4px; flex: none; }
+.rate-chips button {
+  flex: none; padding: 5px 8px; font-size: 10.5px; border-radius: 6px;
+  letter-spacing: 0; white-space: nowrap;
+}
+.rate-chips button.on { background: rgba(125,255,176,.2); border-color: rgba(125,255,176,.45); color: var(--green); }
+.tstat { display: flex; flex-direction: column; line-height: 1.15; flex: none; white-space: nowrap; padding-left: 4px; }
 .tstat label { font-size: 9px; letter-spacing: .14em; color: var(--dimmer); text-transform: uppercase; }
 .tstat b { font-family: var(--mono); font-size: 11px; color: var(--text); font-weight: 600; }
 
@@ -300,4 +314,7 @@ kbd {
   .help-grid { grid-template-columns: 1fr; }
   #transport { gap: 8px; }
   .tbtn { min-width: 70px; font-size: 11px; padding: 7px 8px; }
+  .rate-chips button { padding: 5px 6px; font-size: 10px; }
+  .speed { min-width: 190px; }
+  .speed input { width: 90px; }
 }

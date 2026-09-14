@@ -42,6 +42,7 @@
     <div class="ro"><label>천체</label><b id="ro-count">0</b></div>
     <div class="ro"><label>ΔE/E</label><b id="ro-err">0</b></div>
     <div class="ro"><label>스텝/프레임</label><b id="ro-sps">0</b></div>
+    <div class="ro"><label>적분기</label><b id="ro-integrator">—</b></div>
     <div class="ro"><label>FPS</label><b id="ro-fps">0</b></div>
   </div>
   <div class="top-actions">
@@ -80,11 +81,11 @@
     </div>
     <div class="row">
       <label>시간간격 Δt<b id="v-dt"></b></label>
-      <input id="in-dt" type="range" min="-4" max="1.7" step="0.01">
+      <input id="in-dt" type="range" min="-7" max="1.7" step="0.01">
     </div>
     <div class="row">
-      <label>프레임당 스텝<b id="v-sub"></b></label>
-      <input id="in-sub" type="range" min="1" max="400" step="1">
+      <label>최대 프레임당 스텝<b id="v-sub"></b></label>
+      <input id="in-sub" type="range" min="0" max="3.4" step="0.01">
     </div>
     <div class="row">
       <label>소프트닝 ε<b id="v-soft"></b></label>
@@ -94,7 +95,9 @@
       <label class="chk"><input id="in-bh" type="checkbox"> Barnes-Hut 트리</label>
       <label class="chk"><input id="in-pn" type="checkbox"> 1PN 상대론 보정</label>
       <label class="chk"><input id="in-col" type="checkbox"> 충돌 병합</label>
-      <label class="chk"><input id="in-auto" type="checkbox"> Δt 자동 추정</label>
+      <label class="chk"><input id="in-auto" type="checkbox" checked> Δt 자동</label>
+      <label class="chk"><input id="in-frag" type="checkbox"> 파괴적 충돌</label>
+      <label class="chk"><input id="in-roche" type="checkbox"> 조석 파괴 (로슈)</label>
     </div>
     <div class="row">
       <label>트리 열림각 θ<b id="v-theta"></b></label>
@@ -117,7 +120,9 @@
     </div>
     <div class="row toggles">
       <label class="chk"><input id="in-trails" type="checkbox" checked> 궤적</label>
-      <label class="chk"><input id="in-orbit" type="checkbox" checked> 예측 궤도</label>
+      <label class="chk"><input id="in-orbit" type="checkbox" checked> 선택 궤도</label>
+      <label class="chk"><input id="in-allorbits" type="checkbox" checked> 모든 궤도</label>
+      <label class="chk"><input id="in-tails" type="checkbox" checked> 혜성 꼬리</label>
       <label class="chk"><input id="in-grid" type="checkbox" checked> 기준면 격자</label>
       <label class="chk"><input id="in-labels" type="checkbox" checked> 라벨</label>
       <label class="chk"><input id="in-bloom" type="checkbox" checked> 블룸</label>
@@ -154,6 +159,38 @@
         <button id="btn-focus" class="btn">카메라 추적</button>
         <button id="btn-frame">기준 천체로</button>
       </div>
+    </div>
+    <div class="block" id="edit-block">
+      <h2>실시간 편집 <span class="hint">선택 천체</span></h2>
+      <div class="row">
+        <label>질량 ×<b id="v-emass">1.00</b></label>
+        <input id="in-emass" type="range" min="-2" max="2" step="0.01" value="0">
+      </div>
+      <div class="row">
+        <label>반지름 ×<b id="v-eradius">1.00</b></label>
+        <input id="in-eradius" type="range" min="-1" max="2" step="0.01" value="0">
+      </div>
+      <div class="row">
+        <label>속도 ×<b id="v-evel">1.00</b></label>
+        <input id="in-evel" type="range" min="0" max="2" step="0.005" value="1">
+      </div>
+      <div class="row btn-row">
+        <button id="btn-apply-edit" class="btn">적용</button>
+        <button id="btn-circularize">원궤도화</button>
+        <button id="btn-remove2">제거</button>
+      </div>
+      <p class="desc">질량·반지름·속도를 바꾸면 궤도가 즉시 달라집니다. 속도를 1 미만으로 줄이면 안쪽으로 떨어지고, 1.414 배를 넘기면 탈출합니다.</p>
+    </div>
+    <div class="block">
+      <h2>천체 던지기 <span class="hint">드래그로 발사</span></h2>
+      <div class="row">
+        <label>천체 종류</label>
+        <select id="in-launch-kind"></select>
+      </div>
+      <div class="row toggles">
+        <label class="chk"><input id="in-launch-mode" type="checkbox"> 발사 모드 (빈 공간 드래그)</label>
+      </div>
+      <p class="desc">발사 모드에서 빈 공간을 드래그하면 놓는 순간의 방향·길이가 초기 속도가 됩니다. 드래그 중에 예상 궤도가 표시됩니다.</p>
     </div>
   </section>
 
@@ -279,13 +316,22 @@
   <button id="btn-step" class="tbtn">▮▶ 스텝</button>
   <button id="btn-reset" class="tbtn">↺ 초기화</button>
   <div class="speed">
-    <label>속도</label>
-    <input id="in-speed" type="range" min="-2" max="2.4" step="0.01" value="0">
+    <label>시간 배율</label>
+    <input id="in-speed" type="range" min="0" max="9.7" step="0.01" value="0">
     <b id="v-speed">1×</b>
   </div>
-  <div class="tstat"><label>적분기</label><b id="ro-integrator">—</b></div>
+  <div class="rate-chips" id="rate-chips">
+    <button data-rate="1" title="시뮬레이션 1초 = 실제 1초">실시간</button>
+    <button data-rate="60">1분/초</button>
+    <button data-rate="3600">1시간/초</button>
+    <button data-rate="86400">1일/초</button>
+    <button data-rate="2629800">1달/초</button>
+    <button data-rate="31557600">1년/초</button>
+    <button data-rate="3155760000">100년/초</button>
+  </div>
   <div class="tstat"><label>Δt</label><b id="ro-dt">—</b></div>
-  <div class="tstat"><label>계산</label><b id="ro-cost">—</b></div>
+  <div class="tstat"><label>실시간</label><b id="ro-lag">100%</b></div>
+  <div class="tstat"><label>물리</label><b id="ro-cost">—</b></div>
 </footer>
 
 <!-- ───────────── 도움말 ───────────── -->
@@ -296,7 +342,7 @@
       <div>
         <h3>카메라</h3>
         <ul>
-          <li>드래그 — 궤도 회전</li>
+          <li>드래그 — 궤도 회전 (발사 모드에서는 천체 던지기)</li>
           <li>휠 / 핀치 — 줌</li>
           <li>Shift+드래그 · 우클릭 드래그 — 이동</li>
           <li>천체 클릭 — 선택 / 더블클릭 — 추적</li>
@@ -309,11 +355,13 @@
           <li><kbd>T</kbd> 궤적 · <kbd>L</kbd> 라벨 · <kbd>G</kbd> 격자</li>
           <li><kbd>F</kbd> 선택 천체 추적 · <kbd>C</kbd> 질량중심</li>
           <li><kbd>1</kbd>–<kbd>5</kbd> 우측 탭 전환</li>
+          <li><kbd>X</kbd> 발사 모드 · <kbd>O</kbd> 모든 궤도</li>
         </ul>
       </div>
       <div>
         <h3>수치 모형</h3>
         <ul>
+          <li>시간 배율 1× = 실시간 (시뮬레이션 1초 = 실제 1초)</li>
           <li>단위계: AU · 일 · 태양질량 (G = 2.9591e-4)</li>
           <li>심플렉틱 적분기(베를레/PEFRL)는 에너지 오차가 유계</li>
           <li>1PN 보정: a = GM/(c²r³)[(4GM/r − v²)r + 4(r·v)v]</li>
@@ -333,6 +381,7 @@
   </div>
 </div>
 
+<div id="launch-hint"></div>
 <div id="toast"></div>
 
 <script type="module" src="./src/main.js"></script>

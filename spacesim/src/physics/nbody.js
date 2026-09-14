@@ -24,6 +24,9 @@ export class NBody {
     this.theta = opts.theta ?? 0.6;
     this.relativistic = opts.relativistic ?? false;
     this.collisions = opts.collisions ?? true;
+    this.fragmentation = opts.fragmentation ?? false;  // 고속 충돌 시 파편 생성
+    this.rocheBreakup = opts.rocheBreakup ?? false;    // 로슈 한계 안쪽 조석 파괴
+    this.maxBodies = opts.maxBodies ?? 3000;
     this.time = 0;
     this.steps = 0;
     this.events = [];
@@ -81,6 +84,7 @@ export class NBody {
       data: b.data ?? null,       // 실측 물리 제원 (있으면 구체로 렌더링)
       key: b.key ?? null,
       rotPhase: b.rotPhase ?? 0,
+      fragment: b.fragment ?? false,
       index: i,
     };
     return i;
@@ -93,12 +97,30 @@ export class NBody {
     this.time = 0;
     this.steps = 0;
     this.mergeEvents = 0;
+    this.fragmentEvents = 0;
+    this.rocheEvents = 0;
     this.events.length = 0;
     this.active.fill(0);
     this.e0 = null;
   }
 
   // ───────────────────────── 힘 계산 ─────────────────────────
+
+  /**
+   * 질량을 가진 활성 천체의 인덱스 목록.
+   * 시험입자(질량 0)는 힘을 만들지 않으므로 안쪽 루프에서 아예 제외한다.
+   * 소행성 수백 개가 섞인 계에서 O(N²) 이 O(N·M) 으로 줄어든다.
+   */
+  _sources() {
+    let src = this._src;
+    if (!src || src.length < this.count) src = this._src = new Int32Array(Math.max(64, this.count * 2));
+    let m = 0;
+    for (let i = 0; i < this.count; i++) {
+      if (this.active[i] && this.mass[i] !== 0) src[m++] = i;
+    }
+    this._srcCount = m;
+    return src;
+  }
 
   /** pos 배열에 대한 가속도를 out 에 기록 */
   accelerations(pos, out) {
@@ -113,18 +135,20 @@ export class NBody {
         this.tree.accel(i, pos, G, eps2, out);
       }
     } else {
+      const src = this._sources(), M = this._srcCount;
+      const mass = this.mass;
       for (let i = 0; i < n; i++) {
         if (!this.active[i]) continue;
         const i3 = i * 3;
         const xi = pos[i3], yi = pos[i3 + 1], zi = pos[i3 + 2];
         let ax = 0, ay = 0, az = 0;
-        for (let j = 0; j < n; j++) {
-          // 무질량 시험입자는 힘을 만들지 않으므로 건너뛴다
-          if (j === i || !this.active[j] || this.mass[j] === 0) continue;
+        for (let s = 0; s < M; s++) {
+          const j = src[s];
+          if (j === i) continue;
           const j3 = j * 3;
           const dx = pos[j3] - xi, dy = pos[j3 + 1] - yi, dz = pos[j3 + 2] - zi;
           const r2 = dx * dx + dy * dy + dz * dz + eps2;
-          const inv = G * this.mass[j] / (r2 * Math.sqrt(r2));
+          const inv = G * mass[j] / (r2 * Math.sqrt(r2));
           ax += dx * inv; ay += dy * inv; az += dz * inv;
         }
         out[i3] = ax; out[i3 + 1] = ay; out[i3 + 2] = az;
@@ -187,6 +211,7 @@ export class NBody {
     this.time += dt;
     this.steps++;
     if (this.collisions) this._resolveCollisions();
+    if (this.rocheBreakup && this.steps % 20 === 0) this.checkRoche();
   }
 
   _drift(dt) {
@@ -301,11 +326,182 @@ export class NBody {
         const d = Math.hypot(dx, dy, dz);
         const touch = this.radius[i] + this.radius[j];
         if (d < touch) {
-          this._merge(i, j);
+          this._collide(i, j, d);
           if (!this.active[i]) break; // i 가 흡수된 경우 다음 천체로
         }
       }
     }
+  }
+
+  /**
+   * 충돌 판정 — 충돌 속도가 두 천체의 상호 탈출속도를 크게 넘으면
+   * 합체 대신 파편화한다 (Universe Sandbox 식 파괴적 충돌).
+   */
+  _collide(i, j, d) {
+    if (!this.fragmentation || this.count >= this.maxBodies) return this._merge(i, j);
+    const mi = this.mass[i], mj = this.mass[j], M = mi + mj;
+    if (M <= 0) return this._merge(i, j);
+    const small = Math.min(mi, mj);
+    if (small / M < 0.005) return this._merge(i, j);   // 먼지 수준이면 그냥 흡수
+
+    const i3 = i * 3, j3 = j * 3;
+    const dvx = this.vel[j3] - this.vel[i3];
+    const dvy = this.vel[j3 + 1] - this.vel[i3 + 1];
+    const dvz = this.vel[j3 + 2] - this.vel[i3 + 2];
+    const vRel = Math.hypot(dvx, dvy, dvz);
+    // 상호 탈출속도 — 이보다 훨씬 빠르면 중력으로 다시 뭉치지 못한다
+    const vEsc = Math.sqrt(2 * this.G * M / Math.max(1e-12, this.radius[i] + this.radius[j]));
+    if (vRel < 1.4 * vEsc) return this._merge(i, j);
+
+    this._fragment(i, j, vRel / vEsc);
+  }
+
+  /**
+   * 파괴적 충돌. 질량과 운동량을 정확히 보존하면서 잔해를 방출한다.
+   * @param {number} ratio 충돌속도 / 탈출속도
+   */
+  _fragment(i, j, ratio) {
+    const mi = this.mass[i], mj = this.mass[j], M = mi + mj;
+    const i3 = i * 3, j3 = j * 3;
+    // 질량중심 상태
+    const cx = (this.pos[i3] * mi + this.pos[j3] * mj) / M;
+    const cy = (this.pos[i3 + 1] * mi + this.pos[j3 + 1] * mj) / M;
+    const cz = (this.pos[i3 + 2] * mi + this.pos[j3 + 2] * mj) / M;
+    const vx = (this.vel[i3] * mi + this.vel[j3] * mj) / M;
+    const vy = (this.vel[i3 + 1] * mi + this.vel[j3 + 1] * mj) / M;
+    const vz = (this.vel[i3 + 2] * mi + this.vel[j3 + 2] * mj) / M;
+
+    // 방출 질량 비율 — 충돌이 격렬할수록 많이 떨어져 나간다
+    const eject = Math.min(0.55, 0.12 * (ratio - 1));
+    const heavy = mi >= mj ? i : j;
+    const light = heavy === i ? j : i;
+    const rTot = Math.cbrt(this.radius[i] ** 3 + this.radius[j] ** 3);
+    const K = Math.max(3, Math.min(14, Math.round(4 + 8 * eject), this.maxBodies - this.count));
+    const mEject = M * eject;
+    const mCore = M - mEject;
+    const vEsc = Math.sqrt(2 * this.G * M / Math.max(1e-12, rTot));
+    const spread = vEsc * (0.9 + 0.8 * Math.min(2, ratio - 1));
+
+    // 파편 생성 (질량 동일, 등방 분포, 속도는 제각각)
+    const mf = mEject / K;
+    const rf = rTot * Math.cbrt(eject / K);
+    const w = [];
+    let wx = 0, wy = 0, wz = 0;
+    for (let k = 0; k < K; k++) {
+      const u = 2 * Math.random() - 1, th = Math.random() * Math.PI * 2;
+      const s = Math.sqrt(1 - u * u);
+      const sp = spread * (0.6 + 0.8 * Math.random());
+      const e = [s * Math.cos(th) * sp, s * Math.sin(th) * sp, u * sp];
+      w.push(e);
+      wx += e[0]; wy += e[1]; wz += e[2];
+    }
+
+    const color = this.meta[heavy].color;
+    for (let k = 0; k < K; k++) {
+      const e = w[k];
+      const n = Math.hypot(e[0], e[1], e[2]) || 1;
+      this.add({
+        name: `${this.meta[light].name} 파편 ${k + 1}`,
+        mass: mf, radius: rf,
+        pos: [
+          cx + (e[0] / n) * rTot * 1.4,
+          cy + (e[1] / n) * rTot * 1.4,
+          cz + (e[2] / n) * rTot * 1.4,
+        ],
+        vel: [vx + e[0], vy + e[1], vz + e[2]],
+        color, type: 'debris', trail: false, drawScale: 1, fragment: true,
+      });
+    }
+
+    // 남은 핵 — 파편이 가져간 운동량만큼 정확히 반동한다
+    const rec = mf / mCore;
+    this.pos[heavy * 3] = cx; this.pos[heavy * 3 + 1] = cy; this.pos[heavy * 3 + 2] = cz;
+    this.vel[heavy * 3] = vx - wx * rec;
+    this.vel[heavy * 3 + 1] = vy - wy * rec;
+    this.vel[heavy * 3 + 2] = vz - wz * rec;
+    this.mass[heavy] = mCore;
+    this.radius[heavy] = rTot * Math.cbrt(1 - eject);
+    this.active[light] = 0;
+    this.meta[heavy].data = null;   // 더 이상 원래 천체가 아니다
+    this.meta[heavy]._tex = null;
+    this.fragmentEvents = (this.fragmentEvents || 0) + 1;
+    this._log(`${this.meta[light].name} × ${this.meta[heavy].name} 파괴적 충돌 — 파편 ${K}개 (방출 ${(eject * 100).toFixed(0)}%)`);
+    this._primed = false;
+  }
+
+  /**
+   * 로슈 한계 조석 파괴 — 위성이 모행성에 너무 가까워지면 부서져 잔해 고리가 된다.
+   * d_Roche = 2.44 R_p (ρ_p / ρ_s)^(1/3)
+   */
+  checkRoche() {
+    if (!this.rocheBreakup || this.count >= this.maxBodies) return;
+    const n = this.count;
+    for (let i = 0; i < n; i++) {
+      if (!this.active[i] || this.mass[i] <= 0 || this.meta[i].fragment) continue;
+      if (this.radius[i] <= 0) continue;
+      for (let j = 0; j < n; j++) {
+        if (i === j || !this.active[j]) continue;
+        if (this.mass[j] < this.mass[i] * 25) continue;   // 훨씬 무거운 천체 기준
+        const i3 = i * 3, j3 = j * 3;
+        const d = Math.hypot(
+          this.pos[i3] - this.pos[j3],
+          this.pos[i3 + 1] - this.pos[j3 + 1],
+          this.pos[i3 + 2] - this.pos[j3 + 2],
+        );
+        const rhoP = this.mass[j] / (this.radius[j] ** 3);
+        const rhoS = this.mass[i] / (this.radius[i] ** 3);
+        const dRoche = 2.44 * this.radius[j] * Math.cbrt(rhoP / rhoS);
+        if (d < dRoche && d > this.radius[j]) {
+          this._tidalBreak(i, j, d);
+          break;
+        }
+      }
+    }
+  }
+
+  /** 조석 파괴 — 궤도 방향으로 늘어선 잔해 흐름을 만든다 */
+  _tidalBreak(i, p, d) {
+    const i3 = i * 3, p3 = p * 3;
+    const K = Math.max(6, Math.min(18, this.maxBodies - this.count));
+    if (K < 3) return;
+    const m = this.mass[i] / K;
+    const r = this.radius[i] * Math.cbrt(1 / K);
+    // 궤도 접선 방향
+    const vx = this.vel[i3] - this.vel[p3];
+    const vy = this.vel[i3 + 1] - this.vel[p3 + 1];
+    const vz = this.vel[i3 + 2] - this.vel[p3 + 2];
+    const vm = Math.hypot(vx, vy, vz) || 1;
+    const tx = vx / vm, ty = vy / vm, tz = vz / vm;
+    // 조석에 의한 속도 퍼짐 ~ (dv/dr)·R
+    const dv = Math.sqrt(this.G * this.mass[p] / d) * (this.radius[i] / d);
+    const name = this.meta[i].name;
+    const color = this.meta[i].color;
+    for (let k = 0; k < K; k++) {
+      const f = (k / (K - 1) - 0.5) * 2;      // −1 … +1
+      this.add({
+        name: `${name} 잔해 ${k + 1}`, mass: m, radius: r,
+        pos: [
+          this.pos[i3] + tx * this.radius[i] * 1.6 * f,
+          this.pos[i3 + 1] + ty * this.radius[i] * 1.6 * f,
+          this.pos[i3 + 2] + tz * this.radius[i] * 1.6 * f,
+        ],
+        vel: [
+          this.vel[i3] + tx * dv * f * 1.4,
+          this.vel[i3 + 1] + ty * dv * f * 1.4,
+          this.vel[i3 + 2] + tz * dv * f * 1.4,
+        ],
+        color, type: 'debris', trail: false, fragment: true,
+      });
+    }
+    this.active[i] = 0;
+    this.rocheEvents = (this.rocheEvents || 0) + 1;
+    this._log(`${name} 이(가) ${this.meta[p].name} 의 로슈 한계 안에서 조석 파괴 — 잔해 ${K}개`);
+    this._primed = false;
+  }
+
+  _log(text) {
+    this.events.push({ t: this.time, kind: 'event', text });
+    if (this.events.length > 60) this.events.shift();
   }
 
   /** 완전 비탄성 충돌: 운동량 보존, 부피 합으로 반경 결정 */
@@ -325,11 +521,7 @@ export class NBody {
     this.radius[heavy] = Math.cbrt(this.radius[heavy] ** 3 + this.radius[light] ** 3);
     this.active[light] = 0;
     this.mergeEvents++;
-    this.events.push({
-      t: this.time, kind: 'merge',
-      text: `${this.meta[light].name} → ${this.meta[heavy].name} 충돌·병합`,
-    });
-    if (this.events.length > 60) this.events.shift();
+    this._log(`${this.meta[light].name} → ${this.meta[heavy].name} 충돌·병합`);
     this._primed = false;
   }
 
@@ -362,9 +554,9 @@ export class NBody {
     let U = 0;
     const eps2 = this.softening * this.softening;
     for (let i = 0; i < this.count; i++) {
-      if (!this.active[i]) continue;
+      if (!this.active[i] || this.mass[i] === 0) continue;
       for (let j = i + 1; j < this.count; j++) {
-        if (!this.active[j]) continue;
+        if (!this.active[j] || this.mass[j] === 0) continue;
         const i3 = i * 3, j3 = j * 3;
         const dx = this.pos[j3] - this.pos[i3];
         const dy = this.pos[j3 + 1] - this.pos[i3 + 1];

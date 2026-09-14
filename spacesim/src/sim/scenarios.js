@@ -117,7 +117,7 @@ export const SCENARIOS = [
     group: '태양계',
     desc: 'JPL 근사 궤도요소(1800–2050년 유효)로 임의 날짜에 초기화하는 태양계 모델. 8행성·명왕성·달·세레스·베스타·팔라스·핼리/엔케 혜성과 소행성대를 완전 N체로 적분합니다. 행성은 실제 반지름·자전주기·자전축 기울기로 자전하며, 태양 방향에 따라 위상이 생깁니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 0.5, integrator: 'pefrl', softening: 1e-5, collisions: false,
+    rate: 2629800, dt: 0.5, integrator: 'pefrl', softening: 1e-5, collisions: false,
     camera: 35, scale: 'log', epochAware: true,
     build(sim, opt = {}) {
       const epoch = opt.epoch ?? 0;
@@ -139,7 +139,7 @@ export const SCENARIOS = [
     group: '태양계',
     desc: '태양 + 내행성 4개. 상대론 보정(1PN)을 켜면 수성 근일점이 세기당 약 43″ 추가로 전진합니다. 궤도요소 패널에서 ω 변화를 관찰하세요.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 0.2, integrator: 'pefrl', softening: 1e-6, relativistic: true, collisions: false,
+    rate: 864000, dt: 0.2, integrator: 'pefrl', softening: 1e-6, relativistic: true, collisions: false,
     camera: 4, scale: 'linear',
     build(sim) {
       addSun(sim);
@@ -153,7 +153,7 @@ export const SCENARIOS = [
     group: '태양계',
     desc: '태양-목성 계의 5개 라그랑주 점에 시험입자를 배치합니다. L4/L5 는 안정(타드폴 궤도), L1·L2·L3 는 불안정해 서서히 이탈합니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 1, integrator: 'pefrl', softening: 1e-5, collisions: false,
+    rate: 31557600, dt: 1, integrator: 'pefrl', softening: 1e-5, collisions: false,
     camera: 12, scale: 'linear', rotatingFrame: true,
     build(sim) {
       addSun(sim);
@@ -194,7 +194,7 @@ export const SCENARIOS = [
     group: '태양계',
     desc: '0.8 M☉ 의 적색왜성이 태양계를 30 AU 거리로 통과합니다. 외행성 궤도가 이심률을 얻고 일부는 성간공간으로 방출됩니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 1, integrator: 'pefrl', softening: 1e-4, collisions: false,
+    rate: 315576000, dt: 1, integrator: 'pefrl', softening: 1e-4, collisions: false,
     camera: 90, scale: 'log',
     build(sim) {
       addSun(sim);
@@ -225,7 +225,7 @@ export const SCENARIOS = [
     group: '위성계',
     desc: '갈릴레오가 1610년에 발견한 네 위성. 이오·유로파·가니메데는 평균운동이 n₁ − 3n₂ + 2n₃ = 0 을 만족하는 라플라스 공명에 갇혀 있어(주기비 약 1:2:4) 세 위성이 동시에 한쪽에 모이는 일이 절대 없습니다. 이 공명이 유지하는 이심률이 조석가열을 일으켜 이오의 화산활동과 유로파의 지하 바다를 만듭니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 0.002, integrator: 'pefrl', softening: 1e-7, collisions: false,
+    rate: 21600, dt: 0.002, integrator: 'pefrl', softening: 1e-7, collisions: false,
     camera: 0.02, scale: 'linear',
     build(sim) {
       const d = BODY_DATA.jupiter;
@@ -245,7 +245,7 @@ export const SCENARIOS = [
     group: '태양계',
     desc: '소행성 1400개의 장반경 분포. 목성과 4:1·3:1·5:2·7:3·2:1 평균운동 공명을 이루는 위치에서는 섭동이 누적돼 소행성이 쓸려나가고, 실제 관측되는 커크우드 간극이 그대로 나타납니다. 소행성을 하나 선택해 궤도요소 패널에서 a 를 확인해 보세요.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 2, integrator: 'pefrl', softening: 1e-4, collisions: false,
+    rate: 31557600, dt: 2, integrator: 'pefrl', softening: 1e-4, collisions: false,
     camera: 6, scale: 'linear',
     build(sim) {
       addSun(sim);
@@ -263,7 +263,7 @@ export const SCENARIOS = [
     group: '고전 3체 문제',
     desc: 'Chenciner & Montgomery (2000) 가 발견한 동일질량 3체 주기해. 세 별이 하나의 8자 곡선을 따라 서로를 쫓습니다. 적분 정확도 검증에 쓰입니다.',
     units: { length: 'code', time: 'code', mass: 'code' },
-    G: 1, dt: 0.001, integrator: 'pefrl', softening: 0, collisions: false,
+    G: 1, rate: 1, dt: 0.001, integrator: 'pefrl', softening: 0, collisions: false,
     camera: 3, scale: 'linear',
     build(sim) {
       const x = 0.97000436, y = -0.24308753;
@@ -281,7 +281,7 @@ export const SCENARIOS = [
     group: '고전 3체 문제',
     desc: 'Burrau (1913) 의 고전 문제. 질량 3·4·5 가 3-4-5 직각삼각형 꼭짓점에 정지해 있다가 카오스적으로 상호작용한 뒤, 이중성계 하나와 탈출체 하나로 분해됩니다.',
     units: { length: 'code', time: 'code', mass: 'code' },
-    G: 1, dt: 2e-4, integrator: 'rk4', softening: 1e-3, collisions: false,
+    G: 1, rate: 2, dt: 2e-4, integrator: 'rk4', softening: 1e-3, collisions: false,
     camera: 8, scale: 'linear',
     build(sim) {
       const c = [0xff7b6b, 0x7de2ff, 0xffd76b];
@@ -303,7 +303,7 @@ export const SCENARIOS = [
     group: '외계 행성계',
     desc: 'Kepler-16 계를 본뜬 근접 쌍성과, 두 별을 함께 도는 주연성(circumbinary) 행성. 행성 궤도는 쌍성의 세차 섭동으로 천천히 회전합니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 0.05, integrator: 'pefrl', softening: 1e-5, collisions: true,
+    rate: 432000, dt: 0.05, integrator: 'pefrl', softening: 1e-5, collisions: true,
     camera: 3, scale: 'linear',
     build(sim) {
       const m1 = 0.69, m2 = 0.20, a = 0.224, e = 0.159;
@@ -343,7 +343,7 @@ export const SCENARIOS = [
     group: '외계 행성계',
     desc: '큰 경사각(70°)을 가진 계층적 3중계. 외부 동반성의 섭동으로 내부 궤도의 이심률과 경사각이 주기적으로 교환됩니다 (√(1−e²)·cos i ≈ 일정).',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 0.5, integrator: 'pefrl', softening: 1e-5, collisions: false,
+    rate: 315576000, dt: 0.5, integrator: 'pefrl', softening: 1e-5, collisions: false,
     camera: 30, scale: 'linear',
     build(sim) {
       addSun(sim, { name: '주성' });
@@ -368,7 +368,7 @@ export const SCENARIOS = [
     group: '원반 역학',
     desc: '토성급 행성 주위 1만 개 규모 고리 입자(축소판)와 양치기 위성. 공명 간극(카시니 간극과 유사한 구조)이 스스로 형성됩니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 0.002, integrator: 'verlet', softening: 2e-6, collisions: false,
+    rate: 3600, dt: 0.002, integrator: 'verlet', softening: 2e-6, collisions: false,
     camera: 0.006, scale: 'linear',
     build(sim) {
       const M = 2.85886e-4;
@@ -414,7 +414,7 @@ export const SCENARIOS = [
     group: '항성계 역학',
     desc: '플러머 모형에서 추출한 500개 항성의 자기중력계. 비리얼 평형(2T/|U| = 1) 에서 출발해 질량 분리와 중심 붕괴가 진행됩니다.',
     units: { length: 'code', time: 'code', mass: 'code' },
-    G: 1, dt: 0.002, integrator: 'verlet', softening: 0.02,
+    G: 1, rate: 0.5, dt: 0.002, integrator: 'verlet', softening: 0.02,
     barnesHut: true, theta: 0.6, collisions: false,
     camera: 12, scale: 'linear',
     build(sim) {
@@ -448,7 +448,7 @@ export const SCENARIOS = [
     group: '항성계 역학',
     desc: '두 원반 은하가 근접 조우합니다. 조석꼬리와 다리 구조가 형성되고 결국 하나의 타원은하로 병합됩니다. Barnes-Hut 트리로 계산합니다.',
     units: { length: 'code', time: 'code', mass: 'code' },
-    G: 1, dt: 0.004, integrator: 'verlet', softening: 0.06,
+    G: 1, rate: 0.5, dt: 0.004, integrator: 'verlet', softening: 0.06,
     barnesHut: true, theta: 0.7, collisions: false,
     camera: 40, scale: 'linear',
     build(sim) {
@@ -465,7 +465,7 @@ export const SCENARIOS = [
     group: '항성계 역학',
     desc: '자기중력으로 묶인 항성(1 M, 400입자)이 1000 M 블랙홀에 포물선 궤도로 접근합니다. 근점 q = 1.2 는 조석반경 r_t ≈ 3 의 안쪽이라 항성이 완전히 찢어지고, 근점에서 각 파편이 자신의 궤도에너지를 고정받아 절반은 속박(되돌아와 강착)·절반은 탈출 조석꼬리로 갈라집니다.',
     units: { length: 'code', time: 'code', mass: 'code' },
-    G: 1, dt: 0.0015, integrator: 'verlet', softening: 0.02, collisions: true,
+    G: 1, rate: 1, dt: 0.0015, integrator: 'verlet', softening: 0.02, collisions: true,
     camera: 16, scale: 'linear',
     build(sim) {
       sim.add({
@@ -501,7 +501,7 @@ export const SCENARIOS = [
     group: '원반 역학',
     desc: '1 M☉ 항성 주위 미행성 300개. 충돌 병합을 켠 상태로 적분하면 과두성장을 거쳐 소수의 원시행성이 남습니다.',
     units: { length: 'AU', time: 'day', mass: 'M☉' },
-    dt: 0.3, integrator: 'verlet', softening: 3e-4, collisions: true,
+    rate: 31557600, dt: 0.3, integrator: 'verlet', softening: 3e-4, collisions: true,
     camera: 5, scale: 'linear',
     build(sim) {
       addSun(sim);

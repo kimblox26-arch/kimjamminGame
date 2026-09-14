@@ -82,6 +82,8 @@ export class View {
     this._buildPoints(4096);
     this._buildTrails();
     this._buildOrbit();
+    this._buildAllOrbits();
+    this._buildTails();
     this._setupComposer();
     this._bindInput();
     this.resize();
@@ -174,6 +176,141 @@ export class View {
     this.scene.add(this.trailGroup);
   }
 
+  /** 모든 천체의 궤도선 풀 + 발사 예상 궤도 */
+  _buildAllOrbits() {
+    this.orbitPool = [];
+    this.orbitGroup = new THREE.Group();
+    for (let i = 0; i < 56; i++) {
+      const g = new THREE.BufferGeometry();
+      const attr = new THREE.BufferAttribute(new Float32Array(200 * 3), 3);
+      attr.setUsage(THREE.DynamicDrawUsage);
+      g.setAttribute('position', attr);
+      g.setDrawRange(0, 0);
+      const line = new THREE.Line(g, new THREE.LineBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false,
+      }));
+      line.frustumCulled = false;
+      line.visible = false;
+      this.orbitGroup.add(line);
+      this.orbitPool.push({ line, attr });
+    }
+    this.scene.add(this.orbitGroup);
+    this.showAllOrbits = true;
+
+    // 발사 미리보기
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(400 * 3), 3));
+    pg.setDrawRange(0, 0);
+    this.previewLine = new THREE.Line(pg, new THREE.LineBasicMaterial({
+      color: 0xffd76b, transparent: true, opacity: 0.9, depthWrite: false,
+    }));
+    this.previewLine.frustumCulled = false;
+    this.previewLine.visible = false;
+    this.scene.add(this.previewLine);
+
+    const dg = new THREE.BufferGeometry();
+    dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    this.dragLine = new THREE.Line(dg, new THREE.LineBasicMaterial({
+      color: 0x7dffb0, transparent: true, opacity: 0.9, depthWrite: false, depthTest: false,
+    }));
+    this.dragLine.frustumCulled = false;
+    this.dragLine.visible = false;
+    this.dragLine.renderOrder = 9;
+    this.scene.add(this.dragLine);
+  }
+
+  /**
+   * 여러 궤도를 한 번에 설정.
+   * @param {{pts:number[], color:number}[]} orbits  pts 는 시뮬레이션 좌표 [x,y,z,...]
+   */
+  setAllOrbits(orbits) {
+    const tmp = this._tmpO || (this._tmpO = [0, 0, 0]);
+    for (let i = 0; i < this.orbitPool.length; i++) {
+      const slot = this.orbitPool[i];
+      const o = this.showAllOrbits ? orbits[i] : null;
+      if (!o || o.pts.length < 6) { slot.line.visible = false; continue; }
+      const n = Math.min(o.pts.length / 3, slot.attr.count);
+      const arr = slot.attr.array;
+      for (let k = 0; k < n; k++) {
+        this.mapPos(o.pts[k * 3], o.pts[k * 3 + 1], o.pts[k * 3 + 2], tmp);
+        arr[k * 3] = tmp[0]; arr[k * 3 + 1] = tmp[1]; arr[k * 3 + 2] = tmp[2];
+      }
+      slot.attr.needsUpdate = true;
+      slot.line.geometry.setDrawRange(0, n);
+      slot.line.material.color.setHex(o.color);
+      slot.line.material.opacity = o.opacity ?? 0.22;
+      slot.line.visible = true;
+    }
+  }
+
+  /** 발사 미리보기 궤도 + 드래그 선 */
+  setPreview(pts, from, to) {
+    const tmp = this._tmpP || (this._tmpP = [0, 0, 0]);
+    if (!pts || pts.length < 6) {
+      this.previewLine.visible = false;
+    } else {
+      const attr = this.previewLine.geometry.getAttribute('position');
+      const n = Math.min(pts.length / 3, attr.count);
+      for (let k = 0; k < n; k++) {
+        this.mapPos(pts[k * 3], pts[k * 3 + 1], pts[k * 3 + 2], tmp);
+        attr.array[k * 3] = tmp[0]; attr.array[k * 3 + 1] = tmp[1]; attr.array[k * 3 + 2] = tmp[2];
+      }
+      attr.needsUpdate = true;
+      this.previewLine.geometry.setDrawRange(0, n);
+      this.previewLine.visible = true;
+    }
+    if (from && to) {
+      const a = this.dragLine.geometry.getAttribute('position');
+      this.mapPos(from[0], from[1], from[2], tmp);
+      a.array[0] = tmp[0]; a.array[1] = tmp[1]; a.array[2] = tmp[2];
+      this.mapPos(to[0], to[1], to[2], tmp);
+      a.array[3] = tmp[0]; a.array[4] = tmp[1]; a.array[5] = tmp[2];
+      a.needsUpdate = true;
+      this.dragLine.visible = true;
+    } else {
+      this.dragLine.visible = false;
+    }
+  }
+
+  clearPreview() {
+    this.previewLine.visible = false;
+    this.dragLine.visible = false;
+  }
+
+  /** 렌더 좌표 → 시뮬레이션 좌표 (mapPos 의 역변환) */
+  unmapPos(x, y, z, out) {
+    if (this.scaleMode === 'log') {
+      const rr = Math.hypot(x, y, z);
+      if (rr < 1e-14) { out[0] = this.origin[0]; out[1] = this.origin[1]; out[2] = this.origin[2]; return out; }
+      const r = this.logRef * (Math.pow(10, rr / this.logK()) - 1);
+      const f = r / rr;
+      out[0] = x * f; out[1] = y * f; out[2] = z * f;
+    } else {
+      out[0] = x / this.unit; out[1] = y / this.unit; out[2] = z / this.unit;
+    }
+    out[0] += this.origin[0]; out[1] += this.origin[1]; out[2] += this.origin[2];
+    return out;
+  }
+
+  /**
+   * 화면 좌표 → 시뮬레이션 좌표.
+   * 카메라 주시점을 지나고 시선에 수직인 평면 위로 투영한다 (샌드박스 배치용).
+   */
+  screenToSim(sx, sy, out) {
+    const ndc = this._ndc || (this._ndc = new THREE.Vector3());
+    const dir = this._sdir || (this._sdir = new THREE.Vector3());
+    const nrm = this._snrm || (this._snrm = new THREE.Vector3());
+    ndc.set((sx / this.width) * 2 - 1, -(sy / this.height) * 2 + 1, 0.5).unproject(this.camera);
+    dir.copy(ndc).sub(this.camera.position).normalize();
+    this.camera.getWorldDirection(nrm);
+    const denom = dir.dot(nrm);
+    if (Math.abs(denom) < 1e-9) return null;
+    const t = this.target.clone().sub(this.camera.position).dot(nrm) / denom;
+    if (!(t > 0)) return null;
+    const p = this.camera.position.clone().addScaledVector(dir, t);
+    return this.unmapPos(p.x, p.y, p.z, out || [0, 0, 0]);
+  }
+
   _buildOrbit() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(1024 * 3), 3));
@@ -183,6 +320,72 @@ export class View {
     }));
     this.orbitLine.frustumCulled = false;
     this.scene.add(this.orbitLine);
+  }
+
+  /** 혜성 꼬리 — 태양 반대 방향으로 뻗는 이온(파랑)·먼지(노랑) 꼬리 */
+  _buildTails(n = 8) {
+    this.tailPool = [];
+    this.tailGroup = new THREE.Group();
+    const SEG = 28;
+    for (let i = 0; i < n; i++) {
+      const pair = [];
+      for (const [color, op] of [[0x8fd8ff, 0.5], [0xffd9a0, 0.34]]) {
+        const g = new THREE.BufferGeometry();
+        const attr = new THREE.BufferAttribute(new Float32Array(SEG * 3), 3);
+        attr.setUsage(THREE.DynamicDrawUsage);
+        g.setAttribute('position', attr);
+        g.setDrawRange(0, 0);
+        const line = new THREE.Line(g, new THREE.LineBasicMaterial({
+          color, transparent: true, opacity: op, depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        }));
+        line.frustumCulled = false;
+        line.visible = false;
+        this.tailGroup.add(line);
+        pair.push({ line, attr });
+      }
+      this.tailPool.push(pair);
+    }
+    this.scene.add(this.tailGroup);
+    this.showTails = true;
+    this.TAIL_SEG = SEG;
+  }
+
+  /**
+   * @param {{pos:number[], sun:number[], len:number, vel:number[]}[]} comets
+   * 이온 꼬리는 정확히 반태양 방향, 먼지 꼬리는 궤도운동 때문에 뒤로 휜다.
+   */
+  setTails(comets) {
+    const tmp = this._tmpT || (this._tmpT = [0, 0, 0]);
+    for (let i = 0; i < this.tailPool.length; i++) {
+      const pair = this.tailPool[i];
+      const c = this.showTails ? comets[i] : null;
+      if (!c) { pair[0].line.visible = false; pair[1].line.visible = false; continue; }
+      const ax = c.pos[0] - c.sun[0], ay = c.pos[1] - c.sun[1], az = c.pos[2] - c.sun[2];
+      const am = Math.hypot(ax, ay, az) || 1;
+      const ux = ax / am, uy = ay / am, uz = az / am;      // 반태양 방향
+      const vm = Math.hypot(c.vel[0], c.vel[1], c.vel[2]) || 1;
+      const wx = -c.vel[0] / vm, wy = -c.vel[1] / vm, wz = -c.vel[2] / vm; // 진행 반대
+      for (let k = 0; k < 2; k++) {
+        const curve = k === 0 ? 0 : 0.55;                  // 먼지 꼬리만 휜다
+        const { line, attr } = pair[k];
+        for (let sIdx = 0; sIdx < this.TAIL_SEG; sIdx++) {
+          const t = sIdx / (this.TAIL_SEG - 1);
+          const L = c.len * t;
+          const bend = curve * t * t;
+          const dx = ux * (1 - bend) + wx * bend;
+          const dy = uy * (1 - bend) + wy * bend;
+          const dz = uz * (1 - bend) + wz * bend;
+          this.mapPos(c.pos[0] + dx * L, c.pos[1] + dy * L, c.pos[2] + dz * L, tmp);
+          attr.array[sIdx * 3] = tmp[0];
+          attr.array[sIdx * 3 + 1] = tmp[1];
+          attr.array[sIdx * 3 + 2] = tmp[2];
+        }
+        attr.needsUpdate = true;
+        line.geometry.setDrawRange(0, this.TAIL_SEG);
+        line.visible = true;
+      }
+    }
   }
 
   _setupComposer() {
@@ -203,6 +406,8 @@ export class View {
     const pointers = new Map();
 
     const down = (e) => {
+      // 발사 모드에서는 좌클릭 드래그를 상위 로직이 가져간다
+      if (this.inputLocked && e.button === 0 && !e.shiftKey) return;
       el.setPointerCapture?.(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       dragging = e.button === 2 || e.shiftKey ? 'pan' : 'orbit';
