@@ -432,6 +432,14 @@ export class ParticleSystem {
     ctx.restore();
   }
 
+  /**
+   * 광원 방향을 설정하면 연기가 한쪽만 밝게 보인다 (실제 연기 기둥처럼).
+   */
+  setLight(x, y) {
+    this.lightX = x;
+    this.lightY = y;
+  }
+
   _drawParticle(ctx, p, camera, sp, zoom) {
     const t = 1 - p.life / p.maxLife;
     const size = lerp(p.size, p.endSize, t) * zoom;
@@ -450,27 +458,70 @@ export class ParticleSystem {
     const color = mixHex(p.color, p.endColor, t);
 
     ctx.globalAlpha = alpha;
+
     if (p.kind === 'debris') {
       ctx.save();
       ctx.translate(sp.x, sp.y);
       ctx.rotate(p.rotation);
-      ctx.fillStyle = color;
+      const g = ctx.createLinearGradient(-size / 2, 0, size / 2, 0);
+      g.addColorStop(0, mixHex(color, '#ffffff', 0.3));
+      g.addColorStop(1, mixHex(color, '#000000', 0.45));
+      ctx.fillStyle = g;
       ctx.fillRect(-size / 2, -size / 4, size, size / 2);
       ctx.restore();
     } else if (p.kind === 'flame') {
+      // 불꽃 — 중심이 하얗게 타고 바깥으로 갈수록 붉어진다
       const g = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, size);
-      g.addColorStop(0, withAlpha(color, 1));
-      g.addColorStop(0.5, withAlpha(color, 0.55));
+      g.addColorStop(0, withAlpha(mixHex(color, '#ffffff', 0.55 * (1 - t)), 1));
+      g.addColorStop(0.25, withAlpha(color, 0.85));
+      g.addColorStop(0.6, withAlpha(color, 0.3));
       g.addColorStop(1, withAlpha(color, 0));
       ctx.fillStyle = g;
       ctx.beginPath();
       ctx.arc(sp.x, sp.y, size, 0, TAU);
       ctx.fill();
-    } else {
-      ctx.fillStyle = color;
+    } else if (p.kind === 'water') {
+      const g = ctx.createRadialGradient(
+        sp.x - size * 0.3,
+        sp.y - size * 0.3,
+        0,
+        sp.x,
+        sp.y,
+        size
+      );
+      g.addColorStop(0, withAlpha('#ffffff', 0.9));
+      g.addColorStop(0.5, withAlpha(color, 0.6));
+      g.addColorStop(1, withAlpha(color, 0));
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(sp.x, sp.y, size * 0.6, 0, TAU);
+      ctx.arc(sp.x, sp.y, size * 0.8, 0, TAU);
       ctx.fill();
+    } else {
+      // 연기 — 광원 쪽이 밝고 반대쪽이 어둡다. 부드러운 가장자리가 핵심.
+      const lx = this.lightX ?? -0.5;
+      const ly = this.lightY ?? -0.5;
+      const g = ctx.createRadialGradient(
+        sp.x + lx * size * 0.42,
+        sp.y + ly * size * 0.42,
+        size * 0.05,
+        sp.x,
+        sp.y,
+        size
+      );
+      g.addColorStop(0, withAlpha(mixHex(color, '#ffffff', 0.42), 0.95));
+      g.addColorStop(0.35, withAlpha(color, 0.7));
+      g.addColorStop(0.72, withAlpha(mixHex(color, '#000000', 0.25), 0.28));
+      g.addColorStop(1, withAlpha(mixHex(color, '#000000', 0.3), 0));
+      ctx.fillStyle = g;
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(p.rotation);
+      ctx.scale(1, 0.82);
+      ctx.translate(-sp.x, -sp.y);
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, size, 0, TAU);
+      ctx.fill();
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
   }
@@ -480,47 +531,98 @@ export class ParticleSystem {
  * 엔진 화염 콘 — 파티클과 별개로 그리는 "코어 화염".
  * 노즐 바로 아래에 밝은 삼각형을 그려 추력감을 준다.
  */
+/**
+ * 엔진 화염 콘.
+ *
+ * 실제 로켓 배기는 노즐 바로 아래가 가장 밝고 좁으며, 과팽창/저팽창에 따라
+ * 충격 다이아몬드(마하 디스크)가 규칙적으로 늘어선다. 진공에서는 압력이
+ * 없어 깃털처럼 넓게 퍼진다. 그 차이를 그려야 로켓처럼 보인다.
+ *
+ * @param {object} opts { x, y, dirX, dirY, power, length, width, color, vacuum(0..1) }
+ */
 export function drawPlume(ctx, camera, opts) {
   const power = clamp01(opts.power);
   if (power < 0.02) return;
   const sp = camera.worldToScreen(opts.x, opts.y);
+  const vac = clamp01(opts.vacuum ?? 0);
   const len = opts.length * power * camera.zoom;
   const width = opts.width * camera.zoom;
-  if (len < 1) return;
+  if (len < 1.5) return;
 
   const angle = Math.atan2(-opts.dirY, opts.dirX) + camera.rotation;
+  const color = opts.color ?? '#ffd07a';
+
   ctx.save();
   ctx.translate(sp.x, sp.y);
   ctx.rotate(angle);
   ctx.globalCompositeOperation = 'lighter';
 
-  const flicker = 0.85 + Math.random() * 0.3;
+  const flicker = 0.88 + Math.random() * 0.24;
   const L = len * flicker;
+  // 진공에서는 넓게 퍼지고, 대기 중에서는 좁게 모인다
+  const spread = lerp(0.55, 1.9, vac);
 
-  const g = ctx.createLinearGradient(0, 0, L, 0);
-  g.addColorStop(0, withAlpha(opts.color ?? '#ffd07a', 0.95));
-  g.addColorStop(0.35, withAlpha(opts.color ?? '#ffb45a', 0.6));
-  g.addColorStop(1, withAlpha('#ff5a1e', 0));
-  ctx.fillStyle = g;
+  /* 1. 바깥 깃털 */
+  const outer = ctx.createLinearGradient(0, 0, L, 0);
+  outer.addColorStop(0, withAlpha(color, 0.5));
+  outer.addColorStop(0.3, withAlpha(color, 0.3));
+  outer.addColorStop(0.7, withAlpha('#ff6a28', 0.1));
+  outer.addColorStop(1, withAlpha('#ff5a1e', 0));
+  ctx.fillStyle = outer;
   ctx.beginPath();
-  ctx.moveTo(0, -width / 2);
-  ctx.lineTo(L * 0.25, -width * 0.55);
-  ctx.lineTo(L, 0);
-  ctx.lineTo(L * 0.25, width * 0.55);
-  ctx.lineTo(0, width / 2);
+  ctx.moveTo(0, -width * 0.5);
+  ctx.quadraticCurveTo(L * 0.45, -width * spread, L, 0);
+  ctx.quadraticCurveTo(L * 0.45, width * spread, 0, width * 0.5);
   ctx.closePath();
   ctx.fill();
 
-  // 내부 코어
-  const g2 = ctx.createLinearGradient(0, 0, L * 0.5, 0);
-  g2.addColorStop(0, withAlpha('#ffffff', 0.9));
-  g2.addColorStop(1, withAlpha('#ffe9a0', 0));
-  ctx.fillStyle = g2;
+  /* 2. 주 화염 */
+  const main = ctx.createLinearGradient(0, 0, L, 0);
+  main.addColorStop(0, withAlpha('#ffffff', 0.95));
+  main.addColorStop(0.08, withAlpha(mixHex(color, '#ffffff', 0.5), 0.9));
+  main.addColorStop(0.4, withAlpha(color, 0.55));
+  main.addColorStop(1, withAlpha('#ff5a1e', 0));
+  ctx.fillStyle = main;
   ctx.beginPath();
-  ctx.moveTo(0, -width * 0.22);
-  ctx.lineTo(L * 0.5, 0);
-  ctx.lineTo(0, width * 0.22);
+  ctx.moveTo(0, -width * 0.34);
+  ctx.quadraticCurveTo(L * 0.4, -width * spread * 0.5, L * 0.95, 0);
+  ctx.quadraticCurveTo(L * 0.4, width * spread * 0.5, 0, width * 0.34);
   ctx.closePath();
+  ctx.fill();
+
+  /* 3. 충격 다이아몬드 — 대기 중에서만 또렷하다 */
+  const diamondStrength = (1 - vac) * power;
+  if (diamondStrength > 0.15 && L > 14) {
+    const n = 4;
+    for (let i = 0; i < n; i++) {
+      const t = 0.1 + i * 0.15;
+      const x = L * t;
+      const dw = width * 0.3 * (1 - t * 0.7);
+      const dl = L * 0.07 * (1 - t * 0.5);
+      const a = diamondStrength * (1 - i / n) * 0.85;
+      const dg = ctx.createRadialGradient(x, 0, 0, x, 0, dl * 1.6);
+      dg.addColorStop(0, withAlpha('#ffffff', a));
+      dg.addColorStop(0.5, withAlpha('#ffe9b0', a * 0.5));
+      dg.addColorStop(1, withAlpha('#ffd07a', 0));
+      ctx.fillStyle = dg;
+      ctx.beginPath();
+      ctx.moveTo(x - dl, 0);
+      ctx.lineTo(x, -dw);
+      ctx.lineTo(x + dl, 0);
+      ctx.lineTo(x, dw);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  /* 4. 노즐 목의 강한 발광 */
+  const throat = ctx.createRadialGradient(0, 0, 0, 0, 0, width * 1.3);
+  throat.addColorStop(0, withAlpha('#ffffff', 0.9 * power));
+  throat.addColorStop(0.35, withAlpha(color, 0.45 * power));
+  throat.addColorStop(1, withAlpha(color, 0));
+  ctx.fillStyle = throat;
+  ctx.beginPath();
+  ctx.arc(0, 0, width * 1.3, 0, TAU);
   ctx.fill();
 
   ctx.restore();

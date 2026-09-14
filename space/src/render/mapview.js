@@ -35,10 +35,12 @@ export class MapView {
     this.dragNode = null;
     this.dragMode = null; // 'prograde' | 'radial' | 'time'
     this.nodeHandleRadius = 46;
+    this.dpr = 1;
     this._sp = { x: 0, y: 0 };
   }
 
   resize(w, h, dpr = 1) {
+    this.dpr = dpr;
     this.camera.resize(w, h, dpr);
   }
 
@@ -175,7 +177,7 @@ export class MapView {
     const vessel = o.vessel;
     const time = o.time;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = '#04060b';
     ctx.fillRect(0, 0, cam.width, cam.height);
 

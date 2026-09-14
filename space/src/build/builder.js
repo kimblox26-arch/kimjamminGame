@@ -46,6 +46,7 @@ export class Builder {
     this.targetZoom = 26;
     this.width = canvas.width;
     this.height = canvas.height;
+    this.dpr = 1;
 
     // 편집 상태
     this.category = 'pod';
@@ -74,9 +75,10 @@ export class Builder {
     this.dirty = true;
   }
 
-  resize(w, h) {
+  resize(w, h, dpr = 1) {
     this.width = w;
     this.height = h;
+    this.dpr = dpr;
   }
 
   /* ── 좌표 변환 ─────────────────────────────────────────── */
@@ -404,7 +406,7 @@ export class Builder {
 
   render() {
     const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     // 배경 (청사진)
     ctx.fillStyle = '#0a141f';

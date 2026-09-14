@@ -374,7 +374,7 @@ export class Game {
       bc.style.width = `${rect.width}px`;
       bc.style.height = `${rect.height}px`;
       bc.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
-      this.builder.resize(rect.width, rect.height);
+      this.builder.resize(rect.width, rect.height, dpr);
     }
   }
 

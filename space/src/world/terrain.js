@@ -76,7 +76,8 @@ export class TerrainGenerator {
     this.craters = [];
     this.features = [];
     this._cache = new Map();
-    this._cacheResolution = 4096;
+    // 격자 해상도. 두 격자점 사이는 선형 보간하므로 지형이 계단지지 않는다.
+    this._cacheResolution = 262144;
     this.gasGiant = !!body.def.gasGiant;
     this.oceanLevel = body.def.ocean ? body.def.ocean.level ?? 0 : null;
     /** 발사장처럼 인위적으로 평탄화된 구역 */
@@ -258,10 +259,23 @@ export class TerrainGenerator {
   elevationAt(theta) {
     if (this.gasGiant) return 0;
     const t = wrapTau(theta);
-    const key = Math.round((t / TAU) * this._cacheResolution);
+    const u = (t / TAU) * this._cacheResolution;
+    const i0 = Math.floor(u);
+    const f = u - i0;
+    const a = this._gridSample(i0);
+    const b = this._gridSample(i0 + 1);
+    // 선형 보간 — 격자 해상도 때문에 지형이 블록처럼 계단지는 것을 막는다
+    return a + (b - a) * f;
+  }
+
+  /** 격자점 하나의 고도 (캐시됨) */
+  _gridSample(index) {
+    const res = this._cacheResolution;
+    const key = ((index % res) + res) % res;
     const cached = this._cache.get(key);
     if (cached !== undefined) return cached;
 
+    const t = (key / res) * TAU;
     let h =
       this.baseElevation(t) + this.featureElevation(t) + this.craterElevation(t);
 
@@ -281,7 +295,7 @@ export class TerrainGenerator {
       h = lerp(h, zone.elevation, blend);
     }
 
-    if (this._cache.size > 20000) this._cache.clear();
+    if (this._cache.size > 160000) this._cache.clear();
     this._cache.set(key, h);
     return h;
   }
@@ -450,7 +464,7 @@ export class SurfaceProps {
     this.props.push(
       { type: 'pad', angle: A(0), width: 34, height: 5 },
       { type: 'tower', angle: A(-15), height: 48 },
-      { type: 'tank', angle: A(26), height: 13 },
+      { type: 'tank', angle: A(58), height: 14 },
       { type: 'building', angle: A(46), height: 17, width: 24 },
       { type: 'building', angle: A(-52), height: 12, width: 19 },
       { type: 'dish', angle: A(-78), height: 15 }

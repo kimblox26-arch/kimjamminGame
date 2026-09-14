@@ -1,5 +1,10 @@
 // ORBITER — 비행 장면 렌더러
-// 배경 → 천체 → 지형 → 잔해 → 기체 → 파티클 → 효과 순으로 합성한다.
+//
+// 합성 순서: 하늘 → 별 → 다른 천체 → 태양 → 현재 천체(원반 또는 지형)
+//          → 궤도선 → 잔해 → 기체 → 화염/파티클 → 화면 효과 → 후처리
+//
+// 모든 셰이딩은 실제 태양 방향을 따라간다. 그래서 같은 로켓도 발사대에서는
+// 옆에서, 궤도에서는 정면에서 빛을 받는다.
 
 import {
   TAU,
@@ -7,6 +12,7 @@ import {
   clamp01,
   lerp,
   withAlpha,
+  mixHex,
   Vec2,
   vLen,
   vNorm,
@@ -19,9 +25,23 @@ import {
   drawFlags,
   drawOrbitPath,
 } from './planetdraw.js';
-import { Starfield, drawSky, drawVignette } from './starfield.js';
+import { Starfield, drawSky, drawCloudDeck } from './starfield.js';
 import { ParticleSystem, drawPlume, ShockwaveManager } from './particles.js';
-import { CHUTE_STATE } from '../physics/aero.js';
+import { PostFX, drawSunDisc } from './postfx.js';
+
+/** ctx.filter 지원 여부 */
+let _filterOk = null;
+function filterSupported() {
+  if (_filterOk !== null) return _filterOk;
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    c.filter = 'brightness(0.5)';
+    _filterOk = c.filter === 'brightness(0.5)';
+  } catch (e) {
+    _filterOk = false;
+  }
+  return _filterOk;
+}
 
 export class FlightRenderer {
   constructor(canvas, opts = {}) {
@@ -30,11 +50,13 @@ export class FlightRenderer {
     this.starfield = new Starfield();
     this.particles = new ParticleSystem({ max: opts.maxParticles ?? 2400 });
     this.shockwaves = new ShockwaveManager();
+    this.postfx = new PostFX();
     this.debris = [];
-    this.quality = opts.quality ?? 2;
+    this.quality = 2;
     this.showTrajectory = true;
     this.time = 0;
     this._sp = { x: 0, y: 0 };
+    this.setQuality(2);
   }
 
   setQuality(level) {
@@ -42,6 +64,8 @@ export class FlightRenderer {
     this.particles.quality = [0.35, 0.6, 1, 1.4][clamp(level, 0, 3)];
     this.particles.max = [700, 1200, 2400, 3600][clamp(level, 0, 3)];
     this.starfield.enabled = level > 0;
+    this.postfx.setQuality(level);
+    this.postfx.enabled = level > 0;
   }
 
   /* ── 잔해 ─────────────────────────────────────────────── */
@@ -59,7 +83,6 @@ export class FlightRenderer {
         this.debris.splice(i, 1);
         continue;
       }
-      // 중력
       const r2 = d.pos.x * d.pos.x + d.pos.y * d.pos.y;
       const r = Math.sqrt(r2);
       if (r > 1) {
@@ -67,7 +90,6 @@ export class FlightRenderer {
         d.vel.x += d.pos.x * f * dt;
         d.vel.y += d.pos.y * f * dt;
       }
-      // 항력
       if (body.atmo.exists) {
         const alt = r - body.radius;
         if (alt < body.atmo.height) {
@@ -90,7 +112,6 @@ export class FlightRenderer {
       d.pos.y += d.vel.y * dt;
       d.angle += d.angularVelocity * dt;
 
-      // 지면 충돌
       const theta = Math.atan2(d.pos.y, d.pos.x);
       const surfaceR = body.terrain.radiusAt(theta);
       if (r < surfaceR) {
@@ -104,11 +125,91 @@ export class FlightRenderer {
     this.debris.length = 0;
   }
 
-  /* ── 메인 렌더 ────────────────────────────────────────── */
+  /* ── 조명 계산 ────────────────────────────────────────── */
 
   /**
-   * @param {object} ctxObj { camera, system, vessel, time, settings }
+   * 태양 방향과 그로부터 나오는 모든 조명 파라미터를 한 번에 구한다.
    */
+  computeLighting(system, body, vessel, t, camera) {
+    const bodyWorld = body.absolutePositionAt(t);
+    const starPos = system.star.absolutePositionAt(t);
+    const vesselLocal = vessel ? vessel.pos : new Vec2(0, body.radius);
+    const absX = bodyWorld.x + vesselLocal.x;
+    const absY = bodyWorld.y + vesselLocal.y;
+
+    const sunDir = vNorm(new Vec2(starPos.x - absX, starPos.y - absY));
+    const up = vNorm(vesselLocal);
+    // 지평선 위 태양 고도각
+    const sunElevation = Math.asin(clamp(sunDir.x * up.x + sunDir.y * up.y, -1, 1));
+
+    // 태양의 화면 위치 — 너무 멀면 방향만 써서 화면 밖에 배치
+    const sp = camera.worldToScreen(starPos.x, starPos.y);
+    const maxOff = Math.max(camera.width, camera.height) * 3;
+    let sunScreenX = sp.x;
+    let sunScreenY = sp.y;
+    let sunOnScreen = true;
+    if (
+      !Number.isFinite(sp.x) ||
+      !Number.isFinite(sp.y) ||
+      Math.abs(sp.x - camera.width / 2) > maxOff ||
+      Math.abs(sp.y - camera.height / 2) > maxOff
+    ) {
+      const c = Math.cos(-camera.rotation);
+      const s = Math.sin(-camera.rotation);
+      const dx = sunDir.x * c - sunDir.y * s;
+      const dy = sunDir.x * s + sunDir.y * c;
+      const d = Math.max(camera.width, camera.height) * 1.1;
+      sunScreenX = camera.width / 2 + dx * d;
+      sunScreenY = camera.height / 2 - dy * d;
+      sunOnScreen = false;
+    }
+
+    const altitude = vessel ? vessel.altitude : body.radius;
+    const atmoDensity =
+      body.atmo.exists && altitude < body.atmo.height
+        ? clamp01(body.atmo.densityAt(altitude) / 1.225)
+        : 0;
+
+    // 그림자(일식·야간)
+    const sunFactor = vessel ? clamp01(vessel.sunFactor ?? 1) : 1;
+
+    // 주변광: 대기 산란 + 지면 반사(행성광)
+    const planetshine = clamp01(1 - altitude / Math.max(body.radius * 0.6, 1)) * 0.14;
+    const ambient = clamp(0.1 + atmoDensity * 0.34 + planetshine, 0.08, 0.55);
+
+    // 태양의 겉보기 크기는 각지름으로 정해야 한다.
+    // 직교 투영에서 반지름 × 줌 을 쓰면 13 Gm 떨어진 항성이 화면을 덮어버린다.
+    const sunDist = Math.max(
+      Math.hypot(starPos.x - absX, starPos.y - absY),
+      system.star.radius * 1.01
+    );
+    const halfAngle = Math.asin(clamp(system.star.radius / sunDist, 0, 1));
+    const ASSUMED_FOV = 1.05; // 수직 화각 약 60°
+    const sunRadius = clamp(
+      (halfAngle / ASSUMED_FOV) * camera.height,
+      2,
+      camera.height * 0.22
+    );
+
+    return {
+      sunDir,
+      sunAngle: Math.atan2(sunDir.y, sunDir.x),
+      sunElevation,
+      sunScreenX,
+      sunScreenY,
+      sunOnScreen,
+      sunRadius,
+      atmoDensity,
+      ambient,
+      sunFactor,
+      altitude,
+      bodyWorld,
+      starPos,
+    };
+  }
+
+  /* ── 메인 렌더 ────────────────────────────────────────── */
+
   render(o) {
     const ctx = this.ctx;
     const camera = o.camera;
@@ -117,87 +218,146 @@ export class FlightRenderer {
     const t = o.time;
     this.time = t;
 
-    const w = camera.width;
-    const h = camera.height;
-
     const body = vessel?.body ?? system.home;
-    const bodyWorld = body.absolutePositionAt(t);
-    const altitude = vessel ? vessel.altitude : body.radius;
+    const lit = this.computeLighting(system, body, vessel, t, camera);
+    const bodyWorld = lit.bodyWorld;
+    const altitude = lit.altitude;
 
-    // 항성 방향
-    const starPos = system.star.absolutePositionAt(t);
-    const vesselAbs = vessel
-      ? new Vec2(bodyWorld.x + vessel.pos.x, bodyWorld.y + vessel.pos.y)
-      : bodyWorld;
-    const sunDir = vNorm(
-      new Vec2(starPos.x - vesselAbs.x, starPos.y - vesselAbs.y)
-    );
-    const sunAngle = Math.atan2(sunDir.y, sunDir.x);
-
-    /* 1. 하늘 / 우주 */
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const skyFactor = drawSky(ctx, camera, body, altitude, sunAngle - Math.atan2(vessel?.pos.y ?? 0, vessel?.pos.x ?? 1));
-    this.starfield.render(ctx, camera, t * 0.05, skyFactor);
+    ctx.filter = 'none';
+    // dpr 보정된 변환을 되살린다
+    const dpr = camera.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    /* 2. 다른 천체들 (원반) */
-    this.renderOtherBodies(ctx, camera, system, body, t, sunDir);
+    /* 1. 하늘 */
+    const skyOpacity = drawSky(ctx, camera, body, altitude, {
+      sunElevation: lit.sunElevation,
+      sunScreenX: lit.sunScreenX,
+      sunScreenY: lit.sunScreenY,
+    });
+    this.starfield.render(ctx, camera, t * 0.05, skyOpacity, {
+      atmosphere: lit.atmoDensity,
+    });
 
-    /* 3. 현재 천체 */
-    const bodyScreenRadius = body.radius * camera.zoom;
-    const nearSurface = altitude < body.radius * 0.35 && bodyScreenRadius > camera.width;
-    if (nearSurface) {
-      drawTerrain(ctx, camera, body, bodyWorld, { time: t, sunAngle });
-      if (body.surfaceProps) {
-        drawSurfaceProps(ctx, camera, body, bodyWorld, body.surfaceProps.props, t);
-        drawFlags(ctx, camera, body, bodyWorld, body.surfaceProps.flags, t);
-      }
-    } else {
-      drawBodyDisc(ctx, camera, body, bodyWorld, { sunDir, time: t });
-    }
-
-    /* 4. 궤도 경로 */
-    if (this.showTrajectory && vessel && !nearSurface && vessel.orbit) {
-      drawOrbitPath(ctx, camera, vessel.orbit, bodyWorld, {
-        color: '#6fd8ff',
-        alpha: 0.35,
-        samples: 160,
-        maxRadius: body.soi,
+    /* 2. 태양 */
+    if (
+      lit.sunScreenX > -camera.width &&
+      lit.sunScreenX < camera.width * 2 &&
+      lit.sunScreenY > -camera.height &&
+      lit.sunScreenY < camera.height * 2
+    ) {
+      drawSunDisc(ctx, {
+        x: lit.sunScreenX,
+        y: lit.sunScreenY,
+        radius: lit.sunRadius,
+        atmosphere: lit.atmoDensity,
       });
     }
 
-    /* 5. 잔해 */
-    this.renderDebris(ctx, camera, bodyWorld);
+    /* 3. 다른 천체 */
+    this.renderOtherBodies(ctx, camera, system, body, t, lit);
 
-    /* 6. 기체 */
-    if (vessel && !vessel.destroyed) {
-      this.renderVessel(ctx, camera, vessel, bodyWorld, sunDir);
+    /* 4. 현재 천체 */
+    const bodyScreenRadius = body.radius * camera.zoom;
+    const nearSurface =
+      altitude < body.radius * 0.35 && bodyScreenRadius > camera.width;
+    if (nearSurface) {
+      drawTerrain(ctx, camera, body, bodyWorld, {
+        time: t,
+        sunAngle: lit.sunAngle,
+        skyColor: body.atmo.exists ? body.atmo.hazeColor : null,
+        // 공기원근은 아주 옅어야 한다. 세게 넣으면 지면이 하얗게 날아간다.
+        hazeStrength: lit.atmoDensity * 0.3,
+        lowDetail: this.quality < 2,
+      });
+      if (body.surfaceProps) {
+        drawSurfaceProps(
+          ctx,
+          camera,
+          body,
+          bodyWorld,
+          body.surfaceProps.props,
+          t,
+          lit.sunAngle
+        );
+        drawFlags(ctx, camera, body, bodyWorld, body.surfaceProps.flags, t);
+      }
+      if (body.atmo.exists && this.quality >= 2) {
+        drawCloudDeck(ctx, camera, body, altitude, t);
+      }
+    } else {
+      drawBodyDisc(ctx, camera, body, bodyWorld, {
+        sunDir: lit.sunDir,
+        time: t,
+      });
     }
 
-    /* 7. 파티클 */
+    /* 5. 궤도 경로 */
+    if (this.showTrajectory && vessel && !nearSurface && vessel.orbit) {
+      drawOrbitPath(ctx, camera, vessel.orbit, bodyWorld, {
+        color: '#6fd8ff',
+        alpha: 0.3,
+        samples: 160,
+        maxRadius: body.soi,
+        glow: this.quality >= 2,
+      });
+    }
+
+    /* 6. 잔해 */
+    this.renderDebris(ctx, camera, bodyWorld, lit);
+
+    /* 7. 기체 */
+    if (vessel && !vessel.destroyed) {
+      this.renderVessel(ctx, camera, vessel, bodyWorld, lit);
+    }
+
+    /* 8. 파티클 */
+    this.particles.setLight(
+      Math.cos(lit.sunAngle - camera.rotation),
+      -Math.sin(lit.sunAngle - camera.rotation)
+    );
     this.particles.render(ctx, camera);
     this.shockwaves.render(ctx, camera);
 
-    /* 8. 화면 효과 */
-    if (vessel) this.renderScreenEffects(ctx, camera, vessel, skyFactor);
+    /* 9. 화면 효과 */
+    if (vessel) this.renderScreenEffects(ctx, camera, vessel, skyOpacity, lit);
 
-    if (o.settings?.graphics?.reduceMotion !== true) {
-      drawVignette(ctx, camera, 0.3);
+    /* 10. 후처리 */
+    if (this.postfx.enabled) {
+      const sunVisible =
+        lit.sunFactor *
+        clamp01(
+          1 -
+            Math.max(
+              Math.abs(lit.sunScreenX - camera.width / 2) / camera.width,
+              Math.abs(lit.sunScreenY - camera.height / 2) / camera.height
+            )
+        );
+      this.postfx.apply(ctx, this.canvas, {
+        dpr,
+        sun:
+          sunVisible > 0.02
+            ? {
+                x: lit.sunScreenX,
+                y: lit.sunScreenY,
+                visible: sunVisible,
+                size: clamp(lit.sunRadius, 3, 60),
+              }
+            : null,
+      });
     }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  renderOtherBodies(ctx, camera, system, current, t, sunDir) {
-    const currentWorld = current.absolutePositionAt(t);
+  renderOtherBodies(ctx, camera, system, current, t, lit) {
+    const currentWorld = lit.bodyWorld;
     for (const other of system.list) {
       if (other === current) continue;
+      if (other.type === 'star') continue; // 태양은 따로 그렸다
       const p = other.absolutePositionAt(t);
-      const dx = p.x - currentWorld.x;
-      const dy = p.y - currentWorld.y;
-      const dist = Math.hypot(dx, dy);
-      const angular = (other.radius / Math.max(dist, 1)) * camera.zoom * dist;
-      // 화면상 반지름이 0.5px 이상이거나 항성이면 그린다
       const screenR = other.radius * camera.zoom;
-      if (screenR < 0.4 && other.type !== 'star') {
-        // 밝은 점으로
+
+      if (screenR < 0.5) {
         const sp = camera.worldToScreen(p.x, p.y, this._sp);
         if (
           sp.x < -10 ||
@@ -206,71 +366,97 @@ export class FlightRenderer {
           sp.y > camera.height + 10
         )
           continue;
-        ctx.fillStyle = withAlpha(other.palette.map ?? '#ffffff', 0.85);
-        ctx.fillRect(sp.x - 1, sp.y - 1, 2.4, 2.4);
+        // 행성은 별보다 밝고 반짝이지 않는다
+        ctx.fillStyle = withAlpha(other.palette.map ?? '#ffffff', 0.9);
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 1.6, 0, TAU);
+        ctx.fill();
         continue;
       }
       if (!camera.isVisible(p.x, p.y, other.radius * 3)) continue;
-      const localSun = vNorm(new Vec2(-dx, -dy));
-      drawBodyDisc(ctx, camera, other, p, {
-        sunDir: other.type === 'star' ? sunDir : localSun,
-        time: t,
-      });
+
+      // 각 천체는 태양에서 오는 빛을 받는다
+      const sunDir = vNorm(
+        new Vec2(lit.starPos.x - p.x, lit.starPos.y - p.y)
+      );
+      drawBodyDisc(ctx, camera, other, p, { sunDir, time: t });
     }
   }
 
-  renderDebris(ctx, camera, bodyWorld) {
+  renderDebris(ctx, camera, bodyWorld, lit) {
     for (const d of this.debris) {
       const wx = bodyWorld.x + d.pos.x;
       const wy = bodyWorld.y + d.pos.y;
       if (!camera.isVisible(wx, wy, 20)) continue;
       const sp = camera.worldToScreen(wx, wy, this._sp);
+      const ang = -(d.angle - Math.PI / 2);
+      const c = Math.cos(ang);
+      const s = Math.sin(ang);
       ctx.save();
       ctx.translate(sp.x, sp.y);
-      ctx.rotate(-(d.angle - Math.PI / 2) + camera.rotation);
+      ctx.rotate(ang + camera.rotation);
       ctx.scale(camera.zoom, -camera.zoom);
-      drawPart(ctx, d.def, null);
+      drawPart(ctx, d.def, {
+        light: {
+          x: lit.sunDir.x * c - lit.sunDir.y * s,
+          y: lit.sunDir.x * s + lit.sunDir.y * c,
+          ambient: lit.ambient,
+        },
+        detail: clamp01((d.def.size.h * camera.zoom) / 40),
+        soot: 0.4,
+      });
       ctx.restore();
     }
   }
 
   /* ── 기체 ─────────────────────────────────────────────── */
 
-  renderVessel(ctx, camera, vessel, bodyWorld, sunDir) {
+  renderVessel(ctx, camera, vessel, bodyWorld, lit) {
     const wx = bodyWorld.x + vessel.pos.x;
     const wy = bodyWorld.y + vessel.pos.y;
     const sp = camera.worldToScreen(wx, wy, this._sp);
     const zoom = camera.zoom;
 
-    // 너무 작으면 아이콘으로
     const size = (vessel.bounds?.length ?? 10) * zoom;
     if (size < 3) {
+      // 너무 작으면 아이콘
       ctx.fillStyle = '#ffd27a';
       ctx.beginPath();
       ctx.arc(sp.x, sp.y, 3, 0, TAU);
       ctx.fill();
-      ctx.strokeStyle = withAlpha('#ffd27a', 0.5);
+      ctx.strokeStyle = withAlpha('#ffd27a', 0.45);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(sp.x, sp.y, 7, 0, TAU);
+      ctx.arc(sp.x, sp.y, 8, 0, TAU);
       ctx.stroke();
       return;
     }
 
+    // 기체 로컬 좌표계에서의 광원 방향
+    const ang = -(vessel.angle - Math.PI / 2);
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const lx = lit.sunDir.x * c - lit.sunDir.y * s;
+    const ly = lit.sunDir.x * s + lit.sunDir.y * c;
+
+    // 그림자 속이면 전체를 어둡게
+    const shadow = lit.sunFactor;
+    const useFilter = filterSupported() && shadow < 0.96;
+
     ctx.save();
     ctx.translate(sp.x, sp.y);
-    ctx.rotate(-(vessel.angle - Math.PI / 2) + camera.rotation);
+    ctx.rotate(ang + camera.rotation);
     ctx.scale(zoom, -zoom);
     ctx.translate(-vessel.com.x, -vessel.com.y);
 
-    // 열 글로우 (뒤쪽 레이어)
-    if (vessel.hottestFraction > 0.25) {
+    // 열 글로우 (부품 뒤 레이어)
+    if (vessel.hottestFraction > 0.22) {
       for (const part of vessel.parts) {
         if (part.destroyed) continue;
         const frac = clamp01(
           (part.temperature - 300) / Math.max(part.maxTemp - 300, 1)
         );
-        if (frac < 0.25) continue;
+        if (frac < 0.22) continue;
         ctx.save();
         ctx.translate(part.localX, part.localY);
         drawHeatGlow(ctx, part.def, frac);
@@ -278,12 +464,18 @@ export class FlightRenderer {
       }
     }
 
-    // 부품 — 측면 부품을 먼저(뒤에) 그린다
+    if (useFilter) {
+      ctx.filter = `brightness(${lerp(0.3, 1, shadow).toFixed(3)})`;
+    }
+
+    // 측면 부품을 먼저(뒤에) 그린다
     const ordered = [...vessel.parts].sort((a, b) => {
       const ra = a.def.radialOnly ? 0 : 1;
       const rb = b.def.radialOnly ? 0 : 1;
       return ra - rb;
     });
+
+    const sootLevel = clamp01(vessel.fuelBurned / 4000);
 
     for (const part of ordered) {
       if (part.destroyed) continue;
@@ -292,9 +484,19 @@ export class FlightRenderer {
       if (part.mirrored) ctx.scale(-1, 1);
       if (part.rot) ctx.rotate(part.rot);
 
-      const state = {
+      const partPx = Math.max(part.def.size.w, part.def.size.h) * zoom;
+      const heat = clamp01((part.temperature - 500) / 1500);
+
+      drawPart(ctx, part.def, {
+        light: {
+          x: part.mirrored ? -lx : lx,
+          y: ly,
+          ambient: lit.ambient,
+        },
+        detail: clamp01(partPx / 45),
         fuelFraction: this._partFuelFraction(part),
-        heat: clamp01((part.temperature - 600) / 1400),
+        heat,
+        soot: part.localY < vessel.com.y ? sootLevel : sootLevel * 0.3,
         enginePower: part.running ? part.throttleActual : 0,
         chuteState: part.chuteState,
         chuteProgress: part.chuteProgress,
@@ -306,18 +508,19 @@ export class FlightRenderer {
         lightOn: part.lightOn,
         docked: vessel.docked,
         active: part.active,
+        sunFactor: lit.sunFactor,
         ablator: part.shield
           ? part.shield.ablator / Math.max(part.shield.maxAblator, 1)
           : 1,
-      };
-      drawPart(ctx, part.def, state);
+      });
       ctx.restore();
     }
 
+    ctx.filter = 'none';
     ctx.restore();
 
-    // 엔진 화염 (월드 좌표로 별도 그리기)
-    this.renderEngines(ctx, camera, vessel, bodyWorld);
+    // 엔진 화염 (월드 좌표)
+    this.renderEngines(ctx, camera, vessel, bodyWorld, lit);
   }
 
   _partFuelFraction(part) {
@@ -333,10 +536,9 @@ export class FlightRenderer {
     return max > 0 ? cur / max : 1;
   }
 
-  renderEngines(ctx, camera, vessel, bodyWorld) {
-    const atmoDensity = vessel.body.atmo.exists
-      ? clamp01(vessel.body.atmo.densityAt(vessel.altitude) / 1.225)
-      : 0;
+  renderEngines(ctx, camera, vessel, bodyWorld, lit) {
+    const atmoDensity = lit.atmoDensity;
+    const vacuum = 1 - clamp01(atmoDensity * 2.2);
 
     for (const part of vessel.parts) {
       if (part.destroyed || !part.isEngine || !part.running) continue;
@@ -344,7 +546,6 @@ export class FlightRenderer {
       if (power < 0.02 || part.flameout) continue;
 
       const e = part.def.engine;
-      // 노즐 위치 (부품 하단)
       const localX = part.localX - vessel.com.x;
       const localY = part.localY - vessel.com.y - part.def.size.h / 2;
       const c = Math.cos(vessel.angle - Math.PI / 2);
@@ -354,7 +555,6 @@ export class FlightRenderer {
       const wx = bodyWorld.x + vessel.pos.x + rx;
       const wy = bodyWorld.y + vessel.pos.y + ry;
 
-      // 분사 방향 (기체 후방 + 짐벌)
       const ga = part.gimbalAngle;
       const dirX = -Math.cos(vessel.angle + ga);
       const dirY = -Math.sin(vessel.angle + ga);
@@ -365,9 +565,10 @@ export class FlightRenderer {
         dirX,
         dirY,
         power,
-        length: (e.plumeLength ?? 2.5) * (1 + (1 - atmoDensity) * 0.8),
-        width: part.def.size.w * 0.75,
+        length: (e.plumeLength ?? 2.5) * (1 + vacuum * 0.9),
+        width: part.def.size.w * 0.7,
         color: e.plumeColor ?? '#ffd07a',
+        vacuum,
       });
 
       this.particles.engineExhaust({
@@ -388,50 +589,51 @@ export class FlightRenderer {
 
   /* ── 화면 효과 ────────────────────────────────────────── */
 
-  renderScreenEffects(ctx, camera, vessel, skyFactor) {
+  renderScreenEffects(ctx, camera, vessel, skyOpacity, lit) {
     const w = camera.width;
     const h = camera.height;
 
     // 재진입 플라즈마
     if (vessel.heatFlux > 30000) {
       const t = clamp01((vessel.heatFlux - 30000) / 400000);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
       const g = ctx.createRadialGradient(
         w / 2,
         h / 2,
-        Math.min(w, h) * 0.2,
+        Math.min(w, h) * 0.18,
         w / 2,
         h / 2,
-        Math.max(w, h) * 0.7
+        Math.max(w, h) * 0.72
       );
-      g.addColorStop(0, withAlpha('#ff6a28', 0));
-      g.addColorStop(1, withAlpha('#ff5a1e', 0.35 * t));
+      g.addColorStop(0, withAlpha('#ff8a3a', 0.05 * t));
+      g.addColorStop(0.6, withAlpha('#ff5a1e', 0.2 * t));
+      g.addColorStop(1, withAlpha('#ff3a10', 0.4 * t));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
+      ctx.restore();
     }
 
     // 고G 블랙아웃
-    if (vessel.gForce > 8) {
-      const t = clamp01((vessel.gForce - 8) / 10);
+    if (vessel.gForce > 7) {
+      const t = clamp01((vessel.gForce - 7) / 11);
       const g = ctx.createRadialGradient(
         w / 2,
         h / 2,
-        Math.min(w, h) * (0.45 - t * 0.3),
+        Math.min(w, h) * (0.46 - t * 0.32),
         w / 2,
         h / 2,
-        Math.max(w, h) * 0.6
+        Math.max(w, h) * 0.62
       );
       g.addColorStop(0, 'rgba(0,0,0,0)');
-      g.addColorStop(1, `rgba(0,0,0,${0.85 * t})`);
+      g.addColorStop(1, `rgba(0,0,0,${0.88 * t})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
     }
 
-    // 대기 산란 헤이즈
-    if (skyFactor > 0.02 && vessel.altitude > 0) {
-      ctx.fillStyle = withAlpha(
-        vessel.body.atmo.hazeColor,
-        0.06 * skyFactor
-      );
+    // 대기 산란 헤이즈 — 낮은 고도에서 화면 전체가 살짝 뿌옇다
+    if (skyOpacity > 0.02) {
+      ctx.fillStyle = withAlpha(vessel.body.atmo.hazeColor, 0.05 * skyOpacity);
       ctx.fillRect(0, 0, w, h);
     }
   }
@@ -449,7 +651,6 @@ export class FlightRenderer {
     this.shockwaves.update(dt);
     if (vessel) this.updateDebris(dt, vessel.body);
 
-    // 재진입 플라즈마 파티클
     if (vessel && vessel.heatFlux > 40000 && !vessel.destroyed) {
       const bodyWorld = vessel.body.absolutePositionAt(this.time);
       const sv = vessel.surfaceVelocity();
@@ -457,10 +658,9 @@ export class FlightRenderer {
       const nose = vessel.bounds?.minY ?? 0;
       const c = Math.cos(vessel.angle - Math.PI / 2);
       const s = Math.sin(vessel.angle - Math.PI / 2);
-      const lx = 0;
       const ly = nose - vessel.com.y;
-      const rx = lx * c - ly * s;
-      const ry = lx * s + ly * c;
+      const rx = -ly * s;
+      const ry = ly * c;
       this.particles.reentryPlasma(
         bodyWorld.x + vessel.pos.x + rx,
         bodyWorld.y + vessel.pos.y + ry,
@@ -472,7 +672,6 @@ export class FlightRenderer {
     }
   }
 
-  /** 폭발 연출 */
   explodeAt(worldX, worldY, scale, velocity) {
     this.particles.explosion(worldX, worldY, scale, {
       vx: velocity?.x ?? 0,

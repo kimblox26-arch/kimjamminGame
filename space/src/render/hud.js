@@ -119,7 +119,7 @@ export class HUD {
    */
   render(o) {
     const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(this.scale, 0, 0, this.scale, 0, 0);
     ctx.clearRect(0, 0, this.width, this.height);
     if (!this.visible) {
       this.renderMessages(o);
