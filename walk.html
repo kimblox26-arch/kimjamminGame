@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>고요 GOYO — 숲 속 1인칭 힐링 산책</title>
+<meta name="description" content="풀·돌·나무·동물이 살아 있는 숲을 1인칭으로 걷는 힐링 게임. 하루가 흐르고, 발소리와 숨소리가 들린다.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Serif+KR:wght@300;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles/walk.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body data-screen="loading">
+
+<canvas id="gl"></canvas>
+<div id="vignette"></div>
+
+<!-- 로딩 -->
+<section id="loading">
+  <div class="load-inner">
+    <h1 class="logo">고요</h1>
+    <p class="logo-sub">GOYO · 숲 속 산책</p>
+    <div class="load-bar"><div id="loading-bar"></div></div>
+    <div id="loading-label" class="load-label">시작하는 중</div>
+  </div>
+</section>
+
+<!-- 타이틀 -->
+<section id="title">
+  <div class="title-inner">
+    <h1 class="logo big">고요</h1>
+    <p class="tagline">아무것도 하지 않아도 좋은 곳.<br>바람과 풀, 물과 동물만 있는 골짜기를 걷는다.</p>
+    <button id="btn-start" class="primary">숲으로 들어가기</button>
+    <ul class="controls">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 걷기</li>
+      <li><kbd>Shift</kbd> 달리기</li>
+      <li><kbd>Ctrl</kbd> 살금살금 (동물이 덜 놀란다)</li>
+      <li><kbd>Space</kbd> 뛰어오르기</li>
+      <li><kbd>R</kbd> 앉아서 쉬기</li>
+      <li><kbd>P</kbd> 사진 모드 · <kbd>M</kbd> 음악 · <kbd>Esc</kbd> 설정</li>
+    </ul>
+    <p class="note">소리를 켜면 발소리·숨소리·새소리가 들립니다. 헤드폰을 권합니다.</p>
+  </div>
+</section>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="compass"><div id="compass-strip"></div><div class="needle"></div></div>
+  <div id="clock"><span id="clock-time">06:00</span><span id="clock-phase">아침</span></div>
+  <div id="calm">
+    <span id="calm-label">고요 35</span>
+    <div class="bar"><div id="calm-fill"></div></div>
+  </div>
+  <div id="stamina"><div id="stamina-fill"></div></div>
+  <div id="hint"></div>
+  <div id="subtitle"></div>
+  <div id="toasts"></div>
+  <div id="dot"></div>
+</div>
+
+<!-- 일시정지 / 설정 -->
+<section id="pause">
+  <div class="panel">
+    <h2>잠시 멈춤</h2>
+    <div class="rows">
+      <label>전체 음량 <input id="opt-master" type="range" min="0" max="1" step="0.01"></label>
+      <label>자연의 소리 <input id="opt-ambient" type="range" min="0" max="1" step="0.01"></label>
+      <label>발소리·숨소리 <input id="opt-sfx" type="range" min="0" max="1" step="0.01"></label>
+      <label>음악 <input id="opt-music" type="range" min="0" max="1" step="0.01"></label>
+      <label>마우스 감도 <input id="opt-sens" type="range" min="0.3" max="2.5" step="0.05"></label>
+      <label>시야각 <input id="opt-fov" type="range" min="55" max="95" step="1"></label>
+      <label>하루 길이(초) <input id="opt-daylen" type="range" min="120" max="2400" step="30"></label>
+      <label class="check"><input id="opt-musicon" type="checkbox"> 음악 켜기</label>
+      <label class="check"><input id="opt-invert" type="checkbox"> 시점 상하 반전</label>
+    </div>
+    <div class="btns">
+      <button id="btn-daynow">아침으로</button>
+      <button id="btn-nightnow">밤으로</button>
+      <button id="btn-pausetime">시간 멈춤</button>
+    </div>
+    <button id="btn-resume" class="primary">다시 걷기</button>
+    <p class="note">Esc 를 누르면 언제든 여기로 돌아옵니다.</p>
+  </div>
+</section>
+
+<script type="module" src="./src/stroll/main.js"></script>
+</body>
+</html>
