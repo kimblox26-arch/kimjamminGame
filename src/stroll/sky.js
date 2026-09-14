@@ -156,6 +156,7 @@ const KEYS = [
 ];
 
 const _ca = new THREE.Color(), _cb = new THREE.Color();
+const _ca2 = new THREE.Vector3();
 // 색으로 다뤄야 하는 항목 (16진수도 숫자라 이름으로 구분한다)
 const COLOR_KEYS = new Set(['zenith', 'horizon', 'ground', 'sun', 'light', 'hemiSky', 'hemiGround', 'fog']);
 
@@ -187,6 +188,7 @@ export class Sky {
     this._buildStars();
     this._buildMoon();
     this._buildClouds();
+    this._buildRainbow();
     this._buildLights();
     this.update(0, new THREE.Vector3());
   }
@@ -399,6 +401,97 @@ export class Sky {
     tex.repeat.set(4, 4);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
+  }
+
+  /** 비 갠 뒤 해 반대편에 걸리는 무지개 (시각반경 42°) */
+  _buildRainbow() {
+    // 링을 직접 만든다 — RingGeometry 는 UV 가 평면 기준이라 무지개 띠에 쓸 수 없다
+    const SEG = 160, r0 = 0.86, r1 = 1.08;
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= SEG; i++) {
+      const t = i / SEG;                       // 호를 따라가는 방향
+      const a = t * Math.PI;
+      const c = Math.cos(a), sn = Math.sin(a);
+      pos.push(c * r0, sn * r0, 0, c * r1, sn * r1, 0);
+      uv.push(t, 0, t, 1);                     // u: 호, v: 띠의 안쪽→바깥쪽
+    }
+    for (let i = 0; i < SEG; i++) {
+      const b = i * 2;
+      idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    this.rainbowMat = new THREE.ShaderMaterial({
+      uniforms: { uAmount: { value: 0 } },
+      vertexShader: `
+        varying vec2 vUv;
+        varying float vUp;
+        void main() {
+          vUv = uv;
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          // 시선 기준 고도 — 지평선 아래 다리는 숨긴다
+          vec3 dir = normalize(world.xyz - cameraPosition);
+          vUp = dir.y;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }`,
+      fragmentShader: `
+        uniform float uAmount;
+        varying vec2 vUv;
+        varying float vUp;
+        vec3 spectrum(float t) {
+          // 바깥 붉은빛 → 안쪽 보랏빛
+          vec3 c = vec3(0.0);
+          c += vec3(0.95, 0.25, 0.15) * exp(-pow((t - 0.06) * 7.0, 2.0));
+          c += vec3(0.98, 0.65, 0.15) * exp(-pow((t - 0.22) * 7.0, 2.0));
+          c += vec3(0.95, 0.95, 0.35) * exp(-pow((t - 0.38) * 7.0, 2.0));
+          c += vec3(0.35, 0.85, 0.45) * exp(-pow((t - 0.55) * 7.0, 2.0));
+          c += vec3(0.3, 0.55, 0.95) * exp(-pow((t - 0.72) * 7.0, 2.0));
+          c += vec3(0.55, 0.35, 0.9) * exp(-pow((t - 0.9) * 7.0, 2.0));
+          return c;
+        }
+        void main() {
+          float t = 1.0 - vUv.y;               // 0 = 바깥(붉은빛), 1 = 안쪽(보랏빛)
+          float edge = smoothstep(0.0, 0.2, vUv.y) * smoothstep(1.0, 0.8, vUv.y);
+          // 지평선 근처에서 흐려진다
+          float arc = smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x);
+          // 하늘빛과 섞이도록 채도를 살린 색
+          vec3 col = clamp(spectrum(t) * 1.25, 0.0, 1.0);
+          // 지평선 근처에서 사라지게 해 땅 위에 겹쳐 그려지지 않도록
+          float horizon = smoothstep(0.02, 0.13, vUp);
+          gl_FragColor = vec4(col, edge * arc * horizon * uAmount * 0.55);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,          // 하늘 레이어로 취급 (지평선 아래는 셰이더에서 지운다)
+      side: THREE.DoubleSide,
+      fog: false,
+    });
+    this.rainbow = new THREE.Mesh(geo, this.rainbowMat);
+    this.rainbow.frustumCulled = false;
+    this.rainbow.renderOrder = -750;
+    this.rainbow.visible = false;
+    this.scene.add(this.rainbow);
+  }
+
+  /** amount 0~1 — 비 갠 직후에만 보인다 */
+  setRainbow(amount, playerPos) {
+    const a = clamp01(amount) * clamp01((this.sunElevation - 0.02) / 0.2) * clamp01((0.62 - this.sunElevation) / 0.2);
+    this.rainbowMat.uniforms.uAmount.value = a;
+    this.rainbow.visible = a > 0.01;
+    if (!this.rainbow.visible) return;
+    const D = 2900;   // 원경 산맥보다 멀리 두어 가려지지 않게
+    // 해 반대편(대일점) 방향으로 두고 카메라를 향하게 세운다
+    const anti = _ca2.copy(this.sunDir).multiplyScalar(-1);
+    this.rainbow.position.copy(playerPos).addScaledVector(anti, D);
+    this.rainbow.lookAt(playerPos);
+    // 42° 시각반경
+    const r = D * Math.tan(42 * Math.PI / 180);
+    this.rainbow.scale.setScalar(r);
+    // RingGeometry 의 0~π 구간이 위쪽 반원이므로 그대로 두면 하늘에 걸린다
   }
 
   _buildLights() {

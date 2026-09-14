@@ -116,43 +116,41 @@ export class Player {
     };
     document.addEventListener('mousemove', mm);
 
-    // 터치 — 왼쪽 절반은 이동, 오른쪽 절반은 시점
-    this.touch = { move: null, look: null, moveOrigin: new THREE.Vector2() };
+    // 터치 — 화면(캔버스)을 끌면 시점, 이동은 화면 위 조이스틱(ui.js)이 맡는다.
+    // 조이스틱/버튼은 DOM 요소라 그쪽 터치는 캔버스로 내려오지 않는다.
+    this.touchMoveActive = false;
+    const looks = new Map();
     const tstart = (e) => {
-      for (const t of e.changedTouches) {
-        if (t.clientX < window.innerWidth * 0.5 && this.touch.move === null) {
-          this.touch.move = t.identifier;
-          this.touch.moveOrigin.set(t.clientX, t.clientY);
-        } else if (this.touch.look === null) {
-          this.touch.look = t.identifier;
-          this.touch.lookLast = { x: t.clientX, y: t.clientY };
-        }
-      }
+      for (const t of e.changedTouches) looks.set(t.identifier, { x: t.clientX, y: t.clientY });
     };
     const tmove = (e) => {
       for (const t of e.changedTouches) {
-        if (t.identifier === this.touch.move) {
-          const dx = (t.clientX - this.touch.moveOrigin.x) / 70;
-          const dy = (t.clientY - this.touch.moveOrigin.y) / 70;
-          this.moveInput.set(clamp(dx, -1, 1), clamp(-dy, -1, 1));
-        } else if (t.identifier === this.touch.look) {
-          this.lookInput.x += (t.clientX - this.touch.lookLast.x) * 1.4;
-          this.lookInput.y += (t.clientY - this.touch.lookLast.y) * 1.4;
-          this.touch.lookLast = { x: t.clientX, y: t.clientY };
-        }
+        const l = looks.get(t.identifier);
+        if (!l) continue;
+        this.lookInput.x += (t.clientX - l.x) * 1.6;
+        this.lookInput.y += (t.clientY - l.y) * 1.6;
+        l.x = t.clientX; l.y = t.clientY;
       }
       e.preventDefault();
     };
     const tend = (e) => {
-      for (const t of e.changedTouches) {
-        if (t.identifier === this.touch.move) { this.touch.move = null; this.moveInput.set(0, 0); }
-        if (t.identifier === this.touch.look) this.touch.look = null;
-      }
+      for (const t of e.changedTouches) looks.delete(t.identifier);
     };
     canvas.addEventListener('touchstart', tstart, { passive: false });
     canvas.addEventListener('touchmove', tmove, { passive: false });
     canvas.addEventListener('touchend', tend);
     canvas.addEventListener('touchcancel', tend);
+  }
+
+  /** 화면 조이스틱 입력 (-1~1). 손을 떼면 active=false */
+  setMove(x, y, active) {
+    this.moveInput.set(x, y);
+    this.touchMoveActive = active;
+  }
+
+  /** 화면 버튼용 — 키를 눌린 것처럼 다룬다 */
+  setKey(code, down) {
+    if (down) this.keys.add(code); else this.keys.delete(code);
   }
 
   jump() {
@@ -188,7 +186,7 @@ export class Player {
     if (k.has('KeyS') || k.has('ArrowDown')) iz -= 1;
     if (k.has('KeyA') || k.has('ArrowLeft')) ix -= 1;
     if (k.has('KeyD') || k.has('ArrowRight')) ix += 1;
-    if (this.touch && this.touch.move !== null) { ix += this.moveInput.x; iz += this.moveInput.y; }
+    if (this.touchMoveActive) { ix += this.moveInput.x; iz += this.moveInput.y; }
     const inLen = Math.hypot(ix, iz);
     if (inLen > 1) { ix /= inLen; iz /= inLen; }
     if (inLen > 0.02) this.sitting = false;

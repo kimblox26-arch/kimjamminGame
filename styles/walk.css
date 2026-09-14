@@ -193,3 +193,70 @@ input[type="checkbox"] { accent-color: var(--accent); }
   #toasts { right: 14px; bottom: 18px; }
   #compass { width: 72vw; }
 }
+
+
+/* ───────── 모바일 화면 조작 ───────── */
+#touch { position: fixed; inset: 0; z-index: 12; pointer-events: none; display: none; }
+body.touch-ui[data-screen="play"] #touch { display: block; }
+body.photo #touch { display: none; }
+
+#stick {
+  position: absolute; left: 22px; bottom: 22px; width: 132px; height: 132px;
+  border-radius: 50%; border: 1px solid rgba(242,239,230,0.25);
+  background: rgba(12,16,14,0.28); pointer-events: auto;
+  touch-action: none; -webkit-user-select: none; user-select: none;
+}
+#stick-knob {
+  position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px;
+  border-radius: 50%; background: rgba(207,224,184,0.5);
+  box-shadow: 0 0 12px rgba(0,0,0,0.35); transition: transform 0.06s linear;
+}
+
+.tbtns {
+  position: absolute; right: 18px; bottom: 22px;
+  display: grid; grid-template-columns: repeat(2, 82px); gap: 10px; pointer-events: auto;
+}
+.tbtns.top { top: 16px; bottom: auto; grid-template-columns: repeat(2, 62px); }
+.tb {
+  height: 56px; border-radius: 14px; font-family: var(--font); font-size: 13px;
+  color: var(--ink); background: rgba(12,16,14,0.42);
+  border: 1px solid rgba(242,239,230,0.22); touch-action: none;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.tb.small { height: 38px; font-size: 12px; }
+.tb.on { background: rgba(207,224,184,0.42); color: #10140f; }
+
+/* 설정 추가 요소 */
+.rows select {
+  flex: 1; max-width: 210px; padding: 5px 8px; font-family: var(--font); font-size: 12px;
+  color: var(--ink); background: rgba(255,255,255,0.06);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+button.wide {
+  display: none; width: 100%; margin-top: 4px; padding: 9px 0;
+  font-family: var(--font); font-size: 12px; color: #10140f; background: var(--accent);
+  border: 0; border-radius: 4px; cursor: pointer;
+}
+button.wide.show { display: block; }
+.subnote { font-size: 11px; color: rgba(242,239,230,0.45); }
+
+/* 화면 조작이 켜진 기기 — 스틱과 버튼 사이 빈 곳에 글자를 둔다 */
+body.touch-ui #calm { left: 18px; bottom: 164px; }
+body.touch-ui #stamina { bottom: 26px; }
+body.touch-ui #hint { bottom: 46px; }
+body.touch-ui #subtitle { bottom: 72px; font-size: 14px; }
+body.touch-ui #toasts { right: 14px; bottom: 152px; max-width: 46vw; }
+body.touch-ui #dot { display: none; }
+
+@media (max-height: 460px) {
+  body.touch-ui #calm { bottom: 152px; width: 104px; }
+  #compass { top: 10px; }
+  #clock { top: 38px; }
+  .tb { height: 46px; font-size: 12px; }
+  .tbtns { grid-template-columns: repeat(2, 72px); bottom: 16px; }
+  #stick { width: 112px; height: 112px; left: 16px; bottom: 16px; }
+}
+
+@media (max-width: 780px) {
+  #toasts { max-width: 54vw; }
+}

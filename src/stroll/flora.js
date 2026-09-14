@@ -122,6 +122,7 @@ uniform vec3 uAmbGround;
 uniform vec3 fogColor;
 uniform float fogNear;
 uniform float fogFar;
+uniform float uWet;
 varying vec3 vColor;
 varying float vH;
 varying vec3 vNormalW;
@@ -135,7 +136,9 @@ void main() {
   float trans = pow(max(dot(-n, uSunDir), 0.0), 1.6) * 0.5;
   vec3 amb = mix(uAmbGround, uAmbSky, 0.5 + 0.5 * n.y);
   float ao = mix(0.45, 1.0, vH);          // 밑동은 어둡게
-  vec3 col = vColor * (amb * ao + uSunColor * (ndl * 0.85 + trans) * ao);
+  // 비에 젖으면 짙어진다
+  vec3 albedo = vColor * mix(1.0, 0.68, uWet);
+  vec3 col = albedo * (amb * ao + uSunColor * (ndl * 0.85 + trans) * ao);
   gl_FragColor = vec4(col, 1.0);
   float f = smoothstep(fogNear, fogFar, vFogDepth);
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, f);
@@ -184,9 +187,10 @@ function tuftGeometry(segments = 4, blades = 3) {
 
 /** 셀 단위로 인스턴스를 재배치하는 공통 로직 */
 class CellPool {
-  constructor({ cell, radius, blocks, perBlock }) {
+  constructor({ cell, radius, blocks, perBlock, minRadius = 0 }) {
     this.cell = cell;
     this.radius = radius;
+    this.minRadius = minRadius;   // 안쪽 링이 이미 채운 영역은 비운다
     this.perBlock = perBlock;
     this.free = [];
     for (let i = 0; i < blocks; i++) this.free.push(i);
@@ -206,7 +210,7 @@ class CellPool {
       for (let cx = cx0; cx <= cx1; cx++) {
         const mx = cx * c + c * 0.5 - px, mz = cz * c + c * 0.5 - pz;
         const d = Math.hypot(mx, mz);
-        if (d > r + c) continue;
+        if (d > r + c || d < this.minRadius - c) continue;
         const k = this.key(cx, cz);
         need.add(k);
         if (!this.active.has(k) && !this._queued(k)) this.queue.push({ k, cx, cz, d });
@@ -240,51 +244,44 @@ class CellPool {
   }
 }
 
-export class GrassField {
-  constructor(scene, quality = 'high') {
-    // blocks 는 반경 안에 들어오는 셀 수(π(r+c)²/c²)보다 넉넉해야 한다
-    const preset = {
-      low: { perBlock: 150, blocks: 42, radius: 20, cell: 8 },
-      medium: { perBlock: 240, blocks: 70, radius: 28, cell: 8 },
-      high: { perBlock: 380, blocks: 100, radius: 36, cell: 8 },
-      ultra: { perBlock: 420, blocks: 142, radius: 44, cell: 8 },
-    }[quality] || { perBlock: 330, blocks: 100, radius: 36, cell: 8 };
+/* 품질별 잔디 링 구성 — 가까운 링은 빽빽하게, 먼 링은 크고 성기게 */
+const GRASS_RINGS = {
+  low: [
+    { cell: 6, radius: 16, minRadius: 0, perBlock: 300, blocks: 46, size: 1.0 },
+    { cell: 14, radius: 36, minRadius: 14, perBlock: 175, blocks: 44, size: 1.5 },
+  ],
+  medium: [
+    { cell: 6, radius: 19, minRadius: 0, perBlock: 330, blocks: 60, size: 1.0 },
+    { cell: 13, radius: 46, minRadius: 17, perBlock: 200, blocks: 70, size: 1.5 },
+  ],
+  high: [
+    { cell: 6, radius: 24, minRadius: 0, perBlock: 460, blocks: 80, size: 1.0 },
+    { cell: 12, radius: 60, minRadius: 22, perBlock: 260, blocks: 116, size: 1.55 },
+  ],
+  ultra: [
+    { cell: 6, radius: 30, minRadius: 0, perBlock: 620, blocks: 120, size: 1.0 },
+    { cell: 12, radius: 78, minRadius: 28, perBlock: 330, blocks: 190, size: 1.6 },
+  ],
+};
 
-    this.perBlock = preset.perBlock;
-    this.count = preset.perBlock * preset.blocks;
-    this.pool = new CellPool(preset);
+/** 잔디 링 하나 */
+class GrassRing {
+  constructor(scene, cfg, material, colorsShared) {
+    this.perBlock = cfg.perBlock;
+    this.count = cfg.perBlock * cfg.blocks;
+    this.size = cfg.size;
+    this.pool = new CellPool(cfg);
 
     const geo = new THREE.InstancedBufferGeometry();
     const blade = tuftGeometry(3, 3);
-    geo.index = blade.index;
-    geo.attributes.position = blade.attributes.position;
-    geo.attributes.normal = blade.attributes.normal;
-    geo.attributes.uv = blade.attributes.uv;
+    geo.setAttribute('position', blade.attributes.position);
+    geo.setAttribute('normal', blade.attributes.normal);
+    geo.setAttribute('uv', blade.attributes.uv);
+    geo.setIndex(blade.index);
     this.colors = new THREE.InstancedBufferAttribute(new Float32Array(this.count * 3), 3);
     geo.setAttribute('instanceColorA', this.colors);
-    geo.instanceCount = this.count;
 
-    this.uniforms = {
-      uTime: WIND.time,
-      uWind: WIND.strength,
-      uWindDir: WIND.dir,
-      uPlayer: WIND.player,
-      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-      uSunColor: { value: new THREE.Color(0xffffff) },
-      uAmbSky: { value: new THREE.Color(0x88aacc) },
-      uAmbGround: { value: new THREE.Color(0x3a3a2a) },
-      fogColor: { value: new THREE.Color(0xc6d6e4) },
-      fogNear: { value: 30 },
-      fogFar: { value: 400 },
-    };
-    const mat = new THREE.ShaderMaterial({
-      uniforms: this.uniforms,
-      vertexShader: GRASS_VERT,
-      fragmentShader: GRASS_FRAG,
-      side: THREE.DoubleSide,
-    });
-
-    this.mesh = new THREE.InstancedMesh(geo, mat, this.count);
+    this.mesh = new THREE.InstancedMesh(geo, material, this.count);
     this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.name = 'grass';
@@ -296,12 +293,11 @@ export class GrassField {
     this._s = new THREE.Vector3();
     this._e = new THREE.Euler();
     this._c = new THREE.Color();
+    this._base = new THREE.Color(0x5c6d37);
 
-    // 처음엔 전부 감춰 둔다
     this._m.compose(this._p.set(0, -999, 0), this._q, this._s.set(0, 0, 0));
     for (let i = 0; i < this.count; i++) this.mesh.setMatrixAt(i, this._m);
     this.mesh.instanceMatrix.needsUpdate = true;
-
     this.pool._onRelease = (block) => this._hideBlock(block);
   }
 
@@ -316,14 +312,13 @@ export class GrassField {
     const cell = this.pool.cell;
     const rng = makeRng((cx * 73856093) ^ (cz * 19349663) ^ 0x9e37);
     const start = block * this.perBlock;
-    const base = new THREE.Color(0x5c6d37);
     for (let i = 0; i < this.perBlock; i++) {
       const x = cx * cell + rng() * cell;
       const z = cz * cell + rng() * cell;
       const { h, slope } = sampleGround(x, z);
       const fert = fertilityAt(x, z, h, slope);
       const surf = surfaceAt(x, z, h, slope);
-      const ok = fert > 0.12 && rng() < fert * (surf === SURFACE.GRASS ? 1 : surf === SURFACE.DIRT ? 0.35 : 0.05);
+      const ok = fert > 0.1 && rng() < fert * (surf === SURFACE.GRASS ? 1.15 : surf === SURFACE.DIRT ? 0.45 : 0.06);
       if (!ok) {
         this._m.compose(this._p.set(0, -999, 0), this._q, this._s.set(0, 0, 0));
         this.mesh.setMatrixAt(start + i, this._m);
@@ -331,20 +326,21 @@ export class GrassField {
       }
       // 짧은 풀이 많고 이따금 긴 풀이 섞여야 바닥이 촘촘해 보인다
       const r1 = rng();
-      const tall = (0.12 + r1 * r1 * 0.62) * lerp(0.65, 1.3, fert);
-      // 물가에서는 갈대처럼 길게
+      const tall = (0.12 + r1 * r1 * 0.66) * lerp(0.65, 1.35, fert);
       const nearWater = Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 12 && h < WATER_LEVEL + 1.6;
-      const height = nearWater ? tall * 2.1 : tall;
+      const height = (nearWater ? tall * 2.2 : tall) * this.size;
       this._e.set(0, rng() * TAU, (rng() - 0.5) * 0.25);
       this._q.setFromEuler(this._e);
       this._p.set(x, h - 0.03, z);
-      this._s.set(0.8 + rng() * 0.6, height, 0.8 + rng() * 0.6);
+      const w = (0.8 + rng() * 0.6) * this.size;
+      this._s.set(w, height, w);
       this._m.compose(this._p, this._q, this._s);
       this.mesh.setMatrixAt(start + i, this._m);
 
-      this._c.copy(base);
+      this._c.copy(this._base);
       const dry = fbm2(x * 0.03 + 17.3, z * 0.03 - 9.2, 2) * 0.5 + 0.5;
-      this._c.offsetHSL((rng() - 0.5) * 0.05 + dry * 0.035, (rng() - 0.5) * 0.16 - dry * 0.12, (rng() - 0.45) * 0.12 + fert * 0.05);
+      this._c.offsetHSL((rng() - 0.5) * 0.05 + dry * 0.035,
+        (rng() - 0.5) * 0.16 - dry * 0.12, (rng() - 0.45) * 0.12 + fert * 0.05);
       if (nearWater) this._c.offsetHSL(0.01, 0.05, -0.02);
       this.colors.setXYZ(start + i, this._c.r, this._c.g, this._c.b);
     }
@@ -352,24 +348,70 @@ export class GrassField {
     this.colors.needsUpdate = true;
   }
 
-  update(px, pz, budget = 2) {
-    this.pool.refresh(px, pz);
-    this.pool.fill(budget, (b, cx, cz) => this._fillBlock(b, cx, cz));
+  flush() {
     if (this._dirty) { this.mesh.instanceMatrix.needsUpdate = true; this._dirty = false; }
   }
+}
 
-  /** 로딩 중 주변을 한 번에 채운다 */
+/** 여러 링을 묶은 잔디밭 — 프레임당 시간 예산 안에서 조금씩 채운다 */
+export class GrassField {
+  constructor(scene, quality = 'high') {
+    const rings = GRASS_RINGS[quality] || GRASS_RINGS.high;
+    this.uniforms = {
+      uTime: WIND.time,
+      uWind: WIND.strength,
+      uWindDir: WIND.dir,
+      uPlayer: WIND.player,
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunColor: { value: new THREE.Color(0xffffff) },
+      uAmbSky: { value: new THREE.Color(0x88aacc) },
+      uAmbGround: { value: new THREE.Color(0x3a3a2a) },
+      fogColor: { value: new THREE.Color(0xc6d6e4) },
+      fogNear: { value: 30 },
+      fogFar: { value: 400 },
+      uWet: { value: 0 },
+    };
+    this.material = new THREE.ShaderMaterial({
+      uniforms: this.uniforms,
+      vertexShader: GRASS_VERT,
+      fragmentShader: GRASS_FRAG,
+      side: THREE.DoubleSide,
+    });
+    this.rings = rings.map((cfg) => new GrassRing(scene, cfg, this.material));
+    this.count = this.rings.reduce((a, r) => a + r.count, 0);
+  }
+
+  /** budgetMs 만큼만 셀을 채워 프레임이 끊기지 않게 한다 */
+  update(px, pz, budgetMs = 2.2) {
+    const t0 = performance.now();
+    for (const ring of this.rings) ring.pool.refresh(px, pz);
+    let guard = 0;
+    while (performance.now() - t0 < budgetMs && guard < 64) {
+      let filled = 0;
+      for (const ring of this.rings) {
+        filled += ring.pool.fill(1, (b, cx, cz) => ring._fillBlock(b, cx, cz));
+        if (performance.now() - t0 >= budgetMs) break;
+      }
+      if (!filled) break;
+      guard++;
+    }
+    for (const ring of this.rings) ring.flush();
+  }
+
   prime(px, pz) {
-    this.pool.refresh(px, pz);
-    this.pool.fill(9999, (b, cx, cz) => this._fillBlock(b, cx, cz));
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this._dirty = false;
+    for (const ring of this.rings) {
+      ring.pool.refresh(px, pz);
+      ring.pool.fill(9999, (b, cx, cz) => ring._fillBlock(b, cx, cz));
+      ring.flush();
+      ring.mesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   syncLighting(sky) {
     const u = this.uniforms;
     u.uSunDir.value.copy(sky.sunDir.y > 0 ? sky.sunDir : sky.moonDir);
-    u.uSunColor.value.copy(sky.sunLight.color).multiplyScalar(Math.max(sky.sunLight.intensity * 0.32, sky.moonLight.intensity * 0.5));
+    u.uSunColor.value.copy(sky.sunLight.color)
+      .multiplyScalar(Math.max(sky.sunLight.intensity * 0.32, sky.moonLight.intensity * 0.5));
     u.uAmbSky.value.copy(sky.hemi.color).multiplyScalar(sky.hemi.intensity * 0.55);
     u.uAmbGround.value.copy(sky.hemi.groundColor).multiplyScalar(sky.hemi.intensity * 0.5);
     u.fogColor.value.copy(sky.scene.fog.color);
@@ -428,6 +470,7 @@ export class ScatterLayer {
     this.place = place;
     this.pool = new CellPool({ cell, radius, blocks, perBlock });
     this.mesh = new THREE.InstancedMesh(geometry, material, this.count);
+    this.mesh.name = 'clutter';
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = castShadow;
     this.mesh.receiveShadow = true;
@@ -554,268 +597,6 @@ function stickGeometry(rng) {
   g.rotateZ(Math.PI / 2);
   roughen(g, 0.05, rng);
   return tint(g, new THREE.Color(0x5b4630), 0.5, rng);
-}
-
-function logGeometry(rng) {
-  const parts = [];
-  const trunk = new THREE.CylinderGeometry(0.26, 0.32, 4.2, 9);
-  trunk.rotateZ(Math.PI / 2);
-  roughen(trunk, 0.07, rng);
-  parts.push(tint(trunk, new THREE.Color(0x5a4532), 0.35, rng));
-  for (let i = 0; i < 3; i++) {
-    const b = new THREE.CylinderGeometry(0.05, 0.08, 0.8, 5);
-    b.rotateZ(rng() * 1.2 - 0.6);
-    b.translate((rng() - 0.5) * 3, 0.35, (rng() - 0.5) * 0.5);
-    parts.push(tint(b, new THREE.Color(0x50402e)));
-  }
-  // 이끼
-  const moss = new THREE.CylinderGeometry(0.29, 0.29, 1.6, 9, 1, true, 0, Math.PI);
-  moss.rotateZ(Math.PI / 2);
-  moss.translate((rng() - 0.5) * 1.5, 0.02, 0);
-  parts.push(tint(moss, new THREE.Color(0x4b6b30), 0.4, rng));
-  return mergeGeos(parts);
-}
-
-/* ------------------------------------------------------------------ */
-/* 나무 / 바위 (정적 배치)                                              */
-/* ------------------------------------------------------------------ */
-function pineTree(rng) {
-  const trunkParts = [], leafParts = [];
-  const h = 9 + rng() * 7;
-  const trunk = new THREE.CylinderGeometry(0.13, 0.42, h, 7);
-  trunk.translate(0, h / 2, 0);
-  roughen(trunk, 0.05, rng, 0.2);
-  trunkParts.push(tint(trunk, new THREE.Color(0x50412f), 0.35, rng));
-
-  const layers = 6 + Math.floor(rng() * 4);
-  for (let i = 0; i < layers; i++) {
-    const t = i / layers;
-    const r = lerp(2.5, 0.5, t) * (0.85 + rng() * 0.3);
-    const ch = lerp(2.6, 1.1, t);
-    const cone = new THREE.ConeGeometry(r, ch, 8, 1);
-    cone.translate((rng() - 0.5) * 0.25, h * (0.32 + t * 0.66), (rng() - 0.5) * 0.25);
-    roughen(cone, 0.18, rng);
-    leafParts.push(tint(cone, new THREE.Color(0x2f4a26), 0.55, rng));
-  }
-  return { trunk: mergeGeos(trunkParts), leaf: mergeGeos(leafParts), height: h };
-}
-
-function broadTree(rng) {
-  const trunkParts = [], leafParts = [];
-  const h = 7 + rng() * 6;
-  const trunk = new THREE.CylinderGeometry(0.24, 0.55, h * 0.72, 8);
-  trunk.translate(0, h * 0.36, 0);
-  roughen(trunk, 0.07, rng, 0.3);
-  trunkParts.push(tint(trunk, new THREE.Color(0x594834), 0.35, rng));
-
-  const branches = 3 + Math.floor(rng() * 3);
-  for (let i = 0; i < branches; i++) {
-    const a = (i / branches) * TAU + rng();
-    const len = h * (0.3 + rng() * 0.25);
-    const b = new THREE.CylinderGeometry(0.07, 0.17, len, 6);
-    b.translate(0, len / 2, 0);
-    b.rotateZ(0.5 + rng() * 0.4);
-    b.rotateY(a);
-    b.translate(0, h * 0.45, 0);
-    trunkParts.push(tint(b, new THREE.Color(0x52422f), 0.3, rng));
-  }
-
-  const blobs = 4 + Math.floor(rng() * 3);
-  for (let i = 0; i < blobs; i++) {
-    const r = (1.8 + rng() * 1.7);
-    const s = new THREE.IcosahedronGeometry(r, 1);
-    roughen(s, r * 0.22, rng);
-    const a = (i / blobs) * TAU + rng() * 0.8;
-    const rad = i === 0 ? 0 : 1.4 + rng() * 1.5;
-    s.translate(Math.cos(a) * rad, h * (0.72 + rng() * 0.22), Math.sin(a) * rad);
-    leafParts.push(tint(s, new THREE.Color(0x476b2c), 0.55, rng));
-  }
-  return { trunk: mergeGeos(trunkParts), leaf: mergeGeos(leafParts), height: h };
-}
-
-function birchTree(rng) {
-  const trunkParts = [], leafParts = [];
-  const h = 8 + rng() * 5;
-  const trunk = new THREE.CylinderGeometry(0.12, 0.22, h * 0.85, 7);
-  trunk.translate(0, h * 0.42, 0);
-  const lean = (rng() - 0.5) * 0.12;
-  trunk.rotateZ(lean);
-  trunkParts.push(tint(trunk, new THREE.Color(0xd8d5c8), 0.22, rng));
-  for (let i = 0; i < 5; i++) {
-    const mark = new THREE.BoxGeometry(0.24, 0.035, 0.05);
-    mark.translate(0, h * (0.15 + rng() * 0.6), 0.16);
-    mark.rotateY(rng() * TAU);
-    trunkParts.push(tint(mark, new THREE.Color(0x3a3630)));
-  }
-  const blobs = 3 + Math.floor(rng() * 3);
-  for (let i = 0; i < blobs; i++) {
-    const r = 1.3 + rng() * 1.2;
-    const s = new THREE.IcosahedronGeometry(r, 1);
-    roughen(s, r * 0.25, rng);
-    const a = (i / blobs) * TAU + rng();
-    s.translate(Math.cos(a) * (i ? 1.2 : 0), h * (0.78 + rng() * 0.2), Math.sin(a) * (i ? 1.2 : 0));
-    leafParts.push(tint(s, new THREE.Color(0x74923a), 0.5, rng));
-  }
-  return { trunk: mergeGeos(trunkParts), leaf: mergeGeos(leafParts), height: h };
-}
-
-function bushGeometry(rng) {
-  const parts = [];
-  const blobs = 3 + Math.floor(rng() * 3);
-  for (let i = 0; i < blobs; i++) {
-    const r = 0.45 + rng() * 0.5;
-    const s = new THREE.IcosahedronGeometry(r, 1);
-    roughen(s, r * 0.3, rng);
-    s.translate((rng() - 0.5) * 0.8, r * 0.75 + rng() * 0.2, (rng() - 0.5) * 0.8);
-    parts.push(tint(s, new THREE.Color(0x3f6129), 0.55, rng));
-  }
-  return mergeGeos(parts);
-}
-
-function rockGeometry(rng) {
-  const g = new THREE.IcosahedronGeometry(1, 1);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const n = 0.7 + fbm2(p.getX(i) * 1.6 + 3, p.getZ(i) * 1.6 - 2, 3) * 0.55;
-    p.setXYZ(i, p.getX(i) * n, p.getY(i) * n * 0.72, p.getZ(i) * n);
-  }
-  roughen(g, 0.06, rng);
-  return tint(g, new THREE.Color(0x8b877f), 0.3, rng);
-}
-
-/** 나무·바위 등 큰 오브젝트를 한 번에 배치한다 */
-export function buildForest(scene, quality = 'high', rngSeed = 20260914) {
-  const rng = makeRng(rngSeed);
-  const group = new THREE.Group();
-  group.name = 'forest';
-  scene.add(group);
-
-  const barkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94, metalness: 0 });
-  const leafMat = windify(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0 }), 0.55);
-  const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02 });
-  const bushMat = windify(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }), 0.8);
-
-  const species = [
-    { make: pineTree, weight: 0.42, minH: 4, maxH: 60 },
-    { make: broadTree, weight: 0.38, minH: 0.9, maxH: 34 },
-    { make: birchTree, weight: 0.2, minH: 1.4, maxH: 40 },
-  ];
-
-  // 종별 위치 수집
-  const placements = species.map(() => []);
-  const bushes = [], rocks = [], logs = [];
-  const R = INNER_HALF - 10;
-  const step = quality === 'low' ? 9 : 7;
-  for (let z = -R; z < R; z += step) {
-    for (let x = -R; x < R; x += step) {
-      const px = x + (rng() - 0.5) * step * 0.95;
-      const pz = z + (rng() - 0.5) * step * 0.95;
-      const d = Math.hypot(px, pz);
-      if (d > R) continue;
-      const h = heightAt(px, pz);
-      const slope = slopeAt(px, pz);
-      const fert = fertilityAt(px, pz, h, slope);
-      if (fert <= 0.05) continue;
-      const lakeD = Math.hypot(px - LAKE.x, pz - LAKE.z) - LAKE.r;
-      if (lakeD < 3) continue;
-
-      // 숲 밀도 — 큰 노이즈로 공터와 숲을 나눈다
-      const forestNoise = fbm2(px * 0.0045 + 5.5, pz * 0.0045 - 2.2, 3) * 0.5 + 0.5;
-      let density = clamp01((forestNoise - 0.32) * 2.1) * fert;
-      // 스폰 지점 주변은 트인 초원으로
-      density *= smoothstep(clamp01((Math.hypot(px - 0, pz - 26) - 14) / 22));
-      if (slope > 0.34) density *= 0.25;
-
-      const roll = rng();
-      if (roll < density * 0.5) {
-        let s = rng(), acc = 0, si = 0;
-        for (let i = 0; i < species.length; i++) { acc += species[i].weight; if (s <= acc) { si = i; break; } }
-        if (h < species[si].minH || h > species[si].maxH) si = 1;
-        placements[si].push([px, pz, h, rng() * TAU, 0.75 + rng() * 0.5]);
-      } else if (roll < density * 0.5 + 0.09) {
-        bushes.push([px, pz, h, rng() * TAU, 0.6 + rng() * 0.8]);
-      } else if (roll < density * 0.5 + 0.12 && (slope > 0.12 || rng() < 0.4)) {
-        rocks.push([px, pz, h, rng() * TAU, 0.35 + Math.pow(rng(), 2.2) * 3.4]);
-      } else if (roll < density * 0.5 + 0.127 && density > 0.25) {
-        logs.push([px, pz, h, rng() * TAU, 0.7 + rng() * 0.6]);
-      }
-    }
-  }
-
-  const meshes = [];
-  const tintCol = new THREE.Color();
-  const addInstanced = (geo, mat, list, shadow, yOff = 0, tiltFromGround = false, jitter = 0) => {
-    if (!list.length) return null;
-    const im = new THREE.InstancedMesh(geo, mat, list.length);
-    im.castShadow = shadow;
-    im.receiveShadow = true;
-    if (jitter > 0) {
-      im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(list.length * 3), 3);
-    }
-    const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(),
-      s = new THREE.Vector3(), e = new THREE.Euler(), up = new THREE.Vector3(0, 1, 0);
-    for (let i = 0; i < list.length; i++) {
-      const [x, z, h, ry, sc] = list[i];
-      if (jitter > 0) {
-        // 나무마다 잎 색을 살짝 달리해 복제품처럼 보이지 않게
-        const b = 1 + (rng() - 0.5) * jitter;
-        tintCol.setRGB(b * (1 + (rng() - 0.5) * jitter * 0.5), b, b * (1 - (rng() - 0.5) * jitter * 0.6));
-        im.instanceColor.setXYZ(i, tintCol.r, tintCol.g, tintCol.b);
-      }
-      if (tiltFromGround) {
-        const n = normalAt(x, z, 1.2);
-        q.setFromUnitVectors(up, n);
-        q.multiply(new THREE.Quaternion().setFromEuler(e.set(0, ry, 0)));
-      } else {
-        q.setFromEuler(e.set(0, ry, 0));
-      }
-      p.set(x, h + yOff, z);
-      s.set(sc, sc, sc);
-      m.compose(p, q, s);
-      im.setMatrixAt(i, m);
-    }
-    im.instanceMatrix.needsUpdate = true;
-    im.computeBoundingSphere();
-    group.add(im);
-    meshes.push(im);
-    return im;
-  };
-
-  // 종마다 변형을 3가지씩 만들어 같은 나무가 반복돼 보이지 않게 한다
-  species.forEach((sp, si) => {
-    const list = placements[si];
-    if (!list.length) return;
-    const variants = 3;
-    const buckets = Array.from({ length: variants }, () => []);
-    list.forEach((item, i) => buckets[i % variants].push(item));
-    for (let v = 0; v < variants; v++) {
-      if (!buckets[v].length) continue;
-      const t = sp.make(rng);
-      addInstanced(t.trunk, barkMat, buckets[v], true, -0.2, false, 0.18);
-      addInstanced(t.leaf, leafMat, buckets[v], true, -0.2, false, 0.42);
-    }
-  });
-
-  for (let v = 0; v < 3; v++) {
-    const list = bushes.filter((_, i) => i % 3 === v);
-    addInstanced(bushGeometry(rng), bushMat, list, true, -0.15, false, 0.4);
-  }
-  for (let v = 0; v < 4; v++) {
-    const list = rocks.filter((_, i) => i % 4 === v);
-    addInstanced(rockGeometry(rng), rockMat, list, true, -0.25, true, 0.3);
-  }
-  for (let v = 0; v < 2; v++) {
-    const list = logs.filter((_, i) => i % 2 === v);
-    addInstanced(logGeometry(rng), barkMat, list, true, 0.25, true);
-  }
-
-  const treeCount = placements.reduce((a, b) => a + b.length, 0);
-  return {
-    group, meshes, treeCount,
-    trees: placements.flat(),          // [x, z, h, ry, scale]
-    rocks, bushes,
-    materials: { barkMat, leafMat, rockMat, bushMat },
-  };
 }
 
 /* ------------------------------------------------------------------ */

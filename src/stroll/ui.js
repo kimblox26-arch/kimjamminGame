@@ -117,17 +117,32 @@ export class Menu {
       el.addEventListener('change', () => set(el.checked));
     };
 
-    bindRange('opt-master', () => g.settings.master, (v) => { g.settings.master = v; g.audio.setVolume('master', v); });
-    bindRange('opt-ambient', () => g.settings.ambient, (v) => { g.settings.ambient = v; g.audio.setVolume('ambient', v); });
-    bindRange('opt-sfx', () => g.settings.sfx, (v) => { g.settings.sfx = v; g.audio.setVolume('sfx', v); });
-    bindRange('opt-music', () => g.settings.musicVol, (v) => { g.settings.musicVol = v; g.audio.setVolume('music', v); });
-    bindRange('opt-sens', () => g.settings.sensitivity, (v) => { g.settings.sensitivity = v; g.player.sensitivity = v; });
+    bindRange('opt-master', () => g.settings.master, (v) => { g.settings.master = v; g.audio.setVolume('master', v); g.saveSettings(); });
+    bindRange('opt-ambient', () => g.settings.ambient, (v) => { g.settings.ambient = v; g.audio.setVolume('ambient', v); g.saveSettings(); });
+    bindRange('opt-sfx', () => g.settings.sfx, (v) => { g.settings.sfx = v; g.audio.setVolume('sfx', v); g.saveSettings(); });
+    bindRange('opt-music', () => g.settings.musicVol, (v) => { g.settings.musicVol = v; g.audio.setVolume('music', v); g.saveSettings(); });
+    bindRange('opt-sens', () => g.settings.sensitivity, (v) => { g.settings.sensitivity = v; g.player.sensitivity = v; g.saveSettings(); });
     bindRange('opt-fov', () => g.settings.fov, (v) => {
       g.settings.fov = v; g.player.fovBase = v; g.camera.fov = v; g.camera.updateProjectionMatrix();
     });
-    bindRange('opt-daylen', () => g.settings.dayLength, (v) => { g.settings.dayLength = v; g.sky.dayLength = v; });
-    bindToggle('opt-musicon', () => g.settings.music, (v) => { g.settings.music = v; });
-    bindToggle('opt-invert', () => g.settings.invertY, (v) => { g.settings.invertY = v; g.player.invertY = v; });
+    bindRange('opt-daylen', () => g.settings.dayLength, (v) => { g.settings.dayLength = v; g.sky.dayLength = v; g.saveSettings(); });
+    bindToggle('opt-musicon', () => g.settings.music, (v) => { g.settings.music = v; g.saveSettings(); });
+    bindToggle('opt-invert', () => g.settings.invertY, (v) => { g.settings.invertY = v; g.player.invertY = v; g.saveSettings(); });
+
+    const quality = document.getElementById('opt-quality');
+    if (quality) {
+      quality.value = g.quality;
+      quality.addEventListener('change', () => {
+        g.settings.quality = quality.value;
+        g.saveSettings();
+        document.getElementById('quality-note').textContent =
+          quality.value === g.quality ? '' : '다시 불러오면 적용됩니다';
+        if (quality.value !== g.quality) document.getElementById('btn-reload').classList.add('show');
+      });
+    }
+    document.getElementById('btn-reload')?.addEventListener('click', () => location.reload());
+    bindToggle('opt-autoq', () => g.settings.autoQuality, (v) => { g.settings.autoQuality = v; g.saveSettings(); });
+    bindToggle('opt-rain', () => g.settings.rain, (v) => { g.settings.rain = v; g.saveSettings(); });
 
     document.getElementById('btn-resume')?.addEventListener('click', () => g.resume());
     document.getElementById('btn-daynow')?.addEventListener('click', () => { g.sky.time = 0.26; g.hud.say('동이 트기 시작한다'); });
@@ -140,4 +155,81 @@ export class Menu {
 
   show() { this.open = true; this.el.classList.add('show'); }
   hide() { this.open = false; this.el.classList.remove('show'); }
+}
+
+
+/** 모바일 화면 조작 — 왼쪽 조이스틱 + 오른쪽 버튼 */
+export class TouchControls {
+  constructor(game) {
+    this.game = game;
+    this.player = game.player;
+    this.root = document.getElementById('touch');
+    if (!this.root) return;
+    document.body.classList.add('touch-ui');
+
+    this.pad = document.getElementById('stick');
+    this.knob = document.getElementById('stick-knob');
+    this._bindStick();
+
+    this._bindHold('tb-run', 'ShiftLeft');
+    this._bindHold('tb-crouch', 'ControlLeft');
+    this._bindTap('tb-jump', () => this.player.jump());
+    this._bindTap('tb-sit', () => this.player.toggleSit());
+    this._bindTap('tb-menu', () => (game.paused ? game.resume() : game.pause()));
+    this._bindTap('tb-photo', () => game.togglePhoto());
+  }
+
+  _bindStick() {
+    let id = null;
+    const R = 52;
+    const move = (t) => {
+      const r = this.pad.getBoundingClientRect();
+      let dx = t.clientX - (r.left + r.width / 2);
+      let dy = t.clientY - (r.top + r.height / 2);
+      const d = Math.hypot(dx, dy) || 1;
+      const k = Math.min(1, d / R);
+      dx = dx / d * k; dy = dy / d * k;
+      this.knob.style.transform = `translate(${dx * R}px, ${dy * R}px)`;
+      this.player.setMove(dx, -dy, true);
+    };
+    const end = () => {
+      id = null;
+      this.knob.style.transform = 'translate(0,0)';
+      this.player.setMove(0, 0, false);
+    };
+    this.pad.addEventListener('touchstart', (e) => {
+      const t = e.changedTouches[0];
+      id = t.identifier; move(t); e.preventDefault();
+    }, { passive: false });
+    this.pad.addEventListener('touchmove', (e) => {
+      for (const t of e.changedTouches) if (t.identifier === id) move(t);
+      e.preventDefault();
+    }, { passive: false });
+    this.pad.addEventListener('touchend', end);
+    this.pad.addEventListener('touchcancel', end);
+  }
+
+  _bindHold(id, code) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const down = (e) => { el.classList.add('on'); this.player.setKey(code, true); e.preventDefault(); };
+    const up = (e) => { el.classList.remove('on'); this.player.setKey(code, false); if (e) e.preventDefault(); };
+    el.addEventListener('touchstart', down, { passive: false });
+    el.addEventListener('touchend', up);
+    el.addEventListener('touchcancel', up);
+  }
+
+  _bindTap(id, fn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('touchstart', (e) => {
+      el.classList.add('on');
+      fn();
+      e.preventDefault();
+    }, { passive: false });
+    const up = () => el.classList.remove('on');
+    el.addEventListener('touchend', up);
+    el.addEventListener('touchcancel', up);
+    el.addEventListener('click', (e) => { e.preventDefault(); });
+  }
 }

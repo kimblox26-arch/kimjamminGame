@@ -111,6 +111,7 @@ export class StrollAudio {
 
     this._buildWind();
     this._buildWater();
+    this._buildRain();
     this.ready = true;
   }
 
@@ -192,7 +193,15 @@ export class StrollAudio {
     lsrc.connect(lbp).connect(lhp).connect(lg).connect(this.busAmbient);
     lsrc.start();
 
-    this.wind = { g, bp, lg, lbp, gust: 0.4, gustTarget: 0.4, t: 0 };
+    // 강한 돌풍에서만 들리는 높은 휘파람
+    const wsrc = this._src(this.nWhite, true);
+    const wbp = ctx.createBiquadFilter();
+    wbp.type = 'bandpass'; wbp.frequency.value = 1100; wbp.Q.value = 4.5;
+    const wg2 = ctx.createGain(); wg2.gain.value = 0;
+    wsrc.connect(wbp).connect(wg2).connect(this.busAmbient);
+    wsrc.start();
+
+    this.wind = { g, bp, lg, lbp, wg: wg2, wbp, gust: 0.4, gustTarget: 0.4, t: 0 };
   }
 
   _buildWater() {
@@ -212,6 +221,44 @@ export class StrollAudio {
     lfo.connect(lfoG).connect(g.gain);
     lfo.start();
     this.water = { g, bp };
+  }
+
+  _buildRain() {
+    const ctx = this.ctx;
+    // 굵은 빗방울(저역 후두둑) + 가는 빗줄기(고역 쉬이익)
+    const low = this._src(this.nBrown, true);
+    const lowBp = ctx.createBiquadFilter();
+    lowBp.type = 'bandpass'; lowBp.frequency.value = 620; lowBp.Q.value = 0.7;
+    const lowG = ctx.createGain(); lowG.gain.value = 0;
+    low.connect(lowBp).connect(lowG).connect(this.busAmbient);
+    low.start();
+
+    const hi = this._src(this.nWhite, true);
+    const hiBp = ctx.createBiquadFilter();
+    hiBp.type = 'bandpass'; hiBp.frequency.value = 4200; hiBp.Q.value = 0.5;
+    const hiHp = ctx.createBiquadFilter();
+    hiHp.type = 'highpass'; hiHp.frequency.value = 1600;
+    const hiG = ctx.createGain(); hiG.gain.value = 0;
+    hi.connect(hiBp).connect(hiHp).connect(hiG).connect(this.busAmbient);
+    hi.start();
+
+    this.rainNodes = { lowG, hiG, lowBp, hiBp };
+    this._dripT = 2;
+  }
+
+  /** 나뭇잎·땅에 떨어지는 빗방울 한 방울 */
+  drip(x, z, vol = 1) {
+    if (!this.ready || !this.enabled) return;
+    const ctx = this.ctx, t = this._now();
+    const sp = this._spatial(x, z, 8);
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(rand(900, 2200), t);
+    o.frequency.exponentialRampToValueAtTime(rand(400, 900), t + 0.05);
+    const g = ctx.createGain();
+    this._env(g, t, 0.03 * vol, 0.002, 0.06);
+    o.connect(g).connect(sp.input);
+    o.start(t); o.stop(t + 0.2);
   }
 
   /* ------------------------- 발소리 ------------------------- */
@@ -585,19 +632,50 @@ export class StrollAudio {
     this.listener.sin = Math.sin(s.yaw);
     this.listener.cos = Math.cos(s.yaw);
 
-    // 바람 — 완만한 무작위 돌풍
+    // 바람 — 게임이 보여주는 돌풍과 같은 값을 그대로 쓴다
     const w = this.wind;
-    w.t -= dt;
-    if (w.t <= 0) { w.t = rand(2.5, 9); w.gustTarget = rand(0.15, 1); }
-    w.gust += (w.gustTarget - w.gust) * Math.min(1, dt * 0.5);
+    const now = this.ctx.currentTime;
     const base = clamp01(s.windStrength);
-    const wg = (0.012 + w.gust * 0.05) * lerp(0.5, 1.25, base);
-    w.g.gain.setTargetAtTime(wg, this.ctx.currentTime, 0.4);
-    w.bp.frequency.setTargetAtTime(lerp(300, 900, w.gust), this.ctx.currentTime, 0.8);
-    const leaves = (0.004 + w.gust * 0.03) * clamp01(s.treeDensity) * lerp(0.6, 1.3, base);
-    w.lg.gain.setTargetAtTime(leaves, this.ctx.currentTime, 0.4);
-    w.lbp.frequency.setTargetAtTime(lerp(2400, 4200, w.gust), this.ctx.currentTime, 0.9);
-    this.gust = w.gust;
+    const gust = s.gust !== undefined ? clamp01(s.gust) : (() => {
+      w.t -= dt;
+      if (w.t <= 0) { w.t = rand(2.5, 9); w.gustTarget = rand(0.15, 1); }
+      w.gust += (w.gustTarget - w.gust) * Math.min(1, dt * 0.5);
+      return w.gust;
+    })();
+    w.gust = gust;
+    this.gust = gust;
+
+    const wg = (0.03 + gust * 0.17) * lerp(0.6, 1.5, base);
+    w.g.gain.setTargetAtTime(wg, now, 0.25);
+    w.bp.frequency.setTargetAtTime(lerp(280, 1100, gust), now, 0.5);
+    w.bp.Q.setTargetAtTime(lerp(0.5, 1.1, gust), now, 0.5);
+
+    // 나뭇잎 — 나무가 많을수록, 돌풍이 셀수록 크게 사각인다
+    const leaves = (0.01 + gust * 0.1) * (0.35 + clamp01(s.treeDensity) * 0.9) * lerp(0.7, 1.4, base);
+    w.lg.gain.setTargetAtTime(leaves, now, 0.25);
+    w.lbp.frequency.setTargetAtTime(lerp(2200, 4600, gust), now, 0.6);
+
+    // 휘파람 — 아주 센 돌풍에서만
+    const whistle = Math.max(0, gust - 0.55) * 0.055 * lerp(0.5, 1.4, base);
+    w.wg.gain.setTargetAtTime(whistle, now, 0.5);
+    w.wbp.frequency.setTargetAtTime(lerp(900, 1700, gust), now, 0.7);
+
+    // 비
+    const rainAmt = clamp01(s.rain || 0);
+    if (this.rainNodes) {
+      const shelter = 1 - clamp01(s.treeDensity) * 0.25;     // 나무 밑은 조금 덜 들린다
+      this.rainNodes.lowG.gain.setTargetAtTime(rainAmt * 0.055 * shelter, now, 0.8);
+      this.rainNodes.hiG.gain.setTargetAtTime(rainAmt * 0.05 * shelter, now, 0.8);
+      this.rainNodes.hiBp.frequency.setTargetAtTime(lerp(3200, 5200, rainAmt), now, 1.2);
+      if (rainAmt > 0.12) {
+        this._dripT -= dt;
+        if (this._dripT <= 0) {
+          this._dripT = rand(0.12, 0.6) / rainAmt;
+          const a = rand(0, TAU), d = rand(1.5, 9);
+          this.drip(s.player.x + Math.cos(a) * d, s.player.z + Math.sin(a) * d, rand(0.4, 1));
+        }
+      }
+    }
 
     // 물가
     const wd = s.waterDist;
