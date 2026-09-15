@@ -431,8 +431,10 @@ class GrassRing {
       this._e.set(Math.sin(leanA) * leanS, rng() * TAU, Math.cos(leanA) * leanS);
       this._q.setFromEuler(this._e);
       this._p.set(x, h - 0.03, z);
-      const w = (0.72 + rng() * 0.55) * this.size;
-      this._s.set(w, height * (0.85 + rng() * 0.3), w * (0.8 + rng() * 0.4));
+      // 길게 자란 포기일수록 잎이 가늘다 — 짧은 포기는 넓게 퍼져 바닥을 덮는다
+      const slim = lerp(1.12, 0.6, clamp01(tall / 0.8));
+      const w = (0.72 + rng() * 0.5) * this.size * slim;
+      this._s.set(w, height * (0.85 + rng() * 0.3), w * (0.82 + rng() * 0.36));
       this._m.compose(this._p, this._q, this._s);
       mesh.setMatrixAt(slot, this._m);
 
