@@ -157,9 +157,12 @@ class CellPool {
         if (!this.active.has(k) && !this._queued(k)) this.queue.push({ k, cx, cz, d });
       }
     }
-    // 멀어진 셀 회수
+    // 멀어진 셀 회수 (block < 0 은 '비어 있다고 확인된 셀')
     for (const [k, block] of this.active) {
-      if (!need.has(k)) { this.active.delete(k); this.free.push(block); this._onRelease?.(block); }
+      if (!need.has(k)) {
+        this.active.delete(k);
+        if (block >= 0) { this.free.push(block); this._onRelease?.(block); }
+      }
     }
     // 가까운 셀부터 채운다
     this.queue = this.queue.filter((q) => need.has(q.k));
@@ -171,14 +174,24 @@ class CellPool {
 
   _queued(k) { return this.queue.some((q) => q.k === k); }
 
-  /** 프레임당 최대 n개 셀 채우기 */
+  /**
+   * 프레임당 최대 n개 셀 채우기.
+   * filler 가 0(심은 게 없음)을 돌려주면 블록을 즉시 반납한다 —
+   * 군락이 드문 꽃일수록 같은 인스턴스 예산으로 훨씬 넓은 땅을 덮을 수 있다.
+   */
   fill(n, filler) {
     let done = 0;
     while (done < n && this.queue.length && this.free.length) {
       const { k, cx, cz } = this.queue.shift();
       const block = this.free.pop();
-      this.active.set(k, block);
-      filler(block, cx, cz);
+      const used = filler(block, cx, cz);
+      if (used === 0) {
+        this.active.set(k, -1);
+        this.free.push(block);
+        this._onRelease?.(block);
+      } else {
+        this.active.set(k, block);
+      }
       done++;
     }
     return done;
@@ -199,12 +212,12 @@ const GRASS_RINGS = {
     { cell: 6, radius: 24, minRadius: 0, perBlock: 460, blocks: 80, size: 1.0 },
     { cell: 12, radius: 60, minRadius: 22, perBlock: 260, blocks: 116, size: 1.55 },
     // 멀리까지 이어지는 성긴 큰 포기 — 풀밭이 끊겨 보이지 않게
-    { cell: 24, radius: 132, minRadius: 56, perBlock: 150, blocks: 136, size: 2.7 },
+    { cell: 24, radius: 132, minRadius: 56, perBlock: 105, blocks: 136, size: 2.7 },
   ],
   ultra: [
-    { cell: 6, radius: 30, minRadius: 0, perBlock: 620, blocks: 120, size: 1.0 },
+    { cell: 6, radius: 29, minRadius: 0, perBlock: 470, blocks: 116, size: 1.0 },
     { cell: 12, radius: 78, minRadius: 28, perBlock: 330, blocks: 190, size: 1.6 },
-    { cell: 24, radius: 165, minRadius: 74, perBlock: 190, blocks: 192, size: 2.8 },
+    { cell: 24, radius: 165, minRadius: 74, perBlock: 120, blocks: 192, size: 2.8 },
   ],
 };
 
@@ -251,6 +264,7 @@ class GrassRing {
     const cell = this.pool.cell;
     const rng = makeRng((cx * 73856093) ^ (cz * 19349663) ^ 0x9e37);
     const start = block * this.perBlock;
+    let used = 0;
     for (let i = 0; i < this.perBlock; i++) {
       const x = cx * cell + rng() * cell;
       const z = cz * cell + rng() * cell;
@@ -258,6 +272,7 @@ class GrassRing {
       const fert = fertilityAt(x, z, h, slope);
       const surf = surfaceAt(x, z, h, slope);
       const ok = fert > 0.1 && rng() < fert * (surf === SURFACE.GRASS ? 1.15 : surf === SURFACE.DIRT ? 0.45 : 0.06);
+      if (ok) used++;
       if (!ok) {
         this._m.compose(this._p.set(0, -999, 0), this._q, this._s.set(0, 0, 0));
         this.mesh.setMatrixAt(start + i, this._m);
@@ -285,6 +300,7 @@ class GrassRing {
     }
     this._dirty = true;
     this.colors.needsUpdate = true;
+    return used;
   }
 
   flush() {
@@ -406,13 +422,13 @@ function windify(material, factor = 1, opts = {}) {
 
 /** 셀 풀로 관리되는 산포 레이어 */
 export class ScatterLayer {
-  constructor(scene, { geometry, material, perBlock, blocks, cell, radius, place, castShadow = false }) {
+  constructor(scene, { geometry, material, perBlock, blocks, cell, radius, place, castShadow = false, name = 'clutter' }) {
     this.perBlock = perBlock;
     this.count = perBlock * blocks;
     this.place = place;
     this.pool = new CellPool({ cell, radius, blocks, perBlock });
     this.mesh = new THREE.InstancedMesh(geometry, material, this.count);
-    this.mesh.name = 'clutter';
+    this.mesh.name = name;
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = castShadow;
     this.mesh.receiveShadow = true;
@@ -441,6 +457,7 @@ export class ScatterLayer {
     const cell = this.pool.cell;
     const rng = makeRng((cx * 73856093) ^ (cz * 19349663) ^ 0x51ed);
     const start = block * this.perBlock;
+    let used = 0;
     for (let i = 0; i < this.perBlock; i++) {
       const x = cx * cell + rng() * cell;
       const z = cz * cell + rng() * cell;
@@ -449,9 +466,11 @@ export class ScatterLayer {
       this.mesh.setMatrixAt(start + i, res.matrix || this._m);
       if (res.color) this.mesh.instanceColor.setXYZ(start + i, res.color.r, res.color.g, res.color.b);
       else this.mesh.instanceColor.setXYZ(start + i, 1, 1, 1);
+      used++;
     }
     this._dirty = true;
     this.mesh.instanceColor.needsUpdate = true;
+    return used;
   }
 
   compose(x, y, z, ry, scale, tiltX = 0, tiltZ = 0) {
@@ -485,25 +504,6 @@ function pebbleGeometry(rng) {
   return roughen(g, 0.16, rng);
 }
 
-function flowerGeometry(rng, petalColor) {
-  const parts = [];
-  const stem = new THREE.CylinderGeometry(0.006, 0.009, 0.22, 4);
-  stem.translate(0, 0.11, 0);
-  parts.push(tint(stem, new THREE.Color(0x5d7a37)));
-  const petals = 5 + Math.floor(rng() * 3);
-  for (let i = 0; i < petals; i++) {
-    const p = new THREE.PlaneGeometry(0.042, 0.03);
-    p.rotateX(-Math.PI / 2.4);
-    p.translate(0, 0.225, 0.027);
-    p.rotateY((i / petals) * TAU);
-    parts.push(tint(p, petalColor, 0.5, rng));
-  }
-  const core = new THREE.SphereGeometry(0.014, 5, 4);
-  core.translate(0, 0.228, 0);
-  parts.push(tint(core, new THREE.Color(0xe8c44a)));
-  return mergeGeos(parts);
-}
-
 function fernGeometry(rng) {
   const parts = [];
   const leaves = 6 + Math.floor(rng() * 4);
@@ -520,7 +520,7 @@ function fernGeometry(rng) {
     g.computeVertexNormals();
     g.rotateX(-0.5 - rng() * 0.35);
     g.rotateY((i / leaves) * TAU + rng() * 0.4);
-    parts.push(tint(g, new THREE.Color(0x3f6a2c), 0.5, rng));
+    parts.push(tint(g, new THREE.Color(0x55813a), 0.45, rng));
   }
   return mergeGeos(parts);
 }
@@ -567,29 +567,8 @@ export function buildClutter(scene, quality = 'high') {
       const n = normalAt(x, z, 0.8);
       const m = self.compose(x, h - sc * 0.18, z, r() * TAU, new THREE.Vector3(sc, sc * (0.6 + r() * 0.5), sc),
         Math.asin(-n.z) * 0.8, Math.asin(n.x) * 0.8);
-      return { matrix: m, color: new THREE.Color().setHSL(0.09, 0.05 + r() * 0.06, 0.42 + r() * 0.22) };
-    },
-  }));
-
-  // 꽃
-  const flowerColors = [0xf4f1e6, 0xf2ead0, 0xe9d76a, 0xf0f0f0, 0xd9a0b4, 0xb3a6d6, 0xe0b36a];
-  layers.push(new ScatterLayer(scene, {
-    geometry: flowerGeometry(rng, new THREE.Color(0xffffff)),
-    material: plantMat,
-    perBlock: Math.round(28 * q), blocks: 92, cell: 14, radius: 58,
-    place(x, z, r, self) {
-      const { h, slope } = sampleGround(x, z);
-      const surf = surfaceAt(x, z, h, slope);
-      if (surf !== SURFACE.GRASS) return null;
-      const fert = fertilityAt(x, z, h, slope);
-      const patch = fbm2(x * 0.05 + 88, z * 0.05 - 41, 2) * 0.5 + 0.5;
-      if (r() > fert * patch * 1.5) return null;
-      const sc = 0.55 + r() * 0.6;
-      const ci = Math.floor(clamp01(fbm2(x * 0.01, z * 0.01, 2) * 0.5 + 0.5) * flowerColors.length * 0.999);
-      return {
-        matrix: self.compose(x, h, z, r() * TAU, sc, (r() - 0.5) * 0.18, (r() - 0.5) * 0.18),
-        color: new THREE.Color(flowerColors[ci]).offsetHSL(0, (r() - 0.5) * 0.1, (r() - 0.5) * 0.12),
-      };
+      const v = 0.82 + r() * 0.34;
+      return { matrix: m, color: new THREE.Color(v * 1.03, v, v * 0.94) };
     },
   }));
 
@@ -597,16 +576,16 @@ export function buildClutter(scene, quality = 'high') {
   layers.push(new ScatterLayer(scene, {
     geometry: fernGeometry(rng),
     material: plantMat,
-    perBlock: Math.round(16 * q), blocks: 84, cell: 14, radius: 55,
+    perBlock: Math.round(26 * q), blocks: 84, cell: 14, radius: 55,
     place(x, z, r, self) {
       const { h, slope } = sampleGround(x, z);
       const fert = fertilityAt(x, z, h, slope);
       const shade = fbm2(x * 0.0045 + 5.5, z * 0.0045 - 2.2, 3) * 0.5 + 0.5;  // 숲 밀도와 같은 노이즈
-      if (r() > fert * clamp01((shade - 0.3) * 2) * 0.9) return null;
+      if (r() > fert * clamp01((shade - 0.34) * 2.4) * 1.35) return null;
       const sc = 0.7 + r() * 0.8;
       return {
         matrix: self.compose(x, h - 0.05, z, r() * TAU, sc, (r() - 0.5) * 0.12, (r() - 0.5) * 0.12),
-        color: new THREE.Color().setHSL(0.26 + (r() - 0.5) * 0.03, 0.42, 0.3 + r() * 0.16),
+        color: new THREE.Color(0.86 + r() * 0.24, 0.9 + r() * 0.22, 0.8 + r() * 0.2),
       };
     },
   }));
@@ -615,12 +594,12 @@ export function buildClutter(scene, quality = 'high') {
   layers.push(new ScatterLayer(scene, {
     geometry: mushroomGeometry(rng, new THREE.Color(0xffffff)),
     material: plantMat,
-    perBlock: 5, blocks: 48, cell: 18, radius: 48,
+    perBlock: 9, blocks: 48, cell: 18, radius: 48,
     place(x, z, r, self) {
       const { h, slope } = sampleGround(x, z);
       const shade = fbm2(x * 0.0045 + 5.5, z * 0.0045 - 2.2, 3) * 0.5 + 0.5;
       if (shade < 0.45 || slope > 0.3 || h < WATER_LEVEL + 0.6) return null;
-      if (r() > 0.35) return null;
+      if (r() > 0.55) return null;
       const sc = 0.7 + r() * 1.1;
       const pal = [0xb4503c, 0xd9c9a8, 0x8a6a4a, 0xe2e0d4];
       return {

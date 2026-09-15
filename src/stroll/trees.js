@@ -399,13 +399,13 @@ function birchTree(rng, leafCount) {
   }
 
   const pal = paletteColors(BIRCH_GREENS);
-  const blobs = 3 + Math.floor(rng() * 3);
+  const blobs = 4 + Math.floor(rng() * 3);
   const centers = [];
   for (let i = 0; i < blobs; i++) {
-    const r = 1.7 + rng() * 1.3;
+    const r = 1.5 + rng() * 1.2;
     const a = (i / blobs) * TAU + rng();
-    const cx = Math.cos(a) * (i ? 1.3 : 0), cz = Math.sin(a) * (i ? 1.3 : 0);
-    const cy = h * (0.66 + rng() * 0.2);
+    const cx = Math.cos(a) * (i ? 1.1 : 0), cz = Math.sin(a) * (i ? 1.1 : 0);
+    const cy = h * (0.5 + (i / blobs) * 0.42 + rng() * 0.08);
     centers.push([cx, cy, cz, r]);
     const s = new THREE.IcosahedronGeometry(r * 0.62, 1);
     roughen(s, r * 0.18, rng);
@@ -424,6 +424,43 @@ function birchTree(rng, leafCount) {
   };
 }
 
+/** 어린 나무 — 가는 줄기에 잎덩이 두어 개 */
+function sapling(rng, leafCount) {
+  const trunkParts = [], blobParts = [];
+  const lb = new LeafBuilder();
+  const h = 1.5 + rng() * 1.6;
+  const conifer = rng() < 0.45;
+  const trunk = new THREE.CylinderGeometry(0.03, 0.07, h * 0.9, 5);
+  trunk.translate(0, h * 0.45, 0);
+  trunkParts.push(tint(trunk, new THREE.Color(0x8d7454), 0.3, rng));
+
+  const pal = paletteColors(conifer ? PINE_GREENS : LEAF_GREENS);
+  if (conifer) {
+    for (let i = 0; i < 3; i++) {
+      const t = i / 3;
+      const cone = new THREE.ConeGeometry(lerp(0.5, 0.18, t), 0.7, 6);
+      cone.translate(0, h * (0.35 + t * 0.55), 0);
+      blobParts.push(tint(cone, new THREE.Color(0x3c5b30), 0.4, rng));
+      scatterBlobLeaves(lb, rng, 0, h * (0.35 + t * 0.55), 0, lerp(0.5, 0.2, t),
+        Math.round(leafCount / 3), [3], pal, 0.26);
+    }
+  } else {
+    for (let i = 0; i < 2; i++) {
+      const r = 0.42 + rng() * 0.3;
+      const cy = h * (0.62 + i * 0.26);
+      const b = new THREE.IcosahedronGeometry(r * 0.66, 1);
+      b.translate((rng() - 0.5) * 0.3, cy, (rng() - 0.5) * 0.3);
+      blobParts.push(tint(b, new THREE.Color(0x4e7331), 0.4, rng));
+      scatterBlobLeaves(lb, rng, 0, cy, 0, r, Math.round(leafCount / 2), [0, 1, 2], pal, 0.2);
+    }
+  }
+  return {
+    trunk: mergeGeos(trunkParts),
+    blob: mergeGeos(blobParts),
+    leaves: lb.pos.length ? lb.geometry() : null,
+  };
+}
+
 function bushGeometry(rng, leafCount) {
   const blobParts = [];
   const lb = new LeafBuilder();
@@ -432,8 +469,8 @@ function bushGeometry(rng, leafCount) {
   for (let i = 0; i < blobs; i++) {
     const r = 0.5 + rng() * 0.55;
     const cx = (rng() - 0.5) * 0.8, cz = (rng() - 0.5) * 0.8, cy = r * 0.8 + rng() * 0.2;
-    const s = new THREE.IcosahedronGeometry(r * 0.8, 1);
-    roughen(s, r * 0.28, rng);
+    const s = new THREE.IcosahedronGeometry(r * 0.62, 1);
+    roughen(s, r * 0.2, rng);
     s.translate(cx, cy, cz);
     blobParts.push(tint(s, new THREE.Color(0x3f6129), 0.5, rng));
     scatterBlobLeaves(lb, rng, cx, cy, cz, r, Math.round(leafCount / blobs), [0, 1, 2], pal, 0.17);
@@ -446,7 +483,7 @@ function rockGeometry(rng) {
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const n = 0.7 + fbm2(p.getX(i) * 1.6 + 3, p.getZ(i) * 1.6 - 2, 3) * 1.6;
-    p.setXYZ(i, p.getX(i) * n, p.getY(i) * n * 0.72, p.getZ(i) * n);
+    p.setXYZ(i, p.getX(i) * n, p.getY(i) * n * 0.88, p.getZ(i) * n);
   }
   roughen(g, 0.06, rng);
   return tint(g, new THREE.Color(0xb4b0a7), 0.3, rng);
@@ -475,10 +512,10 @@ function logGeometry(rng) {
 /* 숲                                                                  */
 /* ------------------------------------------------------------------ */
 const QUALITY = {
-  low: { step: 10, leaves: 130, nearTrees: 14, leafDist: 17, variants: 2, bushLeaves: 10 },
-  medium: { step: 8, leaves: 230, nearTrees: 38, leafDist: 36, variants: 2, bushLeaves: 20 },
-  high: { step: 7, leaves: 380, nearTrees: 70, leafDist: 52, variants: 3, bushLeaves: 34 },
-  ultra: { step: 6, leaves: 760, nearTrees: 120, leafDist: 70, variants: 3, bushLeaves: 60 },
+  low: { step: 9, leaves: 130, nearTrees: 14, leafDist: 17, variants: 2, bushLeaves: 10, saplings: 0.4 },
+  medium: { step: 7.2, leaves: 230, nearTrees: 38, leafDist: 36, variants: 2, bushLeaves: 20, saplings: 0.7 },
+  high: { step: 6.2, leaves: 380, nearTrees: 70, leafDist: 52, variants: 3, bushLeaves: 34, saplings: 1 },
+  ultra: { step: 5.4, leaves: 760, nearTrees: 120, leafDist: 70, variants: 3, bushLeaves: 60, saplings: 1.3 },
 };
 
 export class Forest {
@@ -533,7 +570,7 @@ export class Forest {
 
   /** 지형 조건에 따라 나무·덤불·바위·통나무 위치를 정한다 */
   _place(rng, q) {
-    const trees = [], bushes = [], rocks = [], logs = [];
+    const trees = [], bushes = [], rocks = [], logs = [], saplings = [];
     const R = INNER_HALF - 10;
     for (let z = -R; z < R; z += q.step) {
       for (let x = -R; x < R; x += q.step) {
@@ -560,16 +597,21 @@ export class Forest {
           else if (r2 < 0.8) sp = 1;
           else sp = 2;
           trees.push([px, pz, h, rng() * TAU, 0.78 + rng() * 0.5, sp, rng()]);
-        } else if (roll < density * 0.5 + 0.09) {
-          bushes.push([px, pz, h, rng() * TAU, 0.6 + rng() * 0.8, 0, rng()]);
-        } else if (roll < density * 0.5 + 0.12 && (slope > 0.12 || rng() < 0.4)) {
-          rocks.push([px, pz, h, rng() * TAU, 0.35 + Math.pow(rng(), 2.2) * 3.4, 0, rng()]);
-        } else if (roll < density * 0.5 + 0.127 && density > 0.25) {
+        } else if (roll < density * 0.5 + 0.14) {
+          bushes.push([px, pz, h, rng() * TAU, 0.6 + rng() * 0.85, 0, rng()]);
+        } else if (roll < density * 0.5 + 0.14 + 0.09 * q.saplings && density > 0.12) {
+          // 어린 나무 — 큰 나무 사이를 메워 숲에 층이 생긴다
+          saplings.push([px, pz, h, rng() * TAU, 0.5 + rng() * 0.7, 0, rng()]);
+        } else if (roll < density * 0.5 + 0.145 + 0.09 * q.saplings
+            && (slope > 0.12 || rng() < 0.35)) {
+          rocks.push([px, pz, h, rng() * TAU, 0.3 + Math.pow(rng(), 2.4) * 2.3, 0, rng()]);
+        } else if (roll < density * 0.5 + 0.152 + 0.09 * q.saplings && density > 0.25) {
           logs.push([px, pz, h, rng() * TAU, 0.7 + rng() * 0.6, 0, rng()]);
         }
       }
     }
     this.trees = trees;
+    this.saplings = saplings;
     this.bushes = bushes;
     this.rocks = rocks;
     this.logs = logs;
@@ -648,6 +690,33 @@ export class Forest {
       }
     }
 
+    // 어린 나무
+    this.saplingVariants = [];
+    if (q.saplings > 0 && this.saplings.length) {
+      for (let v = 0; v < 2; v++) {
+        const list = this.saplings.filter((_, i) => i % 2 === v);
+        if (!list.length) continue;
+        const built = sapling(rng, Math.round(q.leaves * 0.18));
+        this._staticInstanced(built.trunk, this.barkMat, list, false, -0.1, false, 0.2);
+        const blob = this._staticInstanced(built.blob, this.blobMat, list, true, -0.1, false, 0.4);
+        if (blob) blob.name = `sapling-${v}`;
+        const variant = { list, blob, leafGeo: built.leaves, near: null };
+        if (built.leaves && q.nearTrees > 0) {
+          const cap = 20;
+          const near = new THREE.InstancedMesh(built.leaves, this.leafMat, cap);
+          near.name = `sapling-leaves-${v}`;
+          near.castShadow = false;
+          near.receiveShadow = true;
+          near.frustumCulled = false;
+          near.count = 0;
+          this.group.add(near);
+          variant.near = near;
+          variant.cap = cap;
+        }
+        this.saplingVariants.push(variant);
+      }
+    }
+
     // 덤불 — 가까운 것에는 잎을 단다
     this.bushVariants = [];
     for (let v = 0; v < 3; v++) {
@@ -714,6 +783,7 @@ export class Forest {
 
     for (const v of this.variants) fill(v);
     for (const v of this.bushVariants) fill(v, true);
+    for (const v of this.saplingVariants) fill(v, true);
   }
 
   /** 새가 앉을 나뭇가지 후보 (x, z, 높이) */

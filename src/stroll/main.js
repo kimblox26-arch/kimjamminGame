@@ -11,6 +11,7 @@ import { Sky } from './sky.js';
 import { Water } from './water.js';
 import { GrassField, buildClutter, WIND, SUN } from './flora.js';
 import { Forest, FallingLeaves } from './trees.js';
+import { buildFlowers, buildLilies } from './flowers.js';
 import { Wildlife } from './fauna.js';
 import { Player, ObstacleGrid } from './player.js';
 import { Audio } from './audio.js';
@@ -91,6 +92,13 @@ class Game {
     await nextFrame();
     this.grass = new GrassField(this.scene, this.quality);
     this.clutter = buildClutter(this.scene, this.quality);
+
+    prog(0.78, '들꽃을 피우는 중');
+    await nextFrame();
+    const flowers = buildFlowers(this.scene, this.quality);
+    this.flowers = flowers;
+    this.clutter = this.clutter.concat(flowers.layers);   // 같은 셀 풀 방식이라 함께 갱신된다
+    this.lilies = buildLilies(this.scene, this.quality);
 
     this.weather = new Weather(this.scene, {
       rain: this.settings.rain,
