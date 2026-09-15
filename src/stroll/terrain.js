@@ -303,6 +303,7 @@ const C = {
   rockDark: new THREE.Color(0x55524f),
   sand: new THREE.Color(0xbfae86),
   silt: new THREE.Color(0x5a5642),
+  duff: new THREE.Color(0x4e4530),          // 숲 바닥 — 낙엽이 삭은 빛깔
   forest: new THREE.Color(0x36482c),
   haze: new THREE.Color(0x7e93ab),
   snow: new THREE.Color(0xe8edf2),
@@ -320,6 +321,10 @@ function colorAt(x, z, h, slope, out) {
   out.copy(C.grass).lerp(C.grassLush, clamp01(0.5 - varB * 0.8));
   out.lerp(C.grassDry, clamp01((dry - 0.55) * 1.9));
   out.lerp(C.moss, clamp01(0.35 - h * 0.03));
+
+  // 숲이 빽빽한 자리의 땅은 낙엽과 그늘로 짙고 누렇다 — 흙·풀·낙엽이 이어진다
+  const forestN = clamp01((fbm2(x * 0.0045 + 5.5, z * 0.0045 - 2.2, 3) * 0.5 + 0.5 - 0.34) * 2.2);
+  out.lerp(_c2.copy(C.duff).lerp(C.moss, clamp01(varA * 0.8 + 0.4)), forestN * (0.24 + varA * 0.16));
 
   // 경사면은 흙 → 바위
   out.lerp(_c2.copy(C.dirt).lerp(C.dirtDark, clamp01(varA * 0.6 + 0.4)),

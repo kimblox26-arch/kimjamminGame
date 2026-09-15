@@ -27,25 +27,110 @@ function stemGeo(h, r0 = 0.006, r1 = 0.004, bend = 0.03, segs = 2) {
   return geo;
 }
 
-/** 꽃잎 한 장 — 밑동에서 +Z 로 뻗고, 가운데가 오목하게 팬다 */
-function petalGeo(len, wid, cup = 0.1, droop = 0.12, segs = 2) {
+/**
+ * 꽃잎 한 장 — 밑동에서 +Z 로 뻗는다.
+ * 가운데가 오목하게 팬 채 주맥을 따라 접히고(fold), 끝이 둥글거나 뾰족하며,
+ * 좌우가 미세하게 어긋나고 길이를 따라 비틀린다.
+ */
+function petalGeo(len, wid, o = {}) {
+  const {
+    cup = 0.1, droop = 0.12, segs = 2, round = 0.8,
+    fold = 0, asym = 0, twist = 0, waist = 0,
+  } = o;
   const pos = [], idx = [];
+  const sides = fold > 0 ? [-1, 0, 1] : [-1, 1];
   for (let i = 0; i <= segs; i++) {
     const t = i / segs;
-    const w = wid * Math.sin(Math.PI * clamp01(0.12 + t * 0.92)) ** 0.8;
+    // 폭 — 밑동은 좁고, round 가 작을수록 끝이 둥글다
+    let w = wid * Math.sin(Math.PI * clamp01(0.12 + t * 0.92)) ** round;
+    if (waist) w *= 1 - waist * Math.sin(t * Math.PI * 2) * 0.5;   // 허리가 잘록한 꽃잎
     const z = t * len;
     const y = Math.sin(t * Math.PI) * cup - t * t * droop;
-    pos.push(-w, y, z, w, y, z);
+    const tw = twist * t;
+    const ct = Math.cos(tw), st = Math.sin(tw);
+    for (const s of sides) {
+      const ww = w * s * (s < 0 ? 1 - asym : 1 + asym);
+      const dy = s === 0 ? -fold * w : 0;      // 주맥이 내려앉아 단면이 V자
+      pos.push(ww * ct, y + dy + ww * st * 0.5, z);
+    }
   }
+  const stride = sides.length;
   for (let i = 0; i < segs; i++) {
-    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
-    idx.push(a, c, b, b, c, d);
+    const a = i * stride;
+    if (stride === 2) idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    else {
+      idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4);
+      idx.push(a + 1, a + 4, a + 2, a + 2, a + 4, a + 5);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
   return g;
+}
+
+/**
+ * 꽃부리 한 벌.
+ * 꽃잎이 자로 잰 듯 돌지 않는다 — 각도·길이·폭·기울기가 저마다 다르고
+ * 빛깔도 장마다 조금씩 어긋나 실제 꽃처럼 보인다.
+ */
+function corolla(parts, rng, n, color, o) {
+  const jit = o.jitter ?? 0.45;
+  for (let i = 0; i < n; i++) {
+    const k = 1 + (rng() - 0.5) * (o.vary ?? 0.32);
+    const p = petalGeo(o.len * k, o.wid * (1 + (rng() - 0.5) * 0.3), {
+      cup: (o.cup ?? 0.1) * (0.7 + rng() * 0.6),
+      droop: (o.droop ?? 0.1) * (0.6 + rng() * 0.8),
+      segs: o.segs ?? 2,
+      round: o.round ?? 0.8,
+      fold: o.fold ?? 0,
+      waist: o.waist ?? 0,
+      asym: (rng() - 0.5) * 0.34,
+      twist: (rng() - 0.5) * (o.twist ?? 0.6),
+    });
+    place(p, {
+      rotX: (o.rotX ?? -0.5) + (rng() - 0.5) * (o.tilt ?? 0.3),
+      rotZ: (rng() - 0.5) * 0.22,
+      rotY: (i / n) * TAU + (rng() - 0.5) * (TAU / n) * jit + (o.rotY0 ?? 0),
+      x: o.x ?? 0, y: o.y + (rng() - 0.5) * (o.yJit ?? 0), z: o.z ?? 0,
+    });
+    const c = _c.copy(color);
+    c.offsetHSL((rng() - 0.5) * 0.03, (rng() - 0.5) * 0.14, (rng() - 0.5) * 0.12);
+    parts.push(tint(p, c, 0.1, rng));
+  }
+}
+
+/**
+ * 꽃 한가운데 — 납작한 원이 아니라 도톰하게 솟은 꽃판.
+ * 테두리를 흔들어 도려낸 원처럼 보이지 않게 한다.
+ */
+function discGeo(r, y, rng, o = {}) {
+  const g = new THREE.CircleGeometry(r, o.seg ?? 9);
+  g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    if (i === 0) { p.setY(i, (o.dome ?? 0.4) * r); continue; }
+    const jr = 1 + (rng() - 0.5) * 0.2;
+    p.setXYZ(i, p.getX(i) * jr, (rng() - 0.25) * r * 0.12, p.getZ(i) * jr);
+  }
+  g.computeVertexNormals();
+  g.translate(0, y, 0);
+  return g;
+}
+
+/** 수술 몇 대 — 꽃 가운데가 살아 있게 보인다 */
+function stamens(parts, rng, n, r, y, color) {
+  for (let i = 0; i < n; i++) {
+    const a = i * 2.399963 + rng() * 0.5;
+    const rr = r * Math.sqrt(rng()) * 0.8;
+    const st = new THREE.CylinderGeometry(r * 0.09, r * 0.06, r * (0.7 + rng() * 0.6), 3, 1, true);
+    st.translate(0, r * 0.35, 0);
+    st.rotateZ((rng() - 0.5) * 0.7);
+    st.rotateY(a);
+    st.translate(Math.cos(a) * rr, y, Math.sin(a) * rr);
+    parts.push(tint(st, color, 0.3, rng));
+  }
 }
 
 /** 길쭉한 잎 */
@@ -80,6 +165,8 @@ function place(geo, { rotX = 0, rotY = 0, rotZ = 0, x = 0, y = 0, z = 0 }) {
 }
 
 const C = (hex) => new THREE.Color(hex);
+const _c = new THREE.Color();
+const _sv = new THREE.Vector3();
 const GREEN = C(0x6f8b46);
 const GREEN_DARK = C(0x5b7639);
 
@@ -92,16 +179,13 @@ function daisy(rng, petalColor = 0xf6f4ec) {
   const parts = [];
   const h = 0.2 + rng() * 0.12;
   parts.push(tint(stemGeo(h, 0.006, 0.0045, 0.02), GREEN, 0.3, rng));
-  const n = 8 + Math.floor(rng() * 3);
-  for (let i = 0; i < n; i++) {
-    const p = petalGeo(0.05, 0.014, 0.008, 0.012, 2);
-    place(p, { rotX: -0.06, rotY: (i / n) * TAU, y: h, z: 0 });
-    parts.push(tint(p, C(petalColor), 0.2, rng));
-  }
-  const disc = new THREE.CircleGeometry(0.017, 8);
-  disc.rotateX(-Math.PI / 2);
-  disc.translate(0, h + 0.004, 0);
-  parts.push(tint(disc, C(0xe8c23c), 0.25, rng));
+  // 혀꽃은 길이도 각도도 제각각이고, 몇 장은 아래로 처진다
+  corolla(parts, rng, 9 + Math.floor(rng() * 5), C(petalColor), {
+    len: 0.05, wid: 0.013, y: h, rotX: -0.08, cup: 0.01, droop: 0.016,
+    round: 0.5, fold: 0.1, vary: 0.42, tilt: 0.42, twist: 0.6, yJit: 0.005,
+  });
+  parts.push(tint(discGeo(0.015 + rng() * 0.004, h + 0.003, rng, { dome: 0.55 }),
+    C(0xe8c23c), 0.25, rng));
   // 밑둥 잎
   for (let i = 0; i < 2; i++) {
     const l = leafGeo(0.07, 0.016, 0.3, 2);
@@ -116,17 +200,15 @@ function dandelion(rng) {
   const parts = [];
   const h = 0.15 + rng() * 0.1;
   parts.push(tint(stemGeo(h, 0.007, 0.006, 0.015), GREEN, 0.25, rng));
-  const n = 10 + Math.floor(rng() * 3);
-  for (let i = 0; i < n; i++) {
-    const p = petalGeo(0.03, 0.008, 0.01, 0.01, 2);
-    const ring = i / n;
-    place(p, { rotX: -0.5 - (i % 3) * 0.35, rotY: ring * TAU * 3.7, y: h });
-    parts.push(tint(p, C(0xf0c22a), 0.28, rng));
+  // 혀꽃이 여러 겹으로 겹쳐 앉는다
+  for (let ring = 0; ring < 3; ring++) {
+    corolla(parts, rng, 5 + Math.floor(rng() * 3), C(0xf0c22a), {
+      len: 0.03 - ring * 0.005, wid: 0.008, y: h - ring * 0.002,
+      rotX: -0.35 - ring * 0.42, cup: 0.008, droop: 0.008, round: 0.45,
+      vary: 0.34, tilt: 0.3, twist: 0.5, rotY0: ring * 0.7,
+    });
   }
-  const core = new THREE.IcosahedronGeometry(0.013, 0);
-  core.scale(1, 0.7, 1);
-  core.translate(0, h, 0);
-  parts.push(tint(core, C(0xdda81e)));
+  parts.push(tint(discGeo(0.012, h + 0.002, rng, { dome: 0.5, seg: 7 }), C(0xdda81e), 0.2, rng));
   for (let i = 0; i < 3; i++) {
     const l = leafGeo(0.1, 0.02, 0.45, 2, 0.22);
     place(l, { rotX: -0.75, rotY: (i / 4) * TAU + rng(), y: 0.01 });
@@ -162,16 +244,13 @@ function poppy(rng) {
   const parts = [];
   const h = 0.32 + rng() * 0.2;
   parts.push(tint(stemGeo(h, 0.007, 0.005, 0.06), GREEN_DARK, 0.3, rng));
-  const n = 4 + (rng() < 0.4 ? 1 : 0);
-  for (let i = 0; i < n; i++) {
-    const p = petalGeo(0.075, 0.05, 0.035, -0.02, 3);
-    place(p, { rotX: -0.95, rotY: (i / n) * TAU + rng() * 0.2, y: h });
-    parts.push(tint(p, C(0xd63a2a), 0.22, rng));
-  }
-  const center = new THREE.IcosahedronGeometry(0.014, 0);
-  center.scale(1, 0.8, 1);
-  center.translate(0, h + 0.008, 0);
-  parts.push(tint(center, C(0x2a2320)));
+  // 넓고 얇은 꽃잎 넉 장 — 가장자리가 물결치고 서로 겹친다
+  corolla(parts, rng, 4 + (rng() < 0.4 ? 1 : 0), C(0xd63a2a), {
+    len: 0.075, wid: 0.05, y: h, rotX: -0.95, cup: 0.035, droop: -0.02, segs: 3,
+    round: 0.55, fold: 0.16, waist: 0.2, vary: 0.3, tilt: 0.34, twist: 0.7, jitter: 0.6,
+  });
+  parts.push(tint(discGeo(0.013, h + 0.008, rng, { dome: 0.8, seg: 7 }), C(0x3a3028), 0.2, rng));
+  stamens(parts, rng, 7, 0.016, h + 0.008, C(0x2a2320));
   for (let i = 0; i < 3; i++) {
     const l = leafGeo(0.09, 0.016, 0.35, 2, 0.3);
     place(l, { rotX: -0.6, rotY: rng() * TAU, y: h * (0.2 + rng() * 0.3) });
@@ -185,16 +264,12 @@ function cosmos(rng, petalColor = 0xe98fb0) {
   const parts = [];
   const h = 0.45 + rng() * 0.3;
   parts.push(tint(stemGeo(h, 0.006, 0.004, 0.08), GREEN, 0.3, rng));
-  const n = 8;
-  for (let i = 0; i < n; i++) {
-    const p = petalGeo(0.062, 0.028, 0.012, 0.02, 2);
-    place(p, { rotX: -0.35, rotY: (i / n) * TAU + rng() * 0.12, y: h });
-    parts.push(tint(p, C(petalColor), 0.18, rng));
-  }
-  const disc = new THREE.CircleGeometry(0.014, 7);
-  disc.rotateX(-Math.PI / 2);
-  disc.translate(0, h + 0.003, 0);
-  parts.push(tint(disc, C(0xf0cf4a), 0.2, rng));
+  // 끝이 톱니처럼 잘린 넓은 꽃잎 여덟 장
+  corolla(parts, rng, 7 + Math.floor(rng() * 3), C(petalColor), {
+    len: 0.062, wid: 0.028, y: h, rotX: -0.35, cup: 0.014, droop: 0.022,
+    round: 0.42, fold: 0.12, vary: 0.3, tilt: 0.32, twist: 0.55, jitter: 0.55,
+  });
+  parts.push(tint(discGeo(0.013, h + 0.003, rng, { dome: 0.45, seg: 7 }), C(0xf0cf4a), 0.2, rng));
   for (let i = 0; i < 4; i++) {
     const l = leafGeo(0.06, 0.004, 0.2, 2);
     place(l, { rotX: -0.4 - rng() * 0.5, rotY: rng() * TAU, y: h * (0.25 + rng() * 0.5) });
@@ -236,14 +311,13 @@ function buttercup(rng) {
   const parts = [];
   const h = 0.16 + rng() * 0.12;
   parts.push(tint(stemGeo(h, 0.005, 0.004, 0.03), GREEN, 0.3, rng));
-  for (let i = 0; i < 5; i++) {
-    const p = petalGeo(0.026, 0.02, 0.014, -0.01, 2);
-    place(p, { rotX: -0.8, rotY: (i / 5) * TAU, y: h });
-    parts.push(tint(p, C(0xf5d02a), 0.18, rng));
-  }
-  const c = new THREE.IcosahedronGeometry(0.006, 0);
-  c.translate(0, h + 0.004, 0);
-  parts.push(tint(c, C(0xdfae1c)));
+  // 둥근 꽃잎 다섯 장이 오목한 잔을 이룬다
+  corolla(parts, rng, 5, C(0xf5d02a), {
+    len: 0.026, wid: 0.02, y: h, rotX: -0.8, cup: 0.014, droop: -0.012,
+    round: 0.4, fold: 0.14, vary: 0.26, tilt: 0.3, twist: 0.4,
+  });
+  parts.push(tint(discGeo(0.007, h + 0.004, rng, { dome: 0.9, seg: 6 }), C(0xdfae1c), 0.2, rng));
+  stamens(parts, rng, 5, 0.008, h + 0.005, C(0xe8be2c));
   for (let i = 0; i < 3; i++) {
     const l = leafGeo(0.045, 0.014, 0.25, 2, 0.35);
     place(l, { rotX: -0.7, rotY: rng() * TAU, y: 0.01 + rng() * h * 0.4 });
@@ -264,10 +338,17 @@ function lupine(rng, color = 0x6f6fd8) {
     const rad = 0.022 * (1 - t * 0.7);
     const per = 3;
     for (let k = 0; k < per; k++) {
-      const a = (k / per) * TAU + i * 1.1;
-      const f = petalGeo(0.016, 0.009, 0.006, 0.004, 2);
-      place(f, { rotX: -1.15, rotY: a, x: Math.cos(a) * rad, y, z: Math.sin(a) * rad });
-      parts.push(tint(f, C(color), 0.26, rng));
+      const a = (k / per) * TAU + i * 1.1 + (rng() - 0.5) * 0.5;
+      const f = petalGeo(0.016 * (0.8 + rng() * 0.45), 0.009, {
+        cup: 0.006, droop: 0.004, segs: 2, round: 0.5, asym: (rng() - 0.5) * 0.3,
+      });
+      place(f, {
+        rotX: -1.15 + (rng() - 0.5) * 0.4, rotY: a,
+        x: Math.cos(a) * rad, y: y + (rng() - 0.5) * 0.006, z: Math.sin(a) * rad,
+      });
+      const cc = _c.copy(C(color));
+      cc.offsetHSL((rng() - 0.5) * 0.04, (rng() - 0.5) * 0.16, (rng() - 0.5) * 0.14);
+      parts.push(tint(f, cc, 0.18, rng));
     }
   }
   // 손바닥 모양 잎
@@ -288,15 +369,15 @@ function forgetMeNot(rng) {
   for (let i = 0; i < heads; i++) {
     const a = rng() * TAU, rad = 0.012 + rng() * 0.016;
     const hx = Math.cos(a) * rad, hz = Math.sin(a) * rad, hy = h + (rng() - 0.5) * 0.02;
-    for (let k = 0; k < 5; k++) {
-      const p = petalGeo(0.011, 0.008, 0.004, 0.002, 2);
-      place(p, { rotX: -1.35, rotY: (k / 5) * TAU, x: hx, y: hy, z: hz });
-      parts.push(tint(p, C(0x86b6e8), 0.2, rng));
-    }
-    const c = new THREE.CircleGeometry(0.004, 5);
-    c.rotateX(-Math.PI / 2);
-    c.translate(hx, hy + 0.003, hz);
-    parts.push(tint(c, C(0xf4e68a)));
+    // 둥근 꽃잎 다섯 장에 노란 눈 — 송이마다 크기가 다르다
+    const k0 = 0.8 + rng() * 0.5;
+    corolla(parts, rng, 5, C(0x86b6e8), {
+      len: 0.011 * k0, wid: 0.008 * k0, x: hx, y: hy, z: hz,
+      rotX: -1.35 + (rng() - 0.5) * 0.5, cup: 0.004, droop: 0.002,
+      round: 0.35, vary: 0.24, tilt: 0.24, twist: 0.3,
+    });
+    parts.push(tint(discGeo(0.0035 * k0, hy + 0.0025, rng, { dome: 0.6, seg: 5 }),
+      C(0xf4e68a), 0.2, rng));
   }
   for (let i = 0; i < 3; i++) {
     const l = leafGeo(0.035, 0.008, 0.2, 2);
@@ -346,21 +427,14 @@ function waterLily(rng, withFlower) {
   parts.push(tint(pad, C(0x4a7040), 0.28, rng));
   if (withFlower) {
     for (let ring = 0; ring < 3; ring++) {
-      const n = 7 - ring;
-      for (let i = 0; i < n; i++) {
-        const p = petalGeo(0.07 - ring * 0.012, 0.022, 0.016, 0.01, 2);
-        place(p, {
-          rotX: -0.5 - ring * 0.3,
-          rotY: (i / n) * TAU + ring * 0.4,
-          y: 0.02 + ring * 0.012,
-        });
-        parts.push(tint(p, C(ring === 2 ? 0xf6e6b4 : 0xf2dce6), 0.16, rng));
-      }
+      corolla(parts, rng, 7 - ring, C(ring === 2 ? 0xf6e6b4 : 0xf2dce6), {
+        len: 0.07 - ring * 0.012, wid: 0.022, y: 0.02 + ring * 0.012,
+        rotX: -0.5 - ring * 0.3, cup: 0.016, droop: 0.01, round: 0.5, fold: 0.15,
+        vary: 0.28, tilt: 0.3, twist: 0.5, rotY0: ring * 0.4 + rng(),
+      });
     }
-    const c = new THREE.IcosahedronGeometry(0.018, 0);
-    c.scale(1, 0.6, 1);
-    c.translate(0, 0.05, 0);
-    parts.push(tint(c, C(0xe8c84a)));
+    parts.push(tint(discGeo(0.017, 0.048, rng, { dome: 0.7, seg: 8 }), C(0xe8c84a), 0.2, rng));
+    stamens(parts, rng, 6, 0.016, 0.05, C(0xf0d868));
   }
   return mergeGeos(parts);
 }
@@ -384,11 +458,14 @@ function clump(build, rng, n, spread) {
   const parts = [];
   for (let i = 0; i < n; i++) {
     const g = build(rng);
+    // 송이마다 크기와 기울기가 다르다 — 한 다발 안에서도 줄을 맞추지 않는다
+    const sc = i === 0 ? 0.9 + rng() * 0.26 : 0.68 + rng() * 0.6;
+    g.scale(sc, sc * (0.85 + rng() * 0.32), sc);
+    g.rotateX((rng() - 0.5) * 0.34);
+    g.rotateZ((rng() - 0.5) * 0.34);
+    g.rotateY(rng() * TAU);
     if (i > 0) {
-      const a = rng() * TAU, r = Math.sqrt(rng()) * spread;
-      const sc = 0.72 + rng() * 0.5;
-      g.scale(sc, sc, sc);
-      g.rotateY(rng() * TAU);
+      const a = rng() * TAU, r = Math.pow(rng(), 0.7) * spread;
       g.translate(Math.cos(a) * r, 0, Math.sin(a) * r);
     }
     parts.push(g);
@@ -468,8 +545,8 @@ const QUALITY = {
   //            한 셀당 다발 / 블록 / 셀 크기 / 반경 / 다발 크기 배수 / 등급
   low: { perBlock: 7, blocks: 22, cell: 8, radius: 18, clumpK: 0.55, tier: 0 },
   medium: { perBlock: 9, blocks: 26, cell: 8, radius: 22, clumpK: 0.75, tier: 1 },
-  high: { perBlock: 12, blocks: 34, cell: 8, radius: 28, clumpK: 0.9, tier: 2 },
-  ultra: { perBlock: 14, blocks: 40, cell: 8, radius: 34, clumpK: 1.1, tier: 2 },
+  high: { perBlock: 10, blocks: 34, cell: 8, radius: 28, clumpK: 0.9, tier: 2 },
+  ultra: { perBlock: 12, blocks: 40, cell: 8, radius: 34, clumpK: 1.1, tier: 2 },
 };
 
 /** 들꽃 레이어 전체를 만든다 */
@@ -481,43 +558,49 @@ export function buildFlowers(scene, quality = 'high') {
   }), 1.15, { translucency: 0.7 });
 
   const layers = [];
+  const VAR = q.tier >= 1 ? 2 : 1;                  // 같은 종이라도 다발 모양이 여러 벌
   for (const sp of SPECIES) {
     if (sp.tier > q.tier) continue;                 // 낮은 품질에서는 흔한 종만 핀다
-    const perBlock = Math.max(2, Math.round(q.perBlock * sp.density));
+    const perBlock = Math.max(2, Math.round(q.perBlock * sp.density / VAR));
     const [c0, c1] = sp.clump;
-    const n = Math.max(1, Math.round(lerp(c0, c1, rng()) * q.clumpK));
-    const geo = clump(sp.build, rng, n, sp.spread);
     const [s0, s1] = sp.scale;
-    layers.push(new ScatterLayer(scene, {
-      geometry: geo,
-      material: mat,
-      perBlock, blocks: q.blocks, cell: q.cell, radius: q.radius, name: 'flower',
-      place(x, z, r, self) {
-        const { h, slope } = sampleGround(x, z);
-        if (h < WATER_LEVEL + 0.1 || slope > 0.36) return null;
-        const surf = surfaceAt(x, z, h, slope);
-        if (surf === SURFACE.ROCK || surf === SURFACE.WATER) return null;
-        const patch = patchAt(x, z, sp.seed, sp.patchScale);
-        if (patch < sp.patchMin) return null;
-        const fert = fertilityAt(x, z, h, slope);
-        if (fert < 0.15) return null;
-        const lakeD = Math.hypot(x - LAKE.x, z - LAKE.z) - LAKE.r;
-        const ctx = {
-          fert,
-          shade: shadeAt(x, z),
-          moist: clamp01(1 - lakeD / 26) * 0.8 + clamp01(1 - (h - WATER_LEVEL) / 4) * 0.4,
-          dry: clamp01(fbm2(x * 0.028 + 71.2, z * 0.028 - 3.3, 3) * 0.5 + 0.5),
-        };
-        const want = clamp01(sp.want(ctx)) * smoothstep(clamp01((patch - sp.patchMin) / 0.25));
-        if (r() > want * (surf === SURFACE.GRASS ? 1 : 0.35)) return null;
-        const sc = lerp(s0, s1, r()) * lerp(0.85, 1.15, patch);
-        const m = self.compose(x, h - 0.01, z, r() * TAU, sc,
-          (r() - 0.5) * 0.14, (r() - 0.5) * 0.14);
-        // 같은 종이라도 포기마다 밝기가 조금씩 다르다
-        const v = 0.88 + r() * 0.24;
-        return { matrix: m, color: self._c.setRGB(v, v * (0.97 + r() * 0.06), v * (0.95 + r() * 0.08)) };
-      },
-    }));
+    for (let vi = 0; vi < VAR; vi++) {
+      const n = Math.max(1, Math.round(lerp(c0, c1, rng()) * q.clumpK));
+      const geo = clump(sp.build, rng, n, sp.spread);
+      layers.push(new ScatterLayer(scene, {
+        geometry: geo,
+        material: mat,
+        perBlock, blocks: q.blocks, cell: q.cell, radius: q.radius, name: 'flower',
+        salt: sp.seed * 131 + vi * 7717,
+        place(x, z, r, self) {
+          const { h, slope } = sampleGround(x, z);
+          if (h < WATER_LEVEL + 0.1 || slope > 0.36) return null;
+          const surf = surfaceAt(x, z, h, slope);
+          if (surf === SURFACE.ROCK || surf === SURFACE.WATER) return null;
+          const patch = patchAt(x, z, sp.seed, sp.patchScale);
+          if (patch < sp.patchMin) return null;
+          const fert = fertilityAt(x, z, h, slope);
+          if (fert < 0.15) return null;
+          const lakeD = Math.hypot(x - LAKE.x, z - LAKE.z) - LAKE.r;
+          const ctx = {
+            fert,
+            shade: shadeAt(x, z),
+            moist: clamp01(1 - lakeD / 26) * 0.8 + clamp01(1 - (h - WATER_LEVEL) / 4) * 0.4,
+            dry: clamp01(fbm2(x * 0.028 + 71.2, z * 0.028 - 3.3, 3) * 0.5 + 0.5),
+          };
+          const want = clamp01(sp.want(ctx)) * smoothstep(clamp01((patch - sp.patchMin) / 0.25));
+          if (r() > want * (surf === SURFACE.GRASS ? 1 : 0.35)) return null;
+          // 크기도 방향도 포기마다 다르고, 반듯이 서 있지도 않다
+          const sc = lerp(s0, s1, r()) * lerp(0.85, 1.15, patch);
+          _sv.set(sc * (0.88 + r() * 0.24), sc * (0.82 + r() * 0.36), sc * (0.88 + r() * 0.24));
+          const m = self.compose(x, h - 0.01, z, r() * TAU, _sv,
+            (r() - 0.5) * 0.3, (r() - 0.5) * 0.3);
+          // 같은 종이라도 포기마다 밝기가 조금씩 다르다
+          const v = 0.88 + r() * 0.24;
+          return { matrix: m, color: self._c.setRGB(v, v * (0.97 + r() * 0.06), v * (0.95 + r() * 0.08)) };
+        },
+      }));
+    }
   }
   return { layers, material: mat, species: SPECIES.map((s) => s.name) };
 }
