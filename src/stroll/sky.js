@@ -50,6 +50,10 @@ void main() {
   float cm = max(dot(d, uMoonDir), 0.0);
   col += vec3(0.55, 0.62, 0.82) * pow(cm, 90.0) * 0.25 * uNight;
 
+  // 아주 미세한 디더 — 하늘 그라디언트의 띠무늬를 없앤다
+  float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  col += (dither - 0.5) * 0.004;
+
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -499,10 +503,11 @@ export class Sky {
     this.sunLight.castShadow = true;
     const s = this.sunLight.shadow;
     s.mapSize.set(2048, 2048);
-    s.camera.near = 1; s.camera.far = 320;
-    s.camera.left = -70; s.camera.right = 70; s.camera.top = 70; s.camera.bottom = -70;
-    s.bias = -0.0008;
-    s.normalBias = 0.06;
+    s.camera.near = 1; s.camera.far = 300;
+    // 그림자 카메라를 좁게 잡을수록 같은 해상도에서 그림자가 또렷해진다
+    s.camera.left = -55; s.camera.right = 55; s.camera.top = 55; s.camera.bottom = -55;
+    s.bias = -0.0004;
+    s.normalBias = 0.045;
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
@@ -517,7 +522,7 @@ export class Sky {
   }
 
   setShadowQuality(q) {
-    const size = q === 'low' ? 1024 : q === 'medium' ? 2048 : 3072;
+    const size = q === 'low' ? 1024 : q === 'medium' ? 2048 : q === 'ultra' ? 4096 : 3072;
     this.sunLight.shadow.mapSize.set(size, size);
     if (this.sunLight.shadow.map) { this.sunLight.shadow.map.dispose(); this.sunLight.shadow.map = null; }
   }

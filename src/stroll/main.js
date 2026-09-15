@@ -1,11 +1,15 @@
 // 고요(GOYO) — 숲 속 1인칭 힐링 산책
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { clamp, clamp01, lerp, rand, TAU } from '../core/utils.js';
 import { damp } from './util.js';
 import { Terrain, fbm2, LAKE } from './terrain.js';
 import { Sky } from './sky.js';
 import { Water } from './water.js';
-import { GrassField, buildClutter, WIND } from './flora.js';
+import { GrassField, buildClutter, WIND, SUN } from './flora.js';
 import { Forest, FallingLeaves } from './trees.js';
 import { Wildlife } from './fauna.js';
 import { Player, ObstacleGrid } from './player.js';
@@ -56,12 +60,14 @@ class Game {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.95;
+    renderer.info.autoReset = false;    // 후처리 패스까지 합쳐서 통계를 본다
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(this.settings.fov, innerWidth / innerHeight, 0.08, 5200);
     this.scene.add(this.camera);
+    this._setupComposer();
 
     const prog = (p, label) => {
       document.getElementById('loading-bar').style.width = `${Math.round(p * 100)}%`;
@@ -138,7 +144,52 @@ class Game {
     this._loop();
   }
 
+  /**
+   * 후처리 — 장면을 HDR 렌더타깃에 그린 뒤 블룸을 얹고 마지막에 톤매핑한다.
+   * (렌더타깃에 그릴 때 three 는 머티리얼 톤매핑을 끄므로 이중 적용되지 않는다)
+   */
+  _setupComposer() {
+    const q = this.quality;
+    // 저사양에서는 후처리를 통째로 건너뛴다 (전체화면 패스도 비용이다)
+    if (q === 'low') { this.composer = null; this.bloom = null; return; }
+    this.bloomOn = true;
+    const samples = q === 'ultra' ? 4 : q === 'high' ? 4 : q === 'medium' ? 2 : 0;
+    const size = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(size);
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+      type: THREE.HalfFloatType,
+      samples,
+      colorSpace: THREE.LinearSRGBColorSpace,
+    });
+    const composer = this.composer = new EffectComposer(this.renderer, target);
+    composer.setPixelRatio(this.renderer.getPixelRatio());
+    composer.setSize(innerWidth, innerHeight);
+    composer.addPass(new RenderPass(this.scene, this.camera));
+    {
+      // 햇빛이 번지는 정도만 — 아주 약하게
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.34, 0.72, 0.86);
+      composer.addPass(this.bloom);
+    }
+    composer.addPass(new OutputPass());
+  }
+
   saveSettings() { saveSettings(this.settings); }
+
+  /**
+   * 해를 향해 보면 안개가 밝아지고, 등지면 가라앉는다.
+   * 먼 산과 나무에 공기원근이 생겨 거리감이 살아난다.
+   */
+  _tintFogBySun() {
+    const cam = this.camera;
+    const d = this._camDir || (this._camDir = new THREE.Vector3());
+    cam.getWorldDirection(d);
+    const toSun = clamp01(d.dot(this.sky.sunDir) * 0.5 + 0.5);
+    const warm = this._warmFog || (this._warmFog = new THREE.Color());
+    warm.copy(this.sky.uniforms.uSunTint.value).lerp(this.scene.fog.color, 0.45);
+    const k = Math.pow(toSun, 2.6) * (0.35 + this.sky.goldenFactor * 0.35)
+      * clamp01(this.sky.sunLight.intensity * 0.5);
+    this.scene.fog.color.lerp(warm, k);
+  }
 
   /** 비가 오면 해가 가려지고 안개가 짙어지며 땅이 젖는다 */
   _applyWeatherToSky(rain) {
@@ -163,7 +214,7 @@ class Game {
       const m = this.terrain.material;
       m.color.setScalar(lerp(1, 0.66, wet));
       m.roughness = lerp(0.97, 0.55, wet);
-      this.grass.uniforms.uWet.value = wet;
+      this.grass.setWet(wet);
       this.forest.blobMat.color.setScalar(lerp(1, 0.78, wet));
       if (this.forest.leafMat) this.forest.leafMat.color.setScalar(lerp(1, 0.82, wet));
       this.forest.barkMat.color.setScalar(lerp(1, 0.7, wet));
@@ -182,6 +233,9 @@ class Game {
       this.camera.aspect = innerWidth / innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(innerWidth, innerHeight);
+      this.composer?.setPixelRatio(this.renderer.getPixelRatio());
+      this.composer?.setSize(innerWidth, innerHeight);
+      this.bloom?.setSize(innerWidth, innerHeight);
     });
 
     document.getElementById('btn-start').addEventListener('click', () => this.start());
@@ -283,12 +337,18 @@ class Game {
     const tick = () => {
       requestAnimationFrame(tick);
       const dt = Math.min(clock.getDelta(), 0.05);
-      if (this.paused) { this.renderer.render(this.scene, this.camera); return; }
+      this.renderer.info.reset();
+      if (this.paused) { this._render(); return; }
       this._measure(dt);
       this.update(dt);
-      this.renderer.render(this.scene, this.camera);
+      this._render();
     };
     tick();
+  }
+
+  _render() {
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   /** 프레임을 살펴 무거우면 스스로 가볍게, 여유로우면 도로 선명하게 */
@@ -317,6 +377,8 @@ class Game {
     this.renderScale = v;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, this.pixelCap) * v);
     this.renderer.setSize(innerWidth, innerHeight);
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer?.setSize(innerWidth, innerHeight);
   }
 
   update(dt) {
@@ -340,11 +402,15 @@ class Game {
     WIND.player.value.set(p.x, p.y, p.z);
 
     this.sky.update(dt, p, this.camera);
+    // 식생 셰이더가 쓰는 태양 상태
+    SUN.dir.value.copy(this.sky.sunDir.y > 0 ? this.sky.sunDir : this.sky.moonDir);
+    SUN.color.value.copy(this.sky.sunLight.color)
+      .multiplyScalar(Math.max(this.sky.sunLight.intensity * 0.22, this.sky.moonLight.intensity * 0.3));
     this._applyWeatherToSky(rainAmt);
     this.sky.setRainbow(this.weather.rainbow, p);
+    this._tintFogBySun();
     if (this.weather.rainbow > 0.4) this.discover('rainbow');
     this.grass.update(p.x, p.z, this.isMobile ? 1.4 : 2.4);
-    this.grass.syncLighting(this.sky);
     for (const layer of this.clutter) layer.update(p.x, p.z, 1);
     this.forest.updateLOD(p.x, p.z);
     this.water.update(dt, this.sky);
@@ -391,6 +457,11 @@ class Game {
       this._warned = true;
       this.hud.say('골짜기를 벗어나면 길을 잃는다. 돌아가자.', 4);
       setTimeout(() => { this._warned = false; }, 12000);
+    }
+
+    if (this.bloom) {
+      // 밤에는 달·별이 번지고, 비에는 가라앉는다
+      this.bloom.strength = lerp(0.3, 0.5, this.sky.night) * (1 - rainAmt * 0.45);
     }
 
     if (!this.started) return;

@@ -607,7 +607,7 @@ class Motes {
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
           vGlow = 0.5 + 0.5 * sin(t * 2.6 + aSeed);
           vNight = uNight;
-          gl_PointSize = mix(1.6, 3.2, uNight) * (26.0 / -mv.z) * (0.6 + vGlow * 0.6);
+          gl_PointSize = mix(1.3, 2.3, uNight) * (22.0 / -mv.z) * (0.6 + vGlow * 0.5);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */`
@@ -619,7 +619,7 @@ class Motes {
           a *= a;
           vec3 col = mix(uPollenColor, uFireflyColor, vNight);
           float amp = mix(0.35, vGlow * vGlow, vNight);
-          gl_FragColor = vec4(col * (0.45 + vNight * 1.1), a * amp * mix(0.3, 0.9, vNight));
+          gl_FragColor = vec4(col * (0.4 + vNight * 0.8), a * amp * mix(0.3, 0.75, vNight));
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,

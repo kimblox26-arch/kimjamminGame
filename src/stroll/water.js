@@ -47,12 +47,16 @@ float noise(vec2 p) {
              mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
 }
 
+const mat2 ROT = mat2(0.8776, -0.4794, 0.4794, 0.8776);   // 27.5°
+
 float waveHeight(vec2 p, float t) {
   vec2 d1 = vec2(t * 0.055, t * 0.031);
   vec2 d2 = vec2(-t * 0.042, t * 0.07);
-  return noise(p * 0.16 + d1) * 0.62
-       + noise(p * 0.46 - d2) * 0.26
-       + noise(p * 1.15 + d1 * 2.0) * 0.12;
+  // 옥타브마다 방향을 돌려 줄무늬가 생기지 않게 한다
+  vec2 q1 = p * 0.16 + d1;
+  vec2 q2 = ROT * p * 0.44 - d2;
+  vec2 q3 = ROT * ROT * p * 1.1 + d1 * 2.0;
+  return noise(q1) * 0.6 + noise(q2) * 0.27 + noise(q3) * 0.13;
 }
 
 /** 거리에 따라 잔물결을 줄여 멀리서 지글거리지 않게 한다 */
@@ -70,7 +74,7 @@ void main() {
   if (depth <= 0.001) discard;
 
   float camDist = distance(cameraPosition, vWorld);
-  float detail = 1.0 - smoothstep(8.0, 90.0, camDist) * 0.75;
+  float detail = 1.0 - smoothstep(6.0, 55.0, camDist) * 0.82;
   vec3 n = waveNormal(vWorld.xz, uTime, detail);
   vec3 viewDir = normalize(cameraPosition - vWorld);
   float fres = pow(1.0 - clamp(dot(n, viewDir), 0.0, 1.0), 3.2);

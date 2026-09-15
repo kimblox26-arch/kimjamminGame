@@ -4,7 +4,7 @@
 // 실제로 그려지는 잎은 일정 수를 넘지 않는다.
 import * as THREE from 'three';
 import { clamp01, lerp, makeRng, smoothstep, TAU } from '../core/utils.js';
-import { heightAt, normalAt, sampleGround, fertilityAt, fbm2, WATER_LEVEL, LAKE, INNER_HALF } from './terrain.js';
+import { heightAt, normalAt, sampleGround, fertilityAt, fbm2, noiseCanvas, normalMapFromHeights, WATER_LEVEL, LAKE, INNER_HALF } from './terrain.js';
 import { mergeGeos, tint, windify, WIND } from './flora.js';
 
 /* ------------------------------------------------------------------ */
@@ -91,6 +91,85 @@ let _atlas = null;
 export function leafTexture() {
   if (!_atlas) _atlas = leafAtlas();
   return _atlas;
+}
+
+/* ------------------------------------------------------------------ */
+/* 나무껍질 / 바위 텍스처                                                */
+/* ------------------------------------------------------------------ */
+function barkHeights(size) {
+  const h = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      // 세로로 길게 늘어난 섬유 + 굵은 골
+      let n = fbm2(u * 26, v * 3.2, 4) * 0.5 + 0.5;
+      const groove = Math.abs(Math.sin(u * Math.PI * 9 + fbm2(u * 6, v * 1.6, 3) * 3.4));
+      n = n * 0.55 + Math.pow(groove, 0.6) * 0.45;
+      // 가로 균열
+      const crack = fbm2(u * 7 + 31, v * 22, 3) * 0.5 + 0.5;
+      if (crack > 0.74) n *= 0.55;
+      h[y * size + x] = n;
+    }
+  }
+  return h;
+}
+
+let _bark = null, _barkN = null;
+export function barkTextures(size = 256) {
+  if (_bark) return { map: _bark, normal: _barkN };
+  const h = barkHeights(size);
+  const canvas = noiseCanvas(size, (d, s) => {
+    for (let i = 0; i < s * s; i++) {
+      const n = h[i];
+      const base = 118 + n * 96;
+      d[i * 4] = base * 1.02;
+      d[i * 4 + 1] = base * 0.9;
+      d[i * 4 + 2] = base * 0.74;
+      d[i * 4 + 3] = 255;
+    }
+  });
+  _bark = new THREE.CanvasTexture(canvas);
+  _bark.wrapS = _bark.wrapT = THREE.RepeatWrapping;
+  _bark.colorSpace = THREE.SRGBColorSpace;
+  _bark.anisotropy = 8;
+  _bark.repeat.set(2, 3);
+  _barkN = normalMapFromHeights(size, h, 3.2, 1);
+  _barkN.repeat.set(2, 3);
+  return { map: _bark, normal: _barkN };
+}
+
+let _rock = null, _rockN = null;
+export function rockTextures(size = 256) {
+  if (_rock) return { map: _rock, normal: _rockN };
+  const h = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size * 7, v = y / size * 7;
+      // 알갱이 + 결
+      let n = fbm2(u, v, 5) * 0.5 + 0.5;
+      n = n * 0.7 + (fbm2(u * 5.3, v * 5.3, 3) * 0.5 + 0.5) * 0.3;
+      h[y * size + x] = n;
+    }
+  }
+  const canvas = noiseCanvas(size, (d, s) => {
+    for (let i = 0; i < s * s; i++) {
+      const n = h[i];
+      const base = 138 + n * 92;
+      const warm = 1 + (n - 0.5) * 0.12;
+      d[i * 4] = base * warm;
+      d[i * 4 + 1] = base * 0.99;
+      d[i * 4 + 2] = base * 0.95;
+      d[i * 4 + 3] = 255;
+    }
+  });
+  _rock = new THREE.CanvasTexture(canvas);
+  _rock.wrapS = _rock.wrapT = THREE.RepeatWrapping;
+  _rock.colorSpace = THREE.SRGBColorSpace;
+  _rock.anisotropy = 8;
+  _rock.repeat.set(1.6, 1.6);
+  _rockN = normalMapFromHeights(size, h, 2.6, 1);
+  _rockN.repeat.set(1.6, 1.6);
+  return { map: _rock, normal: _rockN };
 }
 
 /* ------------------------------------------------------------------ */
@@ -194,10 +273,10 @@ function pineTree(rng, leafCount) {
   const trunkParts = [], blobParts = [];
   const lb = new LeafBuilder();
   const h = 8.5 + rng() * 7;
-  const trunk = new THREE.CylinderGeometry(0.07, 0.44, h * 0.94, 8);
-  trunk.translate(0, h * 0.47, 0);
+  const trunk = new THREE.CylinderGeometry(0.06, 0.44, h * 0.88, 8);
+  trunk.translate(0, h * 0.44, 0);
   roughen(trunk, 0.05, rng);
-  trunkParts.push(tint(trunk, new THREE.Color(0x4e402e), 0.35, rng));
+  trunkParts.push(tint(trunk, new THREE.Color(0x9a8464), 0.35, rng));
 
   const layers = 7 + Math.floor(rng() * 4);
   const pal = paletteColors(PINE_GREENS);
@@ -208,15 +287,17 @@ function pineTree(rng, leafCount) {
     const ch = lerp(2.6, 1.1, t);
     const y = h * (0.32 + t * 0.64);   // 사람 키 위에서 가지가 시작한다
 
-    // 잔가지
-    const twigs = 3 + Math.floor(rng() * 3);
+    // 잔가지 — 잎을 많이 그리는 품질에서만 (저사양에서는 삼각형이 아깝다)
+    const twigs = leafCount > 200 ? 2 + Math.floor(rng() * 2) : 0;
     for (let k = 0; k < twigs; k++) {
       const a = rng() * TAU;
-      const tw = new THREE.CylinderGeometry(0.02, 0.05, r * 1.1, 4);
-      tw.rotateZ(Math.PI / 2 - 0.25);
-      tw.translate(Math.cos(a) * r * 0.5, y, Math.sin(a) * r * 0.5);
-      tw.rotateY(a);
-      trunkParts.push(tint(tw, new THREE.Color(0x473a2a)));
+      // 원점에서 +X 로 눕힌 뒤 각도만큼 돌리고 높이로 올린다 (순서가 중요)
+      const tw = new THREE.CylinderGeometry(0.02, 0.05, r * 1.05, 4);
+      tw.rotateZ(Math.PI / 2 - 0.22);
+      tw.translate(r * 0.48, 0, 0);
+      tw.rotateY(-a);
+      tw.translate(0, y, 0);
+      trunkParts.push(tint(tw, new THREE.Color(0x8b7358)));
     }
 
     // 속을 채우는 원뿔은 작게 — 실제 모양은 침엽 다발이 만든다
@@ -253,7 +334,7 @@ function broadTree(rng, leafCount, autumn = 0) {
   const trunk = new THREE.CylinderGeometry(0.22, 0.56, trunkH, 9);
   trunk.translate(0, trunkH / 2, 0);
   roughen(trunk, 0.07, rng);
-  trunkParts.push(tint(trunk, new THREE.Color(0x56452f), 0.35, rng));
+  trunkParts.push(tint(trunk, new THREE.Color(0xa0855f), 0.35, rng));
 
   // 가지 — 끝 위치를 정확히 계산해 그 자리에 잎을 붙인다
   const branches = 4 + Math.floor(rng() * 3);
@@ -268,7 +349,7 @@ function broadTree(rng, leafCount, autumn = 0) {
     b.rotateZ(tilt);
     b.rotateY(a);
     b.translate(0, y0, 0);
-    trunkParts.push(tint(b, new THREE.Color(0x50412e), 0.3, rng));
+    trunkParts.push(tint(b, new THREE.Color(0x93795a), 0.3, rng));
     // rotateZ(t) 로 (0,len,0) → (-sin t·len, cos t·len, 0), 이어서 rotateY(a)
     tips.push([
       -Math.sin(tilt) * len * Math.cos(a),
@@ -368,7 +449,7 @@ function rockGeometry(rng) {
     p.setXYZ(i, p.getX(i) * n, p.getY(i) * n * 0.72, p.getZ(i) * n);
   }
   roughen(g, 0.06, rng);
-  return tint(g, new THREE.Color(0x8b877f), 0.3, rng);
+  return tint(g, new THREE.Color(0xb4b0a7), 0.3, rng);
 }
 
 function logGeometry(rng) {
@@ -376,17 +457,17 @@ function logGeometry(rng) {
   const trunk = new THREE.CylinderGeometry(0.26, 0.32, 4.2, 9);
   trunk.rotateZ(Math.PI / 2);
   roughen(trunk, 0.07, rng);
-  parts.push(tint(trunk, new THREE.Color(0x5a4532), 0.35, rng));
+  parts.push(tint(trunk, new THREE.Color(0xa1865f), 0.35, rng));
   for (let i = 0; i < 3; i++) {
     const b = new THREE.CylinderGeometry(0.05, 0.08, 0.8, 5);
     b.rotateZ(rng() * 1.2 - 0.6);
     b.translate((rng() - 0.5) * 3, 0.35, (rng() - 0.5) * 0.5);
-    parts.push(tint(b, new THREE.Color(0x50402e)));
+    parts.push(tint(b, new THREE.Color(0x93795a)));
   }
   const moss = new THREE.CylinderGeometry(0.29, 0.29, 1.6, 9, 1, true, 0, Math.PI);
   moss.rotateZ(Math.PI / 2);
   moss.translate((rng() - 0.5) * 1.5, 0.02, 0);
-  parts.push(tint(moss, new THREE.Color(0x4b6b30), 0.4, rng));
+  parts.push(tint(moss, new THREE.Color(0x6f9a48), 0.4, rng));
   return mergeGeos(parts);
 }
 
@@ -412,9 +493,21 @@ export class Forest {
     const rng = makeRng(seed);
     this.rng = rng;
 
-    this.barkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94, metalness: 0 });
+    const bark = barkTextures();
+    const rock = rockTextures();
+    this.barkMat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.95, metalness: 0,
+      map: bark.map, normalMap: bark.normal, normalScale: new THREE.Vector2(1.1, 1.1),
+    });
+    this.birchMat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.78, metalness: 0,
+      normalMap: bark.normal, normalScale: new THREE.Vector2(0.35, 0.35),
+    });
     this.blobMat = windify(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 }), 0.5);
-    this.rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02 });
+    this.rockMat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.9, metalness: 0.02,
+      map: rock.map, normalMap: rock.normal, normalScale: new THREE.Vector2(1, 1),
+    });
     this.leafMat = q.leaves > 0 ? windify(new THREE.MeshStandardMaterial({
       vertexColors: true,
       map: leafTexture(),
@@ -425,7 +518,7 @@ export class Forest {
       emissive: new THREE.Color(0x16240f),
       emissiveIntensity: 0.55,
       alphaToCoverage: true,
-    }), 0.85) : null;
+    }), 0.85, { translucency: 1.0 }) : null;
 
     this._place(rng, q);
     this._build(rng, q);
@@ -534,7 +627,7 @@ export class Forest {
         const list = buckets[sp * q.variants + v];
         if (!list.length) continue;
         const built = makers[sp](rng);
-        this._staticInstanced(built.trunk, this.barkMat, list, true, -0.2, false, 0.18);
+        this._staticInstanced(built.trunk, sp === 2 ? this.birchMat : this.barkMat, list, true, -0.2, false, 0.18);
         const blob = this._staticInstanced(built.blob, this.blobMat, list, true, -0.2, false, 0.42);
         if (blob) blob.name = `canopy-${sp}-${v}`;
         const variant = { list, blob, leafGeo: built.leaves, near: null, farCount: list.length };

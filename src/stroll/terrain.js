@@ -148,7 +148,7 @@ export function fertilityAt(x, z, h = heightAt(x, z), slope = slopeAt(x, z)) {
 /* ------------------------------------------------------------------ */
 /* 절차적 디테일 텍스처                                                 */
 /* ------------------------------------------------------------------ */
-function noiseCanvas(size, fn) {
+export function noiseCanvas(size, fn) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
@@ -178,6 +178,30 @@ function makeGroundMap(size = 512) {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
+  return tex;
+}
+
+/** 높이 배열(0~1)에서 탄젠트 공간 노멀맵 텍스처를 만든다 */
+export function normalMapFromHeights(size, heights, strength = 2.4, repeat = 1) {
+  const canvas = noiseCanvas(size, (d, s) => {
+    const at = (x, y) => heights[((y + s) % s) * s + ((x + s) % s)];
+    for (let y = 0; y < s; y++) {
+      for (let x = 0; x < s; x++) {
+        const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+        const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+        const len = Math.hypot(-dx, -dy, 1);
+        const i = (y * s + x) * 4;
+        d[i] = (-dx / len * 0.5 + 0.5) * 255;
+        d[i + 1] = (-dy / len * 0.5 + 0.5) * 255;
+        d[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+        d[i + 3] = 255;
+      }
+    }
+  });
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.anisotropy = 4;
   return tex;
 }
 
@@ -211,13 +235,63 @@ function makeGroundNormal(size = 512) {
 }
 
 /* ------------------------------------------------------------------ */
+/* 앰비언트 오클루전 (수평선 기반)                                       */
+/* 골짜기·바위 밑동이 어두워져 지형에 깊이가 생긴다.                      */
+/* ------------------------------------------------------------------ */
+const AO_DIRS = 8;
+const AO_STEPS = [2.5, 6, 13, 26, 48];
+
+export class AOMap {
+  constructor(half, res) {
+    this.half = half;
+    this.res = res;
+    this.step = (half * 2) / (res - 1);
+    this.data = new Float32Array(res * res).fill(1);
+  }
+
+  /** j 번째 행을 계산한다 (로딩 중 나눠 돌리기 좋게) */
+  bakeRow(j) {
+    const { res, half, step } = this;
+    const z = -half + j * step;
+    for (let i = 0; i < res; i++) {
+      const x = -half + i * step;
+      const h0 = heightAt(x, z);
+      let occ = 0;
+      for (let d = 0; d < AO_DIRS; d++) {
+        const a = (d / AO_DIRS) * TAU;
+        const dx = Math.cos(a), dz = Math.sin(a);
+        let maxTan = 0;
+        for (const r of AO_STEPS) {
+          const dh = heightAt(x + dx * r, z + dz * r) - h0;
+          if (dh > 0) maxTan = Math.max(maxTan, dh / r);
+        }
+        occ += maxTan / Math.sqrt(1 + maxTan * maxTan);   // sin(수평선 각)
+      }
+      this.data[j * res + i] = clamp01(1 - (occ / AO_DIRS) * 1.35);
+    }
+  }
+
+  /** 쌍선형 보간 */
+  at(x, z) {
+    const { res, half, step, data } = this;
+    const fx = clamp01((x + half) / (half * 2)) * (res - 1);
+    const fz = clamp01((z + half) / (half * 2)) * (res - 1);
+    const i = Math.min(res - 2, Math.floor(fx)), j = Math.min(res - 2, Math.floor(fz));
+    const tx = fx - i, tz = fz - j;
+    const a = data[j * res + i], b = data[j * res + i + 1];
+    const c = data[(j + 1) * res + i], d = data[(j + 1) * res + i + 1];
+    return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 색 팔레트                                                           */
 /* ------------------------------------------------------------------ */
 const C = {
-  grass: new THREE.Color(0x52643a),
-  grassLush: new THREE.Color(0x61763f),
+  grass: new THREE.Color(0x56613c),
+  grassLush: new THREE.Color(0x606f3f),
   grassDry: new THREE.Color(0x8d8657),
-  moss: new THREE.Color(0x405432),
+  moss: new THREE.Color(0x44513a),
   dirt: new THREE.Color(0x6b5438),
   dirtDark: new THREE.Color(0x4a3a28),
   rock: new THREE.Color(0x7a7570),
@@ -255,6 +329,9 @@ function colorAt(x, z, h, slope, out) {
     out.lerp(C.sand, beach * 0.85);
   }
   if (h < WATER_LEVEL + 0.4) out.lerp(C.silt, smoothstep(clamp01((WATER_LEVEL + 0.4 - h) / 1.4)) * 0.8);
+  // 물이 닿았다 빠진 자리는 젖어서 짙다
+  const wet = smoothstep(clamp01((0.55 - (h - WATER_LEVEL)) / 0.9)) * smoothstep(clamp01((h - WATER_LEVEL + 1.2) / 0.6));
+  out.multiplyScalar(1 - wet * 0.32);
 
   // 고지대 — 침엽수 띠 → 바위 → 설선 (원경은 공기원근으로 푸르게)
   out.lerp(C.forest, smoothstep(clamp01((h - 30) / 40)) * 0.55);
@@ -279,10 +356,22 @@ export class Terrain {
   }
 
   async build(onProgress = () => {}, frame = () => Promise.resolve()) {
+    await this._bakeAO(onProgress, frame);
     await this._buildInner(onProgress, frame);
     await frame();
     this._buildFar();
     onProgress(1);
+  }
+
+  /** 지형 AO 를 미리 구워 둔다 (정점 색에 곱한다) */
+  async _bakeAO(onProgress, frame) {
+    const res = this.quality === 'low' ? 128 : this.quality === 'medium' ? 176 : 224;
+    this.ao = new AOMap(INNER_HALF + 20, res);
+    for (let j = 0; j < res; j++) {
+      this.ao.bakeRow(j);
+      if ((j & 15) === 0) { onProgress(j / res * 0.22); await frame(); }
+    }
+    onProgress(0.22);
   }
 
   /** 플레이어가 걷는 정밀 지형 — 청크로 나눠 시야 밖은 그리지 않는다 */
@@ -299,11 +388,22 @@ export class Terrain {
       vertexColors: true,
       map,
       normalMap: nrm,
-      normalScale: new THREE.Vector2(0.6, 0.6),
+      normalScale: new THREE.Vector2(0.75, 0.75),
       roughness: 0.97,
       metalness: 0,
       dithering: true,
     });
+    // 같은 텍스처를 두 배율로 섞어 반복 무늬가 보이지 않게 한다
+    this.material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          vec4 tNear = texture2D(map, vMapUv);
+          vec4 tFar = texture2D(map, vMapUv * 0.143);
+          vec4 sampledDiffuseColor = mix(tNear, tFar, 0.45);
+          diffuseColor *= sampledDiffuseColor;
+        #endif`);
+    };
+    this.material.customProgramCacheKey = () => 'terrain-detail';
 
     // 청크 경계에서 법선이 끊기지 않도록 한 칸씩 넓게 샘플링한다
     const G = SEG + 3;
@@ -343,7 +443,9 @@ export class Terrain {
             nor[k * 3] = dx / len; nor[k * 3 + 1] = ny; nor[k * 3 + 2] = dz / len;
             uv[k * 2] = x / 6; uv[k * 2 + 1] = z / 6;
             colorAt(x, z, h, 1 - ny, _c);
-            col[k * 3] = _c.r; col[k * 3 + 1] = _c.g; col[k * 3 + 2] = _c.b;
+            // 구워 둔 AO — 그늘진 골과 바위 밑이 짙어진다
+            const ao = lerp(0.55, 1, this.ao.at(x, z));
+            col[k * 3] = _c.r * ao; col[k * 3 + 1] = _c.g * ao; col[k * 3 + 2] = _c.b * ao;
             if (cx === 0 && i === 0) edge.push([3, z, x, h]);
             if (cx === CH - 1 && i === SEG) edge.push([1, z, x, h]);
             if (cz === 0 && j === 0) edge.push([0, x, z, h]);
@@ -375,7 +477,7 @@ export class Terrain {
         this.group.add(mesh);
         this.meshes.push(mesh);
       }
-      onProgress((cz + 1) / CH * 0.92);
+      onProgress(0.22 + (cz + 1) / CH * 0.7);
       await frame();
     }
 

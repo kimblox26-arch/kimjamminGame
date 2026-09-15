@@ -4,6 +4,12 @@ import * as THREE from 'three';
 import { clamp01, lerp, makeRng, smoothstep, TAU } from '../core/utils.js';
 import { heightAt, normalAt, slopeAt, sampleGround, fertilityAt, surfaceAt, SURFACE, WATER_LEVEL, LAKE, INNER_HALF, fbm2 } from './terrain.js';
 
+/* 식생 셰이더가 공유하는 태양 상태 (투과광용) */
+export const SUN = {
+  dir: { value: new THREE.Vector3(0, 1, 0) },
+  color: { value: new THREE.Color(0xffffff) },
+};
+
 /* 모든 식생 셰이더가 공유하는 바람 상태 */
 export const WIND = {
   time: { value: 0 },
@@ -24,12 +30,14 @@ export function mergeGeos(geos) {
   const pos = new Float32Array(vTotal * 3);
   const nrm = new Float32Array(vTotal * 3);
   const col = new Float32Array(vTotal * 3);
+  const uvs = new Float32Array(vTotal * 2);
   const idx = vTotal > 65535 ? new Uint32Array(iTotal) : new Uint16Array(iTotal);
   let vo = 0, io = 0;
   for (const g of geos) {
-    const p = g.attributes.position, n = g.attributes.normal, c = g.attributes.color;
+    const p = g.attributes.position, n = g.attributes.normal, c = g.attributes.color, u = g.attributes.uv;
     pos.set(p.array, vo * 3);
     if (n) nrm.set(n.array, vo * 3);
+    if (u) uvs.set(u.array, vo * 2);
     if (c) col.set(c.array, vo * 3);
     else for (let i = 0; i < p.count; i++) { col[(vo + i) * 3] = 1; col[(vo + i) * 3 + 1] = 1; col[(vo + i) * 3 + 2] = 1; }
     if (g.index) for (let i = 0; i < g.index.count; i++) idx[io + i] = g.index.array[i] + vo;
@@ -41,6 +49,7 @@ export function mergeGeos(geos) {
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  out.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   out.setIndex(new THREE.BufferAttribute(idx, 1));
   return out;
 }
@@ -74,79 +83,7 @@ function roughen(geo, amount, rng = Math.random, scaleY = 1) {
 /* ------------------------------------------------------------------ */
 /* 풀밭                                                                */
 /* ------------------------------------------------------------------ */
-const GRASS_VERT = /* glsl */`
-uniform float uTime;
-uniform float uWind;
-uniform vec2 uWindDir;
-uniform vec3 uPlayer;
-attribute vec3 instanceColorA;
-varying vec3 vColor;
-varying float vH;
-varying vec3 vNormalW;
-varying float vFogDepth;
-
-void main() {
-  vColor = instanceColorA;
-  float h = uv.y;                         // 0 = 밑동, 1 = 끝
-  vH = h;
-
-  vec4 world = instanceMatrix * vec4(position, 1.0);
-  vec3 base = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-
-  // 바람: 큰 물결 + 잔떨림
-  float phase = base.x * 0.12 + base.z * 0.15;
-  float gust = sin(uTime * 1.1 + phase) * 0.6 + sin(uTime * 2.7 + phase * 1.7) * 0.25;
-  float bend = (gust * 0.55 + 0.25) * uWind * h * h;
-  world.xz += uWindDir * bend;
-  world.y -= abs(bend) * 0.18;
-
-  // 플레이어가 지나가면 풀이 눕는다
-  vec3 d = world.xyz - uPlayer;
-  d.y = 0.0;
-  float dist = length(d);
-  float push = smoothstep(1.35, 0.15, dist) * h;
-  world.xz += normalize(d.xz + vec2(0.0001)) * push * 0.55;
-  world.y -= push * 0.28;
-
-  vNormalW = normalize(mat3(instanceMatrix) * normal);
-  vec4 mv = viewMatrix * world;
-  vFogDepth = -mv.z;
-  gl_Position = projectionMatrix * mv;
-}`;
-
-const GRASS_FRAG = /* glsl */`
-uniform vec3 uSunDir;
-uniform vec3 uSunColor;
-uniform vec3 uAmbSky;
-uniform vec3 uAmbGround;
-uniform vec3 fogColor;
-uniform float fogNear;
-uniform float fogFar;
-uniform float uWet;
-varying vec3 vColor;
-varying float vH;
-varying vec3 vNormalW;
-varying float vFogDepth;
-
-void main() {
-  vec3 n = normalize(vNormalW);
-  if (!gl_FrontFacing) n = -n;
-  float ndl = max(dot(n, uSunDir), 0.0);
-  // 잎을 통과하는 빛 (서브서피스 흉내)
-  float trans = pow(max(dot(-n, uSunDir), 0.0), 1.6) * 0.5;
-  vec3 amb = mix(uAmbGround, uAmbSky, 0.5 + 0.5 * n.y);
-  float ao = mix(0.45, 1.0, vH);          // 밑동은 어둡게
-  // 비에 젖으면 짙어진다
-  vec3 albedo = vColor * mix(1.0, 0.68, uWet);
-  vec3 col = albedo * (amb * ao + uSunColor * (ndl * 0.85 + trans) * ao);
-  gl_FragColor = vec4(col, 1.0);
-  float f = smoothstep(fogNear, fogFar, vFogDepth);
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, f);
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-}`;
-
-function bladeStrip(pos, nrm, uvs, idx, segments, w, ox, oz, rot, curveDir, height) {
+function bladeStrip(pos, nrm, uvs, idx, segments, w, ox, oz, rot, curveDir, height, col) {
   const base = pos.length / 3;
   const c = Math.cos(rot), s = Math.sin(rot);
   for (let i = 0; i <= segments; i++) {
@@ -154,11 +91,14 @@ function bladeStrip(pos, nrm, uvs, idx, segments, w, ox, oz, rot, curveDir, heig
     const width = w * (1 - t * 0.9);
     const y = t * height;
     const curve = t * t * curveDir;
+    // 밑동은 어둡고 끝으로 갈수록 밝게 — 풀숲 바닥의 그늘
+    const ao = 0.62 + t * 0.44;
     for (const side of [-1, 1]) {
       const lx = side * width, lz = curve;
       pos.push(ox + lx * c - lz * s, y, oz + lx * s + lz * c);
       nrm.push(-s * 0.2, 0.3, c);
       uvs.push(side * 0.5 + 0.5, t);
+      col.push(ao, ao, ao);
     }
   }
   for (let i = 0; i < segments; i++) {
@@ -169,18 +109,19 @@ function bladeStrip(pos, nrm, uvs, idx, segments, w, ox, oz, rot, curveDir, heig
 
 /** 잎 세 장이 한 포기를 이룬다 — 인스턴스 수 대비 훨씬 빽빽해 보인다 */
 function tuftGeometry(segments = 4, blades = 3) {
-  const pos = [], nrm = [], uvs = [], idx = [];
+  const pos = [], nrm = [], uvs = [], idx = [], col = [];
   for (let b = 0; b < blades; b++) {
     const rot = (b / blades) * TAU + 0.4;
     const r = b === 0 ? 0 : 0.022;
     bladeStrip(pos, nrm, uvs, idx, segments, 0.021,
       Math.cos(rot) * r, Math.sin(rot) * r, rot,
-      0.16 + b * 0.07, 1 - b * 0.14);
+      0.16 + b * 0.07, 1 - b * 0.14, col);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   return g;
 }
@@ -257,10 +198,13 @@ const GRASS_RINGS = {
   high: [
     { cell: 6, radius: 24, minRadius: 0, perBlock: 460, blocks: 80, size: 1.0 },
     { cell: 12, radius: 60, minRadius: 22, perBlock: 260, blocks: 116, size: 1.55 },
+    // 멀리까지 이어지는 성긴 큰 포기 — 풀밭이 끊겨 보이지 않게
+    { cell: 24, radius: 132, minRadius: 56, perBlock: 150, blocks: 136, size: 2.7 },
   ],
   ultra: [
     { cell: 6, radius: 30, minRadius: 0, perBlock: 620, blocks: 120, size: 1.0 },
     { cell: 12, radius: 78, minRadius: 28, perBlock: 330, blocks: 190, size: 1.6 },
+    { cell: 24, radius: 165, minRadius: 74, perBlock: 190, blocks: 192, size: 2.8 },
   ],
 };
 
@@ -272,19 +216,14 @@ class GrassRing {
     this.size = cfg.size;
     this.pool = new CellPool(cfg);
 
-    const geo = new THREE.InstancedBufferGeometry();
-    const blade = tuftGeometry(3, 3);
-    geo.setAttribute('position', blade.attributes.position);
-    geo.setAttribute('normal', blade.attributes.normal);
-    geo.setAttribute('uv', blade.attributes.uv);
-    geo.setIndex(blade.index);
-    this.colors = new THREE.InstancedBufferAttribute(new Float32Array(this.count * 3), 3);
-    geo.setAttribute('instanceColorA', this.colors);
-
+    const geo = tuftGeometry(3, 3);
     this.mesh = new THREE.InstancedMesh(geo, material, this.count);
     this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.receiveShadow = true;        // 나무 그늘이 풀밭에 드리운다
     this.mesh.name = 'grass';
+    this.colors = new THREE.InstancedBufferAttribute(new Float32Array(this.count * 3).fill(1), 3);
+    this.mesh.instanceColor = this.colors;
     scene.add(this.mesh);
 
     this._m = new THREE.Matrix4();
@@ -293,7 +232,7 @@ class GrassRing {
     this._s = new THREE.Vector3();
     this._e = new THREE.Euler();
     this._c = new THREE.Color();
-    this._base = new THREE.Color(0x5c6d37);
+    this._base = new THREE.Color(0x76883f);
 
     this._m.compose(this._p.set(0, -999, 0), this._q, this._s.set(0, 0, 0));
     for (let i = 0; i < this.count; i++) this.mesh.setMatrixAt(i, this._m);
@@ -357,26 +296,14 @@ class GrassRing {
 export class GrassField {
   constructor(scene, quality = 'high') {
     const rings = GRASS_RINGS[quality] || GRASS_RINGS.high;
-    this.uniforms = {
-      uTime: WIND.time,
-      uWind: WIND.strength,
-      uWindDir: WIND.dir,
-      uPlayer: WIND.player,
-      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-      uSunColor: { value: new THREE.Color(0xffffff) },
-      uAmbSky: { value: new THREE.Color(0x88aacc) },
-      uAmbGround: { value: new THREE.Color(0x3a3a2a) },
-      fogColor: { value: new THREE.Color(0xc6d6e4) },
-      fogNear: { value: 30 },
-      fogFar: { value: 400 },
-      uWet: { value: 0 },
-    };
-    this.material = new THREE.ShaderMaterial({
-      uniforms: this.uniforms,
-      vertexShader: GRASS_VERT,
-      fragmentShader: GRASS_FRAG,
+    // 표준 조명 재질을 써서 그림자·안개·해질녘 빛을 그대로 받는다
+    this.material = new THREE.MeshLambertMaterial({
+      vertexColors: true,
       side: THREE.DoubleSide,
+      color: 0xffffff,
+      emissive: 0x151d0d,          // 그늘에서도 완전히 죽지 않게
     });
+    windify(this.material, 2.6, { translucency: 0.85 });
     this.rings = rings.map((cfg) => new GrassRing(scene, cfg, this.material));
     this.count = this.rings.reduce((a, r) => a + r.count, 0);
   }
@@ -407,16 +334,10 @@ export class GrassField {
     }
   }
 
-  syncLighting(sky) {
-    const u = this.uniforms;
-    u.uSunDir.value.copy(sky.sunDir.y > 0 ? sky.sunDir : sky.moonDir);
-    u.uSunColor.value.copy(sky.sunLight.color)
-      .multiplyScalar(Math.max(sky.sunLight.intensity * 0.32, sky.moonLight.intensity * 0.5));
-    u.uAmbSky.value.copy(sky.hemi.color).multiplyScalar(sky.hemi.intensity * 0.55);
-    u.uAmbGround.value.copy(sky.hemi.groundColor).multiplyScalar(sky.hemi.intensity * 0.5);
-    u.fogColor.value.copy(sky.scene.fog.color);
-    u.fogNear.value = sky.scene.fog.near;
-    u.fogFar.value = sky.scene.fog.far;
+  /** 비에 젖으면 짙어진다 */
+  setWet(wet) {
+    const v = 1 - wet * 0.32;
+    this.material.color.setRGB(v, v, v);
   }
 }
 
@@ -424,13 +345,17 @@ export class GrassField {
 /* 지면 잡동사니 (돌멩이·꽃·고사리·버섯·나뭇가지)                         */
 /* ------------------------------------------------------------------ */
 /** 바람에 흔들리는 식물용 재질 패치 */
-function windify(material, factor = 1) {
+function windify(material, factor = 1, opts = {}) {
+  const trans = opts.translucency ?? 0;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = WIND.time;
     shader.uniforms.uWind = WIND.strength;
     shader.uniforms.uWindDir = WIND.dir;
     shader.uniforms.uPlayer = WIND.player;
     shader.uniforms.uSwayK = { value: factor };
+    shader.uniforms.uSunDir = SUN.dir;
+    shader.uniforms.uSunColor = SUN.color;
+    shader.uniforms.uTrans = { value: trans };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
         uniform float uTime; uniform float uWind; uniform vec2 uWindDir;
@@ -454,11 +379,28 @@ function windify(material, factor = 1) {
           vec3 d = wp4.xyz - uPlayer; d.y = 0.0;
           float push = smoothstep(1.5, 0.2, length(d)) * uSwayK;
           wp4.xz += uWindDir * sway * hh * 0.14 + normalize(d.xz + vec2(0.0001)) * push * hh * 0.35;
+          wp4.y -= (abs(sway) * 0.05 + push * 0.12) * hh;
           mvPosition = viewMatrix * wp4;
         }
         gl_Position = projectionMatrix * mvPosition;`);
+
+    if (trans > 0) {
+      // 잎·풀을 통과해 비치는 빛 (아주 단순한 서브서피스 흉내)
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+          uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uTrans;`)
+        .replace('#include <dithering_fragment>', `
+          {
+            // 잎 뒤에서 해가 비칠 때 잎살이 환해진다
+            vec3 nv = normalize(vNormal);
+            vec3 sunV = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+            float back = pow(max(dot(-nv, sunV), 0.0), 1.7);
+            gl_FragColor.rgb += uSunColor * uTrans * back * 0.55 * gl_FragColor.rgb;
+          }
+          #include <dithering_fragment>`);
+    }
   };
-  material.customProgramCacheKey = () => 'windify' + factor;
+  material.customProgramCacheKey = () => `windify${factor}_${trans}`;
   return material;
 }
 
