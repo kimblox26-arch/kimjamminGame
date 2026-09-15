@@ -83,39 +83,53 @@ function roughen(geo, amount, rng = Math.random, scaleY = 1) {
 /* ------------------------------------------------------------------ */
 /* 풀밭                                                                */
 /* ------------------------------------------------------------------ */
-function bladeStrip(pos, nrm, uvs, idx, segments, w, ox, oz, rot, curveDir, height, col) {
+function bladeStrip(pos, nrm, uvs, idx, segments, w, ox, oz, rot, curveDir, height, col, pitch = 0) {
   const base = pos.length / 3;
-  const c = Math.cos(rot), s = Math.sin(rot);
+  const cy = Math.cos(rot), sy = Math.sin(rot);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const width = w * (1 - t * 0.9);
-    const y = t * height;
-    const curve = t * t * curveDir;
+    const width = w * (1 - t * 0.88);
+    const ly = t * height;
+    const lz = t * t * curveDir;
     // 밑동은 어둡고 끝으로 갈수록 밝게 — 풀숲 바닥의 그늘
     const ao = 0.62 + t * 0.44;
     for (const side of [-1, 1]) {
-      const lx = side * width, lz = curve;
-      pos.push(ox + lx * c - lz * s, y, oz + lx * s + lz * c);
-      nrm.push(-s * 0.2, 0.3, c);
+      const lx = side * width;
+      // 눕히기(pitch) → 돌리기(yaw)
+      const py = ly * cp - lz * sp;
+      const pz = ly * sp + lz * cp;
+      pos.push(ox + lx * cy - pz * sy, py, oz + lx * sy + pz * cy);
+      nrm.push(-sy * 0.25, 0.3 * cp + 0.2, cy);
       uvs.push(side * 0.5 + 0.5, t);
       col.push(ao, ao, ao);
     }
   }
   for (let i = 0; i < segments; i++) {
-    const a = base + i * 2, b = a + 1, cc = a + 2, d = a + 3;
-    idx.push(a, cc, b, b, cc, d);
+    const a = base + i * 2, b = a + 1, c = a + 2, d = a + 3;
+    idx.push(a, c, b, b, c, d);
   }
 }
 
-/** 잎 세 장이 한 포기를 이룬다 — 인스턴스 수 대비 훨씬 빽빽해 보인다 */
-function tuftGeometry(segments = 4, blades = 3) {
+/**
+ * 한 포기 — 곧게 선 잎 몇 장 + 바닥을 덮도록 눕힌 잎 몇 장.
+ * 눕힌 잎이 포기 사이의 흙을 가려 풀밭에 틈이 보이지 않는다.
+ */
+function tuftGeometry(segments = 3, upright = 3, mats = 3) {
   const pos = [], nrm = [], uvs = [], idx = [], col = [];
-  for (let b = 0; b < blades; b++) {
-    const rot = (b / blades) * TAU + 0.4;
+  for (let b = 0; b < upright; b++) {
+    const rot = (b / upright) * TAU + 0.4;
     const r = b === 0 ? 0 : 0.022;
     bladeStrip(pos, nrm, uvs, idx, segments, 0.021,
       Math.cos(rot) * r, Math.sin(rot) * r, rot,
-      0.16 + b * 0.07, 1 - b * 0.14, col);
+      0.16 + b * 0.07, 1 - b * 0.14, col, 0.12 + b * 0.06);
+  }
+  // 바닥을 덮는 잎 — 짧고 넓게, 거의 눕혀서
+  for (let b = 0; b < mats; b++) {
+    const rot = (b / mats) * TAU + 1.7;
+    bladeStrip(pos, nrm, uvs, idx, 2, 0.03,
+      Math.cos(rot) * 0.01, Math.sin(rot) * 0.01, rot,
+      0.05, 0.42 + (b % 2) * 0.12, col, 1.02 + (b % 3) * 0.12);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -201,23 +215,23 @@ class CellPool {
 /* 품질별 잔디 링 구성 — 가까운 링은 빽빽하게, 먼 링은 크고 성기게 */
 const GRASS_RINGS = {
   low: [
-    { cell: 6, radius: 16, minRadius: 0, perBlock: 300, blocks: 46, size: 1.0 },
-    { cell: 14, radius: 36, minRadius: 14, perBlock: 175, blocks: 44, size: 1.5 },
+    { cell: 6, radius: 16, minRadius: 0, perBlock: 175, blocks: 46, size: 1.0 },
+    { cell: 14, radius: 36, minRadius: 14, perBlock: 105, blocks: 44, size: 1.5 },
   ],
   medium: [
-    { cell: 6, radius: 19, minRadius: 0, perBlock: 330, blocks: 60, size: 1.0 },
-    { cell: 13, radius: 46, minRadius: 17, perBlock: 200, blocks: 70, size: 1.5 },
+    { cell: 6, radius: 19, minRadius: 0, perBlock: 210, blocks: 60, size: 1.0 },
+    { cell: 13, radius: 46, minRadius: 17, perBlock: 130, blocks: 70, size: 1.5 },
   ],
   high: [
-    { cell: 6, radius: 24, minRadius: 0, perBlock: 460, blocks: 80, size: 1.0 },
-    { cell: 12, radius: 60, minRadius: 22, perBlock: 260, blocks: 116, size: 1.55 },
+    { cell: 6, radius: 24, minRadius: 0, perBlock: 290, blocks: 80, size: 1.0 },
+    { cell: 12, radius: 60, minRadius: 22, perBlock: 150, blocks: 116, size: 1.55 },
     // 멀리까지 이어지는 성긴 큰 포기 — 풀밭이 끊겨 보이지 않게
-    { cell: 24, radius: 132, minRadius: 56, perBlock: 105, blocks: 136, size: 2.7 },
+    { cell: 24, radius: 132, minRadius: 56, perBlock: 78, blocks: 136, size: 2.7 },
   ],
   ultra: [
-    { cell: 6, radius: 29, minRadius: 0, perBlock: 470, blocks: 116, size: 1.0 },
-    { cell: 12, radius: 78, minRadius: 28, perBlock: 330, blocks: 190, size: 1.6 },
-    { cell: 24, radius: 165, minRadius: 74, perBlock: 120, blocks: 192, size: 2.8 },
+    { cell: 6, radius: 29, minRadius: 0, perBlock: 300, blocks: 116, size: 1.0 },
+    { cell: 12, radius: 74, minRadius: 27, perBlock: 160, blocks: 176, size: 1.6 },
+    { cell: 24, radius: 165, minRadius: 74, perBlock: 72, blocks: 192, size: 2.8 },
   ],
 };
 
@@ -229,7 +243,7 @@ class GrassRing {
     this.size = cfg.size;
     this.pool = new CellPool(cfg);
 
-    const geo = tuftGeometry(3, 3);
+    const geo = tuftGeometry(3, 3, 2);
     this.mesh = new THREE.InstancedMesh(geo, material, this.count);
     this.mesh.frustumCulled = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -271,7 +285,7 @@ class GrassRing {
       const { h, slope } = sampleGround(x, z);
       const fert = fertilityAt(x, z, h, slope);
       const surf = surfaceAt(x, z, h, slope);
-      const ok = fert > 0.1 && rng() < fert * (surf === SURFACE.GRASS ? 1.15 : surf === SURFACE.DIRT ? 0.45 : 0.06);
+      const ok = fert > 0.08 && rng() < fert * (surf === SURFACE.GRASS ? 1.45 : surf === SURFACE.DIRT ? 0.7 : 0.1);
       if (ok) used++;
       if (!ok) {
         this._m.compose(this._p.set(0, -999, 0), this._q, this._s.set(0, 0, 0));

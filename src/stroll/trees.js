@@ -177,51 +177,91 @@ export function rockTextures(size = 256) {
 /* ------------------------------------------------------------------ */
 const _u = new THREE.Vector3(), _v = new THREE.Vector3(), _t1 = new THREE.Vector3(), _t2 = new THREE.Vector3();
 
+/**
+ * 잎 한 장을 '진짜 모형'으로 만든다.
+ * 납작한 카드가 아니라 주맥을 따라 접히고(단면이 V자), 끝으로 갈수록
+ * 아래로 휘며, 윤곽 자체가 잎 모양이다. 옆에서 봐도 종이처럼 보이지 않는다.
+ */
+const LEAF_SEGS = 3;
+
 class LeafBuilder {
-  constructor() { this.pos = []; this.nrm = []; this.uv = []; this.col = []; this.idx = []; }
+  constructor() { this.pos = []; this.nrm = []; this.uv = []; this.col = []; this.idx = []; this.out = []; }
 
   /**
-   * 잎 한 장. 법선은 카드 면이 아니라 '수관 바깥 방향'을 쓴다.
-   * 그래야 잎이 하나하나 보이면서도 전체가 한 덩어리처럼 부드럽게 빛을 받는다.
+   * px,py,pz : 잎자루가 붙는 자리
+   * dir      : 잎이 뻗어 나가는 방향(수관 바깥)
+   * w, l     : 폭과 길이
+   * cell     : 잎 텍스처 아틀라스 칸
+   * roll     : 잎면이 도는 각
    */
-  add(px, py, pz, dirX, dirY, dirZ, w, l, cell, roll, color) {
-    _u.set(dirX, dirY, dirZ).normalize();
-    // 잎 면의 기준축
+  add(px, py, pz, dirX, dirY, dirZ, w, l, cell, roll, color, curl = 0.28, crease = 0.2, segs = LEAF_SEGS) {
+    _u.set(dirX, dirY, dirZ).normalize();           // 잎이 뻗는 방향
     _t1.set(-_u.z, 0, _u.x);
     if (_t1.lengthSq() < 1e-5) _t1.set(1, 0, 0);
     _t1.normalize();
     _t2.crossVectors(_u, _t1).normalize();
     const cr = Math.cos(roll), sr = Math.sin(roll);
-    // 잎이 살짝 아래로 늘어지게
-    const droop = -0.26;
-    const ax = _t1.x * cr + _t2.x * sr, ay = _t1.y * cr + _t2.y * sr, az = _t1.z * cr + _t2.z * sr;
-    const bx = -_t1.x * sr + _t2.x * cr + _u.x * 0, by = -_t1.y * sr + _t2.y * cr + droop, bz = -_t1.z * sr + _t2.z * cr;
+    // 잎면의 가로축(폭)과 면 법선축
+    const sx = _t1.x * cr + _t2.x * sr, sy = _t1.y * cr + _t2.y * sr, sz = _t1.z * cr + _t2.z * sr;
+    const nx = -_t1.x * sr + _t2.x * cr, ny = -_t1.y * sr + _t2.y * cr, nz = -_t1.z * sr + _t2.z * cr;
+
     const base = this.pos.length / 3;
     const cu = (cell % 2) * 0.5, cv = Math.floor(cell / 2) * 0.5;
-    const corners = [
-      [-0.5, -0.5, cu, cv], [0.5, -0.5, cu + 0.5, cv],
-      [-0.5, 0.5, cu, cv + 0.5], [0.5, 0.5, cu + 0.5, cv + 0.5],
-    ];
-    for (const [sx, sy, u0, v0] of corners) {
-      this.pos.push(
-        px + ax * sx * w + bx * sy * l,
-        py + ay * sx * w + by * sy * l,
-        pz + az * sx * w + bz * sy * l);
-      this.nrm.push(_u.x, _u.y, _u.z);
-      this.uv.push(u0, v0);
-      this.col.push(color.r, color.g, color.b);
+
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      // 잎 윤곽 — 밑동은 좁고 3할 지점이 가장 넓으며 끝은 뾰족하다
+      const prof = Math.sin(Math.PI * clamp01(0.08 + t * 0.9)) ** 0.75 * (1 - t * 0.12);
+      const halfW = w * prof;
+      const along = l * t;
+      const drop = -curl * l * t * t;              // 끝으로 갈수록 처진다
+      const lift = crease * halfW;                 // 주맥이 솟아 V자 단면
+      for (const side of [-1, 0, 1]) {
+        const wx = halfW * side;
+        const up = side === 0 ? lift : 0;
+        this.pos.push(
+          px + _u.x * along + sx * wx + nx * up,
+          py + _u.y * along + sy * wx + ny * up + drop,
+          pz + _u.z * along + sz * wx + nz * up);
+        this.uv.push(cu + (0.17 + (side * 0.5 + 0.5) * 0.66) * 0.5, cv + (0.14 + t * 0.72) * 0.5);
+        this.col.push(color.r, color.g, color.b);
+        this.out.push(_u.x, _u.y, _u.z);
+      }
     }
-    this.idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+    for (let i = 0; i < segs; i++) {
+      const a = base + i * 3;
+      // 왼쪽 반 + 오른쪽 반
+      this.idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4);
+      this.idx.push(a + 1, a + 4, a + 2, a + 2, a + 4, a + 5);
+    }
   }
 
   geometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setIndex(this.idx);
+    g.computeVertexNormals();
+    // 실제 면 법선과 '수관 바깥 방향'을 섞는다 — 잎 한 장의 입체감은 살리되
+    // 수관 전체는 한 덩어리처럼 부드럽게 빛을 받는다
+    const n = g.attributes.normal;
+    for (let i = 0; i < n.count; i++) {
+      const ox = this.out[i * 3], oy = this.out[i * 3 + 1], oz = this.out[i * 3 + 2];
+      const mx = n.getX(i) * 0.65 + ox * 0.35;
+      const my = n.getY(i) * 0.65 + oy * 0.35;
+      const mz = n.getZ(i) * 0.65 + oz * 0.35;
+      const len = Math.hypot(mx, my, mz) || 1;
+      n.setXYZ(i, mx / len, my / len, mz / len);
+    }
     return g;
+  }
+}
+
+/** 침엽 다발 — 얇은 판 세 장을 엇갈려 세워 어느 각도에서도 부피가 있다 */
+function needleCluster(lb, px, py, pz, dirX, dirY, dirZ, w, l, color, rng) {
+  for (let k = 0; k < 2; k++) {
+    lb.add(px, py, pz, dirX, dirY, dirZ, w, l, 3, k * 1.15 + rng() * 0.3, color, 0.16, 0.05, 2);
   }
 }
 
@@ -233,6 +273,120 @@ function roughen(geo, amount, rng) {
   }
   geo.computeVertexNormals();
   return geo;
+}
+
+/* ------------------------------------------------------------------ */
+/* 가지                                                                */
+/* ------------------------------------------------------------------ */
+const _bv = new THREE.Vector3(), _bq = new THREE.Quaternion(), _bup = new THREE.Vector3(0, 1, 0);
+
+/** 두 점을 잇는 원뿔대 — 가지 한 마디 */
+function limb(p0, dir, len, r0, r1, sides) {
+  const g = new THREE.CylinderGeometry(r1, r0, len, sides, 1, true);
+  g.translate(0, len / 2, 0);
+  _bq.setFromUnitVectors(_bup, _bv.copy(dir).normalize());
+  g.applyQuaternion(_bq);
+  g.translate(p0.x, p0.y, p0.z);
+  return g;
+}
+
+/**
+ * 재귀로 뻗는 가지.
+ * 끝마디의 위치와 방향을 모아 돌려주므로, 잎을 '가지 끝'에 달 수 있다.
+ */
+function growBranches(rng, opts) {
+  const {
+    origin, dir, length, radius, depth, children = 3,
+    spread = 0.7, droop = 0.1, shrink = 0.68, lenShrink = 0.72,
+    sides = 5, geos, tips, curve = 0.15,
+  } = opts;
+
+  const end = new THREE.Vector3().copy(origin).addScaledVector(dir, length);
+  geos.push(limb(origin, dir, length, radius, radius * shrink, sides));
+
+  if (depth <= 0 || radius < 0.012) {
+    tips.push({ pos: end, dir: new THREE.Vector3().copy(dir), r: radius * shrink });
+    return;
+  }
+
+  const n = Math.max(2, Math.round(children * (0.7 + rng() * 0.6)));
+  // 가지 끝에서 갈라지는 축
+  const side = new THREE.Vector3(-dir.z, 0, dir.x);
+  if (side.lengthSq() < 1e-5) side.set(1, 0, 0);
+  side.normalize();
+  const side2 = new THREE.Vector3().crossVectors(dir, side).normalize();
+
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + rng() * 0.9;
+    const sp = spread * (0.6 + rng() * 0.8);
+    const nd = new THREE.Vector3()
+      .copy(dir)
+      .addScaledVector(side, Math.cos(a) * sp)
+      .addScaledVector(side2, Math.sin(a) * sp);
+    nd.y -= droop * (0.5 + rng());               // 끝으로 갈수록 처진다
+    nd.y += curve * 0.5;                          // 그래도 빛을 향해 조금 든다
+    nd.normalize();
+    growBranches(rng, {
+      ...opts,
+      origin: end,
+      dir: nd,
+      length: length * lenShrink * (0.8 + rng() * 0.4),
+      radius: radius * shrink,
+      depth: depth - 1,
+      children: Math.max(2, children - 1),
+      sides: Math.max(4, sides - 1),
+    });
+  }
+}
+
+/**
+ * 먼 거리용 수관 덩어리 — 가지 끝을 몇 무리로 묶어 큰 공 몇 개로 만든다.
+ * (끝가지마다 공을 만들면 멀리 있는 나무까지 삼각형을 낭비한다)
+ */
+function blobsFromTips(tips, groups, rng, color, pad = 1.35) {
+  const out = [];
+  if (!tips.length) return out;
+  const buckets = Array.from({ length: groups }, () => []);
+  for (const t of tips) {
+    // 줄기를 중심으로 한 방위각으로 무리를 나눈다
+    const a = Math.atan2(t.pos.z, t.pos.x) + Math.PI;
+    buckets[Math.min(groups - 1, Math.floor((a / TAU) * groups))].push(t);
+  }
+  for (const b of buckets) {
+    if (!b.length) continue;
+    let cx = 0, cy = 0, cz = 0;
+    for (const t of b) { cx += t.pos.x; cy += t.pos.y; cz += t.pos.z; }
+    cx /= b.length; cy /= b.length; cz /= b.length;
+    let r = 0.5;
+    for (const t of b) r = Math.max(r, Math.hypot(t.pos.x - cx, t.pos.y - cy, t.pos.z - cz));
+    const g = new THREE.IcosahedronGeometry(r * pad * 0.62, 1);
+    roughen(g, r * 0.16, rng);
+    g.translate(cx, cy, cz);
+    out.push(tint(g, color, 0.42, rng));
+  }
+  return out;
+}
+
+/** 가지 끝 둘레에 잎을 단다 */
+function leavesAtTip(lb, rng, tip, count, cells, palette, size, spread = 0.35, along = 0.9) {
+  for (let i = 0; i < count; i++) {
+    const a = rng() * TAU;
+    const up = rng() * 2 - 1;
+    const r = Math.sqrt(Math.max(0, 1 - up * up));
+    const dx = Math.cos(a) * r, dy = up, dz = Math.sin(a) * r;
+    const d = Math.sqrt(rng()) * spread;
+    // 마지막 가지 마디를 따라 늘어서게
+    const t = (rng() - 0.72) * along;
+    const px = tip.pos.x + dx * d + tip.dir.x * t;
+    const py = tip.pos.y + dy * d * 0.8 + tip.dir.y * t;
+    const pz = tip.pos.z + dz * d + tip.dir.z * t;
+    const s = size * (0.8 + rng() * 0.5);
+    // 잎은 가지 끝에서 바깥·아래로 퍼진다
+    lb.add(px, py, pz,
+      dx * 0.8 + tip.dir.x * 0.5, dy * 0.5 - 0.25 + tip.dir.y * 0.4, dz * 0.8 + tip.dir.z * 0.5,
+      s, s * 1.5, cells[Math.floor(rng() * cells.length)], rng() * TAU,
+      palette[Math.floor(rng() * palette.length)]);
+  }
 }
 
 /** 구 표면에 잎을 흩뿌린다 */
@@ -273,50 +427,46 @@ function pineTree(rng, leafCount) {
   const trunkParts = [], blobParts = [];
   const lb = new LeafBuilder();
   const h = 8.5 + rng() * 7;
-  const trunk = new THREE.CylinderGeometry(0.06, 0.44, h * 0.88, 8);
-  trunk.translate(0, h * 0.44, 0);
-  roughen(trunk, 0.05, rng);
+  const trunk = new THREE.CylinderGeometry(0.06, 0.44, h * 0.9, 8, 1, true);
+  trunk.translate(0, h * 0.45, 0);
+  roughen(trunk, 0.04, rng);
   trunkParts.push(tint(trunk, new THREE.Color(0x9a8464), 0.35, rng));
 
   const layers = 7 + Math.floor(rng() * 4);
   const pal = paletteColors(PINE_GREENS);
-  const needles = Math.round(leafCount * 1.25);
+  const needles = Math.round(leafCount * 0.34);
+  const perLayer = Math.max(3, Math.round(needles / layers / 3));   // 다발 하나가 판 세 장
+  const origin = new THREE.Vector3();
+
   for (let i = 0; i < layers; i++) {
     const t = i / layers;
-    const r = lerp(2.9, 0.5, t) * (0.85 + rng() * 0.3);
-    const ch = lerp(2.6, 1.1, t);
-    const y = h * (0.32 + t * 0.64);   // 사람 키 위에서 가지가 시작한다
+    const r = lerp(2.8, 0.5, t) * (0.85 + rng() * 0.3);
+    const y = h * (0.3 + t * 0.66);
+    // 층마다 돌려 나는 가지 — 바깥으로 뻗으며 살짝 처진다
+    const arms = 5 + Math.floor(rng() * 3);
+    for (let k = 0; k < arms; k++) {
+      const a = (k / arms) * TAU + i * 0.8 + rng() * 0.3;
+      const dir = new THREE.Vector3(Math.cos(a), -0.2 - rng() * 0.2, Math.sin(a)).normalize();
+      origin.set(0, y, 0);
+      const g = limb(origin, dir, r, 0.045 * (1 - t * 0.6) + 0.015, 0.012, 4);
+      trunkParts.push(tint(g, new THREE.Color(0x8b7358), 0.3, rng));
 
-    // 잔가지 — 잎을 많이 그리는 품질에서만 (저사양에서는 삼각형이 아깝다)
-    const twigs = leafCount > 200 ? 2 + Math.floor(rng() * 2) : 0;
-    for (let k = 0; k < twigs; k++) {
-      const a = rng() * TAU;
-      // 원점에서 +X 로 눕힌 뒤 각도만큼 돌리고 높이로 올린다 (순서가 중요)
-      const tw = new THREE.CylinderGeometry(0.02, 0.05, r * 1.05, 4);
-      tw.rotateZ(Math.PI / 2 - 0.22);
-      tw.translate(r * 0.48, 0, 0);
-      tw.rotateY(-a);
-      tw.translate(0, y, 0);
-      trunkParts.push(tint(tw, new THREE.Color(0x8b7358)));
+      // 가지를 따라 침엽 다발
+      const along = Math.max(2, Math.round(perLayer / arms) + 2);
+      for (let m = 0; m < along; m++) {
+        const f = 0.25 + (m / along) * 0.8;
+        const px = dir.x * r * f, py = y + dir.y * r * f, pz = dir.z * r * f;
+        const s = (0.34 + rng() * 0.2) * (1 - t * 0.3);
+        needleCluster(lb, px, py, pz,
+          dir.x * 0.7 + (rng() - 0.5) * 0.5, -0.35 + rng() * 0.4, dir.z * 0.7 + (rng() - 0.5) * 0.5,
+          s * 0.5, s * 1.6, pal[Math.floor(rng() * pal.length)], rng);
+      }
     }
-
-    // 속을 채우는 원뿔은 작게 — 실제 모양은 침엽 다발이 만든다
-    const cone = new THREE.ConeGeometry(r * 0.5, ch * 0.8, 7, 1);
-    cone.translate((rng() - 0.5) * 0.2, y, (rng() - 0.5) * 0.2);
-    roughen(cone, 0.12, rng);
-    blobParts.push(tint(cone, new THREE.Color(0x3c5b30), 0.45, rng));
-
-    // 가지를 따라 아래로 늘어지는 침엽 다발
-    const n = Math.round(needles / layers);
-    for (let k = 0; k < n; k++) {
-      const a = rng() * TAU;
-      const rad = r * (0.35 + Math.sqrt(rng()) * 0.8);
-      const drop = (0.35 - rad / r * 0.55) * ch;
-      const s = 0.5 + rng() * 0.4;
-      lb.add(Math.cos(a) * rad, y + drop, Math.sin(a) * rad,
-        Math.cos(a) * 0.85, -0.42 + rng() * 0.5, Math.sin(a) * 0.85,
-        s, s * 1.2, 3, rng() * TAU, pal[Math.floor(rng() * pal.length)]);
-    }
+    // 먼 거리용 원뿔
+    const cone = new THREE.ConeGeometry(r * 0.62, lerp(2.4, 1.0, t), 7, 1, true);
+    cone.translate((rng() - 0.5) * 0.15, y + 0.2, (rng() - 0.5) * 0.15);
+    roughen(cone, 0.1, rng);
+    blobParts.push(tint(cone, new THREE.Color(0x3c5b30), 0.42, rng));
   }
   return {
     trunk: mergeGeos(trunkParts),
@@ -326,54 +476,38 @@ function pineTree(rng, leafCount) {
   };
 }
 
-function broadTree(rng, leafCount, autumn = 0) {
+function broadTree(rng, leafCount, autumn = 0, depth = 3) {
   const trunkParts = [], blobParts = [];
   const lb = new LeafBuilder();
   const h = 6.8 + rng() * 5.6;
-  const trunkH = h * 0.5;
-  const trunk = new THREE.CylinderGeometry(0.22, 0.56, trunkH, 9);
+  const trunkH = h * 0.42;
+  const trunk = new THREE.CylinderGeometry(0.2, 0.52, trunkH, 9, 1, true);
   trunk.translate(0, trunkH / 2, 0);
-  roughen(trunk, 0.07, rng);
+  roughen(trunk, 0.06, rng);
   trunkParts.push(tint(trunk, new THREE.Color(0xa0855f), 0.35, rng));
 
-  // 가지 — 끝 위치를 정확히 계산해 그 자리에 잎을 붙인다
-  const branches = 4 + Math.floor(rng() * 3);
+  // 줄기 위에서 갈라지는 가지 — 두 번 더 갈라져 끝가지가 15~30개 생긴다
   const tips = [];
-  for (let i = 0; i < branches; i++) {
-    const a = (i / branches) * TAU + rng() * 0.5;
-    const len = h * (0.3 + rng() * 0.22);
-    const tilt = 0.5 + rng() * 0.35;
-    const y0 = trunkH * (0.72 + rng() * 0.22);
-    const b = new THREE.CylinderGeometry(0.055, 0.16, len, 6);
-    b.translate(0, len / 2, 0);
-    b.rotateZ(tilt);
-    b.rotateY(a);
-    b.translate(0, y0, 0);
-    trunkParts.push(tint(b, new THREE.Color(0x93795a), 0.3, rng));
-    // rotateZ(t) 로 (0,len,0) → (-sin t·len, cos t·len, 0), 이어서 rotateY(a)
-    tips.push([
-      -Math.sin(tilt) * len * Math.cos(a),
-      y0 + Math.cos(tilt) * len,
-      Math.sin(tilt) * len * Math.sin(a),
-    ]);
+  const branchGeos = [];
+  const primaries = 4 + Math.floor(rng() * 3);
+  const start = new THREE.Vector3(0, trunkH * 0.92, 0);
+  for (let i = 0; i < primaries; i++) {
+    const a = (i / primaries) * TAU + rng() * 0.7;
+    const tilt = 0.55 + rng() * 0.35;
+    const dir = new THREE.Vector3(Math.cos(a) * Math.sin(tilt), Math.cos(tilt), Math.sin(a) * Math.sin(tilt));
+    growBranches(rng, {
+      origin: start, dir, length: h * (0.22 + rng() * 0.1), radius: 0.13 + rng() * 0.05,
+      depth, children: 3, spread: 0.58, droop: 0.16, shrink: 0.7, lenShrink: 0.66,
+      sides: 5, geos: branchGeos, tips, curve: 0.2,
+    });
   }
+  for (const g of branchGeos) trunkParts.push(tint(g, new THREE.Color(0x93795a), 0.3, rng));
 
   const pal = paletteColors(LEAF_GREENS.concat(autumn > 0.5 ? LEAF_AUTUMN : []), autumn * 0.5);
-  // 수관은 가지 끝마다 하나 + 가운데 하나
-  const centers = [[0, trunkH * 1.12, 0, 2.6 + rng() * 0.9]];
-  for (const [tx, ty, tz] of tips) centers.push([tx, ty, tz, 1.75 + rng() * 0.9]);
+  const per = Math.max(2, Math.round(leafCount / Math.max(1, tips.length)));
+  for (const tip of tips) leavesAtTip(lb, rng, tip, per, [0, 1], pal, 0.25, 0.32, 1.1);
+  blobParts.push(...blobsFromTips(tips, 4, rng, new THREE.Color(0x4e7331), 1.28));
 
-  for (const [cx, cy, cz, r] of centers) {
-    // 속을 채우는 덩어리는 작게 — 잎 껍질 안쪽에 숨는다
-    const s = new THREE.IcosahedronGeometry(r * 0.62, 1);
-    roughen(s, r * 0.16, rng);
-    s.translate(cx, cy, cz);
-    blobParts.push(tint(s, new THREE.Color(0x4e7331), 0.45, rng));
-  }
-  const per = Math.round(leafCount / centers.length);
-  for (const [cx, cy, cz, r] of centers) {
-    scatterBlobLeaves(lb, rng, cx, cy, cz, r, per, [0, 1], pal, 0.3);
-  }
   return {
     trunk: mergeGeos(trunkParts),
     blob: mergeGeos(blobParts),
@@ -382,40 +516,43 @@ function broadTree(rng, leafCount, autumn = 0) {
   };
 }
 
-function birchTree(rng, leafCount) {
+function birchTree(rng, leafCount, depth = 3) {
   const trunkParts = [], blobParts = [];
   const lb = new LeafBuilder();
   const h = 7.5 + rng() * 4.5;
-  const lean = (rng() - 0.5) * 0.12;
-  const trunk = new THREE.CylinderGeometry(0.09, 0.2, h * 0.76, 8);
-  trunk.translate(0, h * 0.38, 0);
+  const trunkH = h * 0.55;
+  const lean = (rng() - 0.5) * 0.1;
+  const trunk = new THREE.CylinderGeometry(0.1, 0.19, trunkH, 8, 1, true);
+  trunk.translate(0, trunkH / 2, 0);
   trunk.rotateZ(lean);
   trunkParts.push(tint(trunk, new THREE.Color(0xd9d6ca), 0.2, rng));
   for (let i = 0; i < 7; i++) {
-    const mark = new THREE.BoxGeometry(0.2, 0.03 + rng() * 0.03, 0.05);
-    mark.translate(0, h * (0.1 + rng() * 0.58), 0.14);
+    const mark = new THREE.BoxGeometry(0.18, 0.03 + rng() * 0.03, 0.05);
+    mark.translate(0, trunkH * (0.1 + rng() * 0.85), 0.12);
     mark.rotateY(rng() * TAU);
     trunkParts.push(tint(mark, new THREE.Color(0x38342d)));
   }
 
+  const tips = [], branchGeos = [];
+  const primaries = 4 + Math.floor(rng() * 3);
+  const start = new THREE.Vector3(0, trunkH * 0.86, 0);
+  for (let i = 0; i < primaries; i++) {
+    const a = (i / primaries) * TAU + rng() * 0.6;
+    const tilt = 0.42 + rng() * 0.3;
+    const dir = new THREE.Vector3(Math.cos(a) * Math.sin(tilt), Math.cos(tilt), Math.sin(a) * Math.sin(tilt));
+    growBranches(rng, {
+      origin: start, dir, length: h * (0.18 + rng() * 0.08), radius: 0.07 + rng() * 0.03,
+      depth, children: 3, spread: 0.46, droop: 0.32, shrink: 0.66, lenShrink: 0.7,
+      sides: 4, geos: branchGeos, tips, curve: 0.05,
+    });
+  }
+  for (const g of branchGeos) trunkParts.push(tint(g, new THREE.Color(0xc9c5b6), 0.25, rng));
+
   const pal = paletteColors(BIRCH_GREENS);
-  const blobs = 4 + Math.floor(rng() * 3);
-  const centers = [];
-  for (let i = 0; i < blobs; i++) {
-    const r = 1.5 + rng() * 1.2;
-    const a = (i / blobs) * TAU + rng();
-    const cx = Math.cos(a) * (i ? 1.1 : 0), cz = Math.sin(a) * (i ? 1.1 : 0);
-    const cy = h * (0.5 + (i / blobs) * 0.42 + rng() * 0.08);
-    centers.push([cx, cy, cz, r]);
-    const s = new THREE.IcosahedronGeometry(r * 0.62, 1);
-    roughen(s, r * 0.18, rng);
-    s.translate(cx, cy, cz);
-    blobParts.push(tint(s, new THREE.Color(0x6f8c39), 0.45, rng));
-  }
-  const per = Math.round(leafCount / centers.length);
-  for (const [cx, cy, cz, r] of centers) {
-    scatterBlobLeaves(lb, rng, cx, cy, cz, r, per, [2, 2, 0], pal, 0.2);
-  }
+  const per = Math.max(2, Math.round(leafCount / Math.max(1, tips.length)));
+  for (const tip of tips) leavesAtTip(lb, rng, tip, per, [2, 2, 0], pal, 0.17, 0.28, 1.0);
+  blobParts.push(...blobsFromTips(tips, 3, rng, new THREE.Color(0x6f8c39), 1.25));
+
   return {
     trunk: mergeGeos(trunkParts),
     blob: mergeGeos(blobParts),
@@ -512,10 +649,10 @@ function logGeometry(rng) {
 /* 숲                                                                  */
 /* ------------------------------------------------------------------ */
 const QUALITY = {
-  low: { step: 9, leaves: 130, nearTrees: 14, leafDist: 17, variants: 2, bushLeaves: 10, saplings: 0.4 },
-  medium: { step: 7.2, leaves: 230, nearTrees: 38, leafDist: 36, variants: 2, bushLeaves: 20, saplings: 0.7 },
-  high: { step: 6.2, leaves: 380, nearTrees: 70, leafDist: 52, variants: 3, bushLeaves: 34, saplings: 1 },
-  ultra: { step: 5.4, leaves: 760, nearTrees: 120, leafDist: 70, variants: 3, bushLeaves: 60, saplings: 1.3 },
+  low: { step: 9.5, leaves: 480, nearTrees: 5, leafDist: 13, variants: 2, bushLeaves: 16, saplings: 0.35, branchDepth: 2 },
+  medium: { step: 7.2, leaves: 1100, nearTrees: 10, leafDist: 20, variants: 2, bushLeaves: 32, saplings: 0.7, branchDepth: 2 },
+  high: { step: 6.2, leaves: 2000, nearTrees: 15, leafDist: 26, variants: 3, bushLeaves: 55, saplings: 1, branchDepth: 3 },
+  ultra: { step: 5.4, leaves: 3400, nearTrees: 26, leafDist: 36, variants: 3, bushLeaves: 100, saplings: 1.3, branchDepth: 3 },
 };
 
 export class Forest {
@@ -548,7 +685,7 @@ export class Forest {
     this.leafMat = q.leaves > 0 ? windify(new THREE.MeshStandardMaterial({
       vertexColors: true,
       map: leafTexture(),
-      alphaTest: 0.42,
+      alphaTest: 0.3,
       side: THREE.DoubleSide,
       roughness: 0.78,
       metalness: 0,
@@ -635,8 +772,13 @@ export class Forest {
       m.compose(p.set(x, h + yOff, z), qt, s.set(sc, sc, sc));
       im.setMatrixAt(i, m);
       if (jitter > 0) {
-        const b = 1 + (this.rng() - 0.5) * jitter;
-        im.instanceColor.setXYZ(i, b * (1 + (this.rng() - 0.5) * jitter * 0.5), b, b * (1 - (this.rng() - 0.5) * jitter * 0.6));
+        let c = list[i][7];
+        if (!c) {
+          const b = 1 + (this.rng() - 0.5) * jitter;
+          c = [b * (1 + (this.rng() - 0.5) * jitter * 0.5), b, b * (1 - (this.rng() - 0.5) * jitter * 0.6)];
+          list[i][7] = c;
+        }
+        im.instanceColor.setXYZ(i, c[0], c[1], c[2]);
       }
     }
     im.instanceMatrix.needsUpdate = true;
@@ -646,10 +788,11 @@ export class Forest {
   }
 
   _build(rng, q) {
+    const depth = q.branchDepth ?? 3;
     const makers = [
       (r) => pineTree(r, q.leaves * 0.75),
-      (r) => broadTree(r, q.leaves, r() < 0.18 ? 1 : 0),
-      (r) => birchTree(r, q.leaves * 0.8),
+      (r) => broadTree(r, q.leaves, r() < 0.18 ? 1 : 0, depth),
+      (r) => birchTree(r, q.leaves * 0.8, depth),
     ];
 
     // 수종 × 변형별로 나무를 나눠 담는다
@@ -696,7 +839,7 @@ export class Forest {
       for (let v = 0; v < 2; v++) {
         const list = this.saplings.filter((_, i) => i % 2 === v);
         if (!list.length) continue;
-        const built = sapling(rng, Math.round(q.leaves * 0.18));
+        const built = sapling(rng, Math.round(q.leaves * 0.12));
         this._staticInstanced(built.trunk, this.barkMat, list, false, -0.1, false, 0.2);
         const blob = this._staticInstanced(built.blob, this.blobMat, list, true, -0.1, false, 0.4);
         if (blob) blob.name = `sapling-${v}`;
@@ -759,26 +902,42 @@ export class Forest {
 
     const fill = (variant, tilt = false) => {
       const near = variant.near;
-      if (!near) return;
-      let n = 0;
-      const cap = variant.cap;
+      const blob = variant.blob;
+      const cap = variant.cap || 0;
+      const yOff = tilt ? -0.15 : -0.2;
+      let n = 0, far = 0;
       for (const item of variant.list) {
-        if (n >= cap) break;
         const [x, z, h, ry, sc] = item;
         const dx = x - px, dz = z - pz;
-        if (dx * dx + dz * dz > R2) continue;
+        const isNear = near && n < cap && dx * dx + dz * dz <= R2;
         this._qt.setFromEuler(this._e.set(0, ry, 0));
-        this._m.compose(this._p.set(x, h + (tilt ? -0.15 : -0.2), z), this._qt, this._s.set(sc, sc, sc));
-        near.setMatrixAt(n, this._m);
-        if (near.instanceColor) {
-          const b = 0.86 + (item[6] || 0) * 0.3;
-          near.instanceColor.setXYZ(n, b * 1.02, b, b * 0.94);
+        this._m.compose(this._p.set(x, h + yOff, z), this._qt, this._s.set(sc, sc, sc));
+        if (isNear) {
+          // 가까운 나무 — 잎을 한 장씩
+          near.setMatrixAt(n, this._m);
+          if (near.instanceColor) {
+            const b = 0.86 + (item[6] || 0) * 0.3;
+            near.instanceColor.setXYZ(n, b * 1.02, b, b * 0.94);
+          }
+          n++;
+        } else if (blob) {
+          // 먼 나무 — 덩어리로. 가까운 나무의 덩어리는 아예 그리지 않는다
+          blob.setMatrixAt(far, this._m);
+          const c = item[7];
+          if (blob.instanceColor && c) blob.instanceColor.setXYZ(far, c[0], c[1], c[2]);
+          far++;
         }
-        n++;
       }
-      near.count = n;
-      near.instanceMatrix.needsUpdate = true;
-      if (near.instanceColor) near.instanceColor.needsUpdate = true;
+      if (near) {
+        near.count = n;
+        near.instanceMatrix.needsUpdate = true;
+        if (near.instanceColor) near.instanceColor.needsUpdate = true;
+      }
+      if (blob) {
+        blob.count = far;
+        blob.instanceMatrix.needsUpdate = true;
+        if (blob.instanceColor) blob.instanceColor.needsUpdate = true;
+      }
     };
 
     for (const v of this.variants) fill(v);

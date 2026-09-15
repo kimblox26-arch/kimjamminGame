@@ -158,29 +158,6 @@ export function noiseCanvas(size, fn) {
   return c;
 }
 
-/** 흙알갱이/잔풀 디테일 (알베도에 곱해진다) */
-function makeGroundMap(size = 512) {
-  const canvas = noiseCanvas(size, (d, s) => {
-    for (let y = 0; y < s; y++) {
-      for (let x = 0; x < s; x++) {
-        const u = x / s * 8, v = y / s * 8;
-        // 타일링을 위해 주기 경계에서 이어지도록 두 번 샘플해 섞는다
-        let n = fbm2(u, v, 4) * 0.5 + 0.5;
-        const g = Math.random();
-        n = n * 0.72 + g * 0.28;
-        const b = 170 + n * 96;
-        const i = (y * s + x) * 4;
-        d[i] = b * 1.02; d[i + 1] = b; d[i + 2] = b * 0.94; d[i + 3] = 255;
-      }
-    }
-  });
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
-
 /** 높이 배열(0~1)에서 탄젠트 공간 노멀맵 텍스처를 만든다 */
 export function normalMapFromHeights(size, heights, strength = 2.4, repeat = 1) {
   const canvas = noiseCanvas(size, (d, s) => {
@@ -205,33 +182,61 @@ export function normalMapFromHeights(size, heights, strength = 2.4, repeat = 1) 
   return tex;
 }
 
-/** 알베도와 같은 노이즈에서 뽑은 범프 노멀 */
-function makeGroundNormal(size = 512) {
+/**
+ * 지면 디테일 — 흙알갱이 위에 짧은 잔풀결을 얹는다.
+ * 정점 색(풀빛/흙빛)에 곱해지므로, 풀밭에서는 잔디결로, 맨땅에서는
+ * 흙알갱이로 읽힌다. 포기 사이가 비어도 바닥이 잔디처럼 보인다.
+ */
+function groundHeights(size) {
   const h = new Float32Array(size * size);
+  // 잔알갱이
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      h[y * size + x] = fbm2(x / size * 8, y / size * 8, 4) * 0.5 + 0.5;
+      const u = x / size * 8, v = y / size * 8;
+      h[y * size + x] = (fbm2(u, v, 4) * 0.5 + 0.5) * 0.55 + Math.random() * 0.2;
     }
   }
+  // 짧은 풀결 — 무작위 방향의 가는 획을 긋는다
+  const rng = makeRng(3131);
+  const strokes = Math.round(size * size / 26);
+  for (let i = 0; i < strokes; i++) {
+    const x0 = rng() * size, y0 = rng() * size;
+    const a = rng() * Math.PI * 2;
+    const len = size * (0.012 + rng() * 0.03);
+    const bright = 0.25 + rng() * 0.45;
+    const steps = Math.ceil(len);
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      const x = Math.round(x0 + Math.cos(a) * len * t) & (size - 1);
+      const y = Math.round(y0 + Math.sin(a) * len * t) & (size - 1);
+      const k = y * size + x;
+      h[k] = Math.min(1, h[k] + bright * (1 - t * 0.7));
+    }
+  }
+  return h;
+}
+
+let _groundH = null;
+function makeGroundMap(size = 512) {
+  if (!_groundH) _groundH = groundHeights(size);
+  const h = _groundH;
   const canvas = noiseCanvas(size, (d, s) => {
-    const at = (x, y) => h[((y + s) % s) * s + ((x + s) % s)];
-    for (let y = 0; y < s; y++) {
-      for (let x = 0; x < s; x++) {
-        const dx = (at(x + 1, y) - at(x - 1, y)) * 2.4;
-        const dy = (at(x, y + 1) - at(x, y - 1)) * 2.4;
-        const len = Math.hypot(-dx, -dy, 1);
-        const i = (y * s + x) * 4;
-        d[i] = (-dx / len * 0.5 + 0.5) * 255;
-        d[i + 1] = (-dy / len * 0.5 + 0.5) * 255;
-        d[i + 2] = (1 / len * 0.5 + 0.5) * 255;
-        d[i + 3] = 255;
-      }
+    for (let i = 0; i < s * s; i++) {
+      const n = h[i];
+      const b = 150 + n * 110;
+      d[i * 4] = b * 1.02; d[i * 4 + 1] = b * 1.03; d[i * 4 + 2] = b * 0.9; d[i * 4 + 3] = 255;
     }
   });
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.anisotropy = 4;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
   return tex;
+}
+
+function makeGroundNormal(size = 512) {
+  if (!_groundH) _groundH = groundHeights(size);
+  return normalMapFromHeights(size, _groundH, 2.2, 1);
 }
 
 /* ------------------------------------------------------------------ */
