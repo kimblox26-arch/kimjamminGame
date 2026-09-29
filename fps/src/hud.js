@@ -32,7 +32,9 @@ export class HUD {
   }
 
   buildSlots() {
-    this.el.slots.innerHTML = this.g.weapons.list.map((w, i) => `<div class="slot" data-i="${i}"><b>${i + 1}</b> ${w.def.name}</div>`).join('');
+    const W = this.g.weapons, c = W.ex ? W.ex.count : { frag: 0, smoke: 0, c4: 0 }, pl = W.ex ? W.ex.placed.length : 0;
+    const names = [W.list[W.loadout[0]].def.name, W.list[W.loadout[1]].def.name, `파편 수류탄 ×${c.frag}`, `연막탄 ×${c.smoke}`, `C4 ×${c.c4}${pl ? ` (설치 ${pl})` : ''}`];
+    this.el.slots.innerHTML = names.map((n, i) => `<div class="slot" data-i="${i}"><b>${i + 1}</b> ${n}</div>`).join('');
   }
 
   weapon(w) {
@@ -40,7 +42,9 @@ export class HUD {
     this.el.wcal.textContent = w.def.cal;
     this.ammo(w);
     this.slotT = 2.5;
-    [...this.el.slots.children].forEach((c, i) => c.classList.toggle('on', i === this.g.weapons.list.indexOf(w)));
+    this.buildSlots();
+    const Wi = this.g.weapons.list.indexOf(w), L = this.g.weapons.loadout;
+    [...this.el.slots.children].forEach((c, i) => c.classList.toggle('on', i < 2 && L[i] === Wi));
     this.el.slots.classList.add('show');
   }
 

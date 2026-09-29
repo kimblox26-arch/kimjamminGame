@@ -19,7 +19,7 @@
 <!-- ─── HUD ─── -->
 <div id="hud">
   <div id="compass"><div id="compass-strip"></div><div class="c-tick"></div></div>
-  <div id="wave-box"><div><span>WAVE</span><b id="wave-num">0</b></div><div><span>적</span><b id="enemies-left">0</b></div><div><span>점수</span><b id="score">0</b></div></div>
+  <div id="wave-box"><div><span>모드</span><b id="wave-num">자유</b></div><div><span>분대</span><b id="enemies-left">4</b></div><div><span>점수</span><b id="score">0</b></div></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="d"></i></div>
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
   <div id="dmg-ind"></div>
@@ -56,6 +56,7 @@
     <div class="btns">
       <button id="btn-start" class="primary">작전 개시 <small>웨이브 서바이벌</small></button>
       <button id="btn-train">사격 훈련장 <small>표적만 · 무한 탄약</small></button>
+      <button id="btn-armory">무기고 <small>21종 실총 · 주무기/보조무기 선택</small></button>
       <button id="btn-settings">설정</button>
     </div>
     <div class="arsenal">
@@ -75,7 +76,7 @@
       <tr><td>C</td><td>앉기 (토글)</td><td>R</td><td>재장전</td></tr>
       <tr><td>Q / E</td><td>좌 / 우 기울이기</td><td>B</td><td>조정간 (연발/단발)</td></tr>
       <tr><td>1–5 · 휠</td><td>무기 교체</td><td>F</td><td>총기 점검 / 탄약 보급</td></tr>
-      <tr><td>ESC</td><td>일시정지</td><td></td><td></td></tr>
+      <tr><td>ESC</td><td>일시정지</td><td>TAB</td><td>무기고 (총기 선택)</td></tr>
     </table>
     <p class="tip">빨간 드럼통은 사격하면 폭발합니다. 유리는 깨집니다. 탄피와 빈 탄창은 바닥에 남습니다.</p>
   </div>
@@ -97,11 +98,22 @@
   </div>
 </section>
 
+<!-- ─── 무기고 ─── -->
+<section id="screen-armory" class="screen">
+  <div class="panel armory">
+    <div class="arm-head"><h2>무기고</h2><span id="arm-cur"></span></div>
+    <div class="arm-tabs"><button id="arm-tab0">1 · 주무기</button><button id="arm-tab1">2 · 보조무기</button></div>
+    <div id="armory-list"></div>
+    <button id="btn-armory-done" class="primary">장비 완료</button>
+  </div>
+</section>
+
 <!-- ─── 일시정지 ─── -->
 <section id="screen-pause" class="screen">
   <div class="panel">
     <h2>일시정지</h2>
     <button id="btn-resume" class="primary">계속하기</button>
+    <button id="btn-armory2">무기고</button>
     <button id="btn-settings2">설정</button>
     <button id="btn-quit">메인 메뉴</button>
   </div>

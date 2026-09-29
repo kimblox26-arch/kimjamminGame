@@ -1,33 +1,44 @@
 // 무기 시스템 — 발사/반동/조준/재장전/볼트·펌프 동작/무기 흔들림/총구화염/탄피
 import * as THREE from 'three';
 import { GUN_BUILDERS } from './guns.js';
-import { Arms, WRIST as WRIST_DEF } from './arms.js';
+import './guns2.js';
+import { Arms, CURLS, VM_GRIP_OFF } from './vmarms.js';
+import { Explosives } from './explosives.js';
 import { Audio } from './audio.js';
 import { T } from './textures.js';
 import { clamp, lerp, damp, smooth, gauss, rand, Spring3, sampleKeys, sampleAnchor, DEG } from './core.js';
 
 // ── 무기 정의 (실총 제원 기반) ──
+const BASE = {
+  AR: { reserve: 180, rpm: 750, modes: ['AUTO', 'SEMI'], pellets: 1, spreadHip: 2.4, spreadAds: 0.06, moveSpread: 2.2, bloom: 0.35, recoil: { v: 0.62, h: 0.24, bias: 0.06, kick: 0.028, rot: 0.05, ads: 0.62 }, adsFov: 0.78, adsTime: 0.2, eye: 0.17, hip: [0.105, -0.145, -0.3], casing: '556', tracer: 4, chamber: true, action: 'rifle', boltTravel: 0.07, chargeTravel: 0.075, headMul: 2.6, limbMul: 0.75, range: [70, 250, 0.72], weight: 1, slot: 0, cat: '돌격소총' },
+  SMG: { reserve: 180, rpm: 800, modes: ['AUTO', 'SEMI'], pellets: 1, spreadHip: 1.9, spreadAds: 0.1, moveSpread: 1.3, bloom: 0.3, recoil: { v: 0.36, h: 0.16, bias: 0.03, kick: 0.02, rot: 0.035, ads: 0.65 }, adsFov: 0.82, adsTime: 0.16, eye: 0.2, hip: [0.1, -0.14, -0.3], casing: '9mm', tracer: 0, chamber: true, action: 'rifle', boltTravel: 0.05, chargeTravel: 0.06, headMul: 2.4, limbMul: 0.8, range: [25, 80, 0.6], weight: 0.8, slot: 0, cat: '기관단총' },
+  HG: { reserve: 85, rpm: 900, modes: ['SEMI'], pellets: 1, spreadHip: 1.8, spreadAds: 0.12, moveSpread: 1.2, bloom: 0.6, recoil: { v: 1.25, h: 0.35, bias: 0, kick: 0.03, rot: 0.14, ads: 0.75 }, adsFov: 0.86, adsTime: 0.14, eye: 0.5, hip: [0.085, -0.115, -0.4], casing: '9mm', tracer: 0, chamber: true, action: 'pistol', slideTravel: 0.028, headMul: 2.4, limbMul: 0.8, range: [25, 60, 0.6], weight: 0.5, lockBack: true, slot: 1, cat: '권총' },
+  SR: { reserve: 30, rpm: 60, modes: ['BOLT'], pellets: 1, spreadHip: 4.5, spreadAds: 0, moveSpread: 3.5, bloom: 0, recoil: { v: 3.2, h: 0.6, bias: 0, kick: 0.07, rot: 0.12, ads: 0.8 }, adsFov: 0.72, adsTime: 0.32, eye: 0.085, hip: [0.11, -0.16, -0.42], casing: '338', tracer: 1, chamber: true, action: 'bolt', boltTravel: 0.09, headMul: 3, limbMul: 0.8, range: [300, 800, 0.85], weight: 1.5, slot: 0, cat: '저격소총' },
+  SG: { reserve: 42, rpm: 90, modes: ['PUMP'], pellets: 9, pelletSpread: 2.6, spreadHip: 1.2, spreadAds: 0.3, moveSpread: 1, bloom: 0, recoil: { v: 3.6, h: 0.8, bias: 0, kick: 0.07, rot: 0.14, ads: 0.8 }, adsFov: 0.86, adsTime: 0.22, eye: 0.3, hip: [0.105, -0.14, -0.3], casing: 'shell', tracer: 0, chamber: true, action: 'pump', pumpTravel: 0.085, headMul: 2, limbMul: 0.8, range: [12, 35, 0.35], weight: 1.2, slot: 0, cat: '산탄총' },
+};
+const D = (base, o) => ({ ...BASE[base], ...o, recoil: { ...BASE[base].recoil, ...(o.recoil || {}) } });
 export const DEFS = [
-  { id: 'm4', name: 'M4A1', cal: '5.56×45mm NATO', mag: 30, reserve: 180, rpm: 800, modes: ['AUTO', 'SEMI'], dmg: 34, vel: 900, pellets: 1,
-    spreadHip: 2.4, spreadAds: 0.06, moveSpread: 2.2, bloom: 0.35, recoil: { v: 0.62, h: 0.24, bias: 0.06, kick: 0.028, rot: 0.05, ads: 0.62 },
-    adsFov: 0.78, adsTime: 0.2, eye: 0.17, hip: [0.105, -0.145, -0.3], sound: 'm4', casing: '556', tracer: 4, chamber: true, action: 'rifle',
-    boltTravel: 0.07, chargeTravel: 0.075, headMul: 2.6, limbMul: 0.75, range: [70, 250, 0.72], weight: 1, lockBack: true },
-  { id: 'ak', name: 'AKM', cal: '7.62×39mm', mag: 30, reserve: 150, rpm: 600, modes: ['AUTO', 'SEMI'], dmg: 44, vel: 715, pellets: 1,
-    spreadHip: 2.8, spreadAds: 0.09, moveSpread: 2.6, bloom: 0.45, recoil: { v: 0.95, h: 0.38, bias: 0.12, kick: 0.036, rot: 0.07, ads: 0.66 },
-    adsFov: 0.8, adsTime: 0.24, eye: 0.4, hip: [0.105, -0.15, -0.26], sound: 'ak', casing: '762', tracer: 4, chamber: true, action: 'ak',
-    boltTravel: 0.085, headMul: 2.6, limbMul: 0.75, range: [60, 200, 0.68], weight: 1.2 },
-  { id: 'glock', name: 'GLOCK 17', cal: '9×19mm Parabellum', mag: 17, reserve: 85, rpm: 1100, modes: ['SEMI'], dmg: 27, vel: 375, pellets: 1,
-    spreadHip: 1.8, spreadAds: 0.12, moveSpread: 1.2, bloom: 0.6, recoil: { v: 1.25, h: 0.35, bias: 0.0, kick: 0.03, rot: 0.14, ads: 0.75 },
-    adsFov: 0.86, adsTime: 0.14, eye: 0.36, hip: [0.085, -0.115, -0.37], sound: 'glock', casing: '9mm', tracer: 0, chamber: true, action: 'pistol',
-    slideTravel: 0.028, headMul: 2.4, limbMul: 0.8, range: [25, 60, 0.6], weight: 0.5, lockBack: true },
-  { id: 'awm', name: 'AWM', cal: '.338 Lapua Magnum', mag: 5, reserve: 30, rpm: 60, modes: ['BOLT'], dmg: 160, vel: 900, pellets: 1,
-    spreadHip: 4.5, spreadAds: 0.0, moveSpread: 3.5, bloom: 0, recoil: { v: 3.2, h: 0.6, bias: 0.0, kick: 0.07, rot: 0.12, ads: 0.8 },
-    adsFov: 0.72, adsTime: 0.32, eye: 0.085, hip: [0.11, -0.16, -0.42], sound: 'awm', casing: '338', tracer: 1, chamber: true, action: 'bolt',
-    boltTravel: 0.09, scope: 6, headMul: 3, limbMul: 0.8, range: [300, 800, 0.85], weight: 1.5 },
-  { id: 'm870', name: 'M870', cal: '12 Gauge 00 Buck', mag: 7, reserve: 42, rpm: 90, modes: ['PUMP'], dmg: 19, vel: 400, pellets: 9, pelletSpread: 2.6,
-    spreadHip: 1.2, spreadAds: 0.3, moveSpread: 1.0, bloom: 0, recoil: { v: 3.6, h: 0.8, bias: 0.0, kick: 0.07, rot: 0.14, ads: 0.8 },
-    adsFov: 0.86, adsTime: 0.22, eye: 0.3, hip: [0.105, -0.14, -0.3], sound: 'm870', casing: 'shell', tracer: 0, chamber: true, action: 'pump',
-    pumpTravel: 0.085, headMul: 2, limbMul: 0.8, range: [12, 35, 0.35], weight: 1.2 },
+  D('AR', { id: 'm4', name: 'M4A1', cal: '5.56×45mm NATO', mag: 30, rpm: 800, dmg: 34, vel: 900, sound: 'm4', lockBack: true, desc: '미군 표준 카빈. EOTech 홀로그래픽.' }),
+  D('AR', { id: 'hk416', name: 'HK416', cal: '5.56×45mm NATO', mag: 30, rpm: 850, dmg: 34, vel: 880, sound: 'hk416', lockBack: true, eye: 0.2, recoil: { v: 0.56, h: 0.2 }, desc: '가스피스톤 AR. Aimpoint 레드닷.' }),
+  D('AR', { id: 'm16', name: 'M16A4', cal: '5.56×45mm NATO', mag: 30, rpm: 800, modes: ['BURST', 'SEMI'], dmg: 36, vel: 950, sound: 'm16', lockBack: true, scope: 4, eye: 0.05, adsFov: 0.7, adsTime: 0.26, hip: [0.105, -0.15, -0.3], recoil: { v: 0.5, h: 0.18 }, range: [100, 300, 0.75], weight: 1.15, desc: '20인치 소총. ACOG 4배율, 3점사.' }),
+  D('AR', { id: 'ak', name: 'AKM', cal: '7.62×39mm', mag: 30, reserve: 150, rpm: 600, dmg: 44, vel: 715, spreadHip: 2.8, spreadAds: 0.09, moveSpread: 2.6, bloom: 0.45, recoil: { v: 0.95, h: 0.38, bias: 0.12, kick: 0.036, rot: 0.07, ads: 0.66 }, adsFov: 0.8, adsTime: 0.24, eye: 0.4, hip: [0.105, -0.15, -0.26], sound: 'ak', casing: '762', action: 'ak', boltTravel: 0.085, range: [60, 200, 0.68], weight: 1.2, desc: '목재 개머리의 고전. 강한 반동.' }),
+  D('AR', { id: 'ak74', name: 'AK-74M', cal: '5.45×39mm', mag: 30, rpm: 650, dmg: 36, vel: 900, recoil: { v: 0.68, h: 0.24, bias: 0.08 }, eye: 0.4, hip: [0.105, -0.15, -0.26], sound: 'ak74', casing: '556', action: 'ak', boltTravel: 0.085, desc: '5.45mm 폴리머 AK. 반동 제어 우수.' }),
+  D('AR', { id: 'scar', name: 'SCAR-H', cal: '7.62×51mm NATO', mag: 20, reserve: 120, rpm: 600, dmg: 50, vel: 850, recoil: { v: 1.05, h: 0.34, bias: 0.08, kick: 0.036, rot: 0.07 }, sound: 'scar', casing: '762', lockBack: true, eye: 0.17, hip: [0.105, -0.15, -0.28], range: [90, 300, 0.75], weight: 1.25, desc: '7.62 NATO 전투소총. 강력한 저지력.' }),
+  D('AR', { id: 'aug', name: 'AUG A3', cal: '5.56×45mm NATO', mag: 30, rpm: 700, dmg: 33, vel: 940, sound: 'aug', scope: 1.5, eye: 0.07, adsFov: 0.85, hip: [0.1, -0.13, -0.18], recoil: { v: 0.52, h: 0.2 }, lockBack: true, rpose: [[-0.06, 0.0, -0.02], [0.3, 0.6, -0.45]], desc: '오스트리아 불펍. 1.5배 광학.' }),
+  D('AR', { id: 'g36c', name: 'G36C', cal: '5.56×45mm NATO', mag: 30, rpm: 750, dmg: 31, vel: 725, sound: 'g36', eye: 0.19, hip: [0.1, -0.14, -0.28], recoil: { v: 0.5, h: 0.22 }, lockBack: true, weight: 0.9, desc: '독일 단축형 카빈. 반투명 탄창.' }),
+  D('SMG', { id: 'mp5', name: 'MP5A3', cal: '9×19mm', mag: 30, rpm: 800, dmg: 26, vel: 400, sound: 'mp5', eye: 0.19, hip: [0.1, -0.13, -0.3], desc: '롤러 지연식 명작 SMG.' }),
+  D('SMG', { id: 'ump', name: 'UMP45', cal: '.45 ACP', mag: 25, reserve: 150, rpm: 600, dmg: 31, vel: 280, sound: 'ump', casing: '45', eye: 0.2, recoil: { v: 0.48, h: 0.2 }, desc: '.45 구경 폴리머 SMG.' }),
+  D('SMG', { id: 'p90', name: 'P90', cal: '5.7×28mm', mag: 50, reserve: 200, rpm: 900, dmg: 25, vel: 715, sound: 'p90', casing: '9mm', eye: 0.24, hip: [0.1, -0.13, -0.22], recoil: { v: 0.3, h: 0.14 }, rpose: [[-0.05, -0.02, -0.02], [0.45, 0.3, 0.25]], desc: '상부 50발 탄창 불펍 PDW.' }),
+  D('AR', { id: 'm249', name: 'M249 SAW', cal: '5.56×45mm NATO', mag: 100, reserve: 300, rpm: 850, modes: ['AUTO'], dmg: 33, vel: 915, sound: 'm249', action: 'lmg', eye: 0.3, hip: [0.12, -0.17, -0.3], spreadHip: 3.2, moveSpread: 3.2, recoil: { v: 0.42, h: 0.3, bias: 0.04, ads: 0.7 }, adsTime: 0.35, weight: 1.9, cat: '경기관총', desc: '분대지원화기. 100발 탄약상자.' }),
+  D('SR', { id: 'awm', name: 'AWM', cal: '.338 Lapua Magnum', mag: 5, dmg: 160, vel: 900, sound: 'awm', scope: 6, desc: '볼트액션 저격소총. 6배율 스코프.' }),
+  D('SR', { id: 'svd', name: 'SVD 드라구노프', cal: '7.62×54mmR', mag: 10, reserve: 50, rpm: 180, modes: ['SEMI'], dmg: 95, vel: 830, sound: 'svd', casing: '762', action: 'ak', boltTravel: 0.085, scope: 4, eye: 0.075, recoil: { v: 1.9, h: 0.4 }, tracer: 0, hip: [0.11, -0.16, -0.3], cat: '지정사수소총', desc: '반자동 지정사수소총. PSO-1 4배율.' }),
+  D('SR', { id: 'barrett', name: 'M82A1 바렛', cal: '.50 BMG', mag: 10, reserve: 30, rpm: 100, modes: ['SEMI'], dmg: 260, vel: 853, sound: 'barrett', casing: '50', action: 'rifle', chargeTravel: 0.1, boltTravel: 0.06, scope: 10, eye: 0.09, recoil: { v: 5.5, h: 1.0, kick: 0.09, rot: 0.14 }, hip: [0.12, -0.18, -0.5], weight: 2.2, cat: '대물저격총', desc: '12.7mm 대물 반자동 저격총. 10배율.' }),
+  D('SG', { id: 'm870', name: 'M870', cal: '12 Gauge 00 Buck', mag: 7, dmg: 19, vel: 400, sound: 'm870', desc: '펌프액션 산탄총.' }),
+  D('SG', { id: 'saiga', name: 'Saiga-12', cal: '12 Gauge 00 Buck', mag: 8, reserve: 48, rpm: 300, modes: ['SEMI'], dmg: 17, vel: 400, sound: 'saiga', action: 'ak', boltTravel: 0.085, eye: 0.4, hip: [0.105, -0.15, -0.26], recoil: { v: 2.6, h: 0.7 }, desc: 'AK 기반 반자동 산탄총. 박스탄창.' }),
+  D('HG', { id: 'glock', name: 'GLOCK 17', cal: '9×19mm Parabellum', mag: 17, rpm: 1100, dmg: 27, vel: 375, sound: 'glock', desc: '폴리머 프레임 권총. 삼중수소 조준.' }),
+  D('HG', { id: 'm1911', name: 'M1911A1', cal: '.45 ACP', mag: 7, reserve: 56, rpm: 800, dmg: 38, vel: 255, sound: 'm1911', casing: '45', recoil: { v: 1.6, h: 0.35 }, desc: '100년 전통의 .45 권총.' }),
+  D('HG', { id: 'deagle', name: 'Desert Eagle', cal: '.50 AE', mag: 7, reserve: 42, rpm: 300, dmg: 62, vel: 450, sound: 'deagle', casing: '50ae', recoil: { v: 3.6, h: 0.9, rot: 0.25 }, eye: 0.52, hip: [0.085, -0.12, -0.41], slideTravel: 0.03, headMul: 2.6, desc: '가스작동식 대구경 권총.' }),
+  D('HG', { id: 'python', name: 'Colt Python', cal: '.357 Magnum', mag: 6, reserve: 42, rpm: 220, dmg: 56, vel: 440, sound: 'python', casing: '357', action: 'revolver', chamber: false, recoil: { v: 2.9, h: 0.7, rot: 0.22 }, eye: 0.55, hip: [0.085, -0.12, -0.41], lockBack: false, desc: '6인치 .357 매그넘 리볼버.' }),
 ];
 
 // ── 애니메이션 클립 ──
@@ -42,7 +53,7 @@ function clips(def) {
   const a = def.action;
   if (a === 'rifle' || a === 'ak') {
     const ak = a === 'ak';
-    const TP = [-0.055, 0.05, 0.06], TR = [0.3, 0.32, -0.8];
+    const TP = def.rpose ? def.rpose[0] : [-0.055, 0.05, 0.06], TR = def.rpose ? def.rpose[1] : [0.3, 0.32, -0.8];
     const tacRot = [[0, ...Z3], [0.3, ...TR], [0.62, TR[0] - 0.02, TR[1] + 0.02, TR[2] - 0.05], [1.3, ...TR], [1.4, TR[0] + 0.08, TR[1], TR[2] + 0.03], [1.55, ...TR], [2.05, ...Z3]];
     const tacPos = [[0, ...Z3], [0.3, ...TP], [1.65, ...TP], [2.05, ...Z3]];
     C.reload = { d: 2.25, pos: tacPos, rot: tacRot, lh: [[0, 'fore'], [0.32, 'mag'], [1.58, 'mag'], [2.0, 'fore']],
@@ -58,8 +69,29 @@ function clips(def) {
       magR: ak ? [[0.9, 0.35], [1.2, 0.35], [1.32, 0]] : null,
       lh: [[0, 'fore'], [0.25, 'fore'], [0.62, 'mag'], [1.5, 'mag'], [1.85, 'charge'], [2.3, 'charge'], [2.75, 'fore']],
       charge: ak ? null : [[1.95, 0], [2.1, 1], [2.18, 1], [2.22, 0]],
-      bolt: ak ? [[1.95, 0], [2.1, 1], [2.18, 1], [2.22, 0]] : [[0, 1], [2.1, 1], [2.18, 1], [2.22, 0]],
+      bolt: ak ? [[1.95, 0], [2.1, 1], [2.18, 1], [2.22, 0]] : [[0, def.lockBack ? 1 : 0], [2.1, 1], [2.18, 1], [2.22, 0]],
       ev: [[0.05, 'cloth'], [0.38, 'magout'], [0.38, 'dropmag'], [1.32, 'magin'], [1.32, 'load'], [2.08, 'boltback'], [2.22, 'boltfwd']] };
+  } else if (a === 'lmg') {
+    // 급탄덮개 열기 → 탄약상자 교체 → 벨트 걸기 → 덮개 닫기
+    const P1 = [-0.06, 0.07, 0.08], R1 = [0.35, 0.3, 0.45];
+    const base = { d: 4.6, pos: [[0, ...Z3], [0.4, ...P1], [4.1, ...P1], [4.55, ...Z3]], rot: [[0, ...Z3], [0.4, ...R1], [2.3, ...R1], [2.5, 0.35, 0.3, -0.5], [3.2, 0.35, 0.3, -0.5], [3.4, ...R1], [4.55, ...Z3]],
+      cover: [[0.5, 0], [0.8, 1], [3.5, 1], [3.75, 0]],
+      lh: [[0, 'fore'], [0.4, 'cover'], [0.85, 'cover'], [1.2, 'mag'], [2.9, 'mag'], [3.35, 'cover'], [3.8, 'cover'], [4.4, 'fore']],
+      mag: [[1.3, ...Z3], [1.5, 0, -0.08, 0], [1.8, -0.1, -0.5, 0.1], [2.0, -0.1, -0.5, 0.1], [2.4, 0, -0.08, 0], [2.6, ...Z3]],
+      ev: [[0.1, 'cloth'], [0.75, 'boltopen'], [1.45, 'magout'], [2.6, 'magin'], [2.9, 'cloth'], [3.72, 'boltclose'], [3.72, 'load']] };
+    C.reload = base;
+    C.reloadEmpty = { ...base, d: 5.2, pos: [...base.pos.slice(0, -1), [4.2, -0.02, 0.03, 0.07], [4.7, -0.02, 0.03, 0.07], [5.15, ...Z3]], rot: [...base.rot.slice(0, -1), [4.2, 0.2, -0.1, 0.3], [4.7, 0.2, -0.1, 0.3], [5.15, ...Z3]],
+      lh: [...base.lh.slice(0, -1), [4.2, 'charge'], [4.65, 'charge'], [5.05, 'fore']], charge: [[4.3, 0], [4.45, 1], [4.52, 1], [4.58, 0]], ev: [...base.ev, [4.44, 'boltback'], [4.58, 'boltfwd']] };
+  } else if (a === 'revolver') {
+    const RP = [-0.02, 0.05, 0.1], RR = [0.4, 0.2, 0.75], UP = [0.95, 0.15, 0.5];
+    C.reload = { d: 3.3, pos: [[0, ...Z3], [0.25, ...RP], [2.9, ...RP], [3.25, ...Z3]],
+      rot: [[0, ...Z3], [0.3, ...RR], [0.7, ...RR], [0.85, ...UP], [1.1, ...UP], [1.3, ...RR], [2.5, ...RR], [2.65, RR[0] - 0.1, RR[1], RR[2] - 0.3], [3.25, ...Z3]],
+      cylOut: [[0.3, 0], [0.5, 1], [2.45, 1], [2.6, 0]],
+      lh: [[0, 'fore'], [0.25, 'cyl'], [1.2, 'cyl'], [1.45, 'mag'], [2.25, 'mag'], [2.4, 'cyl'], [2.7, 'cyl'], [3.1, 'fore']],
+      magV: [[0, 0], [1.3, 0], [1.31, 1], [2.22, 1], [2.23, 0]],
+      mag: [[1.3, -0.1, -0.4, 0.2], [1.95, 0, 0.0, -0.08], [2.1, 0, 0, 0]],
+      ev: [[0.45, 'boltopen'], [0.95, 'ejectAll'], [2.1, 'magin'], [2.1, 'load'], [2.6, 'boltclose']] };
+    C.reloadEmpty = C.reload;
   } else if (a === 'pistol') {
     const mag = [[0.3, ...Z3], [0.42, 0, -0.1, 0], [0.7, -0.06, -0.45, 0.1], [0.85, -0.06, -0.45, 0.1], [1.05, 0, -0.1, 0], [1.18, ...Z3]];
     const PP = [-0.04, 0.045, 0.08], PR = [0.45, 0.3, -0.55];
@@ -117,6 +149,8 @@ class Weapon {
     this.cycleT = 1;           // 자동 노리쇠 왕복
     this.shotIdx = 0;
     this.nextFire = 0;
+    this.burst = 0;
+    this.cylA = 0;
     this.m.group.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
   }
 }
@@ -129,6 +163,9 @@ export class WeaponSystem {
     this.root = game.vmRoot;
     this.arms = new Arms(this.root);
     this.list = DEFS.map((d) => new Weapon(d, this.root));
+    this.byId = Object.fromEntries(this.list.map((w, i) => [w.def.id, i]));
+    this.loadout = [this.byId.m4, this.byId.glock];
+    this.slot = 0;
     this.idx = 0; this.cur = this.list[0];
     this.ads = 0; this.sprintT = 0; this.blockT = 0;
     this.anim = null; this.pending = null;
@@ -144,9 +181,11 @@ export class WeaponSystem {
     const shell = new THREE.Group();
     const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.0105, 0.0105, 0.058, 12), new THREE.MeshStandardMaterial({ color: 0x8e1712, roughness: 0.5 }));
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.0108, 0.0108, 0.014, 12), new THREE.MeshStandardMaterial({ color: 0xd4a84f, roughness: 0.3, metalness: 1 }));
-    base.position.y = -0.03; shell.add(hull, base); shell.rotation.set(0, 0, Math.PI / 2); shell.position.set(-0.01, 0.0, -0.03);
+    base.position.y = -0.03; shell.add(hull, base);     shell.position.copy(VM_GRIP_OFF.L); shell.rotation.set(Math.PI / 2, 0, 0);
     shell.visible = false; this.arms.side.L.hand.add(shell); this.handShell = shell;
-    this.equip(0, true);
+    this.item = null;
+    this.ex = new Explosives(game, this);
+    this.equip(this.loadout[0], true);
   }
 
   buildFlash() {
@@ -176,10 +215,36 @@ export class WeaponSystem {
       this.play('draw');
       this.g.hud?.weapon(w);
     };
-    if (instant) { doDraw(); this.anim = null; return; }
+    if (instant) { this.pending = null; doDraw(); this.anim = null; return; }
     this.cancelAnim();
     this.pending = i;
     this.play('holster', () => { this.pending = null; doDraw(); });
+  }
+
+  selectSlot(i) {
+    if (this.item) { this.ex.stow(() => this.fromItem(i)); return; }
+    this.slot = i; this.equip(this.loadout[i]);
+  }
+  // 투척물/폭약 (3 파편, 4 연막, 5 C4)
+  selectItem(k) {
+    if (this.pending != null) return;
+    if (this.item) { if (this.item !== k || this.ex.state === 'det') this.ex.stow(() => { this.item = k; this.ex.begin(k); }); return; }
+    if (!this.ex.has(k)) { this.g.hud?.message(`${this.ex.label(k)} 없음`, 1.2); return; }
+    this.cancelAnim(); this.ads = Math.min(this.ads, 0.3);
+    this.pending = -1;
+    this.play('holster', () => { this.pending = null; this.cur.m.group.visible = false; this.item = k; this.ex.begin(k); });
+  }
+  fromItem(i) {
+    this.item = null; this.ex.hide();
+    const w = this.list[this.loadout[i]];
+    this.slot = i; this.idx = this.loadout[i]; this.cur = w; w.m.group.visible = true; w.m.muzzle.add(this.flash);
+    this.play('draw'); this.g.hud?.weapon(w);
+  }
+  setLoadout(slot, id) {
+    const i = this.byId[id]; if (i == null) return;
+    this.loadout[slot] = i;
+    const w = this.list[i]; w.ammo = w.def.mag + (w.def.chamber && w.def.action !== 'bolt' && w.def.action !== 'pump' ? 1 : 0); w.reserve = w.def.reserve; w.locked = false; w.needsCycle = false;
+    if (this.item) this.ex.hud(); else if (this.slot === slot) this.equip(i, false); else this.g.hud?.weapon(this.cur);
   }
 
   cancelAnim() { this.anim = null; this.handShell.visible = false; }
@@ -204,6 +269,7 @@ export class WeaponSystem {
       case 'chamber': w.needsCycle = false; w.locked = false; break;
       case 'dropmag': g.fx.dropMag(w, this); Audio.play('magout', { vol: 0.2, rate: 0.7 }); break;
       case 'eject': g.fx.eject(w, this); break;
+      case 'ejectAll': { const n = d.mag - w.ammo; for (let i = 0; i < n; i++) g.fx.eject(w, this, w.m.parts.cyl, true); w.ammo = 0; break; }
       case 'slide': w.locked = false; Audio.play('slide', { vol: 0.8 }); break;
       case 'boltfwd': w.locked = false; Audio.play('boltfwd', { vol: 0.8 }); break;
       case 'select': Audio.play('select', { vol: 0.7 }); break;
@@ -249,6 +315,16 @@ export class WeaponSystem {
   // ── 발사 ──
   tryFire(held, pressed) {
     const w = this.cur, d = w.def, p = this.g.player;
+    if (d.modes[w.mode] === 'BURST') {
+      if (!held) this.fireLatch = false;
+      if (pressed && w.burst <= 0 && !this.fireLatch && !this.anim && this.sprintT < 0.35 && w.ammo > 0) { w.burst = 3; this.fireLatch = true; }
+      if (w.burst > 0 && this.time >= w.nextFire) {
+        if (w.ammo <= 0 || this.anim) { w.burst = 0; return; }
+        w.nextFire = this.time + 60 / d.rpm; w.burst--; this.fire();
+      }
+      if (pressed && w.ammo <= 0 && !this.anim) { Audio.play('dry', { vol: 0.8 }); if (w.reserve > 0) this.reloadAt = this.time + 0.25; }
+      return;
+    }
     if (!held) this.fireLatch = false;
     if (this.shotgunLoading && pressed && w.ammo > 0) { this.stopShells = true; return; }
     if (!held) return;
@@ -310,10 +386,12 @@ export class WeaponSystem {
     this.flashLight.intensity = 6;
     g.fx.muzzle(muzzleW, fwd, d);
     // 노리쇠/슬라이드 왕복 + 탄피
-    if (d.action === 'rifle' || d.action === 'ak' || d.action === 'pistol') {
+    if (d.action === 'rifle' || d.action === 'ak' || d.action === 'pistol' || d.action === 'lmg') {
       w.cycleT = 0;
       g.fx.eject(w, this);
       if (w.ammo === 0 && d.lockBack) w.locked = true;
+    } else if (d.action === 'revolver') {
+      w.cycleT = 0; w.cylA += Math.PI / 3;
     } else {
       w.needsCycle = true;
       if (d.action === 'pump') this.pumpAt = this.time + 0.18;
@@ -349,9 +427,16 @@ export class WeaponSystem {
     const g = this.g, p = g.player, w = this.cur, d = w.def;
     this.time += dt;
     // 입력
-    if (input.pressed('Digit1')) this.equip(0); if (input.pressed('Digit2')) this.equip(1); if (input.pressed('Digit3')) this.equip(2);
-    if (input.pressed('Digit4')) this.equip(3); if (input.pressed('Digit5')) this.equip(4);
-    if (input.wheel) { this.equip((this.idx + (input.wheel > 0 ? 1 : this.list.length - 1)) % this.list.length); }
+    if (input.pressed('Digit1')) this.selectSlot(0); if (input.pressed('Digit2')) this.selectSlot(1);
+    if (input.pressed('Digit3') || input.pressed('KeyG')) this.selectItem('frag');
+    if (input.pressed('Digit4')) this.selectItem('smoke');
+    if (input.pressed('Digit5')) this.selectItem('c4');
+    if (input.wheel && !this.item) this.selectSlot(this.slot ? 0 : 1);
+    if (this.item) {
+      this.ads = Math.max(0, this.ads - dt * 6); this.bloom = 0;
+      this.sprintT = damp(this.sprintT, p.sprinting ? 1 : 0, 8, dt); this.blockT = damp(this.blockT, 0, 10, dt);
+      this.ex.update(dt, input); return;
+    }
     if (input.pressed('KeyR')) this.reload();
     if (input.pressed('KeyB')) this.cycleMode();
     if (input.pressed('KeyF') && !g.nearAmmo) this.inspect();
@@ -392,7 +477,22 @@ export class WeaponSystem {
     const adsP = [-s.x, -s.y, -d.eye - s.z];
     const pos = _v.set(lerp(hip[0], adsP[0], e), lerp(hip[1], adsP[1], e), lerp(hip[2], adsP[2], e));
     const rot = new THREE.Vector3(0, 0, 0);
-    // 스프린트 자세
+    this.motion(pos, rot, e, dt, input);
+    // 애니메이션 트랙
+    const tmp = [0, 0, 0];
+    if (A) {
+      const t = A.t, c = A.clip;
+      if (sampleKeys(c.pos, t, tmp)) { pos.x += tmp[0]; pos.y += tmp[1]; pos.z += tmp[2]; }
+      if (sampleKeys(c.rot, t, tmp)) { rot.x += tmp[0]; rot.y += tmp[1]; rot.z += tmp[2]; }
+    }
+    m.group.position.copy(pos);
+    m.group.rotation.set(rot.x, rot.y, rot.z, 'YXZ');
+    this.poseParts(dt, A, w, d, m, tmp);
+  }
+
+  // 공통 뷰모델 움직임: 스프린트/벽/걷기/호흡/스웨이/착지/반동/앉기
+  motion(pos, rot, e, dt, input) {
+    const g = this.g, p = g.player;
     const sp = smooth(this.sprintT) * (1 - e);
     pos.x += -0.03 * sp; pos.y += -0.05 * sp; pos.z += 0.03 * sp;
     rot.x += -0.35 * sp; rot.y += 0.75 * sp; rot.z += 0.45 * sp;
@@ -422,28 +522,30 @@ export class WeaponSystem {
     rot.x += rr.x * 0.01; rot.y += rr.y * 0.01; rot.z += rr.z * 0.01;
     // 앉기 기울임
     rot.z += (p.crouchT || 0) * 0.06 * (1 - e);
-    // 애니메이션 트랙
-    const tmp = [0, 0, 0];
-    if (A) {
-      const t = A.t, c = A.clip;
-      if (sampleKeys(c.pos, t, tmp)) { pos.x += tmp[0]; pos.y += tmp[1]; pos.z += tmp[2]; }
-      if (sampleKeys(c.rot, t, tmp)) { rot.x += tmp[0]; rot.y += tmp[1]; rot.z += tmp[2]; }
-    }
-    m.group.position.copy(pos);
-    m.group.rotation.set(rot.x, rot.y, rot.z, 'YXZ');
+  }
+
+  poseParts(dt, A, w, d, m, tmp) {
+    const g = this.g;
     // 부품
     const P = m.parts;
     const trk = (k) => (A && A.clip[k] ? sampleKeys(A.clip[k], A.t, tmp)[0] : null);
     w.cycleT = Math.min(1, w.cycleT + dt / Math.max(0.05, 60 / d.rpm * 0.9));
     const cyc = w.cycleT < 1 ? Math.sin(Math.PI * w.cycleT) : 0;
     if (P.mag) {
-      const baseRot = d.id === 'glock' ? -0.36 : 0;
+      const baseRot = m.magRot ?? (d.id === 'glock' ? -0.36 : 0);
       P.mag.position.copy(m.magBase);
-      if (A && A.clip.mag) { sampleKeys(A.clip.mag, A.t, tmp); P.mag.position.add(_v2.set(tmp[0], tmp[1], tmp[2]).applyAxisAngle(_X, baseRot)); }
+      if (A && A.clip.mag) {
+        sampleKeys(A.clip.mag, A.t, tmp);
+        if (m.magDir) P.mag.position.add(_v2.set(tmp[0], 0, tmp[2])).addScaledVector(m.magDir, -tmp[1]);
+        else P.mag.position.add(_v2.set(tmp[0], tmp[1], tmp[2]).applyAxisAngle(_X, baseRot));
+      }
       P.mag.rotation.x = baseRot + (trk('magR') ?? 0);
       const mv = trk('magV');
-      P.mag.visible = mv == null ? true : mv > 0.5;
+      P.mag.visible = mv == null ? d.action !== 'revolver' : mv > 0.5;
     }
+    if (P.cover) P.cover.rotation.x = -(trk('cover') ?? 0) * 1.05;
+    if (P.cyl) { const o = trk('cylOut') ?? 0; P.cyl.position.x = -0.032 * o; P.cyl.position.y = -0.002 - 0.012 * o; P.cyl.rotation.set(0, o * 0.15, 0); P.cyl.rotateZ(-w.cylA); }
+    if (P.hammer) P.hammer.rotation.x = w.cycleT < 1 ? Math.sin(Math.PI * w.cycleT) * 0.9 : (d.action === 'revolver' && g.input.mouse[0] && !this.anim ? 0.4 : 0);
     if (P.bolt) {
       const bt = trk('bolt');
       const bv = bt ?? (w.locked ? 1 : cyc);
@@ -468,21 +570,25 @@ export class WeaponSystem {
       m.holo.material.uniforms.uUp.value.set(0, 1, 0).applyQuaternion(m.group.quaternion);
     }
     // 팔 IK
-    this.root.updateMatrixWorld(true);
-    _m.copy(this.root.matrixWorld).invert();
     const anchorName = (k, def) => (A && A.clip[k] ? sampleAnchor(A.clip[k], A.t) : { a: def, b: def, u: 0 });
-    const L = anchorName('lh', 'fore'), Rr = anchorName('rh', 'grip');
-    this.arms.updateSide('R', this.blendAnchors(Rr));
-    this.arms.updateSide('L', this.blendAnchors(L));
+    this.ikArms(anchorName('lh', 'fore'), anchorName('rh', 'grip'));
   }
 
-  getAnchor(name) { return name === 'free' ? this.freeAnchor : this.cur.m.anchors[name] || this.cur.m.anchors.fore; }
+  ikArms(L, Rr) {
+    this.root.updateMatrixWorld(true);
+    _m.copy(this.root.matrixWorld).invert();
+    const tr = this.blendAnchors(Rr), tl = this.blendAnchors(L);
+    this.arms.updateSide('R', tr, tr.curl);
+    this.arms.updateSide('L', tl, tl.curl);
+  }
+
+  getAnchor(name) { if (this.item) return this.ex.anchors[name] || this.freeAnchor; return name === 'free' ? this.freeAnchor : this.cur.m.anchors[name] || this.cur.m.anchors.fore; }
   blendAnchors({ a, b, u }) {
     const A = this.getAnchor(a), B = this.getAnchor(b);
     const pa = new THREE.Vector3(), qa = new THREE.Quaternion(), sa = new THREE.Vector3();
     _m2.multiplyMatrices(_m, A.matrixWorld).decompose(pa, qa, sa);
-    const wA = A.userData.wrist, wB = B.userData.wrist;
-    const w = wA || wB ? new THREE.Vector3().lerpVectors(wA || WRIST_DEF, wB || WRIST_DEF, A !== B ? u : 0) : null;
+    const cA = A.userData.curl || CURLS[a] || CURLS.fore, cB = B.userData.curl || CURLS[b] || CURLS.fore;
+    const curl = cA.map((x, i) => x + (cB[i] - x) * (A !== B ? u : 0));
     if (A !== B && u > 0) {
       const pb = new THREE.Vector3(), qb = new THREE.Quaternion();
       _m2.multiplyMatrices(_m, B.matrixWorld).decompose(pb, qb, sa);
@@ -490,6 +596,6 @@ export class WeaponSystem {
       // 경로를 아래로 살짝 휘게 (손이 총을 관통하지 않도록)
       pa.y -= Math.sin(u * Math.PI) * 0.05;
     }
-    return { p: pa, q: qa, w };
+    return { p: pa, q: qa, curl };
   }
 }

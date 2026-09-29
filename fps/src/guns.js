@@ -70,7 +70,7 @@ function boxUV(g) {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
-class GB {
+export class GB {
   constructor() { this.batch = new MeshBatch(); this.group = new THREE.Group(); this.subs = []; }
   add(geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
     _bm.compose(_bp.set(x, y, z), _bq.setFromEuler(_be.set(rx, ry, rz)), _bs);
@@ -120,7 +120,7 @@ class GB {
 
 // 손 앵커: X'(손바닥 반대), Y'(쥠 축) 벡터로 방향 지정
 const WRIST_SUPPORT = new THREE.Vector3(0.062, -0.055, 0.03);
-function anchor(parent, name, f, y, x, X, Y, wrist) {
+export function anchor(parent, name, f, y, x, X, Y, wrist) {
   const o = new THREE.Object3D(); o.name = name;
   if (wrist || /fore|port|mag/.test(name)) o.userData.wrist = wrist || WRIST_SUPPORT;
   o.position.set(x, y, -f);
@@ -131,14 +131,14 @@ function anchor(parent, name, f, y, x, X, Y, wrist) {
   parent.add(o);
   return o;
 }
-const point = (parent, f, y, x = 0) => { const o = new THREE.Object3D(); o.position.set(x, y, -f); parent.add(o); return o; };
+export const point = (parent, f, y, x = 0) => { const o = new THREE.Object3D(); o.position.set(x, y, -f); parent.add(o); return o; };
 
 // ── 홀로그래픽 조준경 레티클 셰이더 (무한 원점 투영: 시차 없음) ──
-export function holoMaterial(color = new THREE.Color(3.2, 0.12, 0.08)) {
-  return new THREE.ShaderMaterial({
-    uniforms: { uAxis: { value: new THREE.Vector3(0, 0, -1) }, uUp: { value: new THREE.Vector3(0, 1, 0) }, uColor: { value: color }, uOn: { value: 1 } },
+export function holoMaterial(color = new THREE.Color(3.2, 0.12, 0.08), style = 0) {
+  const hm = new THREE.ShaderMaterial({
+    uniforms: { uAxis: { value: new THREE.Vector3(0, 0, -1) }, uUp: { value: new THREE.Vector3(0, 1, 0) }, uColor: { value: color }, uOn: { value: 1 }, uStyle: { value: 0 } },
     vertexShader: `varying vec3 vView; void main(){ vec4 mv = modelViewMatrix*vec4(position,1.); vView = mv.xyz; gl_Position = projectionMatrix*mv; }`,
-    fragmentShader: `uniform vec3 uAxis; uniform vec3 uUp; uniform vec3 uColor; uniform float uOn; varying vec3 vView;
+    fragmentShader: `uniform vec3 uAxis; uniform vec3 uUp; uniform vec3 uColor; uniform float uOn; uniform float uStyle; varying vec3 vView;
       void main(){
         vec3 d = normalize(vView), a = normalize(uAxis), r = normalize(cross(a, uUp)), u = cross(r, a);
         vec2 q = vec2(dot(d,r), dot(d,u)) / max(dot(d,a), 1e-3);
@@ -147,19 +147,21 @@ export function holoMaterial(color = new THREE.Color(3.2, 0.12, 0.08)) {
         float ring = 1. - smoothstep(0.00035, 0.0008, abs(rad - 0.0125));
         float ticks = (1. - smoothstep(0.00035, 0.0008, abs(q.x))) * step(0.0125, abs(q.y)) * step(abs(q.y), 0.0165) * step(q.y, 0.)
                     + (1. - smoothstep(0.00035, 0.0008, abs(q.y))) * step(0.0125, abs(q.x)) * step(abs(q.x), 0.0165);
-        float m = clamp(max(max(dotm, ring), ticks), 0., 1.) * uOn;
+        float m = clamp(uStyle > 0.5 ? (1. - smoothstep(0.0012, 0.002, rad)) : max(max(dotm, ring), ticks), 0., 1.) * uOn;
         gl_FragColor = vec4(uColor * m + vec3(0.03,0.05,0.05), max(m, 0.04));
       }`,
     transparent: true, depthWrite: false,
   });
+  hm.uniforms.uStyle.value = style;
+  return hm;
 }
 
 // ── 저격 조준경 렌즈 (PIP 렌더 타깃 + 레티클) ──
-export function scopeMaterial() {
+export function scopeMaterial(style = 0) {
   return new THREE.ShaderMaterial({
-    uniforms: { tScene: { value: null }, uEye: { value: new THREE.Vector2() }, uAds: { value: 0 }, uTime: { value: 0 } },
+    uniforms: { tScene: { value: null }, uEye: { value: new THREE.Vector2() }, uAds: { value: 0 }, uTime: { value: 0 }, uStyle: { value: style } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-    fragmentShader: `uniform sampler2D tScene; uniform vec2 uEye; uniform float uAds; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D tScene; uniform vec2 uEye; uniform float uAds; uniform float uStyle; varying vec2 vUv;
       void main(){
         vec2 p = vUv*2. - 1.;
         float r = length(p);
@@ -176,8 +178,28 @@ export function scopeMaterial() {
         float mil = 0.;
         for (int i = 1; i <= 4; i++) { float o = float(i)*0.085; mil += (1. - smoothstep(0.006, 0.009, length(p - vec2(0., -o)))) + (1. - smoothstep(0.006, 0.009, length(p - vec2(o, 0.)))) + (1. - smoothstep(0.006, 0.009, length(p - vec2(-o, 0.)))) + (1. - smoothstep(0.006, 0.009, length(p - vec2(0., o)))); }
         float ret = clamp(lv + lh + mil, 0., 1.);
-        col = mix(col, vec3(0.0), ret * 0.95);
-        col = mix(col, vec3(6., 0.15, 0.05), 1. - smoothstep(0.004, 0.007, r));
+        vec3 glow = vec3(0.);
+        if (uStyle > 0.5 && uStyle < 1.5) {
+          // ACOG: 붉은 쉐브론 + 하단 탄도 눈금
+          float chev = (1. - smoothstep(0.004, 0.008, abs(abs(p.x) * 1.2 - (-p.y) ))) * step(-0.09, p.y) * step(p.y, 0.0);
+          float post = (1. - smoothstep(0.003, 0.006, abs(p.x))) * step(p.y, -0.09) * step(-0.5, p.y);
+          float bdc = 0.; for (int i = 1; i <= 5; i++) { float yy = -0.12 - float(i) * 0.07; bdc += (1. - smoothstep(0.003, 0.006, abs(p.y - yy))) * step(abs(p.x), 0.06 - float(i) * 0.008); }
+          ret = clamp(post + bdc, 0., 1.);
+          glow = vec3(5., 0.2, 0.05) * chev;
+        } else if (uStyle > 1.5 && uStyle < 2.5) {
+          // PSO-1: 쉐브론 3개 + 좌측 거리측정 곡선
+          float c = 0.;
+          for (int i = 0; i < 4; i++) { float yo = -float(i) * 0.12; c += (1. - smoothstep(0.004, 0.007, abs(abs(p.x) * 1.4 - (yo - p.y)))) * step(yo - 0.07, p.y) * step(p.y, yo); }
+          float hl = (1. - smoothstep(0.003, 0.005, abs(p.y))) * step(0.12, abs(p.x)) * step(abs(p.x), 0.5);
+          float rf = (1. - smoothstep(0.003, 0.006, abs(p.y + 0.35 - 0.12 / (0.8 + p.x * 3.0) * 0.1))) * step(-0.75, p.x) * step(p.x, -0.3);
+          ret = clamp(c + hl + rf, 0., 1.);
+          glow = vec3(4., 0.3, 0.05) * c * 0.6;
+        } else if (uStyle > 2.5) {
+          // 링 + 점 (저배율)
+          ret = (1. - smoothstep(0.004, 0.008, abs(r - 0.35))) + (1. - smoothstep(0.004, 0.008, abs(p.x))) * step(0.35, abs(p.y)) + (1. - smoothstep(0.004, 0.008, abs(p.y))) * step(0.35, abs(p.x));
+        }
+        col = mix(col, vec3(0.0), clamp(ret, 0., 1.) * 0.95) + glow;
+        if (uStyle < 0.5) col = mix(col, vec3(6., 0.15, 0.05), 1. - smoothstep(0.004, 0.007, r));
         // 아이박스 그림자 (정렬 어긋나면 초승달 그림자)
         float eb = smoothstep(1.0, 0.72, length(p + uEye * 5.0));
         col *= eb * smoothstep(1.0, 0.94, r);
@@ -507,6 +529,7 @@ function buildM870() {
 }
 
 export const GUN_BUILDERS = { m4: buildM4, ak: buildAK, glock: buildGlock, awm: buildAWM, m870: buildM870 };
+export function registerGuns(extra) { Object.assign(GUN_BUILDERS, extra); }
 
 // 탄피 지오메트리 (선반 회전체)
 export function casingGeo(type) {
@@ -515,6 +538,10 @@ export function casingGeo(type) {
     '762': [0.0056, 0.0052, 0.004, 0.039, 0.03],
     '9mm': [0.0049, 0.0048, 0.0048, 0.019, 0.019],
     '338': [0.0074, 0.007, 0.0045, 0.069, 0.055],
+    '45': [0.006, 0.006, 0.006, 0.0228, 0.0228],
+    '50ae': [0.0071, 0.007, 0.007, 0.0329, 0.0329],
+    '357': [0.0048, 0.0048, 0.0048, 0.033, 0.033],
+    '50': [0.0103, 0.0101, 0.0066, 0.099, 0.075],
   }[type];
   if (!spec) {
     const g = new THREE.CylinderGeometry(0.0105, 0.0105, 0.068, 12);

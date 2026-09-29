@@ -113,6 +113,23 @@ class AudioSys {
     B.glock = gunshot(c, { crackHP: 2400, crackT: 0.008, crack: 0.9, bodyLP: 1600, bodyT: 0.035, body: 0.9, thumpF: 150, thumpT: 0.03, thump: 0.6, tail: 0.35, tailT: 0.25, mechAt: 0.03, mech: 0.3, dur: 1.1 });
     B.awm = gunshot(c, { crackHP: 1100, crackT: 0.02, crack: 1.2, bodyLP: 650, bodyT: 0.14, body: 1.6, thumpF: 60, thumpT: 0.12, thump: 1.6, tail: 0.9, tailT: 0.8, tailLP: 450, dur: 2.4, echoes: [[0.12, 0.45], [0.25, 0.3], [0.48, 0.22], [0.8, 0.12]] });
     B.m870 = gunshot(c, { crackHP: 900, crackT: 0.018, crack: 0.9, bodyLP: 700, bodyT: 0.12, body: 1.7, thumpF: 70, thumpT: 0.1, thump: 1.5, tail: 0.8, tailT: 0.6, dur: 2.0 });
+    const G = (k, o) => { B[k] = gunshot(c, o); };
+    G('hk416', { crackHP: 1750, crackT: 0.011, bodyLP: 1050, bodyT: 0.055, thumpF: 115, thumpT: 0.05, tail: 0.5, tailT: 0.4 });
+    G('m16', { crackHP: 1900, crackT: 0.012, crack: 1.1, bodyLP: 1150, bodyT: 0.05, thumpF: 120, thumpT: 0.045, tail: 0.55, tailT: 0.45 });
+    G('ak74', { crackHP: 1700, crackT: 0.011, crack: 1.1, bodyLP: 950, bodyT: 0.06, thumpF: 100, thumpT: 0.05, tail: 0.6, tailT: 0.42 });
+    G('scar', { crackHP: 1200, crackT: 0.015, crack: 1.15, bodyLP: 800, bodyT: 0.09, body: 1.5, thumpF: 75, thumpT: 0.08, thump: 1.3, tail: 0.7, tailT: 0.5 });
+    G('aug', { crackHP: 1800, crackT: 0.011, bodyLP: 1000, bodyT: 0.06, thumpF: 110, thumpT: 0.05, tail: 0.5, tailT: 0.4 });
+    G('g36', { crackHP: 1850, crackT: 0.01, bodyLP: 1150, bodyT: 0.05, thumpF: 120, thumpT: 0.045, tail: 0.5, tailT: 0.38 });
+    G('mp5', { crackHP: 2600, crackT: 0.006, crack: 0.7, bodyLP: 1400, bodyT: 0.03, body: 0.9, thumpF: 150, thumpT: 0.03, thump: 0.5, tail: 0.3, tailT: 0.25, mech: 0.35, mechAt: 0.02, dur: 1.0 });
+    G('ump', { crackHP: 2000, crackT: 0.007, crack: 0.6, bodyLP: 900, bodyT: 0.045, body: 1.1, thumpF: 95, thumpT: 0.05, thump: 0.8, tail: 0.35, tailT: 0.28, mech: 0.3, dur: 1.1 });
+    G('p90', { crackHP: 2800, crackT: 0.008, crack: 1.0, bodyLP: 1600, bodyT: 0.03, body: 0.8, thumpF: 160, thumpT: 0.03, thump: 0.5, tail: 0.35, tailT: 0.3, dur: 1.0 });
+    G('m249', { crackHP: 1600, crackT: 0.012, crack: 1.1, bodyLP: 1000, bodyT: 0.065, body: 1.3, thumpF: 100, thumpT: 0.06, thump: 1.1, tail: 0.6, tailT: 0.45, mech: 0.25 });
+    G('svd', { crackHP: 1100, crackT: 0.018, crack: 1.2, bodyLP: 700, bodyT: 0.11, body: 1.5, thumpF: 70, thumpT: 0.1, thump: 1.4, tail: 0.8, tailT: 0.7, dur: 2.0 });
+    G('barrett', { crackHP: 700, crackT: 0.03, crack: 1.3, bodyLP: 450, bodyT: 0.2, body: 1.8, thumpF: 45, thumpT: 0.18, thump: 2.0, tail: 1.0, tailT: 1.1, tailLP: 380, dur: 2.8, echoes: [[0.14, 0.5], [0.3, 0.35], [0.55, 0.25], [0.9, 0.15]] });
+    G('saiga', { crackHP: 950, crackT: 0.017, crack: 0.9, bodyLP: 720, bodyT: 0.11, body: 1.6, thumpF: 72, thumpT: 0.09, thump: 1.4, tail: 0.75, tailT: 0.55, dur: 1.8 });
+    G('m1911', { crackHP: 1800, crackT: 0.008, crack: 0.8, bodyLP: 1000, bodyT: 0.05, body: 1.1, thumpF: 100, thumpT: 0.05, thump: 0.9, tail: 0.4, tailT: 0.3, mech: 0.3, dur: 1.2 });
+    G('deagle', { crackHP: 1200, crackT: 0.014, crack: 1.2, bodyLP: 700, bodyT: 0.09, body: 1.6, thumpF: 70, thumpT: 0.09, thump: 1.5, tail: 0.7, tailT: 0.6, dur: 1.8 });
+    G('python', { crackHP: 1500, crackT: 0.013, crack: 1.3, bodyLP: 900, bodyT: 0.08, body: 1.4, thumpF: 85, thumpT: 0.07, thump: 1.2, tail: 0.65, tailT: 0.55, mech: 0.0, dur: 1.7 });
     B.bot = B.ak;
     // 기계음
     B.dry = mech(c, [{ at: 0, freq: 4200, tau: 0.004, g: 1 }, { at: 0.012, freq: 2200, tau: 0.01, g: 0.6 }], 0.08);
@@ -161,6 +178,18 @@ class AudioSys {
     B.heart = tone(c, 0.9, (t) => { const b = (tt) => (tt > 0 ? Math.sin(2 * Math.PI * 48 * tt) * env(tt, 0.01, 0.06) : 0); return b(t) + b(t - 0.28) * 0.7; });
     // 폭발
     B.explosion = make(c, 3.2, (ch) => { const lp = new Biquad('lp', 500), lp2 = new Biquad('lp', 120), hp = new Biquad('hp', 1500); let ph = 0; return (t) => { const n = rnd(); ph += 2 * Math.PI * (55 * Math.exp(-t * 3) + 22) / SR; return lp.p(n) * env(t, 0.003, 0.5) * 1.5 + lp2.p(n) * env(t, 0.01, 1.1) * 3 + Math.sin(ph) * env(t, 0.004, 0.35) * 1.4 + hp.p(n) * env(t, 0.0005, 0.03) + (Math.random() < 0.002 * Math.exp(-t) ? rnd() * 2 : 0); }; });
+    // 투척물/폭약
+    const P2 = 2 * Math.PI;
+    B.frag = make(c, 2.8, () => { const lp = new Biquad('lp', 1400), lp2 = new Biquad('lp', 160), hp = new Biquad('hp', 2500); let ph = 0; return (t) => { const n = rnd(); ph += P2 * (70 * Math.exp(-t * 5) + 30) / SR; return lp.p(n) * env(t, 0.001, 0.18) * 1.8 + lp2.p(n) * env(t, 0.005, 0.7) * 2.2 + Math.sin(ph) * env(t, 0.002, 0.2) * 1.2 + hp.p(n) * env(t, 0.0003, 0.02) * 1.4 + (Math.random() < 0.004 * Math.exp(-t * 1.5) ? rnd() * 1.5 : 0); }; });
+    B.pin = mech(c, [{ at: 0, freq: 5200, tau: 0.006, g: 0.8, ping: [[4300, 0.12]] }, { at: 0.05, freq: 3600, tau: 0.01, g: 0.9, ping: [[6100, 0.15], [3900, 0.1]] }], 0.3);
+    B.spoon = tone(c, 0.6, (t) => (Math.sin(P2 * 2900 * t) * 0.5 + Math.sin(P2 * 4700 * t) * 0.3 + Math.sin(P2 * 7300 * t) * 0.2) * env(t, 0.001, 0.12) * (1 + 0.5 * Math.sin(P2 * 28 * t)) + rnd() * env(t, 0.0005, 0.006) * 0.5);
+    B.nadeBounce = make(c, 0.3, () => { const lp = new Biquad('lp', 900), bp = new Biquad('bp', 1700, 4); return (t) => lp.p(rnd()) * env(t, 0.001, 0.025) * 1.2 + bp.p(rnd()) * env(t, 0.0005, 0.03) * 0.8 + Math.sin(P2 * 1250 * t) * env(t, 0.001, 0.04) * 0.35; }, false);
+    B.nadeMetal = make(c, 0.5, () => { const hp = new Biquad('hp', 1500); return (t) => hp.p(rnd()) * env(t, 0.0005, 0.008) + (Math.sin(P2 * 1830 * t) * 0.6 + Math.sin(P2 * 2990 * t) * 0.4) * env(t, 0.0005, 0.09); }, false);
+    B.smokePop = make(c, 0.5, () => { const lp = new Biquad('lp', 600); return (t) => lp.p(rnd()) * env(t, 0.002, 0.06) * 2 + rnd() * env(t, 0.0005, 0.01) * 0.6; }, false);
+    B.hiss = make(c, 12, () => { const bp = new Biquad('bp', 2600, 0.7), lp = new Biquad('lp', 5000); return (t) => lp.p(bp.p(rnd())) * Math.min(1, t / 0.15) * (t > 10 ? Math.max(0, 1 - (t - 10) / 2) : 1) * (0.8 + 0.2 * Math.sin(t * 23 + Math.sin(t * 3) * 2)); }, false, 0.6);
+    B.c4stick = make(c, 0.3, () => { const lp = new Biquad('lp', 500), bp = new Biquad('bp', 1200, 2); return (t) => lp.p(rnd()) * env(t, 0.002, 0.05) * 1.5 + bp.p(rnd()) * env(t, 0.001, 0.02); }, false);
+    B.beep = tone(c, 0.3, (t) => (t < 0.07 || (t > 0.14 && t < 0.21) ? Math.sin(P2 * 2750 * t) * 0.5 : 0));
+    B.clicker = mech(c, [{ at: 0, freq: 3300, tau: 0.006, g: 1, ping: [[2500, 0.15]] }, { at: 0.07, freq: 2800, tau: 0.008, g: 1.1 }], 0.2);
     B.ui = tone(c, 0.08, (t) => Math.sin(2 * Math.PI * 1800 * t) * env(t, 0.001, 0.015));
     B.pickup = tone(c, 0.3, (t) => Math.sin(2 * Math.PI * (700 + t * 1500) * t) * env(t, 0.005, 0.08));
     B.breath = make(c, 1.6, () => { const bp = new Biquad('bp', 900, 0.8); return (t) => bp.p(rnd()) * Math.sin(Math.PI * Math.min(1, t / 1.6)) * 0.6; }, false);

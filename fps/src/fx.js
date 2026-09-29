@@ -130,7 +130,7 @@ export class FX {
     for (let i = 0; i < 48; i++) { const m = new THREE.Mesh(tg, this.tracerMatP); m.visible = false; m.frustumCulled = false; s.add(m); this.tracers.push(m); }
     // 탄피
     const gm = gunMats();
-    this.casingGeos = { '556': casingGeo('556'), '762': casingGeo('762'), '9mm': casingGeo('9mm'), '338': casingGeo('338'), shell: casingGeo('shell') };
+    this.casingGeos = {}; for (const k of ['556', '762', '9mm', '338', '45', '50ae', '357', '50', 'shell']) this.casingGeos[k] = casingGeo(k);
     this.casings = [];
     for (let i = 0; i < 60; i++) { const m = new THREE.Mesh(this.casingGeos['556'], gm.brass); m.visible = false; m.castShadow = true; s.add(m); this.casings.push({ m, v: new THREE.Vector3(), w: new THREE.Vector3(), life: 0, bounces: 0, active: false }); }
     this.ci = 0;
@@ -158,15 +158,16 @@ export class FX {
   }
 
   // 탄피 배출
-  eject(w, ws) {
+  eject(w, ws, from, drop) {
     const d = w.def, g = this.g;
     const c = this.casings[this.ci]; this.ci = (this.ci + 1) % this.casings.length;
     c.m.geometry = this.casingGeos[d.casing] || this.casingGeos['556'];
     c.m.material = d.casing === 'shell' ? ws.handShell.children[0].material : gunMats().brass;
-    c.m.position.copy(ws.worldPointOf(w.m.eject));
+    c.m.position.copy(ws.worldPointOf(from || w.m.eject));
     const q = g.camera.quaternion;
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q), up = new THREE.Vector3(0, 1, 0).applyQuaternion(q), fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
-    c.v.copy(right).multiplyScalar(rand(2.2, 3.4)).addScaledVector(up, rand(0.5, 1.3)).addScaledVector(fwd, rand(-0.2, 0.8)).add(g.player.vel);
+    if (drop) c.v.set(rand(-0.3, 0.3), rand(-1.5, -0.5), rand(-0.3, 0.3)).add(g.player.vel);
+    else c.v.copy(right).multiplyScalar(rand(2.2, 3.4)).addScaledVector(up, rand(0.5, 1.3)).addScaledVector(fwd, rand(-0.2, 0.8)).add(g.player.vel);
     c.w.set(rand(-25, 25), rand(-25, 25), rand(-25, 25));
     c.m.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2));
     c.life = 0; c.bounces = 0; c.active = true; c.m.visible = true; c.shell = d.casing === 'shell';
@@ -339,7 +340,7 @@ export class Ballistics {
       let best = remaining, kind = null, hit = null;
       const wh = g.world.raycast(o, d, best);
       if (wh && wh.t < best) { best = wh.t; kind = 'world'; hit = wh; }
-      if (b.owner === 'player') { const bh = g.bots.raycast(o, d, best); if (bh && bh.t < best) { best = bh.t; kind = 'bot'; hit = bh; } }
+      if (b.owner === 'player') { const bh = g.squad.raycast(o, d, best); if (bh && bh.t < best) { best = bh.t; kind = 'friend'; hit = bh; } }
       else { const ph = g.player.raycast(o, d, best); if (ph && ph.t < best) { best = ph.t; kind = 'player'; hit = ph; } }
       // 근접 통과음
       if (b.owner !== 'player' && !b.whiz) {
@@ -361,7 +362,7 @@ export class Ballistics {
         if (hit.col && hit.col.barrel) g.damageBarrel(hit.col.barrel, b.dmg * falloff, b.owner);
         this.end(b, hit.point); return false;
       }
-      if (kind === 'bot') { g.hitBot(hit, b.dmg * falloff, d, b.def); this.end(b, hit.point); return false; }
+      if (kind === 'friend') { g.hitFriend(hit, d); this.end(b, hit.point); return false; }
       if (kind === 'player') { g.player.damage(b.dmg * falloff, b.bot ? b.bot.pos : o, 'gun'); g.fx.blood(hit.point, d, false); this.end(b, hit.point); return false; }
     }
     return true;
