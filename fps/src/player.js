@@ -52,7 +52,7 @@ export class Player {
     const f = (input.key('KeyW') ? 1 : 0) - (input.key('KeyS') ? 1 : 0);
     const r = (input.key('KeyD') ? 1 : 0) - (input.key('KeyA') ? 1 : 0);
     if (input.pressed('KeyC')) this.crouching = !this.crouching;
-    const crouchHeld = input.key('ControlLeft');
+    const crouchHeld = false;
     let wantCrouch = this.crouching || crouchHeld;
     this.sprintBlock = Math.max(0, (this.sprintBlock || 0) - dt);
     this.sprinting = input.key('ShiftLeft') && f > 0 && !aiming && this.sprintBlock <= 0 && this.st.grounded && !(W && W.busy() && /reload|rS/.test(W.anim?.name || ''));

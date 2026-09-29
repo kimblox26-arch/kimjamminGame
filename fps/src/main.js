@@ -25,7 +25,7 @@ class Input {
   constructor(el) {
     this.keys = new Set(); this.down = new Set(); this.mouse = [false, false, false]; this.mdown = [false, false, false];
     this.dx = 0; this.dy = 0; this.wheel = 0; this.el = el; this._dx = 0; this._dy = 0; this._w = 0;
-    addEventListener('keydown', (e) => { if (!this.keys.has(e.code)) this.down.add(e.code); this.keys.add(e.code); if (this.locked && ['Tab', 'Space', 'KeyC', 'ControlLeft', 'KeyW', 'KeyS', 'KeyD', 'KeyA', 'KeyQ', 'KeyE', 'KeyF', 'KeyR'].includes(e.code)) e.preventDefault(); });
+    addEventListener('keydown', (e) => { if (!this.keys.has(e.code)) this.down.add(e.code); this.keys.add(e.code); if (this.locked && ['Tab', 'Space', 'KeyC', 'KeyW', 'KeyS', 'KeyD', 'KeyA', 'KeyQ', 'KeyE', 'KeyF', 'KeyR'].includes(e.code)) e.preventDefault(); });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('mousedown', (e) => { if (!this.locked) return; this.mouse[e.button] = true; this.mdown[e.button] = true; });
     addEventListener('mouseup', (e) => { this.mouse[e.button] = false; });
