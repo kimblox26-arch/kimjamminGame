@@ -158,15 +158,17 @@ class Bot {
       this.coverT -= dt;
       if (this.coverSpot && this.pos.distanceTo(this.coverSpot) > 0.8) { moveTarget = this.coverSpot; speed = 4.2; }
       else { this.wantCrouch = true; if (this.coverT <= 0) { this.state = 'hunt'; this.wantCrouch = false; } }
-    } else if (this.canSee && dist < 80) {
+    } else if (this.canSee && dist < 70) {
       this.state = 'engage';
       this.strafeT -= dt;
       if (this.strafeT <= 0) { this.strafeT = rand(0.8, 2.2); this.strafe = pick([-1, 0, 1, 1, -1]); this.wantCrouch = dist > 14 && Math.random() < 0.35; }
       if (this.hp < 55 && this.hitT < 1 && Math.random() < 0.02) this.findCover();
-      if (dist > 45) { moveTarget = P.pos; speed = 2.2; }
+      if (dist > 40) { moveTarget = P.pos; speed = 2.2; }
     } else {
       this.state = 'hunt';
-      if (this.lostT > 0.6 || !this.canSee) { moveTarget = this.alerted ? this.last : P.pos; speed = this.lostT > 6 ? 2.4 : 4.0; this.wantCrouch = false; }
+      this.wantCrouch = false;
+      moveTarget = this.canSee || !this.alerted ? P.pos : this.last;
+      speed = this.canSee ? 3.2 : this.lostT > 8 && this.lostT < 90 ? 2.4 : 3.8;
     }
     // ── 경로 추종 ──
     this.pathT -= dt;

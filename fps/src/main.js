@@ -221,7 +221,10 @@ class Game {
     this.resize();
     this.setLoad(0.95, '셰이더 컴파일');
     await tick();
+    this.bots.spawn(1); this.bots.spawn(1);
+    this.fx.explosion(new THREE.Vector3(0, -50, 0)); this.fx.clear();
     r.compile(scene, this.camera); r.compile(vmScene, this.vmCam);
+    this.bots.clear();
     this.setLoad(1, '준비 완료');
     this.bindUI();
     this.state = 'menu';

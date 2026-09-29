@@ -57,8 +57,8 @@ export class Arms {
     const camo = T.camo, lt = T.leather;
     this.mats = {
       sleeve: new THREE.MeshStandardMaterial({ map: camo.map.clone(), normalMap: camo.normalMap.clone(), roughness: 1, roughnessMap: camo.roughnessMap }),
-      glove: new THREE.MeshStandardMaterial({ color: 0x2c2b28, normalMap: lt.normalMap, roughnessMap: lt.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(0.6, 0.6) }),
-      pad: new THREE.MeshStandardMaterial({ color: 0x151516, roughness: 0.55, normalMap: T.stipple.normalMap }),
+      glove: new THREE.MeshStandardMaterial({ color: 0x5b4d3c, normalMap: lt.normalMap, roughnessMap: lt.roughnessMap, roughness: 1, normalScale: new THREE.Vector2(0.6, 0.6) }),
+      pad: new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 0.55, normalMap: T.stipple.normalMap }),
     };
     for (const k of ['map', 'normalMap']) { this.mats.sleeve[k].repeat.set(2, 1.6); this.mats.sleeve[k].needsUpdate = true; }
     this.side = { R: this.makeSide(1), L: this.makeSide(-1) };

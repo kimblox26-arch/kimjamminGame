@@ -9,7 +9,7 @@ const rep = (t, n) => { if (!t) return null; const c = t.clone(); c.repeat.set(n
 export function gunMats() {
   if (MAT) return MAT;
   const an = T.anodized, st = T.stipple, wd = T.gunwood, lt = T.leather;
-  const metal = (color, rough = 1, metal = 0.85, n = 10) => new THREE.MeshStandardMaterial({ color, map: rep(an.map, n), roughnessMap: rep(an.roughnessMap, n), normalMap: rep(an.normalMap, n), normalScale: new THREE.Vector2(0.35, 0.35), roughness: rough, metalness: metal, envMapIntensity: 1.2 });
+  const metal = (color, rough = 1, metal = 0.85, n = 10) => new THREE.MeshPhysicalMaterial({ color, map: rep(an.map, n), roughnessMap: rep(an.roughnessMap, n), normalMap: rep(an.normalMap, n), normalScale: new THREE.Vector2(0.35, 0.35), roughness: rough, metalness: metal, envMapIntensity: 1.2, clearcoat: 0.22, clearcoatRoughness: 0.38 });
   const poly = (color, rough = 1) => new THREE.MeshStandardMaterial({ color, roughnessMap: rep(st.roughnessMap, 14), normalMap: rep(st.normalMap, 14), normalScale: new THREE.Vector2(0.6, 0.6), roughness: rough, metalness: 0.0, envMapIntensity: 0.9 });
   const wood = (color) => new THREE.MeshPhysicalMaterial({ color, map: rep(wd.map, 3), roughnessMap: rep(wd.roughnessMap, 3), normalMap: rep(wd.normalMap, 3), normalScale: new THREE.Vector2(0.3, 0.3), roughness: 1.6, clearcoat: 0.18, clearcoatRoughness: 0.5, envMapIntensity: 0.5 });
   MAT = {
@@ -98,6 +98,15 @@ class GB {
     const g = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 10 });
     g.translate(0, 0, -d / 2); g.rotateY(Math.PI / 2);
     return this.add(g, mat, x, 0, 0);
+  }
+  // 정면 프로파일(x, y)을 총열 축으로 압출 (f0 → f1)
+  profZ(mat, pts, holes, f0, f1, bevel = 0.001) {
+    const sh = shapeFrom(pts);
+    if (holes) for (const h of holes) sh.holes.push(shapeFrom(h));
+    const L = f1 - f0, b = Math.min(bevel, L * 0.3);
+    const g = new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.0005, L - 2 * b), bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 8 });
+    g.translate(0, 0, -f1 + b);
+    return this.add(g, mat);
   }
   // 피카티니 레일
   rail(mat, f0, f1, y, w = 0.021) {
@@ -235,8 +244,11 @@ function buildM4() {
   G.box(m.anod, 0.034, 0.012, -0.02, 0.085, 0.038, 0.05);
   G.prof(m.anod, [[0.03, 0.05], [0.086, 0.05], [0.086, 0.066], ['q', 0.084, 0.074, 0.074, 0.075], [0.03, 0.075]], 0.036, 0, 0.003);
   G.box(m.anod, 0.036, 0.004, -0.02, 0.032, 0.05, 0.054);
-  for (const s of [-1, 1]) G.prof(m.anod, [[-0.02, 0.05], [0.032, 0.05], [0.032, 0.084], [0.024, 0.088], [-0.014, 0.088], [-0.02, 0.083]], 0.0045, s * 0.0178, 0.0012);
-  G.prof(m.anod, [[-0.022, 0.084], [0.034, 0.084], [0.03, 0.091], [-0.018, 0.091]], 0.04, 0, 0.002);
+  const hood = [[-0.02, 0.05], [0.02, 0.05], [0.02, 0.084], ['q', 0.02, 0.093, 0.011, 0.093], [-0.011, 0.093], ['q', -0.02, 0.093, -0.02, 0.084]];
+  const win = [[-0.0158, 0.0545], [0.0158, 0.0545], [0.0158, 0.083], ['q', 0.0158, 0.0885, 0.01, 0.0885], [-0.01, 0.0885], ['q', -0.0158, 0.0885, -0.0158, 0.083]];
+  G.profZ(m.anod, hood, [win], -0.021, 0.03, 0.0015);
+  G.box(m.anod, 0.006, 0.012, -0.012, 0.018, 0.093, 0.096);
+  for (const sx of [-1, 1]) G.box(m.dark, 0.0008, 0.018, -0.014, 0.024, 0.06, 0.078, sx * 0.0205);
   G.box(m.poly, 0.007, 0.005, -0.024, -0.02, 0.043, 0.048, 0.008); G.box(m.poly, 0.007, 0.005, -0.024, -0.02, 0.043, 0.048, -0.008);
   G.box(m.poly, 0.005, 0.005, -0.024, -0.02, 0.043, 0.048, 0);
   G.box(m.anod, 0.01, 0.01, 0.04, 0.06, 0.04, 0.05, 0.02); G.cylX(m.anod, 0.004, 0.012, 0.05, 0.045, 0.028);
