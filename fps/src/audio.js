@@ -190,6 +190,15 @@ class AudioSys {
     B.c4stick = make(c, 0.3, () => { const lp = new Biquad('lp', 500), bp = new Biquad('bp', 1200, 2); return (t) => lp.p(rnd()) * env(t, 0.002, 0.05) * 1.5 + bp.p(rnd()) * env(t, 0.001, 0.02); }, false);
     B.beep = tone(c, 0.3, (t) => (t < 0.07 || (t > 0.14 && t < 0.21) ? Math.sin(P2 * 2750 * t) * 0.5 : 0));
     B.clicker = mech(c, [{ at: 0, freq: 3300, tau: 0.006, g: 1, ping: [[2500, 0.15]] }, { at: 0.07, freq: 2800, tau: 0.008, g: 1.1 }], 0.2);
+    // 자연: 새소리 4종, 돌풍(+나뭇잎), 풀벌레
+    { let ph = 0; B.chirp0 = tone(c, 1.1, (t) => { const k = Math.floor(t / 0.13), tt = t - k * 0.13; if (k > 6 || tt > 0.06) return 0; const f = 6200 - tt / 0.06 * 2600 + (k % 2) * 400; ph += P2 * f / SR; return (Math.sin(ph) + 0.25 * Math.sin(ph * 2)) * Math.sin(Math.PI * tt / 0.06); }); }
+    { let ph = 0; B.chirp1 = tone(c, 1.4, (t) => { const f = (Math.floor(t * 18) % 2 ? 4300 : 5200) + Math.sin(t * P2 * 60) * 250; ph += P2 * f / SR; const e = Math.sin(Math.PI * Math.min(1, t / 1.3)) * (0.5 + 0.5 * Math.abs(Math.sin(t * Math.PI * 18))); return t < 1.3 ? Math.sin(ph) * e : 0; }); }
+    { let ph = 0; B.chirp2 = tone(c, 0.9, (t) => { const n = t < 0.32 ? 0 : t < 0.42 ? -1 : t < 0.8 ? 1 : -1; if (n < 0) return 0; const tt = n ? t - 0.42 : t, L = n ? 0.38 : 0.32; const f = n ? 3350 - tt * 300 : 4100 + tt * 250; ph += P2 * f / SR; return (Math.sin(ph) + 0.12 * Math.sin(ph * 2)) * Math.sin(Math.PI * tt / L); }); }
+    { let ph = 0; B.chirp3 = tone(c, 1.8, (t) => { const seg = [[0, 0.35], [0.5, 1.05], [1.15, 1.6]]; for (const [a, b] of seg) if (t >= a && t < b) { const u = (t - a) / (b - a); ph += P2 * (560 + Math.sin(Math.PI * u) * 60) / SR; return (Math.sin(ph) + 0.3 * Math.sin(ph * 2)) * Math.sin(Math.PI * u) ** 1.5; } return 0; }); }
+    B.gust = make(c, 5, (ch) => { const bp = new Biquad('bp', 380, 0.6), lp = new Biquad('lp', 160), hp = new Biquad('hp', 2800); return (t) => { const e = Math.pow(Math.sin(Math.PI * Math.min(1, t / 5)), 1.5); const n = rnd(); return bp.p(n) * e * 1.2 + lp.p(n) * e * 2 + hp.p(rnd()) * e * (Math.random() < 0.25 * e ? 1.2 : 0.15); }; }, true, 0.8);
+    B.bugs = make(c, 4, (ch) => { const bugs = [[4700, 0.7, 0.1], [5200, 0.9, 0.45], [4400, 1.1, 0.8]]; return (t) => { let s = 0; for (const [f, per, off] of bugs) { const u = ((t + off + ch * 0.13) % per) / per; const g = u < 0.18 ? Math.max(0, Math.sin(u / 0.18 * Math.PI * 3)) : 0; s += Math.sin(P2 * f * t) * g; } return s * 0.5; }; }, true, 0.5);
+    B.ding = tone(c, 1.6, (t) => (Math.sin(P2 * 1830 * t) * 0.5 + Math.sin(P2 * 2750 * t) * 0.35 + Math.sin(P2 * 4460 * t) * 0.2 + Math.sin(P2 * 6200 * t) * 0.1) * env(t, 0.0005, 0.35) * (1 + 0.15 * Math.sin(P2 * 7 * t)) + rnd() * env(t, 0.0003, 0.004) * 0.6);
+    B.gong = tone(c, 2.4, (t) => (Math.sin(P2 * 620 * t) * 0.5 + Math.sin(P2 * 1040 * t) * 0.4 + Math.sin(P2 * 1590 * t) * 0.3 + Math.sin(P2 * 2400 * t) * 0.15) * env(t, 0.0008, 0.6) * (1 + 0.2 * Math.sin(P2 * 4 * t)) + rnd() * env(t, 0.0005, 0.006) * 0.5);
     B.ui = tone(c, 0.08, (t) => Math.sin(2 * Math.PI * 1800 * t) * env(t, 0.001, 0.015));
     B.pickup = tone(c, 0.3, (t) => Math.sin(2 * Math.PI * (700 + t * 1500) * t) * env(t, 0.005, 0.08));
     B.breath = make(c, 1.6, () => { const bp = new Biquad('bp', 900, 0.8); return (t) => bp.p(rnd()) * Math.sin(Math.PI * Math.min(1, t / 1.6)) * 0.6; }, false);
@@ -202,7 +211,11 @@ class AudioSys {
     const src = c.createBufferSource(); src.buffer = b; src.loop = true;
     this.ambGain = c.createGain(); this.ambGain.gain.value = 0.18;
     src.connect(this.ambGain).connect(this.master); src.start();
+    const bugs = c.createBufferSource(); bugs.buffer = this.buf.bugs; bugs.loop = true;
+    this.bugGain = c.createGain(); this.bugGain.gain.value = 0.035;
+    bugs.connect(this.bugGain).connect(this.master); bugs.start();
   }
+  setWind(k) { if (this.ambGain) this.ambGain.gain.setTargetAtTime(0.1 + k * 0.1, this.ctx.currentTime, 0.4); }
 
   setListener(pos, fwd) { this.listener.pos.copy(pos); this.listener.fwd.copy(fwd); }
   setVolume(v) { this.vol = v; if (this.master) this.master.gain.value = v; }

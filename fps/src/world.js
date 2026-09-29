@@ -25,6 +25,19 @@ const patchFn = (shader) => {
     .replace('#include <aomap_fragment>', `#include <aomap_fragment>
       float ioF = interiorF(vWPos); reflectedLight.indirectDiffuse *= ioF; reflectedLight.indirectSpecular *= ioF;`);
 };
+// 단지 밖 지형 높이 (지형 메시·나무·풀 배치 공용)
+export function terrainH(x, z) {
+  const r = Math.max(Math.abs(x), Math.abs(z));
+  if (r < 72) return -0.35;
+  const k = THREE.MathUtils.smoothstep(r, 75, 260);
+  return Math.max(-0.35, (fbm(x / 1400 + 0.5, z / 1400 + 0.5, 6, 4) - 0.35) * 90 * k + k * 6);
+}
+// 초원 비율 (0 흙 ~ 1 풀)
+export function grassK(x, z) {
+  const r = Math.max(Math.abs(x), Math.abs(z));
+  return THREE.MathUtils.smoothstep(r, 71, 76) * THREE.MathUtils.clamp(0.35 + fbm(x / 160 + 3.1, z / 160 + 1.7, 4, 3) * 1.1, 0, 1);
+}
+
 export function patchInterior(mat) { mat.onBeforeCompile = patchFn; return mat; }
 export function interiorFactorCPU(p) {
   let f = 1;
@@ -46,6 +59,48 @@ function boxGeo(w, h, d, tile, ox = 0, oy = 0, oz = 0) {
     uv.setXY(i, (uv.getX(i) * D[0] + D[2]) / tile, (uv.getY(i) * D[1] + D[3]) / tile);
   }
   return g;
+}
+
+// 잔디 지면 텍스처 (위에서 본 풀잎 스트로크)
+function turfTex() {
+  const N = 512, c = document.createElement('canvas'); c.width = c.height = N;
+  const x = c.getContext('2d');
+  const im = x.createImageData(N, N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const n = fbm(i / N, j / N, 6, 4), o = (j * N + i) * 4;
+    im.data[o] = 58 + n * 40; im.data[o + 1] = 70 + n * 38; im.data[o + 2] = 28 + n * 12; im.data[o + 3] = 255;
+  }
+  x.putImageData(im, 0, 0);
+  for (let k = 0; k < 14000; k++) {
+    const px = Math.random() * N, py = Math.random() * N, a = Math.random() * Math.PI * 2, L = 3 + Math.random() * 9, g = 0.6 + Math.random() * 0.7;
+    const dry = Math.random() < 0.18;
+    x.strokeStyle = dry ? `rgba(${150 * g | 0},${135 * g | 0},${70 * g | 0},0.8)` : `rgba(${55 * g | 0},${92 * g | 0},${30 * g | 0},0.85)`;
+    x.lineWidth = 1 + Math.random() * 1.2;
+    for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) {
+      if (px + dx < -12 || px + dx > N + 12 || py + dy < -12 || py + dy > N + 12) continue;
+      x.beginPath(); x.moveTo(px + dx, py + dy); x.lineTo(px + dx + Math.cos(a) * L, py + dy + Math.sin(a) * L); x.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+
+// 철망 텍스처 (다이아몬드 격자, 알파)
+function chainTex() {
+  const N = 128, c = document.createElement('canvas'); c.width = c.height = N;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, N, N); x.lineCap = 'round';
+  for (const [w, col] of [[5, 'rgba(70,72,72,1)'], [3, 'rgba(210,214,214,1)']]) {
+    x.strokeStyle = col; x.lineWidth = w;
+    for (let k = -2; k <= 2; k++) {
+      x.beginPath(); x.moveTo(k * N / 2, 0); x.lineTo(k * N / 2 + N, N); x.stroke();
+      x.beginPath(); x.moveTo(k * N / 2 + N, 0); x.lineTo(k * N / 2, N); x.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
 }
 
 export class World {
@@ -95,6 +150,8 @@ export class World {
       glass: new THREE.MeshStandardMaterial({ color: 0x9fb6c0, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.28, envMapIntensity: 1.6, depthWrite: false }),
       lamp: new THREE.MeshStandardMaterial({ color: 0x111111, emissive: new THREE.Color(1, 0.86, 0.62), emissiveIntensity: 9 }),
       marker: new THREE.MeshStandardMaterial({ color: 0x111111, emissive: new THREE.Color(0.3, 1, 0.45), emissiveIntensity: 5 }),
+      chain: new THREE.MeshStandardMaterial({ map: chainTex(), color: 0xb8bcbc, alphaTest: 0.45, side: THREE.DoubleSide, metalness: 0.75, roughness: 0.45 }),
+      galv: std(T.steel, { color: 0x9aa0a2, roughness: 0.7, metalness: 0.85 }),
       tree: patchInterior(new THREE.MeshStandardMaterial({ color: 0x2b3a22, roughness: 1 })),
       trunk: patchInterior(new THREE.MeshStandardMaterial({ color: 0x3b2a1c, roughness: 1 })),
     };
@@ -175,14 +232,12 @@ export class World {
     B(-35, 0, 22, 60, 0.012, 8, M.asphalt, { collide: false, tile: 6 });
 
     // 외벽 (패널 + 기둥) — 남쪽 정문
-    const WH = 4.2;
-    this.wall('x', -70, -70, 70, 0, WH, 0.5, M.concrete, [], { tile: 3 });
-    this.wall('x', 70, -70, 70, 0, WH, 0.5, M.concrete, [[-5, 5, 0, 0]], { tile: 3 });
-    this.wall('z', -70, -70, 70, 0, WH, 0.5, M.concrete, [], { tile: 3 });
-    this.wall('z', 70, -70, 70, 0, WH, 0.5, M.concrete, [], { tile: 3 });
-    for (let s = -70; s <= 70; s += 7) {
-      for (const [x, z] of [[s, -70], [s, 70], [-70, s], [70, s]]) if (!(z === 70 && Math.abs(x) < 6)) B(x, 0, z, 0.8, WH + 0.35, 0.8, M.concrete, { collide: false, tile: 3 });
-    }
+    const FH = 3.1;
+    this.fence('x', -70, -70, 70, FH);
+    this.fence('x', 70, -70, 70, FH, [[-5.2, 5.2]]);
+    this.fence('z', -70, -70, 70, FH);
+    this.fence('z', 70, -70, 70, FH);
+    for (const sx of [-5.6, 5.6]) B(sx, 0, 70, 0.5, 3.6, 0.5, M.concrete, { tile: 2 });
     // 정문 (슬라이딩 게이트)
     this.addCollider(-5, 0, 69.7, 5, 3.4, 70.3, 'metal');
     B(0, 0.05, 70, 10, 0.12, 0.12, M.steel, { collide: false });
@@ -201,38 +256,70 @@ export class World {
   }
 
   buildTerrain() {
-    const size = 1400, seg = 160;
+    const size = 1400, seg = 200;
     const geo = new THREE.PlaneGeometry(size, size, seg, seg);
     geo.rotateX(-Math.PI / 2);
-    const p = geo.attributes.position, uv = geo.attributes.uv;
+    const p = geo.attributes.position, uv = geo.attributes.uv, col = new Float32Array(p.count * 3);
     for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), z = p.getZ(i), r = Math.max(Math.abs(x), Math.abs(z));
-      const k = THREE.MathUtils.smoothstep(r, 75, 260);
-      const h = (fbm(x / size + 0.5, z / size + 0.5, 6, 4) - 0.35) * 90 * k + k * 6;
-      p.setY(i, r < 72 ? -0.35 : Math.max(-0.35, h));
+      const x = p.getX(i), z = p.getZ(i);
+      p.setY(i, terrainH(x, z));
       uv.setXY(i, x / 14, z / 14);
+      // r: 풀 비율, g: 마른 풀 정도
+      col[i * 3] = grassK(x, z); col[i * 3 + 1] = fbm(x / 60 + 9, z / 60 + 4, 3, 2); col[i * 3 + 2] = 0;
     }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, this.M.dirt);
+    const mat = this.M.dirt.clone(); mat.vertexColors = true;
+    const gt = turfTex();
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTurf = { value: gt };
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uTurf;')
+        .replace('#include <color_fragment>', `
+          vec2 tuv = vMapUv * 3.1;
+          vec3 turf = texture2D(uTurf, tuv).rgb * 0.62 + texture2D(uTurf, tuv * 0.23 + 0.37).rgb * 0.38;
+          turf *= mix(vec3(0.92, 1.0, 0.9), vec3(1.3, 1.08, 0.62), smoothstep(0.35, 0.8, vColor.g));
+          diffuseColor.rgb = mix(diffuseColor.rgb, turf, smoothstep(0.1, 0.55, vColor.r));`);
+    };
+    mat.customProgramCacheKey = () => 'terrain-turf';
+    const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     this.group.add(mesh);
-    // 원경 나무
-    const N = 420, cone = new THREE.ConeGeometry(2.2, 9, 7), trunk = new THREE.CylinderGeometry(0.25, 0.35, 3, 6);
-    cone.translate(0, 7, 0); trunk.translate(0, 1.5, 0);
-    const im1 = new THREE.InstancedMesh(cone, this.M.tree, N), im2 = new THREE.InstancedMesh(trunk, this.M.trunk, N);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3();
-    let n = 0;
-    for (let i = 0; n < N && i < 5000; i++) {
-      const a = Math.random() * Math.PI * 2, r = 85 + Math.random() ** 0.7 * 320, x = Math.cos(a) * r, z = Math.sin(a) * r;
-      if (fbm(x / 300 + 0.5, z / 300 + 0.5, 4, 3) < 0.45) continue;
-      const rr = Math.max(Math.abs(x), Math.abs(z)), k = THREE.MathUtils.smoothstep(rr, 75, 260);
-      const y = (fbm(x / size + 0.5, z / size + 0.5, 6, 4) - 0.35) * 90 * k + k * 6 - 0.5;
-      const sc = 0.7 + Math.random() * 0.9;
-      m.compose(v.set(x, y, z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * 6), s.set(sc, sc * (0.8 + Math.random() * 0.5), sc));
-      im1.setMatrixAt(n, m); im2.setMatrixAt(n, m); n++;
+  }
+
+  // 철망 울타리 (기둥 파이프 + 상단 레일 + 가시철선) — 총알은 통과, 사람/투척물은 막힘
+  fence(axis, fixed, a0, a1, H, gaps = []) {
+    const M = this.M, segs = [];
+    let cur = a0;
+    for (const [g0, g1] of gaps) { segs.push([cur, g0]); cur = g1; }
+    segs.push([cur, a1]);
+    for (const [s0, s1] of segs) {
+      const L = s1 - s0, c = (s0 + s1) / 2;
+      if (axis === 'x') this.addCollider(s0, 0, fixed - 0.15, s1, H + 0.4, fixed + 0.15, 'metal', { thin: true, pass: true });
+      else this.addCollider(fixed - 0.15, 0, s0, fixed + 0.15, H + 0.4, s1, 'metal', { thin: true, pass: true });
+      const g = new THREE.PlaneGeometry(L, H - 0.05);
+      const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * L / 0.12, uv.getY(i) * (H - 0.05) / 0.12);
+      const m = new THREE.Mesh(g, M.chain);
+      m.position.set(axis === 'x' ? c : fixed, 0.03 + (H - 0.05) / 2, axis === 'x' ? fixed : c);
+      if (axis === 'z') m.rotation.y = Math.PI / 2;
+      m.receiveShadow = true; m.castShadow = true;
+      this.group.add(m);
+      const n = Math.max(1, Math.round(L / 3));
+      for (let k = 0; k <= n; k++) {
+        const t = s0 + (L * k) / n, x = axis === 'x' ? t : fixed, z = axis === 'x' ? fixed : t;
+        this.cylinder(x, H / 2 + 0.2, z, 0.038, H + 0.4, M.galv, { seg: 10, collide: false });
+        // 가시철선 암 (바깥쪽 45°)
+        const out = Math.sign(fixed) * 0.18;
+        const ax = axis === 'x' ? x : x + out, az = axis === 'x' ? z + out : z;
+        this.box(ax, H + 0.2, az, axis === 'x' ? 0.03 : 0.4, 0.03, axis === 'x' ? 0.4 : 0.03, M.galv, { collide: false });
+      }
+      const ra = axis === 'x' ? 'x' : 'z';
+      this.cylinder(axis === 'x' ? c : fixed, H, axis === 'x' ? fixed : c, 0.022, L, M.galv, { seg: 8, axis: ra, collide: false });
+      this.cylinder(axis === 'x' ? c : fixed, 0.1, axis === 'x' ? fixed : c, 0.012, L, M.galv, { seg: 6, axis: ra, collide: false });
+      for (let w = 0; w < 3; w++) {
+        const out = Math.sign(fixed) * (0.02 + w * 0.08);
+        this.cylinder(axis === 'x' ? c : fixed + out, H + 0.25 + w * 0.06, axis === 'x' ? fixed + out : c, 0.004, L, M.galv, { seg: 4, axis: ra, collide: false });
+      }
     }
-    im1.count = im2.count = n;
-    this.group.add(im1, im2);
   }
 
   buildWarehouse() {
@@ -543,17 +630,32 @@ export class World {
   }
 
   // ── 질의 ──
-  raycast(o, d, maxT, { ignoreGlass = false } = {}) {
+  raycast(o, d, maxT, { ignoreGlass = false, solid = false } = {}) {
     let best = maxT, hit = null;
     const out = this._ro || (this._ro = { n: new THREE.Vector3() });
     const n = this._rn || (this._rn = new THREE.Vector3());
     for (const c of this.colliders) {
-      if (c.disabled || (ignoreGlass && c.glass)) continue;
+      if (c.disabled || (ignoreGlass && c.glass) || (c.pass && !solid)) continue;
       const t = rayAABB(o, d, c, best, out);
       if (t >= 0 && t < best) { best = t; hit = c; n.copy(out.n); }
     }
     // 지면
-    if (d.y < 0) { const t = -o.y / d.y; if (t >= 0 && t < best) { best = t; hit = null; n.set(0, 1, 0); return { t, n: n.clone(), surf: this.groundSurf(o.x + d.x * t, o.z + d.z * t), col: null, point: o.clone().addScaledVector(d, t) }; } }
+    if (d.y < 0 && Math.abs(o.x) < 71 && Math.abs(o.z) < 71) { const t = -o.y / d.y; if (t >= 0 && t < best) { best = t; hit = null; n.set(0, 1, 0); return { t, n: n.clone(), surf: this.groundSurf(o.x + d.x * t, o.z + d.z * t), col: null, point: o.clone().addScaledVector(d, t) }; } }
+    // 단지 밖 지형 (높이장 레이마치 + 이분 탐색)
+    const ex = o.x + d.x * best, ez = o.z + d.z * best;
+    if (Math.abs(o.x) > 70 || Math.abs(o.z) > 70 || Math.abs(ex) > 70 || Math.abs(ez) > 70) {
+      const step = 0.6;
+      for (let t = 0; t < best; t += step) {
+        const t1 = Math.min(best, t + step);
+        if (o.y + d.y * t1 - terrainH(o.x + d.x * t1, o.z + d.z * t1) < 0) {
+          let a = t, b = t1;
+          for (let k = 0; k < 6; k++) { const m = (a + b) / 2; if (o.y + d.y * m - terrainH(o.x + d.x * m, o.z + d.z * m) < 0) b = m; else a = m; }
+          const px = o.x + d.x * b, pz = o.z + d.z * b, e = 0.4;
+          n.set(terrainH(px - e, pz) - terrainH(px + e, pz), 2 * e, terrainH(px, pz - e) - terrainH(px, pz + e)).normalize();
+          return { t: b, n: n.clone(), surf: 'dirt', col: null, point: o.clone().addScaledVector(d, b) };
+        }
+      }
+    }
     if (!hit) return null;
     return { t: best, n: n.clone(), surf: hit.surf, col: hit, point: o.clone().addScaledVector(d, best) };
   }

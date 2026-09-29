@@ -203,6 +203,7 @@ export class Explosives {
 
   // 아이템 꺼내기
   begin(k) {
+    this.qL = false;
     if (k === 'c4' && this.count.c4 === 0 && this.placed.length) k = 'det';
     this.hide();
     this.kind = k; this.state = 'draw';
@@ -245,10 +246,12 @@ export class Explosives {
       for (const [t, e] of an.clip.ev || []) if (an.t >= t && !an.fired.has(e)) { an.fired.add(e); this.event(e, input); }
       if (an.t >= an.clip.d) { this.anim = null; an.onEnd?.(); }
     }
-    const lmbP = input.mousePressed(0), rmbP = input.mousePressed(2);
+    let lmbP = input.mousePressed(0);
+    const rmbP = input.mousePressed(2);
     const st = this.state;
-    if (st === 'draw' && !this.anim) this.state = 'idle';
-    else if (st === 'idle') {
+    if (st === 'draw') { if (lmbP) this.qL = true; if (!this.anim) this.state = 'idle'; }
+    if (st === 'idle' && this.qL) { lmbP = true; this.qL = false; }
+    if (st === 'idle') {
       if (k === 'frag' || k === 'smoke') { if (lmbP || this.pendingThrow) { this.state = 'pin'; this.play('pin', () => { this.state = 'ready'; this.play('ready'); }); } }
       else if (k === 'c4') { if (lmbP) { this.state = 'place'; this.play('place', () => this.after()); } else if (rmbP && this.placed.length) this.swapTo('det'); }
       else if (k === 'det') { if (lmbP && this.placed.length) { this.state = 'press'; this.play('press', () => this.after()); } else if (rmbP && this.count.c4 > 0) this.swapTo('c4'); }
@@ -285,7 +288,7 @@ export class Explosives {
       const fwd = V(0, 0, -1).applyQuaternion(cam.quaternion);
       // 손이 벽을 관통하지 않도록 눈 → 손 경로 검사
       const toP = p.clone().sub(cam.position), dl = toP.length();
-      const wh = g.world.raycast(cam.position, toP.clone().normalize(), dl + 0.05);
+      const wh = g.world.raycast(cam.position, toP.clone().normalize(), dl + 0.05, { solid: true });
       if (wh) p.copy(cam.position).addScaledVector(toP.normalize(), Math.max(0, wh.t - 0.08));
       let v;
       if (k === 'c4') v = fwd.clone().multiplyScalar(6).add(V(0, 1.2, 0));
@@ -361,7 +364,7 @@ export class Explosives {
           const L = pr.v.length() * h;
           if (L < 1e-6) continue;
           d.copy(pr.v).normalize();
-          const hit = W.raycast(pr.p, d, L + pr.r);
+          const hit = W.raycast(pr.p, d, L + pr.r, { solid: true });
           if (hit) {
             pr.p.copy(hit.point).addScaledVector(hit.n, pr.r);
             if (pr.kind === 'c4') { this.stick(pr, hit); break; }

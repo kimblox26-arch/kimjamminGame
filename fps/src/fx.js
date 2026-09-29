@@ -340,7 +340,10 @@ export class Ballistics {
       let best = remaining, kind = null, hit = null;
       const wh = g.world.raycast(o, d, best);
       if (wh && wh.t < best) { best = wh.t; kind = 'world'; hit = wh; }
-      if (b.owner === 'player') { const bh = g.squad.raycast(o, d, best); if (bh && bh.t < best) { best = bh.t; kind = 'friend'; hit = bh; } }
+      if (b.owner === 'player') {
+        const bh = g.squad.raycast(o, d, best); if (bh && bh.t < best) { best = bh.t; kind = 'friend'; hit = bh; }
+        const rh = g.range?.raycast(o, d, best); if (rh && rh.t < best) { best = rh.t; kind = 'target'; hit = rh; }
+      }
       else { const ph = g.player.raycast(o, d, best); if (ph && ph.t < best) { best = ph.t; kind = 'player'; hit = ph; } }
       // 근접 통과음
       if (b.owner !== 'player' && !b.whiz) {
@@ -363,6 +366,7 @@ export class Ballistics {
         this.end(b, hit.point); return false;
       }
       if (kind === 'friend') { g.hitFriend(hit, d); this.end(b, hit.point); return false; }
+      if (kind === 'target') { g.range.hit(hit, d, b); this.end(b, hit.point); return false; }
       if (kind === 'player') { g.player.damage(b.dmg * falloff, b.bot ? b.bot.pos : o, 'gun'); g.fx.blood(hit.point, d, false); this.end(b, hit.point); return false; }
     }
     return true;

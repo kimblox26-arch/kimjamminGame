@@ -18,6 +18,8 @@ import { createHuman, WIND } from './human.js';
 import { buildTextures2 } from './textures2.js';
 import { HUD } from './hud.js';
 import { Armory } from './armory.js';
+import { Nature } from './nature.js';
+import { Range } from './range.js';
 import { Audio } from './audio.js';
 import { clamp, lerp, damp, rand, DEG } from './core.js';
 
@@ -125,6 +127,10 @@ class Game {
     this.world = new World(scene);
     this.world.build();
     this.lamps = this.world.lamps.map((p) => { const l = new THREE.PointLight(0xffd7a0, 28, 26, 2); l.position.copy(p); scene.add(l); return l; });
+    this.setLoad(0.7, '자연 환경 (초원 · 숲 · 새)');
+    await tick();
+    this.nature = new Nature(this);
+    this.range = new Range(this);
     // 전역 재질 환경광 강도
     scene.traverse((o) => { if (o.isMesh && o.material && 'envMapIntensity' in o.material && !o.material.userData.keepEnv) o.material.envMapIntensity = 0.8; });
 
@@ -294,11 +300,11 @@ class Game {
     this.state = 'playing';
     this.showScreen('game');
     this.lock();
-    this.hud.message(mode === 'training' ? '훈련 모드 — 표적은 반격하지 않습니다' : '작전 개시', 2.5, 'big');
+    this.hud.message(mode === 'training' ? '사격장 챌린지 — 왼쪽(서쪽) 사대로' : '자유 훈련 — 분대가 함께합니다', 2.5, 'big');
   }
 
   reset() {
-    this.fx.clear(); this.ballistics.clear();
+    this.fx.clear(); this.ballistics.clear(); this.range.reset();
     for (const c of this.world.glass) { c.disabled = false; c.glass.visible = true; }
     for (const b of this.world.barrels) { b.exploded = false; b.hp = 30; b.col.disabled = false; b.mesh.visible = true; }
     this.player.reset(this.world.playerSpawn);
@@ -323,7 +329,7 @@ class Game {
       this.state = 'dead';
       if (document.pointerLockElement) document.exitPointerLock();
       const acc = this.stats.shots ? Math.round(this.stats.hits / this.stats.shots * 100) : 0;
-      $('death-stats').innerHTML = `<div><b>${this.wave}</b><span>도달 웨이브</span></div><div><b>${this.stats.kills}</b><span>사살</span></div><div><b>${this.stats.heads}</b><span>헤드샷</span></div><div><b>${acc}%</b><span>명중률</span></div><div><b>${this.score}</b><span>점수</span></div>`;
+      $('death-stats').innerHTML = `<div><b>${Math.round(this.time)}s</b><span>생존 시간</span></div><div><b>${this.stats.hits}</b><span>명중</span></div><div><b>${acc}%</b><span>명중률</span></div><div><b>${this.score}</b><span>점수</span></div>`;
       this.showScreen('dead');
     }, 2600);
   }
@@ -349,6 +355,7 @@ class Game {
     this.fx.explosion(p);
     const R = 7.5;
     this.squad.react(p, 25, 1.4);
+    this.nature.scare(p, 1);
     const P = this.player, dp = P.eye.distanceTo(p);
     if (dp < R * 1.2 && this.world.los(p, P.eye)) P.damage(110 * Math.max(0, 1 - dp / (R * 1.2)), p, 'explosion');
     const k = clamp(1 - dp / 40, 0, 1);
@@ -359,11 +366,12 @@ class Game {
     for (const c of this.world.glass) if (!c.disabled && c.glass.position.distanceTo(p) < 10) this.fx.glassBreak(c, c.glass.position, c.glass.position.clone().sub(p).normalize());
   }
 
-  alert(pos, r) { this.squad.react(pos, 4, 0.4); }
+  alert(pos, r) { this.squad.react(pos, 4, 0.4); this.nature.scare(pos, r > 60 ? 0.5 : 0.3); }
+  onBlast(p, R) { this.nature.scare(p, 1); }
   suppress(k) { this.suppressLevel = Math.min(1, this.suppressLevel + k); }
 
   updateMode(dt) {
-    this.hud.stats(this.mode === 'training' ? '훈련' : '자유', this.squad.list.length, this.score);
+    this.hud.stats(this.mode === 'training' ? '사격장' : '자유', this.squad.list.length, this.score);
   }
 
   // ── 메인 루프 ──
@@ -383,6 +391,7 @@ class Game {
 
   menuCam(dt) {
     this.time += dt;
+    WIND.time.value += dt; this.nature.update(dt);
     const t = this.time * 0.05;
     this.camera.position.set(Math.sin(t) * 38, 9 + Math.sin(t * 0.7) * 2, 40 + Math.cos(t) * 20);
     this.camera.lookAt(0, 3, -20);
@@ -412,6 +421,9 @@ class Game {
     if (this.mode === 'training') for (const w of W.list) w.reserve = w.def.reserve;
     this.ballistics.update(dt);
     W.ex.updateWorld(dt);
+    this.nature.update(dt);
+    this.range.update(dt);
+    Audio.setWind(WIND.strength.value);
     this.squad.update(dt);
     this.updateShadowBody(dt);
     this.fx.update(dt);
