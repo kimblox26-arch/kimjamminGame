@@ -362,7 +362,8 @@ export class SolidGrid {
     return this.G[(X * this.ny + Y) * this.nz + Z] === 0;
   }
 }
-export function solidOf(root) { return root.userData.solid || (root.userData.solid = new SolidGrid(root)); }
+const SOLIDS = new WeakMap();   // userData 에 두면 clone() 시 JSON 직렬화되어 매우 느림
+export function solidOf(root) { let g = SOLIDS.get(root); if (!g) SOLIDS.set(root, g = new SolidGrid(root)); return g; }
 
 // 물체 전체의 표면 해시 (물체 로컬 좌표) — 손 이동 경로가 총을 관통하지 않게
 export function surfOf(root, sc = 0.03) {

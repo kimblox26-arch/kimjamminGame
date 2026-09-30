@@ -11,7 +11,7 @@ export class HUD {
       root: $('hud'), cross: $('crosshair'), hit: $('hitmarker'), hp: $('hp-fill'), hpTxt: $('hp-text'), ammo: $('ammo-mag'), res: $('ammo-res'),
       wname: $('w-name'), wcal: $('w-cal'), wmode: $('w-mode'), rounds: $('rounds'), feed: $('killfeed'), dmg: $('dmg-ind'),
       wave: $('wave-num'), left: $('enemies-left'), score: $('score'), msg: $('center-msg'), prompt: $('prompt'), compass: $('compass-strip'),
-      slots: $('slots'), fps: $('fps'), breath: $('breath'), lowAmmo: $('low-ammo'), clock: $('clock'),
+      slots: $('slots'), fps: $('fps'), breath: $('breath'), lowAmmo: $('low-ammo'), clock: $('clock'), ptsBox: $('pts-feed'), ptsTotal: $('pts-total'),
     };
     this.hitT = 0; this.msgT = 0; this.slotT = 0;
     this.buildCompass();
@@ -83,14 +83,25 @@ export class HUD {
     setTimeout(() => d.remove(), 1400);
   }
 
-  kill(name, weapon, head) {
+  kill(name, weapon, head, squad = false) {
     const e = document.createElement('div');
     e.className = 'kf';
-    e.innerHTML = `<span class="me">YOU</span> <span class="wp">[${weapon}]</span> <span class="en">${name}</span>${head ? ' <span class="hs">◉ HEADSHOT</span>' : ''}`;
+    e.innerHTML = `<span class="me">${squad ? '분대' : (this.g.profile?.nick || 'YOU')}</span> <span class="wp">[${weapon}]</span> <span class="en">${name}</span>${head ? ' <span class="hs">◉ HEADSHOT</span>' : ''}`;
     this.el.feed.prepend(e);
     setTimeout(() => e.classList.add('fade'), 4000);
     setTimeout(() => e.remove(), 4800);
     while (this.el.feed.children.length > 5) this.el.feed.lastChild.remove();
+  }
+
+  // 포인트 획득 팝업 (+100 처치)
+  points(n, why, total) {
+    const e = document.createElement('div');
+    e.className = 'pts'; e.innerHTML = `<b>+${n}</b> ${why}`;
+    this.el.ptsBox.prepend(e);
+    setTimeout(() => e.classList.add('fade'), 1600);
+    setTimeout(() => e.remove(), 2200);
+    while (this.el.ptsBox.children.length > 4) this.el.ptsBox.lastChild.remove();
+    this.el.ptsTotal.textContent = total.toLocaleString();
   }
 
   message(txt, t = 2.2, cls = '') {

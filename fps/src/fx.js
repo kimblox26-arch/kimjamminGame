@@ -410,9 +410,13 @@ export class Ballistics {
         const bh = g.squad.raycast(o, d, best); if (bh && bh.t < best) { best = bh.t; kind = 'friend'; hit = bh; }
         const rh = g.range?.raycast(o, d, best); if (rh && rh.t < best) { best = rh.t; kind = 'target'; hit = rh; }
       }
-      else { const ph = g.player.raycast(o, d, best); if (ph && ph.t < best) { best = ph.t; kind = 'player'; hit = ph; } }
+      if (b.owner === 'player' || b.owner === 'friend') { const eh = g.enemies?.raycast(o, d, best); if (eh && eh.t < best) { best = eh.t; kind = 'enemy'; hit = eh; } }
+      if (b.owner === 'enemy') {
+        const ph = g.player.raycast(o, d, best); if (ph && ph.t < best) { best = ph.t; kind = 'player'; hit = ph; }
+        const bh = g.squad.raycast(o, d, best); if (bh && bh.t < best) { best = bh.t; kind = 'friend'; hit = bh; }
+      }
       // 근접 통과음
-      if (b.owner !== 'player' && !b.whiz) {
+      if (b.owner === 'enemy' && !b.whiz) {
         const head = g.player.eye;
         const t = clamp(head.clone().sub(o).dot(d), 0, best);
         const cp = o.clone().addScaledVector(d, t);
@@ -431,7 +435,8 @@ export class Ballistics {
         if (hit.col && hit.col.barrel) g.damageBarrel(hit.col.barrel, b.dmg * falloff, b.owner);
         this.end(b, hit.point); return false;
       }
-      if (kind === 'friend') { g.hitFriend(hit, d); this.end(b, hit.point); return false; }
+      if (kind === 'friend') { if (b.owner === 'player') g.hitFriend(hit, d); else { hit.friend.onHit(d); g.fx.blood(hit.point, d, false); } this.end(b, hit.point); return false; }
+      if (kind === 'enemy') { g.enemies.hit(hit, d, b); this.end(b, hit.point); return false; }
       if (kind === 'target') { g.range.hit(hit, d, b); this.end(b, hit.point); return false; }
       if (kind === 'player') { g.player.damage(b.dmg * falloff, b.bot ? b.bot.pos : o, 'gun'); g.fx.blood(hit.point, d, false); this.end(b, hit.point); return false; }
     }

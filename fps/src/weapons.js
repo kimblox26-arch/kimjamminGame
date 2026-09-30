@@ -6,6 +6,7 @@ import { Arms, VM_GRIP_OFF } from './vmarms.js';
 import { preset, lerpPose, gunPose, surfOf } from './hand.js';
 import { Explosives } from './explosives.js';
 import { Audio } from './audio.js';
+import { applyUpgrades } from './profile.js';
 import { T } from './textures.js';
 import { clamp, lerp, damp, smooth, gauss, rand, Spring3, sampleKeys, sampleAnchor, DEG } from './core.js';
 
@@ -168,6 +169,8 @@ export class WeaponSystem {
     this.root = game.vmRoot;
     this.arms = new Arms(this.root);
     this.list = DEFS.map((d) => new Weapon(d, this.root));
+    for (const w of this.list) w.base = w.def;
+    this.refreshUpgrades();
     this.byId = Object.fromEntries(this.list.map((w, i) => [w.def.id, i]));
     this.loadout = [this.byId.m4, this.byId.glock];
     this.slot = 0;
@@ -462,7 +465,7 @@ export class WeaponSystem {
     let A = null;
     if (this.anim) {
       const an = this.anim;
-      an.t += dt;
+      an.t += dt * (an.name[0] === 'r' ? this.cur.def.reloadRate || 1 : 1);   // 재장전 숙련 업그레이드
       for (const [t, e] of an.clip.ev || []) if (an.t >= t && !an.fired.has(t + e)) { an.fired.add(t + e); this.event(e); }
       if (an.t >= an.clip.d) { this.anim = null; this.handShell.visible = false; an.onEnd?.(); }
       A = an;
@@ -705,6 +708,13 @@ export class WeaponSystem {
     m.group.updateMatrixWorld(true);
     for (let i = 0; i < m.stockCaps.length; i++) { const c = m.stockCaps[i], o = m.stockW[i]; o.a.copy(c.a).applyMatrix4(m.group.matrixWorld); o.b.copy(c.b).applyMatrix4(m.group.matrixWorld); }
     return m.stockW;
+  }
+
+  // 프로필 업그레이드를 각 총 제원에 반영
+  refreshUpgrades() {
+    const P = this.g.profile;
+    for (const w of this.list) { w.def = applyUpgrades(w.base, P ? P.up[w.base.id] : {}); }
+    if (this.g.hud && this.cur) this.g.hud.ammo(this.cur);
   }
 
   // 로딩 후 백그라운드에서 모든 총의 손 자세를 미리 계산 (첫 교체 시 끊김 방지)

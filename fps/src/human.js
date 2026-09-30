@@ -562,11 +562,25 @@ function kneePad(h) {
 }
 
 // ── 공유 재질 ──
-let MATS = null;
-function mats() {
-  if (MATS) return MATS;
+const MATS_BY = {};
+// faction: 'fr' 아군(멀티캠·코요테 장비) / 'op' 적(우드랜드 위장·올리브/검정 장비)
+function mats(faction = 'fr') {
+  if (MATS_BY[faction]) return MATS_BY[faction];
+  if (faction === 'op') {
+    const b = mats('fr'), cl = T.clothN;
+    return (MATS_BY.op = { ...b,
+      shirt: triMaterial({ color: 0x8f9c76, map: T.camo.map, nmap: cl.normalMap, scale: 2.6, ns: 1.4, rough: 0.95, vcol: true, sheen: 0.5 }),
+      pants: triMaterial({ color: 0x8f9c76, map: T.camo.map, nmap: cl.normalMap, scale: 2.5, ns: 1.5, rough: 0.95, vcol: true, sheen: 0.5 }),
+      cordura: triMaterial({ color: 0x3d4130, map: T.cordura.map, nmap: T.cordura.normalMap, scale: 4, ns: 1.4, rough: 0.92, sheen: 0.3 }),
+      cordura2: triMaterial({ color: 0x2e3126, map: T.cordura.map, nmap: T.cordura.normalMap, scale: 5, ns: 1.2, rough: 0.92, sheen: 0.3 }),
+      helmet: triMaterial({ color: 0x3f4632, map: T.cordura.map, nmap: T.cordura.normalMap, scale: 7, ns: 0.9, rough: 0.85, sheen: 0.2 }),
+      cap: triMaterial({ color: 0x2c2f25, nmap: T.clothN.normalMap, scale: 6, ns: 1.2, rough: 0.95, sheen: 0.4 }),
+      cap2: triMaterial({ color: 0x24261f, nmap: T.clothN.normalMap, scale: 6, ns: 0.8, rough: 0.95 }),
+      glove: triMaterial({ color: 0x1d1d1b, nmap: T.glove.normalMap, map: T.glove.map, scale: 9, ns: 1.3, rough: 0.7 }),
+      headset: triMaterial({ color: 0x24261f, nmap: T.stipple.normalMap, scale: 20, ns: 0.6, rough: 0.6 }) });
+  }
   const cam = T.multicam, cl = T.clothN;
-  MATS = {
+  const MATS = MATS_BY.fr = {
     shirt: triMaterial({ map: cam.map, nmap: cl.normalMap, scale: 2.4, ns: 1.4, rough: 0.95, vcol: true, sheen: 0.6 }),
     pants: triMaterial({ map: cam.map, nmap: cl.normalMap, scale: 2.3, ns: 1.5, rough: 0.95, vcol: true, sheen: 0.6 }),
     boot: triMaterial({ color: 0x3e3226, nmap: T.bootL.normalMap, scale: 14, ns: 1.2, rough: 0.7, vcol: false }),
@@ -599,11 +613,16 @@ export const VARIANTS = {
   mason: { name: '메이슨', skin: [0.77, 0.54, 0.41], browColor: [0.24, 0.16, 0.1], jaw: 1.1, nose: 1.08, beard: 'full', beardColor: 0x3a2a1c, hair: 'medium', hairColor: 0x3a2a1c, gear: 'cap', glasses: true, iris: [0.3, 0.4, 0.45] },
   sofia: { name: '소피아', female: true, skin: [0.78, 0.55, 0.43], browColor: [0.2, 0.13, 0.08], jaw: 0.9, nose: 0.9, lips: 1.1, brow: 0.8, hair: 'pony', hairColor: 0x2b1b10, gear: 'headset', iris: [0.35, 0.25, 0.12] },
   dae: { name: '대현', skin: [0.66, 0.45, 0.32], jaw: 1.0, nose: 0.95, beard: 'mustache', beardColor: 0x1a1410, stubble: 0.5, hair: 'short', hairColor: 0x0f0c0a, gear: 'boonie', scar: [0.045, -0.02], iris: [0.18, 0.12, 0.08] },
+  // 적 (우드랜드 위장)
+  op1: { name: '적 소총수', faction: 'op', skin: [0.7, 0.52, 0.4], jaw: 1.08, nose: 1.05, stubble: 0.9, hair: 'buzz', hairColor: 0x14110e, gear: 'helmet', iris: [0.2, 0.14, 0.1] },
+  op2: { name: '적 사수', faction: 'op', skin: [0.62, 0.44, 0.32], jaw: 1.12, nose: 1.0, beard: 'full', beardColor: 0x16120e, hair: 'short', hairColor: 0x100d0b, gear: 'cap', iris: [0.15, 0.1, 0.07] },
+  op3: { name: '적 척후병', faction: 'op', skin: [0.75, 0.56, 0.44], jaw: 0.98, nose: 1.1, stubble: 0.4, hair: 'short', hairColor: 0x2a1d12, gear: 'boonie', iris: [0.28, 0.3, 0.3] },
+  op4: { name: '적 분대장', faction: 'op', skin: [0.55, 0.39, 0.28], jaw: 1.05, nose: 0.97, beard: 'mustache', beardColor: 0x0f0c0a, stubble: 0.7, hair: 'buzz', hairColor: 0x0c0a08, gear: 'helmet', iris: [0.12, 0.08, 0.06] },
 };
 
 export function createHuman(key, { shadowOnly = false } = {}) {
   const v = VARIANTS[key] || VARIANTS.jin;
-  const M = mats();
+  const M = mats(v.faction);
   // 뼈대
   const bones = SKEL.map((b) => { const bone = new THREE.Bone(); bone.name = b.name; return bone; });
   SKEL.forEach((b, i) => {

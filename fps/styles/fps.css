@@ -152,3 +152,49 @@ body[data-screen=game] #hud { display: block; }
 @media (max-width: 560px) { .panel.armory { padding: 14px 16px; } .wgrid { grid-template-columns: 1fr; } }
 
 #clock { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); margin-top: 26px; font-weight: 600; font-size: 13px; letter-spacing: 0.12em; color: rgba(232, 236, 239, 0.75); text-shadow: 0 1px 2px rgba(0,0,0,0.6); white-space: nowrap; }
+
+/* 포인트 */
+#pts-wrap { position: absolute; right: 24px; top: 150px; text-align: right; font-family: Rajdhani, sans-serif; pointer-events: none; }
+#pts-wrap .pts-cur { color: #ffd76a; font-size: 13px; letter-spacing: .1em; }
+#pts-wrap .pts-cur b { font-size: 22px; margin-left: 8px; }
+#pts-feed .pts { color: #fff; font-size: 16px; opacity: 1; transition: opacity .5s, transform .5s; text-shadow: 0 1px 3px #000a; }
+#pts-feed .pts b { color: #ffd76a; font-size: 20px; }
+#pts-feed .pts.fade { opacity: 0; transform: translateY(-8px); }
+
+/* 프로필 배지 */
+#profile-badge { position: absolute; top: 18px; right: 22px; display: flex; gap: 12px; align-items: center; white-space: nowrap; font-family: Rajdhani, 'Noto Sans KR', sans-serif; color: #e8e4d8; z-index: 3; }
+#profile-badge #pb-nick { font-size: 18px; font-weight: 700; }
+#profile-badge #pb-pts { color: #ffd76a; font-size: 18px; }
+#profile-badge button { padding: 6px 12px; font-size: 13px; }
+/* 업그레이드 */
+.panel.upgrade { width: min(980px, 94vw); }
+.up-pts { color: #ffd76a; font-family: Rajdhani, sans-serif; font-size: 18px; }
+.up-body { display: grid; grid-template-columns: 260px 1fr; gap: 16px; max-height: 62vh; }
+#up-guns { overflow: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 6px; }
+#up-guns .ug { text-align: left; padding: 8px 10px; font-size: 14px; display: flex; justify-content: space-between; }
+#up-guns .ug.on { background: #c9a44a33; border-color: #c9a44a; }
+#up-guns .ug small { color: #9a968a; }
+#up-detail { overflow: auto; }
+#up-detail h3 { margin: 0 0 4px; font-family: Oswald, sans-serif; letter-spacing: .05em; }
+#up-detail .ud-sub { color: #9a968a; font-size: 13px; margin-bottom: 12px; }
+.urow { display: grid; grid-template-columns: 1fr 160px 120px; gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid #ffffff14; border-radius: 6px; margin-bottom: 8px; background: #ffffff06; }
+.urow b { font-size: 15px; } .urow small { display: block; color: #9a968a; font-size: 12px; }
+.urow .lv { display: flex; gap: 4px; } .urow .lv i { flex: 1; height: 8px; border-radius: 2px; background: #ffffff1c; } .urow .lv i.f { background: #ffd76a; }
+.urow button { padding: 7px 8px; font-size: 13px; }
+.urow button:disabled { opacity: .45; cursor: default; }
+.ustats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 14px; margin: 10px 0 14px; font-size: 13px; color: #cfcab9; }
+.ustats span { color: #9a968a; } .ustats em { color: #8fe38f; font-style: normal; }
+/* 계정 */
+.panel.account { width: min(460px, 94vw); }
+.acc-status { color: #cfcab9; font-size: 14px; margin-bottom: 10px; }
+.acc-row { display: grid; grid-template-columns: 64px 1fr 76px; white-space: nowrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.panel.account input { width: 100%; box-sizing: border-box; padding: 9px 10px; background: #0d0f0e; color: #eee; border: 1px solid #ffffff2a; border-radius: 5px; font-size: 15px; margin-bottom: 8px; }
+.acc-row input { margin-bottom: 0 !important; }
+.acc-g { width: 100%; margin-bottom: 10px; } .acc-g span { font-weight: 700; color: #4285f4; margin-right: 6px; }
+.acc-tabs { display: flex; gap: 6px; margin-bottom: 8px; } .acc-tabs button { flex: 1; padding: 6px; } .acc-tabs button.on { border-color: #c9a44a; background: #c9a44a22; }
+.acc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.acc-msg { min-height: 1.4em; color: #ffcf7a; font-size: 13px; }
+#acc-phone button { width: 100%; margin-bottom: 8px; }
+@media (max-width: 700px) { .up-body { grid-template-columns: 1fr; } .urow { grid-template-columns: 1fr; } }
+
+.acc-row button, .acc-btns button, .acc-tabs button { white-space: nowrap; }

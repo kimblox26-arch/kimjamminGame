@@ -22,6 +22,10 @@ import { Armory } from './armory.js';
 import { Nature } from './nature.js';
 import { Range } from './range.js';
 import { Audio } from './audio.js';
+import { Profile } from './profile.js';
+import { Enemies } from './enemies.js';
+import { UpgradeShop } from './upgrades.js';
+import { Account } from './account.js';
 import { clamp, lerp, damp, rand, DEG } from './core.js';
 
 const $ = (id) => document.getElementById(id);
@@ -160,12 +164,16 @@ class Game {
     this.fx = new FX(this);
     this.ballistics = new Ballistics(this);
     this.player = new Player(this);
+    this.profile = new Profile();
     this.weapons = new WeaponSystem(this);
     this.squad = new Squad(this);
     this.vmRoot.traverse((o) => { if (o.isMesh && !o.material.transparent && !o.material.isShaderMaterial) { o.castShadow = true; o.receiveShadow = true; } });
     this.loadLoadout();
     this.hud = new HUD(this);
     this.armory = new Armory(this);
+    this.enemies = new Enemies(this);
+    this.shop = new UpgradeShop(this);
+    this.account = new Account(this);
     this.dayNight = new DayNight(this, { sunDir: SUN_DIR, envBaker: this.envBaker });
     this.dayNight.setMode(this.settings.timeMode || 'cycle');
     this.hud.weapon(this.weapons.cur);
@@ -173,6 +181,11 @@ class Game {
     this.setLoad(0.86, '분대원 생성 (인물 조형)');
     await tick();
     this.squad.spawn();
+    // 적 인물·총 미리 조형 (전투 중 첫 등장 시 끊김 방지)
+    this.setLoad(0.9, '적 병력 조형');
+    await tick();
+    for (const k of ['op1', 'op2', 'op3', 'op4']) { createHuman(k); await tick(); }
+    for (const t of ['ak', 'ak74', 'm4']) propGun(t);
     this.shadowBody = createHuman('jin', { shadowOnly: true });
     this.shadowAnim = new HumanAnimator(this.shadowBody);
     this.scene.add(this.shadowBody.root);
@@ -314,7 +327,10 @@ class Game {
     this.state = 'playing';
     this.showScreen('game');
     this.lock();
-    this.hud.message(mode === 'training' ? '사격장 챌린지 — 왼쪽(서쪽) 사대로' : '자유 훈련 — 분대가 함께합니다', 2.5, 'big');
+    this.hud.message(mode === 'training' ? '사격장 챌린지 — 왼쪽(서쪽) 사대로' : '기지 방어전 — 분대와 함께 적 병력을 격퇴하라', 2.8, 'big');
+    if (mode === 'survival') this.enemies.start(); else this.enemies.stop();
+    document.querySelector('#wave-box div:nth-child(2) span').textContent = mode === 'survival' ? '적' : '분대';
+    this.hud.points(0, '', this.profile.points); document.querySelector('#pts-feed').innerHTML = '';
   }
 
   reset() {
@@ -335,7 +351,15 @@ class Game {
   openArmory() { this.state = 'paused'; this.armory.open('game'); if (document.pointerLockElement) document.exitPointerLock(); }
   pause() { if (this.state !== 'playing') return; this.state = 'paused'; this.showScreen('pause'); }
   resume() { if (this.input.forceLock) { this.state = 'playing'; this.showScreen('game'); } else this.lock(); }
-  toMenu() { this.state = 'menu'; this.showScreen('menu'); if (document.pointerLockElement) document.exitPointerLock(); }
+  toMenu() { this.state = 'menu'; this.enemies.stop(); this.showScreen('menu'); if (document.pointerLockElement) document.exitPointerLock(); }
+
+  // 처치 포인트 적립 (프로필 저장 → 로그인 시 클라우드 동기화)
+  addPoints(n, why) {
+    this.score += n; this.profile.kills = (this.profile.kills || 0) + (why.includes('처치') && !why.includes('지원') ? 1 : 0);
+    this.profile.best = Math.max(this.profile.best || 0, this.score);
+    this.profile.add(n);
+    this.hud.points(n, why, this.profile.points);
+  }
 
   onPlayerDeath() {
     this.state = 'dying';
@@ -385,7 +409,9 @@ class Game {
   suppress(k) { this.suppressLevel = Math.min(1, this.suppressLevel + k); }
 
   updateMode(dt) {
-    this.hud.stats(this.mode === 'training' ? '사격장' : '자유', this.squad.list.length, this.score);
+    const E = this.enemies;
+    if (this.mode === 'survival') this.hud.stats(E.wave ? `제 ${E.wave} 파` : '대기', E.alive + E.toSpawn, this.score);
+    else this.hud.stats('사격장', this.squad.list.length, this.score);
   }
 
   // ── 메인 루프 ──
@@ -425,6 +451,7 @@ class Game {
     if (I.pressed('KeyL')) { this.dayNight.flashOn = !this.dayNight.flashOn; Audio.play('select', { vol: 0.6 }); }
     if (I.pressed('KeyN')) { this.dayNight.nvg = !this.dayNight.nvg; Audio.play(this.dayNight.nvg ? 'nvgOn' : 'select', { vol: 0.5 }); }
     if (I.pressed('Tab') && P.alive) { this.openArmory(); return; }
+    if (I.pressed('KeyU') && P.alive) { this.state = 'paused'; this.shop.open('game'); if (document.pointerLockElement) document.exitPointerLock(); return; }
     P.update(dt, I);
     // 벽 근접 거리 (무기 들어올림)
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
@@ -444,6 +471,7 @@ class Game {
     this.range.update(dt);
     Audio.setWind(WIND.strength.value);
     this.squad.update(dt);
+    this.enemies.update(dt);
     this.updateShadowBody(dt);
     this.fx.update(dt);
     this.updateMode(dt);

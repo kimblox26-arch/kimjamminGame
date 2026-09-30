@@ -25,6 +25,7 @@
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
   <div id="dmg-ind"></div>
   <div id="killfeed"></div>
+  <div id="pts-wrap"><div class="pts-cur"><span>포인트</span><b id="pts-total">0</b></div><div id="pts-feed"></div></div>
   <div id="center-msg"></div>
   <div id="prompt"></div>
   <div id="low-ammo">탄약 없음 — 탄약 상자에서 보급하세요</div>
@@ -51,13 +52,15 @@
 
 <!-- ─── 메인 메뉴 ─── -->
 <section id="screen-menu" class="screen">
+  <div id="profile-badge"><span id="pb-nick">게스트</span><b id="pb-pts">0 P</b><button id="btn-account">계정 · 로그인</button></div>
   <div class="menu">
     <h1 class="logo">OPERATION<b>KIMJAMMIN</b></h1>
     <p class="sub">TACTICAL FIRST-PERSON SHOOTER</p>
     <div class="btns">
-      <button id="btn-start" class="primary">자유 훈련 <small>아군 분대와 함께 · 기지 자유 행동</small></button>
+      <button id="btn-start" class="primary">기지 방어전 <small>아군 분대와 함께 · 몰려오는 적 병력 격퇴 · 처치 시 포인트</small></button>
       <button id="btn-train">사격장 챌린지 <small>무한 탄약 · 스틸 · 팝업 · 300m 장거리 표적</small></button>
       <button id="btn-armory">무기고 <small>21종 실총 · 주무기/보조무기 선택</small></button>
+      <button id="btn-upgrade">총기 업그레이드 <small>처치 포인트로 화력·반동·탄창·재장전·조준 강화</small></button>
       <button id="btn-settings">설정</button>
     </div>
     <div class="arsenal">
@@ -78,8 +81,9 @@
       <tr><td>3 · G / 4 / 5</td><td>수류탄 / 연막 / C4</td><td>좌클릭 유지</td><td>핀 뽑고 놓으면 투척</td></tr>
       <tr><td>ESC</td><td>일시정지</td><td>TAB</td><td>무기고 (총기 선택)</td></tr>
       <tr><td>L</td><td>총기 전술 라이트</td><td>N</td><td>야간투시경</td></tr>
+      <tr><td>U</td><td>총기 업그레이드</td><td></td><td></td></tr>
     </table>
-    <p class="tip">분대원은 모두 아군입니다. 서쪽 사격장에서 스틸 플레이트·팝업 표적·병, 울타리 밖 100/200/300m 철판을 노려보세요. 빨간 드럼통은 폭발합니다.</p>
+    <p class="tip">우드랜드 위장복이 적, 멀티캠이 아군입니다. 적을 처치하면 포인트(헤드샷 +50)가 쌓이고, 업그레이드 창(U)에서 총기를 강화할 수 있습니다. 분대원은 모두 아군입니다. 서쪽 사격장에서 스틸 플레이트·팝업 표적·병, 울타리 밖 100/200/300m 철판을 노려보세요. 빨간 드럼통은 폭발합니다.</p>
   </div>
 </section>
 
@@ -117,6 +121,7 @@
     <h2>일시정지</h2>
     <button id="btn-resume" class="primary">계속하기</button>
     <button id="btn-armory2">무기고</button>
+    <button id="btn-upgrade2">총기 업그레이드</button>
     <button id="btn-settings2">설정</button>
     <button id="btn-quit">메인 메뉴</button>
   </div>
@@ -129,6 +134,46 @@
     <div id="death-stats"></div>
     <button id="btn-retry" class="primary">재도전</button>
     <button id="btn-menu">메인 메뉴</button>
+  </div>
+</section>
+
+<!-- ─── 총기 업그레이드 ─── -->
+<section id="screen-upgrade" class="screen">
+  <div class="panel upgrade">
+    <div class="arm-head"><h2>총기 업그레이드</h2><span class="up-pts">보유 포인트 <b id="up-pts">0</b></span></div>
+    <div class="up-body">
+      <div id="up-guns"></div>
+      <div id="up-detail"></div>
+    </div>
+    <button id="btn-upgrade-done" class="primary">완료</button>
+  </div>
+</section>
+
+<!-- ─── 계정 ─── -->
+<section id="screen-account" class="screen">
+  <div class="panel account">
+    <h2>계정</h2>
+    <div id="acc-status" class="acc-status">게스트로 플레이 중 (이 기기에 저장)</div>
+    <div class="acc-row"><label>닉네임</label><input id="acc-nick" maxlength="12" placeholder="2~12자"><button id="acc-nick-save">저장</button></div>
+    <div id="acc-login">
+      <button id="acc-google" class="acc-g"><span>G</span> Google 로 로그인</button>
+      <div class="acc-tabs"><button id="acc-tab-email" class="on">이메일</button><button id="acc-tab-phone">전화번호</button></div>
+      <div id="acc-email">
+        <input id="acc-em" type="email" placeholder="이메일" autocomplete="email">
+        <input id="acc-pw" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password">
+        <div class="acc-btns"><button id="acc-em-login" class="primary">로그인</button><button id="acc-em-signup">회원가입</button></div>
+      </div>
+      <div id="acc-phone" hidden>
+        <input id="acc-ph" type="tel" placeholder="전화번호 (예: 010-1234-5678)" autocomplete="tel">
+        <button id="acc-ph-send">인증번호 받기</button>
+        <input id="acc-code" inputmode="numeric" maxlength="6" placeholder="인증번호 6자리" hidden>
+        <button id="acc-ph-verify" class="primary" hidden>확인 · 로그인</button>
+        <div id="recaptcha-box"></div>
+      </div>
+    </div>
+    <button id="acc-logout" hidden>로그아웃</button>
+    <p id="acc-msg" class="acc-msg"></p>
+    <button id="btn-account-done" class="primary">돌아가기</button>
   </div>
 </section>
 

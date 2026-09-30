@@ -39,7 +39,7 @@ export function propGun(type) {
   const find = (n) => g.getObjectByName(n);
   // 개머리판 끝(견착점): 바운딩 박스 뒤쪽
   const box = new THREE.Box3().setFromObject(p.group);
-  return { group: g, grip: find('grip'), fore: find('fore'), butt: V(0, -0.03, box.max.z - 0.01), sight: p.sight.clone(), poses: p.poses, type, pistol: PISTOLS.has(type) };
+  return { group: g, grip: find('grip'), fore: find('fore'), butt: V(0, -0.03, box.max.z - 0.01), sight: p.sight.clone(), muzzle: p.muzzle ? p.muzzle.position.clone() : V(0, 0, box.min.z), poses: p.poses, type, pistol: PISTOLS.has(type) };
 }
 
 export class HumanAnimator {
@@ -363,8 +363,13 @@ class Friend {
     // 방향: 이동 중엔 진행 방향, 정지 시 플레이어 시선 방향 + 개인 편차
     const hv = Math.hypot(this.vel.x, this.vel.z);
     let tyaw;
-    const aiming = W.ads > 0.5 || g.inCombat > 0;
-    if (hv > 0.4) tyaw = Math.atan2(this.vel.x, this.vel.z);
+    // 교전 목표: 보이는 가장 가까운 적 (0.4초마다 확인)
+    this.tgtT = (this.tgtT || 0) - dt;
+    if (this.tgtT <= 0) { this.tgtT = 0.4; this.enemy = g.enemies ? g.enemies.nearestVisible(this.pos.clone().add(V(0, 1.55, 0)), 65) : null; }
+    if (this.enemy && !this.enemy.alive) this.enemy = null;
+    const aiming = W.ads > 0.5 || g.inCombat > 0 || !!this.enemy;
+    if (hv > 0.4 && !this.enemy) tyaw = Math.atan2(this.vel.x, this.vel.z);
+    else if (this.enemy) tyaw = Math.atan2(this.enemy.pos.x - this.pos.x, this.enemy.pos.z - this.pos.z);
     else tyaw = Math.atan2(pf.x, pf.z) + this.slot.x * 0.12;
     const dy = Math.atan2(Math.sin(tyaw - this.yaw), Math.cos(tyaw - this.yaw));
     this.yaw += clamp(dy, -4 * dt, 4 * dt);
@@ -380,9 +385,10 @@ class Friend {
     }
     if ((this.eyeT = (this.eyeT || 0) - dt) > 0) look = P.eye.clone();
     let aimPitch = 0, aimYaw = 0, ready = aiming ? 1 : 0;
-    if (aiming && g.aimPoint) {
-      look = g.aimPoint;
-      const d = g.aimPoint.clone().sub(this.pos); d.y -= 1.45;
+    const ap = this.enemy ? this.enemy.pos.clone().add(V(0, this.enemy.crouch ? 1.0 : 1.3, 0)) : g.aimPoint;
+    if (aiming && ap) {
+      look = ap;
+      const d = ap.clone().sub(this.pos); d.y -= 1.45;
       aimPitch = clamp(Math.atan2(d.y, Math.hypot(d.x, d.z)), -0.6, 0.6);
       aimYaw = clamp(Math.atan2(Math.sin(Math.atan2(d.x, d.z) - this.yaw), Math.cos(Math.atan2(d.x, d.z) - this.yaw)), -0.8, 0.8);
     }
@@ -401,6 +407,15 @@ class Friend {
     this.anim.flinch = Math.max(this.anim.flinch, this.flinchT > 0 ? Math.min(1, this.flinchT) : 0);
     this.anim.update(dt, { pos: this.pos, yaw: this.yaw, vel: this.vel, crouch: crouching, ready, aimPitch, aimYaw, lookAt: look, gun: this.gun });
     this.sling.update(this.h.bones.chest, this.gun);
+    // 사격: 반응 후 점사 (총구 선상에 아군/플레이어가 있으면 사격 중지)
+    if (this.enemy && ready > 0.8 && Math.abs(aimYaw) < 0.3) {
+      this.react = (this.react || 0) + dt;
+      this.burstT = (this.burstT ?? 0.5) - dt;
+      if (this.react > 0.45) {
+        if ((this.burst || 0) > 0) { this.shotT = (this.shotT || 0) - dt; if (this.shotT <= 0) { this.shotT = 60 / 700; this.burst--; this.fire(); } }
+        else if (this.burstT <= 0) { this.burst = 2 + Math.floor(Math.random() * 3); this.burstT = rand(0.35, 0.9); }
+      }
+    } else this.react = Math.max(0, (this.react || 0) - dt * 2);
     const DN = g.dayNight, wantL = DN && DN.flashOn && DN.lamp > 0.4 ? 1 : 0;
     this.lightK = damp(this.lightK, wantL, wantL ? 3 + this.slot.x : 4, dt);
     this.light.intensity = this.lightK > 0.05 ? 55 * this.lightK : 0;
@@ -422,6 +437,19 @@ class Friend {
         for (let i = 0; i < 3; i++) g.fx.alpha.add(this.pos.clone().add(V(rand(-0.12, 0.12), 0.04, rand(-0.12, 0.12))), V(rand(-0.3, 0.3), rand(0.1, 0.35), rand(-0.3, 0.3)).addScaledVector(this.vel, 0.12), { life: rand(0.6, 1.1), size: rand(0.12, 0.22), grow: 0.5, drag: 2, grav: -0.04, color: c, alpha: 0.3, fadeIn: 0.05 });
       }
     }
+  }
+
+  fire() {
+    const g = this.g, e = this.enemy; if (!e) return;
+    this.gun.group.updateMatrixWorld(true);
+    const m = this.gun.muzzle.clone().applyMatrix4(this.gun.group.matrixWorld), t = e.pos.clone().add(V(0, e.crouch ? 1.0 : 1.25, 0));
+    const spread = 0.01 + m.distanceTo(t) * 0.0001 + Math.hypot(this.vel.x, this.vel.z) * 0.01, dir = t.sub(m).normalize();
+    dir.x += gauss() * spread; dir.y += gauss() * spread * 0.8; dir.z += gauss() * spread; dir.normalize();
+    g.ballistics.fire({ origin: m, dir, speed: 800, dmg: 24, owner: 'friend', def: { range: [50, 180, 0.65] }, tracer: Math.random() < 0.3, from: m });
+    Audio.play3D(this.gun.type === 'ak' ? 'ak' : 'm4', m, { vol: 1.0, ref: 6 });
+    g.fx.flashLight(m, 60, 0.05, 10);
+    for (let i = 0; i < 2; i++) g.fx.add.add(m, dir.clone().multiplyScalar(rand(3, 8)).add(V(rand(-1, 1), rand(-1, 1), rand(-1, 1))), { life: rand(0.04, 0.08), size: rand(0.05, 0.12), drag: 4, color: [7, 3.5, 1.2] });
+    this.anim.pull = 1;
   }
 
   hitboxes() {
