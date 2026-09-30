@@ -377,6 +377,7 @@ export class WeaponSystem {
     this.recPos.impulse(gauss() * 0.02, 0.05 * R.kick * 20, R.kick * 55 * (1 - this.ads * 0.35));
     this.recRot.impulse(R.rot * 45 * (1 - this.ads * 0.4), gauss() * R.rot * 12, gauss() * R.rot * 22);
     this.bloom = Math.min(this.bloom + d.bloom, 4);
+    this.pullT = 1;   // 방아쇠를 끝까지 당긴 검지
     // 총구 화염 + 조명
     this.flashT = 0.045;
     this.flash.visible = true;
@@ -573,6 +574,8 @@ export class WeaponSystem {
     // 팔 IK (검지: 사격 중이거나 정조준 시 방아쇠로)
     const wantTrig = (g.input.mouse[0] && !this.anim) || (this.ads > 0.6 && !this.anim) ? 1 : 0;
     this.trigW = damp(this.trigW ?? 0, wantTrig, wantTrig ? 22 : 6, dt);
+    this.pullT = Math.max(0, (this.pullT || 0) - dt / 0.07);
+    this.pullW = damp(this.pullW || 0, g.input.mouse[0] && !this.anim && this.cur.ammo > 0 ? 1 : this.pullT, 40, dt);
     const anchorName = (k, def) => (A && A.clip[k] ? sampleAnchor(A.clip[k], A.t) : { a: def, b: def, u: 0 });
     this.ikArms(anchorName('lh', 'fore'), anchorName('rh', 'grip'));
   }
@@ -618,8 +621,9 @@ export class WeaponSystem {
     // 방아쇠 규율: 쏠 때만 검지를 방아쇠에, 평소엔 프레임 위에 곧게
     const tp = a === 'grip' ? pose : (A !== B && b === 'grip' && u > 0.5 ? pose : null);
     if (tp && tp.indexTrig && !this.item) {
-      const k = this.trigW, o = { ...tp };
-      o.index = tp.indexFrame.map((x, i) => x + (tp.indexTrig[i] - x) * k);
+      const k = this.trigW, pk = (this.pullW || 0) * k, o = { ...tp };
+      // 방아쇠 당김: 중간·끝마디를 더 굽혀 방아쇠를 뒤로 누름
+      o.index = tp.indexFrame.map((x, i) => x + (tp.indexTrig[i] - x) * k + (i === 1 ? 0.22 : i === 2 ? 0.12 : 0) * pk);
       pose = o;
     }
     if (A !== B && u > 0) {

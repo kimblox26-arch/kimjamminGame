@@ -113,12 +113,18 @@ export class HumanAnimator {
         if (F.step <= 0) {
           const other = this.feet[k === 'L' ? 'R' : 'L'];
           const dev = F.p.distanceTo(ideal), dy = Math.abs(Math.atan2(Math.sin(sy - F.yaw), Math.cos(sy - F.yaw)));
-          if ((dev > 0.16 || dy > 0.5) && other.step <= 0) { F.step = 1; F.from.copy(F.p); F.to.copy(ideal); F.yaw0 = F.yaw; }
+          if ((dev > 0.1 || dy > 0.4) && other.step <= 0) {
+            F.step = 1; F.from.copy(F.p); F.to.copy(ideal); F.yaw0 = F.yaw;
+            // 디딘 발 위에 겹쳐 딛지 않도록: 옆으로 최소 17cm
+            const sep = F.to.clone().sub(other.p); sep.y = 0;
+            const lat = sep.dot(srt) * -s;
+            if (sep.length() < 0.17) F.to.addScaledVector(srt, -s * Math.max(0, 0.17 - Math.max(0, lat)));
+          }
         }
         if (F.step > 0) {
           F.step = Math.max(0, F.step - dt / 0.28);
           const k2 = smooth(1 - F.step);
-          F.p.lerpVectors(F.from, F.to, k2); F.p.y = o.pos.y + Math.sin(Math.PI * k2) * 0.06;
+          F.p.lerpVectors(F.from, F.to, k2).addScaledVector(srt, -s * Math.sin(Math.PI * k2) * 0.035); F.p.y = o.pos.y + Math.sin(Math.PI * k2) * 0.06;
           F.yaw = F.yaw0 + Math.atan2(Math.sin(sy - F.yaw0), Math.cos(sy - F.yaw0)) * k2;
         }
       } else { F.p.copy(gait); F.yaw = yaw; F.step = 0; }
@@ -253,6 +259,39 @@ export class HumanAnimator {
   }
 }
 
+// ════════ 2점식 슬링: 총 앞 고리 → 왼쪽 가슴·어깨 → 등 대각선 → 오른 겨드랑이 아래 → 개머리판 ════════
+const SLING_PTS = [V(0.09, 0.12, 0.175), V(0.125, 0.245, 0.03), V(0.03, 0.13, -0.19), V(-0.14, -0.02, -0.12), V(-0.195, -0.03, 0.03)];
+const SLING_MAT = new THREE.MeshStandardMaterial({ color: 0x4d4536, roughness: 0.92, side: THREE.DoubleSide });
+class Sling {
+  constructor(n = 40) {
+    this.n = n;
+    const g = new THREE.BufferGeometry(), pos = new Float32Array(n * 2 * 3), idx = [];
+    for (let i = 0; i < n - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(idx);
+    this.mesh = new THREE.Mesh(g, SLING_MAT); this.mesh.frustumCulled = false; this.mesh.castShadow = true; this.mesh.receiveShadow = true;
+    this.curve = new THREE.CatmullRomCurve3(Array.from({ length: SLING_PTS.length + 2 }, () => V(0, 0, 0)), false, 'centripetal');
+  }
+  update(chest, gun) {
+    const gq = gun.group.quaternion, gp = gun.group.position, gF = V(0, 0, -1).applyQuaternion(gq), gL = V(-1, 0, 0).applyQuaternion(gq);
+    const front = V(0, 0, 0).setFromMatrixPosition(gun.fore.matrixWorld).addScaledVector(gF, 0.05).addScaledVector(gL, 0.02);
+    const rear = gun.butt.clone().applyQuaternion(gq).add(gp).addScaledVector(gF, 0.05).addScaledVector(gL, 0.02).add(V(0, -0.02, 0));
+    const P = this.curve.points, c = V(0, 0, 0).setFromMatrixPosition(chest.matrixWorld);
+    P[0].copy(front);
+    SLING_PTS.forEach((q, i) => P[i + 1].copy(q).applyMatrix4(chest.matrixWorld));
+    P[P.length - 1].copy(rear);
+    const pos = this.mesh.geometry.attributes.position, t = V(0, 0, 0), nrm = V(0, 0, 0), b = V(0, 0, 0), p = V(0, 0, 0);
+    for (let i = 0; i < this.n; i++) {
+      const u = i / (this.n - 1);
+      this.curve.getPoint(u, p); this.curve.getTangent(u, t);
+      nrm.copy(p).sub(c); nrm.y *= 0.3; nrm.normalize();
+      b.crossVectors(t, nrm).normalize().multiplyScalar(0.0125);
+      p.addScaledVector(nrm, 0.004);
+      pos.setXYZ(i * 2, p.x + b.x, p.y + b.y, p.z + b.z); pos.setXYZ(i * 2 + 1, p.x - b.x, p.y - b.y, p.z - b.z);
+    }
+    pos.needsUpdate = true; this.mesh.geometry.computeVertexNormals(); this.mesh.geometry.computeBoundingSphere();
+  }
+}
+
 // ════════ 분대 AI ════════
 const SLOTS = [V(-1.7, 0, -1.6), V(1.8, 0, -2.2), V(-0.9, 0, -3.9), V(1.2, 0, -4.8)];
 const GUNS = { jin: 'm4', mason: 'm4', sofia: 'm4', dae: 'ak' };
@@ -270,6 +309,7 @@ class Friend {
     this.crouch = false; this.flinchT = 0; this.scanT = rand(1, 4); this.scanTarget = null; this.hitCD = 0;
     this.spheres = Array.from({ length: 10 }, () => ({ c: V(0, 0, 0), r: 0.1 }));
     this.name = VARIANTS[key].name;
+    this.sling = new Sling(); this.g.scene.add(this.sling.mesh);
   }
 
   update(dt) {
@@ -316,6 +356,13 @@ class Friend {
     this.scanT -= dt;
     if (this.scanT <= 0) { this.scanT = rand(2, 5); const a = this.yaw + rand(-1.1, 1.1); this.scanTarget = this.pos.clone().add(V(Math.sin(a) * 10, rand(0.8, 2.5), Math.cos(a) * 10)); if (Math.random() < 0.3) this.scanTarget = P.eye.clone(); }
     let look = this.scanTarget;
+    // 눈 맞춤: 가까이서 플레이어가 이 대원을 바라보면 마주 봄
+    if (pd < 3.5 && !aiming) {
+      const cf = V(-Math.sin(P.yaw) * Math.cos(P.pitch), Math.sin(P.pitch), -Math.cos(P.yaw) * Math.cos(P.pitch));
+      const toMe = this.pos.clone().add(V(0, 1.6, 0)).sub(P.eye).normalize();
+      if (cf.dot(toMe) > 0.965) { this.eyeT = 2.5; }
+    }
+    if ((this.eyeT = (this.eyeT || 0) - dt) > 0) look = P.eye.clone();
     let aimPitch = 0, aimYaw = 0, ready = aiming ? 1 : 0;
     if (aiming && g.aimPoint) {
       look = g.aimPoint;
@@ -337,6 +384,7 @@ class Friend {
     ready *= 1 - this.safeT;
     this.anim.flinch = Math.max(this.anim.flinch, this.flinchT > 0 ? Math.min(1, this.flinchT) : 0);
     this.anim.update(dt, { pos: this.pos, yaw: this.yaw, vel: this.vel, crouch: crouching, ready, aimPitch, aimYaw, lookAt: look, gun: this.gun });
+    this.sling.update(this.h.bones.chest, this.gun);
     // 발소리
     this.stepAcc = (this.stepAcc || 0) + hv * dt;
     if (this.stepAcc > (hv > 3 ? 1.2 : 0.75) && hv > 0.5) {
@@ -385,5 +433,5 @@ export class Squad {
   react(pos, radius, strength = 1) {
     for (const f of this.list) { const d = f.pos.distanceTo(pos); if (d < radius) { f.flinchT = Math.max(f.flinchT, strength * (1 - d / radius) * 1.6); } }
   }
-  clear() { for (const f of this.list) { this.g.scene.remove(f.h.root); this.g.scene.remove(f.gun.group); } this.list = []; }
+  clear() { for (const f of this.list) { this.g.scene.remove(f.h.root); this.g.scene.remove(f.gun.group); this.g.scene.remove(f.sling.mesh); } this.list = []; }
 }
