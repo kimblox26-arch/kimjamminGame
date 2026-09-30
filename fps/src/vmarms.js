@@ -76,7 +76,8 @@ function buildArms() {
   ARM = buildGeometry(m, cls, ['sleeve', 'skin'], (x, y, z, mat, out) => {
     if (mat === 'skin') {
       const sun = 0.9 + n3(x * 40, y * 40, z * 40) * 0.12, fr = n3(x * 300, y * 300, z * 300) > 0.8 ? 0.93 : 1;
-      out[0] = 0.72 * sun * fr; out[1] = 0.5 * sun * fr; out[2] = 0.37 * sun * fr;
+      const vein = Math.max(0, 1 - Math.abs(n3(x * 70, y * 25, z * 70) - 0.5) * 14) * 0.5, blot = n3(x * 90, y * 90, z * 90) - 0.5;
+      out[0] = (0.68 + blot * 0.05 - vein * 0.05) * sun * fr; out[1] = (0.51 + blot * 0.02 - vein * 0.02) * sun * fr; out[2] = (0.4 + blot * 0.01 + vein * 0.02) * sun * fr;
       // 흉터 색 (오른팔)
       if (x < 0) { const G = GEO.R, sc = G.el.clone().lerp(G.wr, 0.62).addScaledVector(G.n, -0.036).addScaledVector(G.w, 0.012); const dd = V(x, y, z).distanceTo(sc); if (dd < 0.03) { const k = Math.max(0, 1 - dd / 0.03) * 0.5; out[0] += 0.12 * k; out[1] += 0.02 * k; out[2] += 0.05 * k; } }
     } else { const dirt = n3(x * 12, y * 12, z * 12) * 0.12; out[0] = out[1] = out[2] = 1 - dirt; }
@@ -123,7 +124,7 @@ export class Arms {
     const skel = new THREE.Skeleton(bones);
     const cam = T.multicam;
     const sleeve = triMaterial({ map: cam.map, nmap: T.clothN.normalMap, scale: 3.4, ns: 1.6, rough: 0.95, vcol: true, sheen: 0.7 });
-    const skin = triMaterial({ nmap: T.skinN.normalMap, map: T.skinN.map, scale: 30, ns: 0.8, rough: 0.5, vcol: true, sheen: 0.2 });
+    const skin = triMaterial({ nmap: T.skinN.normalMap, map: T.skinN.map, scale: 30, ns: 0.8, rough: 0.5, vcol: true, sheen: 0.15, skin: 1 });
     const glove = triMaterial({ color: 0x5a4a37, map: T.glove.map, nmap: T.glove.normalMap, scale: 11, ns: 1.5, rough: 0.72, sheen: 0.3 });
     const palm = triMaterial({ color: 0x3e3a33, map: T.glove.map, nmap: T.stipple.normalMap, scale: 30, ns: 0.9, rough: 0.85, sheen: 0.5 });
     const pad = triMaterial({ color: 0x1f1d1a, nmap: T.stipple.normalMap, scale: 26, ns: 0.7, rough: 0.45 });

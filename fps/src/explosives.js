@@ -462,6 +462,7 @@ export class Explosives {
     for (let k = 0; k < (big ? 110 : 80); k++) fx.add.add(p, V(rand(-1, 1), rand(-0.1, 1.2), rand(-1, 1)).normalize().multiplyScalar(rand(12, 40)), { life: rand(0.15, 0.5), size: rand(0.015, 0.03), grav: 9.8, drag: 0.8, color: [9, 5, 1.6] });
     for (let k = 0; k < (big ? 60 : 30); k++) fx.dots.add(p, V(rand(-1, 1), rand(0.4, 1.6), rand(-1, 1)).normalize().multiplyScalar(rand(3, 12)), { life: rand(1, 2.2), size: rand(0.02, 0.06), grav: 9.8, drag: 0.4, color: [0.07, 0.06, 0.05] });
     fx.decals.scorch.add(V(p.x, Math.max(0.012, p.y - 0.2), p.z), V(0, 1, 0), big ? rand(3.5, 4.5) : rand(1.6, 2.4));
+    fx.blast(p, big, ground);
     Audio.play3D(big ? 'explosion' : 'frag', p, { vol: big ? 3 : 2.4, ref: 10 });
     // 피해·반응
     const P = g.player, dp = P.eye.distanceTo(p);

@@ -9,7 +9,7 @@ const rep = (t, n) => { if (!t) return null; const c = t.clone(); c.repeat.set(n
 export function gunMats() {
   if (MAT) return MAT;
   const an = T.anodized, st = T.stipple, wd = T.gunwood, lt = T.leather;
-  const metal = (color, rough = 1, metal = 0.85, n = 10) => new THREE.MeshPhysicalMaterial({ color, map: rep(an.map, n), roughnessMap: rep(an.roughnessMap, n), normalMap: rep(an.normalMap, n), normalScale: new THREE.Vector2(0.35, 0.35), roughness: rough, metalness: metal, envMapIntensity: 1.2, clearcoat: 0.22, clearcoatRoughness: 0.38 });
+  const metal = (color, rough = 1, metal = 0.85, n = 10) => new THREE.MeshPhysicalMaterial({ color, map: rep(an.map, n), roughnessMap: rep(an.roughnessMap, n), normalMap: rep(an.normalMap, n), normalScale: new THREE.Vector2(0.35, 0.35), roughness: rough, metalness: metal, envMapIntensity: 1.0 });
   const poly = (color, rough = 1) => new THREE.MeshStandardMaterial({ color, roughnessMap: rep(st.roughnessMap, 14), normalMap: rep(st.normalMap, 14), normalScale: new THREE.Vector2(0.6, 0.6), roughness: rough, metalness: 0.0, envMapIntensity: 0.9 });
   const wood = (color) => new THREE.MeshPhysicalMaterial({ color, map: rep(wd.map, 3), roughnessMap: rep(wd.roughnessMap, 3), normalMap: rep(wd.normalMap, 3), normalScale: new THREE.Vector2(0.3, 0.3), roughness: 1.6, clearcoat: 0.18, clearcoatRoughness: 0.5, envMapIntensity: 0.5 });
   MAT = {

@@ -19,9 +19,18 @@ export function n3(x, y, z) {
 export const WIND = { dir: { value: new THREE.Vector3(1, 0, 0.3).normalize() }, strength: { value: 1.0 }, time: { value: 0 } };
 
 // ── 삼면투영 재질 (UV 없는 SDF 메쉬용, 스키닝 시 바인드 포즈 좌표 사용) ──
-export function triMaterial({ color = 0xffffff, map = null, nmap = null, scale = 8, ns = 1, rough = 0.9, metal = 0, vcol = false, side = THREE.FrontSide, env = 1, sheen = 0 } = {}) {
-  const m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, vertexColors: vcol, side, envMapIntensity: env });
-  const uni = { uTriMap: { value: map || T.soft.map }, uTriNor: { value: nmap }, uTriS: { value: scale }, uTriNS: { value: ns }, uHasMap: { value: map ? 1 : 0 }, uSheen: { value: sheen } };
+// 피부: 파장별 랩 조명(표면하 산란 근사: 적색광이 더 깊이 퍼짐) + 피지 이중 스펙큘러(클리어코트)
+const SKIN_PARS = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+  'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor )',
+  `vec3 sssW = vec3(0.42, 0.2, 0.12) * uSSS;
+    float nl0 = dot( geometryNormal, directLight.direction );
+    vec3 wrapNL = saturate( ( nl0 + sssW ) / ( 1.0 + sssW ) );
+    vec3 sssTint = mix( vec3( 1.0 ), vec3( 1.0, 0.62, 0.52 ), saturate( ( 1.0 - saturate( nl0 * 2.5 ) ) * 0.7 * uSSS ) );
+    reflectedLight.directDiffuse += wrapNL * sssTint * directLight.color * BRDF_Lambert( material.diffuseColor )`);
+export function triMaterial({ color = 0xffffff, map = null, nmap = null, scale = 8, ns = 1, rough = 0.9, metal = 0, vcol = false, side = THREE.FrontSide, env = 1, sheen = 0, skin = 0 } = {}) {
+  const m = skin ? new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, vertexColors: vcol, side, envMapIntensity: env, clearcoat: 0.32 * skin, clearcoatRoughness: 0.42 })
+    : new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, vertexColors: vcol, side, envMapIntensity: env });
+  const uni = { uTriMap: { value: map || T.soft.map }, uTriNor: { value: nmap }, uTriS: { value: scale }, uTriNS: { value: ns }, uHasMap: { value: map ? 1 : 0 }, uSheen: { value: sheen }, uSSS: { value: skin } };
   m.userData.tri = uni;
   const interior = patchInterior(new THREE.MeshStandardMaterial()).onBeforeCompile;
   m.onBeforeCompile = (s) => {
@@ -36,7 +45,7 @@ export function triMaterial({ color = 0xffffff, map = null, nmap = null, scale =
           vO2V = normalMatrix;
         #endif`);
     s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-        varying vec3 vTriPos; varying vec3 vTriN; varying mat3 vO2V; uniform sampler2D uTriMap; uniform sampler2D uTriNor; uniform float uTriNS; uniform float uHasMap; uniform float uSheen;
+        varying vec3 vTriPos; varying vec3 vTriN; varying mat3 vO2V; uniform sampler2D uTriMap; uniform sampler2D uTriNor; uniform float uTriNS; uniform float uHasMap; uniform float uSheen; uniform float uSSS;
         vec3 triW(){ vec3 b = pow(abs(normalize(vTriN)), vec3(4.)); return b / (b.x + b.y + b.z); }
         vec4 tri(sampler2D t, vec3 w){ return texture2D(t, vTriPos.zy) * w.x + texture2D(t, vTriPos.xz) * w.y + texture2D(t, vTriPos.xy) * w.z; }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -52,10 +61,11 @@ export function triMaterial({ color = 0xffffff, map = null, nmap = null, scale =
           normal = normalize(vO2V * on) * faceDirection;
         }`)
       .replace('#include <roughnessmap_fragment>', `float roughnessFactor = roughness * mix(1.0, tri(uTriNor, tw).a * 0. + 1.0, 0.);`)
+      .replace('#include <lights_physical_pars_fragment>', skin ? SKIN_PARS : '#include <lights_physical_pars_fragment>')
       .replace('#include <opaque_fragment>', `outgoingLight += uSheen * pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0) * diffuseColor.rgb * 0.35;
         #include <opaque_fragment>`);
   };
-  m.customProgramCacheKey = () => 'tri' + (nmap ? 1 : 0) + (vcol ? 1 : 0);
+  m.customProgramCacheKey = () => 'tri' + (nmap ? 1 : 0) + (vcol ? 1 : 0) + (skin ? 's' : '');
   if (!nmap) uni.uTriNor.value = T.clothN.normalMap, uni.uTriNS.value = 0;
   return m;
 }
@@ -172,7 +182,7 @@ function buildHands() {
 
 // ════════ 머리/얼굴 ════════
 // v: {jaw, nose, brow, cheek, female, skin:[r,g,b], lips, stubble, scar}
-function buildHead(v, h = 0.0032) {
+function buildHead(v, h = 0.0025) {
   const C = [0, 1.667, 0.012];
   const at = (x, y, z) => [C[0] + x, C[1] + y, C[2] + z];
   const S = new SDFModel(at(-0.1, -0.22, -0.12), at(0.1, 0.13, 0.135), h);
@@ -197,7 +207,7 @@ function buildHead(v, h = 0.0032) {
     const ex = s * 0.031 * f;
     S.sub(ellipsoid(at(ex, 0.003, 0.092), [0.017, 0.012, 0.015], { k: 0.012 }));
     S.add(sphere(at(ex, 0.003, 0.0795), 0.0137, { mat: 'lid', k: 0.003 }));
-    S.sub(ellipsoid(at(ex, 0.0022, 0.0945), [0.0126, 0.0044, 0.012], { k: 0.002, rot: [0, 0, s * -0.1] }));
+    S.sub(ellipsoid(at(ex, 0.0016, 0.0945), [0.0124, 0.0039, 0.012], { k: 0.002, rot: [0, 0, s * -0.1] }));
     S.add(ellipsoid(at(ex, 0.0098, 0.0888), [0.0145, 0.0035, 0.006], { mat: 'lid', k: 0.004, rot: [0, 0, s * -0.08] }));
     S.add(ellipsoid(at(ex, -0.0048, 0.0895), [0.0125, 0.0028, 0.0055], { mat: 'lid', k: 0.003 }));
     // 팔자주름 (얕게)
@@ -233,9 +243,18 @@ function buildHead(v, h = 0.0032) {
     // 볼/코 홍조, 눈 주변 그늘, 수염 자국
     const cheek = Math.exp(-(((Math.abs(lx) - 0.04) / 0.022) ** 2 + ((ly + 0.02) / 0.025) ** 2)) * (lz > 0.03 ? 1 : 0);
     const nose = Math.exp(-((lx / 0.015) ** 2 + ((ly + 0.028) / 0.015) ** 2)) * (lz > 0.09 ? 1 : 0);
-    r += (cheek * 0.08 + nose * 0.07); gg -= (cheek * 0.02 + nose * 0.02); bb -= cheek * 0.02;
+    { const L = (r + gg + bb) / 3; r = L + (r - L) * 0.82; gg = L + (gg - L) * 0.82; bb = L + (bb - L) * 0.82; }   // 과포화 억제
+    r += (cheek * 0.05 + nose * 0.05); gg -= (cheek * 0.012 + nose * 0.015); bb -= cheek * 0.01;
     const eye = Math.exp(-(((Math.abs(lx) - 0.031) / 0.018) ** 2 + ((ly - 0.0) / 0.012) ** 2));
-    r -= eye * 0.08; gg -= eye * 0.08; bb -= eye * 0.05;
+    r -= eye * 0.07; gg -= eye * 0.075; bb -= eye * 0.04;
+    // 오목부 차폐(AO): 콧방울 옆, 입꼬리, 코밑, 턱 아래, 귀 뒤
+    const g2 = (dx, dy, sx, sy) => Math.exp(-((dx / sx) ** 2 + (dy / sy) ** 2));
+    const ao = g2(Math.abs(lx) - 0.02, ly + 0.035, 0.006, 0.012) * (lz > 0.08 ? 1 : 0) * 0.35 + g2(Math.abs(lx) - 0.021, ly + 0.057, 0.004, 0.005) * 0.3
+      + g2(lx, ly + 0.043, 0.012, 0.004) * (lz > 0.1 ? 1 : 0) * 0.12 + (ly < -0.11 && lz < 0.07 ? 0.25 : 0) + g2(Math.abs(lx) - 0.07, lz + 0.03, 0.012, 0.012) * (ly > -0.03 && ly < 0.03 ? 0.3 : 0);
+    r *= 1 - ao * 0.55; gg *= 1 - ao * 0.62; bb *= 1 - ao * 0.6;
+    // 피부 얼룩/주근깨/혈관 기미 (저주파 + 고주파)
+    const mo = n3(x * 60, y * 60, z * 60) - 0.5, fr = Math.max(0, n3(x * 520, y * 520, z * 520) - 0.72) * (v.female ? 1.4 : 0.8);
+    r += mo * 0.05 - fr * 0.12; gg += mo * 0.02 - fr * 0.16; bb += mo * 0.015 - fr * 0.14;
     if (mat === 'lip') { r = sk[0] * 0.88 + 0.05; gg = sk[1] * 0.74; bb = sk[2] * 0.76; }
     const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     const beardZone = sm(-0.018, -0.034, ly) * sm(-0.035, -0.005, lz) * sm(0.075, 0.06, Math.abs(lx)) * sm(-0.135, -0.12, ly) * (1 - sm(0.045, 0.02, Math.abs(lx)) * sm(-0.03, -0.02, ly));
@@ -245,9 +264,9 @@ function buildHead(v, h = 0.0032) {
     const hc = v.browColor || [0.12, 0.09, 0.07];
     r = r * (1 - brow) + hc[0] * brow; gg = gg * (1 - brow) + hc[1] * brow; bb = bb * (1 - brow) + hc[2] * brow;
     if (v.hair && v.hair !== 'none') {
-      const hr = Math.hypot(lx / 0.074, (ly - 0.02) / 0.093, (lz + 0.012) / 0.1);
+      const hr = Math.hypot(lx / (0.074 * f), (ly - 0.02) / (0.093 * f), (lz + 0.012) / (0.1 * f));
       const front = lz > 0.03 ? 0.058 - (lz - 0.03) * 0.0 : lz > -0.02 ? 0.02 : -0.045;
-      const scalp = sm(front - 0.008, front + 0.004, ly + (Math.abs(lx) < 0.07 && Math.abs(lx) > 0.06 ? 0.02 : 0)) * sm(1.12, 1.02, hr) * (Math.abs(lx) > 0.068 && ly < 0.01 && lz > -0.03 ? 0 : 1);
+      const scalp = sm(front - 0.008, front + 0.004, ly + (Math.abs(lx) < 0.07 && Math.abs(lx) > 0.06 ? 0.02 : 0)) * sm(1.16, 1.04, hr) * (Math.abs(lx) > 0.068 && ly < 0.01 && lz > -0.03 ? 0 : 1);
       const hcol = v.hairRGB || hc;
       const k = scalp * (v.hair === 'buzz' ? 0.55 : 0.9) * (0.75 + n3(x * 900, y * 900, z * 900) * 0.35);
       r = r * (1 - k) + hcol[0] * k; gg = gg * (1 - k) + hcol[1] * k; bb = bb * (1 - k) + hcol[2] * k;
@@ -280,6 +299,22 @@ function beardGeometry(headGeo, v) {
   for (let t = 0; t < idx.length; t += 3) if (keep[idx[t]] && keep[idx[t + 1]] && keep[idx[t + 2]]) newIdx.push(idx[t], idx[t + 1], idx[t + 2]);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', pos); g.setAttribute('normal', nor);
+  g.setIndex(newIdx);
+  return g;
+}
+// 두피 셸 영역 (짧은 머리/모근 밀도감)
+function scalpGeometry(headGeo, v, hat = false) {
+  const C = headGeo.userData.C, pos = headGeo.attributes.position, idx = headGeo.index.array, f = v.female ? 0.94 : 1;
+  const keep = new Uint8Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const lx = pos.getX(i) - C[0], ly = pos.getY(i) - C[1], lz = pos.getZ(i) - C[2];
+    const front = lz > 0.03 ? 0.056 : lz > -0.02 ? 0.02 : -0.045;
+    keep[i] = ly > front && Math.hypot(lx / (0.074 * f), (ly - 0.02) / (0.093 * f), (lz + 0.012) / (0.1 * f)) > 0.9 && !(Math.abs(lx) > 0.066 && ly < 0.012 && lz > -0.035) && !(hat && (ly > 0.03 || lz > 0.0)) ? 1 : 0;
+  }
+  const newIdx = [];
+  for (let t = 0; t < idx.length; t += 3) if (keep[idx[t]] && keep[idx[t + 1]] && keep[idx[t + 2]]) newIdx.push(idx[t], idx[t + 1], idx[t + 2]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', pos); g.setAttribute('normal', headGeo.attributes.normal);
   g.setIndex(newIdx);
   return g;
 }
@@ -317,7 +352,7 @@ function hairMaterial(color) {
   return m;
 }
 // 두피 위 카드 생성: style = 'short' | 'medium' | 'pony' | 'buzz'
-function buildHair(style, C, f) {
+function buildHair(style, C, f, hat = 0) {
   const pos = [], uv = [], at = [], root = [], idx = [];
   const R = [0.078 * f, 0.097 * f, 0.104 * f], cz = -0.012;
   const surf = (th, ph, off = 0) => { // th: 위(0)→아래(π), ph: 방위(0=앞)
@@ -338,6 +373,7 @@ function buildHair(style, C, f) {
     const ph = rnd(-Math.PI, Math.PI), th = Math.acos(rnd(-0.15, 1)) * 0.95;
     const front = Math.cos(ph);
     if (th > 1.35 - (front > 0.3 ? 0.55 : 0) + (Math.abs(Math.sin(ph)) > 0.8 ? -0.25 : 0)) continue;
+    if (hat && th < hat) continue;   // 모자 속 머리는 생략 (관통 방지)
     const L = style === 'short' ? rnd(0.035, 0.06) : style === 'medium' ? rnd(0.08, 0.14) : rnd(0.07, 0.12);
     const pts = [];
     let t0 = th, p0 = ph;
@@ -403,17 +439,18 @@ function eyeMaterial(iris) {
   const m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.02 });
   m.onBeforeCompile = (s) => {
     s.uniforms.uIris = { value: new THREE.Color(...iris) };
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vOP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvOP = normalize(position);');
-    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vOP; uniform vec3 uIris;')
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying float vUp;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvOP = normalize(position); vUp = normalize((modelMatrix * vec4(normal, 0.)).xyz).y;');
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying float vUp; uniform vec3 uIris;')
       .replace('#include <map_fragment>', `#include <map_fragment>
         float a = acos(clamp(vOP.z, -1., 1.));
         float ang = atan(vOP.y, vOP.x);
-        vec3 sclera = vec3(0.93, 0.9, 0.87) * (1.0 - 0.15 * smoothstep(0.9, 1.6, a)) + vec3(0.1, -0.05, -0.05) * smoothstep(1.2, 1.6, a) * (0.5 + 0.5 * sin(ang * 23.0));
+        vec3 sclera = vec3(0.8, 0.76, 0.71) * (1.0 - 0.2 * smoothstep(0.8, 1.5, a)) + vec3(0.1, -0.05, -0.05) * smoothstep(1.2, 1.6, a) * (0.5 + 0.5 * sin(ang * 23.0));
         float fib = 0.75 + 0.25 * sin(ang * 60.0 + sin(ang * 13.0) * 2.0);
         vec3 ir = uIris * fib * (0.7 + 0.5 * smoothstep(0.1, 0.46, a));
         vec3 c = mix(ir, sclera, smoothstep(0.49, 0.53, a));
         c = mix(vec3(0.01), c, smoothstep(0.18, 0.21, a));
         c *= 1.0 - 0.6 * smoothstep(0.42, 0.5, a) * (1.0 - smoothstep(0.5, 0.55, a));
+        c *= 1.0 - 0.55 * smoothstep(-0.25, 0.4, vUp);   // 윗눈꺼풀/속눈썹 그늘
         diffuseColor.rgb = c;`);
   };
   m.customProgramCacheKey = () => 'eye';
@@ -552,7 +589,7 @@ function mats() {
   return MATS;
 }
 function skinMaterial() {
-  return triMaterial({ nmap: T.skinN.normalMap, map: T.skinN.map, scale: 22, ns: 0.55, rough: 0.52, vcol: true, sheen: 0.15 });
+  return triMaterial({ nmap: T.skinN.normalMap, map: T.skinN.map, scale: 22, ns: 0.55, rough: 0.5, vcol: true, sheen: 0.12, skin: 1 });
 }
 
 // ════════ 인물 생성 ════════
@@ -615,12 +652,17 @@ export function createHuman(key, { shadowOnly = false } = {}) {
     // 눈썹/머리카락/수염
     const hmat = hairMaterial(v.hairColor);
     const brows = new THREE.Mesh(buildBrows(C, f, v.female ? 0.7 : 1.1), hmat); headGroup.add(brows);
-    const hg = buildHair(v.hair, C, f);
+    const hg = buildHair(v.hair, C, f, v.gear === 'cap' || v.gear === 'boonie' ? 1.2 : v.gear === 'helmet' ? 1.35 : 0);
+    if (v.hair && v.hair !== 'none') {
+      const coarse = BEARD_BASE[key] || (BEARD_BASE[key] = buildHead(v, 0.0055));
+      const sg = scalpGeometry(coarse, v, !!v.gear && v.gear !== 'headset'), hl = v.hair === 'buzz' ? 0.004 : 0.007;
+      for (let i = 1; i <= 5; i++) { const sh = new THREE.Mesh(sg, shellMaterial(v.hairColor, hl, 2200, i, 5)); sh.userData.noShadow = i > 1; headGroup.add(sh); }
+    }
     if (hg) { const hair = new THREE.Mesh(hg, hmat); hair.castShadow = true; headGroup.add(hair); }
     if (v.beard) {
       const coarse = BEARD_BASE[key] || (BEARD_BASE[key] = buildHead(v, 0.0055));
       const bg = beardGeometry(coarse, v);
-      for (let i = 1; i <= 7; i++) { const sh = new THREE.Mesh(bg, shellMaterial(v.beardColor, v.beard === 'full' ? 0.009 : 0.007, 1400, i, 7)); headGroup.add(sh); }
+      for (let i = 1; i <= 7; i++) { const sh = new THREE.Mesh(bg, shellMaterial(v.beardColor, v.beard === 'full' ? 0.009 : 0.007, 1400, i, 7)); sh.userData.noShadow = i > 1; headGroup.add(sh); }
     }
     headGroup.userData = { eyes, hmat, lids };
   }
@@ -629,7 +671,7 @@ export function createHuman(key, { shadowOnly = false } = {}) {
   else if (v.gear === 'boonie') headGroup.add(gearMesh('boonie', (h) => capGear(h, true), { cap: M.cap, cap2: M.cap2, headset: M.headset }, 0.0042));
   else if (v.gear === 'headset') headGroup.add(gearMesh('headset', (h) => { const S = new SDFModel([-0.13, 1.58, -0.08], [0.13, 1.78, 0.08], h); for (const s of [1, -1]) S.add(rbox([s * 0.092, 1.645, 0.0], [0.017, 0.037, 0.032], 0.014, { mat: 'headset', k: 0.004, rot: [0, 0, s * 0.08] })); S.add(torus([0, 1.665, 0.0], 0.091, 0.0055, { mat: 'headset', k: 0.003, rot: [0, 0, Math.PI / 2] })); return { S }; }, { headset: M.headset }, 0.0045));
   if (v.glasses) headGroup.add(gearMesh('glasses', sunglasses, { lens: M.lens, frame: M.frame }, 0.0024));
-  headGroup.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  headGroup.traverse((o) => { if (o.isMesh) { o.castShadow = !o.userData.noShadow; o.receiveShadow = true; } });
   attach('head', headGroup);
   root.userData = { v };
   return { root, bones: Bn, skeleton, body, hands, head: headGroup, v, key };

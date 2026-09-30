@@ -199,6 +199,8 @@ class AudioSys {
     B.bugs = make(c, 4, (ch) => { const bugs = [[4700, 0.7, 0.1], [5200, 0.9, 0.45], [4400, 1.1, 0.8]]; return (t) => { let s = 0; for (const [f, per, off] of bugs) { const u = ((t + off + ch * 0.13) % per) / per; const g = u < 0.18 ? Math.max(0, Math.sin(u / 0.18 * Math.PI * 3)) : 0; s += Math.sin(P2 * f * t) * g; } return s * 0.5; }; }, true, 0.5);
     B.ding = tone(c, 1.6, (t) => (Math.sin(P2 * 1830 * t) * 0.5 + Math.sin(P2 * 2750 * t) * 0.35 + Math.sin(P2 * 4460 * t) * 0.2 + Math.sin(P2 * 6200 * t) * 0.1) * env(t, 0.0005, 0.35) * (1 + 0.15 * Math.sin(P2 * 7 * t)) + rnd() * env(t, 0.0003, 0.004) * 0.6);
     B.gong = tone(c, 2.4, (t) => (Math.sin(P2 * 620 * t) * 0.5 + Math.sin(P2 * 1040 * t) * 0.4 + Math.sin(P2 * 1590 * t) * 0.3 + Math.sin(P2 * 2400 * t) * 0.15) * env(t, 0.0008, 0.6) * (1 + 0.2 * Math.sin(P2 * 4 * t)) + rnd() * env(t, 0.0005, 0.006) * 0.5);
+    B.nvgOn = tone(c, 0.7, (t) => Math.sin(P2 * (2600 + t * 5200) * t) * env(t, 0.02, 0.35) * 0.35 + Math.sin(P2 * 11000 * t) * env(t, 0.05, 0.5) * 0.08);
+    { let ph = 0; B.owl = tone(c, 1.6, (t) => { const seg = [[0, 0.28], [0.42, 0.62], [0.72, 1.3]]; for (const [a, b] of seg) if (t >= a && t < b) { const u = (t - a) / (b - a); ph += P2 * (380 - u * 40) / SR; return (Math.sin(ph) + 0.2 * Math.sin(ph * 2)) * Math.sin(Math.PI * u) ** 1.2; } return 0; }); }
     B.ui = tone(c, 0.08, (t) => Math.sin(2 * Math.PI * 1800 * t) * env(t, 0.001, 0.015));
     B.pickup = tone(c, 0.3, (t) => Math.sin(2 * Math.PI * (700 + t * 1500) * t) * env(t, 0.005, 0.08));
     B.breath = make(c, 1.6, () => { const bp = new Biquad('bp', 900, 0.8); return (t) => bp.p(rnd()) * Math.sin(Math.PI * Math.min(1, t / 1.6)) * 0.6; }, false);
@@ -215,6 +217,7 @@ class AudioSys {
     this.bugGain = c.createGain(); this.bugGain.gain.value = 0.035;
     bugs.connect(this.bugGain).connect(this.master); bugs.start();
   }
+  setNight(k) { if (this.bugGain) this.bugGain.gain.setTargetAtTime(0.025 + k * 0.1, this.ctx.currentTime, 1.5); }
   setWind(k) { if (this.ambGain) this.ambGain.gain.setTargetAtTime(0.1 + k * 0.1, this.ctx.currentTime, 0.4); }
 
   setListener(pos, fwd) { this.listener.pos.copy(pos); this.listener.fwd.copy(fwd); }

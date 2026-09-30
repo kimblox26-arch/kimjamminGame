@@ -6,9 +6,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
-import { ViewmodelPass, SSAOPass, GradeShader, skyMaterial, buildEnvironment } from './post.js';
+import { ViewmodelPass, SSAOPass, GradeShader, skyMaterial, buildEnvironment, EnvBaker, packFogDir } from './post.js';
+import { DayNight, NVGShader } from './daynight.js';
 
-import { buildTextures } from './textures.js';
+import { buildTextures, T } from './textures.js';
 import { World, interiorFactorCPU } from './world.js';
 import { WeaponSystem } from './weapons.js';
 import { Player } from './player.js';
@@ -70,7 +71,7 @@ class Game {
   }
 
   loadSettings() {
-    const d = { sens: 1, adsSens: 0.8, fov: 90, vol: 0.8, quality: 'high', invertY: false, showFps: false };
+    const d = { sens: 1, adsSens: 0.8, fov: 90, vol: 0.8, quality: 'high', invertY: false, showFps: false, timeMode: 'cycle' };
     let s = d;
     try { s = { ...d, ...JSON.parse(localStorage.getItem('kj-fps-settings') || '{}') }; } catch {}
     const q = new URLSearchParams(location.search).get('q');
@@ -91,10 +92,12 @@ class Game {
     this.setLoad(0.02, '텍스처 생성');
     await buildTextures((p, n) => this.setLoad(0.02 + p * 0.4, `텍스처 생성 · ${n}`));
     await buildTextures2((p, n) => this.setLoad(0.42 + p * 0.14, `인물 텍스처 · ${n}`));
+    // 비스듬한 각도에서도 선명하도록 최대 비등방성 필터
+    { const mx = r.capabilities.getMaxAnisotropy(); for (const k in T) for (const m of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (T[k] && T[k][m]) { T[k][m].anisotropy = mx; T[k][m].needsUpdate = true; } }
 
     // 씬/카메라
     const scene = this.scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x9aa6ae, 0.0055);
+    scene.fog = new THREE.Fog(0x9aa6ae, packFogDir(SUN_DIR), 0.0055);   // near=해 방향, far=밀도 (post.js 대기 안개)
     this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.03, 1500);
     this.camera.rotation.order = 'YXZ';
     scene.add(this.camera);
@@ -112,8 +115,9 @@ class Game {
     this.setLoad(0.6, '환경광 계산 (HDRI)');
     try {
       const hdr = await new EXRLoader().loadAsync('./assets/hdri/park.exr');
-      this.env = buildEnvironment(r, hdr, SUN_DIR, 0.628);
-      hdr.dispose();
+      // 시간대별로 다시 굽기 위해 HDRI 유지
+      this.envBaker = new EnvBaker(r, hdr, 0.628);
+      this.env = this.envBaker.bake(SUN_DIR, SUN_DIR.clone().negate(), 1, 0, 0);
     } catch (e) {
       console.warn('HDRI 로드 실패, 절차적 하늘 사용', e);
       const envScene = new THREE.Scene(); const es = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMaterial(SUN_DIR, 0.05)); envScene.add(es);
@@ -143,9 +147,9 @@ class Game {
     this.vmCam.rotation.order = 'YXZ';
     vmScene.add(this.vmCam);
     this.vmRoot = new THREE.Group(); this.vmCam.add(this.vmRoot);
-    this.vmHemi = new THREE.HemisphereLight(0xc4d6ee, 0x5a4a38, 0.6); vmScene.add(this.vmHemi);
+    this.vmHemi = new THREE.HemisphereLight(0xd2d9e2, 0x5a4a38, 0.6); vmScene.add(this.vmHemi);
     this.vmSun = new THREE.DirectionalLight(0xffe0bc, 3.0); vmScene.add(this.vmSun, this.vmSun.target);
-    this.vmFill = new THREE.DirectionalLight(0x8fa6c8, 0.5); vmScene.add(this.vmFill);
+    this.vmFill = new THREE.DirectionalLight(0xa9b3c2, 0.5); vmScene.add(this.vmFill);
     // 카메라 기준 키 라이트 (총기 윤곽 하이라이트)
     // 뷰모델 자체 그림자 (손 ↔ 총 사이)
     this.vmSun.castShadow = true;
@@ -162,6 +166,8 @@ class Game {
     this.loadLoadout();
     this.hud = new HUD(this);
     this.armory = new Armory(this);
+    this.dayNight = new DayNight(this, { sunDir: SUN_DIR, envBaker: this.envBaker });
+    this.dayNight.setMode(this.settings.timeMode || 'cycle');
     this.hud.weapon(this.weapons.cur);
     // 아군 분대 + 플레이어 그림자 몸체
     this.setLoad(0.86, '분대원 생성 (인물 조형)');
@@ -216,6 +222,8 @@ class Game {
     this.bloom.enabled = q.bloom;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    this.nvgPass = new ShaderPass(NVGShader);
+    this.composer.addPass(this.nvgPass);
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
   }
@@ -228,8 +236,9 @@ class Game {
     if (this.composer) {
       if (this.composer.renderTarget1.samples !== q.msaa) { this.composer.renderTarget1.samples = q.msaa; this.composer.renderTarget2.samples = q.msaa; this.composer.renderTarget1.dispose(); this.composer.renderTarget2.dispose(); }
       this.bloom.enabled = q.bloom;
-      this.ssao.enabled = q.ao;
+      this.ssao.ao = q.ao;
     }
+    this.dayNight?.setMode(s.timeMode || 'cycle');
     const vs = this.vmSun.shadow;
     if (vs.mapSize.x !== q.vmShadow) { vs.mapSize.set(q.vmShadow, q.vmShadow); vs.map?.dispose(); vs.map = null; }
     Audio.setVolume(s.vol);
@@ -242,6 +251,7 @@ class Game {
     this.renderer.setSize(w, h);
     this.composer?.setSize(w, h);
     this.ssao?.setSize(w * this.renderer.getPixelRatio(), h * this.renderer.getPixelRatio());
+    this.grade?.uniforms.uTexel.value.set(1 / (w * this.renderer.getPixelRatio()), 1 / (h * this.renderer.getPixelRatio()));
     this.camera.aspect = this.vmCam.aspect = w / h;
     this.baseFov = 2 * Math.atan(Math.tan(this.settings.fov * DEG / 2) * (h / w)) / DEG;
     this.camera.updateProjectionMatrix(); this.vmCam.updateProjectionMatrix();
@@ -273,6 +283,7 @@ class Game {
     bind('set-fov', 'fov', (v) => v + '°');
     bind('set-vol', 'vol', (v) => Math.round(v * 100) + '%');
     bind('set-quality', 'quality', (v) => ({ low: '낮음', medium: '보통', high: '높음' }[v]), String);
+    bind('set-time', 'timeMode', (v) => ({ cycle: '자동', dawn: '새벽', morning: '아침', day: '한낮', afternoon: '오후', dusk: '황혼', night: '밤' }[v] || v), String);
     bind('set-invert', 'invertY');
     bind('set-fps', 'showFps');
     document.addEventListener('pointerlockchange', () => {
@@ -394,6 +405,7 @@ class Game {
 
   menuCam(dt) {
     this.time += dt;
+    this.dayNight.update(dt);
     WIND.time.value += dt; this.nature.update(dt);
     const t = this.time * 0.05;
     this.camera.position.set(Math.sin(t) * 38, 9 + Math.sin(t * 0.7) * 2, 40 + Math.cos(t) * 20);
@@ -408,6 +420,10 @@ class Game {
     this.time += dt;
     this.vmRoot.visible = P.alive;
     if (I.pressed('Escape')) this.pause();
+    this.dayNight.update(dt);
+    // 전술 라이트 / 야간투시경
+    if (I.pressed('KeyL')) { this.dayNight.flashOn = !this.dayNight.flashOn; Audio.play('select', { vol: 0.6 }); }
+    if (I.pressed('KeyN')) { this.dayNight.nvg = !this.dayNight.nvg; Audio.play(this.dayNight.nvg ? 'nvgOn' : 'select', { vol: 0.5 }); }
     if (I.pressed('Tab') && P.alive) { this.openArmory(); return; }
     P.update(dt, I);
     // 벽 근접 거리 (무기 들어올림)
@@ -492,12 +508,13 @@ class Game {
     } else if (this.vmPass) this.vmPass.camera = this.vmCam;
     // 뷰모델 조명 (실내 여부 + 태양 가림)
     this.sunVisT = (this.sunVisT || 0) - dt;
-    if (this.sunVisT <= 0) { this.sunVisT = 0.15; this.sunVis = this.world.raycast(cam.position, SUN_DIR, 150) ? 0 : 1; }
+    if (this.sunVisT <= 0) { this.sunVisT = 0.15; this.sunVis = this.world.raycast(cam.position, this.dayNight.sunDir, 150) ? 0 : 1; }
     this.vmSunK = damp(this.vmSunK ?? 1, this.sunVis ?? 1, 5, dt);
     const io = interiorFactorCPU(cam.position);
-    this.vmSun.intensity = 3.4 * this.vmSunK; this.vmSun.position.copy(SUN_DIR).multiplyScalar(2); this.vmSun.target.position.set(0, 0, 0); this.vmSun.target.updateMatrixWorld();
-    this.vmHemi.intensity = 0.6 * io;
-    this.vmFill.intensity = 0.35 * io + 0.25; this.vmKey.intensity = 0.5 + 0.7 * io; this.vmFill.position.set(-SUN_DIR.x, 0.4, -SUN_DIR.z);
+    const DN = this.dayNight, amb = clamp(DN.ambient, 0.06, 1);
+    this.vmSun.intensity = 3.4 * this.vmSunK * DN.lightI / 4.2; this.vmSun.color.copy(DN.lightColor); this.vmSun.position.copy(DN.sunDir).multiplyScalar(2); this.vmSun.target.position.set(0, 0, 0); this.vmSun.target.updateMatrixWorld();
+    this.vmHemi.intensity = 0.6 * io * amb;
+    this.vmFill.intensity = (0.35 * io + 0.25) * amb; this.vmKey.intensity = (0.5 + 0.7 * io) * amb; this.vmFill.position.set(-DN.sunDir.x, 0.4, -DN.sunDir.z);
     this.vmScene.environmentIntensity = io;
     for (const w of W.list) w.m.group.traverse((o) => { if (o.isMesh && o.material.envMapIntensity !== undefined && !o.material.isShaderMaterial) { if (o.material.userData.env0 === undefined) o.material.userData.env0 = o.material.envMapIntensity; o.material.envMapIntensity = o.material.userData.env0 * (0.25 + 0.75 * io); } });
     // 파티클 크기 스케일
@@ -528,6 +545,26 @@ class Game {
     g.uLow.value = P.alive ? clamp((40 - P.hp) / 40, 0, 1) : 0.6;
     g.uFlash.value = this.flashWhite;
     g.uScope.value = W.def.scope ? W.ads : 0;
+    // 폭발 충격파 (화면 굴절 고리, 최대 2개)
+    { const sh = this.fx.shocks, u = [g.uSh0.value, g.uSh1.value]; u[0].set(0, 0, 0, 0); u[1].set(0, 0, 0, 0);
+      let j = 0;
+      for (let i = sh.length - 1; i >= 0; i--) {
+        const s = sh[i]; s.t += dt; const T = s.big ? 0.55 : 0.42;
+        if (s.t > T) { sh.splice(i, 1); continue; }
+        if (j > 1) continue;
+        const d = cam.position.distanceTo(s.p), k = clamp(1 - d / (s.big ? 90 : 60), 0, 1), sp = s.p.clone().project(cam);
+        if (k <= 0 || sp.z > 1 || Math.abs(sp.x) > 1.6 || Math.abs(sp.y) > 1.6) continue;
+        const x = s.t / T, R = (s.big ? 16 : 10) * Math.pow(x, 0.55);
+        u[j++].set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5, R / (2 * Math.max(d, 1) * Math.tan(cam.fov * DEG / 2)), 0.022 * k * Math.pow(1 - x, 1.4));
+      } }
+    // 빛줄기: 해의 화면 위치/가시도 (해가 낮을수록 강함)
+    { const DN = this.dayNight, su = this.ssao.compMat.uniforms, sp = cam.position.clone().addScaledVector(DN.sun, 800).project(cam);
+      const facing = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).dot(DN.sun);
+      su.uSunUV.value.set(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5);
+      su.uSunVis.value = clamp((facing - 0.1) / 0.5, 0, 1) * THREE.MathUtils.smoothstep(DN.sun.y, -0.02, 0.06) * (0.55 + 1.3 * DN.tw) * (1 - DN.nvgK);
+      su.uSunCol.value.copy(DN.lightColor).multiplyScalar(1.4); }
+    const nu = this.nvgPass.uniforms; nu.uK.value = this.dayNight.nvgK; nu.uTime.value = this.time; nu.uGain.value = lerp(1.2, 4.5, this.dayNight.night) + this.dayNight.tw * 1.5;
+    this.hud.clock(this.dayNight);
     this.composer.render(dt);
   }
 }

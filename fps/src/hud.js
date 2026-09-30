@@ -11,7 +11,7 @@ export class HUD {
       root: $('hud'), cross: $('crosshair'), hit: $('hitmarker'), hp: $('hp-fill'), hpTxt: $('hp-text'), ammo: $('ammo-mag'), res: $('ammo-res'),
       wname: $('w-name'), wcal: $('w-cal'), wmode: $('w-mode'), rounds: $('rounds'), feed: $('killfeed'), dmg: $('dmg-ind'),
       wave: $('wave-num'), left: $('enemies-left'), score: $('score'), msg: $('center-msg'), prompt: $('prompt'), compass: $('compass-strip'),
-      slots: $('slots'), fps: $('fps'), breath: $('breath'), lowAmmo: $('low-ammo'),
+      slots: $('slots'), fps: $('fps'), breath: $('breath'), lowAmmo: $('low-ammo'), clock: $('clock'),
     };
     this.hitT = 0; this.msgT = 0; this.slotT = 0;
     this.buildCompass();
@@ -125,6 +125,11 @@ export class HUD {
     // 숨 참기 게이지
     this.el.breath.style.opacity = W.def.scope && W.ads > 0.5 ? 1 : 0;
     this.el.breath.firstElementChild.style.width = P.breath * 100 + '%';
+  }
+
+  clock(dn) {
+    const t = dn.clock() + (dn.flashOn ? '  ◉ 라이트' : '') + (dn.nvg ? '  ◉ NVG' : '') + (dn.lamp > 0.6 && !dn.flashOn && !dn.nvg ? '  [L] 라이트 · [N] 야간투시경' : '');
+    if (this._ck !== t) { this._ck = t; this.el.clock.textContent = t; }
   }
 
   stats(wave, left, score) {

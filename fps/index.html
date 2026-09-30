@@ -19,6 +19,7 @@
 <!-- ─── HUD ─── -->
 <div id="hud">
   <div id="compass"><div id="compass-strip"></div><div class="c-tick"></div></div>
+  <div id="clock"></div>
   <div id="wave-box"><div><span>모드</span><b id="wave-num">자유</b></div><div><span>분대</span><b id="enemies-left">4</b></div><div><span>점수</span><b id="score">0</b></div></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><i class="d"></i></div>
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
@@ -76,6 +77,7 @@
       <tr><td>1 · 2 · 휠</td><td>주 / 보조 무기</td><td>F</td><td>총기 점검 / 탄약 보급</td></tr>
       <tr><td>3 · G / 4 / 5</td><td>수류탄 / 연막 / C4</td><td>좌클릭 유지</td><td>핀 뽑고 놓으면 투척</td></tr>
       <tr><td>ESC</td><td>일시정지</td><td>TAB</td><td>무기고 (총기 선택)</td></tr>
+      <tr><td>L</td><td>총기 전술 라이트</td><td>N</td><td>야간투시경</td></tr>
     </table>
     <p class="tip">분대원은 모두 아군입니다. 서쪽 사격장에서 스틸 플레이트·팝업 표적·병, 울타리 밖 100/200/300m 철판을 노려보세요. 빨간 드럼통은 폭발합니다.</p>
   </div>
@@ -89,6 +91,8 @@
     <label>정조준 감도 배율 <span id="set-ads-v"></span><input id="set-ads" type="range" min="0.3" max="1.5" step="0.05"></label>
     <label>시야각 (수평 FOV) <span id="set-fov-v"></span><input id="set-fov" type="range" min="70" max="115" step="1"></label>
     <label>음량 <span id="set-vol-v"></span><input id="set-vol" type="range" min="0" max="1" step="0.05"></label>
+    <label>시간대 <span id="set-time-v"></span>
+      <select id="set-time"><option value="cycle">자동 순환 (실제 1분 = 1시간)</option><option value="dawn">새벽</option><option value="morning">아침</option><option value="day">한낮</option><option value="afternoon">오후</option><option value="dusk">황혼</option><option value="night">밤</option></select></label>
     <label>그래픽 품질 <span id="set-quality-v"></span>
       <select id="set-quality"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label>
     <label class="chk"><input id="set-invert" type="checkbox"> 마우스 Y축 반전</label>

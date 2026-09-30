@@ -150,3 +150,5 @@ body[data-screen=game] #hud { display: block; }
 .wcard .st i { height: 4px; background: var(--line); display: block; }
 .wcard .st u { height: 100%; background: var(--fg); display: block; }
 @media (max-width: 560px) { .panel.armory { padding: 14px 16px; } .wgrid { grid-template-columns: 1fr; } }
+
+#clock { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); margin-top: 26px; font-weight: 600; font-size: 13px; letter-spacing: 0.12em; color: rgba(232, 236, 239, 0.75); text-shadow: 0 1px 2px rgba(0,0,0,0.6); white-space: nowrap; }

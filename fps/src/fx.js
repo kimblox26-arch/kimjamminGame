@@ -140,6 +140,67 @@ export class FX {
     for (let i = 0; i < 4; i++) { const l = new THREE.PointLight(0xffa850, 0, 14, 2); s.add(l); this.lights.push({ l, t: 0, dur: 0.05, peak: 0 }); }
     this.li = 0;
     this.burning = [];
+    // 파편(돌·흙덩이): 그림자 드리우는 인스턴스 메쉬 + 튕김 물리
+    const dg = new THREE.IcosahedronGeometry(1, 0), dp = dg.attributes.position;
+    for (let i = 0; i < dp.count; i++) dp.setXYZ(i, dp.getX(i) * rand(0.7, 1.2), dp.getY(i) * rand(0.5, 0.9), dp.getZ(i) * rand(0.7, 1.2));
+    dg.computeVertexNormals();
+    this.deb = new THREE.InstancedMesh(dg, new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), 160);
+    this.deb.castShadow = true; this.deb.receiveShadow = true; this.deb.frustumCulled = false; this.deb.count = 0;
+    this.deb.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.debS = []; for (let i = 0; i < 160; i++) { this.debS.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(), s: 0, life: 0, rest: false, on: false }); this.deb.setColorAt(i, new THREE.Color(0.3, 0.28, 0.25)); }
+    this.debI = 0; this._o = new THREE.Object3D(); this._q = new THREE.Quaternion();
+    s.add(this.deb);
+    this.shocks = [];
+  }
+
+  // 폭발 부가 효과: 충격파(화면 굴절) + 지면 먼지 고리 + 파편
+  blast(p, big, ground = [0.33, 0.3, 0.27]) {
+    this.shocks.push({ p: p.clone(), t: 0, big });
+    const n = big ? 34 : 22;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand(-0.1, 0.1), sp = rand(7, big ? 16 : 11);
+      const c = rand(0.85, 1.1);
+      this.alpha.add(new THREE.Vector3(p.x + Math.cos(a) * 0.4, p.y + rand(0.05, 0.3), p.z + Math.sin(a) * 0.4), new THREE.Vector3(Math.cos(a) * sp, rand(0.2, 0.9), Math.sin(a) * sp), { life: rand(1.6, 3.2), size: rand(0.6, 1.2), grow: big ? 1.6 : 1.1, drag: 3.2, grav: -0.1, color: [ground[0] * c, ground[1] * c, ground[2] * c], alpha: 0.6, spin: 0.4, fadeIn: 0.03 });
+    }
+    this.debris(p, big ? 44 : 26, ground, big ? 1 : 0.7);
+  }
+  debris(p, n, col, k = 1, size = [0.02, 0.085], nrm = null) {
+    const C = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const d = this.debS[this.debI], j = this.debI; this.debI = (this.debI + 1) % this.debS.length;
+      d.on = true; d.rest = false; d.life = 0; d.s = rand(size[0], size[1]) * (Math.random() < 0.15 ? 1.6 : 1);
+      d.p.copy(p).add(new THREE.Vector3(rand(-0.25, 0.25), rand(0.05, 0.3), rand(-0.25, 0.25)));
+      if (nrm) { d.p.copy(p).addScaledVector(nrm, 0.02); d.v.copy(nrm).multiplyScalar(rand(1, 3.5)).add(new THREE.Vector3(rand(-1.2, 1.2), rand(0, 1.8), rand(-1.2, 1.2))); }
+      else d.v.set(rand(-1, 1), rand(0.5, 1.8), rand(-1, 1)).normalize().multiplyScalar(rand(4, 15) * k);
+      d.q.setFromEuler(new THREE.Euler(rand(0, 6), rand(0, 6), rand(0, 6))); d.w.set(rand(-18, 18), rand(-18, 18), rand(-18, 18));
+      const c = rand(0.6, 1.05); this.deb.setColorAt(j, C.setRGB(col[0] * c, col[1] * c, col[2] * c));
+    }
+    this.deb.instanceColor.needsUpdate = true;
+  }
+  _updDebris(dt) {
+    const w = this.g.world, o = this._o; let top = 0;
+    for (let i = 0; i < this.debS.length; i++) {
+      const d = this.debS[i];
+      if (!d.on) { o.scale.setScalar(0); o.updateMatrix(); this.deb.setMatrixAt(i, o.matrix); continue; }
+      d.life += dt; top = i + 1;
+      if (!d.rest) {
+        d.v.y -= 9.8 * dt; d.v.multiplyScalar(1 - 0.15 * dt);
+        d.p.addScaledVector(d.v, dt);
+        this._q.setFromEuler(new THREE.Euler(d.w.x * dt, d.w.y * dt, d.w.z * dt)); d.q.multiply(this._q);
+        const f = w.floorAt(d.p.x, d.p.z, d.p.y + 0.3);
+        if (d.p.y < f.y + d.s * 0.5 && d.v.y < 0) {
+          d.p.y = f.y + d.s * 0.5;
+          d.v.y *= -0.3; d.v.x *= 0.45; d.v.z *= 0.45; d.w.multiplyScalar(0.45);
+          if (d.v.lengthSq() < 0.3) d.rest = true;
+        }
+      }
+      const fade = d.life > 14 ? Math.max(0, 1 - (d.life - 14) / 2) : 1;
+      if (fade <= 0) d.on = false;
+      o.position.copy(d.p); o.quaternion.copy(d.q); o.scale.setScalar(d.s * fade); o.updateMatrix();
+      this.deb.setMatrixAt(i, o.matrix);
+    }
+    this.deb.count = this.debS.length;
+    this.deb.instanceMatrix.needsUpdate = true;
   }
 
   flashLight(p, intensity = 40, dur = 0.06, dist = 14, color = 0xffa850) {
@@ -208,6 +269,7 @@ export class FX {
       this.flashLight(p.clone().addScaledVector(n, 0.2), 6, 0.04, 3, 0xffc070);
     }
     if (S.decal) this.decals[S.decal].add(p, n, S.decal === 'metal' ? rand(0.05, 0.07) : rand(0.07, 0.11));
+    if (surf === 'concrete' || surf === 'dirt' || surf === 'wood') this.debris(p, 3, S.dust.map((c) => c * 0.8), 1, surf === 'wood' ? [0.006, 0.014] : [0.005, 0.012], n);
     Audio.play3D(S.sound, p, { vol: 0.9, ref: 3 });
     if (surf === 'metal' && Math.random() < 0.25) Audio.play3D('ricochet', p, { vol: 0.6, ref: 4 });
   }
@@ -250,6 +312,7 @@ export class FX {
     for (let i = 0; i < 30; i++) this.dots.add(p, new THREE.Vector3(rand(-1, 1), rand(0.4, 1.4), rand(-1, 1)).normalize().multiplyScalar(rand(4, 14)), { life: rand(1, 2), size: rand(0.03, 0.07), grav: 9.8, drag: 0.4, color: [0.08, 0.07, 0.06] });
     this.decals.scorch.add(new THREE.Vector3(p.x, 0.012, p.z), new THREE.Vector3(0, 1, 0), rand(3, 4.5));
     this.burning.push({ p: p.clone(), t: rand(6, 10) });
+    this.blast(p, true, [0.3, 0.26, 0.21]);
     Audio.play3D('explosion', p, { vol: 2.5, ref: 10 });
   }
 
@@ -262,6 +325,7 @@ export class FX {
   update(dt) {
     const g = this.g, w = g.world;
     this.add.update(dt); this.alpha.update(dt); this.dots.update(dt);
+    this._updDebris(dt);
     for (const L of this.lights) { if (L.t > 0) { L.t -= dt; L.l.intensity = L.peak * Math.max(0, L.t / L.dur) ** 1.5; } else L.l.intensity = 0; }
     // 화재 잔류
     for (let i = this.burning.length - 1; i >= 0; i--) {
@@ -309,6 +373,8 @@ export class FX {
     this.mags = [];
     for (const c of this.casings) { c.active = false; c.m.visible = false; c.rest = false; }
     this.burning = [];
+    for (const d of this.debS) d.on = false;
+    this.shocks = [];
   }
 }
 

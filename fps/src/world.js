@@ -149,6 +149,7 @@ export class World {
       yellow: std(T.steel, { color: 0xd9a514, roughness: 0.7, metalness: 0.3 }),
       glass: new THREE.MeshStandardMaterial({ color: 0x9fb6c0, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.28, envMapIntensity: 1.6, depthWrite: false }),
       lamp: new THREE.MeshStandardMaterial({ color: 0x111111, emissive: new THREE.Color(1, 0.86, 0.62), emissiveIntensity: 9 }),
+      streetLamp: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, emissive: new THREE.Color(1, 0.78, 0.5), emissiveIntensity: 0.15 }),
       marker: new THREE.MeshStandardMaterial({ color: 0x111111, emissive: new THREE.Color(0.3, 1, 0.45), emissiveIntensity: 5 }),
       chain: new THREE.MeshStandardMaterial({ map: chainTex(), color: 0xb8bcbc, alphaTest: 0.45, side: THREE.DoubleSide, metalness: 0.75, roughness: 0.45 }),
       galv: std(T.steel, { color: 0x9aa0a2, roughness: 0.7, metalness: 0.85 }),
@@ -587,7 +588,8 @@ export class World {
     for (const [x, z] of [[-9, 50], [9, 30], [-9, 5], [9, -18], [30, 30], [-35, 30], [20, 45], [-30, -28]]) {
       this.cylinder(x, 3.5, z, 0.09, 7, M.steel, { seg: 10 });
       B(x + (x > 0 ? -0.8 : 0.8), 6.9, z, 1.8, 0.12, 0.2, M.steel, { collide: false });
-      B(x + (x > 0 ? -1.4 : 1.4), 6.82, z, 0.6, 0.08, 0.3, M.lamp, { collide: false });
+      B(x + (x > 0 ? -1.4 : 1.4), 6.82, z, 0.6, 0.08, 0.3, M.streetLamp, { collide: false });
+      (this.streetLamps || (this.streetLamps = [])).push(new THREE.Vector3(x + (x > 0 ? -1.4 : 1.4), 6.74, z));
     }
     // 창고 외부 공조기/발전기
     B(28, 0, -54, 2.2, 1.6, 1.4, M.barrelGray, { surf: 'metal' });

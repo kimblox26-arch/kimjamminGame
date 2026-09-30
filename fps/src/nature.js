@@ -399,11 +399,14 @@ export class Nature {
     this.chirpT -= dt;
     if (this.chirpT <= 0) {
       this.chirpT = rand(1.2, 4.5);
+      const dayK = g.dayNight ? g.dayNight.day : 1;
       if (this.quiet <= 0) {
         const L = g.player.pos, a = rand(0, Math.PI * 2), r = rand(25, 70);
         const p = V(L.x + Math.cos(a) * r, rand(4, 12), L.z + Math.sin(a) * r);
-        Audio.play3D('chirp' + ((Math.random() * 4) | 0), p, { vol: rand(0.25, 0.5), ref: 12, jitter: 0.08 });
+        if (Math.random() < dayK) Audio.play3D('chirp' + ((Math.random() * 4) | 0), p, { vol: rand(0.25, 0.5), ref: 12, jitter: 0.08 });
+        else if (Math.random() < 0.18) Audio.play3D('owl', p.setY(rand(8, 14)), { vol: rand(0.3, 0.5), ref: 14, jitter: 0.04 });
       }
+      if (g.dayNight) Audio.setNight(1 - dayK);
     }
     // 국기
     const f = this.flag.geometry.attributes.position, a0 = this.flag0, S = WIND.strength.value;

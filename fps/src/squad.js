@@ -217,7 +217,11 @@ export class HumanAnimator {
     if (ud.eyes) {
       const hq = B.head.getWorldQuaternion(new THREE.Quaternion()).invert();
       const eyeT = this.lookW.clone().sub(V(0, 0, 0).setFromMatrixPosition(B.head.matrixWorld)).applyQuaternion(hq).normalize();
-      for (const e of ud.eyes) e.quaternion.setFromUnitVectors(FWD, V(clamp(eyeT.x, -0.35, 0.35), clamp(eyeT.y, -0.25, 0.25), 1).normalize());
+      // 단속 운동(사카드): 응시 중에도 0.3~2초마다 미세하게 시선이 튄다
+      this.sacT = (this.sacT ?? 0) - dt;
+      if (this.sacT <= 0) { this.sacT = 0.3 + Math.random() * 1.7; this.sac = [(Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.04]; }
+      const sc = this.sac || [0, 0];
+      for (const e of ud.eyes) e.quaternion.setFromUnitVectors(FWD, V(clamp(eyeT.x / Math.max(eyeT.z, 0.3) + sc[0], -0.35, 0.35), clamp(eyeT.y / Math.max(eyeT.z, 0.3) + sc[1], -0.25, 0.25), 1).normalize());
       if (ud.hmat?.userData.wLocal) ud.hmat.userData.wLocal.value.copy(WIND.dir.value).applyQuaternion(hq).multiplyScalar(1 + (hv > 3 ? 0.6 : 0));
     }
     // 눈 깜빡임 (2~6초 간격, 약 0.15초; 가끔 두 번)
@@ -292,6 +296,15 @@ class Sling {
   }
 }
 
+// 총기 라이트 광선 (옆에서 볼 때 안개 속 원뿔)
+const BEAM_GEO = (() => { const g = new THREE.ConeGeometry(1, 1, 28, 1, true); g.translate(0, -0.5, 0); g.rotateX(-Math.PI / 2); return g; })();
+const BEAM_MAT = new THREE.ShaderMaterial({
+  uniforms: { uK: { value: 0 } },
+  vertexShader: `varying float vZ; varying vec3 vN, vV; void main(){ vZ = position.z; vec4 mv = modelViewMatrix * vec4(position, 1.); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform float uK; varying float vZ; varying vec3 vN, vV; void main(){ float e = abs(dot(vN, vV)); float a = uK * pow(1. - vZ, 2.) * smoothstep(0.0, 0.05, vZ) * e * e * 0.07; gl_FragColor = vec4(vec3(1.0, 0.95, 0.85) * a, 1.); }`,
+  transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+});
+
 // ════════ 분대 AI ════════
 const SLOTS = [V(-1.7, 0, -1.6), V(1.8, 0, -2.2), V(-0.9, 0, -3.9), V(1.2, 0, -4.8)];
 const GUNS = { jin: 'm4', mason: 'm4', sofia: 'm4', dae: 'ak' };
@@ -310,6 +323,9 @@ class Friend {
     this.spheres = Array.from({ length: 10 }, () => ({ c: V(0, 0, 0), r: 0.1 }));
     this.name = VARIANTS[key].name;
     this.sling = new Sling(); this.g.scene.add(this.sling.mesh);
+    // 총기 라이트 (야간에 플레이어가 켜면 함께 켬)
+    this.light = new THREE.SpotLight(0xfff0dc, 0, 40, 0.32, 0.6, 1.6); this.g.scene.add(this.light, this.light.target); this.lightK = 0;
+    this.beam = new THREE.Mesh(BEAM_GEO, BEAM_MAT.clone()); this.beam.scale.set(4.4, 4.4, 14); this.beam.visible = false; this.beam.renderOrder = 5; this.beam.frustumCulled = false; this.g.scene.add(this.beam);
   }
 
   update(dt) {
@@ -385,6 +401,16 @@ class Friend {
     this.anim.flinch = Math.max(this.anim.flinch, this.flinchT > 0 ? Math.min(1, this.flinchT) : 0);
     this.anim.update(dt, { pos: this.pos, yaw: this.yaw, vel: this.vel, crouch: crouching, ready, aimPitch, aimYaw, lookAt: look, gun: this.gun });
     this.sling.update(this.h.bones.chest, this.gun);
+    const DN = g.dayNight, wantL = DN && DN.flashOn && DN.lamp > 0.4 ? 1 : 0;
+    this.lightK = damp(this.lightK, wantL, wantL ? 3 + this.slot.x : 4, dt);
+    this.light.intensity = this.lightK > 0.05 ? 55 * this.lightK : 0;
+    if (this.light.intensity > 0) {
+      const gq = this.gun.group.quaternion, gF = V(0, 0, -1).applyQuaternion(gq);
+      this.light.position.setFromMatrixPosition(this.gun.fore.matrixWorld).addScaledVector(gF, 0.12).add(V(0, 0.02, 0));
+      this.light.target.position.copy(this.light.position).addScaledVector(gF, 10); this.light.target.updateMatrixWorld();
+      this.beam.position.copy(this.light.position); this.beam.lookAt(this.light.target.position);
+    }
+    this.beam.visible = this.lightK > 0.05; this.beam.material.uniforms.uK.value = this.lightK;
     // 발소리
     this.stepAcc = (this.stepAcc || 0) + hv * dt;
     if (this.stepAcc > (hv > 3 ? 1.2 : 0.75) && hv > 0.5) {
@@ -433,5 +459,5 @@ export class Squad {
   react(pos, radius, strength = 1) {
     for (const f of this.list) { const d = f.pos.distanceTo(pos); if (d < radius) { f.flinchT = Math.max(f.flinchT, strength * (1 - d / radius) * 1.6); } }
   }
-  clear() { for (const f of this.list) { this.g.scene.remove(f.h.root); this.g.scene.remove(f.gun.group); this.g.scene.remove(f.sling.mesh); } this.list = []; }
+  clear() { for (const f of this.list) { this.g.scene.remove(f.h.root); this.g.scene.remove(f.gun.group); this.g.scene.remove(f.sling.mesh); this.g.scene.remove(f.light, f.light.target, f.beam); } this.list = []; }
 }
