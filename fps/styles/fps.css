@@ -253,3 +253,5 @@ body.touch #center-msg { font-size: 20px; }
   button { font-size: 16px; padding: 9px 16px; }
   .logo b { font-size: 40px; }
 }
+#screen-settings .panel { max-height: 94vh; overflow-y: auto; margin: auto; }
+.set-sub { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--acc); font-size: 13px; letter-spacing: 0.2em; font-weight: 700; }

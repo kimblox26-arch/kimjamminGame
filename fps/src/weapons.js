@@ -333,7 +333,7 @@ export class WeaponSystem {
       if (pressed && w.ammo <= 0 && !this.anim) { Audio.play('dry', { vol: 0.8 }); if (w.reserve > 0) this.reloadAt = this.time + 0.25; }
       return;
     }
-    if (!held) this.fireLatch = false;
+    if (!held) this.fireLatch = this.dryHeld = false;
     if (this.shotgunLoading && pressed && w.ammo > 0) { this.stopShells = true; return; }
     if (!held) return;
     if (this.anim) { if (this.anim.name === 'inspect') this.cancelAnim(); else return; }
@@ -343,7 +343,8 @@ export class WeaponSystem {
     if (w.needsCycle) { if (pressed && !this.anim) this.play('cycle'); return; }
     if (this.time < w.nextFire) return;
     if (w.ammo <= 0) {
-      if (!this.fireLatch) { Audio.play('dry', { vol: 0.8 }); this.fireLatch = true; if (w.reserve > 0) this.reloadAt = this.time + 0.25; }
+      // 연사 중 탄이 떨어져도 (방아쇠를 계속 당긴 채) 한 번 격발음 후 자동 재장전
+      if (!this.dryHeld) { Audio.play('dry', { vol: 0.8 }); this.fireLatch = this.dryHeld = true; if (w.reserve > 0) this.reloadAt = this.time + 0.25; }
       return;
     }
     this.fireLatch = true;
@@ -501,11 +502,12 @@ export class WeaponSystem {
     m.group.position.copy(pos);
     // 팔-개머리판 관통 피드백: 팔이 파고든 만큼 총을 반대로 밀어냄 (관통 없으면 서서히 복귀)
     { const sp = this.stockPush || (this.stockPush = new THREE.Vector3()), A = this.arms;
-      let moved = false;
-      for (const k of ['R', 'L']) if (A.pen && A.pen[k] > 0.001) { _v2.copy(A.penDir[k]).transformDirection(_m.copy(this.root.matrixWorld).invert()); sp.addScaledVector(_v2, Math.min(A.pen[k], 0.02) * 0.8); moved = true; }
-      if (!moved) sp.multiplyScalar(Math.max(0, 1 - dt * 2.5));
+      // 항상 감쇠 → 관통이 남아도 누적(래칫)되지 않고 평형값에 머묾
+      sp.multiplyScalar(Math.max(0, 1 - dt * 2.5));
+      for (const k of ['R', 'L']) if (A.pen && A.pen[k] > 0.001 && A.penDir[k].lengthSq() > 0.25) { _v2.copy(A.penDir[k]).transformDirection(_m.copy(this.root.matrixWorld).invert()); sp.addScaledVector(_v2, Math.min(A.pen[k], 0.02) * 0.8); }
       if (sp.length() > 0.12) sp.setLength(0.12);
-      m.group.position.add(sp); }
+      // 정조준 시 광학 정렬은 항상 정확해야 함
+      m.group.position.addScaledVector(sp, 1 - e); }
     m.group.rotation.set(rot.x, rot.y, rot.z, 'YXZ');
     this.poseParts(dt, A, w, d, m, tmp);
   }

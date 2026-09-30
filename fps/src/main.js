@@ -64,6 +64,8 @@ class Input {
   releaseAll() { this.keys.clear(); this.mouse = [false, false, false]; }
 }
 
+const SHADOW = { off: [0, 0], low: [1024, 512], medium: [2048, 1024], high: [4096, 2048] };
+const presetOpts = (q) => ({ renderScale: { low: 0.75, medium: 1, high: Math.min(devicePixelRatio, 1.5) }[q] ?? 1, shadow: q, aa: q !== 'low', ao: q !== 'low', bloom: q !== 'low' });
 const QUALITY = {
   low: { pr: 0.75, shadow: 1024, msaa: 0, bloom: false, ao: false, vmShadow: 512 },
   medium: { pr: 1, shadow: 2048, msaa: 2, bloom: true, ao: true, vmShadow: 1024 },
@@ -83,10 +85,13 @@ class Game {
 
   loadSettings() {
     const d = { sens: 1, adsSens: 0.8, fov: 90, vol: 0.8, quality: isTouchDevice() ? 'low' : 'high', invertY: false, showFps: false, timeMode: 'cycle' };
-    let s = d;
-    try { s = { ...d, ...JSON.parse(localStorage.getItem('kj-fps-settings') || '{}') }; } catch {}
+    d.fpsCap = 0;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem('kj-fps-settings') || '{}'); } catch {}
+    const s = { ...d, ...saved };
     const q = new URLSearchParams(location.search).get('q');
-    if (q && QUALITY[q]) s.quality = q;
+    if (q && QUALITY[q]) { s.quality = q; Object.assign(s, presetOpts(q)); }
+    for (const [k, v] of Object.entries(presetOpts(s.quality))) if (s[k] === undefined) s[k] = v;
     return s;
   }
   saveLoadout() { try { const W = this.weapons; localStorage.setItem('kj-fps-loadout', JSON.stringify(W.loadout.map((i) => W.list[i].def.id))); } catch {} }
@@ -230,17 +235,17 @@ class Game {
   }
 
   setupComposer() {
-    const r = this.renderer, q = QUALITY[this.settings.quality] || QUALITY.high;
-    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: q.msaa });
+    const r = this.renderer, s = this.settings, msaa = this.msaa();
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: msaa });
     rt.depthTexture = new THREE.DepthTexture(innerWidth, innerHeight); rt.depthTexture.type = THREE.UnsignedIntType;
     this.composer = new EffectComposer(r, rt);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.ssao = new SSAOPass(this.camera, innerWidth * r.getPixelRatio(), innerHeight * r.getPixelRatio());
-    this.ssao.enabled = q.ao;
+    this.ssao.enabled = s.ao;
     this.composer.addPass(this.ssao);
     this.composer.addPass(this.vmPass = new ViewmodelPass(this.vmScene, this.vmCam));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.32, 0.45, 0.92);
-    this.bloom.enabled = q.bloom;
+    this.bloom.enabled = s.bloom;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.nvgPass = new ShaderPass(NVGShader);
@@ -249,19 +254,24 @@ class Game {
     this.composer.addPass(this.grade);
   }
 
+  msaa() { const q = QUALITY[this.settings.quality] || QUALITY.high; return this.settings.aa ? Math.max(2, q.msaa) : 0; }
+
   applySettings() {
-    const s = this.settings, q = QUALITY[s.quality] || QUALITY.high;
-    this.renderer.setPixelRatio(q.pr);
-    const sh = this.sun.shadow;
-    if (sh.mapSize.x !== q.shadow) { sh.mapSize.set(q.shadow, q.shadow); sh.map?.dispose(); sh.map = null; }
+    const s = this.settings, msaa = this.msaa();
+    const [shSize, vmShSize] = SHADOW[s.shadow] || SHADOW.medium;
+    this.renderer.setPixelRatio(clamp(s.renderScale, 0.4, 2));
+    const setShadow = (L, size) => {
+      L.castShadow = size > 0;
+      if (size && L.shadow.mapSize.x !== size) { L.shadow.mapSize.set(size, size); L.shadow.map?.dispose(); L.shadow.map = null; }
+    };
+    setShadow(this.sun, shSize); setShadow(this.vmSun, vmShSize);
+    if (this.dayNight?.flash) this.dayNight.flash.castShadow = shSize >= 2048;
     if (this.composer) {
-      if (this.composer.renderTarget1.samples !== q.msaa) { this.composer.renderTarget1.samples = q.msaa; this.composer.renderTarget2.samples = q.msaa; this.composer.renderTarget1.dispose(); this.composer.renderTarget2.dispose(); }
-      this.bloom.enabled = q.bloom;
-      this.ssao.ao = q.ao;
+      if (this.composer.renderTarget1.samples !== msaa) { this.composer.renderTarget1.samples = msaa; this.composer.renderTarget2.samples = msaa; this.composer.renderTarget1.dispose(); this.composer.renderTarget2.dispose(); }
+      this.bloom.enabled = s.bloom;
+      this.ssao.enabled = s.ao;
     }
     this.dayNight?.setMode(s.timeMode || 'cycle');
-    const vs = this.vmSun.shadow;
-    if (vs.mapSize.x !== q.vmShadow) { vs.mapSize.set(q.vmShadow, q.vmShadow); vs.map?.dispose(); vs.map = null; }
     Audio.setVolume(s.vol);
     $('fps').style.display = s.showFps ? 'block' : 'none';
     this.resize();
@@ -293,11 +303,16 @@ class Game {
     $('btn-armory2').onclick = () => this.armory.open('pause');
     for (const id of ['btn-settings', 'btn-settings2']) $(id).onclick = () => { this.prevScreen = this.screen; this.showScreen('settings'); };
     $('btn-back').onclick = () => { this.saveSettings(); this.applySettings(); this.showScreen(this.prevScreen || 'menu'); };
+    const refresh = [];
     const bind = (id, key, fmt = (v) => v, parse = Number) => {
       const el = $(id), out = $(id + '-v');
-      el.value = s[key]; if (out) out.textContent = fmt(s[key]);
-      el.oninput = () => { s[key] = el.type === 'checkbox' ? el.checked : parse(el.value); if (out) out.textContent = fmt(s[key]); if (key === 'vol') Audio.setVolume(s.vol); if (key === 'fov') this.resize(); };
-      if (el.type === 'checkbox') el.checked = s[key];
+      const show = () => { if (el.type === 'checkbox') el.checked = s[key]; else el.value = s[key]; if (out) out.textContent = fmt(s[key]); };
+      el.oninput = () => {
+        s[key] = el.type === 'checkbox' ? el.checked : parse(el.value); if (out) out.textContent = fmt(s[key]);
+        if (key === 'vol') Audio.setVolume(s.vol); if (key === 'fov') this.resize();
+        if (key === 'quality') { Object.assign(s, presetOpts(s.quality)); refresh.forEach((f) => f()); }
+      };
+      show(); refresh.push(show);
     };
     bind('set-sens', 'sens', (v) => (+v).toFixed(2));
     bind('set-ads', 'adsSens', (v) => (+v).toFixed(2));
@@ -305,6 +320,13 @@ class Game {
     bind('set-vol', 'vol', (v) => Math.round(v * 100) + '%');
     bind('set-quality', 'quality', (v) => ({ low: '낮음', medium: '보통', high: '높음' }[v]), String);
     bind('set-time', 'timeMode', (v) => ({ cycle: '자동', dawn: '새벽', morning: '아침', day: '한낮', afternoon: '오후', dusk: '황혼', night: '밤' }[v] || v), String);
+    $('set-scale').max = Math.max(1, Math.min(2, devicePixelRatio));
+    bind('set-scale', 'renderScale', (v) => Math.round(v * 100) + '%');
+    bind('set-shadow', 'shadow', (v) => ({ off: '끔', low: '낮음', medium: '보통', high: '높음' }[v]), String);
+    bind('set-fpscap', 'fpsCap', (v) => (+v ? v + ' FPS' : '무제한'));
+    bind('set-aa', 'aa');
+    bind('set-ao', 'ao');
+    bind('set-bloom', 'bloom');
     bind('set-invert', 'invertY');
     bind('set-fps', 'showFps');
     document.addEventListener('pointerlockchange', () => {
@@ -428,6 +450,8 @@ class Game {
   loop() {
     requestAnimationFrame(() => this.loop());
     const now = performance.now();
+    const cap = +this.settings.fpsCap;
+    if (cap && now - this.last < 1000 / cap - 2) return;
     let dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.fpsAcc = (this.fpsAcc || 0) + dt; this.fpsN = (this.fpsN || 0) + 1;

@@ -5,6 +5,7 @@ import { packFogDir } from './post.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const ss = THREE.MathUtils.smoothstep;
+const SHADOW_SIZE = { low: 1024, medium: 2048, high: 4096 };
 // 태양 궤도: 동(+x)에서 떠서 남쪽(+z)으로 기울어 서(-x)로 짐. 15시 = 기존 오후 태양 방향
 const E = V(1, 0, 0), UP = V(0, 1, 0), S = V(0, 0, 1), TILT = 0.846, MTILT = 0.7;
 export const TIME_PRESETS = { dawn: 5.85, morning: 8.5, day: 12.5, afternoon: 15, dusk: 18.35, night: 23.2 };
@@ -68,7 +69,7 @@ export class DayNight {
   buildFlashlight() {
     const g = this.g;
     const L = this.flash = new THREE.SpotLight(0xfff2de, 0, 55, 0.3, 0.55, 1.5);
-    L.castShadow = g.settings.quality !== 'low';
+    L.castShadow = (SHADOW_SIZE[g.settings.shadow] || 0) >= 2048;
     L.shadow.mapSize.set(512, 512); L.shadow.bias = -0.0005; L.shadow.camera.near = 0.2;
     g.scene.add(L, L.target);
     const cone = new THREE.ConeGeometry(1, 1, 28, 1, true); cone.translate(0, -0.5, 0); cone.rotateX(-Math.PI / 2);

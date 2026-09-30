@@ -102,6 +102,15 @@
       <select id="set-time"><option value="cycle">자동 순환 (실제 1분 = 1시간)</option><option value="dawn">새벽</option><option value="morning">아침</option><option value="day">한낮</option><option value="afternoon">오후</option><option value="dusk">황혼</option><option value="night">밤</option></select></label>
     <label>그래픽 품질 <span id="set-quality-v"></span>
       <select id="set-quality"><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label>
+    <div class="set-sub">세부 그래픽 · 최적화</div>
+    <label>렌더 해상도 <span id="set-scale-v"></span><input id="set-scale" type="range" min="0.4" max="2" step="0.05"></label>
+    <label>그림자 <span id="set-shadow-v"></span>
+      <select id="set-shadow"><option value="off">끔 (가장 빠름)</option><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option></select></label>
+    <label>프레임 제한 <span id="set-fpscap-v"></span>
+      <select id="set-fpscap"><option value="0">무제한</option><option value="60">60 FPS</option><option value="30">30 FPS (배터리 절약)</option></select></label>
+    <label class="chk"><input id="set-aa" type="checkbox"> 안티앨리어싱 (MSAA)</label>
+    <label class="chk"><input id="set-ao" type="checkbox"> 앰비언트 오클루전 (SSAO)</label>
+    <label class="chk"><input id="set-bloom" type="checkbox"> 블룸 (빛 번짐)</label>
     <label class="chk"><input id="set-invert" type="checkbox"> 마우스 Y축 반전</label>
     <label class="chk"><input id="set-fps" type="checkbox"> FPS 표시</label>
     <button id="btn-back" class="primary">저장 후 돌아가기</button>
