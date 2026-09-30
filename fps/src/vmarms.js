@@ -1,4 +1,4 @@
-// 1인칭 팔/손 (고해상도 SDF 조형 + 스키닝) — 걷어올린 소매, 팔뚝 피부/혈관/털/흉터, 전술 장갑(손가락 관절), 손목시계
+// 1인칭 팔/손 (고해상도 SDF 조형 + 스키닝) — 긴소매 전투복, 전술 장갑(손가락 관절), 손목시계
 import * as THREE from 'three';
 import { SDFModel, ellipsoid, sphere, cone, rbox, torus, buildGeometry, smoothMesh, mergeParts } from './sdf.js';
 import { SKEL, BI, triMaterial, frameQuat, setWorldQuat, n3 } from './human.js';
@@ -8,6 +8,22 @@ import { T } from './textures.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const FWD = V(0, 0, 1);
+// 선분-선분 최단거리
+const _d1 = V(0, 0, 0), _d2 = V(0, 0, 0), _r = V(0, 0, 0), _c1 = V(0, 0, 0), _c2 = V(0, 0, 0);
+export function segSeg(p1, q1, p2, q2) {
+  _d1.subVectors(q1, p1); _d2.subVectors(q2, p2); _r.subVectors(p1, p2);
+  const a = _d1.dot(_d1), e = _d2.dot(_d2), f = _d2.dot(_r);
+  let s = 0, t = 0;
+  if (a <= 1e-9 && e <= 1e-9) return p1.distanceTo(p2);
+  if (a <= 1e-9) t = clamp(f / e, 0, 1);
+  else {
+    const c = _d1.dot(_r);
+    if (e <= 1e-9) s = clamp(-c / a, 0, 1);
+    else { const b = _d1.dot(_d2), den = a * e - b * b; s = den > 1e-9 ? clamp((b * f - c * e) / den, 0, 1) : 0; t = (b * s + f) / e; if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); } else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); } }
+  }
+  _c1.copy(p1).addScaledVector(_d1, s); _c2.copy(p2).addScaledVector(_d2, t);
+  return _c1.distanceTo(_c2);
+}
 // 뼈대: 루트 + 좌우 (상완, 전완, 손, 엄지 3마디, 네 손가락 각 3마디)
 const VB = [];
 const addB = (name, parent, p) => VB.push({ name, parent: parent == null ? -1 : VB.findIndex((b) => b.name === parent), p: V(...p) });
@@ -45,29 +61,19 @@ function buildArms() {
   if (ARM) return ARM;
   const parts = [];
   for (const [s, k] of SIDES) {
-    const S = new SDFModel(s > 0 ? [0.14, 0.95, -0.09] : [-0.62, 0.95, -0.09], s > 0 ? [0.62, 1.48, 0.09] : [-0.14, 1.48, 0.09], 0.0036);
-    const { sh, el, wr } = GEO[k], ua = VBI['uarm' + k], fa = VBI['farm' + k], ha = VBI['hand' + k];
+    const S = new SDFModel(s > 0 ? [-0.02, 0.9, -0.1] : [-0.62, 0.9, -0.1], s > 0 ? [0.62, 1.52, 0.1] : [0.02, 1.52, 0.1], 0.0036);
+    const { sh, el, wr } = GEO[k], ua = VBI['uarm' + k], fa = VBI['farm' + k];
     const lerpP = (a, b, t) => a.clone().lerp(b, t).toArray();
-    // 소매: 상완 + 팔꿈치 주름 + 걷어올린 커프
-    S.add(cone(sh.toArray(), el.toArray(), 0.057, 0.048, { bone: [ua, fa], seg: [sh.toArray(), el.toArray()], blend: [0.8, 1.02], mat: 'sleeve', k: 0.02, disp: folds(0.004, 0.14, 0.9, 0.2), dispMax: 0.006 }));
-    S.add(cone(el.toArray(), lerpP(el, wr, 0.36), 0.048, 0.046, { bone: [ua, fa], seg: [el.toArray(), wr.toArray()], blend: [-0.1, 0.12], mat: 'sleeve', k: 0.015, disp: folds(0.004, 0.12, 0.1, 0.25), dispMax: 0.006 }));
-    const cuffA = el.clone().lerp(wr, 0.35), cuffB = el.clone().lerp(wr, 0.305);
-    for (const [c, R, r] of [[cuffA, 0.046, 0.0105], [cuffB, 0.048, 0.009]]) {
-      S.add(torus(c.toArray(), R, r, { bone: fa, mat: 'sleeve', k: 0.006, rot: [0, 0, s * Math.PI / 4] }));
-    }
-    // 팔뚝 피부 (근육 볼륨 + 힘줄 + 혈관)
-    S.add(cone(lerpP(el, wr, 0.25), wr.toArray(), 0.042, 0.03, { bone: [fa, ha], seg: [el.toArray(), wr.toArray()], blend: [0.95, 1.1], mat: 'skin', k: 0.012 }));
-    const m1 = el.clone().lerp(wr, 0.42).addScaledVector(GEO[k].w, 0.012).addScaledVector(GEO[k].n, -0.008);
-    S.add(ellipsoid(m1.toArray(), [0.036, 0.034, 0.03], { bone: fa, mat: 'skin', k: 0.02, rot: [0, 0, -s * Math.PI / 4] }));
-    for (const [o1, o2, t0, t1] of [[0.02, 0.028, 0.45, 0.97], [-0.012, 0.03, 0.5, 0.95], [0.004, 0.034, 0.6, 1.0]]) {
-      const a = el.clone().lerp(wr, t0).addScaledVector(GEO[k].w, o1).addScaledVector(GEO[k].n, o2 * 0.95 + 0.004);
-      const b = el.clone().lerp(wr, t1).addScaledVector(GEO[k].w, o1 * 0.6).addScaledVector(GEO[k].n, 0.026);
-      S.add(cone(a.toArray(), b.toArray(), 0.0022, 0.0018, { bone: fa, mat: 'skin', k: 0.004 }));
-    }
-    if (k === 'R') { // 흉터 (얕은 홈)
-      const sc = el.clone().lerp(wr, 0.62).addScaledVector(GEO[k].n, -0.036).addScaledVector(GEO[k].w, 0.012);
-      S.sub(ellipsoid(sc.toArray(), [0.028, 0.0016, 0.0022], { k: 0.002, rot: [0.5, 0, -s * Math.PI / 4 + 0.4] }));
-    }
+    // 긴소매 전투복: 어깨 뒤로 길게 이어져(화면에 끝단이 보이지 않게) → 상완 → 팔꿈치 주름 → 전완 → 소매 끝(장갑 커프 속으로)
+    const back = sh.clone().addScaledVector(el.clone().sub(sh).normalize(), -0.22);
+    S.add(cone(back.toArray(), sh.toArray(), 0.06, 0.058, { bone: ua, mat: 'sleeve', k: 0.02 }));
+    S.add(cone(sh.toArray(), el.toArray(), 0.058, 0.049, { bone: [ua, fa], seg: [sh.toArray(), el.toArray()], blend: [0.8, 1.02], mat: 'sleeve', k: 0.02, disp: folds(0.004, 0.14, 0.9, 0.2), dispMax: 0.006 }));
+    S.add(cone(el.toArray(), lerpP(el, wr, 0.86), 0.049, 0.039, { bone: [ua, fa], seg: [el.toArray(), wr.toArray()], blend: [-0.1, 0.12], mat: 'sleeve', k: 0.015, disp: folds(0.0035, 0.1, 0.12, 0.3), dispMax: 0.006 }));
+    // 전완 근육 볼륨 (소매 속)
+    const m1 = el.clone().lerp(wr, 0.3).addScaledVector(GEO[k].w, 0.008).addScaledVector(GEO[k].n, -0.006);
+    S.add(ellipsoid(m1.toArray(), [0.05, 0.044, 0.04], { bone: fa, mat: 'sleeve', k: 0.03, rot: [0, 0, -s * Math.PI / 4] }));
+    // 소매 끝단 밑단
+    S.add(torus(lerpP(el, wr, 0.84), 0.038, 0.004, { bone: fa, mat: 'sleeve', k: 0.004, rot: [0, 0, s * Math.PI / 4] }));
     S.bake();
     const m = smoothMesh(S.mesh(), 1, 0.3);
     parts.push({ m, cls: S.classify(m, VB, 0.012) });
@@ -100,21 +106,6 @@ function buildGloves() {
   return HAND;
 }
 
-function hairShell(layer, layers) {
-  const m = new THREE.MeshStandardMaterial({ color: 0x3b2a1c, roughness: 0.8, envMapIntensity: 0.4, alphaTest: 0.5 });
-  m.onBeforeCompile = (s) => {
-    s.uniforms.uL = { value: 0.0038 * layer / layers }; s.uniforms.uK = { value: layer / layers };
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uL; varying vec3 vP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvP = position; float sx = sign(position.x); transformed += normal * uL + vec3(sx * 0.7071, -0.7071, 0.0) * uL * 2.2;');
-    s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>
-      uniform float uK; varying vec3 vP; float hh(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }`)
-      .replace('#include <alphatest_fragment>', `float sx = sign(vP.x); vec3 dd = vec3(sx * 0.7071, -0.7071, 0.0), nn = vec3(-sx * 0.7071, -0.7071, 0.0);
-        vec2 ac = floor(vec2(dot(vP, nn), vP.z) * 2600.0); float al = dot(vP, dd) * 170.0 + hh(ac.xyx) * 7.0;
-        float r = hh(vec3(ac, floor(al))); if (r < 0.975 + uK * 0.018 || fract(al) > 1.0 - uK * 0.6) discard;`);
-  };
-  m.customProgramCacheKey = () => 'armhair' + layer;
-  return m;
-}
-
 export class Arms {
   constructor(root) {
     this.root = root;
@@ -123,10 +114,10 @@ export class Arms {
     this.bones = Object.fromEntries(bones.map((b) => [b.name, b]));
     const skel = new THREE.Skeleton(bones);
     const cam = T.multicam;
-    const sleeve = triMaterial({ map: cam.map, nmap: T.clothN.normalMap, scale: 3.4, ns: 1.6, rough: 0.95, vcol: true, sheen: 0.7 });
+    const sleeve = triMaterial({ map: cam.map, nmap: T.clothN.normalMap, scale: 3.4, ns: 1.6, rough: 0.95, vcol: true, sheen: 0.5, side: THREE.DoubleSide });
     const skin = triMaterial({ nmap: T.skinN.normalMap, map: T.skinN.map, scale: 30, ns: 0.8, rough: 0.5, vcol: true, sheen: 0.15, skin: 1 });
-    const glove = triMaterial({ color: 0x5a4a37, map: T.glove.map, nmap: T.glove.normalMap, scale: 11, ns: 1.5, rough: 0.72, sheen: 0.3 });
-    const palm = triMaterial({ color: 0x3e3a33, map: T.glove.map, nmap: T.stipple.normalMap, scale: 30, ns: 0.9, rough: 0.85, sheen: 0.5 });
+    const glove = triMaterial({ color: 0x74604a, map: T.glove.map, nmap: T.glove.normalMap, scale: 11, ns: 1.5, rough: 0.78, sheen: 0.12, env: 0.55 });
+    const palm = triMaterial({ color: 0x4a4339, map: T.glove.map, nmap: T.stipple.normalMap, scale: 30, ns: 0.9, rough: 0.88, sheen: 0.2, env: 0.55 });
     const pad = triMaterial({ color: 0x1f1d1a, nmap: T.stipple.normalMap, scale: 26, ns: 0.7, rough: 0.45 });
     const pad2 = triMaterial({ color: 0x3a342b, nmap: T.stipple.normalMap, scale: 24, ns: 0.5, rough: 0.6 });
     const cuff = triMaterial({ color: 0x2d2924, nmap: T.clothN.normalMap, scale: 9, ns: 1.2, rough: 0.9 });
@@ -141,21 +132,15 @@ export class Arms {
     this.group = new THREE.Group();
     this.group.add(this.arm, this.hands);
     for (const o of [this.arm, this.hands]) { o.frustumCulled = false; o.castShadow = true; o.receiveShadow = true; }
-    // 팔 털 셸 (피부 영역만)
-    const g = this.arm.geometry, grp = g.groups.find((x) => x.materialIndex === 1);
-    if (grp) {
-      const hg = new THREE.BufferGeometry();
-      for (const a of ['position', 'normal', 'skinIndex', 'skinWeight']) hg.setAttribute(a, g.attributes[a]);
-      hg.setIndex(new THREE.BufferAttribute(g.index.array.slice(grp.start, grp.start + grp.count), 1));
-      for (let i = 1; i <= 4; i++) { const sm = new THREE.SkinnedMesh(hg, hairShell(i, 4)); sm.bind(skel); sm.frustumCulled = false; this.group.add(sm); }
-    }
     root.add(this.group);
     this.side = { L: { hand: this.bones.handL }, R: { hand: this.bones.handR } };
+    this.pen = { L: 0, R: 0 }; this.penDir = { L: V(0, 0, 0), R: V(0, 0, 0) };
     this.shoulder = { L: V(-0.21, -0.31, 0.17), R: V(0.21, -0.31, 0.17) };
   }
 
   // tgt: {p, q} (root 로컬), pose: hand.js 손 자세 (off = 쥔 물체 중심의 손 로컬 위치)
-  updateSide(k, tgt, pose) {
+  // obst: [{a, b, r}] (월드 캡슐, 개머리판 등) — 팔이 총을 관통하지 않도록 팔꿈치 방향(폴)을 돌려 피함
+  updateSide(k, tgt, pose, obst = null) {
     const s = k === 'L' ? 1 : -1, B = this.bones, G = GEO[k];
     this.root.updateWorldMatrix(true, false);
     const rq = this.root.getWorldQuaternion(new THREE.Quaternion());
@@ -171,6 +156,42 @@ export class Arms {
     const pole = V(-s * 0.75, -1, 0.15).normalize().applyQuaternion(rq);
     const elbow = V(0, 0, 0), S = sh.clone();
     solveIK(S, wrist, 0.295, 0.255, pole, elbow);
+    if (obst && obst.length) {
+      // 손목 쪽 25%는 손잡이에 맞닿는 게 정상이므로 제외
+      const W3 = V(0, 0, 0), sp = V(0, 0, 0), sdf = obst.sdf;
+      const pen = (S0, E) => {
+        W3.copy(E).lerp(wrist, 0.75); let p = 0;
+        for (const o of obst) { p = Math.max(p, 0.056 + o.r - segSeg(S0, E, o.a, o.b), 0.045 + o.r - segSeg(E, W3, o.a, o.b)); }
+        // 총 전체 표면: 전완(손목 쪽 20% 제외)·상완(어깨 쪽 절반) 표본점
+        if (sdf) {
+          for (const t of [0.15, 0.35, 0.55, 0.72]) p = Math.max(p, 0.042 - sdf(sp.copy(E).lerp(wrist, t)));
+          for (const t of [0.55, 0.8, 1.0]) p = Math.max(p, 0.05 - sdf(sp.copy(S0).lerp(E, t)));
+        }
+        return p;
+      };
+      let bp = pen(S, elbow);
+      if (bp > 0) {
+        const ax = wrist.clone().sub(sh).normalize(), best = { c: bp * 10, e: elbow.clone(), s: S.clone() };
+        for (const ang of [0.25, -0.25, 0.5, -0.5, 0.75, -0.75, 1.0, -1.0, 1.3, -1.3, 1.6, -1.6]) {
+          const S2 = sh.clone(), E2 = V(0, 0, 0), pl = pole.clone().applyAxisAngle(ax, ang);
+          solveIK(S2, wrist, 0.295, 0.255, pl, E2);
+          const c = pen(S2, E2) * 10 + Math.abs(ang) * 0.004;
+          if (c < best.c) { best.c = c; best.e.copy(E2); best.s.copy(S2); }
+        }
+        elbow.copy(best.e); S.copy(best.s);
+      }
+      // 남은 관통(방향 포함) → 총 위치 보정용 피드백 (Weapons 가 다음 프레임에 총을 그만큼 밀어냄)
+      W3.copy(elbow).lerp(wrist, 0.75); let wp = 0; const dir = V(0, 0, 0);
+      for (const o of obst) for (const [A0, B0, r0] of [[S, elbow, 0.056], [elbow, W3, 0.045]]) {
+        const pp = r0 + o.r - segSeg(A0, B0, o.a, o.b);
+        if (pp > wp) { wp = pp; dir.subVectors(_c2, _c1).normalize(); }
+      }
+      if (sdf) for (const t of [0.15, 0.35, 0.55, 0.72]) {
+        const q = V(0, 0, 0).copy(elbow).lerp(wrist, t), pp = 0.042 - sdf(q);
+        if (pp > wp) { wp = pp; const h = 0.01; dir.set(sdf(V(q.x + h, q.y, q.z)) - sdf(V(q.x - h, q.y, q.z)), sdf(V(q.x, q.y + h, q.z)) - sdf(V(q.x, q.y - h, q.z)), sdf(V(q.x, q.y, q.z + h)) - sdf(V(q.x, q.y, q.z - h))).normalize().negate(); }
+      }
+      this.pen[k] = wp; this.penDir[k].copy(dir);
+    } else { this.pen[k] = 0; }
     if (S.distanceToSquared(sh) > 1e-8) { B['uarm' + k].position.add(S.sub(sh).applyQuaternion(rq.clone().invert())); B['uarm' + k].updateMatrixWorld(true); sh.setFromMatrixPosition(B['uarm' + k].matrixWorld); }
     const ua = elbow.clone().sub(sh), fl = wrist.clone().sub(elbow);
     const un = ua.clone().normalize(), flex = fl.clone().addScaledVector(un, -fl.dot(un));

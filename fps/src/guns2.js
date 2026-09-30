@@ -220,8 +220,10 @@ function akBase(G, m, o) {
   const mag = G.sub('mag', 0.13, -0.035);
   return mag;
 }
-function akAnchors(G, P, foreF = 0.285) {
-  return { grip: anchor(G.group, 'grip', -0.01, -0.1, 0, [1, 0, 0], [0, 0.1, -0.034]), fore: anchor(G.group, 'fore', foreF, -0.014, -0.004, [0.5, 0.9, 0], [0, 0, -1]), mag: anchor(P.mag, 'mag', -0.02, -0.12, -0.004, [1, 0, 0.1], [0, 1, -0.2]), charge: anchor(P.bolt, 'charge', 0.11, 0.012, 0.05, [-0.3, 1, 0], [0, 0, -1]) };
+function akAnchors(G, P, foreF = 0.285, scoped = false) {
+  // 조준경이 있으면 장전손잡이를 위가 아닌 옆에서(손바닥이 기관부를 향하게) 잡음
+  const chX = scoped ? [1, 0.25, 0] : [-0.3, 1, 0], chP = scoped ? [0.13, 0.0, 0.065] : [0.11, 0.012, 0.05];
+  return { grip: anchor(G.group, 'grip', -0.01, -0.1, 0, [1, 0, 0], [0, 0.1, -0.034]), fore: anchor(G.group, 'fore', foreF, -0.014, -0.004, [0.5, 0.9, 0], [0, 0, -1]), mag: anchor(P.mag, 'mag', -0.02, -0.12, -0.004, [1, 0, 0.1], [0, 1, -0.2]), charge: anchor(P.bolt, 'charge', chP[0], chP[1], chP[2], chX, [0, 0, -1]) };
 }
 
 // ════════ AK-74M (폴리머, 5.45 자두색 탄창, 측면 접철) ════════
@@ -268,7 +270,7 @@ function buildSVD() {
   const o = optScope(G, m, { f0: -0.13, f1: 0.2, y: 0.075, rt: 0.013, ro: 0.018, ru: 0.017, style: 2, x: -0.012, mounts: [0.0] });
   G.box(m.blued, 0.012, 0.04, -0.01, 0.04, 0.03, 0.065, -0.012);
   G.cylY(m.blued, 0.009, 0.012, 0.02, 0.075 + 0.012, -0.012, 12);
-  return finish(G, (P) => ({ anchors: akAnchors(G, P, 0.29), sight: o.sight, lens: o.lens, muzzle: point(G.group, 0.8, 0), eject: point(G.group, 0.03, 0.01, 0.017) }));
+  return finish(G, (P) => ({ anchors: akAnchors(G, P, 0.29, true), sight: o.sight, lens: o.lens, muzzle: point(G.group, 0.8, 0), eject: point(G.group, 0.03, 0.01, 0.017) }));
 }
 
 // ════════ FN SCAR-H (FDE, 20발 7.62 NATO) ════════
@@ -487,7 +489,7 @@ function buildM249() {
   mag.box(m.odg, 0.064, 0.01, -0.06, 0.06, -0.012, -0.002, -0.01);
   for (let i = 0; i < 7; i++) { const t = i / 6; mag.cyl(m.brass, 0.0029, 0.0029, -0.03 + t * 0.002, 0.012, 0.005 + t * 0.03, 0.01 + t * 0.012, 8); mag.box(m.dark, 0.006, 0.003, -0.034, 0.016, 0.002 + t * 0.03, 0.005 + t * 0.03, 0.01 + t * 0.012); }
   return finish(G, (P) => ({
-    anchors: { grip: anchor(G.group, 'grip', -0.02, -0.11, 0, [1, 0, 0], [0, 0.104, 0.03]), fore: anchor(G.group, 'fore', 0.3, -0.02, -0.004, [0.45, 0.9, 0], [0, 0, -1]), mag: anchor(P.mag, 'mag', 0.0, -0.08, -0.04, [1, 0, 0.1], [0, 1, 0]), charge: anchor(P.charge, 'charge', 0, 0, 0.02, [-1, 0.3, 0], [0, 1, 0]), cover: anchor(P.cover, 'cover', -0.155, 0.022, 0, [0, 1, 0.3], [1, 0, 0]) },
+    anchors: { grip: anchor(G.group, 'grip', -0.02, -0.11, 0, [1, 0, 0], [0, 0.104, 0.03]), fore: anchor(G.group, 'fore', 0.3, -0.02, -0.004, [0.45, 0.9, 0], [0, 0, -1]), mag: anchor(P.mag, 'mag', 0.0, -0.08, -0.04, [1, 0, 0.1], [0, 1, 0]), charge: anchor(P.charge, 'charge', 0, 0, 0.02, [-1, 0.3, 0], [0, 1, 0]), cover: anchor(P.cover, 'cover', -0.2, 0.022, 0, [0, 1, 0.3], [1, 0, 0]) },
     sight: new THREE.Vector3(0, 0.075, 0.08), muzzle: point(G.group, 0.69, 0), eject: point(G.group, 0.02, -0.06, 0.0),
   }));
 }

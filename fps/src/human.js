@@ -50,7 +50,8 @@ export function triMaterial({ color = 0xffffff, map = null, nmap = null, scale =
         vec4 tri(sampler2D t, vec3 w){ return texture2D(t, vTriPos.zy) * w.x + texture2D(t, vTriPos.xz) * w.y + texture2D(t, vTriPos.xy) * w.z; }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         vec3 tw = triW();
-        if (uHasMap > 0.5) diffuseColor.rgb *= tri(uTriMap, tw).rgb;`)
+        if (uHasMap > 0.5) diffuseColor.rgb *= tri(uTriMap, tw).rgb;
+        if (!gl_FrontFacing) diffuseColor.rgb *= 0.18;   // 근접 평면에 잘린 안쪽 면은 어두운 안감으로`)
       .replace('#include <normal_fragment_maps>', `
         {
           vec3 n0 = normalize(vTriN);

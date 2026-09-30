@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GUN_BUILDERS } from './guns.js';
 import './guns2.js';
 import { Arms, VM_GRIP_OFF } from './vmarms.js';
-import { preset, lerpPose, gunPose } from './hand.js';
+import { preset, lerpPose, gunPose, surfOf } from './hand.js';
 import { Explosives } from './explosives.js';
 import { Audio } from './audio.js';
 import { T } from './textures.js';
@@ -19,21 +19,21 @@ const BASE = {
 };
 const D = (base, o) => ({ ...BASE[base], ...o, recoil: { ...BASE[base].recoil, ...(o.recoil || {}) } });
 export const DEFS = [
-  D('AR', { id: 'm4', name: 'M4A1', cal: '5.56×45mm NATO', mag: 30, rpm: 800, dmg: 34, vel: 900, sound: 'm4', lockBack: true, desc: '미군 표준 카빈. EOTech 홀로그래픽.' }),
-  D('AR', { id: 'hk416', name: 'HK416', cal: '5.56×45mm NATO', mag: 30, rpm: 850, dmg: 34, vel: 880, sound: 'hk416', lockBack: true, eye: 0.2, recoil: { v: 0.56, h: 0.2 }, desc: '가스피스톤 AR. Aimpoint 레드닷.' }),
-  D('AR', { id: 'm16', name: 'M16A4', cal: '5.56×45mm NATO', mag: 30, rpm: 800, modes: ['BURST', 'SEMI'], dmg: 36, vel: 950, sound: 'm16', lockBack: true, scope: 4, eye: 0.05, adsFov: 0.7, adsTime: 0.26, hip: [0.105, -0.15, -0.3], recoil: { v: 0.5, h: 0.18 }, range: [100, 300, 0.75], weight: 1.15, desc: '20인치 소총. ACOG 4배율, 3점사.' }),
+  D('AR', { id: 'm4', noCharge: true, name: 'M4A1', cal: '5.56×45mm NATO', mag: 30, rpm: 800, dmg: 34, vel: 900, sound: 'm4', lockBack: true, desc: '미군 표준 카빈. EOTech 홀로그래픽.' }),
+  D('AR', { id: 'hk416', noCharge: true, name: 'HK416', cal: '5.56×45mm NATO', mag: 30, rpm: 850, dmg: 34, vel: 880, sound: 'hk416', lockBack: true, eye: 0.2, recoil: { v: 0.56, h: 0.2 }, desc: '가스피스톤 AR. Aimpoint 레드닷.' }),
+  D('AR', { id: 'm16', noCharge: true, name: 'M16A4', cal: '5.56×45mm NATO', mag: 30, rpm: 800, modes: ['BURST', 'SEMI'], dmg: 36, vel: 950, sound: 'm16', lockBack: true, scope: 4, eye: 0.05, adsFov: 0.7, adsTime: 0.26, hip: [0.105, -0.15, -0.3], recoil: { v: 0.5, h: 0.18 }, range: [100, 300, 0.75], weight: 1.15, desc: '20인치 소총. ACOG 4배율, 3점사.' }),
   D('AR', { id: 'ak', name: 'AKM', cal: '7.62×39mm', mag: 30, reserve: 150, rpm: 600, dmg: 44, vel: 715, spreadHip: 2.8, spreadAds: 0.09, moveSpread: 2.6, bloom: 0.45, recoil: { v: 0.95, h: 0.38, bias: 0.12, kick: 0.036, rot: 0.07, ads: 0.66 }, adsFov: 0.8, adsTime: 0.24, eye: 0.4, hip: [0.105, -0.15, -0.26], sound: 'ak', casing: '762', action: 'ak', boltTravel: 0.085, range: [60, 200, 0.68], weight: 1.2, desc: '목재 개머리의 고전. 강한 반동.' }),
   D('AR', { id: 'ak74', name: 'AK-74M', cal: '5.45×39mm', mag: 30, rpm: 650, dmg: 36, vel: 900, recoil: { v: 0.68, h: 0.24, bias: 0.08 }, eye: 0.4, hip: [0.105, -0.15, -0.26], sound: 'ak74', casing: '556', action: 'ak', boltTravel: 0.085, desc: '5.45mm 폴리머 AK. 반동 제어 우수.' }),
-  D('AR', { id: 'scar', name: 'SCAR-H', cal: '7.62×51mm NATO', mag: 20, reserve: 120, rpm: 600, dmg: 50, vel: 850, recoil: { v: 1.05, h: 0.34, bias: 0.08, kick: 0.036, rot: 0.07 }, sound: 'scar', casing: '762', lockBack: true, eye: 0.17, hip: [0.105, -0.15, -0.28], range: [90, 300, 0.75], weight: 1.25, desc: '7.62 NATO 전투소총. 강력한 저지력.' }),
+  D('AR', { id: 'scar', noCharge: true, name: 'SCAR-H', cal: '7.62×51mm NATO', mag: 20, reserve: 120, rpm: 600, dmg: 50, vel: 850, recoil: { v: 1.05, h: 0.34, bias: 0.08, kick: 0.036, rot: 0.07 }, sound: 'scar', casing: '762', lockBack: true, eye: 0.17, hip: [0.105, -0.15, -0.28], range: [90, 300, 0.75], weight: 1.25, desc: '7.62 NATO 전투소총. 강력한 저지력.' }),
   D('AR', { id: 'aug', name: 'AUG A3', cal: '5.56×45mm NATO', mag: 30, rpm: 700, dmg: 33, vel: 940, sound: 'aug', scope: 1.5, eye: 0.07, adsFov: 0.85, hip: [0.1, -0.13, -0.18], recoil: { v: 0.52, h: 0.2 }, lockBack: true, rpose: [[-0.06, 0.0, -0.02], [0.3, 0.6, -0.45]], desc: '오스트리아 불펍. 1.5배 광학.' }),
-  D('AR', { id: 'g36c', name: 'G36C', cal: '5.56×45mm NATO', mag: 30, rpm: 750, dmg: 31, vel: 725, sound: 'g36', eye: 0.19, hip: [0.1, -0.14, -0.28], recoil: { v: 0.5, h: 0.22 }, lockBack: true, weight: 0.9, desc: '독일 단축형 카빈. 반투명 탄창.' }),
+  D('AR', { id: 'g36c', noCharge: true, name: 'G36C', cal: '5.56×45mm NATO', mag: 30, rpm: 750, dmg: 31, vel: 725, sound: 'g36', eye: 0.19, hip: [0.1, -0.14, -0.28], recoil: { v: 0.5, h: 0.22 }, lockBack: true, weight: 0.9, desc: '독일 단축형 카빈. 반투명 탄창.' }),
   D('SMG', { id: 'mp5', name: 'MP5A3', cal: '9×19mm', mag: 30, rpm: 800, dmg: 26, vel: 400, sound: 'mp5', eye: 0.19, hip: [0.1, -0.13, -0.3], desc: '롤러 지연식 명작 SMG.' }),
   D('SMG', { id: 'ump', name: 'UMP45', cal: '.45 ACP', mag: 25, reserve: 150, rpm: 600, dmg: 31, vel: 280, sound: 'ump', casing: '45', eye: 0.2, recoil: { v: 0.48, h: 0.2 }, desc: '.45 구경 폴리머 SMG.' }),
   D('SMG', { id: 'p90', name: 'P90', cal: '5.7×28mm', mag: 50, reserve: 200, rpm: 900, dmg: 25, vel: 715, sound: 'p90', casing: '9mm', eye: 0.24, hip: [0.1, -0.13, -0.22], recoil: { v: 0.3, h: 0.14 }, rpose: [[-0.05, -0.02, -0.02], [0.45, 0.3, 0.25]], desc: '상부 50발 탄창 불펍 PDW.' }),
-  D('AR', { id: 'm249', name: 'M249 SAW', cal: '5.56×45mm NATO', mag: 100, reserve: 300, rpm: 850, modes: ['AUTO'], dmg: 33, vel: 915, sound: 'm249', action: 'lmg', eye: 0.3, hip: [0.12, -0.17, -0.3], spreadHip: 3.2, moveSpread: 3.2, recoil: { v: 0.42, h: 0.3, bias: 0.04, ads: 0.7 }, adsTime: 0.35, weight: 1.9, cat: '경기관총', desc: '분대지원화기. 100발 탄약상자.' }),
+  D('AR', { id: 'm249', name: 'M249 SAW', cal: '5.56×45mm NATO', mag: 100, reserve: 300, rpm: 850, modes: ['AUTO'], dmg: 33, vel: 915, sound: 'm249', action: 'lmg', eye: 0.3, hip: [0.12, -0.17, -0.3], spreadHip: 3.2, moveSpread: 3.2, recoil: { v: 0.42, h: 0.3, bias: 0.04, ads: 0.7 }, adsTime: 0.35, weight: 1.9, shoulderX: 0.05, noCharge: true, coverR: true, cat: '경기관총', desc: '분대지원화기. 100발 탄약상자.' }),
   D('SR', { id: 'awm', name: 'AWM', cal: '.338 Lapua Magnum', mag: 5, dmg: 160, vel: 900, sound: 'awm', scope: 6, desc: '볼트액션 저격소총. 6배율 스코프.' }),
   D('SR', { id: 'svd', name: 'SVD 드라구노프', cal: '7.62×54mmR', mag: 10, reserve: 50, rpm: 180, modes: ['SEMI'], dmg: 95, vel: 830, sound: 'svd', casing: '762', action: 'ak', boltTravel: 0.085, scope: 4, eye: 0.075, recoil: { v: 1.9, h: 0.4 }, tracer: 0, hip: [0.11, -0.16, -0.3], cat: '지정사수소총', desc: '반자동 지정사수소총. PSO-1 4배율.' }),
-  D('SR', { id: 'barrett', name: 'M82A1 바렛', cal: '.50 BMG', mag: 10, reserve: 30, rpm: 100, modes: ['SEMI'], dmg: 260, vel: 853, sound: 'barrett', casing: '50', action: 'rifle', chargeTravel: 0.1, boltTravel: 0.06, scope: 10, eye: 0.09, recoil: { v: 5.5, h: 1.0, kick: 0.09, rot: 0.14 }, hip: [0.12, -0.18, -0.5], weight: 2.2, cat: '대물저격총', desc: '12.7mm 대물 반자동 저격총. 10배율.' }),
+  D('SR', { id: 'barrett', name: 'M82A1 바렛', cal: '.50 BMG', mag: 10, reserve: 30, rpm: 100, modes: ['SEMI'], dmg: 260, vel: 853, sound: 'barrett', casing: '50', action: 'rifle', chargeTravel: 0.1, boltTravel: 0.06, scope: 10, eye: 0.09, recoil: { v: 5.5, h: 1.0, kick: 0.09, rot: 0.14 }, hip: [0.12, -0.18, -0.5], weight: 2.2, shoulderX: 0.06, noCharge: true, cat: '대물저격총', desc: '12.7mm 대물 반자동 저격총. 10배율.' }),
   D('SG', { id: 'm870', name: 'M870', cal: '12 Gauge 00 Buck', mag: 7, dmg: 19, vel: 400, sound: 'm870', desc: '펌프액션 산탄총.' }),
   D('SG', { id: 'saiga', name: 'Saiga-12', cal: '12 Gauge 00 Buck', mag: 8, reserve: 48, rpm: 300, modes: ['SEMI'], dmg: 17, vel: 400, sound: 'saiga', action: 'ak', boltTravel: 0.085, eye: 0.4, hip: [0.105, -0.15, -0.26], recoil: { v: 2.6, h: 0.7 }, desc: 'AK 기반 반자동 산탄총. 박스탄창.' }),
   D('HG', { id: 'glock', name: 'GLOCK 17', cal: '9×19mm Parabellum', mag: 17, rpm: 1100, dmg: 27, vel: 375, sound: 'glock', desc: '폴리머 프레임 권총. 삼중수소 조준.' }),
@@ -61,7 +61,7 @@ function clips(def) {
       mag: [[0.42, ...Z3], [0.6, 0, -0.07, 0], [0.85, -0.08, -0.5, 0.12], [1.02, -0.08, -0.5, 0.12], [1.25, 0, -0.07, 0], [1.38, ...Z3]],
       magR: ak ? [[0.42, 0], [0.55, 0.4], [0.7, 0.4], [1.2, 0.35], [1.25, 0.35], [1.38, 0]] : null,
       ev: [[0.05, 'cloth'], [0.45, 'magout'], [1.38, 'magin'], [1.38, 'load']] };
-    const CR = ak ? [0.2, 0.25, -0.55] : [0.25, 0.1, 0.45], CP = ak ? [-0.04, 0.05, 0.06] : [-0.03, 0.035, 0.07];
+    const CR = def.cpose ? def.cpose[1] : ak ? [0.2, 0.25, -0.55] : [0.25, 0.1, 0.45], CP = def.cpose ? def.cpose[0] : ak ? [-0.04, 0.05, 0.06] : [-0.03, 0.035, 0.07];
     C.reloadEmpty = { d: 2.95,
       pos: [[0, ...Z3], [0.3, ...TP], [1.5, ...TP], [1.85, ...CP], [2.3, ...CP], [2.75, ...Z3]],
       rot: [[0, ...Z3], [0.3, ...TR], [1.25, ...TR], [1.35, TR[0] + 0.08, TR[1], TR[2] + 0.03], [1.5, ...TR], [1.85, ...CR], [2.3, ...CR], [2.4, CR[0] + 0.05, CR[1], CR[2]], [2.8, ...Z3]],
@@ -74,14 +74,15 @@ function clips(def) {
       ev: [[0.05, 'cloth'], [0.38, 'magout'], [0.38, 'dropmag'], [1.32, 'magin'], [1.32, 'load'], [2.08, 'boltback'], [2.22, 'boltfwd']] };
   } else if (a === 'lmg') {
     // 급탄덮개 열기 → 탄약상자 교체 → 벨트 걸기 → 덮개 닫기
-    const P1 = [-0.06, 0.07, 0.08], R1 = [0.35, 0.3, 0.45];
-    const base = { d: 4.6, pos: [[0, ...Z3], [0.4, ...P1], [4.1, ...P1], [4.55, ...Z3]], rot: [[0, ...Z3], [0.4, ...R1], [2.3, ...R1], [2.5, 0.35, 0.3, -0.5], [3.2, 0.35, 0.3, -0.5], [3.4, ...R1], [4.55, ...Z3]],
+    const P1 = [-0.03, 0.11, 0.09], R1 = [0.35, 0.3, 0.45];
+    const base = { d: 4.6, pos: [[0, ...Z3], [0.4, ...P1], [4.1, ...P1], [4.55, ...Z3]], rot: [[0, ...Z3], [0.4, ...R1], [2.3, ...R1], [2.5, 0.35, 0.3, -0.5], [3.2, 0.35, 0.3, -0.5], [3.45, 0.3, 0.1, -0.35], [4.0, 0.3, 0.1, -0.35], [4.55, ...Z3]],
       cover: [[0.5, 0], [0.8, 1], [3.5, 1], [3.75, 0]],
       lh: [[0, 'fore'], [0.4, 'cover'], [0.85, 'cover'], [1.2, 'mag'], [2.9, 'mag'], [3.35, 'cover'], [3.8, 'cover'], [4.4, 'fore']],
       mag: [[1.3, ...Z3], [1.5, 0, -0.08, 0], [1.8, -0.1, -0.5, 0.1], [2.0, -0.1, -0.5, 0.1], [2.4, 0, -0.08, 0], [2.6, ...Z3]],
       ev: [[0.1, 'cloth'], [0.75, 'boltopen'], [1.45, 'magout'], [2.6, 'magin'], [2.9, 'cloth'], [3.72, 'boltclose'], [3.72, 'load']] };
     C.reload = base;
-    C.reloadEmpty = { ...base, d: 5.2, pos: [...base.pos.slice(0, -1), [4.2, -0.02, 0.03, 0.07], [4.7, -0.02, 0.03, 0.07], [5.15, ...Z3]], rot: [...base.rot.slice(0, -1), [4.2, 0.2, -0.1, 0.3], [4.7, 0.2, -0.1, 0.3], [5.15, ...Z3]],
+    const LP = def.cpose ? def.cpose[0] : [-0.02, 0.03, 0.07], LR = def.cpose ? def.cpose[1] : [0.2, -0.1, 0.3];
+    C.reloadEmpty = { ...base, d: 5.2, pos: [...base.pos.slice(0, -1), [4.2, ...LP], [4.7, ...LP], [5.15, ...Z3]], rot: [...base.rot.slice(0, -1), [4.2, ...LR], [4.7, ...LR], [5.15, ...Z3]],
       lh: [...base.lh.slice(0, -1), [4.2, 'charge'], [4.65, 'charge'], [5.05, 'fore']], charge: [[4.3, 0], [4.45, 1], [4.52, 1], [4.58, 0]], ev: [...base.ev, [4.44, 'boltback'], [4.58, 'boltfwd']] };
   } else if (a === 'revolver') {
     const RP = [-0.02, 0.05, 0.1], RR = [0.4, 0.2, 0.75], UP = [0.95, 0.15, 0.5];
@@ -131,6 +132,8 @@ function clips(def) {
     C.rShell = { d: 0.55, rot: [[0, ...R], [0.36, ...R], [0.42, R[0] + 0.05, R[1], R[2]], [0.55, ...R]], pos: [[0, -0.05, 0.04, 0.06]], lh: [[0, 'port'], [0.14, 'free'], [0.2, 'free'], [0.36, 'port']], shell: [[0, 0], [0.12, 0], [0.13, 1], [0.39, 1], [0.4, 0]], ev: [[0.4, 'shellin'], [0.4, 'load1']] };
     C.rEnd = { d: 0.4, rot: [[0, ...R], [0.4, ...Z3]], pos: [[0, -0.05, 0.04, 0.06], [0.4, ...Z3]], lh: [[0, 'port'], [0.38, 'fore']] };
   }
+  // 오픈볼트(M249)·노리쇠 멈춤쇠 해제(AR-15 계열·SCAR·G36·바렛): 빈 탄창 재장전에도 장전손잡이를 당기지 않음
+  if (def.noCharge && C.reload) C.reloadEmpty = { ...C.reload, ev: [...(C.reload.ev || []), [C.reload.d - 0.25, 'boltfwd']] };
   return C;
 }
 
@@ -156,6 +159,7 @@ class Weapon {
   }
 }
 
+const _m3 = new THREE.Matrix4(), _m4 = new THREE.Matrix4(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _vA = new THREE.Vector3();
 const _X = new THREE.Vector3(1, 0, 0), _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 
 export class WeaponSystem {
@@ -485,9 +489,20 @@ export class WeaponSystem {
     if (A) {
       const t = A.t, c = A.clip;
       if (sampleKeys(c.pos, t, tmp)) { pos.x += tmp[0]; pos.y += tmp[1]; pos.z += tmp[2]; }
-      if (sampleKeys(c.rot, t, tmp)) { rot.x += tmp[0]; rot.y += tmp[1]; rot.z += tmp[2]; }
+      // 팔이 개머리판에 걸리면 동작 회전 폭을 줄임 (실제로 팔이 막아서 덜 돌아가는 것처럼)
+      const ks = 1 - (this.animSoft || 0);
+      if (sampleKeys(c.rot, t, tmp)) { rot.x += tmp[0] * ks; rot.y += tmp[1] * ks; rot.z += tmp[2] * ks; }
     }
+    { const pe = this.arms.pen ? Math.max(this.arms.pen.R, this.arms.pen.L) : 0;
+      this.animSoft = A && pe > 0.001 ? Math.min(0.85, (this.animSoft || 0) + Math.min(0.12, pe * 12)) : Math.max(0, (this.animSoft || 0) - dt * 0.6); }
     m.group.position.copy(pos);
+    // 팔-개머리판 관통 피드백: 팔이 파고든 만큼 총을 반대로 밀어냄 (관통 없으면 서서히 복귀)
+    { const sp = this.stockPush || (this.stockPush = new THREE.Vector3()), A = this.arms;
+      let moved = false;
+      for (const k of ['R', 'L']) if (A.pen && A.pen[k] > 0.001) { _v2.copy(A.penDir[k]).transformDirection(_m.copy(this.root.matrixWorld).invert()); sp.addScaledVector(_v2, Math.min(A.pen[k], 0.02) * 0.8); moved = true; }
+      if (!moved) sp.multiplyScalar(Math.max(0, 1 - dt * 2.5));
+      if (sp.length() > 0.12) sp.setLength(0.12);
+      m.group.position.add(sp); }
     m.group.rotation.set(rot.x, rot.y, rot.z, 'YXZ');
     this.poseParts(dt, A, w, d, m, tmp);
   }
@@ -577,15 +592,119 @@ export class WeaponSystem {
     this.pullT = Math.max(0, (this.pullT || 0) - dt / 0.07);
     this.pullW = damp(this.pullW || 0, g.input.mouse[0] && !this.anim && this.cur.ammo > 0 ? 1 : this.pullT, 40, dt);
     const anchorName = (k, def) => (A && A.clip[k] ? sampleAnchor(A.clip[k], A.t) : { a: def, b: def, u: 0 });
-    this.ikArms(anchorName('lh', 'fore'), anchorName('rh', 'grip'));
+    let L = anchorName('lh', 'fore'), Rr = anchorName('rh', 'grip');
+    // 장전손잡이가 총 오른편이면 오른손이 당김 (왼손이 총을 가로질러 관통하지 않게)
+    // (+ 총별 지정: M249 급탄덮개 닫기는 오른손 — 왼팔이 탄약상자를 지나지 않게)
+    const rhN = this.item ? null : ['charge', 'cover'].find((n) => (L.a === n || L.b === n) && this.cur.m.anchors[n]);
+    if (rhN) {
+      const ca = this.cur.m.anchors[rhN]; this.cur.m.group.updateMatrixWorld(true);
+      if (!('side' in ca.userData)) { const p = ca.getWorldPosition(new THREE.Vector3()); this.cur.m.group.worldToLocal(p); ca.userData.side = rhN === 'charge' ? (p.x > 0.004 ? 'R' : 'L') : (this.cur.def.coverR ? 'R' : 'L'); }
+      if (ca.userData.side === 'R') {
+        const toR = (n) => (n === rhN ? rhN : 'grip'), toL = (n) => (n === rhN ? 'fore' : n);
+        Rr = { a: toR(L.a), b: toR(L.b), u: L.u }; L = { a: toL(L.a), b: toL(L.b), u: L.u };
+      }
+    }
+    this.ikArms(L, Rr);
   }
 
   ikArms(L, Rr) {
     this.root.updateMatrixWorld(true);
     _m.copy(this.root.matrixWorld).invert();
     const tr = this.blendAnchors(Rr, 'R'), tl = this.blendAnchors(L, 'L');
-    this.arms.updateSide('R', tr, tr.pose);
-    this.arms.updateSide('L', tl, tl.pose);
+    const ob = this.item ? null : this.stockObst(this.cur);
+    if (ob) ob.sdf = this.gunSdf();
+    // 개머리판이 넓은 중화기는 오른 어깨를 바깥으로 (상완이 개머리판 속을 지나지 않게)
+    this.arms.shoulder.R.x = 0.21 + (this.item ? 0 : this.cur.def.shoulderX || 0);
+    this.arms.updateSide('R', tr, tr.pose, ob);
+    this.arms.updateSide('L', tl, tl.pose, ob);
+    // 손 전체(손바닥 + 모든 손가락 마디)가 총 속에 들어가면 바깥으로 밀어 다시 풂 (접촉·눌림만 허용)
+    if (!this.item) for (const [k, t] of [['L', tl], ['R', tr]]) {
+      for (let it = 0; it < 5; it++) {
+        const push = this.handPush(k);
+        if (!push) break;
+        t.p.add(push);
+        this.arms.updateSide(k, t, t.pose, ob);
+      }
+    }
+  }
+
+  // 월드 점 → 총 표면 부호거리 (팔뚝·상완 충돌 검사용)
+  gunSdf() {
+    const m = this.cur.m;
+    if (!m.surfAll) m.surfAll = surfOf(m.group, 0.035);
+    const S = m.surfAll, G2 = new THREE.Matrix4().copy(m.group.matrixWorld).invert(), p = new THREE.Vector3();
+    return (w) => { p.copy(w).applyMatrix4(G2); return S.sdist(p.x, p.y, p.z); };
+  }
+
+  // 손 관절점들의 총 내부 관통 → root 로컬 밀어내기 벡터 (없으면 null)
+  handPush(k) {
+    const m = this.cur.m, B = this.arms.bones;
+    if (!m.surfAll) m.surfAll = surfOf(m.group, 0.035);
+    const S = m.surfAll, G2 = _m3.copy(m.group.matrixWorld).invert();
+    B['hand' + k].updateMatrixWorld(true);
+    const acc = _v4.set(0, 0, 0); let n = 0, worst = 0;
+    const C = [0, 0, 0, 0];
+    const test = (wp, r) => {
+      const p = _v3.copy(wp).applyMatrix4(G2);
+      if (!S.closest(p.x, p.y, p.z, C)) return;
+      const pen = r - C[0];
+      if (pen <= 0.0015) return;
+      // 바깥 방향: 밖이면 (점-표면), 안이면 (표면-점)
+      const g = new THREE.Vector3(p.x - C[1], p.y - C[2], p.z - C[3]); if (C[0] < 0) g.negate();
+      if (g.lengthSq() < 1e-12) return;
+      g.normalize().transformDirection(m.group.matrixWorld);
+      acc.addScaledVector(g, pen); n++; worst = Math.max(worst, pen);
+    };
+    // 손가락: 관절·마디 중간·손끝을 실제 반지름(장갑 포함)으로 검사
+    const RAD = { thumb: [0.0135, 0.0125, 0.0115], index: [0.0105, 0.0098, 0.0092], middle: [0.0108, 0.01, 0.0094], ring: [0.0103, 0.0096, 0.009], pinky: [0.0094, 0.0088, 0.0082] };
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), wp = new THREE.Vector3();
+    for (const f in RAD) {
+      const R = RAD[f];
+      B[f + 1 + k].getWorldPosition(a); B[f + 2 + k].getWorldPosition(b); B[f + 3 + k].getWorldPosition(c);
+      const tip = wp.copy(c).sub(b).multiplyScalar(0.85).add(c);
+      test(a, R[0]); test(b, R[1]); test(c, R[2]);
+      test(_vA.copy(a).lerp(b, 0.5), R[0]); test(_vA.copy(b).lerp(c, 0.5), R[1]); test(_vA.copy(c).lerp(tip, 0.5), R[2]); test(tip, R[2] * 0.9);
+    }
+    test(B['hand' + k].getWorldPosition(wp), 0.022);
+    // 손바닥 격자: 손목 → 각 손가락 뿌리 사이 (두께 반지름 1.6cm)
+    const wr = B['hand' + k].getWorldPosition(new THREE.Vector3());
+    for (const f of ['index', 'middle', 'ring', 'pinky']) { B[f + 1 + k].getWorldPosition(a); for (const t of [0.35, 0.65, 0.9]) test(_vA.copy(wr).lerp(a, t), 0.016); }
+    if (!n || worst < 0.002) return null;
+    acc.divideScalar(n).setLength(Math.min(worst, 0.03));
+    return acc.transformDirection(_m4.copy(this.root.matrixWorld).invert()).multiplyScalar(Math.min(worst, 0.03));
+  }
+
+  // 개머리판(손잡이 뒤쪽) 충돌 캡슐: 총 로컬에서 3cm 구간별 세로 캡슐 1회 계산 → 매 프레임 월드 변환
+  stockObst(w) {
+    const m = w.m;
+    if (!m.stockCaps) {
+      m.group.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(m.group.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+      // 총 로컬: 앞 = -z. 손잡이보다 4cm 뒤(z 큰 쪽)를 개머리판으로 봄
+      const gz = m.anchors.grip ? m.anchors.grip.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv).z : 0;
+      const bins = new Map();
+      m.group.traverse((o) => {
+        if (!o.isMesh || o.material.transparent) return;
+        M.multiplyMatrices(inv, o.matrixWorld); const p = o.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          v.fromBufferAttribute(p, i).applyMatrix4(M);
+          if (v.z < gz + 0.04) continue;
+          const k = Math.floor(v.z / 0.03); let b = bins.get(k);
+          if (!b) bins.set(k, b = { y0: 1e9, y1: -1e9, x0: 1e9, x1: -1e9 });
+          b.y0 = Math.min(b.y0, v.y); b.y1 = Math.max(b.y1, v.y); b.x0 = Math.min(b.x0, v.x); b.x1 = Math.max(b.x1, v.x);
+        }
+      });
+      m.stockCaps = [];
+      for (const [k, b] of bins) {
+        const r = Math.max((b.x1 - b.x0) / 2, 0.012), z = (k + 0.5) * 0.03, xc = (b.x0 + b.x1) / 2;
+        const ya = Math.min(b.y0 + r, (b.y0 + b.y1) / 2), yb = Math.max(b.y1 - r, (b.y0 + b.y1) / 2);
+        m.stockCaps.push({ a: new THREE.Vector3(xc, ya, z), b: new THREE.Vector3(xc, yb, z), r: r + 0.004 });
+      }
+      m.stockW = m.stockCaps.map((c) => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), r: c.r }));
+    }
+    m.group.updateMatrixWorld(true);
+    for (let i = 0; i < m.stockCaps.length; i++) { const c = m.stockCaps[i], o = m.stockW[i]; o.a.copy(c.a).applyMatrix4(m.group.matrixWorld); o.b.copy(c.b).applyMatrix4(m.group.matrixWorld); }
+    return m.stockW;
   }
 
   // 로딩 후 백그라운드에서 모든 총의 손 자세를 미리 계산 (첫 교체 시 끊김 방지)
@@ -623,17 +742,41 @@ export class WeaponSystem {
     if (tp && tp.indexTrig && !this.item) {
       const k = this.trigW, pk = (this.pullW || 0) * k, o = { ...tp };
       // 방아쇠 당김: 중간·끝마디를 더 굽혀 방아쇠를 뒤로 누름
-      o.index = tp.indexFrame.map((x, i) => x + (tp.indexTrig[i] - x) * k + (i === 1 ? 0.22 : i === 2 ? 0.12 : 0) * pk);
+      o.index = tp.indexFrame.map((x, i) => x + (tp.indexTrig[i] - x) * k + (i === 1 ? 0.1 : i === 2 ? 0.05 : 0) * pk);
       pose = o;
     }
     if (A !== B && u > 0) {
       const pb = new THREE.Vector3(), qb = new THREE.Quaternion();
       _m2.multiplyMatrices(_m, B.matrixWorld).decompose(pb, qb, sa);
       pa.lerp(pb, u); qa.slerp(qb, u);
-      // 경로를 아래로 살짝 휘게 (손이 총을 관통하지 않도록)
-      pa.y -= Math.sin(u * Math.PI) * 0.05;
+      // 경로를 아래로 살짝 휘게 + 총 표면 거리장으로 밀어내 손이 총을 관통하지 않도록 우회
+      if (this.item) pa.y -= Math.sin(u * Math.PI) * 0.05;
+      else {
+        // 총 바깥쪽(왼손은 총의 왼편, 오른손은 오른편)으로 크게 돌아가게 → 거리장으로 남은 관통 밀어냄
+        const g = this.cur.m.group; g.updateMatrixWorld(true);
+        const off = _v4.set(side === 'L' ? -0.085 : 0.085, 0.012, 0).transformDirection(g.matrixWorld).multiplyScalar(0.087 * Math.sin(u * Math.PI));
+        off.transformDirection(_m3.copy(this.root.matrixWorld).invert()).multiplyScalar(0.087 * Math.sin(u * Math.PI));
+        pa.add(off);
+        this.routeAround(pa, Math.sin(u * Math.PI));
+      }
     }
     return { p: pa, q: qa, pose };
+  }
+
+  // 손 이동 경로 우회: root 로컬 점 → 총 로컬에서 부호거리 < 여유면 바깥(기울기) 방향으로 밀어냄
+  routeAround(pa, w) {
+    const m = this.cur.m;
+    if (!m.surfAll) m.surfAll = surfOf(m.group, 0.035);
+    const S = m.surfAll, M = _m3.copy(m.group.matrixWorld).invert().multiply(this.root.matrixWorld), Mi = _m4.copy(M).invert();
+    const p = _v3.copy(pa).applyMatrix4(M), clear = 0.04, h = 0.008;
+    for (let it = 0; it < 3; it++) {
+      const d = S.sdist(p.x, p.y, p.z);
+      if (d >= clear) break;
+      const gx = S.sdist(p.x + h, p.y, p.z) - S.sdist(p.x - h, p.y, p.z), gy = S.sdist(p.x, p.y + h, p.z) - S.sdist(p.x, p.y - h, p.z), gz = S.sdist(p.x, p.y, p.z + h) - S.sdist(p.x, p.y, p.z - h);
+      const n = _v4.set(gx, gy, gz); if (n.lengthSq() < 1e-10) n.set(0, -1, 0); n.normalize();
+      p.addScaledVector(n, (clear - d) * w);
+    }
+    pa.copy(p.applyMatrix4(Mi));
   }
 }
 
