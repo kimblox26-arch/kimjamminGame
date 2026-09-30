@@ -108,6 +108,7 @@ const SURF = {
   glass: { dust: [0.8, 0.85, 0.9], sound: 'glass' },
 };
 
+const _sw = new THREE.Vector3(), _sn = new THREE.Vector3(), _pp = new THREE.Vector3();
 export class FX {
   constructor(game) {
     this.g = game;
@@ -153,6 +154,20 @@ export class FX {
     this.shocks = [];
   }
 
+  // 이동 구간 벽 충돌: prev→pos 사이에 벽이 있으면 벽면에 멈추고 속도 반사 (관통 방지)
+  sweep(prev, pos, vel, r = 0.01, e = 0.3) {
+    const d = _sw.subVectors(pos, prev), len = d.length();
+    if (len < 1e-6) return false;
+    d.divideScalar(len);
+    const h = this.g.world.raycast(prev, d, len + r, { solid: true });
+    if (!h) return false;
+    const n = _sn.copy(h.n);
+    pos.copy(h.point).addScaledVector(n, r);
+    const vn = vel.dot(n); if (vn < 0) vel.addScaledVector(n, -(1 + e) * vn);
+    vel.multiplyScalar(0.7);
+    return true;
+  }
+
   // 폭발 부가 효과: 충격파(화면 굴절) + 지면 먼지 고리 + 파편
   blast(p, big, ground = [0.33, 0.3, 0.27]) {
     this.shocks.push({ p: p.clone(), t: 0, big });
@@ -185,7 +200,8 @@ export class FX {
       d.life += dt; top = i + 1;
       if (!d.rest) {
         d.v.y -= 9.8 * dt; d.v.multiplyScalar(1 - 0.15 * dt);
-        d.p.addScaledVector(d.v, dt);
+        _pp.copy(d.p); d.p.addScaledVector(d.v, dt);
+        this.sweep(_pp, d.p, d.v, d.s * 0.5);
         this._q.setFromEuler(new THREE.Euler(d.w.x * dt, d.w.y * dt, d.w.z * dt)); d.q.multiply(this._q);
         const f = w.floorAt(d.p.x, d.p.z, d.p.y + 0.3);
         if (d.p.y < f.y + d.s * 0.5 && d.v.y < 0) {
@@ -341,7 +357,8 @@ export class FX {
       if (c.life > 12) { c.active = false; c.m.visible = false; continue; }
       if (c.rest) continue;
       c.v.y -= 9.8 * dt;
-      c.m.position.addScaledVector(c.v, dt);
+      _pp.copy(c.m.position); c.m.position.addScaledVector(c.v, dt);
+      if (this.sweep(_pp, c.m.position, c.v, 0.006)) c.w.multiplyScalar(0.5);
       c.m.rotation.x += c.w.x * dt; c.m.rotation.y += c.w.y * dt; c.m.rotation.z += c.w.z * dt;
       const f = w.floorAt(c.m.position.x, c.m.position.z, c.m.position.y + 0.3);
       if (c.m.position.y < f.y + 0.006 && c.v.y < 0) {
@@ -354,7 +371,8 @@ export class FX {
     for (const m of this.mags) {
       if (m.rest) continue;
       m.life += dt; m.v.y -= 9.8 * dt;
-      m.m.position.addScaledVector(m.v, dt);
+      _pp.copy(m.m.position); m.m.position.addScaledVector(m.v, dt);
+      this.sweep(_pp, m.m.position, m.v, 0.02);
       m.m.rotation.x += m.w.x * dt; m.m.rotation.z += m.w.z * dt;
       const f = w.floorAt(m.m.position.x, m.m.position.z, m.m.position.y + 0.3);
       if (m.m.position.y < f.y + 0.02) {

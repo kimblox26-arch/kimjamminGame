@@ -83,6 +83,9 @@ class Hostile {
       if (dGoal > 42) { speed = 2.2; desired.set(goal.x - this.pos.x, 0, goal.z - this.pos.z).normalize().multiplyScalar(speed); }
       else if (this.strafe) { const r = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); desired.copy(r).multiplyScalar(this.strafe * 1.4); }
       ready = 1;
+      // 총구 앞 1m 안에 벽이면 총을 내림 (총이 벽을 뚫지 않게)
+      const ad = this.target.p.clone().sub(this.eye()).normalize();
+      if (w.raycast(this.eye().add(V(0, -0.15, 0)), ad, 1.0, { solid: true })) ready = 0.25;
     } else {
       // 전진: 마지막 목격 위치 / 플레이어 쪽으로 (18m 앞에서 멈춤)
       this.react = Math.max(0, this.react - dt * 0.5);
@@ -121,7 +124,7 @@ class Hostile {
     this.anim.flinch = Math.max(this.anim.flinch, this.flinchT > 0 ? Math.min(1, this.flinchT * 1.5) : 0);
     this.anim.update(dt, { pos: this.pos, yaw: this.yaw, vel: this.vel, crouch: this.crouch, ready, aimPitch, aimYaw, lookAt: look, gun: this.gun });
     // 사격: 반응 지연 → 점사 (거리·이동·피격 시 정확도 하락, 조준 시간에 따라 향상)
-    if (ready && this.target && Math.abs(dy) < 0.25) {
+    if (ready > 0.9 && this.target && Math.abs(dy) < 0.25) {
       this.react += dt * this.skill;
       if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) { this.mag = 30; } }
       else if (this.react > 0.7) {
@@ -198,7 +201,10 @@ class Hostile {
   die(dir, head, by) {
     this.alive = false; this.deathT = 0; this.hp = 0;
     // 쓰러지는 방향: 총알 방향(수평) + 약간 무작위, 머리 맞으면 즉시 힘이 빠짐
-    const f = V(dir.x, 0, dir.z).normalize().applyAxisAngle(V(0, 1, 0), rand(-0.5, 0.5));
+    let f = V(dir.x, 0, dir.z).normalize().applyAxisAngle(V(0, 1, 0), rand(-0.5, 0.5));
+    // 쓰러질 자리에 벽·상자가 있으면 빈 쪽으로 (몸이 벽을 뚫고 눕지 않게)
+    const w = this.g.world, free = (v) => [0.35, 0.9, 1.4].every((hh) => !w.raycast(V(this.pos.x, this.pos.y + hh, this.pos.z), v, 1.75 - hh * 0.25, { solid: true }));
+    if (!free(f)) { const alt = [0.8, -0.8, 1.6, -1.6, 2.4, -2.4, Math.PI].map((a) => f.clone().applyAxisAngle(V(0, 1, 0), a)).find(free); if (alt) f = alt; else this.cramped = true; }
     this.fallAxis = V(0, 1, 0).cross(f).normalize();   // 이 축으로 회전하면 f 방향으로 넘어짐
     this.theta = head ? 0.12 : 0.05; this.omega = head ? 1.4 : 0.8 + Math.random() * 0.6;
     this.collapse = head ? 0.12 : 0.28;
@@ -226,8 +232,9 @@ class Hostile {
       // 강체 막대 넘어짐: θ'' = (3g / 2L) sin θ
       this.omega += 1.5 * 9.8 / 1.1 * Math.sin(this.theta) * dt;
       this.theta += this.omega * dt;
-      if (this.theta >= Math.PI / 2 - 0.08) {
-        this.theta = Math.PI / 2 - 0.08; this.omega *= -0.18;
+      const lim = this.cramped ? 0.5 : Math.PI / 2 - 0.08;   // 사방이 막혔으면 벽에 기대 주저앉음
+      if (this.theta >= lim) {
+        this.theta = lim; this.omega *= -0.18;
         if (Math.abs(this.omega) < 0.25) { this.landed = true; this.E.pool(this); Audio.play3D('land', this.pos, { vol: 0.9, ref: 3, rate: 0.8 }); g.fx.alpha.add(this.pos.clone().add(V(0, 0.1, 0)), V(0, 0.3, 0), { life: 1.2, size: 0.6, grow: 0.8, drag: 2, color: [0.4, 0.37, 0.33], alpha: 0.3, fadeIn: 0.05 }); }
       }
       // 팔다리 힘 빠짐: 다리·몸통은 곧게 펴지고(쓰러지며 무릎이 펴짐) 팔은 벌어짐
@@ -245,7 +252,8 @@ class Hostile {
     // 떨어진 총
     const d = this.drop, G = this.gun.group;
     if (d && !d.rest) {
-      d.v.y -= 9.8 * dt; G.position.addScaledVector(d.v, dt);
+      d.v.y -= 9.8 * dt; const pv = G.position.clone(); G.position.addScaledVector(d.v, dt);
+      g.fx.sweep(pv, G.position, d.v, 0.04);
       G.rotation.x += d.w.x * dt; G.rotation.y += d.w.y * dt; G.rotation.z += d.w.z * dt;
       const fl = g.world.floorAt(G.position.x, G.position.z, G.position.y + 0.3);
       if (G.position.y < fl.y + 0.04 && d.v.y < 0) {
