@@ -176,7 +176,7 @@ export async function buildTextures(progress = () => {}) {
     }, { normal: 3 })],
     ['anodized', () => gen(256, (u, v, o) => {
       const n = fbm(u, v, 12, 4), sc = sstep(0.9, 0.97, fbm(u * 6, v * 0.3, 24, 3)), edge = sstep(0.8, 0.95, fbm(u, v, 4, 3));
-      rgb(o, 1, 1, 1, 0.9 + n * 0.1 + sc * 0.6 + edge * 0.15); o.h = n * 0.15 - sc * 0.3; o.ro = 0.42 + n * 0.18 - sc * 0.15; o.me = 1;
+      rgb(o, 1, 1, 1, 0.92 + n * 0.08 + sc * 0.28 + edge * 0.08); o.h = n * 0.12 - sc * 0.25; o.ro = 0.46 + n * 0.14 - sc * 0.12; o.me = 1;
     }, { normal: 1 })],
     ['gunwood', () => gen(512, (u, v, o) => {
       const w = fbm2(u, v, 2, 24, 4), ring = Math.sin((v * 6 + w * 4) * Math.PI * 4) * 0.5 + 0.5, pore = fbm2(u, v, 16, 256, 2), fig = fbm(u, v, 3, 3);

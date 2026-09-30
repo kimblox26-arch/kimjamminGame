@@ -197,16 +197,18 @@ function buildHead(v, h = 0.0025) {
   S.add(ellipsoid(at(0, 0.017, 0.093), [0.012, 0.009, 0.006], { mat: 'skin', k: 0.01 }));
   for (const s of [1, -1]) {
     // 광대/볼/턱선
-    S.add(ellipsoid(at(s * 0.046 * f, -0.013, 0.066), [0.022, 0.016, 0.02], { mat: 'skin', k: 0.02 }));
-    S.add(ellipsoid(at(s * 0.041 * jw * f, -0.05, 0.05), [0.026, 0.029, 0.03], { mat: 'skin', k: 0.025 }));
+    S.add(ellipsoid(at(s * 0.047 * f, -0.008, 0.064), [0.02, 0.013, 0.018], { mat: 'skin', k: 0.018 }));   // 광대뼈
+    S.add(ellipsoid(at(s * 0.04 * jw * f, -0.05, 0.047), [0.024, 0.026, 0.027], { mat: 'skin', k: 0.024 }));
     S.add(cone(at(s * 0.058 * jw * f, -0.036, -0.012), at(s * 0.022 * jw, -0.1 * f, 0.066), 0.018 * jw, 0.015, { mat: 'skin', k: 0.02 }));
+    // 하악각 (턱 모서리)
+    S.add(ellipsoid(at(s * 0.056 * jw * f, -0.075, 0.012), [0.012, 0.016, 0.018], { mat: 'skin', k: 0.02 }));
     // 귀
     S.add(ellipsoid(at(s * 0.076 * f, 0.0, -0.008), [0.011, 0.03, 0.019], { mat: 'skin', k: 0.006, rot: [0.15, s * 0.3, s * 0.15] }));
     S.add(torus(at(s * 0.082 * f, 0.004, -0.008), 0.018, 0.0045, { mat: 'skin', k: 0.004, rot: [0, 0, Math.PI / 2 + s * 0.15] }));
     S.sub(ellipsoid(at(s * 0.087 * f, -0.002, -0.004), [0.005, 0.013, 0.01], { k: 0.004 }));
     // 눈구멍 → 눈꺼풀 구 → 눈매 틈 → 쌍꺼풀 주름/아래눈꺼풀
     const ex = s * 0.031 * f;
-    S.sub(ellipsoid(at(ex, 0.003, 0.092), [0.017, 0.012, 0.015], { k: 0.012 }));
+    S.sub(ellipsoid(at(ex, 0.004, 0.093), [0.0175, 0.0125, 0.0158], { k: 0.012 }));
     S.add(sphere(at(ex, 0.003, 0.0795), 0.0137, { mat: 'lid', k: 0.003 }));
     S.sub(ellipsoid(at(ex, 0.0016, 0.0945), [0.0124, 0.0039, 0.012], { k: 0.002, rot: [0, 0, s * -0.1] }));
     S.add(ellipsoid(at(ex, 0.0098, 0.0888), [0.0145, 0.0035, 0.006], { mat: 'lid', k: 0.004, rot: [0, 0, s * -0.08] }));
@@ -224,7 +226,7 @@ function buildHead(v, h = 0.0025) {
     S.sub(ellipsoid(at(s * 0.0068, -0.0395 * nl, 0.108), [0.0036, 0.0024, 0.0046], { k: 0.002 }));
   }
   // 입/입술/인중/턱
-  S.add(ellipsoid(at(0, -0.052, 0.086), [0.031, 0.028, 0.022], { mat: 'skin', k: 0.02 }));
+  S.add(ellipsoid(at(0, -0.052, 0.085), [0.03, 0.027, 0.02], { mat: 'skin', k: 0.018 }));
   S.add(ellipsoid(at(0, -0.046, 0.097), [0.016, 0.009, 0.01], { mat: 'skin', k: 0.01 }));
   S.add(ellipsoid(at(0, -0.0515, 0.1005), [0.019 * (v.lips ?? 1), 0.0046, 0.0078], { mat: 'lip', k: 0.004 }));
   S.add(ellipsoid(at(0, -0.0612, 0.0978), [0.0175 * (v.lips ?? 1), 0.0058, 0.0082], { mat: 'lip', k: 0.004 }));
@@ -277,7 +279,10 @@ function buildHead(v, h = 0.0025) {
     // 흉터
     if (v.scar) { const sx = lx - v.scar[0], sy = ly - v.scar[1]; const dd = Math.abs(sx * 0.5 + sy) / 1.1; if (dd < 0.0025 && Math.abs(sx) < 0.022 && lz > 0.03 && Math.sign(lx) === Math.sign(v.scar[0])) { r = r * 0.95 + 0.05; gg *= 0.82; bb *= 0.84; } }
     const sp = (n3(x * 200, y * 200, z * 200) - 0.5) * 0.05;
-    out[0] = Math.max(0, r + sp); out[1] = Math.max(0, gg + sp * 0.8); out[2] = Math.max(0, bb + sp * 0.7);
+    // 피부색 값은 sRGB 기준 → 선형으로 변환해 정점색에 (그대로 쓰면 ~20% 밝고 분홍빛)
+    const lin = (c) => Math.pow(Math.max(0, c), 1.45) * 1.08;
+    let R = lin(r + sp), G = lin(gg + sp * 0.8), Bc = lin(bb + sp * 0.7); const Lm = R * 0.3 + G * 0.59 + Bc * 0.11;
+    out[0] = Lm + (R - Lm) * 0.72; out[1] = Lm + (G - Lm) * 0.72; out[2] = Lm + (Bc - Lm) * 0.72;
   });
   g.userData = { C, mesh: m, cls };
   return g;

@@ -13,11 +13,12 @@ export function gunMats() {
   const poly = (color, rough = 1) => new THREE.MeshStandardMaterial({ color, roughnessMap: rep(st.roughnessMap, 14), normalMap: rep(st.normalMap, 14), normalScale: new THREE.Vector2(0.6, 0.6), roughness: rough, metalness: 0.0, envMapIntensity: 0.9 });
   const wood = (color) => new THREE.MeshPhysicalMaterial({ color, map: rep(wd.map, 3), roughnessMap: rep(wd.roughnessMap, 3), normalMap: rep(wd.normalMap, 3), normalScale: new THREE.Vector2(0.3, 0.3), roughness: 1.6, clearcoat: 0.18, clearcoatRoughness: 0.5, envMapIntensity: 0.5 });
   MAT = {
-    anod: metal(0x252629, 1, 0.5),
-    steel: metal(0x2a2b2d, 1.1, 0.7),
-    blued: metal(0x202224, 1.1, 0.6),
+    // 아노다이징·파커라이징은 착색된 산화/인산염 피막(유전체) → 금속도 낮고 새틴 질감
+    anod: metal(0x1f2022, 1.35, 0.18),
+    steel: metal(0x27282a, 1.4, 0.35),
+    blued: metal(0x1d1f23, 1.05, 0.55),
     bright: metal(0x9a9da0, 0.55, 1),
-    nitride: metal(0x2c2e30, 1.15, 0.55),
+    nitride: metal(0x2a2c2e, 1.3, 0.3),
     poly: poly(0x19191a),
     polyGreen: poly(0x4a5436),
     polyTan: poly(0x8a7657),
@@ -39,7 +40,25 @@ export function gunMats() {
 }
 
 // ── 지오메트리 헬퍼 (UV 는 미터 단위) ──
+// 모서리를 ~1mm 둥글린 상자 (실제 가공 금속처럼 모서리에 하이라이트가 맺힘): 둥근 사각형 단면 + 압출 베벨
+const BOX_CACHE = new Map();
 function boxG(w, h, l) {
+  const m = Math.min(w, h, l), b = Math.min(0.0009, m * 0.18);
+  if (b < 0.00025) return boxG0(w, h, l);
+  const key = [w, h, l].map((v) => Math.round(v * 1e5)).join(',');
+  let g = BOX_CACHE.get(key);
+  if (!g) {
+    const hw = w / 2 - b, hh = h / 2 - b, r = b, sh = new THREE.Shape();
+    sh.moveTo(-hw, -hh - r); sh.lineTo(hw, -hh - r); sh.quadraticCurveTo(hw + r, -hh - r, hw + r, -hh); sh.lineTo(hw + r, hh);
+    sh.quadraticCurveTo(hw + r, hh + r, hw, hh + r); sh.lineTo(-hw, hh + r); sh.quadraticCurveTo(-hw - r, hh + r, -hw - r, hh); sh.lineTo(-hw - r, -hh);
+    sh.quadraticCurveTo(-hw - r, -hh - r, -hw, -hh - r);
+    g = new THREE.ExtrudeGeometry(sh, { depth: Math.max(1e-4, l - 2 * b), bevelEnabled: true, bevelThickness: b, bevelSize: b * 0.9, bevelOffset: -b * 0.9, bevelSegments: 2, curveSegments: 2 });
+    g.translate(0, 0, -(l - 2 * b) / 2);
+    BOX_CACHE.set(key, g);
+  }
+  return g.clone();
+}
+function boxG0(w, h, l) {
   const g = new THREE.BoxGeometry(w, h, l), uv = g.attributes.uv;
   const dims = [[l, h], [l, h], [w, l], [w, l], [w, h], [w, h]];
   for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0], uv.getY(i) * dims[f][1]); }
