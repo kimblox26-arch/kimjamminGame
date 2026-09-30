@@ -327,7 +327,7 @@ class Game {
     this.state = 'playing';
     this.showScreen('game');
     this.lock();
-    this.hud.message(mode === 'training' ? '사격장 챌린지 — 왼쪽(서쪽) 사대로' : '기지 방어전 — 분대와 함께 적 병력을 격퇴하라', 2.8, 'big');
+    this.hud.message(mode === 'training' ? '사격장 챌린지 — 왼쪽(서쪽) 사대로' : '기지 방어전 — 적을 격퇴하라', 2.8, 'big');
     if (mode === 'survival') this.enemies.start(); else this.enemies.stop();
     document.querySelector('#wave-box div:nth-child(2) span').textContent = mode === 'survival' ? '적' : '분대';
     this.hud.points(0, '', this.profile.points); document.querySelector('#pts-feed').innerHTML = '';
@@ -399,13 +399,14 @@ class Game {
     const k = clamp(1 - dp / 40, 0, 1);
     P.shake = Math.min(1.2, P.shake + k * 1.4);
     this.flashWhite = k * 0.35;
+    this.enemies.blast(p, R * 1.3, 150, 'player');
     if (k > 0.5) Audio.deafen(0.85 * k, 2.5);
     for (const o of this.world.barrels) if (!o.exploded && o.pos.distanceTo(p) < 4) setTimeout(() => this.explode(o), 120 + Math.random() * 180);
     for (const c of this.world.glass) if (!c.disabled && c.glass.position.distanceTo(p) < 10) this.fx.glassBreak(c, c.glass.position, c.glass.position.clone().sub(p).normalize());
   }
 
   alert(pos, r) { this.squad.react(pos, 4, 0.4); this.nature.scare(pos, r > 60 ? 0.5 : 0.3); }
-  onBlast(p, R) { this.nature.scare(p, 1); }
+  onBlast(p, R) { this.nature.scare(p, 1); this.enemies.blast(p, R * 1.3, 160, 'player'); }
   suppress(k) { this.suppressLevel = Math.min(1, this.suppressLevel + k); }
 
   updateMode(dt) {

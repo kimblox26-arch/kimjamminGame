@@ -74,6 +74,9 @@ export class HUD {
   }
 
   damage(from, p, amount) {
+    // 화면 가장자리 피 튐 (맞은 방향 쪽 더 진하게)
+    this.bloodT = Math.min(1, (this.bloodT || 0) + amount / 45);
+    if (!this.bloodCv) this.bloodCv = this.makeSplatter();
     if (!from) return;
     const d = document.createElement('div');
     d.className = 'dmg-arc';
@@ -91,6 +94,27 @@ export class HUD {
     setTimeout(() => e.classList.add('fade'), 4000);
     setTimeout(() => e.remove(), 4800);
     while (this.el.feed.children.length > 5) this.el.feed.lastChild.remove();
+  }
+
+  // 무작위 핏방울 얼룩 캔버스 (가장자리 위주) → 화면 오버레이 배경
+  makeSplatter() {
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 576;
+    const x = c.getContext('2d');
+    // 가장자리 띠에만: 불규칙한 얼룩 + 흘러내린 자국 + 미세 비말
+    for (let i = 0; i < 26; i++) {
+      const side = Math.floor(Math.random() * 4), t = Math.random();
+      const px = side === 0 ? Math.random() * 90 : side === 1 ? 1024 - Math.random() * 90 : t * 1024, py = side === 2 ? Math.random() * 70 : side === 3 ? 576 - Math.random() * 70 : t * 576;
+      const r = 10 + Math.random() * 30;
+      for (let k = 0; k < 7; k++) {   // 여러 겹의 작은 원으로 불규칙한 얼룩
+        const ox = (Math.random() - 0.5) * r, oy = (Math.random() - 0.5) * r, rr = r * (0.3 + Math.random() * 0.5), g = x.createRadialGradient(px + ox, py + oy, 0, px + ox, py + oy, rr);
+        g.addColorStop(0, 'rgba(70,0,3,0.85)'); g.addColorStop(0.7, 'rgba(95,3,6,0.55)'); g.addColorStop(1, 'rgba(95,3,6,0)');
+        x.fillStyle = g; x.beginPath(); x.arc(px + ox, py + oy, rr, 0, Math.PI * 2); x.fill();
+      }
+      if (side !== 3 && Math.random() < 0.6) { const L = 20 + Math.random() * 90, w = 2 + Math.random() * 4; const g = x.createLinearGradient(px, py, px, py + L); g.addColorStop(0, 'rgba(80,0,4,0.7)'); g.addColorStop(1, 'rgba(80,0,4,0)'); x.fillStyle = g; x.fillRect(px - w / 2, py, w, L); }
+      for (let k = 0; k < 10; k++) { const a = Math.random() * Math.PI * 2, d = r * (1.2 + Math.random() * 2); x.fillStyle = 'rgba(90,2,6,0.6)'; x.beginPath(); x.arc(px + Math.cos(a) * d, py + Math.sin(a) * d, 0.8 + Math.random() * 2.2, 0, Math.PI * 2); x.fill(); }
+    }
+    const el = document.getElementById('blood-screen'); el.style.backgroundImage = `url(${c.toDataURL()})`;
+    return c;
   }
 
   // 포인트 획득 팝업 (+100 처치)
@@ -111,6 +135,7 @@ export class HUD {
   prompt(txt) { this.el.prompt.textContent = txt || ''; this.el.prompt.style.opacity = txt ? 1 : 0; }
 
   update(dt) {
+    if (this.bloodT > 0) { this.bloodT = Math.max(0, this.bloodT - dt * 0.35); document.getElementById('blood-screen').style.opacity = Math.min(0.6, this.bloodT).toFixed(3); }
     const g = this.g, W = g.weapons, P = g.player;
     // 조준선
     const spread = W.currentSpread();

@@ -216,7 +216,13 @@ class Hostile {
       // 무릎이 꺾이며 주저앉기 시작
       this.anim.update(dt, { pos: this.pos, yaw: this.yaw, vel: V(0, 0, 0), crouch: true, ready: 0, aimPitch: 0.3, aimYaw: 0, lookAt: this.pos.clone().add(V(0, 0, 0)), gun: null });
       this.pos.y -= dt * 0.9;
-    } else if (!this.landed) {
+    }
+    if (this.launch) {   // 폭풍에 날려감
+      this.launch.y -= 9.8 * dt; this.pos.addScaledVector(this.launch, dt);
+      const fl = g.world.floorAt(this.pos.x, this.pos.z, this.pos.y + 0.5);
+      if (this.pos.y <= fl.y) { this.pos.y = fl.y; this.launch.multiplyScalar(0.3); this.launch.y = 0; if (this.launch.length() < 0.3) this.launch = null; }
+    }
+    if (this.deathT < this.collapse) { /* 주저앉는 중 */ } else if (!this.landed) {
       // 강체 막대 넘어짐: θ'' = (3g / 2L) sin θ
       this.omega += 1.5 * 9.8 / 1.1 * Math.sin(this.theta) * dt;
       this.theta += this.omega * dt;
@@ -306,6 +312,19 @@ export class Enemies {
     const e = new Hostile(this, key, pos);
     e.lastSeen = P.pos.clone();
     this.list.push(e);
+  }
+
+  // 폭발: 거리 감쇠 피해, 사망 시 폭풍 방향으로 날아가 쓰러짐
+  blast(p, R, dmg, by) {
+    for (const e of this.list) {
+      if (!e.alive) continue;
+      const c = e.pos.clone().add(V(0, 1.0, 0)), d = c.distanceTo(p);
+      if (d > R || !this.g.world.los(p.clone().add(V(0, 0.3, 0)), c)) continue;
+      const k = Math.pow(1 - d / R, 1.3), dir = c.clone().sub(p).normalize();
+      e.damage(1, dmg * k, dir, c, by);
+      if (!e.alive) { e.omega += 2.5 + k * 4; e.launch = dir.setY(Math.max(0.35, dir.y)).multiplyScalar(3 + k * 7); }
+      else { e.flinchT = 1.2; e.findCover(); }
+    }
   }
 
   nearestVisible(from, maxD) {

@@ -198,3 +198,5 @@ body[data-screen=game] #hud { display: block; }
 @media (max-width: 700px) { .up-body { grid-template-columns: 1fr; } .urow { grid-template-columns: 1fr; } }
 
 .acc-row button, .acc-btns button, .acc-tabs button { white-space: nowrap; }
+
+#blood-screen { position: absolute; inset: 0; background-size: 100% 100%; opacity: 0; pointer-events: none; mix-blend-mode: multiply; }
