@@ -1,0 +1,13 @@
+{
+  "name": "math-land-eater",
+  "version": "1.0.0",
+  "description": "매뜨 땅먹 — 초등 수학 문제를 풀어 우리 학교 땅을 넓히는 전국 학교 땅따먹기 게임",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

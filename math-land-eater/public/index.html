@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>매뜨 땅먹</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 로그인 / 회원가입 -->
+<section id="auth" class="screen">
+  <div class="card auth-card">
+    <h1 class="logo">매뜨 땅먹<small>MATH LAND EATER</small></h1>
+    <p class="tagline">수학 문제를 풀어 우리 학교 땅을 넓혀라! 🏫⚔️</p>
+    <div class="tabs">
+      <button type="button" class="tab on" data-tab="login">로그인</button>
+      <button type="button" class="tab" data-tab="signup">회원가입</button>
+    </div>
+    <form id="loginForm" class="form">
+      <label>아이디<input id="liId" autocomplete="username" required></label>
+      <label>비밀번호<input id="liPw" type="password" autocomplete="current-password" required></label>
+      <p id="liErr" class="err"></p>
+      <button class="btn primary big">로그인</button>
+    </form>
+    <form id="signupForm" class="form" hidden>
+      <label>아이디 <small>영어·숫자 4~16자</small><input id="suId" autocomplete="username" required></label>
+      <label>비밀번호 <small>4자 이상</small><input id="suPw" type="password" autocomplete="new-password" required></label>
+      <label>비밀번호 확인<input id="suPw2" type="password" autocomplete="new-password" required></label>
+      <label>나이 인증 <small>출생연도로 학년이 정해져요</small><select id="suBirth" required></select></label>
+      <p id="suGrade" class="note"></p>
+      <p id="suErr" class="err"></p>
+      <button class="btn primary big">회원가입</button>
+    </form>
+  </div>
+</section>
+
+<!-- 게임 시작 전 설정 -->
+<section id="setup" class="screen" hidden>
+  <form id="setupForm" class="card setup-card">
+    <h2>🎒 게임 시작 전 설정</h2>
+    <div class="field">
+      <div class="label">🏫 우리 학교</div>
+      <div id="stChosen" class="chosen">아직 학교를 고르지 않았어요</div>
+      <input id="stSearch" placeholder="학교 이름이나 지역으로 검색 (예: 대치, 수원, 제주)" autocomplete="off">
+      <div id="stList" class="school-list"></div>
+      <button type="button" id="stCustomToggle" class="link">찾는 학교가 없나요? 직접 등록하기</button>
+      <div id="stCustom" class="custom" hidden>
+        <div class="row"><select id="stCSido"></select><select id="stCSigungu"></select></div>
+        <input id="stCName" placeholder="학교 이름 (예: 햇살초등학교)" maxlength="16">
+      </div>
+    </div>
+    <div class="field"><div class="label">📚 학년</div><div id="stGrade" class="static"></div></div>
+    <div class="field"><div class="label">🗓️ 학기</div>
+      <div class="seg"><button type="button" class="sem" data-sem="1">1학기</button><button type="button" class="sem" data-sem="2">2학기</button></div>
+    </div>
+    <div class="field"><div class="label">😀 닉네임</div><input id="stNick" maxlength="10" placeholder="게임에서 쓸 이름" required></div>
+    <p id="stErr" class="err"></p>
+    <div class="row end"><button type="button" id="stBack" class="btn" hidden>취소</button><button class="btn primary big">게임 시작! 🚀</button></div>
+  </form>
+</section>
+
+<!-- 게임 -->
+<section id="game" class="screen" hidden>
+  <header class="topbar">
+    <div class="brand">매뜨 땅먹</div>
+    <div class="hud">
+      <span id="hudServer" class="pill server"></span>
+      <span id="hudOnline" class="pill"></span>
+      <span class="pill school">⭐ <b id="hudSchool"></b> · 땅 <b id="hudLand">0</b>칸</span>
+      <span id="hudUser" class="pill"></span>
+      <span id="cheatBadge" class="pill bug" hidden>🐛 버그 모드</span>
+    </div>
+    <div class="top-actions">
+      <button type="button" id="btnHelp" class="icon-btn" title="놀이 방법">❓</button>
+      <button type="button" id="btnBoard" class="icon-btn" title="순위">🏆</button>
+      <button type="button" id="btnSettings" class="icon-btn" title="설정">⚙️</button>
+    </div>
+  </header>
+  <main class="game-main">
+    <div id="mapWrap">
+      <canvas id="map"></canvas>
+      <div class="map-ctrl">
+        <button type="button" id="zIn" title="크게">＋</button>
+        <button type="button" id="zOut" title="작게">－</button>
+        <button type="button" id="zHome" title="우리 학교로">🏠</button>
+        <button type="button" id="zFit" title="전국 지도">🗺️</button>
+      </div>
+      <div id="conn" class="conn" title="서버 연결 상태"></div>
+      <div id="popup" class="popup" hidden></div>
+    </div>
+    <aside id="side" class="side">
+      <h3>🏆 학교 순위</h3>
+      <ol id="board" class="board"></ol>
+      <div id="myRank" class="my-rank"></div>
+      <h3>📣 소식</h3>
+      <ul id="feed" class="feed"></ul>
+      <div class="legend">
+        <span><i style="background:#ffc400"></i>우리 학교</span>
+        <span><i style="background:#7fb3e0"></i>다른 학교</span>
+        <span><i style="background:#ece6cc"></i>빈 땅</span>
+        <span><i class="dot"></i>학교 본부</span>
+      </div>
+    </aside>
+  </main>
+</section>
+
+<!-- 문제 풀기 -->
+<div id="quizModal" class="modal" hidden>
+  <div class="card quiz">
+    <div class="quiz-head"><b id="qzTitle"></b><button type="button" id="qzClose" class="icon-btn" title="그만하기">✕</button></div>
+    <div class="bar"><i id="qzBar"></i></div>
+    <div id="qzCount" class="muted"></div>
+    <div id="qzQ" class="question"></div>
+    <div id="qzAnswer"></div>
+    <div id="qzFeedback" class="feedback"></div>
+    <button type="button" id="qzHintBtn" class="btn hint" hidden>💡 힌트보기</button>
+    <div id="qzHint" class="hint-box" hidden></div>
+  </div>
+</div>
+
+<!-- 방어 수 정하기 -->
+<div id="defModal" class="modal" hidden>
+  <div class="card">
+    <h3>🛡️ 땅 방어하기</h3>
+    <p id="defInfo"></p>
+    <p class="muted">몇 개만큼 방어할까요? 정한 수만큼 문제를 풀어야 해요.</p>
+    <div class="stepper"><button type="button" id="defMinus">−</button><input id="defNum" type="number" min="1" max="20" value="3"><button type="button" id="defPlus">+</button></div>
+    <div class="quick"><button type="button" data-n="2">2</button><button type="button" data-n="3">3</button><button type="button" data-n="5">5</button><button type="button" data-n="10">10</button><button type="button" data-n="20">20</button></div>
+    <p id="defAfter" class="note"></p>
+    <div class="row end"><button type="button" class="btn" data-close="defModal">취소</button><button type="button" id="defGo" class="btn primary">방어 문제 풀기</button></div>
+  </div>
+</div>
+
+<!-- 설정 -->
+<div id="settingsModal" class="modal" hidden>
+  <div class="card settings">
+    <div class="settings-head">
+      <div class="secret">
+        <button type="button" id="secretSchool" class="secret-btn" aria-label="학교">
+          <svg viewBox="0 0 64 64" width="36" height="36"><path d="M32 6l26 14H6z" fill="#e8553d"/><rect x="10" y="20" width="44" height="34" fill="#ffd66b" stroke="#8a5a14" stroke-width="2"/><rect x="27" y="36" width="10" height="18" fill="#8a5a14"/><rect x="15" y="26" width="8" height="8" fill="#6ec3ff"/><rect x="41" y="26" width="8" height="8" fill="#6ec3ff"/><circle cx="32" cy="27" r="4" fill="#fff" stroke="#8a5a14" stroke-width="2"/><path d="M32 2v8" stroke="#555" stroke-width="2"/><path d="M32 2h8l-2 3 2 3h-8z" fill="#e8553d"/></svg>
+        </button>
+        <button type="button" id="secretBug" class="secret-btn" aria-label="벌레" hidden>
+          <svg viewBox="0 0 64 64" width="36" height="36"><g stroke="#333" stroke-width="3" stroke-linecap="round"><path d="M20 30l-10-6M20 38H8M20 46l-10 6M44 30l10-6M44 38h12M44 46l10 6M26 14l-6-8M38 14l6-8"/></g><ellipse cx="32" cy="40" rx="14" ry="18" fill="#3fbf5f" stroke="#1f7a37" stroke-width="3"/><circle cx="32" cy="18" r="8" fill="#2a2a2a"/><path d="M32 22v36" stroke="#1f7a37" stroke-width="2"/><circle cx="26" cy="36" r="3" fill="#1f7a37"/><circle cx="38" cy="46" r="3" fill="#1f7a37"/></svg>
+        </button>
+      </div>
+      <h2>⚙️ 설정</h2>
+      <button type="button" class="icon-btn" data-close="settingsModal">✕</button>
+    </div>
+    <div id="setInfo" class="set-info"></div>
+    <div class="field"><div class="label">🗓️ 학기 (문제 범위)</div>
+      <div class="seg" id="setSem"><button type="button" class="sem2" data-sem="1">1학기</button><button type="button" class="sem2" data-sem="2">2학기</button></div>
+    </div>
+    <div class="field"><div class="label">😀 닉네임</div>
+      <div class="row"><input id="setNick" maxlength="10"><button type="button" id="setNickSave" class="btn">저장</button></div>
+    </div>
+    <div class="row">
+      <button type="button" id="setSchool" class="btn">🏫 학교 바꾸기</button>
+      <button type="button" id="setLogout" class="btn danger">로그아웃</button>
+    </div>
+  </div>
+</div>
+
+<!-- 비밀번호 -->
+<div id="pwModal" class="modal" hidden>
+  <form id="pwForm" class="card small">
+    <h3>🔒 비밀번호가 걸려 있어요</h3>
+    <input id="pwInput" type="password" placeholder="비밀번호" autocomplete="off">
+    <p id="pwErr" class="err"></p>
+    <div class="row end"><button type="button" class="btn" data-close="pwModal">취소</button><button class="btn primary">확인</button></div>
+  </form>
+</div>
+
+<!-- 버그 창 -->
+<div id="bugModal" class="modal" hidden>
+  <div class="card small bug-card">
+    <h3>🐛 버그 창</h3>
+    <p class="muted">켜 두면 문제를 풀지 않고 바로 할 수 있어요.</p>
+    <button type="button" id="bugCapture" class="btn toggle"></button>
+    <button type="button" id="bugDefend" class="btn toggle"></button>
+    <div class="row end"><button type="button" class="btn" data-close="bugModal">닫기</button></div>
+  </div>
+</div>
+
+<!-- 놀이 방법 -->
+<div id="helpModal" class="modal" hidden>
+  <div class="card">
+    <h3>❓ 놀이 방법</h3>
+    <ol class="rules">
+      <li>지도에서 <b>우리 학교 땅(노란색)</b>과 닿아 있는 땅을 눌러요.</li>
+      <li><b>⚔️ 땅 뺏기</b>를 누르면 수학 문제가 나와요. 한 칸에 <b>문제 2개</b>를 풀면 우리 땅!</li>
+      <li>다른 학교 땅이 방어되어 있으면 <b>방어 수만큼</b> 문제를 풀어야 뺏을 수 있어요.</li>
+      <li>우리 땅을 눌러 <b>🛡️ 땅 방어하기</b>로 방어 수를 정하고, 그만큼 문제를 풀면 방어가 올라가요.</li>
+      <li>틀리면 <b>💡 힌트보기</b> 버튼이 나와요. 다시 풀어 보세요!</li>
+      <li>같은 학교 친구들은 함께 땅을 넓혀요. 학년마다 서버가 따로 있어요.</li>
+      <li>🏫 학교 본부 칸은 절대 빼앗기지 않아요.</li>
+    </ol>
+    <div class="row end"><button type="button" class="btn primary" data-close="helpModal">알겠어요!</button></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="js/shared.js"></script>
+<script src="js/problems.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

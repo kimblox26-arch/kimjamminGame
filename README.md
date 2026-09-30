@@ -170,3 +170,9 @@ WebGL2 지원 브라우저(Chrome, Edge, Firefox, Safari 16+)에서 동작합니
 - 물리와 렌더는 분리되어 있으며, 물리는 120 Hz 고정 스텝(최대 6 서브스텝)으로 적분합니다.
 - 지형 하이트맵은 CPU에서 생성되어 충돌 판정과 렌더 형상이 **완전히 일치**합니다.
 - 콘솔에서 `__FREEFREELY__` 로 게임 인스턴스에 접근할 수 있고, `__FREEFREELY__.debugStep(초)` 로 렌더 없이 물리만 진행시켜 비행 특성을 검증할 수 있습니다.
+
+---
+
+## 🗺️ 매뜨 땅먹 (Math Land Eater)
+초등 수학 문제를 풀어 우리 학교 땅을 넓히는 전국 학교 땅따먹기 게임이 [`math-land-eater/`](math-land-eater/README.md) 폴더에 있습니다.
+`cd math-land-eater && node server.js` 로 실행하세요.
