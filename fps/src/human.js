@@ -1,7 +1,8 @@
 // 사실적 인물 생성기 — SDF 조각으로 옷 입은 몸/얼굴/장갑/부츠를 만들고 뼈대에 스키닝.
 // 머리카락(바람에 흔들리는 카드), 수염(셸), 눈, 플레이트캐리어·헬멧·헤드셋 등 장비 포함.
 import * as THREE from 'three';
-import { SDFModel, ellipsoid, sphere, cone, rbox, torus, plane, buildGeometry, smoothMesh } from './sdf.js';
+import { handBoneSpec, buildGloveLocal, toRest } from './hand.js';
+import { SDFModel, ellipsoid, sphere, cone, rbox, torus, plane, buildGeometry, smoothMesh, mergeParts } from './sdf.js';
 import { T } from './textures.js';
 import { patchInterior } from './world.js';
 
@@ -77,12 +78,9 @@ function skeletonSpec() {
     add('uarm' + k, 'clav' + k, sh);
     add('farm' + k, 'uarm' + k, el);
     add('hand' + k, 'farm' + k, wr);
-    const kn = [wr[0] + d[0] * 0.095, wr[1] + d[1] * 0.095, wr[2]];
-    add('fing1' + k, 'hand' + k, kn);
-    add('fing2' + k, 'fing1' + k, [kn[0] + d[0] * 0.045, kn[1] + d[1] * 0.045, kn[2]]);
-    const tb = [wr[0] + d[0] * 0.025, wr[1] + d[1] * 0.025, wr[2] + 0.028];
-    add('thumb1' + k, 'hand' + k, tb);
-    add('thumb2' + k, 'thumb1' + k, [tb[0] + d[0] * 0.03, tb[1] + d[1] * 0.03, tb[2] + 0.03]);
+    // 손가락 3마디 + 엄지 3마디 (hand.js 공용 정의, 손 로컬 x=d, y=n(손바닥), z=w(엄지쪽))
+    const n = [-s * A, -A, 0];
+    for (const hb of handBoneSpec()) { const q = hb.p; add(hb.name + k, hb.parent + k, [wr[0] + d[0] * q.x + n[0] * q.y, wr[1] + d[1] * q.x + n[1] * q.y, wr[2] + d[2] * q.x + n[2] * q.y + q.z]); }
   }
   for (const [s, k] of [[1, 'L'], [-1, 'R']]) {
     add('thigh' + k, 'hips', [s * 0.093, 0.93, 0]);
@@ -159,37 +157,16 @@ function buildBody() {
 let HAND_GEO = null;
 function buildHands() {
   if (HAND_GEO) return HAND_GEO;
-  const S = new SDFModel([-0.78, 0.8, -0.1], [0.78, 1.1, 0.12], 0.005);
-  const b = BI;
+  const parts = [];
   for (const [s, k] of [[1, 'L'], [-1, 'R']]) {
-    const d = new THREE.Vector3(s * 0.7071, -0.7071, 0), n = new THREE.Vector3(-s * 0.7071, -0.7071, 0), w = new THREE.Vector3(0, 0, 1);
-    const wr = new THREE.Vector3(...P('hand' + k));
-    const at = (a, bb, c) => wr.clone().addScaledVector(d, a).addScaledVector(n, bb).addScaledVector(w, c).toArray();
-    // 손바닥 + 커프
-    S.add(cone(at(-0.035, 0, 0), at(0.01, 0, 0), 0.036, 0.034, { bone: b['hand' + k], mat: 'cuff', k: 0.01 }));
-    S.add(ellipsoid(at(0.05, 0.002, 0), [0.048, 0.02, 0.045], { bone: b['hand' + k], mat: 'glove', k: 0.012, rot: null }));
-    S.add(ellipsoid(at(0.03, 0.006, 0.02), [0.034, 0.018, 0.03], { bone: b['hand' + k], mat: 'glove', k: 0.015 }));
-    // 네 손가락 (근위/중위+원위)
-    [-0.031, -0.011, 0.01, 0.03].forEach((o, i) => {
-      const L = 0.046 * (i === 0 ? 0.82 : i === 2 ? 1.06 : 1), r = 0.0098 - Math.abs(i - 1.5) * 0.0008 - (i === 0 ? 0.001 : 0);
-      const k0 = at(0.093, 0.0, o), k1 = at(0.093 + L, 0.004, o * 1.05), k2 = at(0.093 + L + 0.027, 0.012, o * 1.08), k3 = at(0.093 + L + 0.049, 0.024, o * 1.1);
-      S.add(sphere(k0, r * 1.15, { bone: b['fing1' + k], mat: 'pad', k: 0.008 }));
-      S.add(cone(k0, k1, r, r * 0.93, { bone: [b['fing1' + k], b['fing2' + k]], blend: [0.85, 1.05], mat: 'glove', k: 0.006 }));
-      S.add(cone(k1, k2, r * 0.93, r * 0.86, { bone: b['fing2' + k], mat: 'glove', k: 0.006 }));
-      S.add(cone(k2, k3, r * 0.86, r * 0.8, { bone: b['fing2' + k], mat: 'glove', k: 0.006 }));
-    });
-    // 엄지
-    const t0 = at(0.025, 0.012, 0.03), t1 = at(0.058, 0.03, 0.058), t2 = at(0.085, 0.045, 0.072);
-    S.add(cone(at(0.0, 0.008, 0.018), t0, 0.018, 0.015, { bone: b['hand' + k], mat: 'glove', k: 0.012 }));
-    S.add(cone(t0, t1, 0.0125, 0.011, { bone: [b['thumb1' + k], b['thumb2' + k]], blend: [0.8, 1.05], mat: 'glove', k: 0.008 }));
-    S.add(cone(t1, t2, 0.011, 0.0095, { bone: b['thumb2' + k], mat: 'glove', k: 0.006 }));
-    // 너클 보호대
-    S.add(rbox(at(0.088, -0.018, 0), [0.012, 0.006, 0.042], 0.005, { bone: b['fing1' + k], mat: 'pad', k: 0.004, rot: [0, 0, s * -0.785] }));
+    const wr = new THREE.Vector3(...P('hand' + k)), d = new THREE.Vector3(s * 0.7071, -0.7071, 0), n = new THREE.Vector3(-s * 0.7071, -0.7071, 0), w = new THREE.Vector3(0, 0, 1);
+    const { m, S } = buildGloveLocal({ h: 0.0024, detail: false, bi: (nm) => BI[nm + k] });
+    const cls = S.classify(m, SKEL, 0.007);
+    toRest(m, wr, d, n, w);
+    parts.push({ m, cls });
   }
-  S.bake();
-  const m = smoothMesh(S.mesh(), 1, 0.35);
-  const cls = S.classify(m, SKEL, 0.008);
-  HAND_GEO = buildGeometry(m, cls, ['glove', 'pad', 'cuff'], null);
+  const { m, cls } = mergeParts(parts);
+  HAND_GEO = buildGeometry(m, cls, ['glove', 'palm', 'pad', 'pad2', 'cuff', 'cuff2'], null);
   return HAND_GEO;
 }
 
@@ -605,7 +582,7 @@ export function createHuman(key, { shadowOnly = false } = {}) {
   body.bind(skeleton);
   body.castShadow = true; body.receiveShadow = !shadowOnly; body.frustumCulled = false;
   root.add(body);
-  const hands = new THREE.SkinnedMesh(buildHands(), shadowOnly ? [invis, invis, invis] : [M.glove, M.pad, M.cuff]);
+  const hands = new THREE.SkinnedMesh(buildHands(), shadowOnly ? [invis, invis, invis, invis, invis, invis] : [M.glove, M.pad, M.pad, M.pad, M.cuff, M.cuff]);
   hands.bind(skeleton); hands.castShadow = true; hands.receiveShadow = !shadowOnly; hands.frustumCulled = false;
   root.add(hands);
   const Bn = Object.fromEntries(bones.map((b) => [b.name, b]));
@@ -632,6 +609,9 @@ export function createHuman(key, { shadowOnly = false } = {}) {
       e.position.set(C[0] + s * 0.031 * f, C[1] + 0.003, C[2] + 0.0795);
       headGroup.add(e); eyes.push(e);
     }
+    // 눈꺼풀(깜빡임용): 열림 땐 안구 뒤위쪽(머리 속)에 숨어 있다가 앞으로 덮음
+    const lidMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(v.skin[0] * 0.9, v.skin[1] * 0.86, v.skin[2] * 0.86, THREE.SRGBColorSpace), roughness: 0.55 });
+    const lids = eyes.map((e) => { const l = new THREE.Mesh(LID_GEO, lidMat); l.position.copy(e.position); l.rotation.x = -0.9; headGroup.add(l); return l; });
     // 눈썹/머리카락/수염
     const hmat = hairMaterial(v.hairColor);
     const brows = new THREE.Mesh(buildBrows(C, f, v.female ? 0.7 : 1.1), hmat); headGroup.add(brows);
@@ -642,7 +622,7 @@ export function createHuman(key, { shadowOnly = false } = {}) {
       const bg = beardGeometry(coarse, v);
       for (let i = 1; i <= 7; i++) { const sh = new THREE.Mesh(bg, shellMaterial(v.beardColor, v.beard === 'full' ? 0.009 : 0.007, 1400, i, 7)); headGroup.add(sh); }
     }
-    headGroup.userData = { eyes, hmat };
+    headGroup.userData = { eyes, hmat, lids };
   }
   if (v.gear === 'helmet') headGroup.add(gearMesh('helmet', helmet, { helmet: M.helmet, rail: M.rail, headset: M.headset }, 0.0045));
   else if (v.gear === 'cap') headGroup.add(gearMesh('cap', (h) => capGear(h, false), { cap: M.cap, cap2: M.cap2, headset: M.headset }, 0.0042));
@@ -656,6 +636,7 @@ export function createHuman(key, { shadowOnly = false } = {}) {
 }
 const HEAD_CACHE = {}, BEARD_BASE = {};
 const EYE_GEO = new THREE.SphereGeometry(0.0122, 24, 16);
+const LID_GEO = new THREE.SphereGeometry(0.0131, 20, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
 
 // ════════ 포즈 도구 ════════
 // 뼈의 휴지 방향: 휴지 회전은 모두 항등 → 자식 오프셋이 곧 방향

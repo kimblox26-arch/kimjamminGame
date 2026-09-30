@@ -527,7 +527,8 @@ function buildBarrett() {
 function pistolAnchors(G, P, grip = [-0.02, -0.07]) {
   return {
     grip: anchor(G.group, 'grip', grip[0], grip[1], 0, [1, 0, 0], [0, 0.94, -0.34]),
-    fore: anchor(G.group, 'fore', grip[0] + 0.008, grip[1] - 0.015, -0.014, [1, -0.1, 0.35], [0, 0.94, -0.34]),
+    // 보조손: 손바닥이 오른쪽-위를 향하도록 약 40° 기울여 사격손 손가락을 앞에서 감쌈 (thumbs-forward)
+    fore: anchor(G.group, 'fore', grip[0] + 0.006, grip[1] - 0.022, -0.016, [0.72, 0.6, 0.3], [0, 0.94, -0.34]),
     mag: P.mag ? anchor(P.mag, 'mag', 0.0, -0.08, -0.004, [1, 0, 0.1], [0, 1, 0]) : null,
     slide: P.slide ? anchor(P.slide, 'slide', -0.01, 0.03, 0.0, [0, 1, 0.2], [1, 0, 0]) : null,
   };

@@ -188,6 +188,9 @@ class Game {
     r.compile(scene, this.camera); r.compile(vmScene, this.vmCam);
     this.setLoad(1, '준비 완료');
     this.bindUI();
+    this.weapons.warmPoses();
+    // 그림자 몸체용 총(손 자세 포함)도 백그라운드에서 미리 생성
+    { const ids = this.weapons.list.map((w) => w.def.id); const next = () => { const id = ids.shift(); if (!id) return; if (!this.shadowGuns[id]) this.shadowGuns[id] = propGun(id); setTimeout(next, 40); }; setTimeout(next, 3000); }
     this.state = 'menu';
     this.showScreen('menu');
     this.last = performance.now();
@@ -208,7 +211,7 @@ class Game {
     this.ssao = new SSAOPass(this.camera, innerWidth * r.getPixelRatio(), innerHeight * r.getPixelRatio());
     this.ssao.enabled = q.ao;
     this.composer.addPass(this.ssao);
-    this.composer.addPass(new ViewmodelPass(this.vmScene, this.vmCam));
+    this.composer.addPass(this.vmPass = new ViewmodelPass(this.vmScene, this.vmCam));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.32, 0.45, 0.92);
     this.bloom.enabled = q.bloom;
     this.composer.addPass(this.bloom);
@@ -479,6 +482,14 @@ class Game {
     }
     this.vmCam.position.set(0, 0, 0);
     this.vmCam.quaternion.copy(cam.quaternion);
+    // 개발용: 뷰모델(손/총) 근접 점검 카메라 {pos, target} (vmCam 로컬)
+    if (this.vmDebug) {
+      const dc = this.vmDbgCam || (this.vmDbgCam = new THREE.PerspectiveCamera(35, 1, 0.005, 10));
+      if (!dc.parent) this.vmCam.add(dc);
+      dc.aspect = cam.aspect; dc.fov = this.vmDebug.fov || 35; dc.updateProjectionMatrix();
+      dc.position.copy(this.vmDebug.pos); this.vmCam.updateMatrixWorld(); dc.lookAt(this.vmCam.localToWorld(this.vmDebug.target.clone()));
+      this.vmPass.camera = dc;
+    } else if (this.vmPass) this.vmPass.camera = this.vmCam;
     // 뷰모델 조명 (실내 여부 + 태양 가림)
     this.sunVisT = (this.sunVisT || 0) - dt;
     if (this.sunVisT <= 0) { this.sunVisT = 0.15; this.sunVis = this.world.raycast(cam.position, SUN_DIR, 150) ? 0 : 1; }

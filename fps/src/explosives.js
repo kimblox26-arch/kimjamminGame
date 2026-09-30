@@ -2,7 +2,7 @@
 // 뷰모델(핀 뽑기 → 오버핸드·언더핸드 투척, 설치, 격발), 투척 물리(바운스·구름·부착), 폭발·연막 효과
 import * as THREE from 'three';
 import { GB } from './guns.js';
-import { CURLS } from './vmarms.js';
+import { preset, solveGrasp, proxyFromMesh } from './hand.js';
 import { Audio } from './audio.js';
 import { T } from './textures.js';
 import { WIND } from './human.js';
@@ -63,12 +63,12 @@ function fuse(G, M, y0, bodyR, bodyY) {
   return pin;
 }
 
-function handAnchor(parent, name, p, X, Y, curl) {
+function handAnchor(parent, name, p, X, Y, pose) {
   const o = new THREE.Object3D(); o.name = name; o.position.set(...p);
   const vx = V(...X).normalize(), vy = V(...Y);
   vy.addScaledVector(vx, -vy.dot(vx)).normalize();
   o.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(vx, vy, V(0, 0, 0).crossVectors(vx, vy)));
-  o.userData.curl = curl;
+  o.userData.pose = pose;
   parent.add(o);
   return o;
 }
@@ -177,14 +177,20 @@ export class Explosives {
     // 손 앵커
     const A = this.anchors = {};
     const m = this.models;
-    m.frag.hold = handAnchor(m.frag.group, 'hold', [0.014, -0.004, 0.002], [1, -0.2, 0.3], [0, 0.1, 1], CURLS.nade);
-    m.smoke.hold = handAnchor(m.smoke.group, 'hold', [0.016, -0.012, 0.002], [1, -0.1, 0.3], [0, 0.1, 1], CURLS.nade);
-    m.c4.hold = handAnchor(m.c4.group, 'hold', [0.0, -0.034, 0.03], [0, -1, 0], [0, 0, -1], CURLS.mag);
-    m.det.hold = handAnchor(m.det.group, 'hold', [0.0, -0.02, 0.0], [1, 0, 0], [0, 1, 0.15], CURLS.det);
-    for (const k of ['frag', 'smoke']) m[k].ring = handAnchor(m[k].pin, 'ring', [-0.03, -0.006, 0.008], [1, 0, 0], [0, 0, 1], CURLS.ring);
-    for (const k of Object.keys(m)) m[k].open = handAnchor(m[k].group, 'open', m[k].hold.position.toArray(), [1, 0, 0.2], [0, 0.4, 1], CURLS.point);
-    A.lrest = W.freeAnchor; W.freeAnchor.userData.curl = CURLS.free;
-    A.lpoint = handAnchor(W.root, 'lpoint', [-0.12, -0.12, -0.5], [0.1, -1, 0], [1, 0, 0], CURLS.point);
+    m.frag.hold = handAnchor(m.frag.group, 'hold', [0.012, -0.004, 0.002], [1, -0.2, 0.3], [0, 0.1, 1], null);
+    m.smoke.hold = handAnchor(m.smoke.group, 'hold', [0.014, -0.012, 0.002], [1, -0.1, 0.3], [0, 0.1, 1], null);
+    m.c4.hold = handAnchor(m.c4.group, 'hold', [0.0, -0.034, 0.03], [0, -1, 0], [0, 0, -1], null);
+    m.det.hold = handAnchor(m.det.group, 'hold', [0.0, -0.02, 0.0], [1, 0, 0], [0, 1, 0.15], null);
+    // 실제 모델 단면에 맞춘 파지 (수류탄: 손바닥 전체로 감쌈, 격발기: 권총 쥐듯 + 엄지는 버튼 위)
+    for (const [k, rsel, opp] of [['frag', 0.06, 1.0], ['smoke', 0.06, 1.0], ['c4', 0.07, 0.9], ['det', 0.05, 0.3]]) {
+      let p = null;
+      try { p = solveGrasp(proxyFromMesh(m[k].group, m[k].hold, 'R', { rsel }), { thumbOpp: opp, spread: 0.35 }); } catch (e) { console.warn('grasp', k, e); }
+      m[k].hold.userData.pose = p || preset('fist');
+    }
+    for (const k of ['frag', 'smoke']) m[k].ring = handAnchor(m[k].pin, 'ring', [-0.03, -0.006, 0.008], [1, 0, 0], [0, 0, 1], preset('ring'));
+    for (const k of Object.keys(m)) m[k].open = handAnchor(m[k].group, 'open', m[k].hold.position.toArray(), [1, 0, 0.2], [0, 0.4, 1], { ...preset('open'), off: m[k].hold.userData.pose.off });
+    A.lrest = W.freeAnchor; W.freeAnchor.userData.pose = preset('relaxed');
+    A.lpoint = handAnchor(W.root, 'lpoint', [-0.12, -0.12, -0.5], [0.1, -1, 0], [1, 0, 0], preset('open'));
     this.tmp = [0, 0, 0];
     this.blink = 0;
   }

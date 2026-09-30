@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { GUN_BUILDERS } from './guns.js';
 import './guns2.js';
-import { Arms, CURLS, VM_GRIP_OFF } from './vmarms.js';
+import { Arms, VM_GRIP_OFF } from './vmarms.js';
+import { preset, lerpPose, gunPose } from './hand.js';
 import { Explosives } from './explosives.js';
 import { Audio } from './audio.js';
 import { T } from './textures.js';
@@ -569,7 +570,9 @@ export class WeaponSystem {
       m.holo.material.uniforms.uAxis.value.set(0, 0, -1).applyQuaternion(m.group.quaternion);
       m.holo.material.uniforms.uUp.value.set(0, 1, 0).applyQuaternion(m.group.quaternion);
     }
-    // 팔 IK
+    // 팔 IK (검지: 사격 중이거나 정조준 시 방아쇠로)
+    const wantTrig = (g.input.mouse[0] && !this.anim) || (this.ads > 0.6 && !this.anim) ? 1 : 0;
+    this.trigW = damp(this.trigW ?? 0, wantTrig, wantTrig ? 22 : 6, dt);
     const anchorName = (k, def) => (A && A.clip[k] ? sampleAnchor(A.clip[k], A.t) : { a: def, b: def, u: 0 });
     this.ikArms(anchorName('lh', 'fore'), anchorName('rh', 'grip'));
   }
@@ -577,18 +580,48 @@ export class WeaponSystem {
   ikArms(L, Rr) {
     this.root.updateMatrixWorld(true);
     _m.copy(this.root.matrixWorld).invert();
-    const tr = this.blendAnchors(Rr), tl = this.blendAnchors(L);
-    this.arms.updateSide('R', tr, tr.curl);
-    this.arms.updateSide('L', tl, tl.curl);
+    const tr = this.blendAnchors(Rr, 'R'), tl = this.blendAnchors(L, 'L');
+    this.arms.updateSide('R', tr, tr.pose);
+    this.arms.updateSide('L', tl, tl.pose);
+  }
+
+  // 로딩 후 백그라운드에서 모든 총의 손 자세를 미리 계산 (첫 교체 시 끊김 방지)
+  warmPoses() {
+    const jobs = [];
+    for (const w of this.list) for (const [n, side] of [['grip', 'R'], ['fore', 'L'], ['mag', 'L'], ['slide', 'L'], ['cyl', 'L']]) if (w.m.anchors[n]) jobs.push([w, n, side]);
+    const step = () => {
+      const t0 = performance.now();
+      while (jobs.length && performance.now() - t0 < 12) {
+        const [w, n, side] = jobs.shift(), c = w.poses || (w.poses = {});
+        if (!c[n + side]) c[n + side] = gunPose(w.m, w.m.anchors[n], n, side, w.def.slot === 1);
+      }
+      if (jobs.length) setTimeout(step, 30);
+    };
+    setTimeout(step, 200);
+  }
+
+  // ── 손 자세: 실제 총 메쉬 단면에 맞춰 손가락을 감싸 쥔 자세 (총·앵커별 1회 계산 후 캐시) ──
+  poseFor(A, name, side) {
+    if (A.userData.pose) return A.userData.pose;
+    if (A === this.freeAnchor) return this._relaxed || (this._relaxed = preset('relaxed'));
+    const w = this.cur, c = w.poses || (w.poses = {}), key = name + side;
+    return c[key] || (c[key] = gunPose(w.m, A, name, side, w.def.slot === 1));
   }
 
   getAnchor(name) { if (this.item) return this.ex.anchors[name] || this.freeAnchor; return name === 'free' ? this.freeAnchor : this.cur.m.anchors[name] || this.cur.m.anchors.fore; }
-  blendAnchors({ a, b, u }) {
+  blendAnchors({ a, b, u }, side) {
     const A = this.getAnchor(a), B = this.getAnchor(b);
     const pa = new THREE.Vector3(), qa = new THREE.Quaternion(), sa = new THREE.Vector3();
     _m2.multiplyMatrices(_m, A.matrixWorld).decompose(pa, qa, sa);
-    const cA = A.userData.curl || CURLS[a] || CURLS.fore, cB = B.userData.curl || CURLS[b] || CURLS.fore;
-    const curl = cA.map((x, i) => x + (cB[i] - x) * (A !== B ? u : 0));
+    let pose = this.poseFor(A, a, side);
+    if (A !== B && u > 0) pose = lerpPose(pose, this.poseFor(B, b, side), u, {});
+    // 방아쇠 규율: 쏠 때만 검지를 방아쇠에, 평소엔 프레임 위에 곧게
+    const tp = a === 'grip' ? pose : (A !== B && b === 'grip' && u > 0.5 ? pose : null);
+    if (tp && tp.indexTrig && !this.item) {
+      const k = this.trigW, o = { ...tp };
+      o.index = tp.indexFrame.map((x, i) => x + (tp.indexTrig[i] - x) * k);
+      pose = o;
+    }
     if (A !== B && u > 0) {
       const pb = new THREE.Vector3(), qb = new THREE.Quaternion();
       _m2.multiplyMatrices(_m, B.matrixWorld).decompose(pb, qb, sa);
@@ -596,6 +629,7 @@ export class WeaponSystem {
       // 경로를 아래로 살짝 휘게 (손이 총을 관통하지 않도록)
       pa.y -= Math.sin(u * Math.PI) * 0.05;
     }
-    return { p: pa, q: qa, curl };
+    return { p: pa, q: qa, pose };
   }
 }
+
