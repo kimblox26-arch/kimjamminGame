@@ -220,7 +220,7 @@ export class Explosives {
     this.play('draw');
     Audio.play('cloth', { vol: 0.35 });
     this.hud();
-    if (this.g.hud && this.lastHint !== k) { this.lastHint = k; this.g.hud.message(`<small>${INFO[k].hint}</small>`, 2.4); }
+    if (this.g.hud && this.lastHint !== k) { this.lastHint = k; this.g.hud.message(`<small>${this.g.input.touchMode ? INFO[k].hint.replace(/좌클릭 유지/g, '발사 버튼 유지').replace(/좌클릭/g, '발사').replace(/우클릭/g, '조준 버튼') : INFO[k].hint}</small>`, 2.4); }
   }
   stow(done) {
     if (this.state === 'stow') return;

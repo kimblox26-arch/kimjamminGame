@@ -200,3 +200,56 @@ body[data-screen=game] #hud { display: block; }
 .acc-row button, .acc-btns button, .acc-tabs button { white-space: nowrap; }
 
 #blood-screen { position: absolute; inset: 0; background-size: 100% 100%; opacity: 0; pointer-events: none; mix-blend-mode: multiply; }
+
+/* ── 모바일 터치 조작 ── */
+#touch { display: none; }
+body.touch[data-screen=game] #touch { display: block; position: fixed; inset: 0; z-index: 6; touch-action: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+body.touch { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+#t-look { position: absolute; inset: 0; }
+#t-stick { position: absolute; width: 124px; height: 124px; margin: -62px 0 0 -62px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28); background: rgba(0, 0, 0, 0.18); display: none; pointer-events: none; }
+#t-stick.on { display: block; }
+#t-stick i { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255, 255, 255, 0.45); }
+.tb { position: absolute; width: 54px; height: 54px; padding: 0; margin: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); background: rgba(10, 12, 14, 0.38); color: #fff; font-size: 13px; font-weight: 700; letter-spacing: 0; text-align: center; transition: none; touch-action: none; }
+.tb:hover { padding: 0; background: rgba(10, 12, 14, 0.38); border-left-color: rgba(255, 255, 255, 0.35); }
+.tb.press, .tb.on { background: rgba(200, 255, 90, 0.35); border-color: var(--acc); }
+#tb-fire { width: 86px; height: 86px; right: calc(26px + env(safe-area-inset-right)); bottom: 104px; font-size: 16px; border-color: rgba(255, 90, 70, 0.7); background: rgba(160, 30, 20, 0.3); }
+#tb-fire2 { width: 64px; height: 64px; left: calc(22px + env(safe-area-inset-left)); bottom: 170px; border-color: rgba(255, 90, 70, 0.6); background: rgba(160, 30, 20, 0.25); }
+#tb-ads { width: 60px; height: 60px; right: calc(128px + env(safe-area-inset-right)); bottom: 166px; }
+#tb-reload { right: calc(132px + env(safe-area-inset-right)); bottom: 96px; }
+#tb-jump { width: 60px; height: 60px; right: calc(40px + env(safe-area-inset-right)); bottom: 22px; }
+#tb-crouch { right: calc(118px + env(safe-area-inset-right)); bottom: 24px; }
+#tb-swap { right: calc(196px + env(safe-area-inset-right)); bottom: 30px; }
+#tb-nade { right: calc(206px + env(safe-area-inset-right)); bottom: 112px; }
+#tb-use { width: 46px; height: 46px; right: calc(210px + env(safe-area-inset-right)); bottom: 186px; }
+#tb-pause, #tb-light, #tb-nvg, #tb-mode { top: 8px; width: 46px; height: 38px; border-radius: 8px; font-size: 12px; }
+#tb-pause { right: calc(10px + env(safe-area-inset-right)); font-size: 16px; }
+#tb-mode { right: calc(62px + env(safe-area-inset-right)); }
+#tb-nvg { right: calc(114px + env(safe-area-inset-right)); }
+#tb-light { right: calc(166px + env(safe-area-inset-right)); }
+#t-rotate { display: none; }
+@media (orientation: portrait) {
+  #t-rotate { display: flex; position: absolute; inset: 0; align-items: center; justify-content: center; background: rgba(6, 8, 10, 0.92); font-size: 20px; font-weight: 700; letter-spacing: 0.1em; z-index: 2; }
+}
+/* 터치 모드 HUD 재배치 */
+body.touch #health { top: 10px; bottom: auto; left: calc(14px + env(safe-area-inset-left)); }
+body.touch .hp-bar { width: 96px; }
+body.touch #hp-text { font-size: 20px; }
+body.touch #weapon-box { top: 40px; bottom: auto; left: calc(14px + env(safe-area-inset-left)); right: auto; text-align: left; min-width: 0; transform: scale(0.6); transform-origin: top left; }
+body.touch .w-top, body.touch .w-ammo, body.touch #rounds { justify-content: flex-start; }
+body.touch #slots { display: none; }
+body.touch #compass { transform: scale(0.66); transform-origin: top center; top: 6px; }
+body.touch #wave-box { top: 32px; font-size: 11px; gap: 14px; }
+body.touch #wave-box b { font-size: 14px; }
+body.touch #killfeed { top: 54px; right: 12px; }
+body.touch .kf { font-size: 12px; }
+body.touch #pts-wrap { top: 118px; left: calc(14px + env(safe-area-inset-left)); right: auto; text-align: left; transform: scale(0.8); transform-origin: top left; }
+body.touch #breath span { display: none; }
+body.touch #center-msg.big { font-size: 36px; }
+body.touch #center-msg { font-size: 20px; }
+@media (max-height: 500px) {
+  .screen.active { overflow-y: auto; }
+  #screen-menu { padding: 16px 20px; }
+  .sub { margin: 6px 0 14px; }
+  button { font-size: 16px; padding: 9px 16px; }
+  .logo b { font-size: 40px; }
+}

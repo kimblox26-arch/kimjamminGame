@@ -164,7 +164,7 @@ export class HUD {
   }
 
   clock(dn) {
-    const t = dn.clock() + (dn.flashOn ? '  ◉ 라이트' : '') + (dn.nvg ? '  ◉ NVG' : '') + (dn.lamp > 0.6 && !dn.flashOn && !dn.nvg ? '  [L] 라이트 · [N] 야간투시경' : '');
+    const t = dn.clock() + (dn.flashOn ? '  ◉ 라이트' : '') + (dn.nvg ? '  ◉ NVG' : '') + (dn.lamp > 0.6 && !dn.flashOn && !dn.nvg ? (this.g.input?.touchMode ? '' : '  [L] 라이트 · [N] 야간투시경') : '');
     if (this._ck !== t) { this._ck = t; this.el.clock.textContent = t; }
   }
 

@@ -26,6 +26,7 @@ import { Profile } from './profile.js';
 import { Enemies } from './enemies.js';
 import { UpgradeShop } from './upgrades.js';
 import { Account } from './account.js';
+import { setupTouch, isTouchDevice } from './touch.js';
 import { clamp, lerp, damp, rand, DEG } from './core.js';
 
 const $ = (id) => document.getElementById(id);
@@ -38,9 +39,10 @@ class Input {
     this.dx = 0; this.dy = 0; this.wheel = 0; this.el = el; this._dx = 0; this._dy = 0; this._w = 0;
     addEventListener('keydown', (e) => { if (!this.keys.has(e.code)) this.down.add(e.code); this.keys.add(e.code); if (this.locked && ['Tab', 'Space', 'KeyC', 'KeyW', 'KeyS', 'KeyD', 'KeyA', 'KeyQ', 'KeyE', 'KeyF', 'KeyR'].includes(e.code)) e.preventDefault(); });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
-    addEventListener('mousedown', (e) => { if (!this.locked) return; this.mouse[e.button] = true; this.mdown[e.button] = true; });
+    this.touchMode = isTouchDevice(); this.forceLock = this.touchMode;
+    addEventListener('mousedown', (e) => { if (!this.locked || this.touchMode) return; this.mouse[e.button] = true; this.mdown[e.button] = true; });
     addEventListener('mouseup', (e) => { this.mouse[e.button] = false; });
-    addEventListener('mousemove', (e) => { if (this.locked) { this._dx += e.movementX; this._dy += e.movementY; } });
+    addEventListener('mousemove', (e) => { if (this.locked && !this.touchMode) { this._dx += e.movementX; this._dy += e.movementY; } });
     addEventListener('wheel', (e) => { if (this.locked) this._w += Math.sign(e.deltaY); }, { passive: true });
     addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('blur', () => { this.keys.clear(); this.mouse = [false, false, false]; });
@@ -55,6 +57,11 @@ class Input {
   key(c) { return this.keys.has(c); }
   pressed(c) { return this.down.has(c); }
   mousePressed(b) { return this.mdown[b]; }
+  hold(c, on) { if (on && !this.keys.has(c)) { this.down.add(c); this.keys.add(c); } else if (!on) this.keys.delete(c); }
+  tap(c) { this.down.add(c); }
+  setMouse(b, on) { if (on && !this.mouse[b]) this.mdown[b] = true; this.mouse[b] = on; }
+  look(dx, dy) { this._dx += dx; this._dy += dy; }
+  releaseAll() { this.keys.clear(); this.mouse = [false, false, false]; }
 }
 
 const QUALITY = {
@@ -75,7 +82,7 @@ class Game {
   }
 
   loadSettings() {
-    const d = { sens: 1, adsSens: 0.8, fov: 90, vol: 0.8, quality: 'high', invertY: false, showFps: false, timeMode: 'cycle' };
+    const d = { sens: 1, adsSens: 0.8, fov: 90, vol: 0.8, quality: isTouchDevice() ? 'low' : 'high', invertY: false, showFps: false, timeMode: 'cycle' };
     let s = d;
     try { s = { ...d, ...JSON.parse(localStorage.getItem('kj-fps-settings') || '{}') }; } catch {}
     const q = new URLSearchParams(location.search).get('q');
@@ -207,6 +214,7 @@ class Game {
     r.compile(scene, this.camera); r.compile(vmScene, this.vmCam);
     this.setLoad(1, '준비 완료');
     this.bindUI();
+    if (this.input.touchMode) setupTouch(this);
     this.weapons.warmPoses();
     // 그림자 몸체용 총(손 자세 포함)도 백그라운드에서 미리 생성
     { const ids = this.weapons.list.map((w) => w.def.id); const next = () => { const id = ids.shift(); if (!id) return; if (!this.shadowGuns[id]) this.shadowGuns[id] = propGun(id); setTimeout(next, 40); }; setTimeout(next, 3000); }
@@ -327,6 +335,7 @@ class Game {
     this.state = 'playing';
     this.showScreen('game');
     this.lock();
+    this.enterFullscreen?.();
     this.hud.message(mode === 'training' ? '사격장 챌린지 — 왼쪽(서쪽) 사대로' : '기지 방어전 — 적을 격퇴하라', 2.8, 'big');
     if (mode === 'survival') this.enemies.start(); else this.enemies.stop();
     document.querySelector('#wave-box div:nth-child(2) span').textContent = mode === 'survival' ? '적' : '분대';
@@ -461,7 +470,7 @@ class Game {
     // 탄약 보급
     this.nearAmmo = this.world.ammoCrates.some((c) => c.distanceTo(P.pos.clone().setY(0.5)) < 1.8);
     if (this.nearAmmo) {
-      this.hud.prompt('[F] 탄약 보급');
+      this.hud.prompt(this.input.touchMode ? 'F 버튼: 탄약 보급' : '[F] 탄약 보급');
       if (I.pressed('KeyF')) { for (const w of W.list) w.reserve = w.def.reserve; W.ex.refill(); Audio.play('pickup', { vol: 0.5, bus: 'ui' }); Audio.play('magin', { vol: 0.6 }); if (!W.item) this.hud.ammo(W.cur); this.hud.message('탄약 보급 완료', 1.4); }
     } else this.hud.prompt('');
     if (P.alive) W.update(dt, I);
