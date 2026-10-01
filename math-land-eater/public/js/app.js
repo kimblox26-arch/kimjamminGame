@@ -200,11 +200,14 @@
     G.land = m.land.map(dec);
     G.landPaths = G.land.map(r => toPath([r]));
     G.landBox = G.land.map(r => boxOf([r]));
-    // 강·호수 (OpenStreetMap) 와 산·강·섬 이름
-    const wl = (m.water && m.water.lines) || []; // [폭, 줄인 좌표…]
-    G.water = { width: wl.map(e => e[0]), lines: wl.map(e => dec(e.slice(1))) };
-    G.water.paths = G.water.lines.map(r => { const p = new Path2D(); p.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) p.lineTo(r[k], r[k + 1]); return p; });
-    G.water.box = G.water.lines.map(r => boxOf([r]));
+    // 북한: 게임 땅은 아니고 보기만 한다. 전체 보기는 한반도 전체가 보이게
+    const north = (m.north || []).map(dec);
+    G.northPath = north.length ? toPath(north) : null;
+    const nbx = north.length ? boxOf(north) : [0, 0, 0, 0];
+    G.northBox = nbx;
+    G.northLabel = { name: '북한', x: (nbx[0] + nbx[2]) / 2, y: (nbx[1] + nbx[3]) / 2, size: 99 };
+    G.vb = { x0: Math.min(0, nbx[0]), y0: Math.min(0, nbx[1]), x1: Math.max(G.W, nbx[2]), y1: Math.max(G.H, nbx[3]) };
+    // 산·섬 이름
     G.places = (m.places || []).map(([type, name, x, y, h]) => ({ type, name, x, y, h }));
     G.peaks = G.places.filter(p => p.type === '산').sort((a, b) => b.h - a.h);
     G.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
@@ -304,23 +307,11 @@
     }
     g.restore();
   }
-  // 강과 하천: 진짜 강 폭에 맞춰 (멀리서도 1px 넘게 보이게), 테두리를 살짝 진하게
-  function drawWater(g, x0, y0, tw, px) {
-    const Wt = G.water, m = 40, list = [];
-    Wt.box.forEach((b, k) => { if (b[0] <= x0 + tw + m && b[2] >= x0 - m && b[1] <= y0 + tw + m && b[3] >= y0 - m) list.push(k); });
-    if (!list.length) return;
-    g.lineJoin = g.lineCap = 'round';
-    const w = k => Math.max((Wt.width[k] > 25 ? 1.8 : 1.2) * px, Wt.width[k]);
-    g.strokeStyle = 'rgba(40,120,190,.55)';
-    for (const k of list) { g.lineWidth = w(k) + 1.6 * px; g.stroke(Wt.paths[k]); }
-    g.strokeStyle = '#6ec0f0';
-    for (const k of list) { g.lineWidth = w(k); g.stroke(Wt.paths[k]); }
-  }
-  // 산·강·섬 이름 (지역 이름표와 함께 겹치지 않게)
+  // 산·섬 이름 (지역 이름표와 함께 겹치지 않게)
   function drawScenery(cp, SX, SY, free) {
     const out = (x, y) => x < -60 || y < -20 || x > vw + 60 || y > vh + 20;
-    const label = (text, x, y, size, color, font) => {
-      ctx.font = `${font || ''} ${size}px Jua, sans-serif`;
+    const label = (text, x, y, size, color) => {
+      ctx.font = `${size}px Jua, sans-serif`;
       const w = ctx.measureText(text).width + 6;
       if (!free(x - w / 2, y - size / 2 - 1, w, size + 2)) return false;
       ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.strokeText(text, x, y);
@@ -340,14 +331,10 @@
       if (p.h >= 1500) { ctx.beginPath(); ctx.moveTo(x, y - t); ctx.lineTo(x + t * 0.38, y - t * 0.3); ctx.lineTo(x - t * 0.38, y - t * 0.3); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); } // 눈 덮인 높은 산
       label(cp >= 3 ? `${p.name} ${p.h}m` : p.name, x, y + t + size * 0.7, size, '#6b4a22');
     }
-    for (const p of G.places) {
-      if (p.type === '산') continue;
-      const big = p.type === '강' ? !/천$/.test(p.name) : true;
-      if (p.type === '강' ? cp < (big ? 1.8 : 6) : cp < 2.5) continue;
+    if (cp >= 2.5) for (const p of G.places) {
+      if (p.type !== '섬') continue;
       const x = SX(p.x), y = SY(p.y);
-      if (out(x, y)) continue;
-      if (p.type === '강') label(p.name, x, y, Math.round(Math.max(11, Math.min(15, 9 + cp * 0.2))), '#1f6fb2', 'italic');
-      else label(p.name, x, y, Math.round(Math.max(11, Math.min(14, 9 + cp * 0.15))), '#4b5563');
+      if (!out(x, y)) label(p.name, x, y, Math.round(Math.max(11, Math.min(14, 9 + cp * 0.15))), '#4b5563');
     }
   }
   // 지역 이름표 (겹치면 건너뛴다)
@@ -367,6 +354,7 @@
       }
     };
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (G.northPath && cp < 8) draw([G.northLabel], Math.round(Math.max(18, Math.min(30, cp * 4))), 'rgba(90,82,70,.8)', 0, 0);
     if (cp < 8) draw(G.sidoList, Math.round(Math.max(14, Math.min(26, cp * 3.5))), 'rgba(70,40,150,.85)', 0, 0);
     if (G.places) drawScenery(cp, SX, SY, free);
     if (cp >= 2.2 && cp < 30) draw(G.sggs, Math.round(Math.max(12, Math.min(17, cp * 1.4))), 'rgba(85,60,160,.8)', cp < 4 ? 6 : 1, below);
@@ -703,7 +691,6 @@
       drawGroups(g, ids, px, false);
     } else drawGroups(g, cellsIn(x0 - 1, y0 - 1, x0 + tw + 1, y0 + tw + 1), px, cp > 9);
     if (G.peaks) drawRelief(g, x0, y0, tw, lands);
-    if (G.water) drawWater(g, x0, y0, tw, px);
     if (G.seg) drawBorders(g, x0, y0, tw, px, cp);
     if (cp >= 3) { g.strokeStyle = 'rgba(242,224,172,.95)'; g.lineWidth = Math.min(5, 1.5 + cp / 25) * px; for (const k of lands) g.stroke(G.landPaths[k]); } // 모래사장
     g.strokeStyle = 'rgba(30,80,120,.5)';
@@ -735,6 +722,7 @@
     const s = view.s, now = performance.now();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, vw, vh); // 바다는 뒤쪽 배경(CSS)이 보여 준다
+    if (G.northPath) drawNorth(s);
 
     // 1) 땅 조각 그림
     const z = Math.max(0, Math.min(ZMAX, Math.ceil(Math.log2((s * dpr) / baseS()) - 0.05)));
@@ -857,6 +845,18 @@
     if (more || flashes.length) requestDraw();
     else if (animate && (myVis || exitLines.length || (cp >= 16 && frontier.size)) && !ambient) ambient = setTimeout(() => { ambient = 0; requestDraw(); }, 90); // 반짝이는 표시는 천천히
   }
+  // 북한 땅: 게임 칸이 없는 보기용 땅 (조각 그림 밖이라 매번 직접 그린다)
+  function drawNorth(s) {
+    const px = 1 / s, cp = SPACING * s, b = G.northBox;
+    if (view.x + b[2] * s < 0 || view.x + b[0] * s > vw || view.y + b[3] * s < 0 || view.y + b[1] * s > vh) return; // 화면 밖
+    ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * view.x, dpr * view.y);
+    ctx.lineJoin = 'round';
+    if (!fast && !moving) for (const [u, m, c] of SEA_BANDS) { ctx.strokeStyle = c; ctx.lineWidth = Math.max(u, m * px); ctx.stroke(G.northPath); }
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = (cp > 20 ? 6 : 4) * px; ctx.stroke(G.northPath);
+    ctx.fillStyle = '#d3cdc1'; ctx.fill(G.northPath);
+    ctx.strokeStyle = 'rgba(30,80,120,.5)'; ctx.lineWidth = 1.1 * px; ctx.stroke(G.northPath);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
   function shield(x, y, r) {
     ctx.beginPath();
     ctx.moveTo(x, y - r); ctx.lineTo(x + r, y - r * 0.6); ctx.lineTo(x + r * 0.8, y + r * 0.5); ctx.lineTo(x, y + r * 1.05); ctx.lineTo(x - r * 0.8, y + r * 0.5); ctx.lineTo(x - r, y - r * 0.6); ctx.closePath();
@@ -917,7 +917,7 @@
   mini.addEventListener('pointermove', e => { if (e.buttons) miniJump(e); });
 
   // ---------- 지도 움직이기 ----------
-  const fitScale = () => Math.min(vw / G.W, vh / G.H) * 0.94;
+  const fitScale = () => Math.min(vw / (G.vb.x1 - G.vb.x0), vh / (G.vb.y1 - G.vb.y0)) * 0.94; // 북한까지 한반도 전체
   const clampS = s => Math.max(fitScale() * 0.8, Math.min(2.4, s));
   function zoomAt(px, py, ns) {
     ns = clampS(ns);
@@ -938,7 +938,7 @@
     };
     step();
   }
-  function fitView() { view.s = fitScale(); view.x = (vw - G.W * view.s) / 2; view.y = (vh - G.H * view.s) / 2; requestDraw(); }
+  function fitView() { view.s = fitScale(); view.x = vw / 2 - ((G.vb.x0 + G.vb.x1) / 2) * view.s; view.y = vh / 2 - ((G.vb.y0 + G.vb.y1) / 2) * view.s; requestDraw(); }
   const goHome = () => { const h = W && W.home[mySid()]; if (h >= 0) flyTo(h, Math.max(view.s, 0.5)); };
 
   const pointers = new Map();
