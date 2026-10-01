@@ -48,9 +48,9 @@ const schoolKey = s => `${s.sido}|${s.sigungu}|${s.name}`;
 const schoolCount = () => BASE.length + db.custom.length;
 const schoolById = id => (id < BASE.length ? BASE[id] : db.custom[id - BASE.length]);
 const idByKey = new Map();
-const indexSchools = () => { idByKey.clear(); for (let i = 0; i < schoolCount(); i++) idByKey.set(schoolKey(schoolById(i)), i); };
+const indexSchools = () => { idByKey.clear(); for (let i = schoolCount() - 1; i >= 0; i--) idByKey.set(schoolKey(schoolById(i)), i); }; // 같은 학교면 진짜 목록이 이긴다
 indexSchools();
-const publicCustom = () => db.custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, dong: c.dong || '', url: c.url || '' }));
+const publicCustom = () => db.custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, dong: c.dong || '', url: c.url || '' })).filter(c => idByKey.get(schoolKey(c)) === c.id);
 const cleanDong = v => { const d = String(v || '').replace(/\s+/g, ''); if (d && !/^[가-힣0-9·.]{1,12}(동|읍|면|가|리)$/.test(d)) fail('동 이름은 "대치동"처럼 동·읍·면으로 끝나게 써 주세요.'); return d; };
 const validUrl = u => /^https?:\/\/[^\s"'<>|;]{3,200}$/.test(u);
 const profileSchool = u => (u.profile && u.profile.school && idByKey.has(u.profile.school) ? idByKey.get(u.profile.school) : -1);

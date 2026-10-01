@@ -64,8 +64,10 @@
   const schoolCount = () => BASE.length + custom.length;
   const schoolById = id => (id < BASE.length ? BASE[id] : custom[id - BASE.length]);
   const idByKey = new Map();
-  function indexSchools() { idByKey.clear(); for (let i = 0; i < schoolCount(); i++) idByKey.set(schoolKey(schoolById(i)), i); }
-  const publicCustom = () => custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, dong: c.dong || '', url: c.url || '' }));
+  // 같은 학교가 두 번 있으면 번호가 작은 쪽(진짜 학교 목록)이 이긴다. 손으로 만든 가짜는 숨긴다.
+  function indexSchools() { idByKey.clear(); for (let i = schoolCount() - 1; i >= 0; i--) idByKey.set(schoolKey(schoolById(i)), i); }
+  const isDup = k => idByKey.get(schoolKey(custom[k])) !== BASE.length + k;
+  const publicCustom = () => custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, dong: c.dong || '', url: c.url || '' })).filter((c, i) => !isDup(i));
   const cleanDong = v => { const d = String(v || '').replace(/\s+/g, ''); if (d && !/^[가-힣0-9·.]{1,12}(동|읍|면|가|리)$/.test(d)) fail('동 이름은 "대치동"처럼 동·읍·면으로 끝나게 써 주세요.'); return d; };
   const profileSchool = u => (u.profile && u.profile.school && idByKey.has(u.profile.school) ? idByKey.get(u.profile.school) : -1);
   async function loadCustom() {
@@ -83,7 +85,7 @@
   function setCell(rt, i, o, d) { rt.owner[i] = o; rt.def[i] = d; }
   function setHome(rt, sid, cell) { rt.home[sid] = cell; rt.homeCell[cell] = sid; rt.owner[cell] = sid; }
   function applyCustomHomes(rt, g) {
-    custom.forEach((c, k) => { const h = c.homes && c.homes[WP + g]; if (h != null && h >= 0 && rt.home[BASE.length + k] == null) setHome(rt, BASE.length + k, h); });
+    custom.forEach((c, k) => { const h = c.homes && c.homes[WP + g]; if (!isDup(k) && h != null && h >= 0 && rt.home[BASE.length + k] == null) setHome(rt, BASE.length + k, h); });
   }
   async function getWorld(g) {
     if (worlds[g]) return worlds[g];
@@ -310,7 +312,10 @@
           const url = String(b.custom.url || '').trim();
           if (url && !validUrl(url)) fail('홈페이지 주소는 https:// 로 시작하게 써 주세요.');
           if (cloud) await loadCustom();
-          custom.push(Object.assign(sc, { x: d.x + (Math.random() - 0.5) * 300, y: d.y + (Math.random() - 0.5) * 300, url, homes: {} }));
+          // 같은 동에 진짜 학교가 있으면 그 근처에, 없으면 시·군·구 가운데 근처에 둔다
+          const near = BASE.filter(s => s.dong && s.dong === sc.dong && s.sido === sc.sido && s.sigungu === sc.sigungu);
+          const cx = near.length ? near.reduce((t, s) => t + M.sx[s.cell], 0) / near.length : d.x, cy = near.length ? near.reduce((t, s) => t + M.sy[s.cell], 0) / near.length : d.y, j = near.length ? 60 : 200;
+          custom.push(Object.assign(sc, { x: cx + (Math.random() - 0.5) * j, y: cy + (Math.random() - 0.5) * j, url, homes: {} }));
           if (!cloud) local.custom = custom;
           await saveCustom();
           indexSchools();

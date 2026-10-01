@@ -116,9 +116,23 @@ input:focus, select:focus { border-color: var(--blue); }
 .top-actions { display: flex; }
 .game-main { flex: 1; display: flex; min-height: 0; }
 #mapWrap {
-  position: relative; flex: 1; min-width: 0; overflow: hidden; background-color: #5fb3e8;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.2' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M3 18q7-7 14 0t14 0M63 48q7-7 14 0t14 0M23 88q7-7 14 0t14 0M83 103q7-7 14 0t14 0'/%3E%3C/g%3E%3C/svg%3E"), linear-gradient(180deg, #7cc8f0, #4fa6de);
+  position: relative; flex: 1; min-width: 0; overflow: hidden; isolation: isolate; background-color: #2b8ad3;
+  background-image: radial-gradient(ellipse 130% 95% at 38% 30%, #6ccaf2 0%, #3fa3e2 42%, #2479c2 78%, #1a63a8 100%);
 }
+/* 움직이는 물결과 반짝이 (화면 합성만 쓰므로 가볍다) */
+#mapWrap::before, #mapWrap::after { content: ''; position: absolute; inset: -240px; z-index: -1; pointer-events: none; will-change: transform; }
+#mapWrap::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='none' stroke='%23fff' stroke-linecap='round'%3E%3Cpath stroke-opacity='.3' stroke-width='2' d='M8 26q8-7 16 0t16 0M92 58q8-7 16 0t16 0M30 104q8-7 16 0t16 0M110 136q8-7 16 0t16 0'/%3E%3Cpath stroke-opacity='.15' stroke-width='1.5' d='M60 12q6-5 12 0M136 88q6-5 12 0M4 70q6-5 12 0M70 150q6-5 12 0'/%3E%3C/g%3E%3C/svg%3E");
+  animation: seaWave 16s linear infinite;
+}
+#mapWrap::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='230' height='230'%3E%3Cg fill='%23fff'%3E%3Cpath fill-opacity='.55' d='M40 30l2 6 6 2-6 2-2 6-2-6-6-2 6-2zM170 120l1.5 4.5 4.5 1.5-4.5 1.5-1.5 4.5-1.5-4.5-4.5-1.5 4.5-1.5z'/%3E%3Ccircle cx='120' cy='40' r='1.6' fill-opacity='.5'/%3E%3Ccircle cx='60' cy='170' r='1.4' fill-opacity='.45'/%3E%3Ccircle cx='200' cy='200' r='1.2' fill-opacity='.4'/%3E%3Ccircle cx='15' cy='110' r='1.3' fill-opacity='.4'/%3E%3C/g%3E%3C/svg%3E"),
+    radial-gradient(ellipse 60% 40% at 30% 30%, rgba(255,255,255,.10), transparent 70%);
+  animation: seaGlint 7s ease-in-out infinite alternate;
+}
+@keyframes seaWave { to { transform: translateX(-160px); } }
+@keyframes seaGlint { from { opacity: .35; transform: translate(0, 0); } to { opacity: .9; transform: translate(-40px, 16px); } }
+@media (prefers-reduced-motion: reduce) { #mapWrap::before, #mapWrap::after { animation: none; } }
 #map { display: block; touch-action: none; cursor: grab; }
 #map:active { cursor: grabbing; }
 .map-ctrl { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }

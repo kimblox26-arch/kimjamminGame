@@ -484,6 +484,8 @@
   const cv = $('#map'), ctx = cv.getContext('2d');
   const view = { s: 0.02, x: 0, y: 0 };
   const TILE = 256, ZMAX = 12;
+  // 얕은 바다 띠: [폭(지도 단위, 1 ≈ 14m), 화면에서 최소 폭(px), 색]
+  const SEA_BANDS = [[160, 16, 'rgba(110,210,235,.18)'], [90, 10, 'rgba(130,222,240,.24)'], [42, 6, 'rgba(160,234,247,.32)'], [16, 3, 'rgba(195,244,250,.45)']];
   let SPACING = 150;
   const tiles = new Map();
   let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set(), owned = new Set();
@@ -571,9 +573,13 @@
     const sz = baseS() * 2 ** z, tw = TILE / sz, x0 = tx * tw, y0 = ty * tw, px = 1 / sz, cp = SPACING * sz;
     g.setTransform(sz, 0, 0, sz, -x0 * sz, -y0 * sz);
     g.lineJoin = 'round';
+    // 바닷가 얕은 물: 해안선을 넓은 선부터 좁은 선까지 겹쳐 그려 물빛이 점점 밝아지게 한다
+    const bands = SEA_BANDS.map(([u, m, c]) => [Math.max(u, m * px), c]), mg = bands[0][0] / 2;
     const lands = [];
-    G.landBox.forEach((b, k) => { if (b[0] <= x0 + tw && b[2] >= x0 && b[1] <= y0 + tw && b[3] >= y0) lands.push(k); });
-    if (!fast) { g.strokeStyle = 'rgba(214,244,255,.85)'; g.lineWidth = Math.min(14, 4 + cp / 12) * px; for (const k of lands) g.stroke(G.landPaths[k]); } // 바닷가 물빛
+    G.landBox.forEach((b, k) => { if (b[0] <= x0 + tw + mg && b[2] >= x0 - mg && b[1] <= y0 + tw + mg && b[3] >= y0 - mg) lands.push(k); });
+    for (const [w, c] of bands) { g.strokeStyle = c; g.lineWidth = w; for (const k of lands) g.stroke(G.landPaths[k]); }
+    g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = (cp > 20 ? 6 : 4) * px; // 하얀 물거품
+    for (const k of lands) g.stroke(G.landPaths[k]);
     if (cp < 6) { // 멀리서 볼 때: 회색 땅을 한 번에 칠하고 주인 있는 칸만 덧칠한다
       g.fillStyle = shade(NEUTRAL, 1);
       for (const k of lands) g.fill(G.landPaths[k]);
@@ -582,6 +588,7 @@
       drawGroups(g, ids, px, false);
     } else drawGroups(g, cellsIn(x0 - 1, y0 - 1, x0 + tw + 1, y0 + tw + 1), px, cp > 9);
     if (G.seg) drawBorders(g, x0, y0, tw, px, cp);
+    if (cp >= 3) { g.strokeStyle = 'rgba(242,224,172,.95)'; g.lineWidth = Math.min(5, 1.5 + cp / 25) * px; for (const k of lands) g.stroke(G.landPaths[k]); } // 모래사장
     g.strokeStyle = 'rgba(30,80,120,.5)';
     g.lineWidth = 1.1 * px;
     for (const k of lands) g.stroke(G.landPaths[k]); // 해안선
