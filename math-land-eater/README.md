@@ -11,6 +11,13 @@ node server.js          # 또는 npm start
 - 회원·땅 정보는 `math-land-eater/data/db.json` 에 저장됩니다. (git 에는 올라가지 않음)
 - 환경 변수: `PORT`(기본 3000), `DATA_DIR`(저장 폴더), `DEBUG_PASSWORD`(비밀 창 비밀번호)
 
+## 폰 브라우저에서 하기 (서버 없이)
+`node tools/build-static.js` 를 실행하면 `dist/static/` 에 서버 없이 돌아가는 판이 만들어져요.
+게임 서버 역할은 `public/js/backend.js` 가 브라우저 안에서 해요.
+- 계정·기록·오답 노트는 그 기기(브라우저)에 저장돼요.
+- claude.ai 페이지로 올리면, 같은 링크로 들어온 친구들과 땅·소식·채팅·순위를 함께 써요. (공유 저장소를 못 쓰는 사람은 혼자 하기)
+- `dist/static/index.html` 은 GitHub Pages 같은 정적 호스팅에도 그대로 올릴 수 있어요. (이때는 혼자 하기)
+
 ## 게임 규칙
 | 항목 | 내용 |
 |---|---|
@@ -65,10 +72,12 @@ math-land-eater/
 │  ├─ korea-land.json     # 한국 해안선 (Natural Earth 1:10m, 퍼블릭 도메인) + 독도
 │  └─ schools.txt         # 학교 이름과 위도·경도
 ├─ tools/import-schools.js # 공공데이터 CSV → schools.txt
+├─ tools/build-static.js  # 서버 없이 돌아가는 판 만들기 (dist/static)
 └─ public/
    ├─ index.html, style.css
    └─ js/
       ├─ shared.js        # 지도 좌표계, 출생연도→학년
       ├─ problems.js      # 학년·학기별 문제와 힌트, 답 채점
-      └─ app.js           # 화면, 지도 그리기, 문제 풀기, 설정, 효과음
+      ├─ app.js           # 화면, 지도 그리기, 문제 풀기, 설정, 효과음
+      └─ backend.js       # 서버 없이 돌릴 때 브라우저 안의 게임 서버
 ```
