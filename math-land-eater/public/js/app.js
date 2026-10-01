@@ -117,24 +117,33 @@
     const res = await fetch(window.MLE_MAP_URL || '/api/map');
     if (!res.ok) throw new Error('지도를 받을 수 없어요.');
     const m = await res.json();
-    if (window.MLEBackend) { $('#loadMsg').textContent = '친구들과 함께 쓰는 지도에 연결하는 중…'; await window.MLEBackend.init(m); }
     $('#loadMsg').textContent = `다각형 땅 ${m.n.toLocaleString()}칸을 그리는 중…`;
     await new Promise(r => setTimeout(r, 30));
     const dec = arr => { const out = new Float32Array(arr.length); let x = 0, y = 0; for (let k = 0; k < arr.length; k += 2) { x += arr[k]; y += arr[k + 1]; out[k] = x; out[k + 1] = y; } return out; };
     const toPath = rings => { const p = new Path2D(); for (const r of rings) { p.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) p.lineTo(r[k], r[k + 1]); p.closePath(); } return p; };
     const boxOf = rings => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of rings) for (let k = 0; k < r.length; k += 2) { x0 = Math.min(x0, r[k]); x1 = Math.max(x1, r[k]); y0 = Math.min(y0, r[k + 1]); y1 = Math.max(y1, r[k + 1]); } return [x0, y0, x1, y1]; };
-    G = { W: m.W, H: m.H, n: m.n, nb: m.nb, sides: m.sides, routes: m.routes };
+    G = { W: m.W, H: m.H, n: m.n, sides: m.sides, routes: m.routes, schoolCount: m.schoolCount };
     SPACING = m.spacing || 150;
     G.rings = new Array(m.n);
     for (let i = 0; i < m.n; i++) {
-      G.rings[i] = m.cells[i].map(dec);
-      if (i % 12000 === 11999) await new Promise(r => setTimeout(r, 0)); // 화면이 멈추지 않게 쉬어 간다
+      G.rings[i] = m.cells[i].map(S.decodeRing);
+      if (i % 15000 === 14999) await new Promise(r => setTimeout(r, 0)); // 화면이 멈추지 않게 쉬어 간다
     }
+    // 이웃한 땅은 칸 모양으로 직접 계산한다 (서버와 같은 방법) + 섬 뱃길
+    G.nb = S.neighborsFromRings(G.rings);
+    for (const [a, b] of m.routes) { G.nb[a].push(b); G.nb[b].push(a); }
     G.paths = new Array(m.n);
     G.box = new Float32Array(m.n * 4);
     G.rings.forEach((rs, i) => G.box.set(boxOf(rs), i * 4));
     G.sx = new Float32Array(m.n); G.sy = new Float32Array(m.n);
-    for (let i = 0; i < m.n; i++) { G.sx[i] = m.seeds[2 * i]; G.sy[i] = m.seeds[2 * i + 1]; }
+    for (let i = 0; i < m.n; i++) { // 학교 칸은 학교 자리, 나머지는 칸 가운데
+      if (i < m.schoolCount) { G.sx[i] = m.seeds[2 * i]; G.sy[i] = m.seeds[2 * i + 1]; continue; }
+      const r = G.rings[i][0];
+      let x = 0, y = 0;
+      for (let k = 0; k < r.length; k += 2) { x += r[k]; y += r[k + 1]; }
+      G.sx[i] = x / (r.length / 2); G.sy[i] = y / (r.length / 2);
+    }
+    if (window.MLEBackend) { $('#loadMsg').textContent = '친구들과 함께 쓰는 지도에 연결하는 중…'; await window.MLEBackend.init(m, G); }
     G.land = m.land.map(dec);
     G.landPaths = G.land.map(r => toPath([r]));
     G.landBox = G.land.map(r => boxOf([r]));
@@ -175,6 +184,15 @@
       if (inside) return i;
     }
     return -1;
+  }
+  function nearestSchool(x, y) { // 가장 가까운 학교 (그 학교의 동네 이름을 빌려 쓴다)
+    let best = null, bd = Infinity;
+    for (const s of schools) {
+      if (!s || s.id >= G.schoolCount) continue; // 기본 학교만 (학교 번호 = 칸 번호)
+      const d = (G.sx[s.id] - x) ** 2 + (G.sy[s.id] - y) ** 2;
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best;
   }
   function nearestDistrict(x, y) {
     let best = null, bd = Infinity;
@@ -265,6 +283,7 @@
     $('#stSigungu').onchange = () => setArea($('#stSido').value, $('#stSigungu').value);
     $('#stDong').onchange = renderSchoolList;
     $('#stSearch').oninput = renderSchoolList;
+    $('#stSearch').placeholder = '또는 동네·학교 이름으로 찾기 (예: 호평동, 남양주시, 대치초)';
     $('#stList').onclick = e => { const b = e.target.closest('[data-id]'); if (b) chooseSchool(+b.dataset.id); };
     $('#stCustomToggle').onclick = () => { $('#stCustom').hidden = !$('#stCustom').hidden; if (!$('#stCustom').hidden) $('#stCDong').value = $('#stDong').value; };
     $$('.sem').forEach(b => { b.onclick = () => setSemester(+b.dataset.sem); });
@@ -299,6 +318,30 @@
     $('#stChosen').classList.toggle('on', !!s);
     renderSchoolList();
   }
+  // "호평동", "남양주시", "남양주", "영통구", "경기" 처럼 지역 이름이면 그 지역의 모든 학교
+  function regionSchools(q) {
+    q = q.replace(/\s+/g, '');
+    if (q.length < 2) return null;
+    const norm = t => (t || '').replace(/\s+/g, '');
+    let list = schools.filter(s => s && s.dong && (s.dong === q || s.dong === q + '동'));
+    if (list.length) return { label: list[0].dong, list };
+    list = schools.filter(s => s && /[시군구]$/.test(q.length > 1 ? norm(s.sigungu) : '') && (norm(s.sigungu) === q || norm(s.sigungu).startsWith(q) || norm(s.sigungu).endsWith(q)));
+    if (list.length) { const g = new Set(list.map(s => s.sigungu)); return { label: g.size === 1 ? list[0].sigungu : q, list }; }
+    list = schools.filter(s => s && s.sido === q);
+    return list.length ? { label: q, list } : null;
+  }
+  // 동네별로 묶어서 보여 준다
+  function schoolListHTML(list, landOf, chosenId) {
+    const sorted = list.slice().sort((a, b) => (a.sido + a.sigungu).localeCompare(b.sido + b.sigungu, 'ko') || (a.dong || '').localeCompare(b.dong || '', 'ko') || a.name.localeCompare(b.name, 'ko'));
+    let html = '', group = null;
+    for (const s of sorted) {
+      const g = `${s.sido} ${s.sigungu}${s.dong ? ' · ' + s.dong : ''}`;
+      if (g !== group) { group = g; html += `<div class="list-group">📍 ${esc(g)}</div>`; }
+      const land = landOf ? landOf(s.id) : null;
+      html += `<button type="button" class="school-item${s.id === chosenId ? ' on' : ''}" data-id="${s.id}" data-sid="${s.id}"><b>${esc(s.name)}</b><span>${land != null ? `땅 ${land}칸` : esc(s.dong || '')}</span></button>`;
+    }
+    return html;
+  }
   const searchSchools = (q, max) => {
     q = q.replace(/\s+/g, '');
     const res = [];
@@ -311,12 +354,14 @@
   };
   function renderSchoolList() {
     const q = $('#stSearch').value.trim(), box = $('#stList'), { sido, sigungu, dong } = area();
-    let res;
-    if (q) res = searchSchools(q, 80);
-    else if (sigungu) res = schools.filter(s => s && s.sido === sido && s.sigungu === sigungu && (!dong || s.dong === dong)).sort((a, b) => (a.dong || '').localeCompare(b.dong || '', 'ko') || a.name.localeCompare(b.name, 'ko'));
-    else { box.innerHTML = `<div class="muted pad">시·도 → 시·군·구 → 동을 고르거나, 학교 이름으로 검색해 보세요. (전국 ${schools.length.toLocaleString()}개 학교)</div>`; return; }
+    let title = '', res;
+    const region = q ? regionSchools(q) : null;
+    if (region) { res = region.list; title = `${region.label}에 있는 모든 학교`; }
+    else if (q) { res = searchSchools(q, 120); title = `"${q}" 검색 결과`; }
+    else if (sigungu) { res = schools.filter(s => s && s.sido === sido && s.sigungu === sigungu && (!dong || s.dong === dong)); title = `${dong || sigungu}에 있는 모든 학교`; }
+    else { box.innerHTML = `<div class="muted pad">시·도 → 시·군·구 → 동을 고르거나, "호평동"·"남양주시"처럼 동네 이름이나 학교 이름으로 찾아보세요. (전국 ${schools.length.toLocaleString()}개 학교)</div>`; return; }
     box.innerHTML = res.length
-      ? res.map(s => `<button type="button" class="school-item${s.id === chosen ? ' on' : ''}" data-id="${s.id}"><b>${esc(s.name)}</b><span>${esc(q ? where(s) : s.dong || s.sigungu)}</span></button>`).join('')
+      ? `<div class="list-title">🏫 ${esc(title)} <b>${res.length}곳</b></div>` + schoolListHTML(res, null, chosen)
       : '<div class="muted pad">이 동네에는 등록된 학교가 없어요. 아래 "직접 등록하기"를 눌러 보세요.</div>';
   }
   async function openSetup() {
@@ -710,14 +755,14 @@
     if (sel < 0 || !W) { box.hidden = true; return; }
     const i = sel, o = W.owner[i], d = W.def[i], hs = W.homeCell[i], my = mySid(), mine = o === my;
     const adj = G.nb[i].some(n => W.owner[n] === my);
-    const dist = nearestDistrict(G.sx[i], G.sy[i]);
+    const near = hs >= 0 ? schools[hs] : nearestSchool(G.sx[i], G.sy[i]), dist = near && near.dong ? near : nearestDistrict(G.sx[i], G.sy[i]);
     const shape = G.sides[i] ? SHAPE[G.sides[i]] || '다각형' : '바닷가';
     const title = hs >= 0 ? (mine ? '🏫 우리 학교 본부' : `🏫 ${schools[hs].name}`) : o < 0 ? `⬜ ${shape} 빈 땅` : mine ? `⭐ 우리 학교 ${shape} 땅` : `🚩 ${short(o)}의 ${shape} 땅`;
     const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : !adj ? '노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요.' : '';
     const defWhy = !mine ? '우리 학교 땅만 방어할 수 있어요.' : hs >= 0 ? '본부는 언제나 안전해요.' : d >= 99 ? '방어가 가장 높아요(99).' : '';
     let ownedN = 0;
     if (o >= 0) for (const k of owned) if (W.owner[k] === o) ownedN++;
-    const tags = [`<span class="tag">📍 ${esc(dist.sido)} ${esc(dist.sigungu)}</span>`];
+    const tags = [`<span class="tag">📍 ${esc(dist.sido)} ${esc(dist.sigungu)}${dist.dong ? ' ' + esc(dist.dong) : ''}${hs < 0 ? ' 근처' : ''}</span>`];
     if (o >= 0 && !mine) tags.push(`<span class="tag" style="--c:${cssColor(o)}">🚩 ${esc(schools[o].name)} · ${ownedN}칸</span>`);
     if (o >= 0 && hs < 0) tags.push(`<span class="tag">🛡️ 방어 <b>${d}</b></span>`);
     if (!mine && hs < 0) tags.push(`<span class="tag hot">⚔️ 문제 <b>${needToTake(i)}개</b> 풀면 뺏어요</span>`);
@@ -1225,10 +1270,16 @@
       if (r.error) toast(r.error, 'warn'); else Sound.play('tap');
     };
     $$('.chch').forEach(b => { b.onclick = () => { chatCh = b.dataset.ch; $$('.chch').forEach(x => x.classList.toggle('on', x === b)); }; });
-    $('#findSchool').oninput = () => {
-      const res = searchSchools($('#findSchool').value, 8);
-      $('#findList').innerHTML = res.map(s => `<button type="button" data-sid="${s.id}"><b>${esc(s.name)}</b><span>${esc(s.sido)} ${esc(s.sigungu)}</span></button>`).join('');
+    const landOf = () => { const m = new Map(); for (const i of owned) m.set(W.owner[i], (m.get(W.owner[i]) || 0) + 1); return id => m.get(id) || 0; };
+    const findRender = () => {
+      const q = $('#findSchool').value.trim(), region = regionSchools(q);
+      if (!q) { $('#findList').innerHTML = ''; return; }
+      const list = region ? region.list : searchSchools(q, 30), title = region ? `${region.label}에 있는 모든 학교` : `"${q}" 검색 결과`;
+      $('#findList').innerHTML = list.length ? `<div class="list-title">🏫 ${esc(title)} <b>${list.length}곳</b></div>` + schoolListHTML(list, landOf()) : '<div class="muted pad">찾는 학교가 없어요.</div>';
     };
+    $('#findSchool').oninput = findRender;
+    $('#findMyDong').onclick = () => { const s = schools[mySid()]; $('#findSchool').value = s ? s.dong || s.sigungu : ''; findRender(); };
+    $('#findMyCity').onclick = () => { const s = schools[mySid()]; $('#findSchool').value = s ? s.sigungu : ''; findRender(); };
     $('#findList').onclick = e => { const b = e.target.closest('[data-sid]'); if (b) { jumpToSchool(+b.dataset.sid); $('#findSchool').value = ''; $('#findList').innerHTML = ''; } };
     $$('.stab').forEach(t => { t.onclick = () => {
       $$('.stab').forEach(x => x.classList.toggle('on', x === t));

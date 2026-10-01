@@ -21,7 +21,7 @@ const SESSION_DAYS = 30;
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
 // ---------- 지도 ----------
-const MAP = buildMap({ landFile: path.join(__dirname, 'mapdata/korea-land.json'), schoolsFile: path.join(__dirname, 'mapdata/schools.txt') });
+const MAP = buildMap({ landFile: path.join(__dirname, 'mapdata/korea-land.json'), schoolsFile: path.join(__dirname, 'mapdata/schools.txt'), cacheDir: DATA_DIR });
 const L = MAP.n;
 const BASE = MAP.schools;
 const MAP_GZ = zlib.gzipSync(MAP.clientJSON, { level: 9 });
@@ -479,5 +479,5 @@ http.createServer(async (req, res) => {
 }).listen(PORT, () => {
   const st = MAP.stats;
   console.log(`매뜨 땅먹 서버가 켜졌어요 → http://localhost:${PORT}`);
-  console.log(`  지도: 다각형 땅 ${st.cells}칸 (바닷가 ${st.coastal}칸, 뱃길 ${st.routes}개), 학교 ${st.schools}곳, ${st.ms}ms`);
+  console.log(`  지도: 다각형 땅 ${st.cells}칸 (바닷가 ${st.coastal}칸, 뱃길 ${st.routes}개), 학교 ${st.schools}곳, ${st.ms}ms${st.cached ? ' (저장해 둔 지도)' : ''}`);
 });

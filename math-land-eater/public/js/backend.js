@@ -45,12 +45,11 @@
 
   // ---------- 지도 ----------
   let M = null, BASE = [], WP = 'w';
-  async function init(m) {
-    M = { n: m.n, nb: m.nb, sx: [], sy: [] };
+  async function init(m, g) { // g: 화면 쪽이 계산한 이웃(nb)과 칸 위치(sx, sy)
+    M = { n: m.n, nb: g.nb, sx: g.sx, sy: g.sy };
     // 지도가 바뀌면 땅 기록은 새로 시작한다 (칸 번호가 달라지니까)
     WP = 'w' + m.hash;
     if (local.mapHash !== m.hash) { local.mapHash = m.hash; local.worlds = {}; local.custom.forEach(c => { c.homes = {}; }); save(); }
-    for (let i = 0; i < m.n; i++) { M.sx.push(m.seeds[2 * i]); M.sy.push(m.seeds[2 * i + 1]); }
     M.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
     BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i }));
     await connectCloud();

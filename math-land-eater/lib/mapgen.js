@@ -4,11 +4,12 @@
  * 보로노이 다각형으로 나눠 사각형·오각형·육각형… 모양의 땅 칸을 만든다.
  * 각 학교는 자기 위치를 품은 칸 하나를 본부 땅으로 가진다. */
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
-const { project } = require('../public/js/shared.js');
+const { project, decodeRing, neighborsFromRings } = require('../public/js/shared.js');
 
-const VERSION = 2;
-const SPACING = 70;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 1km)
+const VERSION = 3;
+const SPACING = 50;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 700m)
 const MIN_GAP = 22;    // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈300m)
 const MARGIN = 400;
 
@@ -86,12 +87,23 @@ function encodeRing(p) {
   return out;
 }
 
-function buildMap({ landFile, schoolsFile }) {
+function buildMap({ landFile, schoolsFile, cacheDir }) {
   const t0 = Date.now();
   const landRings = JSON.parse(fs.readFileSync(landFile, 'utf8')).rings;
   const schoolsText = fs.readFileSync(schoolsFile, 'utf8');
   const schools = parseSchools(schoolsText);
   const hash = crypto.createHash('sha1').update(`${VERSION}|${SPACING}|${MIN_GAP}|`).update(JSON.stringify(landRings)).update(schoolsText).digest('hex').slice(0, 12);
+  // 같은 재료로 만든 지도가 있으면 그대로 쓴다 (만드는 데 십몇 초 걸리니까)
+  const cacheFile = cacheDir ? path.join(cacheDir, `map-${hash}.json`) : null;
+  if (cacheFile && fs.existsSync(cacheFile)) {
+    try {
+      const c = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      c.toMap = (lat, lon) => { const [x, y] = project(lon, lat); return [x - c.ox, y - c.oy]; };
+      c.stats.ms = Date.now() - t0;
+      c.stats.cached = true;
+      return c;
+    } catch { /* 다시 만든다 */ }
+  }
   const rand = mulberry32(20260930);
 
   // ---- 1) 해안선을 지도 좌표로 ----
@@ -214,7 +226,7 @@ function buildMap({ landFile, schoolsFile }) {
 
   // ---- 3) 보로노이 다각형 (반평면 자르기) ----
   const LIM = SPACING * 5;
-  const vor = new Array(n), nbSets = Array.from({ length: n }, () => new Set());
+  const vor = new Array(n);
   for (let i = 0; i < n; i++) {
     const x = sx[i], y = sy[i];
     let P = [[x - LIM, y - LIM, -1], [x + LIM, y - LIM, -1], [x + LIM, y + LIM, -1], [x - LIM, y + LIM, -1]];
@@ -236,10 +248,6 @@ function buildMap({ landFile, schoolsFile }) {
       }
     }
     vor[i] = P;
-    for (let k = 0; k < P.length; k++) {
-      const A = P[k], Bv = P[(k + 1) % P.length];
-      if (A[2] >= 0 && Math.hypot(Bv[0] - A[0], Bv[1] - A[1]) > 0.5) { nbSets[i].add(A[2]); nbSets[A[2]].add(i); }
-    }
   }
 
   // ---- 4) 칸을 해안선으로 잘라 실제 땅 모양으로 ----
@@ -272,8 +280,24 @@ function buildMap({ landFile, schoolsFile }) {
     cells[i] = rings.length ? rings : [P.map(v => [v[0], v[1]])];
   }
 
-  // ---- 5) 모든 땅이 이어지도록 섬에 뱃길을 놓는다 ----
-  const nb = nbSets.map(s => [...s]);
+  // ---- 5) 꼭짓점을 정수로 맞추기: 이웃 칸이 똑같은 꼭짓점을 쓰도록 거의 같은 점은 하나로 ----
+  const snap = new Map();
+  const canon = (x, y) => {
+    const bx = Math.floor(x), by = Math.floor(y);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const l = snap.get((bx + dx) * 131072 + by + dy);
+      if (l) for (const v of l) if ((v[0] - x) ** 2 + (v[1] - y) ** 2 < 0.5) return [v[2], v[3]];
+    }
+    const v = [x, y, Math.round(x), Math.round(y)], k = bx * 131072 + by;
+    if (!snap.has(k)) snap.set(k, []);
+    snap.get(k).push(v);
+    return [v[2], v[3]];
+  };
+  const encoded = cells.map(rings => rings.map(r => encodeRing(r.map(([x, y]) => canon(x, y)))).filter(r => r.length >= 6));
+  // 브라우저와 똑같이 정수 좌표로 이웃을 구한다
+  const nb = neighborsFromRings(encoded.map(rings => rings.map(decodeRing)));
+
+  // ---- 6) 모든 땅이 이어지도록 섬에 뱃길을 놓는다 ----
   const routes = [];
   const parent = Array.from({ length: n }, (_, i) => i), find = a => (parent[a] === a ? a : (parent[a] = find(parent[a])));
   for (let i = 0; i < n; i++) for (const j of nb[i]) parent[find(i)] = find(j);
@@ -293,7 +317,7 @@ function buildMap({ landFile, schoolsFile }) {
     parent[root] = find(best[1]);
   }
 
-  // ---- 6) 시군구 중심 (학교 위치 평균) ----
+  // ---- 7) 시군구 중심 (학교 위치 평균) ----
   const dmap = new Map();
   schools.forEach((s, i) => {
     const key = s.sido + '|' + s.sigungu;
@@ -303,20 +327,26 @@ function buildMap({ landFile, schoolsFile }) {
   const districts = [...dmap.values()].map(d => ({ sido: d.sido, sigungu: d.sigungu, x: d.x / d.n, y: d.y / d.n, lat: d.lat / d.n, lon: d.lon / d.n }));
 
   const map = {
-    hash, W, H, n, schoolCount, seedX: sx, seedY: sy, nb, routes, sides, mass: massOfSeed, districts,
+    hash, W, H, n, ox, oy, schoolCount, seedX: sx, seedY: sy, nb, routes, sides, mass: massOfSeed, districts,
     schools: schools.map((s, i) => ({ name: s.name, sido: s.sido, sigungu: s.sigungu, dong: s.dong, url: s.url, cell: i })),
     toMap, landAt,
   };
   map.clientJSON = JSON.stringify({
-    hash, W, H, n, spacing: SPACING,
-    cells: cells.map(rings => rings.map(encodeRing)),
-    nb, sides, routes,
-    seeds: sx.flatMap((x, i) => [Math.round(x), Math.round(sy[i])]),
+    hash, W, H, n, spacing: SPACING, schoolCount,
+    cells: encoded, sides, routes,
+    seeds: sx.slice(0, schoolCount).flatMap((x, i) => [Math.round(x), Math.round(sy[i])]), // 학교 칸만 (나머지는 칸 가운데)
     land: polys.map(encodeRing),
     schools: schools.map(s => [s.name, s.sido, s.sigungu, s.url || '', s.dong || '']),
     districts: districts.map(d => [d.sido, d.sigungu, Math.round(d.x), Math.round(d.y)]),
   });
   map.stats = { cells: n, schools: schoolCount, coastal, fallback, routes: routes.length, ms: Date.now() - t0 };
+  if (cacheFile) {
+    try {
+      fs.mkdirSync(cacheDir, { recursive: true });
+      const { toMap, landAt, ...plain } = map;
+      fs.writeFileSync(cacheFile, JSON.stringify(plain));
+    } catch (e) { console.warn('지도 저장 실패:', e.message); }
+  }
   return map;
 }
 
