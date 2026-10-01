@@ -126,7 +126,7 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
       c.toMap = (lat, lon) => { const [x, y] = project(lon, lat); return [x - c.ox, y - c.oy]; };
       c.stats.ms = Date.now() - t0;
       c.stats.cached = true;
-      return c;
+      return addScenery(c, landFile);
     } catch { /* 다시 만든다 */ }
   }
   const rand = mulberry32(20260930);
@@ -377,6 +377,37 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
       fs.writeFileSync(cacheFile, JSON.stringify(plain));
     } catch (e) { console.warn('지도 저장 실패:', e.message); }
   }
+  return addScenery(map, landFile);
+}
+
+// 강·호수와 산·섬·강 이름 (칸 모양과 상관없어서 지도 번호(hash)에 넣지 않는다: 바꿔도 땅 기록이 그대로다)
+function addScenery(map, landFile) {
+  const dir = path.dirname(landFile), xy = (lat, lon) => { const [x, y] = project(lon, lat); return [x - map.ox, y - map.oy]; };
+  const water = { lines: [] }, places = [];
+  try {
+    const r = JSON.parse(fs.readFileSync(path.join(dir, 'korea-rivers.json'), 'utf8'));
+    // 물길: [폭(지도 단위), 줄인 좌표…]
+    water.lines = r.lines.map(l => { const o = []; for (let k = 1; k < l.length; k += 2) o.push(xy(l[k + 1], l[k])); return [Math.round(l[0] / 13.9), ...encodeRing(o)]; }).filter(e => e.length >= 5);
+  } catch { /* 강 데이터가 없으면 강 없이 */ }
+  let txt = '';
+  try { txt = fs.readFileSync(path.join(dir, 'korea-places.txt'), 'utf8'); } catch { /* 이름 없이 */ }
+  const linePts = water.lines.map(e => { const o = []; let x = 0, y = 0; for (let k = 1; k < e.length; k += 2) { x += e[k]; y += e[k + 1]; o.push([x, y]); } return o; }).flat();
+  for (const line of txt.split('\n')) {
+    const m = line.trim().match(/^(산|강|섬)\|([^|]+)\|(-?[\d.]+)\|(-?[\d.]+)(?:\|(\d+))?$/);
+    if (!m) continue;
+    let [x, y] = xy(+m[3], +m[4]);
+    if (m[1] === '강') { // 강 이름은 가장 가까운 물길 위에
+      let bd = Infinity, best = null;
+      for (const q of linePts) { const d = (q[0] - x) ** 2 + (q[1] - y) ** 2; if (d < bd) { bd = d; best = q; } }
+      const R = /천$/.test(m[2]) ? 110 : 360; // 작은 하천은 1.5km, 큰 강은 5km 안에서만 (다른 강에 이름이 붙지 않게)
+      if (!best || bd > R * R) continue;
+      [x, y] = best;
+    }
+    places.push([m[1], m[2], Math.round(x), Math.round(y), m[5] ? +m[5] : 0]);
+  }
+  const j = JSON.parse(map.clientJSON);
+  j.water = water; j.places = places;
+  map.clientJSON = JSON.stringify(j);
   return map;
 }
 
