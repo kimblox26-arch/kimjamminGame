@@ -130,7 +130,13 @@
     // 고리 r 의 좌표 = G.xy[G.ro[r] .. G.ro[r + 1]), 칸 i 의 고리 = G.cr[i] .. G.cr[i + 1] - 1
     const br = await fetch(window.MLE_MAP_BIN_URL || '/api/map.bin');
     if (!br.ok) throw new Error('지도를 받을 수 없어요.');
-    const buf = new Uint8Array(await br.arrayBuffer()), n = new DataView(buf.buffer).getUint32(4, true);
+    let buf;
+    if (/\.txt$/.test(window.MLE_MAP_BIN_URL || '')) { // base64 글자로 된 지도 (아티팩트용)
+      const t = atob((await br.text()).trim());
+      buf = new Uint8Array(t.length);
+      for (let k = 0; k < t.length; k++) buf[k] = t.charCodeAt(k);
+    } else buf = new Uint8Array(await br.arrayBuffer());
+    const n = new DataView(buf.buffer).getUint32(4, true);
     if (n !== m.n) throw new Error('지도 파일이 서로 맞지 않아요. 새로고침 해 주세요.');
     G.sides = buf.slice(8, 8 + n);
     let p = 8 + n, px = 0, py = 0, nr = 0, nx = 0, ro = new Int32Array(n + (n >> 2) + 16);
