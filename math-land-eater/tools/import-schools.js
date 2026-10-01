@@ -69,16 +69,17 @@ for (const r of rows) {
   const addr = (r[C.addr] || (C.road >= 0 ? r[C.road] : '') || '').trim().split(/\s+/);
   const sido = shortSido(addr[0] || '');
   if (!sido || !(lat > 32.5 && lat < 39 && lon > 124 && lon < 132.5)) { skipped++; continue; }
-  const sigungu = sido === '세종' ? '세종시' : (addr[1] || '').replace(/[|;:,]/g, '');
-  const name = r[C.name].trim().replace(/[|;:,]/g, '');
+  const sigungu = sido === '세종' ? '세종시' : (addr[1] || '').replace(/[|;:,@]/g, '');
+  const dong = (addr.slice(1).find(t => /(동|읍|면|\d가)$/.test(t)) || '').replace(/[|;:,@]/g, '');
+  const name = r[C.name].trim().replace(/[|;:,@]/g, '');
   const key = sido + '|' + sigungu;
   if (!groups.has(key)) groups.set(key, []);
   const url = homepage.get(sido + '|' + name);
-  groups.get(key).push(`${name}:${lat.toFixed(5)},${lon.toFixed(5)}${url ? ',' + url : ''}`);
+  groups.get(key).push(`${name}${dong ? '@' + dong : ''}:${lat.toFixed(5)},${lon.toFixed(5)}${url ? ',' + url : ''}`);
   count++;
 }
 
-const out = ['# 공공데이터포털 전국초중등학교위치표준데이터에서 만든 초등학교 목록', `# 원본: ${path.basename(file)}  (${new Date().toISOString().slice(0, 10)})`, '# 형식: 시도|시군구|학교:위도,경도[,홈페이지주소];…'];
+const out = ['# 공공데이터포털 전국초중등학교위치표준데이터에서 만든 초등학교 목록', `# 원본: ${path.basename(file)}  (${new Date().toISOString().slice(0, 10)})`, '# 형식: 시도|시군구|학교[@동]:위도,경도[,홈페이지주소];…'];
 for (const [key, list] of [...groups.entries()].sort()) out.push(`${key}|${list.join(';')}`);
 const dest = path.join(__dirname, '..', 'mapdata', 'schools.txt');
 fs.writeFileSync(dest, out.join('\n') + '\n');

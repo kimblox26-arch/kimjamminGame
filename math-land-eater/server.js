@@ -50,7 +50,8 @@ const schoolById = id => (id < BASE.length ? BASE[id] : db.custom[id - BASE.leng
 const idByKey = new Map();
 const indexSchools = () => { idByKey.clear(); for (let i = 0; i < schoolCount(); i++) idByKey.set(schoolKey(schoolById(i)), i); };
 indexSchools();
-const publicCustom = () => db.custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, url: c.url || '' }));
+const publicCustom = () => db.custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, dong: c.dong || '', url: c.url || '' }));
+const cleanDong = v => { const d = String(v || '').replace(/\s+/g, ''); if (d && !/^[가-힣0-9·.]{1,12}(동|읍|면|가|리)$/.test(d)) fail('동 이름은 "대치동"처럼 동·읍·면으로 끝나게 써 주세요.'); return d; };
 const validUrl = u => /^https?:\/\/[^\s"'<>|;]{3,200}$/.test(u);
 const profileSchool = u => (u.profile && u.profile.school && idByKey.has(u.profile.school) ? idByKey.get(u.profile.school) : -1);
 // 예전 버전 프로필(학교 번호)은 학교를 다시 고르게 한다
@@ -228,7 +229,7 @@ const routes = {
       if (!d) fail('학교가 있는 지역을 골라 주세요.');
       const stem = String(b.custom.name || '').replace(/\s+/g, '').replace(/(초등학교|초교|초)$/, '');
       if (!/^[가-힣A-Za-z0-9]{1,12}$/.test(stem)) fail('학교 이름은 한글·영어·숫자로 1~12자 써 주세요.');
-      const sc = { name: stem + '초등학교', sido: d.sido, sigungu: d.sigungu };
+      const sc = { name: stem + '초등학교', sido: d.sido, sigungu: d.sigungu, dong: cleanDong(b.custom.dong) };
       schoolId = idByKey.has(schoolKey(sc)) ? idByKey.get(schoolKey(sc)) : -1;
       if (schoolId < 0) {
         if (db.custom.length >= 5000) fail('더 이상 학교를 등록할 수 없어요.');
@@ -275,7 +276,7 @@ const routes = {
     }
     members.sort((x, y) => y.online - x.online || y.captures - x.captures);
     const sc = schoolById(id);
-    return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
+    return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, dong: sc.dong || '', url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
   },
 
   // 오답 노트

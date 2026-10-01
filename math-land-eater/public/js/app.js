@@ -54,6 +54,7 @@
   const fxCv = $('#fx'), fx = fxCv.getContext('2d');
   let parts = [];
   function confetti(x, y, n) {
+    if (typeof fast !== "undefined" && fast) n = Math.min(n || 90, 30);
     const cols = ['#ff7a1a', '#ffc107', '#22a95a', '#2f80ed', '#e5484d', '#b45cff'];
     for (let k = 0; k < (n || 90); k++) {
       const a = Math.random() * Math.PI * 2, v = 3 + Math.random() * 8;
@@ -124,8 +125,12 @@
     const boxOf = rings => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of rings) for (let k = 0; k < r.length; k += 2) { x0 = Math.min(x0, r[k]); x1 = Math.max(x1, r[k]); y0 = Math.min(y0, r[k + 1]); y1 = Math.max(y1, r[k + 1]); } return [x0, y0, x1, y1]; };
     G = { W: m.W, H: m.H, n: m.n, nb: m.nb, sides: m.sides, routes: m.routes };
     SPACING = m.spacing || 150;
-    G.rings = m.cells.map(c => c.map(dec));
-    G.paths = G.rings.map(toPath);
+    G.rings = new Array(m.n);
+    for (let i = 0; i < m.n; i++) {
+      G.rings[i] = m.cells[i].map(dec);
+      if (i % 12000 === 11999) await new Promise(r => setTimeout(r, 0)); // 화면이 멈추지 않게 쉬어 간다
+    }
+    G.paths = new Array(m.n);
     G.box = new Float32Array(m.n * 4);
     G.rings.forEach((rs, i) => G.box.set(boxOf(rs), i * 4));
     G.sx = new Float32Array(m.n); G.sy = new Float32Array(m.n);
@@ -146,7 +151,7 @@
       for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) G.index[gy * G.ibw + gx].push(i);
     }
     marks = new Uint32Array(m.n);
-    schools = m.schools.map(([name, sido, sigungu, url], id) => ({ id, name, sido, sigungu, url: url || '' }));
+    schools = m.schools.map(([name, sido, sigungu, url, dong], id) => ({ id, name, sido, sigungu, dong: dong || '', url: url || '' }));
   }
   function cellsIn(x0, y0, x1, y1) {
     const out = [];
@@ -231,27 +236,48 @@
     if (msg) toast(msg, 'warn');
   }
 
-  // ---------- 게임 시작 전 설정 ----------
+  // ---------- 게임 시작 전 설정: 시도 → 시군구 → 동 → 학교 ----------
   let chosen = null, semester = 1;
+  const opt = (v, t, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(t)}</option>`;
+  const area = () => ({ sido: $('#stSido').value, sigungu: $('#stSigungu').value, dong: $('#stDong').value });
+  function fillSigungu(keep) {
+    const sido = $('#stSido').value, list = [...new Set(G.districts.filter(d => d.sido === sido).map(d => d.sigungu))].sort((a, b) => a.localeCompare(b, 'ko'));
+    $('#stSigungu').innerHTML = opt('', '시·군·구 고르기') + list.map(g => opt(g, g, g === keep)).join('');
+  }
+  function fillDong(keep) {
+    const { sido, sigungu } = area(), set = new Set();
+    for (const s of schools) if (s && s.sido === sido && s.sigungu === sigungu && s.dong) set.add(s.dong);
+    const list = [...set].sort((a, b) => a.localeCompare(b, 'ko'));
+    $('#stDong').innerHTML = opt('', sigungu ? `전체 (${list.length}개 동네)` : '동·읍·면') + list.map(d => opt(d, d, d === keep)).join('');
+    $('#stDongList').innerHTML = list.map(d => `<option value="${esc(d)}">`).join('');
+    $('#stCWhere').textContent = sigungu ? `📍 ${sido} ${sigungu}에 새 학교를 등록해요.` : '먼저 위에서 시·도와 시·군·구를 골라 주세요.';
+  }
+  function setArea(sido, sigungu, dong) {
+    $('#stSido').value = sido || '';
+    fillSigungu(sigungu);
+    fillDong(dong);
+    renderSchoolList();
+  }
   function initSetup() {
+    const sidos = [...new Set(G.districts.map(d => d.sido))];
+    $('#stSido').innerHTML = opt('', '시·도 고르기') + sidos.map(s => opt(s, s)).join('');
+    $('#stSido').onchange = () => setArea($('#stSido').value);
+    $('#stSigungu').onchange = () => setArea($('#stSido').value, $('#stSigungu').value);
+    $('#stDong').onchange = renderSchoolList;
     $('#stSearch').oninput = renderSchoolList;
     $('#stList').onclick = e => { const b = e.target.closest('[data-id]'); if (b) chooseSchool(+b.dataset.id); };
-    $('#stCustomToggle').onclick = () => { $('#stCustom').hidden = !$('#stCustom').hidden; };
-    const sidos = [...new Set(G.districts.map(d => d.sido))];
-    $('#stCSido').innerHTML = sidos.map(s => `<option>${esc(s)}</option>`).join('');
-    const fillSigungu = () => {
-      $('#stCSigungu').innerHTML = G.districts.map((d, i) => (d.sido === $('#stCSido').value ? `<option value="${i}">${esc(d.sigungu)}</option>` : '')).join('');
-    };
-    $('#stCSido').onchange = fillSigungu;
-    fillSigungu();
+    $('#stCustomToggle').onclick = () => { $('#stCustom').hidden = !$('#stCustom').hidden; if (!$('#stCustom').hidden) $('#stCDong').value = $('#stDong').value; };
     $$('.sem').forEach(b => { b.onclick = () => setSemester(+b.dataset.sem); });
     $('#stBack').onclick = () => startGame();
     $('#setupForm').onsubmit = async e => {
       e.preventDefault();
       const body = { semester, nickname: $('#stNick').value.trim() };
       const cname = $('#stCName').value.trim();
-      if (!$('#stCustom').hidden && cname) body.custom = { di: +$('#stCSigungu').value, name: cname, url: $('#stCUrl').value.trim() };
-      else if (chosen != null) body.schoolId = chosen;
+      if (!$('#stCustom').hidden && cname) {
+        const { sido, sigungu } = area(), di = G.districts.findIndex(d => d.sido === sido && d.sigungu === sigungu);
+        if (di < 0) return setErr('#stErr', '새 학교가 있는 시·도와 시·군·구를 위에서 골라 주세요.');
+        body.custom = { di, name: cname, dong: $('#stCDong').value.trim(), url: $('#stCUrl').value.trim() };
+      } else if (chosen != null) body.schoolId = chosen;
       else return setErr('#stErr', '우리 학교를 골라 주세요.');
       const d = await api('/api/profile', body);
       if (d.error) return setErr('#stErr', d.error);
@@ -265,10 +291,11 @@
     semester = s;
     $$('.sem').forEach(b => b.classList.toggle('on', +b.dataset.sem === s));
   }
+  const where = s => `${s.sido} ${s.sigungu}${s.dong ? ' ' + s.dong : ''}`;
   function chooseSchool(id) {
     chosen = id;
     const s = schools[id];
-    $('#stChosen').innerHTML = s ? `✅ <b>${esc(s.name)}</b> <span class="muted">${esc(s.sido)} ${esc(s.sigungu)}</span>` : '아직 학교를 고르지 않았어요';
+    $('#stChosen').innerHTML = s ? `✅ <b>${esc(s.name)}</b> <span class="muted">${esc(where(s))}</span>` : '아직 학교를 고르지 않았어요';
     $('#stChosen').classList.toggle('on', !!s);
     renderSchoolList();
   }
@@ -277,30 +304,34 @@
     const res = [];
     if (!q) return res;
     for (const s of schools) {
-      if (s && (s.name + s.sido + s.sigungu).includes(q)) res.push(s);
+      if (s && (s.name + s.sido + s.sigungu + (s.dong || '')).includes(q)) res.push(s);
       if (res.length >= max) break;
     }
     return res;
   };
   function renderSchoolList() {
-    const q = $('#stSearch').value, box = $('#stList'), res = searchSchools(q, 60);
-    if (!q.trim()) { box.innerHTML = `<div class="muted pad">전국 ${schools.length.toLocaleString()}개 학교 중에서 이름이나 지역을 검색해 보세요.</div>`; return; }
+    const q = $('#stSearch').value.trim(), box = $('#stList'), { sido, sigungu, dong } = area();
+    let res;
+    if (q) res = searchSchools(q, 80);
+    else if (sigungu) res = schools.filter(s => s && s.sido === sido && s.sigungu === sigungu && (!dong || s.dong === dong)).sort((a, b) => (a.dong || '').localeCompare(b.dong || '', 'ko') || a.name.localeCompare(b.name, 'ko'));
+    else { box.innerHTML = `<div class="muted pad">시·도 → 시·군·구 → 동을 고르거나, 학교 이름으로 검색해 보세요. (전국 ${schools.length.toLocaleString()}개 학교)</div>`; return; }
     box.innerHTML = res.length
-      ? res.map(s => `<button type="button" class="school-item${s.id === chosen ? ' on' : ''}" data-id="${s.id}"><b>${esc(s.name)}</b><span>${esc(s.sido)} ${esc(s.sigungu)}</span></button>`).join('')
-      : '<div class="muted pad">검색 결과가 없어요. 아래 "직접 등록하기"를 눌러 보세요.</div>';
+      ? res.map(s => `<button type="button" class="school-item${s.id === chosen ? ' on' : ''}" data-id="${s.id}"><b>${esc(s.name)}</b><span>${esc(q ? where(s) : s.dong || s.sigungu)}</span></button>`).join('')
+      : '<div class="muted pad">이 동네에는 등록된 학교가 없어요. 아래 "직접 등록하기"를 눌러 보세요.</div>';
   }
   async function openSetup() {
     show('setup');
     const d = await api('/api/schools');
     mergeCustom(d.custom);
-    const p = me.profile || {}, m = new Date().getMonth();
+    const p = me.profile || {}, m = new Date().getMonth(), cur = p.schoolId != null ? schools[p.schoolId] : null;
     $('#stGrade').innerHTML = `<b>${me.grade}학년</b> <span class="muted">(${me.birthYear}년생 · 나이 인증으로 정해졌어요 · ${me.grade}학년 서버)</span>`;
     setSemester(p.semester || (m >= 1 && m <= 6 ? 1 : 2));
     $('#stNick').value = p.nickname || '';
     $('#stSearch').value = '';
     $('#stCustom').hidden = true;
-    $('#stCName').value = '';
+    $('#stCName').value = $('#stCDong').value = $('#stCUrl').value = '';
     $('#stBack').hidden = !me.profile;
+    setArea(cur ? cur.sido : '', cur ? cur.sigungu : '', cur ? cur.dong : '');
     chooseSchool(p.schoolId != null ? p.schoolId : null);
   }
 
@@ -315,6 +346,34 @@
   const colorCache = new Map();
   const baseS = () => TILE / Math.max(G.W, G.H);
   const cellPx = () => SPACING * view.s;
+
+  // ⚡ 빠르게 모드: 폰에서는 처음부터 켜고, 렉이 걸리면 저절로 켠다
+  let fast = store.get('mle_fast') != null ? store.get('mle_fast') === '1' : matchMedia('(pointer: coarse)').matches;
+  let moving = false, moveTimer = 0, slow = 0;
+  function setFast(on, auto) {
+    fast = on;
+    store.set('mle_fast', on ? '1' : '0');
+    tiles.clear();
+    resize();
+    renderMini();
+    $$('.fast-toggle').forEach(b => { b.textContent = `⚡ 빠르게 모드: ${on ? '켜짐 ✅' : '꺼짐'}`; b.classList.toggle('on', on); });
+    if (auto) toast('렉이 걸려서 ⚡ 빠르게 모드를 켰어요. 설정에서 끌 수 있어요.', 'warn');
+  }
+  function nudge() { // 지도를 움직이는 동안은 꼭 필요한 것만 그린다
+    moving = true;
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => { moving = false; requestDraw(); }, 160);
+    requestDraw();
+  }
+  // 칸 모양은 처음 그릴 때 만든다 (불러오기가 빨라진다)
+  function pathOf(i) {
+    let p = G.paths[i];
+    if (!p) {
+      p = G.paths[i] = new Path2D();
+      for (const r of G.rings[i]) { p.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) p.lineTo(r[k], r[k + 1]); p.closePath(); }
+    }
+    return p;
+  }
 
   function hsl(h, s, l) {
     const f = n => { const k = (n + h / 30) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
@@ -333,18 +392,31 @@
     return c;
   }
   const cssColor = o => `rgb(${rgbOf(o).join(',')})`;
-  const hash01 = i => { let h = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
-  function fillOf(i) {
-    const o = W.owner[i], c = rgbOf(o);
-    let f = 1 + (hash01(i) - 0.5) * (o < 0 ? 0.08 : 0.12);
-    if (W.def[i] > 0) f *= 0.8;
-    return `rgb(${Math.min(255, c[0] * f) | 0},${Math.min(255, c[1] * f) | 0},${Math.min(255, c[2] * f) | 0})`;
-  }
-  function strokeOf(i) {
+  const shade = (c, f) => `rgb(${Math.min(255, c[0] * f) | 0},${Math.min(255, c[1] * f) | 0},${Math.min(255, c[2] * f) | 0})`;
+  // 같은 색 칸을 한 묶음으로 모아 한 번에 칠한다 (칸마다 칠하는 것보다 훨씬 빠르다)
+  function groupKey(i) {
     const o = W.owner[i];
-    if (o < 0) return 'rgba(255,255,255,.8)';
-    const c = rgbOf(o);
-    return `rgb(${c[0] * 0.6 | 0},${c[1] * 0.6 | 0},${c[2] * 0.6 | 0})`;
+    if (o < 0) return 'n' + (i % 3);
+    return (W.def[i] > 0 ? 'd' : 'o') + o;
+  }
+  function groupStyle(key) {
+    if (key[0] === 'n') return { fill: shade(NEUTRAL, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.8)' };
+    const c = rgbOf(+key.slice(1)), f = key[0] === 'd' ? 0.8 : 1;
+    return { fill: shade(c, f), line: shade(c, 0.6 * f) };
+  }
+  function drawGroups(g, ids, px, lines) {
+    const groups = new Map();
+    for (const i of ids) {
+      const k = groupKey(i);
+      let p = groups.get(k);
+      if (!p) groups.set(k, p = new Path2D());
+      p.addPath(pathOf(i));
+    }
+    for (const [k, p] of groups) {
+      const st = groupStyle(k);
+      g.fillStyle = st.fill; g.fill(p);
+      g.strokeStyle = lines ? st.line : st.fill; g.lineWidth = lines ? Math.min(2.2, 0.6 + (SPACING * (1 / px)) / 70) * px : px; g.stroke(p);
+    }
   }
 
   function renderTile(z, tx, ty) {
@@ -356,30 +428,14 @@
     g.lineJoin = 'round';
     const lands = [];
     G.landBox.forEach((b, k) => { if (b[0] <= x0 + tw && b[2] >= x0 && b[1] <= y0 + tw && b[3] >= y0) lands.push(k); });
-    g.strokeStyle = 'rgba(214,244,255,.85)';
-    g.lineWidth = Math.min(14, 4 + cp / 12) * px;
-    for (const k of lands) g.stroke(G.landPaths[k]); // 바닷가 물빛
-    if (cp < 3) { // 아주 멀리서 볼 때: 회색 땅을 한 번에 칠하고 주인 있는 칸만 덧칠한다
-      g.fillStyle = `rgb(${NEUTRAL.join(',')})`;
+    if (!fast) { g.strokeStyle = 'rgba(214,244,255,.85)'; g.lineWidth = Math.min(14, 4 + cp / 12) * px; for (const k of lands) g.stroke(G.landPaths[k]); } // 바닷가 물빛
+    if (cp < 6) { // 멀리서 볼 때: 회색 땅을 한 번에 칠하고 주인 있는 칸만 덧칠한다
+      g.fillStyle = shade(NEUTRAL, 1);
       for (const k of lands) g.fill(G.landPaths[k]);
-      g.lineWidth = px;
-      for (const i of owned) {
-        const b = i * 4;
-        if (G.box[b] > x0 + tw || G.box[b + 2] < x0 || G.box[b + 1] > y0 + tw || G.box[b + 3] < y0) continue;
-        g.fillStyle = g.strokeStyle = fillOf(i); g.fill(G.paths[i]); g.stroke(G.paths[i]);
-      }
-    } else {
-    const ids = cellsIn(x0 - 1, y0 - 1, x0 + tw + 1, y0 + tw + 1);
-    const lines = cp > 7;
-    g.lineWidth = (lines ? Math.min(2.2, 0.6 + cp / 70) : 1) * px;
-    for (const i of ids) {
-      const f = fillOf(i);
-      g.fillStyle = f;
-      g.fill(G.paths[i]);
-      if (!lines) { g.strokeStyle = f; g.stroke(G.paths[i]); } // 이음새 메우기
-    }
-    if (lines) for (const i of ids) { g.strokeStyle = strokeOf(i); g.stroke(G.paths[i]); }
-    }
+      const ids = [];
+      for (const i of owned) { const b = i * 4; if (G.box[b] <= x0 + tw && G.box[b + 2] >= x0 && G.box[b + 1] <= y0 + tw && G.box[b + 3] >= y0) ids.push(i); }
+      drawGroups(g, ids, px, false);
+    } else drawGroups(g, cellsIn(x0 - 1, y0 - 1, x0 + tw + 1, y0 + tw + 1), px, cp > 9);
     g.strokeStyle = 'rgba(30,80,120,.5)';
     g.lineWidth = 1.1 * px;
     for (const k of lands) g.stroke(G.landPaths[k]); // 해안선
@@ -394,7 +450,7 @@
   }
   function resize() {
     const r = $('#mapWrap').getBoundingClientRect();
-    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    dpr = fast ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     vw = r.width; vh = r.height;
     cv.width = Math.round(vw * dpr); cv.height = Math.round(vh * dpr);
     cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
@@ -403,39 +459,25 @@
   window.addEventListener('resize', () => { if (!$('#game').hidden) { resize(); renderMini(); } });
   function requestDraw() { if (!queued) { queued = true; requestAnimationFrame(draw); } }
 
-  let seaPattern = null;
-  function makeSea() {
-    const p = document.createElement('canvas');
-    p.width = p.height = 120;
-    const g = p.getContext('2d');
-    g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 1.5; g.lineCap = 'round';
-    for (const [x, y] of [[10, 20], [70, 50], [30, 90], [90, 105]]) { g.beginPath(); g.arc(x, y, 8, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); g.beginPath(); g.arc(x + 16, y, 8, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); }
-    seaPattern = ctx.createPattern(p, 'repeat');
-  }
-
   function draw() {
     queued = false;
     if (!G || !W) return;
     const s = view.s, now = performance.now();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const sea = ctx.createLinearGradient(0, 0, 0, vh);
-    sea.addColorStop(0, '#7cc8f0'); sea.addColorStop(1, '#4fa6de');
-    ctx.fillStyle = sea; ctx.fillRect(0, 0, vw, vh);
-    if (!seaPattern) makeSea();
-    ctx.save(); ctx.translate(view.x % 120, view.y % 120); ctx.fillStyle = seaPattern; ctx.fillRect(-120, -120, vw + 240, vh + 240); ctx.restore();
+    ctx.clearRect(0, 0, vw, vh); // 바다는 뒤쪽 배경(CSS)이 보여 준다
 
     // 1) 땅 조각 그림
     const z = Math.max(0, Math.min(ZMAX, Math.ceil(Math.log2((s * dpr) / baseS()) - 0.05)));
     const sz = baseS() * 2 ** z, tw = TILE / sz, nT = 2 ** z;
     const tx0 = Math.max(0, Math.floor(-view.x / s / tw)), tx1 = Math.min(nT - 1, Math.floor((vw - view.x) / s / tw));
     const ty0 = Math.max(0, Math.floor(-view.y / s / tw)), ty1 = Math.min(nT - 1, Math.floor((vh - view.y) / s / tw));
-    const t0 = performance.now();
+    const budget = moving ? (fast ? 4 : 7) : 14;
     let rendered = 0, more = false;
     tick++;
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
       const key = z + '/' + tx + '/' + ty, X = view.x + tx * tw * s, Y = view.y + ty * tw * s, SZ = tw * s;
       let t = tiles.get(key);
-      if ((!t || t.dirty) && (rendered === 0 || performance.now() - t0 < 14)) { // 한 화면에 너무 오래 걸리지 않게
+      if ((!t || t.dirty) && (rendered === 0 || performance.now() - now < budget)) { // 한 화면에 너무 오래 걸리지 않게
         rendered++;
         const img = renderTile(z, tx, ty);
         if (t) { t.cv = img; t.dirty = false; } else tiles.set(key, t = { cv: img, z, tx, ty, dirty: false });
@@ -450,11 +492,14 @@
         break;
       }
     }
-    if (tiles.size > 160) [...tiles.entries()].sort((a, b) => a[1].used - b[1].used).slice(0, tiles.size - 160).forEach(([k]) => tiles.delete(k));
+    const maxTiles = fast ? 90 : 160;
+    if (tiles.size > maxTiles) [...tiles.entries()].sort((a, b) => a[1].used - b[1].used).slice(0, tiles.size - maxTiles).forEach(([k]) => tiles.delete(k));
 
     // 2) 지도 위 표시 (지도 좌표)
     const cp = cellPx(), wx0 = -view.x / s, wy0 = -view.y / s, wx1 = (vw - view.x) / s, wy1 = (vh - view.y) / s;
     const vis = i => G.box[i * 4] <= wx1 && G.box[i * 4 + 2] >= wx0 && G.box[i * 4 + 1] <= wy1 && G.box[i * 4 + 3] >= wy0;
+    const calm = !moving; // 움직이는 중에는 꾸밈을 줄인다
+    const animate = calm && !fast;
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * view.x, dpr * view.y);
     ctx.lineJoin = 'round';
     if (G.routes.length) { // 섬으로 가는 뱃길
@@ -463,20 +508,22 @@
       for (const [a, b] of G.routes) { ctx.moveTo(G.sx[a], G.sy[a]); ctx.lineTo(G.sx[b], G.sy[b]); }
       ctx.stroke(); ctx.setLineDash([]);
     }
-    if (cp >= 16 && frontier.size) { // 뺏을 수 있는 땅
-      ctx.setLineDash([6 / s, 4 / s]); ctx.lineDashOffset = -(now / 60) / s; ctx.lineWidth = 2.4 / s; ctx.strokeStyle = 'rgba(255,170,0,.95)'; ctx.fillStyle = 'rgba(255,214,90,.16)';
-      for (const i of frontier) if (vis(i)) { ctx.fill(G.paths[i]); ctx.stroke(G.paths[i]); }
+    if (calm && cp >= 16 && frontier.size) { // 뺏을 수 있는 땅
+      const fp = new Path2D();
+      for (const i of frontier) if (vis(i)) fp.addPath(pathOf(i));
+      ctx.setLineDash([6 / s, 4 / s]); ctx.lineDashOffset = animate ? -(now / 60) / s : 0; ctx.lineWidth = 2.4 / s; ctx.strokeStyle = 'rgba(255,170,0,.95)'; ctx.fillStyle = 'rgba(255,214,90,.16)';
+      ctx.fill(fp); ctx.stroke(fp);
       ctx.setLineDash([]);
     }
     flashes = flashes.filter(f => now - f.t < 1000);
     for (const f of flashes) {
       const a = 1 - (now - f.t) / 1000;
-      ctx.fillStyle = `rgba(255,255,255,${a * 0.75})`; ctx.fill(G.paths[f.i]);
-      ctx.lineWidth = (2 + 6 * (1 - a)) / s; ctx.strokeStyle = f.bad ? `rgba(229,72,77,${a})` : `rgba(255,193,7,${a})`; ctx.stroke(G.paths[f.i]);
+      ctx.fillStyle = `rgba(255,255,255,${a * 0.75})`; ctx.fill(pathOf(f.i));
+      ctx.lineWidth = (2 + 6 * (1 - a)) / s; ctx.strokeStyle = f.bad ? `rgba(229,72,77,${a})` : `rgba(255,193,7,${a})`; ctx.stroke(pathOf(f.i));
     }
     if (sel >= 0) {
-      ctx.lineWidth = 7 / s; ctx.strokeStyle = 'rgba(255,45,85,.35)'; ctx.stroke(G.paths[sel]);
-      ctx.lineWidth = 3 / s; ctx.strokeStyle = '#ff2d55'; ctx.stroke(G.paths[sel]);
+      ctx.lineWidth = 7 / s; ctx.strokeStyle = 'rgba(255,45,85,.35)'; ctx.stroke(pathOf(sel));
+      ctx.lineWidth = 3 / s; ctx.strokeStyle = '#ff2d55'; ctx.stroke(pathOf(sel));
     }
 
     // 3) 화면 좌표 표시: 시도 이름, 방어, 학교
@@ -487,7 +534,7 @@
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.fillStyle = 'rgba(40,55,70,.55)';
       for (const d of G.sidos) { ctx.strokeText(d.name, SX(d.x), SY(d.y)); ctx.fillText(d.name, SX(d.x), SY(d.y)); }
     }
-    if (cp >= 34) {
+    if (calm && cp >= 34) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `bold ${Math.round(Math.min(15, cp * 0.2))}px sans-serif`;
       for (const i of defended) {
         if (!vis(i) || W.homeCell[i] >= 0) continue;
@@ -497,20 +544,25 @@
       }
     }
     const my = mySid();
-    for (let sid = 0; sid < W.home.length; sid++) {
-      const h = W.home[sid];
-      if (h < 0 || sid === my || cp < 11 || !vis(h)) continue;
-      schoolMark(SX(G.sx[h]), SY(G.sy[h]), Math.max(4, Math.min(12, cp * 0.14)), sid, cp >= 55 || h === sel);
+    if (cp >= 11 && (calm || !fast)) {
+      for (let sid = 0; sid < W.home.length; sid++) {
+        const h = W.home[sid];
+        if (h < 0 || sid === my || !vis(h)) continue;
+        schoolMark(SX(G.sx[h]), SY(G.sy[h]), Math.max(4, Math.min(12, cp * 0.14)), sid, calm && (cp >= 55 || h === sel));
+      }
     }
     const mh = W.home[my], myVis = mh >= 0 && vis(mh);
     if (myVis) {
-      const x = SX(G.sx[mh]), y = SY(G.sy[mh]), pulse = (now % 1600) / 1600;
-      ctx.beginPath(); ctx.arc(x, y, 10 + pulse * 18, 0, 7); ctx.strokeStyle = `rgba(232,85,61,${1 - pulse})`; ctx.lineWidth = 3; ctx.stroke();
+      const x = SX(G.sx[mh]), y = SY(G.sy[mh]);
+      if (animate) { const pulse = (now % 1600) / 1600; ctx.beginPath(); ctx.arc(x, y, 10 + pulse * 18, 0, 7); ctx.strokeStyle = `rgba(232,85,61,${1 - pulse})`; ctx.lineWidth = 3; ctx.stroke(); }
       schoolMark(x, y, Math.max(8, Math.min(14, cp * 0.16)), my, true);
     }
     drawMini();
+    // 너무 느리면 빠르게 모드로
+    const spent = performance.now() - now;
+    if (!fast && spent > 45 && ++slow >= 8) setFast(true, true);
     if (more || flashes.length) requestDraw();
-    else if ((myVis || (cp >= 16 && frontier.size)) && !ambient) ambient = setTimeout(() => { ambient = 0; requestDraw(); }, 60); // 반짝이는 표시는 천천히
+    else if (animate && (myVis || (cp >= 16 && frontier.size)) && !ambient) ambient = setTimeout(() => { ambient = 0; requestDraw(); }, 90); // 반짝이는 표시는 천천히
   }
   function shield(x, y, r) {
     ctx.beginPath();
@@ -546,7 +598,7 @@
     g.lineWidth = 1 / k;
     g.fillStyle = '#c4c9d0';
     for (const p of G.landPaths) g.fill(p);
-    for (const i of owned) { g.fillStyle = g.strokeStyle = cssColor(W.owner[i]); g.fill(G.paths[i]); g.stroke(G.paths[i]); }
+    for (const i of owned) { g.fillStyle = g.strokeStyle = cssColor(W.owner[i]); g.fill(pathOf(i)); g.stroke(pathOf(i)); }
     miniImg = c;
     mini.width = c.width; mini.height = c.height;
     mini.style.width = miniW + 'px'; mini.style.height = miniH + 'px';
@@ -566,7 +618,7 @@
     const r = mini.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * G.W, y = ((e.clientY - r.top) / r.height) * G.H;
     view.x = vw / 2 - x * view.s; view.y = vh / 2 - y * view.s;
-    requestDraw();
+    nudge();
   }
   mini.addEventListener('pointerdown', e => { mini.setPointerCapture(e.pointerId); miniJump(e); });
   mini.addEventListener('pointermove', e => { if (e.buttons) miniJump(e); });
@@ -578,7 +630,7 @@
     ns = clampS(ns);
     const wx = (px - view.x) / view.s, wy = (py - view.y) / view.s;
     view.s = ns; view.x = px - wx * ns; view.y = py - wy * ns;
-    requestDraw();
+    nudge();
   }
   function flyTo(i, s) {
     const from = { ...view }, toS = clampS(s || view.s), t0 = performance.now();
@@ -588,7 +640,7 @@
       const ls = Math.exp(Math.log(from.s) + (Math.log(to.s) - Math.log(from.s)) * e);
       const wx = G.sx[i], wy = G.sy[i], cx = (vw / 2 - from.x) / from.s + (wx - (vw / 2 - from.x) / from.s) * e, cy = (vh / 2 - from.y) / from.s + (wy - (vh / 2 - from.y) / from.s) * e;
       view.s = ls; view.x = vw / 2 - cx * ls; view.y = vh / 2 - cy * ls;
-      requestDraw();
+      nudge();
       if (t < 1) requestAnimationFrame(step);
     };
     step();
@@ -614,11 +666,11 @@
       const st = pinchState(), ns = clampS(pinch.s * (st.d / pinch.d));
       const wx = (pinch.x - pinch.vx) / pinch.s, wy = (pinch.y - pinch.vy) / pinch.s;
       view.s = ns; view.x = st.x - wx * ns; view.y = st.y - wy * ns;
-      requestDraw();
+      nudge();
     } else if (drag) {
       const p = pos(e), dx = p.x - drag.x, dy = p.y - drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
-      if (moved) { view.x = drag.vx + dx; view.y = drag.vy + dy; requestDraw(); }
+      if (moved) { view.x = drag.vx + dx; view.y = drag.vy + dy; nudge(); }
     }
   });
   const endPointer = e => {
@@ -700,7 +752,7 @@
     $('#scName').innerHTML = `<i class="sw" style="background:${cssColor(sid)}"></i>${esc(d.name)}`;
     const mem = d.members.map(m => `<li class="${m.me ? 'me' : ''}"><i class="dot ${m.online ? 'on' : ''}"></i><span class="nm">${esc(m.nick)}</span><small>뺏은 땅 ${m.captures} · 문제 ${m.solved}</small></li>`).join('');
     $('#scBody').innerHTML = `
-      <p class="muted">📍 ${esc(d.sido)} ${esc(d.sigungu)} · ${me.grade}학년 서버</p>
+      <p class="muted">📍 ${esc(d.sido)} ${esc(d.sigungu)}${d.dong ? ' ' + esc(d.dong) : ''} · ${me.grade}학년 서버</p>
       <div class="stats"><div><b>${d.land}</b><span>땅</span></div><div><b>${d.rank ? d.rank + '위' : '-'}</b><span>학교 순위</span></div><div><b>${d.def}</b><span>방어 합계</span></div></div>
       <div class="row">${homeLink(sid)}<button type="button" class="link-btn" id="scGo">🗺️ 지도에서 보기</button></div>
       <h4>🧒 함께하는 친구 ${d.memberCount}명</h4>
@@ -1112,6 +1164,7 @@
   function wiggle(el) { el.classList.remove('tap'); void el.offsetWidth; el.classList.add('tap'); }
   function initSettings() {
     $('#btnSettings').onclick = openSettings;
+    $$('.fast-toggle').forEach(b => { b.onclick = () => setFast(!fast); b.textContent = `⚡ 빠르게 모드: ${fast ? '켜짐 ✅' : '꺼짐'}`; b.classList.toggle('on', fast); });
     $('#btnHelp').onclick = () => openM('helpModal');
     $('#setHelp').onclick = () => { closeM('settingsModal'); openM('helpModal'); };
     $('#setMySchool').onclick = () => { closeM('settingsModal'); openSchool(mySid()); };

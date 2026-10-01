@@ -115,7 +115,10 @@ input:focus, select:focus { border-color: var(--blue); }
 .pill.bug { background: #dcfce7; color: #166534; font-weight: 700; }
 .top-actions { display: flex; }
 .game-main { flex: 1; display: flex; min-height: 0; }
-#mapWrap { position: relative; flex: 1; min-width: 0; overflow: hidden; background: #5fb3e8; }
+#mapWrap {
+  position: relative; flex: 1; min-width: 0; overflow: hidden; background-color: #5fb3e8;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.2' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M3 18q7-7 14 0t14 0M63 48q7-7 14 0t14 0M23 88q7-7 14 0t14 0M83 103q7-7 14 0t14 0'/%3E%3C/g%3E%3C/svg%3E"), linear-gradient(180deg, #7cc8f0, #4fa6de);
+}
 #map { display: block; touch-action: none; cursor: grab; }
 #map:active { cursor: grabbing; }
 .map-ctrl { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -311,3 +314,11 @@ input:focus, select:focus { border-color: var(--blue); }
 .chat-btns button:active { transform: scale(.95); }
 .pw-change summary { cursor: pointer; font-weight: 700; margin-bottom: 8px; }
 @media (max-width: 820px) { .wide-only { display: none; } .stats.four { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- 학교 고르기 (시도 → 시군구 → 동) ---------- */
+.area { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+.area label { font-size: 12px; font-weight: 700; color: var(--muted); display: grid; gap: 3px; }
+.area select { padding: 9px 6px; font-size: 14px; }
+.small-note { font-size: 12px; margin: 6px 0 0; }
+.btn.toggle.on { background: #dcfce7; color: #166534; }
+@media (max-width: 420px) { .area { grid-template-columns: 1fr 1fr; } .area label:last-child { grid-column: span 2; } }

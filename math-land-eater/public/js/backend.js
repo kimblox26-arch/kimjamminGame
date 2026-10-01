@@ -29,18 +29,19 @@
 
   // ---------- 공유 저장소 (claude.ai) ----------
   let cloud = null; // { db, room }
-  async function connectCloud() {
+  // 페이지가 열리자마자 연결을 시작하고, 3.5초 안에 안 되면(로그인 안 한 사람 등) 혼자 하기
+  const cloudReady = (async () => {
     if (!window.claude || typeof window.claude.use !== 'function') return;
-    const timeout = new Promise(r => setTimeout(() => r(null), 6000));
+    const timeout = new Promise(r => setTimeout(() => r(null), 3500));
     try {
-      const db = await Promise.race([window.claude.use('db'), timeout]);
-      if (!db) return;
-      const user = await Promise.race([window.claude.use('user'), timeout]);
-      if (user && (await user.can('data.write')) === false) return; // 읽기만 되는 사람은 혼자 모드
-      const room = await Promise.race([window.claude.use('room'), timeout]);
+      const got = await Promise.race([Promise.all([window.claude.use('db'), window.claude.use('user'), window.claude.use('room')]), timeout]);
+      if (!got || !got[0]) return;
+      const [db, user, room] = got;
+      if (user && (await Promise.race([user.can('data.write'), timeout])) === false) return; // 읽기만 되는 사람은 혼자 하기
       cloud = { db, room };
     } catch { cloud = null; }
-  }
+  })();
+  const connectCloud = () => cloudReady;
 
   // ---------- 지도 ----------
   let M = null, BASE = [];
@@ -48,7 +49,7 @@
     M = { n: m.n, nb: m.nb, sx: [], sy: [] };
     for (let i = 0; i < m.n; i++) { M.sx.push(m.seeds[2 * i]); M.sy.push(m.seeds[2 * i + 1]); }
     M.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
-    BASE = m.schools.map(([name, sido, sigungu, url], i) => ({ name, sido, sigungu, url: url || '', cell: i }));
+    BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i }));
     await connectCloud();
     if (cloud) await loadCustom();
     indexSchools();
@@ -62,7 +63,8 @@
   const schoolById = id => (id < BASE.length ? BASE[id] : custom[id - BASE.length]);
   const idByKey = new Map();
   function indexSchools() { idByKey.clear(); for (let i = 0; i < schoolCount(); i++) idByKey.set(schoolKey(schoolById(i)), i); }
-  const publicCustom = () => custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, url: c.url || '' }));
+  const publicCustom = () => custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, dong: c.dong || '', url: c.url || '' }));
+  const cleanDong = v => { const d = String(v || '').replace(/\s+/g, ''); if (d && !/^[가-힣0-9·.]{1,12}(동|읍|면|가|리)$/.test(d)) fail('동 이름은 "대치동"처럼 동·읍·면으로 끝나게 써 주세요.'); return d; };
   const profileSchool = u => (u.profile && u.profile.school && idByKey.has(u.profile.school) ? idByKey.get(u.profile.school) : -1);
   async function loadCustom() {
     const snap = await cloud.db.doc('meta/custom').get();
@@ -300,7 +302,7 @@
         if (!d) fail('학교가 있는 지역을 골라 주세요.');
         const stem = String(b.custom.name || '').replace(/\s+/g, '').replace(/(초등학교|초교|초)$/, '');
         if (!/^[가-힣A-Za-z0-9]{1,12}$/.test(stem)) fail('학교 이름은 한글·영어·숫자로 1~12자 써 주세요.');
-        const sc = { name: stem + '초등학교', sido: d.sido, sigungu: d.sigungu };
+        const sc = { name: stem + '초등학교', sido: d.sido, sigungu: d.sigungu, dong: cleanDong(b.custom.dong) };
         schoolId = idByKey.has(schoolKey(sc)) ? idByKey.get(schoolKey(sc)) : -1;
         if (schoolId < 0) {
           const url = String(b.custom.url || '').trim();
@@ -342,7 +344,7 @@
       const members = (await playersOf(a.grade)).filter(p => p.sid === id).map(p => ({ nick: p.nick, captures: p.captures, solved: p.solved, online: p.acc === a.u.acc, me: p.acc === a.u.acc }));
       members.sort((x, y) => y.online - x.online || y.captures - x.captures);
       const sc = schoolById(id);
-      return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
+      return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, dong: sc.dong || '', url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
     },
     'GET /api/players': async t => {
       const a = await needPlayer(t), list = (await playersOf(a.grade)).map(p => Object.assign(p, { me: p.acc === a.u.acc }));

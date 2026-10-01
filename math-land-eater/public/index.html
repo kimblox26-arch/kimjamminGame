@@ -56,11 +56,18 @@
     <div class="field">
       <div class="label">🏫 우리 학교</div>
       <div id="stChosen" class="chosen">아직 학교를 고르지 않았어요</div>
-      <input id="stSearch" placeholder="학교 이름이나 지역으로 검색 (예: 대치, 수원, 제주)" autocomplete="off">
+      <div class="area">
+        <label>시·도<select id="stSido"></select></label>
+        <label>시·군·구<select id="stSigungu"></select></label>
+        <label>동·읍·면<select id="stDong"></select></label>
+      </div>
+      <input id="stSearch" placeholder="또는 학교 이름으로 전국 검색 (예: 대치초)" autocomplete="off">
       <div id="stList" class="school-list"></div>
       <button type="button" id="stCustomToggle" class="link">찾는 학교가 없나요? 직접 등록하기</button>
       <div id="stCustom" class="custom" hidden>
-        <div class="row"><select id="stCSido"></select><select id="stCSigungu"></select></div>
+        <p id="stCWhere" class="muted"></p>
+        <input id="stCDong" placeholder="동·읍·면 (예: 대치동)" maxlength="14" list="stDongList">
+        <datalist id="stDongList"></datalist>
         <input id="stCName" placeholder="학교 이름 (예: 햇살초등학교)" maxlength="16">
         <input id="stCUrl" placeholder="학교 홈페이지 주소 (없으면 비워 두세요)" maxlength="200" inputmode="url">
       </div>
@@ -193,6 +200,10 @@
     </div>
     <div class="field"><div class="label">😀 닉네임</div>
       <div class="row"><input id="setNick" maxlength="10"><button type="button" id="setNickSave" class="btn">저장</button></div>
+    </div>
+    <div class="field"><div class="label">🚀 게임 속도</div>
+      <button type="button" class="btn toggle fast-toggle">⚡ 빠르게 모드</button>
+      <p class="muted small-note">렉이 걸리면 켜 보세요. 화면을 조금 덜 선명하게, 움직임 효과를 줄여서 더 빨라져요.</p>
     </div>
     <details class="field pw-change"><summary>🔑 비밀번호 바꾸기</summary>
       <div class="row"><input id="pwOld" type="password" placeholder="지금 비밀번호" autocomplete="current-password"><input id="pwNew" type="password" placeholder="새 비밀번호 (4자 이상)" autocomplete="new-password"><button type="button" id="pwSave" class="btn">바꾸기</button></div>
