@@ -31,7 +31,7 @@ function parseSchools(text) {
       const m = item.match(/^([^@:]+)(?:@([^:]*))?:(-?[\d.]+),(-?[\d.]+)(?:,(https?:\/\/\S+))?$/);
       if (!m) continue;
       const nm = m[1].trim();
-      out.push({ name: /학교$/.test(nm) ? nm : nm + '초등학교', sido: sido.trim(), sigungu: (sigungu || '').trim(), dong: (m[2] || '').trim(), lat: +m[3], lon: +m[4], url: m[5] || '' });
+      out.push({ name: /(학교|분교장|분교)$/.test(nm) ? nm : nm + '초등학교', sido: sido.trim(), sigungu: (sigungu || '').trim(), dong: (m[2] || '').trim(), lat: +m[3], lon: +m[4], url: m[5] || '' });
     }
   }
   return out;

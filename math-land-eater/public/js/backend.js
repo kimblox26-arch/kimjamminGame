@@ -44,9 +44,12 @@
   const connectCloud = () => cloudReady;
 
   // ---------- 지도 ----------
-  let M = null, BASE = [];
+  let M = null, BASE = [], WP = 'w';
   async function init(m) {
     M = { n: m.n, nb: m.nb, sx: [], sy: [] };
+    // 지도가 바뀌면 땅 기록은 새로 시작한다 (칸 번호가 달라지니까)
+    WP = 'w' + m.hash;
+    if (local.mapHash !== m.hash) { local.mapHash = m.hash; local.worlds = {}; local.custom.forEach(c => { c.homes = {}; }); save(); }
     for (let i = 0; i < m.n; i++) { M.sx.push(m.seeds[2 * i]); M.sy.push(m.seeds[2 * i + 1]); }
     M.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
     BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i }));
@@ -81,17 +84,17 @@
   function setCell(rt, i, o, d) { rt.owner[i] = o; rt.def[i] = d; }
   function setHome(rt, sid, cell) { rt.home[sid] = cell; rt.homeCell[cell] = sid; rt.owner[cell] = sid; }
   function applyCustomHomes(rt, g) {
-    custom.forEach((c, k) => { const h = c.homes && c.homes[g]; if (h != null && h >= 0 && rt.home[BASE.length + k] == null) setHome(rt, BASE.length + k, h); });
+    custom.forEach((c, k) => { const h = c.homes && c.homes[WP + g]; if (h != null && h >= 0 && rt.home[BASE.length + k] == null) setHome(rt, BASE.length + k, h); });
   }
   async function getWorld(g) {
     if (worlds[g]) return worlds[g];
     const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Int32Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1 };
     BASE.forEach((s, i) => setHome(rt, i, s.cell));
     if (cloud) {
-      const snap = await cloud.db.collection(`w/g${g}/c`).get();
+      const snap = await cloud.db.collection(`${WP}/g${g}/c`).get();
       snap.docs.forEach(d => { for (const [k, v] of Object.entries(d.data() || {})) setCell(rt, +k, v[0], v[1]); });
       applyCustomHomes(rt, g);
-      const f = await cloud.db.doc(`w/g${g}/f/main`).get();
+      const f = await cloud.db.doc(`${WP}/g${g}/f/main`).get();
       (f.exists ? f.data().items || [] : []).forEach(it => { rt.seen.add(it.id); rt.feed.push(it); });
       subscribe(rt);
     } else {
@@ -105,7 +108,7 @@
   // 다른 친구가 바꾼 땅·소식을 실시간으로 받는다
   function subscribe(rt) {
     const g = rt.g;
-    cloud.db.collection(`w/g${g}/c`).onSnapshot(snap => {
+    cloud.db.collection(`${WP}/g${g}/c`).onSnapshot(snap => {
       const cells = [];
       for (const ch of snap.docChanges()) {
         if (ch.type === 'removed') continue;
@@ -116,7 +119,7 @@
       }
       if (cells.length) emit(g, { t: 'upd', cells });
     }, () => {});
-    cloud.db.doc(`w/g${g}/f/main`).onSnapshot(snap => {
+    cloud.db.doc(`${WP}/g${g}/f/main`).onSnapshot(snap => {
       for (const it of (snap.exists ? snap.data().items || [] : [])) {
         if (rt.seen.has(it.id)) continue;
         rt.seen.add(it.id);
@@ -150,7 +153,7 @@
     const byChunk = new Map();
     for (const [i, o, d] of cells) { const k = Math.floor(i / CHUNK); if (!byChunk.has(k)) byChunk.set(k, {}); byChunk.get(k)[i] = [o, d]; }
     for (const [k, data] of byChunk) {
-      const ref = cloud.db.doc(`w/g${rt.g}/c/${k}`);
+      const ref = cloud.db.doc(`${WP}/g${rt.g}/c/${k}`);
       try { await ref.update(data); } catch { await ref.set(Object.assign({}, (await ref.get()).data() || {}, data)); }
     }
   }
@@ -163,7 +166,7 @@
       else emit(rt.g, { t: 'upd', ev: item.ev, school: item.school, home: item.home });
       return;
     }
-    const ref = cloud.db.doc(`w/g${rt.g}/f/main`), cur = await ref.get();
+    const ref = cloud.db.doc(`${WP}/g${rt.g}/f/main`), cur = await ref.get();
     const items = (cur.exists ? cur.data().items || [] : []).concat([item]).slice(-40);
     await ref.set({ items });
   }
@@ -180,7 +183,7 @@
     if (best < 0) return null;
     setHome(rt, id, best);
     sc.homes = sc.homes || {};
-    sc.homes[rt.g] = best;
+    sc.homes[WP + rt.g] = best;
     return { cell: best, run: async () => {
       await saveCustom();
       await writeCells(rt, [[best, id, 0]]);

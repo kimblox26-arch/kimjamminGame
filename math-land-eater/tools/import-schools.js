@@ -69,7 +69,9 @@ for (const r of rows) {
   const addr = (r[C.addr] || (C.road >= 0 ? r[C.road] : '') || '').trim().split(/\s+/);
   const sido = shortSido(addr[0] || '');
   if (!sido || !(lat > 32.5 && lat < 39 && lon > 124 && lon < 132.5)) { skipped++; continue; }
-  const sigungu = sido === '세종' ? '세종시' : (addr[1] || '').replace(/[|;:,@]/g, '');
+  // "수원시 영통구"처럼 구가 있는 시는 구까지 쓴다
+  const gu = /시$/.test(addr[1] || '') && /구$/.test(addr[2] || '') ? ' ' + addr[2] : '';
+  const sigungu = sido === '세종' ? '세종시' : ((addr[1] || '') + gu).replace(/[|;:,@]/g, '');
   const dong = (addr.slice(1).find(t => /(동|읍|면|\d가)$/.test(t)) || '').replace(/[|;:,@]/g, '');
   const name = r[C.name].trim().replace(/[|;:,@]/g, '');
   const key = sido + '|' + sigungu;
