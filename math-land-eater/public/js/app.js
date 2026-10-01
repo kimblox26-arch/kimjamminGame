@@ -76,6 +76,11 @@
 
   // ---------- 공통 ----------
   async function api(path, body) {
+    if (window.MLEBackend) { // 서버 없이 브라우저 안에서 돌릴 때
+      const d = await window.MLEBackend.api(path, body, token);
+      if (d.code === 401 && token) logoutLocal('다시 로그인해 주세요.');
+      return d;
+    }
     const opt = { method: body ? 'POST' : 'GET', headers: {} };
     if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     if (token) opt.headers.Authorization = 'Bearer ' + token;
@@ -108,9 +113,10 @@
   const IB = 1024; // 빠른 찾기 색인 칸 크기
   let stamp = 0, marks = null;
   async function loadMap() {
-    const res = await fetch('/api/map');
+    const res = await fetch(window.MLE_MAP_URL || '/api/map');
     if (!res.ok) throw new Error('지도를 받을 수 없어요.');
     const m = await res.json();
+    if (window.MLEBackend) { $('#loadMsg').textContent = '친구들과 함께 쓰는 지도에 연결하는 중…'; await window.MLEBackend.init(m); }
     $('#loadMsg').textContent = `다각형 땅 ${m.n.toLocaleString()}칸을 그리는 중…`;
     await new Promise(r => setTimeout(r, 30));
     const dec = arr => { const out = new Float32Array(arr.length); let x = 0, y = 0; for (let k = 0; k < arr.length; k += 2) { x += arr[k]; y += arr[k + 1]; out[k] = x; out[k + 1] = y; } return out; };
@@ -927,7 +933,12 @@
       else el.value += k;
     });
     $('#qzHintBtn').onclick = () => { $('#qzHint').hidden = false; };
-    $('#qzClose').onclick = () => { if (!quiz || quiz.solved === 0 || quiz.practice || confirm('그만할까요? 지금까지 푼 문제는 사라져요.')) closeQuiz(); };
+    let closeAsk = 0;
+    $('#qzClose').onclick = () => { // 확인 창 대신 한 번 더 누르기
+      if (!quiz || quiz.solved === 0 || quiz.practice || Date.now() - closeAsk < 3000) { closeAsk = 0; return closeQuiz(); }
+      closeAsk = Date.now();
+      feedback('그만하려면 ✕ 를 한 번 더 누르세요. 지금까지 푼 문제는 사라져요.', 'bad');
+    };
   }
 
   // ---------- 월드 / 실시간 ----------
@@ -970,6 +981,11 @@
   }
   function connectEvents() {
     if (es) es.close();
+    if (window.MLEBackend) {
+      es = { close: window.MLEBackend.listen(token, onEvent) };
+      $('#conn span').textContent = window.MLEBackend.isShared() ? '친구들과 함께' : '혼자 하기 (이 기기)';
+      return;
+    }
     let broken = false;
     es = new EventSource('/api/events?token=' + encodeURIComponent(token));
     es.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onEvent(m); };
