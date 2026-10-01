@@ -117,6 +117,7 @@
     const toPath = rings => { const p = new Path2D(); for (const r of rings) { p.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) p.lineTo(r[k], r[k + 1]); p.closePath(); } return p; };
     const boxOf = rings => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of rings) for (let k = 0; k < r.length; k += 2) { x0 = Math.min(x0, r[k]); x1 = Math.max(x1, r[k]); y0 = Math.min(y0, r[k + 1]); y1 = Math.max(y1, r[k + 1]); } return [x0, y0, x1, y1]; };
     G = { W: m.W, H: m.H, n: m.n, nb: m.nb, sides: m.sides, routes: m.routes };
+    SPACING = m.spacing || 150;
     G.rings = m.cells.map(c => c.map(dec));
     G.paths = G.rings.map(toPath);
     G.box = new Float32Array(m.n * 4);
@@ -300,9 +301,10 @@
   // ---------- 지도 그리기 (조각 그림 캐시) ----------
   const cv = $('#map'), ctx = cv.getContext('2d');
   const view = { s: 0.02, x: 0, y: 0 };
-  const TILE = 256, ZMAX = 11, SPACING = 150;
+  const TILE = 256, ZMAX = 12;
+  let SPACING = 150;
   const tiles = new Map();
-  let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set();
+  let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set(), owned = new Set();
   const NEUTRAL = [196, 201, 208], MINE = [255, 193, 7];
   const colorCache = new Map();
   const baseS = () => TILE / Math.max(G.W, G.H);
@@ -351,6 +353,16 @@
     g.strokeStyle = 'rgba(214,244,255,.85)';
     g.lineWidth = Math.min(14, 4 + cp / 12) * px;
     for (const k of lands) g.stroke(G.landPaths[k]); // 바닷가 물빛
+    if (cp < 3) { // 아주 멀리서 볼 때: 회색 땅을 한 번에 칠하고 주인 있는 칸만 덧칠한다
+      g.fillStyle = `rgb(${NEUTRAL.join(',')})`;
+      for (const k of lands) g.fill(G.landPaths[k]);
+      g.lineWidth = px;
+      for (const i of owned) {
+        const b = i * 4;
+        if (G.box[b] > x0 + tw || G.box[b + 2] < x0 || G.box[b + 1] > y0 + tw || G.box[b + 3] < y0) continue;
+        g.fillStyle = g.strokeStyle = fillOf(i); g.fill(G.paths[i]); g.stroke(G.paths[i]);
+      }
+    } else {
     const ids = cellsIn(x0 - 1, y0 - 1, x0 + tw + 1, y0 + tw + 1);
     const lines = cp > 7;
     g.lineWidth = (lines ? Math.min(2.2, 0.6 + cp / 70) : 1) * px;
@@ -361,6 +373,7 @@
       if (!lines) { g.strokeStyle = f; g.stroke(G.paths[i]); } // 이음새 메우기
     }
     if (lines) for (const i of ids) { g.strokeStyle = strokeOf(i); g.stroke(G.paths[i]); }
+    }
     g.strokeStyle = 'rgba(30,80,120,.5)';
     g.lineWidth = 1.1 * px;
     for (const k of lands) g.stroke(G.landPaths[k]); // 해안선
@@ -410,13 +423,14 @@
     const sz = baseS() * 2 ** z, tw = TILE / sz, nT = 2 ** z;
     const tx0 = Math.max(0, Math.floor(-view.x / s / tw)), tx1 = Math.min(nT - 1, Math.floor((vw - view.x) / s / tw));
     const ty0 = Math.max(0, Math.floor(-view.y / s / tw)), ty1 = Math.min(nT - 1, Math.floor((vh - view.y) / s / tw));
-    let budget = 6, more = false;
+    const t0 = performance.now();
+    let rendered = 0, more = false;
     tick++;
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
       const key = z + '/' + tx + '/' + ty, X = view.x + tx * tw * s, Y = view.y + ty * tw * s, SZ = tw * s;
       let t = tiles.get(key);
-      if ((!t || t.dirty) && budget > 0) {
-        budget--;
+      if ((!t || t.dirty) && (rendered === 0 || performance.now() - t0 < 14)) { // 한 화면에 너무 오래 걸리지 않게
+        rendered++;
         const img = renderTile(z, tx, ty);
         if (t) { t.cv = img; t.dirty = false; } else tiles.set(key, t = { cv: img, z, tx, ty, dirty: false });
       }
@@ -524,12 +538,9 @@
     const g = c.getContext('2d'), k = (miniW * d) / G.W;
     g.setTransform(k, 0, 0, k, 0, 0);
     g.lineWidth = 1 / k;
-    for (let i = 0; i < G.n; i++) {
-      const o = W.owner[i];
-      g.fillStyle = o < 0 ? '#c4c9d0' : cssColor(o);
-      g.fill(G.paths[i]);
-      if (o >= 0) { g.strokeStyle = g.fillStyle; g.stroke(G.paths[i]); }
-    }
+    g.fillStyle = '#c4c9d0';
+    for (const p of G.landPaths) g.fill(p);
+    for (const i of owned) { g.fillStyle = g.strokeStyle = cssColor(W.owner[i]); g.fill(G.paths[i]); g.stroke(G.paths[i]); }
     miniImg = c;
     mini.width = c.width; mini.height = c.height;
     mini.style.width = miniW + 'px'; mini.style.height = miniH + 'px';
@@ -577,7 +588,7 @@
     step();
   }
   function fitView() { view.s = fitScale(); view.x = (vw - G.W * view.s) / 2; view.y = (vh - G.H * view.s) / 2; requestDraw(); }
-  const goHome = () => { const h = W && W.home[mySid()]; if (h >= 0) flyTo(h, Math.max(view.s, 0.3)); };
+  const goHome = () => { const h = W && W.home[mySid()]; if (h >= 0) flyTo(h, Math.max(view.s, 0.5)); };
 
   const pointers = new Map();
   let drag = null, pinch = null, moved = false, hoverCell = -1;
@@ -646,9 +657,10 @@
     const title = hs >= 0 ? (mine ? '🏫 우리 학교 본부' : `🏫 ${schools[hs].name}`) : o < 0 ? `⬜ ${shape} 빈 땅` : mine ? `⭐ 우리 학교 ${shape} 땅` : `🚩 ${short(o)}의 ${shape} 땅`;
     const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : !adj ? '노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요.' : '';
     const defWhy = !mine ? '우리 학교 땅만 방어할 수 있어요.' : hs >= 0 ? '본부는 언제나 안전해요.' : d >= 99 ? '방어가 가장 높아요(99).' : '';
-    const owned = o >= 0 ? W.owner.reduce((n, v) => n + (v === o), 0) : 0;
+    let ownedN = 0;
+    if (o >= 0) for (const k of owned) if (W.owner[k] === o) ownedN++;
     const tags = [`<span class="tag">📍 ${esc(dist.sido)} ${esc(dist.sigungu)}</span>`];
-    if (o >= 0 && !mine) tags.push(`<span class="tag" style="--c:${cssColor(o)}">🚩 ${esc(schools[o].name)} · ${owned}칸</span>`);
+    if (o >= 0 && !mine) tags.push(`<span class="tag" style="--c:${cssColor(o)}">🚩 ${esc(schools[o].name)} · ${ownedN}칸</span>`);
     if (o >= 0 && hs < 0) tags.push(`<span class="tag">🛡️ 방어 <b>${d}</b></span>`);
     if (!mine && hs < 0) tags.push(`<span class="tag hot">⚔️ 문제 <b>${needToTake(i)}개</b> 풀면 뺏어요</span>`);
     box.innerHTML = `
@@ -823,6 +835,8 @@
     W = { owner: Int32Array.from(d.owner), def: new Int32Array(G.n), home: d.home.slice(), homeCell: new Int32Array(G.n).fill(-1) };
     defended = new Set();
     d.def.forEach(([i, v]) => { W.def[i] = v; defended.add(i); });
+    owned = new Set();
+    W.owner.forEach((o, i) => { if (o >= 0) owned.add(i); });
     W.home.forEach((c, sid) => { if (c >= 0) W.homeCell[c] = sid; });
     online = d.online || 0;
     colorCache.clear();
@@ -841,7 +855,7 @@
     renderMini();
     connectEvents();
     const h = W.home[mySid()];
-    if (h >= 0) { fitView(); setTimeout(() => flyTo(h, 0.3), 350); } else fitView();
+    if (h >= 0) { fitView(); setTimeout(() => flyTo(h, 0.55), 350); } else fitView();
   }
   function connectEvents() {
     if (es) es.close();
@@ -871,6 +885,7 @@
     for (const [i, o, d] of cells) {
       W.owner[i] = o; W.def[i] = d;
       if (d > 0) defended.add(i); else defended.delete(i);
+      if (o >= 0) owned.add(i); else owned.delete(i);
       invalidateCell(i);
     }
     computeFrontier();
@@ -899,7 +914,7 @@
     const li = document.createElement('li');
     li.innerHTML = `<span class="t">${new Date().toTimeString().slice(0, 5)}</span>${esc(txt)}`;
     li.className = cls;
-    if (ev.cell >= 0) li.onclick = () => { flyTo(ev.cell, Math.max(view.s, 0.3)); select(ev.cell); $('#side').classList.remove('open'); };
+    if (ev.cell >= 0) li.onclick = () => { flyTo(ev.cell, Math.max(view.s, 0.5)); select(ev.cell); $('#side').classList.remove('open'); };
     $('#feed').prepend(li);
     while ($('#feed').children.length > 40) $('#feed').lastChild.remove();
     if ($('#paneFeed').hidden) $('#feedDot').hidden = false;
@@ -1006,7 +1021,7 @@
     $('#zFit').onclick = fitView;
     const jumpToSchool = sid => {
       const h = W && W.home[sid];
-      if (h >= 0) { flyTo(h, Math.max(view.s, 0.3)); select(h); $('#side').classList.remove('open'); }
+      if (h >= 0) { flyTo(h, Math.max(view.s, 0.5)); select(h); $('#side').classList.remove('open'); }
       else toast('이 학교는 아직 이 서버 지도에 없어요.', 'warn');
     };
     $('#board').onclick = e => { const li = e.target.closest('[data-sid]'); if (li) jumpToSchool(+li.dataset.sid); };

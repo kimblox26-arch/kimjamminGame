@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const { project } = require('../public/js/shared.js');
 
 const VERSION = 2;
-const SPACING = 150;   // 칸 사이 평균 거리 (지도 단위, ≈2.1km)
+const SPACING = 70;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 1km)
 const MIN_GAP = 22;    // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈300m)
 const MARGIN = 400;
 
@@ -308,7 +308,7 @@ function buildMap({ landFile, schoolsFile }) {
     toMap, landAt,
   };
   map.clientJSON = JSON.stringify({
-    hash, W, H, n,
+    hash, W, H, n, spacing: SPACING,
     cells: cells.map(rings => rings.map(encodeRing)),
     nb, sides, routes,
     seeds: sx.flatMap((x, i) => [Math.round(x), Math.round(sy[i])]),
