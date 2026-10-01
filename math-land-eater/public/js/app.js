@@ -1225,14 +1225,22 @@
       $('#qzPad').hidden = true;
     } else {
       $('#qzAnswer').innerHTML = `<form id="qzForm" class="answer-row">
-        <input id="qzInput" autocomplete="off" inputmode="${coarse ? 'none' : p.frac ? 'text' : 'decimal'}" placeholder="${p.frac ? '예: 3/4 또는 2와 1/3' : '답을 써요'}">
-        ${p.unit ? `<span class="unit">${esc(p.unit)}</span>` : ''}<button class="btn primary">확인</button></form>`;
+        <input id="qzInput" autocomplete="off" inputmode="${coarse ? 'none' : p.frac ? 'text' : 'decimal'}" placeholder="${p.frac ? '분자/분모 예: 3/10 (=10분의 3)' : '답을 써요'}">
+        ${p.unit ? `<span class="unit">${esc(p.unit)}</span>` : ''}<button class="btn primary">확인</button></form><div id="qzPreview" class="qz-preview"></div>`;
+      $('#qzInput').oninput = showPreview;
       $('#qzForm').onsubmit = e => { e.preventDefault(); answer($('#qzInput').value); };
       const keys = ['7', '8', '9', '⌫', '4', '5', '6', 'C', '1', '2', '3', '.', '0', '/', '와', '확인'];
       $('#qzPad').innerHTML = keys.map(k => `<button type="button" data-k="${k}" class="${k === '확인' ? 'go' : /\d/.test(k) ? '' : 'op'}">${k}</button>`).join('');
       $('#qzPad').hidden = false;
       if (!coarse) setTimeout(() => { const el = $('#qzInput'); if (el) el.focus(); }, 60);
     }
+  }
+  // 분수를 쓰는 동안 어떻게 보이는지 미리 보여 준다 (10/3 → 3분의 10)
+  function showPreview() {
+    const el = $('#qzInput'), box = $('#qzPreview');
+    if (!el || !box) return;
+    const v = el.value.replace(/\s+/g, ''), m = v.match(/^(?:(\d+)(?:와|과))?(\d+)\/(\d+)$/);
+    box.innerHTML = m ? `내가 쓴 답: ${m[1] ? esc(m[1]) + ' ' : ''}${fmt(`{${m[2]}/${m[3]}}`)} <small>(${m[1] ? esc(m[1]) + '와 ' : ''}${esc(m[3])}분의 ${esc(m[2])})</small>` : '';
   }
   function feedback(msg, kind) {
     const f = $('#qzFeedback');
@@ -1260,6 +1268,10 @@
       Sound.play('bad');
       $('#qzHintBtn').hidden = false;
       if (res === 'simplest') return feedback('🤏 거의 맞았어요! 더 이상 약분할 수 없게(기약분수로) 써 주세요.', 'bad');
+      if (res === 'flipped') { // 틀린 걸로 치지 않고 다시 쓰게
+        const [a, b] = String(v).replace(/\s+/g, '').split('/');
+        return feedback(`🔄 분자와 분모가 바뀌었어요! ${a}분의 ${b}는 ${b}/${a} 처럼 위의 수(분자)를 먼저 써요.`, 'bad');
+      }
       if (!quiz.fixed && !quiz.noted) { // 틀린 문제는 오답 노트에
         quiz.noted = true;
         const { q, a, hint, unit, frac, simplest, choices } = quiz.p;
@@ -1362,6 +1374,7 @@
       if (k === '⌫') el.value = el.value.slice(0, -1);
       else if (k === 'C') el.value = '';
       else el.value += k;
+      showPreview();
     });
     $('#qzHintBtn').onclick = () => { $('#qzHint').hidden = false; };
     let closeAsk = 0;

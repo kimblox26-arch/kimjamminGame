@@ -233,11 +233,14 @@
     if (/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return { v: parseFloat(s) };
     return null;
   }
-  // 맞으면 true, 틀리면 false, 값은 맞는데 약분이 덜 됐으면 'simplest'
+  // 맞으면 true, 틀리면 false, 값은 맞는데 약분이 덜 됐으면 'simplest', 분자·분모를 거꾸로 썼으면 'flipped'
   function check(p, input) {
     if (p.choices) return String(input) === String(p.a);
-    const x = parse(input);
-    if (!x || !isFinite(x.v) || Math.abs(x.v - p.a) > 1e-9 * Math.max(1, Math.abs(p.a))) return false;
+    const x = parse(input), near = v => Math.abs(v - p.a) <= 1e-9 * Math.max(1, Math.abs(p.a));
+    if (!x || !isFinite(x.v) || !near(x.v)) {
+      const m = String(input).replace(/\s+/g, '').match(/^(\d+)\/(\d+)$/); // "10분의 3" 을 10/3 으로 쓴 경우
+      return m && +m[1] && m[1] !== m[2] && near(m[2] / m[1]) ? 'flipped' : false;
+    }
     if (p.simplest && x.d && gcd(x.n, x.d) !== 1) return 'simplest';
     return true;
   }
