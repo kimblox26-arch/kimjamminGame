@@ -8,9 +8,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { project, decodeRing, neighborsFromRings } = require('../public/js/shared.js');
 
-const VERSION = 3;
-const SPACING = 35;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 490m)
-const MIN_GAP = 18;    // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈250m)
+const VERSION = 4;
+const SPACING = 25;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 350m)
+const MIN_GAP = 14;    // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈200m)
 const MARGIN = 400;
 
 function mulberry32(a) {
@@ -87,6 +87,30 @@ function encodeRing(p) {
   return out;
 }
 
+// map.bin: 'MLE1', 칸 수(4바이트), 칸마다 변 수(1바이트), 그다음 칸 모양.
+// 칸 모양 = [고리 수, (꼭짓점 수, 첫 점(앞 고리 첫 점과의 차이), 나머지 점(바로 앞 점과의 차이))…] 를 지그재그 가변 길이 정수로 적는다.
+function encodeBin(encoded, sides) {
+  const n = encoded.length;
+  let cap = 8 + n + 16;
+  for (const rings of encoded) for (const r of rings) cap += 6 + r.length * 3;
+  const buf = Buffer.alloc(cap);
+  buf.write('MLE1', 0, 'latin1');
+  buf.writeUInt32LE(n, 4);
+  for (let i = 0; i < n; i++) buf[8 + i] = Math.min(255, sides[i] || 0);
+  let p = 8 + n, px = 0, py = 0;
+  const u = v => { while (v >= 0x80) { buf[p++] = (v & 0x7f) | 0x80; v >>>= 7; } buf[p++] = v; };
+  const z = v => u(((v << 1) ^ (v >> 31)) >>> 0);
+  for (const rings of encoded) {
+    u(rings.length);
+    for (const r of rings) {
+      u(r.length >> 1);
+      z(r[0] - px); z(r[1] - py); px = r[0]; py = r[1];
+      for (let k = 2; k < r.length; k++) z(r[k]);
+    }
+  }
+  return buf.subarray(0, p);
+}
+
 function buildMap({ landFile, schoolsFile, cacheDir }) {
   const t0 = Date.now();
   const landRings = JSON.parse(fs.readFileSync(landFile, 'utf8')).rings;
@@ -98,6 +122,7 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   if (cacheFile && fs.existsSync(cacheFile)) {
     try {
       const c = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      c.clientBin = fs.readFileSync(cacheFile.replace(/\.json$/, '.bin'));
       c.toMap = (lat, lon) => { const [x, y] = project(lon, lat); return [x - c.ox, y - c.oy]; };
       c.stats.ms = Date.now() - t0;
       c.stats.cached = true;
@@ -301,13 +326,16 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   const routes = [];
   const parent = Array.from({ length: n }, (_, i) => i), find = a => (parent[a] === a ? a : (parent[a] = find(parent[a])));
   for (let i = 0; i < n; i++) for (const j of nb[i]) parent[find(i)] = find(j);
+  const coast = [];
+  for (let i = 0; i < n; i++) if (!sides[i]) coast.push(i);
   for (;;) {
     const comps = new Map();
     for (let i = 0; i < n; i++) { const r = find(i); if (!comps.has(r)) comps.set(r, []); comps.get(r).push(i); }
     if (comps.size <= 1) break;
-    const small = [...comps.values()].sort((a, b) => a.length - b.length)[0], root = find(small[0]);
+    const comp = [...comps.values()].sort((a, b) => a.length - b.length)[0], root = find(comp[0]);
+    const small = comp.some(i => !sides[i]) ? comp.filter(i => !sides[i]) : comp;
     let best = null, bd = Infinity;
-    for (const a of small) for (let b = 0; b < n; b++) {
+    for (const a of small) for (const b of coast) { // 가장 가까운 두 칸은 언제나 바닷가 칸이다
       if (find(b) === root) continue;
       const d = (sx[a] - sx[b]) ** 2 + (sy[a] - sy[b]) ** 2;
       if (d < bd) { bd = d; best = [a, b]; }
@@ -333,17 +361,19 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   };
   map.clientJSON = JSON.stringify({
     hash, W, H, n, spacing: SPACING, schoolCount,
-    cells: encoded, sides, routes,
+    bin: true, routes, // 칸 모양과 변 수는 map.bin 에 (훨씬 작다)
     seeds: sx.slice(0, schoolCount).flatMap((x, i) => [Math.round(x), Math.round(sy[i])]), // 학교 칸만 (나머지는 칸 가운데)
     land: polys.map(encodeRing),
     schools: schools.map(s => [s.name, s.sido, s.sigungu, s.url || '', s.dong || '']),
     districts: districts.map(d => [d.sido, d.sigungu, Math.round(d.x), Math.round(d.y)]),
   });
+  map.clientBin = encodeBin(encoded, sides);
   map.stats = { cells: n, schools: schoolCount, coastal, fallback, routes: routes.length, ms: Date.now() - t0 };
   if (cacheFile) {
     try {
       fs.mkdirSync(cacheDir, { recursive: true });
-      const { toMap, landAt, ...plain } = map;
+      const { toMap, landAt, clientBin, ...plain } = map;
+      fs.writeFileSync(cacheFile.replace(/\.json$/, '.bin'), clientBin);
       fs.writeFileSync(cacheFile, JSON.stringify(plain));
     } catch (e) { console.warn('지도 저장 실패:', e.message); }
   }

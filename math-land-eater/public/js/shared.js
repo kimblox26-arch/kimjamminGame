@@ -48,30 +48,82 @@
     for (let k = 0; k < arr.length; k += 2) { x += arr[k]; y += arr[k + 1]; out[k] = x; out[k + 1] = y; }
     return out;
   }
+  // 두 칸이 함께 쓰는 변 찾기. ring(c, visit) 는 칸 c 의 고리마다 visit(좌표 배열, 시작, 끝) 을 부른다.
+  // 같은 변을 쓰는 칸을 만나면 fn(c, o, x1, y1, x2, y2). 변(두 꼭짓점)을 열쇠로 하는 타입 배열 해시 표라 50만 칸도 빠르다.
+  function sharedEdges(n, ring, fn) {
+    let total = 0;
+    for (let c = 0; c < n; c++) ring(c, (r, s, e) => { total += (e - s) >> 1; });
+    let cap = 1024;
+    while (cap < total * 0.6) cap *= 2; // 서로 다른 변은 꼭짓점 수의 절반쯤
+    const ka = new Uint32Array(cap), kb = new Uint32Array(cap), val = new Int32Array(cap).fill(-1), mask = cap - 1, O = 4096;
+    for (let c = 0; c < n; c++) ring(c, (r, s, e) => {
+      if (e - s < 4) return;
+      let px = r[e - 2], py = r[e - 1];
+      for (let k = s; k < e; k += 2) {
+        const x = r[k], y = r[k + 1];
+        if (x !== px || y !== py) {
+          const v = ((x + O) * 65536 + (y + O)) >>> 0, w = ((px + O) * 65536 + (py + O)) >>> 0, a = v < w ? v : w, b = v < w ? w : v;
+          let h = Math.imul(a ^ Math.imul(b, 0x9e3779b1), 0x85ebca6b);
+          h = (h ^ (h >>> 15)) & mask;
+          while (val[h] >= 0 && (ka[h] !== a || kb[h] !== b)) h = (h + 1) & mask;
+          const o = val[h];
+          if (o < 0) { ka[h] = a; kb[h] = b; val[h] = c; }
+          else if (o !== c) fn(c, o, px, py, x, y);
+        }
+        px = x; py = y;
+      }
+    });
+  }
   // 이웃한 땅: 변(꼭짓점 두 개)을 함께 쓰는 칸끼리 이웃이다.
   // 서버와 브라우저가 같은 정수 좌표로 계산하므로 결과가 항상 같다. (지도 파일에 이웃 목록을 안 넣어도 된다)
   function neighborsFromRings(cellRings) {
-    const vid = new Map(), edges = new Map(), nb = cellRings.map(() => []);
-    let nv = 0;
-    const id = (x, y) => { const k = (x + 65536) * 262144 + (y + 65536); let v = vid.get(k); if (v === undefined) { v = nv++; vid.set(k, v); } return v; };
-    cellRings.forEach((rings, c) => {
-      for (const r of rings) {
-        const L = r.length >> 1;
-        if (L < 2) continue;
-        let prev = id(r[2 * L - 2], r[2 * L - 1]);
-        for (let k = 0; k < L; k++) {
-          const v = id(r[2 * k], r[2 * k + 1]);
-          if (v !== prev) {
-            const key = v < prev ? v * 4194304 + prev : prev * 4194304 + v, o = edges.get(key);
-            if (o === undefined) edges.set(key, c);
-            else if (o !== c && !nb[c].includes(o)) { nb[c].push(o); nb[o].push(c); }
-          }
-          prev = v;
-        }
-      }
-    });
+    const nb = cellRings.map(() => []);
+    sharedEdges(cellRings.length, (c, visit) => { for (const r of cellRings[c]) visit(r, 0, r.length); }, (c, o) => { if (!nb[c].includes(o)) { nb[c].push(o); nb[o].push(c); } });
     return nb;
   }
 
-  return { PROJ, project, unproject, schoolYear, gradeFromBirthYear, BADGES, CHAT, decodeRing, neighborsFromRings };
+  // ---------- 게임 규칙 (서버와 브라우저가 똑같이 쓴다) ----------
+  const BASE_COST = 2, FAR_GRADE = 4, FAR_COST = 50;
+  // 갇힌 학교의 탈출길: 우리 땅 둘레에 빈 땅이 하나도 없으면 가장 가까운 빈 땅으로 빠져나갈 수 있다
+  const nbFn = nb => (typeof nb === 'function' ? nb : i => nb[i]); // 이웃 목록: 배열 또는 함수
+  function escapeCells(owner, nb, sid) {
+    nb = nbFn(nb);
+    const n = owner.length, seen = new Uint8Array(n);
+    let cur = [];
+    for (let i = 0; i < n; i++) if (owner[i] === sid) { cur.push(i); seen[i] = 1; }
+    if (!cur.length) return [];
+    for (const i of cur) for (const k of nb(i)) if (owner[k] < 0) return [];
+    while (cur.length) {
+      const next = [], found = [];
+      for (const i of cur) for (const k of nb(i)) if (!seen[k]) { seen[k] = 1; (owner[k] < 0 ? found : next).push(k); }
+      if (found.length) return found;
+      cur = next;
+    }
+    return [];
+  }
+  // 땅을 뺏는 데 필요한 문제 수. 닿은 땅 = 2(또는 방어 수), 탈출길 = 2, 4학년부터 멀리 있는 땅 = 50(또는 방어 수)
+  function captureCost(o) { // { owner, def, nb, sid, cell, grade, escape(Set, 없으면 계산) }
+    const { owner, def, sid, cell, grade } = o, nb = nbFn(o.nb), prev = owner[cell], d = prev < 0 ? 0 : def[cell];
+    if (nb(cell).some(k => owner[k] === sid)) return { cost: Math.max(BASE_COST, d) };
+    const esc = o.escape || new Set(escapeCells(owner, nb, sid));
+    if (esc.has(cell)) return { cost: BASE_COST, escape: true };
+    if (grade >= FAR_GRADE) return { cost: Math.max(FAR_COST, d), far: true };
+    return { error: '우리 학교 땅과 닿아 있는 땅만 뺏을 수 있어요. (4학년부터는 멀리 있는 땅도 문제 50개로 뺏을 수 있어요)' };
+  }
+  // 땅 팔기: 고른 칸에서 이어진 우리 땅(본부 빼고)을 count 칸까지 모은다
+  function saleCells(owner, nb, homeCell, sid, start, count) {
+    nb = nbFn(nb);
+    const out = [start], seen = new Set(out);
+    for (let k = 0; k < out.length && out.length < count; k++) {
+      for (const j of nb(out[k])) if (!seen.has(j) && owner[j] === sid && homeCell[j] < 0) { seen.add(j); out.push(j); if (out.length >= count) break; }
+    }
+    return out;
+  }
+  const touches = (cells, owner, nb, sid) => { nb = nbFn(nb); return cells.some(c => nb(c).some(k => owner[k] === sid)); };
+  // 운영자·개발자 이름은 다른 사람이 못 쓴다
+  const RESERVED_NICK = /운영|관리자|개발|어드민|admin|develop|^gm$|staff|매니저|manager/i;
+  const ROLE_NICK = { admin: '운영자', dev: '개발자' };
+
+  return { PROJ, project, unproject, schoolYear, gradeFromBirthYear, BADGES, CHAT, decodeRing, sharedEdges, neighborsFromRings,
+    BASE_COST, FAR_GRADE, FAR_COST, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK };
 });

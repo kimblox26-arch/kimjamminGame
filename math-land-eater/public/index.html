@@ -94,6 +94,7 @@
       <span id="cheatBadge" class="pill bug" hidden>🐛 버그 모드</span>
     </div>
     <div class="top-actions">
+      <button type="button" id="btnAdmin" class="icon-btn" title="운영자 관리" hidden>🛠️</button>
       <button type="button" id="btnPractice" class="icon-btn" title="연습하기">✏️</button>
       <button type="button" id="btnWrong" class="icon-btn" title="오답 노트">📒<i id="wrongCount" class="count" hidden></i></button>
       <button type="button" id="btnBadges" class="icon-btn" title="내 배지와 기록">🏅</button>
@@ -256,6 +257,32 @@
 </div>
 
 <!-- 버그 창 -->
+<div id="sellModal" class="modal" hidden>
+  <div class="card">
+    <div class="row between"><h3>🏷️ 땅 팔기</h3><button type="button" class="icon-btn" data-close="sellModal">✕</button></div>
+    <p class="muted" id="sellRule"></p>
+    <input id="sellFind" placeholder="🔎 살 학교 찾기 (예: 판곡초, 호평동)" hidden>
+    <div id="sellList" class="chips sell-list"></div>
+    <div class="stepper"><button type="button" id="sellMinus">−</button><input id="sellNum" type="number" min="1" max="30" value="3"><span>칸</span><button type="button" id="sellPlus">＋</button></div>
+    <p id="sellInfo" class="hint-box"></p>
+    <div class="row end"><button type="button" class="btn primary" id="sellGo">🏷️ 팔기</button></div>
+  </div>
+</div>
+
+<div id="adminModal" class="modal" hidden>
+  <div class="card">
+    <div class="row between"><h3>🛠️ 운영자 관리</h3><button type="button" class="icon-btn" data-close="adminModal">✕</button></div>
+    <p class="muted" id="admWho"></p>
+    <h4>🌐 학년 서버 바꾸기</h4>
+    <div id="admGrades" class="chips"></div>
+    <h4>📢 공지 보내기</h4>
+    <div class="answer-row"><input id="admNotice" maxlength="100" placeholder="모두에게 보낼 공지"><button type="button" class="btn primary" id="admNoticeGo">보내기</button></div>
+    <h4>🧹 정리하기</h4>
+    <div class="row"><button type="button" class="btn" id="admChat">💬 채팅 모두 지우기</button><button type="button" class="btn attack" id="admReset">♻️ 이 학년 서버 처음으로</button></div>
+    <p class="muted">지도에서 땅을 누르면 <b>이 땅 비우기 · 학교 땅 모두 비우기 · 가짜 학교 지우기</b>를 할 수 있어요.</p>
+  </div>
+</div>
+
 <div id="bugModal" class="modal" hidden>
   <div class="card small bug-card">
     <h3>🐛 버그 창</h3>
@@ -276,7 +303,10 @@
       <li><b>노란색 우리 땅</b>과 닿은 땅(점선 표시)을 눌러 <b>⚔️ 땅 뺏기</b>! 한 칸에 <b>문제 2개</b>를 풀면 우리 땅이에요.</li>
       <li>다른 학교 땅이 방어되어 있으면 <b>방어 수만큼</b> 문제를 풀어야 뺏을 수 있어요.</li>
       <li>우리 땅을 눌러 <b>🛡️ 땅 방어하기</b>로 방어 수를 정하고, 그만큼 문제를 풀면 방어가 올라가요.</li>
-      <li>틀리면 <b>💡 힌트보기</b>가 나와요. 연속으로 맞히면 🔥 불꽃이 붙어요!</li>
+      <li>틀리면 정답과 <b>💡 힌트보기</b>가 나오고, <b>한 단계 뒤로</b> 가서 <b>새 문제</b>를 풀어요. 연속으로 맞히면 🔥 불꽃이 붙어요!</li>
+      <li>🚀 <b>4학년부터</b>는 멀리 있는 땅도 <b>문제 50개</b>를 풀면 뺏을 수 있고, 거기서부터 땅을 넓힐 수 있어요.</li>
+      <li>🚪 다른 학교 땅과 본부에 막혀 나갈 곳이 없으면, 가장 가까운 빈 땅으로 가는 <b>초록 탈출길</b>이 생겨요.</li>
+      <li>🏷️ 우리 땅을 눌러 <b>땅 팔기</b>! 살 학교를 고르면(3학년까지는 닿아 있는 학교만) 그 학교는 <b>🛒 땅 사기</b>로 문제 없이 가져가요.</li>
       <li>섬은 <b>뱃길(점선)</b>로 이어져 있어요. 학년마다 서버가 따로 있고, 같은 학교 친구들과 함께 땅을 넓혀요.</li>
       <li>✏️ <b>연습하기</b>로 문제만 풀 수도 있고, 틀린 문제는 📒 <b>오답 노트</b>에 모여요. 🏅 배지도 모아 보세요!</li>
       <li>💬 소식 탭에서 우리 학교 친구들에게 <b>빠른 채팅</b>을 보낼 수 있어요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>

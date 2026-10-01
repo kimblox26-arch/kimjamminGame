@@ -14,14 +14,15 @@ fs.mkdirSync(path.join(out, 'js'), { recursive: true });
 
 const map = buildMap({ landFile: path.join(root, 'mapdata/korea-land.json'), schoolsFile: path.join(root, 'mapdata/schools.txt') });
 fs.writeFileSync(path.join(out, 'map.json'), map.clientJSON);
+fs.writeFileSync(path.join(out, 'map.bin'), map.clientBin);
 for (const f of ['style.css', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js']) fs.copyFileSync(path.join(root, 'public', f), path.join(out, f));
 
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const title = html.match(/<title>[\s\S]*?<\/title>/)[0];
 const links = (html.match(/<link [^>]*>/g) || []).filter(l => !/rel="icon"/.test(l)).join('\n');
 let body = html.slice(html.indexOf('<body>') + 6, html.lastIndexOf('</body>'));
-body = body.replace('<script src="js/app.js"></script>', '<script>window.MLE_MAP_URL = "map.json";</script>\n<script src="js/backend.js"></script>\n<script src="js/app.js"></script>');
+body = body.replace('<script src="js/app.js"></script>', '<script>window.MLE_MAP_URL = "map.json"; window.MLE_MAP_BIN_URL = "map.bin";</script>\n<script src="js/backend.js"></script>\n<script src="js/app.js"></script>');
 const page = `${title}\n${links}\n${body.trim()}\n`;
 fs.writeFileSync(path.join(out, 'artifact.html'), page);
 fs.writeFileSync(path.join(out, 'index.html'), `<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">\n${page.replace(body.trim(), '')}</head>\n<body>\n${body.trim()}\n</body>\n</html>\n`);
-console.log(`dist/static 에 만들었어요. (땅 ${map.stats.cells}칸, map.json ${(map.clientJSON.length / 1048576).toFixed(1)}MB)`);
+console.log(`dist/static 에 만들었어요. (땅 ${map.stats.cells}칸, map.json ${(map.clientJSON.length / 1048576).toFixed(1)}MB, map.bin ${(map.clientBin.length / 1048576).toFixed(1)}MB)`);

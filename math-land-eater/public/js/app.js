@@ -19,7 +19,8 @@
   const cheat = { unlocked: false, capture: false, defend: false };
   const mySid = () => (me && me.profile ? me.profile.schoolId : -1);
   const short = sid => (schools[sid] ? schools[sid].name.replace(/초등학교$/, '초') : '어떤 학교');
-  const needToTake = i => (W.owner[i] < 0 ? 2 : Math.max(2, W.def[i]));
+  const costOf = i => S.captureCost({ owner: W.owner, def: W.def, nb: G.nbOf, sid: mySid(), cell: i, grade: me.grade, escape: exits });
+  const needToTake = i => { const c = costOf(i); return c.error ? Math.max(S.BASE_COST, W.def[i]) : c.cost; };
 
   // ---------- 소리 (파일 없이 직접 만든 효과음) ----------
   const Sound = (() => {
@@ -124,24 +125,70 @@
     const boxOf = rings => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of rings) for (let k = 0; k < r.length; k += 2) { x0 = Math.min(x0, r[k]); x1 = Math.max(x1, r[k]); y0 = Math.min(y0, r[k + 1]); y1 = Math.max(y1, r[k + 1]); } return [x0, y0, x1, y1]; };
     G = { W: m.W, H: m.H, n: m.n, sides: m.sides, routes: m.routes, schoolCount: m.schoolCount };
     SPACING = m.spacing || 150;
-    G.rings = new Array(m.n);
-    for (let i = 0; i < m.n; i++) {
-      G.rings[i] = m.cells[i].map(S.decodeRing);
-      if (i % 15000 === 14999) await new Promise(r => setTimeout(r, 0)); // 화면이 멈추지 않게 쉬어 간다
+    // map.bin: 칸 모양을 작게 줄여 둔 파일 (만드는 법은 lib/mapgen.js 의 encodeBin).
+    // 50만 칸을 칸마다 따로 담으면 메모리가 너무 커서, 꼭짓점을 큰 배열 하나(G.xy)에 이어 담는다:
+    // 고리 r 의 좌표 = G.xy[G.ro[r] .. G.ro[r + 1]), 칸 i 의 고리 = G.cr[i] .. G.cr[i + 1] - 1
+    const br = await fetch(window.MLE_MAP_BIN_URL || '/api/map.bin');
+    if (!br.ok) throw new Error('지도를 받을 수 없어요.');
+    const buf = new Uint8Array(await br.arrayBuffer()), n = new DataView(buf.buffer).getUint32(4, true);
+    if (n !== m.n) throw new Error('지도 파일이 서로 맞지 않아요. 새로고침 해 주세요.');
+    G.sides = buf.slice(8, 8 + n);
+    let p = 8 + n, px = 0, py = 0, nr = 0, nx = 0, ro = new Int32Array(n + (n >> 2) + 16);
+    const xy = new Int32Array(buf.length), cr = new Int32Array(n + 1);
+    const u = () => { let v = 0, sh = 0, b; do { b = buf[p++]; v += (b & 0x7f) * 2 ** sh; sh += 7; } while (b & 0x80); return v; };
+    const z = () => { const v = u(); return v % 2 ? -(v + 1) / 2 : v / 2; };
+    for (let i = 0; i < n; i++) {
+      const rc = u();
+      cr[i] = nr;
+      for (let k = 0; k < rc; k++) {
+        if (nr + 2 > ro.length) { const t = new Int32Array(ro.length * 2); t.set(ro); ro = t; }
+        const L = u();
+        ro[nr++] = nx;
+        let x = (px += z()), y = (py += z());
+        xy[nx++] = x; xy[nx++] = y;
+        for (let q = 1; q < L; q++) { x += z(); y += z(); xy[nx++] = x; xy[nx++] = y; }
+      }
+      if (i % 50000 === 49999) await new Promise(r => setTimeout(r, 0)); // 화면이 멈추지 않게 쉬어 간다
     }
-    // 이웃한 땅은 칸 모양으로 직접 계산한다 (서버와 같은 방법) + 섬 뱃길
-    G.nb = S.neighborsFromRings(G.rings);
-    for (const [a, b] of m.routes) { G.nb[a].push(b); G.nb[b].push(a); }
+    cr[n] = nr; ro[nr] = nx;
+    G.xy = xy.slice(0, nx); G.ro = ro.slice(0, nr + 1); G.cr = cr;
+    $('#loadMsg').textContent = `이웃한 땅 ${m.n.toLocaleString()}칸을 잇는 중…`;
+    await new Promise(r => setTimeout(r, 0));
+    // 이웃한 땅은 칸 모양으로 직접 계산한다 (서버와 같은 방법) + 섬 뱃길. 칸끼리 함께 쓰는 변은 지역 경계선에도 쓴다.
+    const eachRing = (c, visit) => { for (let r = G.cr[c]; r < G.cr[c + 1]; r++) visit(G.xy, G.ro[r], G.ro[r + 1]); };
+    let ec = new Int32Array(1 << 20), es = new Int32Array(1 << 22), ne = 0;
+    S.sharedEdges(n, eachRing, (c, o, x1, y1, x2, y2) => {
+      if (2 * ne + 2 > ec.length) { const t = new Int32Array(ec.length * 2); t.set(ec); ec = t; const t2 = new Int32Array(es.length * 2); t2.set(es); es = t2; }
+      ec[2 * ne] = c; ec[2 * ne + 1] = o; es[4 * ne] = x1; es[4 * ne + 1] = y1; es[4 * ne + 2] = x2; es[4 * ne + 3] = y2; ne++;
+    });
+    G.edges = { c: ec, s: es, n: ne }; // computeRegions 가 경계선을 만든 뒤 버린다
+    const off = new Int32Array(n + 1), pairs = ne + m.routes.length;
+    const pa = k => (k < ne ? ec[2 * k] : m.routes[k - ne][0]), pb = k => (k < ne ? ec[2 * k + 1] : m.routes[k - ne][1]);
+    for (let k = 0; k < pairs; k++) { off[pa(k) + 1]++; off[pb(k) + 1]++; }
+    for (let i = 0; i < n; i++) off[i + 1] += off[i];
+    const pos = off.slice(0, n), idx = new Int32Array(off[n]);
+    for (let k = 0; k < pairs; k++) { const a = pa(k), b = pb(k); idx[pos[a]++] = b; idx[pos[b]++] = a; }
+    let wr = 0; // 같은 이웃이 두 번 들어간 것을 빼며 앞으로 당긴다
+    for (let i = 0; i < n; i++) {
+      const s0 = off[i], e0 = off[i + 1];
+      off[i] = wr;
+      for (let k = s0; k < e0; k++) { const v = idx[k]; let dup = false; for (let q = off[i]; q < wr; q++) if (idx[q] === v) { dup = true; break; } if (!dup) idx[wr++] = v; }
+    }
+    off[n] = wr;
+    G.nbOff = off; G.nbIdx = idx.slice(0, wr);
+    G.nbOf = i => G.nbIdx.subarray(G.nbOff[i], G.nbOff[i + 1]);
     G.paths = new Array(m.n);
     G.box = new Float32Array(m.n * 4);
-    G.rings.forEach((rs, i) => G.box.set(boxOf(rs), i * 4));
     G.sx = new Float32Array(m.n); G.sy = new Float32Array(m.n);
-    for (let i = 0; i < m.n; i++) { // 학교 칸은 학교 자리, 나머지는 칸 가운데
-      if (i < m.schoolCount) { G.sx[i] = m.seeds[2 * i]; G.sy[i] = m.seeds[2 * i + 1]; continue; }
-      const r = G.rings[i][0];
+    for (let i = 0; i < n; i++) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let k = G.ro[G.cr[i]]; k < G.ro[G.cr[i + 1]]; k += 2) { const x = G.xy[k], y = G.xy[k + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      G.box[4 * i] = x0; G.box[4 * i + 1] = y0; G.box[4 * i + 2] = x1; G.box[4 * i + 3] = y1;
+      if (i < m.schoolCount) { G.sx[i] = m.seeds[2 * i]; G.sy[i] = m.seeds[2 * i + 1]; continue; } // 학교 칸은 학교 자리, 나머지는 첫 고리 가운데
+      const a = G.ro[G.cr[i]], b = G.ro[G.cr[i] + 1];
       let x = 0, y = 0;
-      for (let k = 0; k < r.length; k += 2) { x += r[k]; y += r[k + 1]; }
-      G.sx[i] = x / (r.length / 2); G.sy[i] = y / (r.length / 2);
+      for (let k = a; k < b; k += 2) { x += G.xy[k]; y += G.xy[k + 1]; }
+      G.sx[i] = x / ((b - a) / 2); G.sy[i] = y / ((b - a) / 2);
     }
     if (window.MLEBackend) { $('#loadMsg').textContent = '친구들과 함께 쓰는 지도에 연결하는 중…'; await window.MLEBackend.init(m, G); }
     G.land = m.land.map(dec);
@@ -183,40 +230,29 @@
       if (di === undefined) { di = dongs.length; dIdx.set(dk, di); dongs.push({ name: s.dong || s.sigungu, up: gi }); }
       if (dong[i] < 0) { dong[i] = di; queue[qt++] = i; }
     }
-    while (qh < qt) { const c = queue[qh++]; for (const m of G.nb[c]) if (dong[m] < 0) { dong[m] = dong[c]; queue[qt++] = m; } }
+    while (qh < qt) { const c = queue[qh++]; for (const m of G.nbOf(c)) if (dong[m] < 0) { dong[m] = dong[c]; queue[qt++] = m; } }
     const sgg = new Int32Array(n), sido = new Int32Array(n);
     for (let i = 0; i < n; i++) { const d = dong[i] < 0 ? 0 : dong[i]; dong[i] = d; sgg[i] = dongs[d].up; sido[i] = sggs[sgg[i]].up; }
     // 이름표 자리: 지역 안에서 경계로부터 가장 깊숙한 칸 (경기도 이름이 서울 위에 뜨지 않게)
     const place = (of, list) => {
       const depth = new Int32Array(n).fill(-1);
       qh = qt = 0;
-      for (let i = 0; i < n; i++) if (!G.sides[i] || G.nb[i].some(m => of[m] !== of[i])) { depth[i] = 0; queue[qt++] = i; } // 바닷가도 경계로 본다 (섬에 이름이 뜨지 않게)
-      while (qh < qt) { const c = queue[qh++]; for (const m of G.nb[c]) if (depth[m] < 0) { depth[m] = depth[c] + 1; queue[qt++] = m; } }
+      for (let i = 0; i < n; i++) if (!G.sides[i] || G.nbOf(i).some(m => of[m] !== of[i])) { depth[i] = 0; queue[qt++] = i; } // 바닷가도 경계로 본다 (섬에 이름이 뜨지 않게)
+      while (qh < qt) { const c = queue[qh++]; for (const m of G.nbOf(c)) if (depth[m] < 0) { depth[m] = depth[c] + 1; queue[qt++] = m; } }
       const best = new Int32Array(list.length).fill(-1);
       for (let i = 0; i < n; i++) { const r = of[i], b = best[r]; if (b < 0 || depth[i] > depth[b]) best[r] = i; }
       list.forEach((r, k) => { const c = best[k]; r.x = c >= 0 ? G.sx[c] : 0; r.y = c >= 0 ? G.sy[c] : 0; r.size = c >= 0 ? depth[c] : 0; });
     };
     place(dong, dongs); place(sgg, sggs); place(sido, sidos);
     // 경계선: 서로 다른 지역의 칸이 함께 쓰는 변
-    const vid = new Map(), edges = new Map(), seg = [], lev = [];
-    let nv = 0;
-    const id = (x, y) => { const k = (x + 65536) * 262144 + (y + 65536); let v = vid.get(k); if (v === undefined) { v = nv++; vid.set(k, v); } return v; };
-    for (let c = 0; c < n; c++) for (const r of G.rings[c]) {
-      const L = r.length >> 1;
-      let pk = L - 1, prev = id(r[2 * pk], r[2 * pk + 1]);
-      for (let k = 0; k < L; k++) {
-        const v = id(r[2 * k], r[2 * k + 1]);
-        if (v !== prev) {
-          const key = v < prev ? v * 4194304 + prev : prev * 4194304 + v, o = edges.get(key);
-          if (o === undefined) edges.set(key, c);
-          else if (o !== c && dong[o] !== dong[c]) {
-            seg.push(r[2 * pk], r[2 * pk + 1], r[2 * k], r[2 * k + 1]);
-            lev.push(sido[o] !== sido[c] ? 0 : sgg[o] !== sgg[c] ? 1 : 2);
-          }
-        }
-        prev = v; pk = k;
-      }
+    const E = G.edges, seg = [], lev = [];
+    for (let k = 0; k < E.n; k++) {
+      const c = E.c[2 * k], o = E.c[2 * k + 1];
+      if (dong[o] === dong[c]) continue;
+      seg.push(E.s[4 * k], E.s[4 * k + 1], E.s[4 * k + 2], E.s[4 * k + 3]);
+      lev.push(sido[o] !== sido[c] ? 0 : sgg[o] !== sgg[c] ? 1 : 2);
     }
+    delete G.edges;
     G.seg = new Float32Array(seg); G.segLev = new Uint8Array(lev);
     G.segIndex = Array.from({ length: G.ibw * G.ibh }, () => []);
     for (let k = 0; k < lev.length; k++) {
@@ -278,7 +314,8 @@
   function hitTest(x, y) {
     for (const i of cellsIn(x, y, x, y)) {
       let inside = false;
-      for (const r of G.rings[i]) for (let a = 0, b = r.length - 2; a < r.length; b = a, a += 2) {
+      const r = G.xy;
+      for (let q = G.cr[i]; q < G.cr[i + 1]; q++) for (let s0 = G.ro[q], e0 = G.ro[q + 1], a = s0, b = e0 - 2; a < e0; b = a, a += 2) {
         if ((r[a + 1] > y) !== (r[b + 1] > y) && x < ((r[b] - r[a]) * (y - r[a + 1])) / (r[b + 1] - r[a + 1]) + r[a]) inside = !inside;
       }
       if (inside) return i;
@@ -336,7 +373,7 @@
     token = d.token;
     store.set('mle_token', token);
     me = d.user;
-    Object.assign(cheat, { unlocked: false, capture: false, defend: false });
+    Object.assign(cheat, { unlocked: me.role === 'dev', capture: false, defend: false }); // 개발자는 버그 창이 처음부터 열려 있다
     route();
   }
   function route() {
@@ -469,9 +506,11 @@
     const d = await api('/api/schools');
     mergeCustom(d.custom);
     const p = me.profile || {}, m = new Date().getMonth(), cur = p.schoolId != null ? schools[p.schoolId] : null;
-    $('#stGrade').innerHTML = `<b>${me.grade}학년</b> <span class="muted">(${me.birthYear}년생 · 나이 인증으로 정해졌어요 · ${me.grade}학년 서버)</span>`;
+    $('#stGrade').innerHTML = me.role ? `<b>${me.grade}학년 서버</b> <span class="muted">(${S.ROLE_NICK[me.role]} 계정 · 🛠️ 관리 창에서 학년 서버를 바꿀 수 있어요)</span>`
+      : `<b>${me.grade}학년</b> <span class="muted">(${me.birthYear}년생 · 나이 인증으로 정해졌어요 · ${me.grade}학년 서버)</span>`;
     setSemester(p.semester || (m >= 1 && m <= 6 ? 1 : 2));
-    $('#stNick').value = p.nickname || '';
+    $('#stNick').value = me.role ? S.ROLE_NICK[me.role] : p.nickname || '';
+    $('#stNick').readOnly = !!me.role;
     $('#stSearch').value = '';
     $('#stCustom').hidden = true;
     $('#stCName').value = $('#stCDong').value = $('#stCUrl').value = '';
@@ -489,6 +528,7 @@
   let SPACING = 150;
   const tiles = new Map();
   let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set(), owned = new Set();
+  let exits = new Set(), exitLines = [], offerOf = new Map(); // 탈출길, 팔려고 내놓은 땅
   const NEUTRAL = [196, 201, 208], MINE = [255, 193, 7];
   const colorCache = new Map();
   const baseS = () => TILE / Math.max(G.W, G.H);
@@ -517,7 +557,8 @@
     let p = G.paths[i];
     if (!p) {
       p = G.paths[i] = new Path2D();
-      for (const r of G.rings[i]) { p.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) p.lineTo(r[k], r[k + 1]); p.closePath(); }
+      const r = G.xy;
+      for (let q = G.cr[i]; q < G.cr[i + 1]; q++) { const a = G.ro[q], b = G.ro[q + 1]; p.moveTo(r[a], r[a + 1]); for (let k = a + 2; k < b; k += 2) p.lineTo(r[k], r[k + 1]); p.closePath(); }
     }
     return p;
   }
@@ -668,6 +709,23 @@
       ctx.fill(fp); ctx.stroke(fp);
       ctx.setLineDash([]);
     }
+    if (calm && exitLines.length) { // 갇혔을 때 가장 가까운 빈 땅으로 가는 탈출길
+      const ep = new Path2D();
+      for (const i of exits) if (vis(i)) ep.addPath(pathOf(i));
+      ctx.setLineDash([8 / s, 6 / s]); ctx.lineDashOffset = animate ? -(now / 40) / s : 0;
+      ctx.fillStyle = 'rgba(16,185,129,.28)'; ctx.fill(ep);
+      ctx.lineWidth = 3 / s; ctx.strokeStyle = 'rgba(5,150,105,.95)'; ctx.stroke(ep);
+      ctx.beginPath();
+      for (const [a, b] of exitLines) { ctx.moveTo(G.sx[a], G.sy[a]); ctx.lineTo(G.sx[b], G.sy[b]); }
+      ctx.lineWidth = Math.max(2.5 / s, 3); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (calm && offerOf.size && cp >= 3) { // 팔려고 내놓은 땅
+      const op = new Path2D();
+      for (const i of offerOf.keys()) if (vis(i)) op.addPath(pathOf(i));
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fill(op);
+      ctx.setLineDash([5 / s, 4 / s]); ctx.lineWidth = 2.5 / s; ctx.strokeStyle = 'rgba(147,51,234,.95)'; ctx.stroke(op); ctx.setLineDash([]);
+    }
     flashes = flashes.filter(f => now - f.t < 1000);
     for (const f of flashes) {
       const a = 1 - (now - f.t) / 1000;
@@ -697,6 +755,11 @@
       }
     }
     const my = mySid();
+    if (calm && cp >= 8) { // 🏷️ 팔 땅, 🚪 탈출길 글자
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(Math.min(18, 8 + cp * 0.15))}px sans-serif`;
+      for (const i of offerOf.keys()) if (vis(i)) ctx.fillText('🏷️', SX(G.sx[i]), SY(G.sy[i]));
+      for (const i of exits) if (vis(i)) ctx.fillText('🚪', SX(G.sx[i]), SY(G.sy[i]));
+    }
     if (cp >= 11 && (calm || !fast)) {
       for (let sid = 0; sid < W.home.length; sid++) {
         const h = W.home[sid];
@@ -715,7 +778,7 @@
     const spent = performance.now() - now;
     if (!fast && spent > 45 && ++slow >= 8) setFast(true, true);
     if (more || flashes.length) requestDraw();
-    else if (animate && (myVis || (cp >= 16 && frontier.size)) && !ambient) ambient = setTimeout(() => { ambient = 0; requestDraw(); }, 90); // 반짝이는 표시는 천천히
+    else if (animate && (myVis || exitLines.length || (cp >= 16 && frontier.size)) && !ambient) ambient = setTimeout(() => { ambient = 0; requestDraw(); }, 90); // 반짝이는 표시는 천천히
   }
   function shield(x, y, r) {
     ctx.beginPath();
@@ -862,18 +925,23 @@
     const box = $('#popup');
     if (sel < 0 || !W) { box.hidden = true; return; }
     const i = sel, o = W.owner[i], d = W.def[i], hs = W.homeCell[i], my = mySid(), mine = o === my;
-    const adj = G.nb[i].some(n => W.owner[n] === my);
+    const cost = !mine && hs < 0 ? costOf(i) : {}, off = offerOf.get(i);
     const near = hs >= 0 ? schools[hs] : nearestSchool(G.sx[i], G.sy[i]), dist = near && near.dong ? near : nearestDistrict(G.sx[i], G.sy[i]);
     const shape = G.sides[i] ? SHAPE[G.sides[i]] || '다각형' : '바닷가';
     const title = hs >= 0 ? (mine ? '🏫 우리 학교 본부' : `🏫 ${schools[hs].name}`) : o < 0 ? `⬜ ${shape} 빈 땅` : mine ? `⭐ 우리 학교 ${shape} 땅` : `🚩 ${short(o)}의 ${shape} 땅`;
-    const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : !adj ? '노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요.' : '';
+    const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : cost.error ? `노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요. (${S.FAR_GRADE}학년부터는 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏어요)` : '';
     const defWhy = !mine ? '우리 학교 땅만 방어할 수 있어요.' : hs >= 0 ? '본부는 언제나 안전해요.' : d >= 99 ? '방어가 가장 높아요(99).' : '';
     let ownedN = 0;
     if (o >= 0) for (const k of owned) if (W.owner[k] === o) ownedN++;
     const tags = [`<span class="tag">📍 ${esc(dist.sido)} ${esc(dist.sigungu)}${dist.dong ? ' ' + esc(dist.dong) : ''}${hs < 0 ? ' 근처' : ''}</span>`];
     if (o >= 0 && !mine) tags.push(`<span class="tag" style="--c:${cssColor(o)}">🚩 ${esc(schools[o].name)} · ${ownedN}칸</span>`);
     if (o >= 0 && hs < 0) tags.push(`<span class="tag">🛡️ 방어 <b>${d}</b></span>`);
-    if (!mine && hs < 0) tags.push(`<span class="tag hot">⚔️ 문제 <b>${needToTake(i)}개</b> 풀면 뺏어요</span>`);
+    if (!mine && hs < 0 && !cost.error) tags.push(`<span class="tag hot">${cost.far ? '🚀 멀리 있는 땅 · ' : cost.escape ? '🚪 탈출길 · ' : '⚔️ '}문제 <b>${cost.cost}개</b> 풀면 뺏어요</span>`);
+    if (off) tags.push(`<span class="tag" style="--c:#9333ea">🏷️ ${esc(short(off.from))} → ${esc(short(off.to))}에 판 땅 ${off.cells.length}칸</span>`);
+    const deal = off && off.to === my ? `<button type="button" class="btn buy" id="btnBuy">🛒 땅 사기 (${off.cells.length}칸 · 문제 없이)</button>`
+      : off && off.from === my ? `<button type="button" class="link-btn" id="btnUnsell">🏷️ 땅 팔기 취소</button>` : '';
+    const sellBtn = mine && hs < 0 ? `<button type="button" class="link-btn" id="btnSell">🏷️ 땅 팔기</button>` : '';
+    const admin = me.role ? `<div class="popup-links admin"><b>🛠️</b>${hs < 0 && o >= 0 ? '<button type="button" class="link-btn" data-adm="clearCell">🧹 이 땅 비우기</button>' : ''}${o >= 0 ? '<button type="button" class="link-btn" data-adm="clearSchool">🧹 이 학교 땅 모두 비우기</button>' : ''}${o >= G.schoolCount ? '<button type="button" class="link-btn" data-adm="hideSchool">🗑️ 가짜 학교 지우기</button>' : ''}</div>` : '';
     box.innerHTML = `
       <div class="popup-head"><b>${esc(title)}</b><button type="button" class="icon-btn" id="popClose">✕</button></div>
       <div class="popup-info">${tags.join('')}</div>
@@ -881,9 +949,14 @@
         <button type="button" class="btn attack" id="btnAtk" ${atkWhy ? 'disabled' : ''}>⚔️ 땅 뺏기</button>
         <button type="button" class="btn defend" id="btnDef" ${defWhy ? 'disabled' : ''}>🛡️ 땅 방어하기</button>
       </div>
-      ${(mine ? defWhy : atkWhy) ? `<div class="why">${esc(mine ? defWhy : atkWhy)}</div>` : ''}
-      ${o >= 0 ? `<div class="popup-links"><button type="button" class="link-btn" id="btnInfo">🏫 ${esc(short(hs >= 0 ? hs : o))} 정보</button>${homeLink(hs >= 0 ? hs : o)}</div>` : ''}`;
+      ${deal ? `<div class="popup-btns">${deal}</div>` : ''}
+      ${(mine ? defWhy : atkWhy) && !deal ? `<div class="why">${esc(mine ? defWhy : atkWhy)}</div>` : ''}
+      ${o >= 0 ? `<div class="popup-links"><button type="button" class="link-btn" id="btnInfo">🏫 ${esc(short(hs >= 0 ? hs : o))} 정보</button>${sellBtn}${homeLink(hs >= 0 ? hs : o)}</div>` : ''}${admin}`;
     box.hidden = false;
+    if ($('#btnBuy')) $('#btnBuy').onclick = async () => { const r = await api('/api/buy', { id: off.id }); if (r.offers) setOffers(r.offers); afterAction(r, `🛒 ${short(off.from)}의 땅 ${r.cells ? r.cells.length : 0}칸을 샀어요!`, i, 'capture'); };
+    if ($('#btnUnsell')) $('#btnUnsell').onclick = async () => { const r = await api('/api/sell/cancel', { id: off.id }); if (r.error) return toast(r.error, 'err'); setOffers(r.offers); toast('땅 팔기를 취소했어요.', 'ok'); };
+    if ($('#btnSell')) $('#btnSell').onclick = () => openSell(i);
+    $$('#popup [data-adm]').forEach(b => { b.onclick = () => adminAct({ act: b.dataset.adm, cell: i, sid: hs >= 0 ? hs : o }, b); });
     if ($('#btnInfo')) $('#btnInfo').onclick = () => openSchool(hs >= 0 ? hs : o);
     $('#popClose').onclick = () => select(-1);
     $('#btnAtk').onclick = () => doAttack(i);
@@ -980,6 +1053,69 @@
     };
   }
 
+  // ---------- 땅 팔기 ----------
+  let sellCell = -1, sellTo = -1;
+  function openSell(i) {
+    sellCell = i; sellTo = -1;
+    const my = mySid(), near = new Map(); // 우리 땅과 닿아 있는 학교
+    for (const k of owned) if (W.owner[k] === my) for (const n of G.nbOf(k)) { const o = W.owner[n]; if (o >= 0 && o !== my) near.set(o, (near.get(o) || 0) + 1); }
+    const far = me.grade >= S.FAR_GRADE;
+    $('#sellRule').innerHTML = far ? `${me.grade}학년은 <b>멀리 있는 학교</b>에도 팔 수 있어요.` : '3학년까지는 <b>우리 땅과 닿아 있는 학교</b>에만 팔 수 있어요.';
+    $('#sellFind').hidden = !far; $('#sellFind').value = '';
+    const render = () => {
+      const q = $('#sellFind').value.trim(), ids = q ? searchSchools(q, 20).map(sc => sc.id).filter(id => id !== my && W.home[id] >= 0) : [...near.keys()];
+      $('#sellList').innerHTML = ids.length ? ids.map(id => `<button type="button" class="chip ${id === sellTo ? 'on' : ''}" data-sid="${id}"><i class="sw" style="background:${cssColor(id)}"></i>${esc(short(id))}${near.has(id) ? ' · 닿음' : ''}</button>`).join('') : `<div class="muted">${q ? '찾는 학교가 없어요.' : '우리 땅과 닿아 있는 다른 학교가 없어요.'}</div>`;
+      const n = +$('#sellNum').value;
+      $('#sellInfo').innerHTML = sellTo >= 0 ? `🏷️ <b>${esc(short(sellTo))}</b>에 이 땅부터 이어진 우리 땅 <b>${n}칸</b>을 팔아요.<br>${esc(short(sellTo))} 친구가 <b>🛒 땅 사기</b>를 누르면 문제 없이 가져가요.` : '땅을 살 학교를 골라 주세요.';
+      $('#sellGo').disabled = sellTo < 0;
+    };
+    $('#sellFind').oninput = render;
+    $('#sellList').onclick = e => { const b = e.target.closest('[data-sid]'); if (b) { sellTo = +b.dataset.sid; render(); } };
+    const setN = v => { $('#sellNum').value = Math.max(1, Math.min(30, Math.round(v) || 1)); render(); };
+    $('#sellMinus').onclick = () => setN(+$('#sellNum').value - 1);
+    $('#sellPlus').onclick = () => setN(+$('#sellNum').value + 1);
+    $('#sellNum').oninput = () => setN(+$('#sellNum').value);
+    $('#sellGo').onclick = async () => {
+      const r = await api('/api/sell', { cell: sellCell, to: sellTo, count: +$('#sellNum').value });
+      if (r.error) return toast(r.error, 'err');
+      closeM('sellModal');
+      setOffers(r.offers);
+      toast(`🏷️ ${short(sellTo)}에 땅 ${r.offer.cells.length}칸을 내놓았어요!`, 'ok');
+    };
+    render();
+    openM('sellModal');
+  }
+
+  // ---------- 운영자 관리 ----------
+  let resetAsk = 0;
+  async function adminAct(body, btn) {
+    if ((body.act === 'resetWorld' || body.act === 'hideSchool' || body.act === 'clearSchool') && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
+      resetAsk = Date.now();
+      return toast('정말 할까요? 3초 안에 한 번 더 누르세요.', 'warn');
+    }
+    resetAsk = 0;
+    if (btn) btn.disabled = true;
+    const r = await api('/api/admin', body);
+    if (btn) btn.disabled = false;
+    if (r.error) return toast(r.error, 'err');
+    if (r.user) { me = r.user; closeM('adminModal'); toast(`🌐 ${me.grade}학년 서버로 옮겼어요.`, 'ok'); return me.profile ? startGame() : openSetup(); }
+    if (r.cells && r.cells.length) applyCells(r.cells, true);
+    if (body.act === 'hideSchool') { delete schools[body.sid]; await loadWorld(); updateBoard(); renderMini(); requestDraw(); select(-1); }
+    if (body.act === 'clearChat') clearChat();
+    toast(body.act === 'notice' ? '📢 공지를 보냈어요.' : `🛠️ 처리했어요${r.n ? ` (${r.n}칸)` : ''}.`, 'ok');
+  }
+  function initAdmin() {
+    $('#btnAdmin').onclick = () => {
+      $('#admGrades').innerHTML = [1, 2, 3, 4, 5, 6].map(g => `<button type="button" class="chip ${g === me.grade ? 'on' : ''}" data-g="${g}">${g}학년</button>`).join('');
+      $('#admWho').textContent = `${S.ROLE_NICK[me.role]} · 지금 ${me.grade}학년 서버`;
+      openM('adminModal');
+    };
+    $('#admGrades').onclick = e => { const b = e.target.closest('[data-g]'); if (b && +b.dataset.g !== me.grade) adminAct({ act: 'grade', grade: +b.dataset.g }); };
+    $('#admNoticeGo').onclick = async () => { await adminAct({ act: 'notice', text: $('#admNotice').value }); $('#admNotice').value = ''; };
+    $('#admChat').onclick = e => adminAct({ act: 'clearChat' }, e.currentTarget);
+    $('#admReset').onclick = e => adminAct({ act: 'resetWorld' }, e.currentTarget);
+  }
+
   // ---------- 문제 풀기 ----------
   let quiz = null;
   const coarse = matchMedia('(pointer: coarse)').matches;
@@ -1045,13 +1181,26 @@
       streak = 0;
       renderStreak();
       Sound.play('bad');
-      feedback(res === 'simplest' ? '🤏 거의 맞았어요! 더 이상 약분할 수 없게(기약분수로) 써 주세요.' : '❌ 틀렸어요! 다시 풀어 보세요.', 'bad');
       $('#qzHintBtn').hidden = false;
-      if (!quiz.fixed && !quiz.noted) { // 처음 틀린 문제는 오답 노트에
+      if (res === 'simplest') return feedback('🤏 거의 맞았어요! 더 이상 약분할 수 없게(기약분수로) 써 주세요.', 'bad');
+      if (!quiz.fixed && !quiz.noted) { // 틀린 문제는 오답 노트에
         quiz.noted = true;
         const { q, a, hint, unit, frac, simplest, choices } = quiz.p;
         api('/api/wrong', { p: { q, a, hint, unit, frac, simplest, choices }, given: String(v).slice(0, 30) }).then(r => { if (r.count != null) setWrongCount(r.count); });
       }
+      if (!quiz.fixed) { // 틀리면 한 단계 뒤로 가고, 같은 문제가 아닌 새 문제를 푼다
+        quiz.busy = true;
+        const back = quiz.solved > 0;
+        if (back) quiz.solved--;
+        $('#qzCount').textContent = `문제 ${quiz.solved + 1} / ${quiz.total}`;
+        $('#qzBar').style.width = (quiz.solved / quiz.total) * 100 + '%';
+        feedback(`❌ 틀렸어요! 정답은 ${P.answerText(quiz.p)}${back ? ' · 한 단계 뒤로 가요' : ''}`, 'bad');
+        $('#qzPad').hidden = true;
+        $('#qzAnswer').innerHTML = '<button type="button" class="btn primary big" id="qzNew">🔄 새 문제 풀기</button>';
+        $('#qzNew').onclick = nextProblem;
+        return;
+      }
+      feedback('❌ 틀렸어요! 다시 풀어 보세요.', 'bad');
       const el = $('#qzInput');
       if (el) { if (!coarse) el.select(); el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
     }
@@ -1162,8 +1311,15 @@
     if (d.stats) me.stats = d.stats;
     colorCache.clear();
     tiles.clear();
+    setOffers(d.offers || [], true);
     computeFrontier();
     return d;
+  }
+  function setOffers(items, quiet) {
+    W.offers = items || [];
+    offerOf = new Map();
+    for (const o of W.offers) for (const c of o.cells) if (W.owner[c] === o.from) offerOf.set(c, o);
+    if (!quiet) { requestDraw(); if (sel >= 0) renderPopup(); }
   }
   async function startGame() {
     show('game');
@@ -1205,7 +1361,10 @@
     if (!W) return;
     if (m.t === 'online') { online = m.n; hud(); return; }
     if (m.t === 'chat') { chatLine(m); if (m.sid !== mySid() && m.ch === 'school') Sound.play('tap'); return; }
+    if (m.t === 'chatClear') return clearChat();
+    if (m.t === 'offers') { setOffers(m.items); if (m.ev) feed(m.ev); return; }
     if (m.t !== 'upd') return;
+    if (m.reload) { loadWorld().then(ok => { if (ok) { updateBoard(); renderPopup(); renderMini(); requestDraw(); } }); if (m.ev) feed(m.ev); return; }
     if (m.school) { schools[m.school.id] = m.school; W.home[m.school.id] = m.home; if (m.home >= 0) W.homeCell[m.home] = m.school.id; }
     if (m.cells) {
       applyCells(m.cells);
@@ -1221,6 +1380,7 @@
       if (o >= 0) owned.add(i); else owned.delete(i);
       invalidateCell(i);
     }
+    if (W.offers && W.offers.length) setOffers(W.offers, true);
     computeFrontier();
     requestDraw();
     scheduleBoard();
@@ -1233,16 +1393,32 @@
     frontier = new Set();
     for (let i = 0; i < G.n; i++) {
       if (W.owner[i] !== my) continue;
-      for (const n of G.nb[i]) if (W.owner[n] !== my && W.homeCell[n] < 0) frontier.add(n);
+      for (const n of G.nbOf(i)) if (W.owner[n] !== my && W.homeCell[n] < 0) frontier.add(n);
+    }
+    // 둘레에 빈 땅이 하나도 없으면(다른 학교 땅·본부에 갇히면) 가장 가까운 빈 땅이 탈출길이 된다
+    exits = new Set(S.escapeCells(W.owner, G.nbOf, my));
+    exitLines = [];
+    for (const e of exits) {
+      let best = -1, bd = Infinity;
+      for (const k of owned) if (W.owner[k] === my) { const d = (G.sx[k] - G.sx[e]) ** 2 + (G.sy[k] - G.sy[e]) ** 2; if (d < bd) { bd = d; best = k; } }
+      if (best >= 0) exitLines.push([best, e]);
     }
   }
+  function clearChat() { $$('#feed li.chat').forEach(li => li.remove()); }
   function feed(ev) {
     const my = mySid(), who = `${ev.by}(${short(ev.sid)})`;
     let txt, cls = ev.sid === my ? 'mine' : '';
     if (ev.kind === 'capture') txt = ev.prev >= 0 ? `⚔️ ${who}님이 ${short(ev.prev)}의 땅을 빼앗았어요!` : `🌱 ${who}님이 빈 땅을 차지했어요.`;
     else if (ev.kind === 'defend') txt = `🛡️ ${who}님이 땅을 방어했어요 (+${ev.amount})`;
     else if (ev.kind === 'join') txt = `🏫 ${short(ev.sid)}가 지도에 나타났어요!`;
+    else if (ev.kind === 'sell') {
+      txt = `🏷️ ${who}님이 ${short(ev.to)}에 땅 ${ev.n}칸을 팔려고 내놓았어요`;
+      if (ev.to === my && ev.sid !== my) { cls = 'alert'; toast(`🏷️ ${short(ev.sid)}가 우리 학교에 땅 ${ev.n}칸을 팔았어요! 🏷️ 땅을 눌러 '땅 사기'를 하세요.`, 'ok'); Sound.play('unlock'); }
+    } else if (ev.kind === 'buy') txt = `🛒 ${who}님이 ${short(ev.from)}의 땅 ${ev.n}칸을 샀어요`;
+    else if (ev.kind === 'notice') { txt = `📢 ${ev.by} 공지: ${ev.text}`; cls = 'alert'; toast(`📢 ${ev.text}`, 'warn'); }
+    else if (ev.kind === 'admin') { txt = `🛠️ ${ev.by}: ${ev.text}`; if (ev.chatClear) clearChat(); }
     else return;
+    if (ev.kind === 'capture' && (ev.far || ev.escape)) txt = `${ev.far ? '🚀' : '🚪'} ${who}님이 ${ev.far ? '멀리 있는' : '탈출길'} 땅을 차지했어요!`;
     if (ev.kind === 'capture' && ev.prev === my && ev.sid !== my) { cls = 'alert'; toast(`😱 ${short(ev.sid)}에게 우리 땅을 빼앗겼어요!`, 'warn'); Sound.play('lose'); }
     const li = document.createElement('li');
     li.innerHTML = `<span class="t">${new Date().toTimeString().slice(0, 5)}</span>${esc(txt)}`;
@@ -1259,6 +1435,7 @@
     $('#hudSchool').textContent = short(mySid());
     $('#hudUser').textContent = `😀 ${me.profile.nickname} · ${me.grade}-${me.profile.semester}`;
     $('#cheatBadge').hidden = !(cheat.capture || cheat.defend);
+    $('#btnAdmin').hidden = !me.role;
     $('#btnSound').textContent = Sound.on ? '🔊' : '🔇';
   }
   let boardTimer = null;
@@ -1272,7 +1449,7 @@
     const medal = k => ['🥇', '🥈', '🥉'][k] || k + 1;
     $('#board').innerHTML = arr.slice(0, 10).map(([sid, n], k) =>
       `<li class="${sid === my ? 'me' : ''}" data-sid="${sid}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(sid)}"></i><span class="nm">${esc(short(sid))}</span><b>${n}</b></li>`).join('');
-    $('#myRank').innerHTML = `⭐ 우리 학교 <b>${rank || '-'}위</b> · 땅 <b>${mine}</b>칸 · 뺏을 수 있는 땅 <b>${frontier.size}</b>칸`;
+    $('#myRank').innerHTML = `⭐ 우리 학교 <b>${rank || '-'}위</b> · 땅 <b>${mine}</b>칸 · 뺏을 수 있는 땅 <b>${frontier.size}</b>칸` + (exits.size ? '<br>🚪 빈 땅이 막혔어요! 초록 점선 <b>탈출길</b>로 빠져나가요.' : '') + (me.grade >= S.FAR_GRADE ? `<br>🚀 ${S.FAR_GRADE}학년부터: 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏을 수 있어요.` : '');
     $('#hudLand').textContent = mine;
     $('#hudRank').textContent = rank || '-';
   }
@@ -1292,12 +1469,12 @@
     const s = schools[mySid()], st = me.stats || {};
     $('#setInfo').innerHTML = `
       <div>👤 아이디: <b>${esc(me.username)}</b></div>
-      <div>🎂 나이 인증: <b>${me.birthYear}년생</b> → <b>${me.grade}학년</b> (${me.grade}학년 서버)</div>
+      <div>${me.role ? `🛠️ <b>${S.ROLE_NICK[me.role]}</b> 계정 · ${me.grade}학년 서버` : `🎂 나이 인증: <b>${me.birthYear}년생</b> → <b>${me.grade}학년</b> (${me.grade}학년 서버)`}</div>
       <div>🏫 학교: <b>${esc(s ? s.name : '')}</b> <span class="muted">${esc(s ? s.sido + ' ' + s.sigungu : '')}</span></div>`;
     $('#setStats').innerHTML = `<div><b>${st.solved || 0}</b><span>푼 문제</span></div><div><b>${st.captures || 0}</b><span>뺏은 땅</span></div><div><b>${st.defends || 0}</b><span>올린 방어</span></div>`;
     $$('.sem2').forEach(b => b.classList.toggle('on', +b.dataset.sem === me.profile.semester));
     $('#setNick').value = me.profile.nickname;
-    $('#secretBug').hidden = !cheat.unlocked;
+    $('#secretBug').hidden = !(cheat.unlocked || me.role === 'dev');
     openM('settingsModal');
   }
   async function saveProfile(patch) {
@@ -1401,12 +1578,12 @@
   // ---------- 시작 ----------
   async function boot() {
     try { await loadMap(); } catch (e) { $('#loadMsg').textContent = '😢 ' + (e.message || '지도를 불러오지 못했어요.') + ' 새로고침 해 주세요.'; return; }
-    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings();
+    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin();
     if (!token) return show('auth');
     const d = await api('/api/me');
     if (!d.user) { show('auth'); if (d.error) toast(d.error, 'err'); return; }
     me = d.user;
-    cheat.unlocked = !!d.debug;
+    cheat.unlocked = !!d.debug || me.role === 'dev';
     route();
   }
   boot();
