@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#ff7a1a">
 <title>매뜨 땅먹</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,8 +12,18 @@
 </head>
 <body>
 
+<!-- 불러오는 중 -->
+<section id="loading" class="screen">
+  <div class="load-box">
+    <div class="load-logo">매뜨 땅먹</div>
+    <div class="load-map">🗺️</div>
+    <div class="load-bar"><i></i></div>
+    <p id="loadMsg">전국 지도를 그리는 중…</p>
+  </div>
+</section>
+
 <!-- 로그인 / 회원가입 -->
-<section id="auth" class="screen">
+<section id="auth" class="screen" hidden>
   <div class="card auth-card">
     <h1 class="logo">매뜨 땅먹<small>MATH LAND EATER</small></h1>
     <p class="tagline">수학 문제를 풀어 우리 학교 땅을 넓혀라! 🏫⚔️</p>
@@ -66,15 +77,16 @@
 <!-- 게임 -->
 <section id="game" class="screen" hidden>
   <header class="topbar">
-    <div class="brand">매뜨 땅먹</div>
+    <div class="brand">매뜨<b>땅먹</b></div>
     <div class="hud">
       <span id="hudServer" class="pill server"></span>
-      <span id="hudOnline" class="pill"></span>
-      <span class="pill school">⭐ <b id="hudSchool"></b> · 땅 <b id="hudLand">0</b>칸</span>
+      <span id="hudOnline" class="pill online"></span>
+      <span class="pill school">⭐ <b id="hudSchool"></b> · 땅 <b id="hudLand">0</b>칸 · <b id="hudRank">-</b>위</span>
       <span id="hudUser" class="pill"></span>
       <span id="cheatBadge" class="pill bug" hidden>🐛 버그 모드</span>
     </div>
     <div class="top-actions">
+      <button type="button" id="btnSound" class="icon-btn" title="소리">🔊</button>
       <button type="button" id="btnHelp" class="icon-btn" title="놀이 방법">❓</button>
       <button type="button" id="btnBoard" class="icon-btn" title="순위">🏆</button>
       <button type="button" id="btnSettings" class="icon-btn" title="설정">⚙️</button>
@@ -89,20 +101,33 @@
         <button type="button" id="zHome" title="우리 학교로">🏠</button>
         <button type="button" id="zFit" title="전국 지도">🗺️</button>
       </div>
-      <div id="conn" class="conn" title="서버 연결 상태"></div>
+      <div class="minimap"><canvas id="mini"></canvas></div>
+      <div id="conn" class="conn" title="서버 연결 상태"><i></i><span>연결됨</span></div>
+      <div id="tip" class="tip"></div>
       <div id="popup" class="popup" hidden></div>
     </div>
     <aside id="side" class="side">
-      <h3>🏆 학교 순위</h3>
-      <ol id="board" class="board"></ol>
-      <div id="myRank" class="my-rank"></div>
-      <h3>📣 소식</h3>
-      <ul id="feed" class="feed"></ul>
+      <div class="side-tabs">
+        <button type="button" class="stab on" data-pane="paneSchools">🏫 학교</button>
+        <button type="button" class="stab" data-pane="panePlayers">🧒 친구</button>
+        <button type="button" class="stab" data-pane="paneFeed">📣 소식<i id="feedDot" hidden></i></button>
+      </div>
+      <div id="paneSchools" class="pane">
+        <input id="findSchool" class="find" placeholder="🔍 지도에서 학교 찾기" autocomplete="off">
+        <div id="findList" class="find-list"></div>
+        <ol id="board" class="board"></ol>
+        <div id="myRank" class="my-rank"></div>
+      </div>
+      <div id="panePlayers" class="pane" hidden>
+        <ol id="players" class="board"></ol>
+        <div id="myPlayer" class="my-rank"></div>
+      </div>
+      <div id="paneFeed" class="pane" hidden><ul id="feed" class="feed"></ul></div>
       <div class="legend">
-        <span><i style="background:#ffc400"></i>우리 학교</span>
+        <span><i style="background:#ffc107"></i>우리 학교</span>
         <span><i style="background:#7fb3e0"></i>다른 학교</span>
-        <span><i style="background:#ece6cc"></i>빈 땅</span>
-        <span><i class="dot"></i>학교 본부</span>
+        <span><i style="background:#c4c9d0"></i>빈 땅</span>
+        <span><i class="dash"></i>뺏을 수 있는 땅</span>
       </div>
     </aside>
   </main>
@@ -111,7 +136,7 @@
 <!-- 문제 풀기 -->
 <div id="quizModal" class="modal" hidden>
   <div class="card quiz">
-    <div class="quiz-head"><b id="qzTitle"></b><button type="button" id="qzClose" class="icon-btn" title="그만하기">✕</button></div>
+    <div class="quiz-head"><b id="qzTitle"></b><span id="qzStreak" class="streak" hidden></span><button type="button" id="qzClose" class="icon-btn" title="그만하기">✕</button></div>
     <div class="bar"><i id="qzBar"></i></div>
     <div id="qzCount" class="muted"></div>
     <div id="qzQ" class="question"></div>
@@ -119,6 +144,7 @@
     <div id="qzFeedback" class="feedback"></div>
     <button type="button" id="qzHintBtn" class="btn hint" hidden>💡 힌트보기</button>
     <div id="qzHint" class="hint-box" hidden></div>
+    <div id="qzPad" class="keypad"></div>
   </div>
 </div>
 
@@ -151,8 +177,9 @@
       <button type="button" class="icon-btn" data-close="settingsModal">✕</button>
     </div>
     <div id="setInfo" class="set-info"></div>
+    <div id="setStats" class="stats"></div>
     <div class="field"><div class="label">🗓️ 학기 (문제 범위)</div>
-      <div class="seg" id="setSem"><button type="button" class="sem2" data-sem="1">1학기</button><button type="button" class="sem2" data-sem="2">2학기</button></div>
+      <div class="seg"><button type="button" class="sem2" data-sem="1">1학기</button><button type="button" class="sem2" data-sem="2">2학기</button></div>
     </div>
     <div class="field"><div class="label">😀 닉네임</div>
       <div class="row"><input id="setNick" maxlength="10"><button type="button" id="setNickSave" class="btn">저장</button></div>
@@ -190,18 +217,19 @@
   <div class="card">
     <h3>❓ 놀이 방법</h3>
     <ol class="rules">
-      <li>지도에서 <b>우리 학교 땅(노란색)</b>과 닿아 있는 땅을 눌러요.</li>
-      <li><b>⚔️ 땅 뺏기</b>를 누르면 수학 문제가 나와요. 한 칸에 <b>문제 2개</b>를 풀면 우리 땅!</li>
+      <li>지도는 <b>사각형·오각형·육각형…</b> 모양의 땅 조각으로 나뉘어 있어요. 회색은 아무도 없는 <b>빈 땅</b>이에요.</li>
+      <li>학교는 <b>실제 위치</b>에 있어요. 처음엔 학교 자리 한 칸(🏫 본부)만 우리 땅이에요.</li>
+      <li><b>노란색 우리 땅</b>과 닿은 땅(점선 표시)을 눌러 <b>⚔️ 땅 뺏기</b>! 한 칸에 <b>문제 2개</b>를 풀면 우리 땅이에요.</li>
       <li>다른 학교 땅이 방어되어 있으면 <b>방어 수만큼</b> 문제를 풀어야 뺏을 수 있어요.</li>
       <li>우리 땅을 눌러 <b>🛡️ 땅 방어하기</b>로 방어 수를 정하고, 그만큼 문제를 풀면 방어가 올라가요.</li>
-      <li>틀리면 <b>💡 힌트보기</b> 버튼이 나와요. 다시 풀어 보세요!</li>
-      <li>같은 학교 친구들은 함께 땅을 넓혀요. 학년마다 서버가 따로 있어요.</li>
-      <li>🏫 학교 본부 칸은 절대 빼앗기지 않아요.</li>
+      <li>틀리면 <b>💡 힌트보기</b>가 나와요. 연속으로 맞히면 🔥 불꽃이 붙어요!</li>
+      <li>섬은 <b>뱃길(점선)</b>로 이어져 있어요. 학년마다 서버가 따로 있고, 같은 학교 친구들과 함께 땅을 넓혀요.</li>
     </ol>
     <div class="row end"><button type="button" class="btn primary" data-close="helpModal">알겠어요!</button></div>
   </div>
 </div>
 
+<canvas id="fx"></canvas>
 <div id="toasts"></div>
 <script src="js/shared.js"></script>
 <script src="js/problems.js"></script>

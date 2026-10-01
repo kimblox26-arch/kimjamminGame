@@ -1,12 +1,13 @@
 'use strict';
 /* 매뜨 땅먹 서버 — 외부 라이브러리 없이 Node.js 내장 모듈만 사용한다.
- * 회원가입/로그인, 학년별 서버(월드), 땅 뺏기/방어, 실시간 소식(SSE)을 담당한다. */
+ * 회원가입/로그인, 지도 만들기, 학년별 서버(월드), 땅 뺏기/방어, 실시간 소식(SSE)을 담당한다. */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const S = require('./public/js/shared.js');
+const { buildMap } = require('./lib/mapgen.js');
 
 const PORT = Number(process.env.PORT) || 3000;
 const DEBUG_PASSWORD = process.env.DEBUG_PASSWORD || 'kim1234school';
@@ -17,11 +18,13 @@ const BASE_COST = 2;      // 방어가 없는 땅을 뺏을 때 풀어야 하는
 const MAX_DEF = 99;       // 한 칸의 최대 방어 수
 const MAX_DEF_STEP = 20;  // 한 번에 올릴 수 있는 방어 수
 const SESSION_DAYS = 30;
-
-const grid = S.buildGrid();
-const L = grid.cc.length;
-const BASE = S.baseSchools();
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+// ---------- 지도 ----------
+const MAP = buildMap({ landFile: path.join(__dirname, 'mapdata/korea-land.json'), schoolsFile: path.join(__dirname, 'mapdata/schools.txt') });
+const L = MAP.n;
+const BASE = MAP.schools;
+const MAP_GZ = zlib.gzipSync(MAP.clientJSON, { level: 9 });
 
 // ---------- 저장 ----------
 const db = { users: {}, sessions: {}, custom: [], worlds: {} };
@@ -38,81 +41,54 @@ function saveNow() {
   fs.renameSync(DB_FILE + '.tmp', DB_FILE);
 }
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { if (saveTimer) saveNow(); process.exit(0); });
-
 for (const [t, s] of Object.entries(db.sessions)) if (Date.now() - s.at > SESSION_DAYS * 864e5) delete db.sessions[t];
 
-// ---------- 학교 ----------
+// ---------- 학교 (기본 학교 + 직접 등록한 학교) ----------
+const schoolKey = s => `${s.sido}|${s.sigungu}|${s.name}`;
 const schoolCount = () => BASE.length + db.custom.length;
 const schoolById = id => (id < BASE.length ? BASE[id] : db.custom[id - BASE.length]);
+const idByKey = new Map();
+const indexSchools = () => { idByKey.clear(); for (let i = 0; i < schoolCount(); i++) idByKey.set(schoolKey(schoolById(i)), i); };
+indexSchools();
 const publicCustom = () => db.custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu }));
+const profileSchool = u => (u.profile && u.profile.school && idByKey.has(u.profile.school) ? idByKey.get(u.profile.school) : -1);
+// 예전 버전 프로필(학교 번호)은 학교를 다시 고르게 한다
+for (const u of Object.values(db.users)) if (u.profile && !u.profile.school) u.profile = null;
 
 // ---------- 학년별 월드 ----------
 const worlds = {}; // grade → { w: 저장되는 상태, homeCell: 칸→본부 학교, clients: SSE 연결 }
 
-function nearestCell(lat, lon, ok) {
-  const p = S.latLonToCR(lat, lon), c0 = Math.round(p.c), r0 = Math.round(p.r);
-  for (let rad = 0; rad < Math.max(grid.cols, grid.rows); rad++) {
-    let best = -1, bd = Infinity;
-    for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
-      if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
-      const c = c0 + dx, r = r0 + dy;
-      if (c < 0 || r < 0 || c >= grid.cols || r >= grid.rows) continue;
-      const k = grid.idx[r * grid.cols + c], d = dx * dx + dy * dy;
-      if (k >= 0 && d < bd && ok(k)) { bd = d; best = k; }
-    }
-    if (best >= 0) return best;
-  }
-  return -1;
-}
-
-// 학교 본부 자리를 정하고, 둘레의 빈 땅을 처음 땅으로 준다. 바뀐 칸 목록을 돌려준다.
-function placeSchool(rt, id) {
-  const { w, homeCell } = rt, sc = schoolById(id);
-  // 다른 학교 본부와 바로 붙지 않는 빈 땅을 먼저 찾는다
-  let cell = nearestCell(sc.lat, sc.lon, k => w.owner[k] < 0 && !S.neighbors(grid, k, true).some(n => homeCell[n] >= 0));
-  if (cell < 0) cell = nearestCell(sc.lat, sc.lon, k => w.owner[k] < 0);
-  if (cell < 0) cell = nearestCell(sc.lat, sc.lon, k => homeCell[k] < 0);
-  if (cell < 0) return [];
-  w.owner[cell] = id; w.def[cell] = 0; w.home[id] = cell; homeCell[cell] = id;
-  return [cell];
-}
-// 본부 둘레의 빈 땅을 한 칸씩 돌아가며 나눠 준다 (학교가 몰린 도시에서도 공평하게)
-function giveStartLand(rt, ids) {
-  const { w } = rt, out = [];
-  for (let round = 0; round < 4; round++) for (const id of ids) {
-    const n = S.neighbors(grid, w.home[id], false).find(k => w.owner[k] < 0);
-    if (n !== undefined) { w.owner[n] = id; out.push(n); }
-  }
-  return out;
-}
-
 function getWorld(grade) {
   if (worlds[grade]) return worlds[grade];
   let w = db.worlds[grade];
-  const fresh = !w || !Array.isArray(w.owner) || w.owner.length !== L;
-  if (fresh) w = db.worlds[grade] = { owner: new Array(L).fill(-1), def: new Array(L).fill(0), home: [] };
-  const rt = worlds[grade] = { w, homeCell: new Int32Array(L).fill(-1), clients: new Map() };
-  if (fresh) {
-    for (const s of BASE) placeSchool(rt, s.id);
-    giveStartLand(rt, BASE.map(s => s.id));
+  if (!w || w.hash !== MAP.hash || !Array.isArray(w.owner) || w.owner.length !== L) {
+    // 새 지도: 모든 땅은 회색 빈 땅, 학교마다 자기 위치 칸 하나만 가진다
+    w = db.worlds[grade] = { hash: MAP.hash, owner: new Array(L).fill(-1), def: new Array(L).fill(0), home: [] };
+    BASE.forEach((s, i) => { w.owner[s.cell] = i; w.home[i] = s.cell; });
     save();
-  } else {
-    w.home.forEach((c, id) => { if (c != null && c >= 0) rt.homeCell[c] = id; });
   }
+  const rt = worlds[grade] = { w, homeCell: new Int32Array(L).fill(-1), clients: new Map() };
+  w.home.forEach((c, id) => { if (c != null && c >= 0) rt.homeCell[c] = id; });
   return rt;
 }
 
 const cellState = (rt, i) => [i, rt.w.owner[i], rt.w.def[i]];
 
+// 직접 등록한 학교: 그 지역에서 가장 가까운 빈 땅을 본부로 준다
 function ensurePlaced(rt, id) {
   const h = rt.w.home[id];
-  if (h != null && h >= 0) return;
-  const cells = placeSchool(rt, id);
-  if (!cells.length) return;
-  cells.push(...giveStartLand(rt, [id]));
+  if ((h != null && h >= 0) || id < BASE.length) return;
+  const sc = schoolById(id), [x, y] = MAP.toMap(sc.lat, sc.lon);
+  let best = -1, bd = Infinity;
+  for (let i = 0; i < L; i++) {
+    if (rt.w.owner[i] >= 0 || rt.homeCell[i] >= 0) continue;
+    const d = (MAP.seedX[i] - x) ** 2 + (MAP.seedY[i] - y) ** 2;
+    if (d < bd) { bd = d; best = i; }
+  }
+  if (best < 0) return;
+  rt.w.owner[best] = id; rt.w.def[best] = 0; rt.w.home[id] = best; rt.homeCell[best] = id;
   save();
-  const sc = schoolById(id), home = rt.w.home[id];
-  broadcast(rt, { t: 'upd', school: { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu }, home, cells: cells.map(i => cellState(rt, i)), ev: { kind: 'join', sid: id, cell: home } });
+  broadcast(rt, { t: 'upd', school: { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu }, home: best, cells: [cellState(rt, best)], ev: { kind: 'join', sid: id, cell: best } });
 }
 
 function broadcast(rt, msg) {
@@ -129,7 +105,14 @@ const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 32).toString('hex');
 const sha = s => crypto.createHash('sha256').update(s).digest();
 const userKey = name => 'u_' + String(name).toLowerCase();
 const gradeOf = u => S.gradeFromBirthYear(u.birthYear);
-const publicUser = u => ({ username: u.username, birthYear: u.birthYear, grade: gradeOf(u), profile: u.profile || null });
+const statsOf = u => (u.stats = u.stats || { solved: 0, captures: 0, defends: 0 });
+function publicUser(u) {
+  const sid = profileSchool(u);
+  return {
+    username: u.username, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u),
+    profile: sid >= 0 ? { schoolId: sid, semester: u.profile.semester, nickname: u.profile.nickname } : null,
+  };
+}
 
 function newSession(key) {
   const token = crypto.randomBytes(24).toString('hex');
@@ -152,10 +135,10 @@ function needLogin(req, url) {
 function needPlayer(req, url) {
   const a = needLogin(req, url), g = gradeOf(a.u);
   if (g < 1 || g > 6) fail('초등학생(1~6학년)만 플레이할 수 있어요.', 403);
-  if (!a.u.profile) fail('먼저 학교와 닉네임을 설정해 주세요.', 409);
+  a.sid = profileSchool(a.u);
+  if (a.sid < 0) fail('먼저 학교와 닉네임을 설정해 주세요.', 409);
   a.grade = g;
   a.rt = getWorld(g);
-  a.sid = a.u.profile.schoolId;
   ensurePlaced(a.rt, a.sid);
   return a;
 }
@@ -177,7 +160,7 @@ const routes = {
     const key = userKey(username);
     if (hasOwn(db.users, key)) fail('이미 있는 아이디예요. 다른 아이디를 써 주세요.');
     const salt = crypto.randomBytes(16).toString('hex');
-    db.users[key] = { username, salt, hash: hashPw(password, salt), birthYear, profile: null, at: Date.now() };
+    db.users[key] = { username, salt, hash: hashPw(password, salt), birthYear, profile: null, stats: { solved: 0, captures: 0, defends: 0 }, at: Date.now() };
     return newSession(key);
   },
 
@@ -209,27 +192,23 @@ const routes = {
     if (nickname.length < 1 || nickname.length > 10) fail('닉네임은 1~10자로 써 주세요.');
     let schoolId;
     if (b.custom) {
-      const di = Number(b.custom.di), d = Number.isInteger(di) ? S.DISTRICTS[di] : null;
+      const di = Number(b.custom.di), d = Number.isInteger(di) ? MAP.districts[di] : null;
       if (!d) fail('학교가 있는 지역을 골라 주세요.');
       const stem = String(b.custom.name || '').replace(/\s+/g, '').replace(/(초등학교|초교|초)$/, '');
       if (!/^[가-힣A-Za-z0-9]{1,12}$/.test(stem)) fail('학교 이름은 한글·영어·숫자로 1~12자 써 주세요.');
-      const name = stem + '초등학교', same = s => s.name === name && s.sido === d.sido && s.sigungu === d.sigungu;
-      const base = BASE.find(same);
-      if (base) schoolId = base.id;
-      else {
-        let ci = db.custom.findIndex(same);
-        if (ci < 0) {
-          if (db.custom.length >= 5000) fail('더 이상 학교를 등록할 수 없어요.');
-          db.custom.push({ name, sido: d.sido, sigungu: d.sigungu, lat: d.lat + (Math.random() - 0.5) * 0.08, lon: d.lon + (Math.random() - 0.5) * 0.1, by: a.u.username });
-          ci = db.custom.length - 1;
-        }
-        schoolId = BASE.length + ci;
+      const sc = { name: stem + '초등학교', sido: d.sido, sigungu: d.sigungu };
+      schoolId = idByKey.has(schoolKey(sc)) ? idByKey.get(schoolKey(sc)) : -1;
+      if (schoolId < 0) {
+        if (db.custom.length >= 5000) fail('더 이상 학교를 등록할 수 없어요.');
+        db.custom.push(Object.assign(sc, { lat: d.lat + (Math.random() - 0.5) * 0.04, lon: d.lon + (Math.random() - 0.5) * 0.05, by: a.u.username }));
+        indexSchools();
+        schoolId = schoolCount() - 1;
       }
     } else {
       schoolId = Number(b.schoolId);
       if (!Number.isInteger(schoolId) || schoolId < 0 || schoolId >= schoolCount()) fail('학교를 골라 주세요.');
     }
-    a.u.profile = { schoolId, semester, nickname };
+    a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname };
     save();
     const g = gradeOf(a.u);
     if (g >= 1 && g <= 6) ensurePlaced(getWorld(g), schoolId);
@@ -240,7 +219,21 @@ const routes = {
     const a = needPlayer(req, url), w = a.rt.w, def = [], home = [];
     w.def.forEach((d, i) => { if (d > 0) def.push([i, d]); });
     for (let i = 0; i < schoolCount(); i++) home.push(w.home[i] != null ? w.home[i] : -1);
-    return { grade: a.grade, landCount: L, owner: w.owner, def, home, custom: publicCustom(), online: onlineCount(a.rt) };
+    return { grade: a.grade, hash: MAP.hash, owner: w.owner, def, home, custom: publicCustom(), online: onlineCount(a.rt) };
+  },
+
+  // 같은 학년 서버의 친구 순위 (땅을 많이 뺏은 순)
+  'GET /api/players': (req, url) => {
+    const a = needPlayer(req, url), list = [];
+    for (const u of Object.values(db.users)) {
+      const sid = profileSchool(u);
+      if (sid < 0 || gradeOf(u) !== a.grade) continue;
+      const st = statsOf(u);
+      list.push({ nick: u.profile.nickname, sid, captures: st.captures, solved: st.solved, me: u === a.u });
+    }
+    list.sort((x, y) => y.captures - x.captures || y.solved - x.solved);
+    const rank = list.findIndex(p => p.me) + 1;
+    return { top: list.slice(0, 10), rank, total: list.length };
   },
 
   // 땅 뺏기: 우리 땅과 닿은 칸만, 방어가 없으면 2문제, 있으면 방어 수만큼 풀어야 한다
@@ -248,19 +241,22 @@ const routes = {
     const a = needPlayer(req, url), { w, homeCell } = a.rt, sid = a.sid, cell = targetCell(b), prev = w.owner[cell];
     if (prev === sid) fail('이미 우리 학교 땅이에요.');
     if (homeCell[cell] >= 0) fail('학교 본부는 뺏을 수 없어요.');
-    if (!S.neighbors(grid, cell, true).some(n => w.owner[n] === sid)) fail('우리 학교 땅과 닿아 있는 땅만 뺏을 수 있어요.');
+    if (!MAP.nb[cell].some(n => w.owner[n] === sid)) fail('우리 학교 땅과 닿아 있는 땅만 뺏을 수 있어요.');
     const required = prev < 0 ? BASE_COST : Math.max(BASE_COST, w.def[cell]);
+    const st = statsOf(a.u);
     if (b.cheat) { if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403); }
     else {
       const solved = Number(b.solved) || 0;
       if (solved < required) return { need: required - solved, required }; // 그사이 방어가 늘었다
+      st.solved += required;
     }
+    st.captures++;
     w.owner[cell] = sid;
     w.def[cell] = 0;
     save();
     const cells = [cellState(a.rt, cell)];
     broadcast(a.rt, { t: 'upd', cells, ev: { kind: 'capture', by: a.u.profile.nickname, sid, prev, cell } });
-    return { ok: true, cells };
+    return { ok: true, cells, stats: st };
   },
 
   // 땅 방어: 정한 수만큼 문제를 풀면 그 수만큼 방어가 올라간다
@@ -270,13 +266,16 @@ const routes = {
     if (w.owner[cell] !== sid) fail('우리 학교 땅만 방어할 수 있어요.');
     if (homeCell[cell] >= 0) fail('학교 본부는 언제나 안전해요.');
     if (w.def[cell] >= MAX_DEF) fail(`방어는 최대 ${MAX_DEF}까지예요.`);
+    const st = statsOf(a.u);
     if (b.cheat) { if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403); }
     else if ((Number(b.solved) || 0) < amount) fail(`문제를 ${amount}개 풀어야 방어할 수 있어요.`);
+    else st.solved += amount;
+    st.defends += amount;
     w.def[cell] = Math.min(MAX_DEF, w.def[cell] + amount);
     save();
     const cells = [cellState(a.rt, cell)];
     broadcast(a.rt, { t: 'upd', cells, ev: { kind: 'defend', by: a.u.profile.nickname, sid, amount, cell } });
-    return { ok: true, cells };
+    return { ok: true, cells, stats: st };
   },
 
   'POST /api/debug/unlock': (req, url, b) => {
@@ -298,6 +297,16 @@ function events(req, res, url) {
   rt.clients.set(res, a.u.username);
   online();
   req.on('close', () => { rt.clients.delete(res); online(); });
+}
+
+// 지도 모양 (한 번 받으면 브라우저가 기억한다)
+function sendMap(req, res) {
+  const etag = `"map-${MAP.hash}"`;
+  if (req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag }); return res.end(); }
+  const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache', ETag: etag };
+  if (wantsGzip(req)) { headers['Content-Encoding'] = 'gzip'; res.writeHead(200, headers); return res.end(MAP_GZ); }
+  res.writeHead(200, headers);
+  res.end(MAP.clientJSON);
 }
 
 // ---------- HTTP ----------
@@ -343,7 +352,8 @@ function serveStatic(req, res, url) {
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname.startsWith('/api/')) {
-    if (url.pathname === '/api/events' && req.method === 'GET') return events(req, res, url);
+    if (req.method === 'GET' && url.pathname === '/api/events') return events(req, res, url);
+    if (req.method === 'GET' && url.pathname === '/api/map') return sendMap(req, res);
     const handler = routes[`${req.method} ${url.pathname}`];
     if (!handler) return send(req, res, 404, { error: '없는 기능이에요.' });
     try {
@@ -358,5 +368,7 @@ http.createServer(async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
   serveStatic(req, res, url);
 }).listen(PORT, () => {
-  console.log(`매뜨 땅먹 서버가 켜졌어요 → http://localhost:${PORT}  (땅 ${L}칸, 학교 ${BASE.length}곳)`);
+  const st = MAP.stats;
+  console.log(`매뜨 땅먹 서버가 켜졌어요 → http://localhost:${PORT}`);
+  console.log(`  지도: 다각형 땅 ${st.cells}칸 (바닷가 ${st.coastal}칸, 뱃길 ${st.routes}개), 학교 ${st.schools}곳, ${st.ms}ms`);
 });
