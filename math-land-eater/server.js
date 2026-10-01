@@ -50,7 +50,8 @@ const schoolById = id => (id < BASE.length ? BASE[id] : db.custom[id - BASE.leng
 const idByKey = new Map();
 const indexSchools = () => { idByKey.clear(); for (let i = 0; i < schoolCount(); i++) idByKey.set(schoolKey(schoolById(i)), i); };
 indexSchools();
-const publicCustom = () => db.custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu }));
+const publicCustom = () => db.custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, url: c.url || '' }));
+const validUrl = u => /^https?:\/\/[^\s"'<>|;]{3,200}$/.test(u);
 const profileSchool = u => (u.profile && u.profile.school && idByKey.has(u.profile.school) ? idByKey.get(u.profile.school) : -1);
 // 예전 버전 프로필(학교 번호)은 학교를 다시 고르게 한다
 for (const u of Object.values(db.users)) if (u.profile && !u.profile.school) u.profile = null;
@@ -67,7 +68,7 @@ function getWorld(grade) {
     BASE.forEach((s, i) => { w.owner[s.cell] = i; w.home[i] = s.cell; });
     save();
   }
-  const rt = worlds[grade] = { w, homeCell: new Int32Array(L).fill(-1), clients: new Map() };
+  const rt = worlds[grade] = { w, homeCell: new Int32Array(L).fill(-1), clients: new Map(), chat: [] };
   w.home.forEach((c, id) => { if (c != null && c >= 0) rt.homeCell[c] = id; });
   return rt;
 }
@@ -91,11 +92,12 @@ function ensurePlaced(rt, id) {
   broadcast(rt, { t: 'upd', school: { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu }, home: best, cells: [cellState(rt, best)], ev: { kind: 'join', sid: id, cell: best } });
 }
 
-function broadcast(rt, msg) {
+function broadcast(rt, msg, onlySid) { // onlySid 가 있으면 그 학교 친구들에게만
   const data = `data: ${JSON.stringify(msg)}\n\n`;
-  for (const res of rt.clients.keys()) res.write(data);
+  for (const [res, c] of rt.clients) if (onlySid == null || c.sid === onlySid) res.write(data);
 }
-const onlineCount = rt => new Set(rt.clients.values()).size;
+const onlineUsers = rt => new Set([...rt.clients.values()].map(c => c.user));
+const onlineCount = rt => onlineUsers(rt).size;
 setInterval(() => { for (const rt of Object.values(worlds)) for (const res of rt.clients.keys()) res.write(': ping\n\n'); }, 25000);
 
 // ---------- 로그인 ----------
@@ -105,11 +107,41 @@ const hashPw = (pw, salt) => crypto.scryptSync(pw, salt, 32).toString('hex');
 const sha = s => crypto.createHash('sha256').update(s).digest();
 const userKey = name => 'u_' + String(name).toLowerCase();
 const gradeOf = u => S.gradeFromBirthYear(u.birthYear);
-const statsOf = u => (u.stats = u.stats || { solved: 0, captures: 0, defends: 0 });
+const STAT0 = { solved: 0, captures: 0, defends: 0, steals: 0, bestStreak: 0, days: 0, dayStreak: 0, lastDay: '' };
+const statsOf = u => { const st = (u.stats = u.stats || {}); for (const k in STAT0) if (st[k] == null) st[k] = STAT0[k]; return st; };
+const koreaDay = (ago = 0) => new Date(Date.now() + 9 * 3600e3 - ago * 864e5).toISOString().slice(0, 10);
+function attend(u) { // 출석 체크 (하루에 한 번)
+  const st = statsOf(u), d = koreaDay();
+  if (st.lastDay === d) return null;
+  st.dayStreak = st.lastDay === koreaDay(1) ? st.dayStreak + 1 : 1;
+  st.days++;
+  st.lastDay = d;
+  save();
+  return { days: st.days, streak: st.dayStreak };
+}
+function newBadges(u) { // 새로 받은 배지 번호들
+  const st = statsOf(u), have = new Set(u.badges = u.badges || []), out = [];
+  for (const b of S.BADGES) if (!have.has(b.id) && (st[b.key] || 0) >= b.n) { u.badges.push(b.id); out.push(b.id); }
+  if (out.length) save();
+  return out;
+}
+const noteStreak = (u, v) => { const st = statsOf(u); st.bestStreak = Math.max(st.bestStreak, Math.min(1000, Math.floor(Number(v) || 0))); };
+function cleanProblem(p) { // 오답 노트에 저장할 문제 (글자 길이 제한)
+  if (!p || typeof p !== 'object') fail('잘못된 문제예요.');
+  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const out = { q: str(p.q, 400), hint: str(p.hint, 400) };
+  if (Array.isArray(p.choices)) { out.choices = p.choices.slice(0, 6).map(c => str(c, 30)); out.a = str(p.a, 30); }
+  else { out.a = Number(p.a); if (!Number.isFinite(out.a)) fail('잘못된 문제예요.'); }
+  if (p.unit) out.unit = str(p.unit, 10);
+  if (p.frac) out.frac = true;
+  if (p.simplest) out.simplest = true;
+  if (!out.q) fail('잘못된 문제예요.');
+  return out;
+}
 function publicUser(u) {
   const sid = profileSchool(u);
   return {
-    username: u.username, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u),
+    username: u.username, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u), badges: u.badges || [],
     profile: sid >= 0 ? { schoolId: sid, semester: u.profile.semester, nickname: u.profile.nickname } : null,
   };
 }
@@ -200,7 +232,9 @@ const routes = {
       schoolId = idByKey.has(schoolKey(sc)) ? idByKey.get(schoolKey(sc)) : -1;
       if (schoolId < 0) {
         if (db.custom.length >= 5000) fail('더 이상 학교를 등록할 수 없어요.');
-        db.custom.push(Object.assign(sc, { lat: d.lat + (Math.random() - 0.5) * 0.04, lon: d.lon + (Math.random() - 0.5) * 0.05, by: a.u.username }));
+        const url = String(b.custom.url || '').trim();
+        if (url && !validUrl(url)) fail('홈페이지 주소는 https:// 로 시작하게 써 주세요.');
+        db.custom.push(Object.assign(sc, { lat: d.lat + (Math.random() - 0.5) * 0.04, lon: d.lon + (Math.random() - 0.5) * 0.05, url, by: a.u.username }));
         indexSchools();
         schoolId = schoolCount() - 1;
       }
@@ -219,7 +253,79 @@ const routes = {
     const a = needPlayer(req, url), w = a.rt.w, def = [], home = [];
     w.def.forEach((d, i) => { if (d > 0) def.push([i, d]); });
     for (let i = 0; i < schoolCount(); i++) home.push(w.home[i] != null ? w.home[i] : -1);
-    return { grade: a.grade, hash: MAP.hash, owner: w.owner, def, home, custom: publicCustom(), online: onlineCount(a.rt) };
+    const chat = a.rt.chat.filter(m => m.ch === 'all' || m.sid === a.sid);
+    return { grade: a.grade, hash: MAP.hash, owner: w.owner, def, home, custom: publicCustom(), online: onlineCount(a.rt), chat, attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u) };
+  },
+
+  // 학교 정보: 땅, 순위, 이 학년 서버의 우리 학교 친구들
+  'GET /api/school': (req, url) => {
+    const a = needPlayer(req, url), id = Number(url.searchParams.get('id'));
+    if (!Number.isInteger(id) || id < 0 || id >= schoolCount()) fail('학교를 찾을 수 없어요.');
+    const w = a.rt.w, cnt = new Map();
+    let def = 0;
+    w.owner.forEach((o, i) => { if (o >= 0) cnt.set(o, (cnt.get(o) || 0) + 1); if (o === id) def += w.def[i]; });
+    const land = cnt.get(id) || 0;
+    let rank = 1;
+    for (const v of cnt.values()) if (v > land) rank++;
+    const on = onlineUsers(a.rt), members = [];
+    for (const u of Object.values(db.users)) {
+      if (profileSchool(u) !== id || gradeOf(u) !== a.grade) continue;
+      const st = statsOf(u);
+      members.push({ nick: u.profile.nickname, captures: st.captures, solved: st.solved, online: on.has(u.username), me: u === a.u });
+    }
+    members.sort((x, y) => y.online - x.online || y.captures - x.captures);
+    const sc = schoolById(id);
+    return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
+  },
+
+  // 오답 노트
+  'GET /api/wrong': (req, url) => ({ list: needLogin(req, url).u.wrong || [] }),
+  'POST /api/wrong': (req, url, b) => {
+    const a = needLogin(req, url), p = cleanProblem(b.p), list = (a.u.wrong || []).filter(x => x.p.q !== p.q);
+    list.unshift({ id: crypto.randomBytes(5).toString('hex'), p, given: String(b.given || '').slice(0, 30), at: Date.now() });
+    a.u.wrong = list.slice(0, 30);
+    save();
+    return { ok: true, count: a.u.wrong.length };
+  },
+  'POST /api/wrong/remove': (req, url, b) => {
+    const a = needLogin(req, url);
+    a.u.wrong = (a.u.wrong || []).filter(x => x.id !== b.id);
+    save();
+    return { ok: true, count: a.u.wrong.length };
+  },
+
+  // 연습하기: 땅과 상관없이 푼 문제를 기록에 더한다
+  'POST /api/practice': (req, url, b) => {
+    const a = needPlayer(req, url), st = statsOf(a.u);
+    st.solved += Math.max(0, Math.min(50, Math.floor(Number(b.solved) || 0)));
+    noteStreak(a.u, b.streak);
+    save();
+    return { stats: st, badges: newBadges(a.u) };
+  },
+
+  // 빠른 채팅 (정해진 말만, 우리 학교 / 전체)
+  'POST /api/chat': (req, url, b) => {
+    const a = needPlayer(req, url), m = Number(b.m), ch = b.ch === 'school' ? 'school' : 'all', now = Date.now();
+    if (!Number.isInteger(m) || !S.CHAT[m]) fail('보낼 말을 골라 주세요.');
+    if (now - (a.s.lastChat || 0) < 2500) fail('조금 천천히 보내 주세요.');
+    a.s.lastChat = now;
+    const msg = { t: 'chat', ch, sid: a.sid, by: a.u.profile.nickname, m, at: now };
+    a.rt.chat.push(msg);
+    if (a.rt.chat.length > 60) a.rt.chat.shift();
+    broadcast(a.rt, msg, ch === 'school' ? a.sid : null);
+    return { ok: true };
+  },
+
+  'POST /api/password': (req, url, b) => {
+    const a = needLogin(req, url), u = a.u;
+    if (!crypto.timingSafeEqual(Buffer.from(hashPw(String(b.old || ''), u.salt), 'hex'), Buffer.from(u.hash, 'hex'))) fail('지금 비밀번호가 틀렸어요.');
+    const pw = String(b.password || '');
+    if (pw.length < 4 || pw.length > 64) fail('새 비밀번호는 4자 이상으로 만들어 주세요.');
+    u.salt = crypto.randomBytes(16).toString('hex');
+    u.hash = hashPw(pw, u.salt);
+    for (const [t, s] of Object.entries(db.sessions)) if (s.user === a.s.user && t !== a.token) delete db.sessions[t]; // 다른 기기는 로그아웃
+    save();
+    return { ok: true };
   },
 
   // 같은 학년 서버의 친구 순위 (땅을 많이 뺏은 순)
@@ -249,14 +355,16 @@ const routes = {
       const solved = Number(b.solved) || 0;
       if (solved < required) return { need: required - solved, required }; // 그사이 방어가 늘었다
       st.solved += required;
+      noteStreak(a.u, b.streak);
     }
     st.captures++;
+    if (prev >= 0) st.steals++;
     w.owner[cell] = sid;
     w.def[cell] = 0;
     save();
     const cells = [cellState(a.rt, cell)];
     broadcast(a.rt, { t: 'upd', cells, ev: { kind: 'capture', by: a.u.profile.nickname, sid, prev, cell } });
-    return { ok: true, cells, stats: st };
+    return { ok: true, cells, stats: st, badges: newBadges(a.u) };
   },
 
   // 땅 방어: 정한 수만큼 문제를 풀면 그 수만큼 방어가 올라간다
@@ -269,13 +377,13 @@ const routes = {
     const st = statsOf(a.u);
     if (b.cheat) { if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403); }
     else if ((Number(b.solved) || 0) < amount) fail(`문제를 ${amount}개 풀어야 방어할 수 있어요.`);
-    else st.solved += amount;
+    else { st.solved += amount; noteStreak(a.u, b.streak); }
     st.defends += amount;
     w.def[cell] = Math.min(MAX_DEF, w.def[cell] + amount);
     save();
     const cells = [cellState(a.rt, cell)];
     broadcast(a.rt, { t: 'upd', cells, ev: { kind: 'defend', by: a.u.profile.nickname, sid, amount, cell } });
-    return { ok: true, cells, stats: st };
+    return { ok: true, cells, stats: st, badges: newBadges(a.u) };
   },
 
   'POST /api/debug/unlock': (req, url, b) => {
@@ -294,7 +402,7 @@ function events(req, res, url) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.write('retry: 3000\n\n');
   const rt = a.rt, online = () => broadcast(rt, { t: 'online', n: onlineCount(rt) });
-  rt.clients.set(res, a.u.username);
+  rt.clients.set(res, { user: a.u.username, sid: a.sid });
   online();
   req.on('close', () => { rt.clients.delete(res); online(); });
 }

@@ -28,10 +28,10 @@ function parseSchools(text) {
     if (!line.trim() || line.startsWith('#')) continue;
     const [sido, sigungu, list] = line.split('|');
     for (const item of (list || '').split(';')) {
-      const m = item.match(/^(.+):(-?[\d.]+),(-?[\d.]+)$/);
+      const m = item.match(/^(.+?):(-?[\d.]+),(-?[\d.]+)(?:,(https?:\/\/\S+))?$/);
       if (!m) continue;
       const nm = m[1].trim();
-      out.push({ name: /학교$/.test(nm) ? nm : nm + '초등학교', sido: sido.trim(), sigungu: (sigungu || '').trim(), lat: +m[2], lon: +m[3] });
+      out.push({ name: /학교$/.test(nm) ? nm : nm + '초등학교', sido: sido.trim(), sigungu: (sigungu || '').trim(), lat: +m[2], lon: +m[3], url: m[4] || '' });
     }
   }
   return out;
@@ -304,7 +304,7 @@ function buildMap({ landFile, schoolsFile }) {
 
   const map = {
     hash, W, H, n, schoolCount, seedX: sx, seedY: sy, nb, routes, sides, mass: massOfSeed, districts,
-    schools: schools.map((s, i) => ({ name: s.name, sido: s.sido, sigungu: s.sigungu, cell: i })),
+    schools: schools.map((s, i) => ({ name: s.name, sido: s.sido, sigungu: s.sigungu, url: s.url, cell: i })),
     toMap, landAt,
   };
   map.clientJSON = JSON.stringify({
@@ -313,7 +313,7 @@ function buildMap({ landFile, schoolsFile }) {
     nb, sides, routes,
     seeds: sx.flatMap((x, i) => [Math.round(x), Math.round(sy[i])]),
     land: polys.map(encodeRing),
-    schools: schools.map(s => [s.name, s.sido, s.sigungu]),
+    schools: schools.map(s => (s.url ? [s.name, s.sido, s.sigungu, s.url] : [s.name, s.sido, s.sigungu])),
     districts: districts.map(d => [d.sido, d.sigungu, Math.round(d.x), Math.round(d.y)]),
   });
   map.stats = { cells: n, schools: schoolCount, coastal, fallback, routes: routes.length, ms: Date.now() - t0 };

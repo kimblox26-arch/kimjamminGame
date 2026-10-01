@@ -13,7 +13,6 @@
   const gcd = (a, b) => (b ? gcd(b, a % b) : Math.abs(a));
   const lcm = (a, b) => (a / gcd(a, b)) * b;
   const num = x => String(+x.toFixed(6));
-  const big = x => x.toLocaleString('ko-KR');
   const fr = (n, d) => `{${n}/${d}}`;
   const mixed = (w, n, d) => `${w}${fr(n, d)}`;
   // 숫자 뒤에 붙는 조사 (받침 여부: 0 영, 1 일, 3 삼, 6 육, 7 칠, 8 팔, 10 십 …)
@@ -243,5 +242,16 @@
     return true;
   }
 
-  return { generate, check, big };
+  // 정답을 보여 줄 글자 (분수 답은 "2와 1/3" 처럼)
+  function answerText(p) {
+    if (p.choices) return String(p.a);
+    let t = num(p.a);
+    if (p.frac) {
+      const w = Math.floor(p.a + 1e-9), f = p.a - w;
+      if (f > 1e-9) for (let d = 2; d <= 1000; d++) { const n = Math.round(f * d); if (Math.abs(n / d - f) < 1e-9) { t = w ? `${gwa(w)} ${n}/${d}` : `${n}/${d}`; break; } }
+    }
+    return t + (p.unit ? ' ' + p.unit : '');
+  }
+
+  return { generate, check, answerText };
 });

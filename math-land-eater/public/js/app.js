@@ -15,7 +15,7 @@
 
   let G = null;          // 지도 모양
   let schools = [];      // 학교 목록 (지도의 실제 학교 + 직접 등록한 학교)
-  let token = store.get('mle_token'), me = null, W = null, es = null, online = 0, sel = -1, streak = 0;
+  let token = store.get('mle_token'), me = null, W = null, es = null, online = 0, sel = -1, streak = 0, best = 0, chatCh = 'school', wrongN = 0;
   const cheat = { unlocked: false, capture: false, defend: false };
   const mySid = () => (me && me.profile ? me.profile.schoolId : -1);
   const short = sid => (schools[sid] ? schools[sid].name.replace(/초등학교$/, '초') : '어떤 학교');
@@ -140,7 +140,7 @@
       for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) G.index[gy * G.ibw + gx].push(i);
     }
     marks = new Uint32Array(m.n);
-    schools = m.schools.map(([name, sido, sigungu], id) => ({ id, name, sido, sigungu }));
+    schools = m.schools.map(([name, sido, sigungu, url], id) => ({ id, name, sido, sigungu, url: url || '' }));
   }
   function cellsIn(x0, y0, x1, y1) {
     const out = [];
@@ -244,7 +244,7 @@
       e.preventDefault();
       const body = { semester, nickname: $('#stNick').value.trim() };
       const cname = $('#stCName').value.trim();
-      if (!$('#stCustom').hidden && cname) body.custom = { di: +$('#stCSigungu').value, name: cname };
+      if (!$('#stCustom').hidden && cname) body.custom = { di: +$('#stCSigungu').value, name: cname, url: $('#stCUrl').value.trim() };
       else if (chosen != null) body.schoolId = chosen;
       else return setErr('#stErr', '우리 학교를 골라 주세요.');
       const d = await api('/api/profile', body);
@@ -670,11 +670,47 @@
         <button type="button" class="btn attack" id="btnAtk" ${atkWhy ? 'disabled' : ''}>⚔️ 땅 뺏기</button>
         <button type="button" class="btn defend" id="btnDef" ${defWhy ? 'disabled' : ''}>🛡️ 땅 방어하기</button>
       </div>
-      ${(mine ? defWhy : atkWhy) ? `<div class="why">${esc(mine ? defWhy : atkWhy)}</div>` : ''}`;
+      ${(mine ? defWhy : atkWhy) ? `<div class="why">${esc(mine ? defWhy : atkWhy)}</div>` : ''}
+      ${o >= 0 ? `<div class="popup-links"><button type="button" class="link-btn" id="btnInfo">🏫 ${esc(short(hs >= 0 ? hs : o))} 정보</button>${homeLink(hs >= 0 ? hs : o)}</div>` : ''}`;
     box.hidden = false;
+    if ($('#btnInfo')) $('#btnInfo').onclick = () => openSchool(hs >= 0 ? hs : o);
     $('#popClose').onclick = () => select(-1);
     $('#btnAtk').onclick = () => doAttack(i);
     $('#btnDef').onclick = () => openDefense(i);
+  }
+
+  // 학교 홈페이지: 주소를 알면 바로, 모르면 검색으로 찾아 준다
+  const safeUrl = u => (/^https?:\/\//.test(u || '') ? u : '');
+  function homeLink(sid) {
+    const s = schools[sid];
+    if (!s) return '';
+    const url = safeUrl(s.url);
+    return url ? `<a class="link-btn home" href="${esc(url)}" target="_blank" rel="noopener noreferrer">🌐 학교 홈페이지</a>`
+      : `<a class="link-btn" href="https://search.naver.com/search.naver?query=${encodeURIComponent(`${s.sido} ${s.name} 홈페이지`)}" target="_blank" rel="noopener noreferrer">🔎 홈페이지 찾기</a>`;
+  }
+  async function openSchool(sid) {
+    const d = await api('/api/school?id=' + sid);
+    if (d.error) return toast(d.error, 'err');
+    $('#scName').innerHTML = `<i class="sw" style="background:${cssColor(sid)}"></i>${esc(d.name)}`;
+    const mem = d.members.map(m => `<li class="${m.me ? 'me' : ''}"><i class="dot ${m.online ? 'on' : ''}"></i><span class="nm">${esc(m.nick)}</span><small>뺏은 땅 ${m.captures} · 문제 ${m.solved}</small></li>`).join('');
+    $('#scBody').innerHTML = `
+      <p class="muted">📍 ${esc(d.sido)} ${esc(d.sigungu)} · ${me.grade}학년 서버</p>
+      <div class="stats"><div><b>${d.land}</b><span>땅</span></div><div><b>${d.rank ? d.rank + '위' : '-'}</b><span>학교 순위</span></div><div><b>${d.def}</b><span>방어 합계</span></div></div>
+      <div class="row">${homeLink(sid)}<button type="button" class="link-btn" id="scGo">🗺️ 지도에서 보기</button></div>
+      <h4>🧒 함께하는 친구 ${d.memberCount}명</h4>
+      <ul class="members">${mem || '<li class="muted">아직 이 학교로 들어온 친구가 없어요.</li>'}</ul>`;
+    $('#scGo').onclick = () => { closeM('schoolModal'); const h = W.home[sid]; if (h >= 0) { flyTo(h, Math.max(view.s, 0.5)); select(h); $('#side').classList.remove('open'); } };
+    openM('schoolModal');
+  }
+
+  // 새 배지 알림
+  function gotBadges(ids) {
+    (ids || []).forEach((id, k) => {
+      const b = S.BADGES.find(x => x.id === id);
+      if (!b) return;
+      if (me && !me.badges.includes(id)) me.badges.push(id);
+      setTimeout(() => { toast(`🏅 새 배지! ${b.icon} ${b.name}`, 'ok'); Sound.play('unlock'); confetti(innerWidth / 2, innerHeight * 0.3, 60); }, 900 + k * 1200);
+    });
   }
 
   function celebrate(i) {
@@ -686,6 +722,7 @@
     if (!r || r.error) { if (r && r.error) toast(r.error, 'err'); return false; }
     if (r.cells) applyCells(r.cells, true);
     if (r.stats) me.stats = r.stats;
+    gotBadges(r.badges);
     toast(okMsg, 'ok');
     if (kind === 'capture') { Sound.play('capture'); celebrate(i); } else { Sound.play('defend'); flashes.push({ i, t: performance.now() }); requestDraw(); }
     if (!$('#panePlayers').hidden) loadPlayers();
@@ -698,7 +735,7 @@
     startQuiz({
       title: '⚔️ 땅 뺏기', total: needToTake(i),
       onDone: async solved => {
-        const r = await api('/api/capture', { cell: i, solved });
+        const r = await api('/api/capture', { cell: i, solved, streak: best });
         if (r.need) return { more: r.need, msg: `🛡️ 상대가 방어를 올렸어요! 문제 ${r.need}개를 더 풀어야 해요.` };
         afterAction(r, okMsg, i, 'capture');
       },
@@ -728,7 +765,7 @@
       closeM('defModal');
       const okMsg = `🛡️ 방어 +${n}! 우리 땅이 더 튼튼해졌어요.`;
       if (cheat.defend) return afterAction(await api('/api/defend', { cell: i, amount: n, cheat: true }), '🐛 ' + okMsg, i, 'defend');
-      startQuiz({ title: `🛡️ 땅 방어하기 (+${n})`, total: n, onDone: async solved => { afterAction(await api('/api/defend', { cell: i, amount: n, solved }), okMsg, i, 'defend'); } });
+      startQuiz({ title: `🛡️ 땅 방어하기 (+${n})`, total: n, onDone: async solved => { afterAction(await api('/api/defend', { cell: i, amount: n, solved, streak: best }), okMsg, i, 'defend'); } });
     };
   }
 
@@ -746,7 +783,8 @@
     el.textContent = `🔥 ${streak}연속!`;
   }
   function nextProblem() {
-    const p = quiz.p = P.generate(me.grade, me.profile.semester);
+    const p = quiz.p = quiz.fixed ? quiz.fixed[quiz.solved] : P.generate(me.grade, me.profile.semester);
+    quiz.noted = false;
     quiz.busy = false;
     $('#qzTitle').textContent = quiz.title;
     $('#qzCount').textContent = `문제 ${quiz.solved + 1} / ${quiz.total}`;
@@ -786,6 +824,7 @@
       quiz.busy = true;
       quiz.solved++;
       streak++;
+      best = Math.max(best, streak);
       Sound.play('ok', streak);
       renderStreak();
       $('#qzBar').style.width = (quiz.solved / quiz.total) * 100 + '%';
@@ -797,6 +836,11 @@
       Sound.play('bad');
       feedback(res === 'simplest' ? '🤏 거의 맞았어요! 더 이상 약분할 수 없게(기약분수로) 써 주세요.' : '❌ 틀렸어요! 다시 풀어 보세요.', 'bad');
       $('#qzHintBtn').hidden = false;
+      if (!quiz.fixed && !quiz.noted) { // 처음 틀린 문제는 오답 노트에
+        quiz.noted = true;
+        const { q, a, hint, unit, frac, simplest, choices } = quiz.p;
+        api('/api/wrong', { p: { q, a, hint, unit, frac, simplest, choices }, given: String(v).slice(0, 30) }).then(r => { if (r.count != null) setWrongCount(r.count); });
+      }
       const el = $('#qzInput');
       if (el) { if (!coarse) el.select(); el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
     }
@@ -809,7 +853,67 @@
     if (r && r.more) { q.total += r.more; toast(r.msg, 'warn'); nextProblem(); return; }
     closeQuiz();
   }
-  function closeQuiz() { quiz = null; closeM('quizModal'); }
+  function closeQuiz() {
+    const q = quiz;
+    quiz = null;
+    closeM('quizModal');
+    if (q && q.practice && q.solved > 0) reportPractice(q.solved);
+  }
+  async function reportPractice(n) {
+    const r = await api('/api/practice', { solved: n, streak: best });
+    if (r.error) return;
+    me.stats = r.stats;
+    toast(`✏️ 연습 끝! 문제 ${n}개를 풀었어요.`, 'ok');
+    gotBadges(r.badges);
+  }
+  function startPractice() {
+    startQuiz({ title: '✏️ 연습하기', total: 10, practice: true, onDone: () => { Sound.play('capture'); confetti(innerWidth / 2, innerHeight * 0.4); } });
+  }
+
+  // 오답 노트
+  function setWrongCount(n) { wrongN = n; $('#wrongCount').hidden = !n; $('#wrongCount').textContent = n; }
+  async function openWrong() {
+    const d = await api('/api/wrong');
+    if (d.error) return toast(d.error, 'err');
+    setWrongCount(d.list.length);
+    $('#wrongList').innerHTML = d.list.length ? d.list.map(w => `
+      <div class="wrong-item" data-id="${esc(w.id)}">
+        <div class="wq">${fmt(w.p.q)}</div>
+        <div class="wa"><span class="bad">내 답: ${esc(w.given || '-')}</span><span class="ok">정답: ${fmt(P.answerText(w.p))}</span></div>
+        <div class="wh">💡 ${fmt(w.p.hint)}</div>
+        <div class="row end"><button type="button" class="btn small" data-act="del">지우기</button><button type="button" class="btn primary small" data-act="retry">다시 풀기</button></div>
+      </div>`).join('') : '<p class="pad muted">틀린 문제가 없어요. 대단해요! 🎉</p>';
+    $('#wrongList').onclick = async e => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const id = b.closest('[data-id]').dataset.id, item = d.list.find(w => w.id === id);
+      if (b.dataset.act === 'del') { const r = await api('/api/wrong/remove', { id }); if (!r.error) { setWrongCount(r.count); b.closest('.wrong-item').remove(); } return; }
+      closeM('wrongModal');
+      startQuiz({ title: '📒 다시 풀기', total: 1, fixed: [item.p], onDone: async () => { const r = await api('/api/wrong/remove', { id }); if (!r.error) setWrongCount(r.count); toast('📒 이제 맞혔어요! 오답 노트에서 지웠어요.', 'ok'); } });
+    };
+    openM('wrongModal');
+  }
+
+  // 배지와 기록
+  function openBadges() {
+    const st = me.stats || {}, have = new Set(me.badges || []);
+    $('#badgeStats').innerHTML = `<div><b>${st.solved || 0}</b><span>푼 문제</span></div><div><b>${st.captures || 0}</b><span>차지한 땅</span></div><div><b>${st.bestStreak || 0}</b><span>최고 연속 정답</span></div><div><b>${st.days || 0}일</b><span>출석 (연속 ${st.dayStreak || 0}일)</span></div>`;
+    $('#badgeGrid').innerHTML = S.BADGES.map(b => {
+      const v = Math.min(st[b.key] || 0, b.n), on = have.has(b.id);
+      return `<div class="badge ${on ? 'on' : ''}"><div class="bi">${b.icon}</div><b>${esc(b.name)}</b><small>${esc(b.desc)}</small>${on ? '<em>받았어요!</em>' : `<div class="bp"><i style="width:${(v / b.n) * 100}%"></i></div><small>${v} / ${b.n}</small>`}</div>`;
+    }).join('');
+    openM('badgeModal');
+  }
+
+  // 빠른 채팅
+  function chatLine(m) {
+    const li = document.createElement('li'), mine = m.sid === mySid();
+    li.className = 'chat' + (m.ch === 'school' ? ' school' : '');
+    li.innerHTML = `<span class="t">${new Date(m.at).toTimeString().slice(0, 5)}</span><span class="ch">${m.ch === 'school' ? '🏫' : '🌐'}</span><b style="color:${mine ? '#b45309' : cssColor(m.sid)}">${esc(m.by)}</b><small>${esc(short(m.sid))}</small> ${esc(S.CHAT[m.m] || '')}`;
+    $('#feed').prepend(li);
+    while ($('#feed').children.length > 60) $('#feed').lastChild.remove();
+    if ($('#paneFeed').hidden) $('#feedDot').hidden = false;
+  }
   function initQuiz() {
     $('#qzAnswer').addEventListener('click', e => { const b = e.target.closest('.choice'); if (b) answer(b.dataset.v); });
     $('#qzPad').addEventListener('click', e => {
@@ -823,7 +927,7 @@
       else el.value += k;
     });
     $('#qzHintBtn').onclick = () => { $('#qzHint').hidden = false; };
-    $('#qzClose').onclick = () => { if (!quiz || quiz.solved === 0 || confirm('그만할까요? 지금까지 푼 문제는 사라져요.')) closeQuiz(); };
+    $('#qzClose').onclick = () => { if (!quiz || quiz.solved === 0 || quiz.practice || confirm('그만할까요? 지금까지 푼 문제는 사라져요.')) closeQuiz(); };
   }
 
   // ---------- 월드 / 실시간 ----------
@@ -839,17 +943,24 @@
     W.owner.forEach((o, i) => { if (o >= 0) owned.add(i); });
     W.home.forEach((c, sid) => { if (c >= 0) W.homeCell[c] = sid; });
     online = d.online || 0;
+    if (d.stats) me.stats = d.stats;
     colorCache.clear();
     tiles.clear();
     computeFrontier();
-    return true;
+    return d;
   }
   async function startGame() {
     show('game');
     sel = -1;
     renderPopup();
     $('#feed').innerHTML = '';
-    if (!(await loadWorld())) return;
+    const d = await loadWorld();
+    if (!d) return;
+    (d.chat || []).forEach(chatLine);
+    if (d.attend) setTimeout(() => toast(`📅 출석 체크! ${d.attend.days}일째${d.attend.streak > 1 ? ` (${d.attend.streak}일 연속)` : ''}`, 'ok'), 1200);
+    gotBadges(d.badges);
+    api('/api/wrong').then(r => { if (r.list) setWrongCount(r.list.length); });
+    if (!store.get('mle_tut')) { store.set('mle_tut', '1'); setTimeout(() => openM('helpModal'), 900); }
     hud();
     updateBoard();
     renderMini();
@@ -872,6 +983,7 @@
   function onEvent(m) {
     if (!W) return;
     if (m.t === 'online') { online = m.n; hud(); return; }
+    if (m.t === 'chat') { chatLine(m); if (m.sid !== mySid() && m.ch === 'school') Sound.play('tap'); return; }
     if (m.t !== 'upd') return;
     if (m.school) { schools[m.school.id] = m.school; W.home[m.school.id] = m.home; if (m.home >= 0) W.homeCell[m.home] = m.school.id; }
     if (m.cells) {
@@ -985,6 +1097,17 @@
   function initSettings() {
     $('#btnSettings').onclick = openSettings;
     $('#btnHelp').onclick = () => openM('helpModal');
+    $('#setHelp').onclick = () => { closeM('settingsModal'); openM('helpModal'); };
+    $('#setMySchool').onclick = () => { closeM('settingsModal'); openSchool(mySid()); };
+    $('#btnPractice').onclick = startPractice;
+    $('#btnWrong').onclick = openWrong;
+    $('#btnBadges').onclick = openBadges;
+    $('#pwSave').onclick = async () => {
+      const r = await api('/api/password', { old: $('#pwOld').value, password: $('#pwNew').value });
+      if (r.error) return toast(r.error, 'err');
+      $('#pwOld').value = $('#pwNew').value = '';
+      toast('🔑 비밀번호를 바꿨어요.', 'ok');
+    };
     $('#btnBoard').onclick = () => $('#side').classList.toggle('open');
     $('#btnSound').onclick = () => { Sound.toggle(); hud(); Sound.play('tap'); };
     $$('.sem2').forEach(b => { b.onclick = async () => { if (await saveProfile({ semester: +b.dataset.sem })) { $$('.sem2').forEach(x => x.classList.toggle('on', x === b)); toast(`${b.dataset.sem}학기 문제가 나와요.`, 'ok'); } }; });
@@ -1024,7 +1147,15 @@
       if (h >= 0) { flyTo(h, Math.max(view.s, 0.5)); select(h); $('#side').classList.remove('open'); }
       else toast('이 학교는 아직 이 서버 지도에 없어요.', 'warn');
     };
-    $('#board').onclick = e => { const li = e.target.closest('[data-sid]'); if (li) jumpToSchool(+li.dataset.sid); };
+    $('#board').onclick = e => { const li = e.target.closest('[data-sid]'); if (li) openSchool(+li.dataset.sid); };
+    $('#chatBtns').innerHTML = S.CHAT.map((t, k) => `<button type="button" data-m="${k}">${esc(t)}</button>`).join('');
+    $('#chatBtns').onclick = async e => {
+      const b = e.target.closest('[data-m]');
+      if (!b) return;
+      const r = await api('/api/chat', { ch: chatCh, m: +b.dataset.m });
+      if (r.error) toast(r.error, 'warn'); else Sound.play('tap');
+    };
+    $$('.chch').forEach(b => { b.onclick = () => { chatCh = b.dataset.ch; $$('.chch').forEach(x => x.classList.toggle('on', x === b)); }; });
     $('#findSchool').oninput = () => {
       const res = searchSchools($('#findSchool').value, 8);
       $('#findList').innerHTML = res.map(s => `<button type="button" data-sid="${s.id}"><b>${esc(s.name)}</b><span>${esc(s.sido)} ${esc(s.sigungu)}</span></button>`).join('');

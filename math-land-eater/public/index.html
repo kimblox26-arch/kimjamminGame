@@ -62,6 +62,7 @@
       <div id="stCustom" class="custom" hidden>
         <div class="row"><select id="stCSido"></select><select id="stCSigungu"></select></div>
         <input id="stCName" placeholder="학교 이름 (예: 햇살초등학교)" maxlength="16">
+        <input id="stCUrl" placeholder="학교 홈페이지 주소 (없으면 비워 두세요)" maxlength="200" inputmode="url">
       </div>
     </div>
     <div class="field"><div class="label">📚 학년</div><div id="stGrade" class="static"></div></div>
@@ -86,8 +87,11 @@
       <span id="cheatBadge" class="pill bug" hidden>🐛 버그 모드</span>
     </div>
     <div class="top-actions">
-      <button type="button" id="btnSound" class="icon-btn" title="소리">🔊</button>
-      <button type="button" id="btnHelp" class="icon-btn" title="놀이 방법">❓</button>
+      <button type="button" id="btnPractice" class="icon-btn" title="연습하기">✏️</button>
+      <button type="button" id="btnWrong" class="icon-btn" title="오답 노트">📒<i id="wrongCount" class="count" hidden></i></button>
+      <button type="button" id="btnBadges" class="icon-btn" title="내 배지와 기록">🏅</button>
+      <button type="button" id="btnSound" class="icon-btn wide-only" title="소리">🔊</button>
+      <button type="button" id="btnHelp" class="icon-btn wide-only" title="놀이 방법">❓</button>
       <button type="button" id="btnBoard" class="icon-btn" title="순위">🏆</button>
       <button type="button" id="btnSettings" class="icon-btn" title="설정">⚙️</button>
     </div>
@@ -110,7 +114,7 @@
       <div class="side-tabs">
         <button type="button" class="stab on" data-pane="paneSchools">🏫 학교</button>
         <button type="button" class="stab" data-pane="panePlayers">🧒 친구</button>
-        <button type="button" class="stab" data-pane="paneFeed">📣 소식<i id="feedDot" hidden></i></button>
+        <button type="button" class="stab" data-pane="paneFeed">💬 소식<i id="feedDot" hidden></i></button>
       </div>
       <div id="paneSchools" class="pane">
         <input id="findSchool" class="find" placeholder="🔍 지도에서 학교 찾기" autocomplete="off">
@@ -122,7 +126,13 @@
         <ol id="players" class="board"></ol>
         <div id="myPlayer" class="my-rank"></div>
       </div>
-      <div id="paneFeed" class="pane" hidden><ul id="feed" class="feed"></ul></div>
+      <div id="paneFeed" class="pane feed-pane" hidden>
+        <ul id="feed" class="feed"></ul>
+        <div class="chatbox">
+          <div class="seg small"><button type="button" class="chch on" data-ch="school">🏫 우리 학교</button><button type="button" class="chch" data-ch="all">🌐 전체</button></div>
+          <div id="chatBtns" class="chat-btns"></div>
+        </div>
+      </div>
       <div class="legend">
         <span><i style="background:#ffc107"></i>우리 학교</span>
         <span><i style="background:#7fb3e0"></i>다른 학교</span>
@@ -184,10 +194,41 @@
     <div class="field"><div class="label">😀 닉네임</div>
       <div class="row"><input id="setNick" maxlength="10"><button type="button" id="setNickSave" class="btn">저장</button></div>
     </div>
+    <details class="field pw-change"><summary>🔑 비밀번호 바꾸기</summary>
+      <div class="row"><input id="pwOld" type="password" placeholder="지금 비밀번호" autocomplete="current-password"><input id="pwNew" type="password" placeholder="새 비밀번호 (4자 이상)" autocomplete="new-password"><button type="button" id="pwSave" class="btn">바꾸기</button></div>
+    </details>
     <div class="row">
-      <button type="button" id="setSchool" class="btn">🏫 학교 바꾸기</button>
+      <button type="button" id="setMySchool" class="btn">🏫 우리 학교 정보</button>
+      <button type="button" id="setHelp" class="btn">❓ 놀이 방법</button>
+      <button type="button" id="setSchool" class="btn">🔄 학교 바꾸기</button>
       <button type="button" id="setLogout" class="btn danger">로그아웃</button>
     </div>
+  </div>
+</div>
+
+<!-- 학교 정보 -->
+<div id="schoolModal" class="modal" hidden>
+  <div class="card school-card">
+    <div class="row between"><h3 id="scName"></h3><button type="button" class="icon-btn" data-close="schoolModal">✕</button></div>
+    <div id="scBody"></div>
+  </div>
+</div>
+
+<!-- 오답 노트 -->
+<div id="wrongModal" class="modal" hidden>
+  <div class="card wide">
+    <div class="row between"><h3>📒 오답 노트</h3><button type="button" class="icon-btn" data-close="wrongModal">✕</button></div>
+    <p class="muted">틀렸던 문제를 다시 풀어 보세요. 맞히면 노트에서 지워져요.</p>
+    <div id="wrongList" class="wrong-list"></div>
+  </div>
+</div>
+
+<!-- 배지와 기록 -->
+<div id="badgeModal" class="modal" hidden>
+  <div class="card wide">
+    <div class="row between"><h3>🏅 내 배지와 기록</h3><button type="button" class="icon-btn" data-close="badgeModal">✕</button></div>
+    <div id="badgeStats" class="stats four"></div>
+    <div id="badgeGrid" class="badge-grid"></div>
   </div>
 </div>
 
@@ -224,6 +265,8 @@
       <li>우리 땅을 눌러 <b>🛡️ 땅 방어하기</b>로 방어 수를 정하고, 그만큼 문제를 풀면 방어가 올라가요.</li>
       <li>틀리면 <b>💡 힌트보기</b>가 나와요. 연속으로 맞히면 🔥 불꽃이 붙어요!</li>
       <li>섬은 <b>뱃길(점선)</b>로 이어져 있어요. 학년마다 서버가 따로 있고, 같은 학교 친구들과 함께 땅을 넓혀요.</li>
+      <li>✏️ <b>연습하기</b>로 문제만 풀 수도 있고, 틀린 문제는 📒 <b>오답 노트</b>에 모여요. 🏅 배지도 모아 보세요!</li>
+      <li>💬 소식 탭에서 우리 학교 친구들에게 <b>빠른 채팅</b>을 보낼 수 있어요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>
     </ol>
     <div class="row end"><button type="button" class="btn primary" data-close="helpModal">알겠어요!</button></div>
   </div>
