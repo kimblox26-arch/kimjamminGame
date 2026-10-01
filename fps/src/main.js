@@ -15,7 +15,7 @@ import { WeaponSystem } from './weapons.js';
 import { Player } from './player.js';
 import { FX, Ballistics } from './fx.js';
 import { Squad, HumanAnimator, propGun } from './squad.js';
-import { createHuman, WIND } from './human.js';
+import { createHuman, WIND, loadHumanAssets } from './human.js';
 import { buildTextures2 } from './textures2.js';
 import { HUD } from './hud.js';
 import { Armory } from './armory.js';
@@ -191,6 +191,7 @@ class Game {
     this.hud.weapon(this.weapons.cur);
     // 아군 분대 + 플레이어 그림자 몸체
     this.setLoad(0.86, '분대원 생성 (인물 조형)');
+    await loadHumanAssets();
     await tick();
     this.squad.spawn();
     // 적 인물·총 미리 조형 (전투 중 첫 등장 시 끊김 방지)
