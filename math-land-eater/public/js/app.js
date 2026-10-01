@@ -161,6 +161,106 @@
     }
     marks = new Uint32Array(m.n);
     schools = m.schools.map(([name, sido, sigungu, url, dong], id) => ({ id, name, sido, sigungu, dong: dong || '', url: url || '' }));
+    $('#loadMsg').textContent = '시·도, 시·군·구, 동 경계를 그리는 중…';
+    await new Promise(r => setTimeout(r, 0));
+    computeRegions();
+  }
+
+  // ---------- 지역 표시: 경기도 › 남양주시 › 호평동 ----------
+  // 땅 칸마다 가장 가까운 학교(이웃 칸을 따라 잰 거리)의 동네를 붙여 대략의 경계를 만든다.
+  const SIDO_FULL = { 서울: '서울특별시', 부산: '부산광역시', 대구: '대구광역시', 인천: '인천광역시', 광주: '광주광역시', 대전: '대전광역시', 울산: '울산광역시', 세종: '세종특별자치시', 경기: '경기도', 강원: '강원특별자치도', 충북: '충청북도', 충남: '충청남도', 전북: '전북특별자치도', 전남: '전라남도', 경북: '경상북도', 경남: '경상남도', 제주: '제주특별자치도' };
+  function computeRegions() {
+    const n = G.n, dongs = [], sggs = [], sidos = [], dIdx = new Map(), gIdx = new Map(), sIdx = new Map();
+    const dong = new Int32Array(n).fill(-1), queue = new Int32Array(n);
+    let qh = 0, qt = 0;
+    for (let i = 0; i < G.schoolCount; i++) {
+      const s = schools[i], gk = s.sido + '|' + s.sigungu, dk = gk + '|' + s.dong;
+      let si = sIdx.get(s.sido);
+      if (si === undefined) { si = sidos.length; sIdx.set(s.sido, si); sidos.push({ name: SIDO_FULL[s.sido] || s.sido }); }
+      let gi = gIdx.get(gk);
+      if (gi === undefined) { gi = sggs.length; gIdx.set(gk, gi); sggs.push({ name: s.sigungu, up: si }); }
+      let di = dIdx.get(dk);
+      if (di === undefined) { di = dongs.length; dIdx.set(dk, di); dongs.push({ name: s.dong || s.sigungu, up: gi }); }
+      if (dong[i] < 0) { dong[i] = di; queue[qt++] = i; }
+    }
+    while (qh < qt) { const c = queue[qh++]; for (const m of G.nb[c]) if (dong[m] < 0) { dong[m] = dong[c]; queue[qt++] = m; } }
+    const sgg = new Int32Array(n), sido = new Int32Array(n);
+    for (let i = 0; i < n; i++) { const d = dong[i] < 0 ? 0 : dong[i]; dong[i] = d; sgg[i] = dongs[d].up; sido[i] = sggs[sgg[i]].up; }
+    // 이름표 자리: 지역 안에서 경계로부터 가장 깊숙한 칸 (경기도 이름이 서울 위에 뜨지 않게)
+    const place = (of, list) => {
+      const depth = new Int32Array(n).fill(-1);
+      qh = qt = 0;
+      for (let i = 0; i < n; i++) if (!G.sides[i] || G.nb[i].some(m => of[m] !== of[i])) { depth[i] = 0; queue[qt++] = i; } // 바닷가도 경계로 본다 (섬에 이름이 뜨지 않게)
+      while (qh < qt) { const c = queue[qh++]; for (const m of G.nb[c]) if (depth[m] < 0) { depth[m] = depth[c] + 1; queue[qt++] = m; } }
+      const best = new Int32Array(list.length).fill(-1);
+      for (let i = 0; i < n; i++) { const r = of[i], b = best[r]; if (b < 0 || depth[i] > depth[b]) best[r] = i; }
+      list.forEach((r, k) => { const c = best[k]; r.x = c >= 0 ? G.sx[c] : 0; r.y = c >= 0 ? G.sy[c] : 0; r.size = c >= 0 ? depth[c] : 0; });
+    };
+    place(dong, dongs); place(sgg, sggs); place(sido, sidos);
+    // 경계선: 서로 다른 지역의 칸이 함께 쓰는 변
+    const vid = new Map(), edges = new Map(), seg = [], lev = [];
+    let nv = 0;
+    const id = (x, y) => { const k = (x + 65536) * 262144 + (y + 65536); let v = vid.get(k); if (v === undefined) { v = nv++; vid.set(k, v); } return v; };
+    for (let c = 0; c < n; c++) for (const r of G.rings[c]) {
+      const L = r.length >> 1;
+      let pk = L - 1, prev = id(r[2 * pk], r[2 * pk + 1]);
+      for (let k = 0; k < L; k++) {
+        const v = id(r[2 * k], r[2 * k + 1]);
+        if (v !== prev) {
+          const key = v < prev ? v * 4194304 + prev : prev * 4194304 + v, o = edges.get(key);
+          if (o === undefined) edges.set(key, c);
+          else if (o !== c && dong[o] !== dong[c]) {
+            seg.push(r[2 * pk], r[2 * pk + 1], r[2 * k], r[2 * k + 1]);
+            lev.push(sido[o] !== sido[c] ? 0 : sgg[o] !== sgg[c] ? 1 : 2);
+          }
+        }
+        prev = v; pk = k;
+      }
+    }
+    G.seg = new Float32Array(seg); G.segLev = new Uint8Array(lev);
+    G.segIndex = Array.from({ length: G.ibw * G.ibh }, () => []);
+    for (let k = 0; k < lev.length; k++) {
+      const gx = Math.min(G.ibw - 1, Math.max(0, Math.floor((seg[4 * k] + seg[4 * k + 2]) / 2 / IB))), gy = Math.min(G.ibh - 1, Math.max(0, Math.floor((seg[4 * k + 1] + seg[4 * k + 3]) / 2 / IB)));
+      G.segIndex[gy * G.ibw + gx].push(k);
+    }
+    Object.assign(G, { dongOf: dong, sggOf: sgg, sidoOf: sido, dongs, sggs, sidoList: sidos });
+  }
+  const regionName = i => (i < 0 || !G.dongOf ? '' : `${G.sidoList[G.sidoOf[i]].name} › ${G.sggs[G.sggOf[i]].name} › ${G.dongs[G.dongOf[i]].name}`);
+  // 타일에 경계선 그리기: 시·도는 늘, 시·군·구는 조금 확대하면, 동은 더 확대하면
+  function drawBorders(g, x0, y0, tw, px, cp) {
+    const maxLev = cp >= 9 ? 2 : cp >= 2 ? 1 : 0, paths = [new Path2D(), new Path2D(), new Path2D()];
+    const gx0 = Math.max(0, Math.floor((x0 - 60) / IB)), gx1 = Math.min(G.ibw - 1, Math.floor((x0 + tw + 60) / IB));
+    const gy0 = Math.max(0, Math.floor((y0 - 60) / IB)), gy1 = Math.min(G.ibh - 1, Math.floor((y0 + tw + 60) / IB));
+    for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) for (const k of G.segIndex[gy * G.ibw + gx]) {
+      const l = G.segLev[k];
+      if (l > maxLev) continue;
+      paths[l].moveTo(G.seg[4 * k], G.seg[4 * k + 1]); paths[l].lineTo(G.seg[4 * k + 2], G.seg[4 * k + 3]);
+    }
+    g.lineCap = 'round';
+    if (maxLev >= 2) { g.strokeStyle = 'rgba(85,60,160,.38)'; g.lineWidth = 1.1 * px; g.stroke(paths[2]); }
+    if (maxLev >= 1) { g.strokeStyle = 'rgba(85,60,160,.62)'; g.lineWidth = Math.min(2.6, 1 + cp / 18) * px; g.stroke(paths[1]); }
+    g.strokeStyle = 'rgba(70,40,150,.85)'; g.lineWidth = Math.min(3.8, 1.6 + cp / 12) * px; g.stroke(paths[0]);
+  }
+  // 지역 이름표 (겹치면 건너뛴다)
+  function drawRegionLabels(cp, SX, SY) {
+    const boxes = [], free = (x, y, w, h) => { for (const b of boxes) if (x < b[0] + b[2] && x + w > b[0] && y < b[1] + b[3] && y + h > b[1]) return false; boxes.push([x, y, w, h]); return true; };
+    const below = cp >= 11 ? Math.max(16, cp * 0.42) : 0; // 학교 표시 아래로 비켜 쓴다
+    const draw = (list, size, color, minSize, dy) => {
+      ctx.font = `${size}px Jua, sans-serif`;
+      for (const r of list) {
+        if (r.size < minSize) continue;
+        const x = SX(r.x), y = SY(r.y) + dy;
+        if (x < -80 || y < -20 || x > vw + 80 || y > vh + 20) continue;
+        const w = ctx.measureText(r.name).width + 8;
+        if (!free(x - w / 2, y - size / 2 - 2, w, size + 4)) continue;
+        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.strokeText(r.name, x, y);
+        ctx.fillStyle = color; ctx.fillText(r.name, x, y);
+      }
+    };
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (cp < 8) draw(G.sidoList, Math.round(Math.max(14, Math.min(26, cp * 3.5))), 'rgba(70,40,150,.85)', 0, 0);
+    if (cp >= 2.2 && cp < 30) draw(G.sggs, Math.round(Math.max(12, Math.min(17, cp * 1.4))), 'rgba(85,60,160,.8)', cp < 4 ? 6 : 1, below);
+    if (cp >= 11) draw(G.dongs, Math.round(Math.max(11, Math.min(15, cp * 0.45))), 'rgba(90,75,140,.75)', cp < 20 ? 2 : 0, below);
   }
   function cellsIn(x0, y0, x1, y1) {
     const out = [];
@@ -481,6 +581,7 @@
       for (const i of owned) { const b = i * 4; if (G.box[b] <= x0 + tw && G.box[b + 2] >= x0 && G.box[b + 1] <= y0 + tw && G.box[b + 3] >= y0) ids.push(i); }
       drawGroups(g, ids, px, false);
     } else drawGroups(g, cellsIn(x0 - 1, y0 - 1, x0 + tw + 1, y0 + tw + 1), px, cp > 9);
+    if (G.seg) drawBorders(g, x0, y0, tw, px, cp);
     g.strokeStyle = 'rgba(30,80,120,.5)';
     g.lineWidth = 1.1 * px;
     for (const k of lands) g.stroke(G.landPaths[k]); // 해안선
@@ -574,10 +675,10 @@
     // 3) 화면 좌표 표시: 시도 이름, 방어, 학교
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const SX = x => view.x + x * s, SY = y => view.y + y * s;
-    if (cp < 9) {
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(Math.max(13, Math.min(26, cp * 3)))}px Jua, sans-serif`;
-      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.fillStyle = 'rgba(40,55,70,.55)';
-      for (const d of G.sidos) { ctx.strokeText(d.name, SX(d.x), SY(d.y)); ctx.fillText(d.name, SX(d.x), SY(d.y)); }
+    if (G.dongOf && (calm || !fast)) drawRegionLabels(cp, SX, SY);
+    if (calm && G.dongOf) { // 지금 보고 있는 곳: 경기도 › 남양주시 › 호평동
+      const c = hitTest((vw / 2 - view.x) / s, (vh / 2 - view.y) / s), text = c >= 0 ? '📍 ' + (cp < 2 ? G.sidoList[G.sidoOf[c]].name : cp < 9 ? G.sidoList[G.sidoOf[c]].name + ' › ' + G.sggs[G.sggOf[c]].name : regionName(c)) : '';
+      if ($('#where').textContent !== text) { $('#where').textContent = text; $('#where').hidden = !text; }
     }
     if (calm && cp >= 34) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `bold ${Math.round(Math.min(15, cp * 0.2))}px sans-serif`;

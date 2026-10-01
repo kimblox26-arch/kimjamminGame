@@ -328,3 +328,5 @@ input:focus, select:focus { border-color: var(--blue); }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .chip { border: 0; background: #eef5ff; color: #1d5fbf; border-radius: 99px; padding: 6px 10px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .find-list { max-height: 50vh; overflow-y: auto; }
+.where { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); max-width: calc(100% - 220px); padding: 6px 12px; border-radius: 99px; background: rgba(255, 255, 255, .92); color: #4c3a8f; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--shadow-sm); pointer-events: none; }
+@media (max-width: 820px) { .where { top: auto; bottom: 12px; left: 12px; transform: none; max-width: calc(100% - 24px); } }
