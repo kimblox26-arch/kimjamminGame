@@ -111,6 +111,7 @@
       <button type="button" id="btnBadges" class="icon-btn" title="내 배지와 기록">🏅</button>
       <button type="button" id="btnSound" class="icon-btn wide-only" title="소리">🔊</button>
       <button type="button" id="btnHelp" class="icon-btn wide-only" title="놀이 방법">❓</button>
+      <button type="button" id="btnRank" class="icon-btn" title="랭킹표">📊</button>
       <button type="button" id="btnBoard" class="icon-btn" title="순위">🏆</button>
       <button type="button" id="btnSettings" class="icon-btn" title="설정">⚙️</button>
     </div>
@@ -141,6 +142,7 @@
         <div class="chips"><button type="button" id="findMyDong" class="chip">📍 우리 동네 학교</button><button type="button" id="findMyCity" class="chip">🏙️ 우리 시·군·구 학교</button></div>
         <div id="findList" class="find-list"></div>
         <ol id="board" class="board"></ol>
+        <button type="button" class="link-btn rank-more" id="btnRankMore">📊 랭킹표 크게 보기</button>
         <div id="myRank" class="my-rank"></div>
       </div>
       <div id="panePlayers" class="pane" hidden>
@@ -249,6 +251,15 @@
 </div>
 
 <!-- 배지와 기록 -->
+<div id="rankModal" class="modal" hidden>
+  <div class="card rank-card">
+    <div class="row between"><h3>📊 랭킹표</h3><button type="button" class="icon-btn" data-close="rankModal">✕</button></div>
+    <div class="seg rank-tabs"><button type="button" class="rtab on" data-t="school">🏫 학교</button><button type="button" class="rtab" data-t="player">🧒 학생</button><button type="button" class="rtab" data-t="sido">🗺️ 시·도</button></div>
+    <p id="rankSum" class="muted"></p>
+    <div class="rank-wrap"><table class="rank-table"><thead id="rankHead"></thead><tbody id="rankBody"></tbody></table></div>
+  </div>
+</div>
+
 <div id="badgeModal" class="modal" hidden>
   <div class="card wide">
     <div class="row between"><h3>🏅 내 배지와 기록</h3><button type="button" class="icon-btn" data-close="badgeModal">✕</button></div>

@@ -454,10 +454,11 @@
       const sc = schoolById(id);
       return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, dong: sc.dong || '', url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
     },
-    'GET /api/players': async t => {
+    'GET /api/players': async (t, q) => {
       const a = await needPlayer(t), list = (await playersOf(a.grade)).map(p => Object.assign(p, { me: p.acc === a.u.acc }));
       list.sort((x, y) => y.captures - x.captures || y.solved - x.solved);
-      return { top: list.slice(0, 10), rank: list.findIndex(p => p.me) + 1, total: list.length };
+      const n = Math.max(10, Math.min(100, Number(q.get('n')) || 10));
+      return { top: list.slice(0, n), rank: list.findIndex(p => p.me) + 1, total: list.length };
     },
     'POST /api/capture': async (t, q, b) => {
       const a = await needPlayer(t), rt = a.rt, sid = a.sid, cell = targetCell(b), prev = rt.owner[cell];

@@ -1610,6 +1610,47 @@
     $('#hudLand').textContent = mine;
     $('#hudRank').textContent = rank || '-';
   }
+  // ---------- 📊 랭킹표: 학교(땅) · 학생(뺏은 땅) · 시도 대항전 ----------
+  let rankTab = 'school';
+  async function openRank(tab) {
+    if (!W) return;
+    rankTab = tab || rankTab;
+    $$('.rtab').forEach(b => b.classList.toggle('on', b.dataset.t === rankTab));
+    openM('rankModal');
+    const my = mySid(), medal = k => ['🥇', '🥈', '🥉'][k] || k + 1, TOP = 50;
+    const where = sid => { const sc = schools[sid]; return sc ? `${SIDO_FULL[sc.sido] || sc.sido} ${sc.sigungu}` : ''; };
+    let head = '', rows = [], sum = '';
+    if (rankTab === 'player') {
+      $('#rankBody').innerHTML = '<tr><td class="muted">불러오는 중…</td></tr>';
+      const d = await api('/api/players?n=' + TOP);
+      if (d.error || rankTab !== 'player') return;
+      head = '<tr><th>순위</th><th>친구</th><th class="num">뺏은 땅</th><th class="num">푼 문제</th></tr>';
+      rows = d.top.map((p, k) => `<tr class="${p.me ? 'me' : ''}" data-sid="${p.sid}"><td class="rk">${medal(k)}</td><td><i class="sw" style="background:${cssColor(p.sid)}"></i>${esc(p.nick)}<small>${esc(short(p.sid))}</small></td><td class="num">${p.captures}</td><td class="num">${p.solved}</td></tr>`);
+      if (d.rank > TOP) rows.push('<tr class="gap"><td colspan="4">⋯</td></tr>', `<tr class="me"><td class="rk">${d.rank}</td><td>😀 나</td><td class="num">${me.stats.captures}</td><td class="num">${me.stats.solved}</td></tr>`);
+      sum = `${me.grade}학년 서버 친구 ${d.total}명 · 나는 <b>${d.rank || '-'}위</b>`;
+    } else {
+      const land = new Map(), def = new Map();
+      for (const i of owned) { const o = W.owner[i]; land.set(o, (land.get(o) || 0) + 1); if (W.def[i]) def.set(o, (def.get(o) || 0) + W.def[i]); }
+      if (rankTab === 'school') {
+        const arr = [...land.entries()].sort((a, b) => b[1] - a[1] || (def.get(b[0]) || 0) - (def.get(a[0]) || 0) || a[0] - b[0]), mine = arr.findIndex(e => e[0] === my);
+        const row = (sid, n, k) => `<tr class="${sid === my ? 'me' : ''}" data-sid="${sid}"><td class="rk">${medal(k)}</td><td><i class="sw" style="background:${cssColor(sid)}"></i>${esc(short(sid))}<small>${esc(where(sid))}</small></td><td class="num">${n}</td><td class="num">${def.get(sid) || 0}</td></tr>`;
+        head = '<tr><th>순위</th><th>학교</th><th class="num">땅</th><th class="num">방어</th></tr>';
+        rows = arr.slice(0, TOP).map(([sid, n], k) => row(sid, n, k));
+        if (mine >= TOP) rows.push('<tr class="gap"><td colspan="4">⋯</td></tr>', row(my, arr[mine][1], mine));
+        sum = `땅을 가진 학교 ${arr.length.toLocaleString()}곳 · 우리 학교 <b>${mine >= 0 ? mine + 1 + '위' : '-'}</b> (땅 ${mine >= 0 ? arr[mine][1] : 0}칸)`;
+      } else { // 시·도 대항전: 그 시·도 학교들의 땅을 모두 더한다
+        const by = new Map();
+        for (const [sid, n] of land) { const sc = schools[sid]; if (!sc) continue; const v = by.get(sc.sido) || { land: 0, schools: 0 }; v.land += n; if (n > 1) v.schools++; by.set(sc.sido, v); }
+        const arr = [...by.entries()].sort((a, b) => b[1].land - a[1].land), mySido = schools[my] && schools[my].sido;
+        head = '<tr><th>순위</th><th>시·도</th><th class="num">땅</th><th class="num">넓힌 학교</th></tr>';
+        rows = arr.map(([sd, v], k) => `<tr class="${sd === mySido ? 'me' : ''}"><td class="rk">${medal(k)}</td><td>${esc(SIDO_FULL[sd] || sd)}</td><td class="num">${v.land.toLocaleString()}</td><td class="num">${v.schools}</td></tr>`);
+        sum = `우리 ${esc(SIDO_FULL[mySido] || mySido || '')}는 <b>${arr.findIndex(e => e[0] === mySido) + 1}위</b> · 넓힌 학교 = 본부 말고 땅을 더 가진 학교`;
+      }
+    }
+    $('#rankHead').innerHTML = head;
+    $('#rankBody').innerHTML = rows.join('') || '<tr><td class="muted">아직 아무도 없어요</td></tr>';
+    $('#rankSum').innerHTML = sum;
+  }
   async function loadPlayers() {
     const d = await api('/api/players');
     if (d.error) return;
@@ -1665,6 +1706,10 @@
       toast('🔑 비밀번호를 바꿨어요.', 'ok');
     };
     $('#btnBoard').onclick = () => $('#side').classList.toggle('open');
+    $('#btnRank').onclick = () => openRank();
+    $('#btnRankMore').onclick = () => openRank('school');
+    $$('.rtab').forEach(b => { b.onclick = () => openRank(b.dataset.t); });
+    $('#rankBody').onclick = e => { const tr = e.target.closest('tr[data-sid]'); if (tr && +tr.dataset.sid >= 0) { closeM('rankModal'); openSchool(+tr.dataset.sid); } };
     $('#btnSound').onclick = () => { Sound.toggle(); hud(); Sound.play('tap'); };
     $$('.sem2').forEach(b => { b.onclick = async () => { if (await saveProfile({ semester: +b.dataset.sem })) { $$('.sem2').forEach(x => x.classList.toggle('on', x === b)); toast(`${b.dataset.sem}학기 문제가 나와요.`, 'ok'); } }; });
     $('#setNickSave').onclick = async () => { if (await saveProfile({ nickname: $('#setNick').value.trim() })) toast('닉네임을 바꿨어요.', 'ok'); };

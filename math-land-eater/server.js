@@ -380,8 +380,8 @@ const routes = {
       list.push({ nick: u.profile.nickname, sid, captures: st.captures, solved: st.solved, me: u === a.u });
     }
     list.sort((x, y) => y.captures - x.captures || y.solved - x.solved);
-    const rank = list.findIndex(p => p.me) + 1;
-    return { top: list.slice(0, 10), rank, total: list.length };
+    const rank = list.findIndex(p => p.me) + 1, n = Math.max(10, Math.min(100, Number(url.searchParams.get('n')) || 10));
+    return { top: list.slice(0, n), rank, total: list.length };
   },
 
   // 땅 뺏기: 닿은 땅은 2문제(방어가 있으면 방어 수), 갇혔을 때 탈출길은 2문제, 4학년부터 멀리 있는 땅은 50문제
