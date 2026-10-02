@@ -12,7 +12,7 @@ const { buildMap } = require('../lib/mapgen.js');
 const root = path.join(__dirname, '..'), out = path.join(root, 'dist', 'static');
 fs.mkdirSync(path.join(out, 'js'), { recursive: true });
 
-const map = buildMap({ landFile: path.join(root, 'mapdata/korea-land.json'), schoolsFile: path.join(root, 'mapdata/schools.txt') });
+const map = buildMap({ landFile: path.join(root, 'mapdata/korea-land.json'), schoolsFile: path.join(root, 'mapdata/schools.txt'), cacheDir: path.join(root, 'data') }); // data/ 에 만들어 둔 지도를 다시 쓴다
 fs.writeFileSync(path.join(out, 'map.json'), map.clientJSON);
 // 아티팩트는 바이너리 파일을 못 올리므로 base64 글자로 바꿔 둔다 (브라우저가 다시 바이트로 푼다).
 // 한 파일이 16MB를 넘으면 안 되니 12MB씩 나눈다 (4글자 단위로 잘라야 base64 가 안 깨진다).

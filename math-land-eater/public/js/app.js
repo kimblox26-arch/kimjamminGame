@@ -167,15 +167,17 @@
     const n = new DataView(buf.buffer).getUint32(4, true);
     if (n !== m.n) throw new Error('지도 파일이 서로 맞지 않아요. 새로고침 해 주세요.');
     G.sides = buf.slice(8, 8 + n);
-    let p = 8 + n, px = 0, py = 0, nr = 0, nx = 0, ro = new Int32Array(n + (n >> 2) + 16);
-    const xy = new Int32Array(buf.length), cr = new Int32Array(n + 1);
     const u = () => { let v = 0, sh = 0, b; do { b = buf[p++]; v += (b & 0x7f) * 2 ** sh; sh += 7; } while (b & 0x80); return v; };
+    let p = 8 + n, R = 0, X = 0; // 먼저 고리·꼭짓점 수만 세어서 배열을 딱 맞게 만든다 (메모리 아끼기)
+    for (let i = 0; i < n; i++) { const rc = u(); R += rc; for (let k = 0; k < rc; k++) { const L = u(); X += 2 * L; for (let q = 0; q < 2 * L; q++) u(); } }
+    p = 8 + n;
+    let px = 0, py = 0, nr = 0, nx = 0;
+    const xy = new Int32Array(X), ro = new Int32Array(R + 1), cr = new Int32Array(n + 1);
     const z = () => { const v = u(); return v % 2 ? -(v + 1) / 2 : v / 2; };
     for (let i = 0; i < n; i++) {
       const rc = u();
       cr[i] = nr;
       for (let k = 0; k < rc; k++) {
-        if (nr + 2 > ro.length) { const t = new Int32Array(ro.length * 2); t.set(ro); ro = t; }
         const L = u();
         ro[nr++] = nx;
         let x = (px += z()), y = (py += z());
@@ -185,15 +187,15 @@
       if (i % 50000 === 49999) await new Promise(r => setTimeout(r, 0)); // 화면이 멈추지 않게 쉬어 간다
     }
     cr[n] = nr; ro[nr] = nx;
-    G.xy = xy.slice(0, nx); G.ro = ro.slice(0, nr + 1); G.cr = cr;
+    G.xy = xy; G.ro = ro; G.cr = cr;
     $('#loadMsg').textContent = `이웃한 땅 ${m.n.toLocaleString()}칸을 잇는 중…`;
     await new Promise(r => setTimeout(r, 0));
     // 이웃한 땅은 칸 모양으로 직접 계산한다 (서버와 같은 방법) + 섬 뱃길. 칸끼리 함께 쓰는 변은 지역 경계선에도 쓴다.
     const eachRing = (c, visit) => { for (let r = G.cr[c]; r < G.cr[c + 1]; r++) visit(G.xy, G.ro[r], G.ro[r + 1]); };
-    let ec = new Int32Array(1 << 20), es = new Int32Array(1 << 22), ne = 0;
-    S.sharedEdges(n, eachRing, (c, o, x1, y1, x2, y2) => {
+    let ec = new Int32Array(2 * (Math.ceil(X / 4 * 1.1) + 1024)), es = new Int32Array(ec.length), ne = 0; // 함께 쓰는 변은 꼭짓점 수의 절반쯤
+    S.sharedEdges(n, eachRing, (c, o, x1, y1, x2, y2, k1, k2) => {
       if (2 * ne + 2 > ec.length) { const t = new Int32Array(ec.length * 2); t.set(ec); ec = t; const t2 = new Int32Array(es.length * 2); t2.set(es); es = t2; }
-      ec[2 * ne] = c; ec[2 * ne + 1] = o; es[4 * ne] = x1; es[4 * ne + 1] = y1; es[4 * ne + 2] = x2; es[4 * ne + 3] = y2; ne++;
+      ec[2 * ne] = c; ec[2 * ne + 1] = o; es[2 * ne] = k1; es[2 * ne + 1] = k2; ne++; // es: 변 두 끝의 G.xy 자리
     });
     G.edges = { c: ec, s: es, n: ne }; // computeRegions 가 경계선을 만든 뒤 버린다
     const off = new Int32Array(n + 1), pairs = ne + m.routes.length;
@@ -211,7 +213,7 @@
     off[n] = wr;
     G.nbOff = off; G.nbIdx = idx.slice(0, wr);
     G.nbOf = i => G.nbIdx.subarray(G.nbOff[i], G.nbOff[i + 1]);
-    G.paths = new Array(m.n);
+    G.paths = new Map();
     G.box = new Float32Array(m.n * 4);
     G.sx = new Float32Array(m.n); G.sy = new Float32Array(m.n);
     for (let i = 0; i < n; i++) {
@@ -293,7 +295,8 @@
     for (let k = 0; k < E.n; k++) {
       const c = E.c[2 * k], o = E.c[2 * k + 1];
       if (dong[o] === dong[c]) continue;
-      seg.push(E.s[4 * k], E.s[4 * k + 1], E.s[4 * k + 2], E.s[4 * k + 3]);
+      const a = E.s[2 * k], b = E.s[2 * k + 1];
+      seg.push(G.xy[a], G.xy[a + 1], G.xy[b], G.xy[b + 1]);
       lev.push(sido[o] !== sido[c] ? 0 : sgg[o] !== sgg[c] ? 1 : 2);
     }
     delete G.edges;
@@ -644,9 +647,11 @@
   }
   // 칸 모양은 처음 그릴 때 만든다 (불러오기가 빨라진다)
   function pathOf(i) {
-    let p = G.paths[i];
+    let p = G.paths.get(i);
     if (!p) {
-      p = G.paths[i] = new Path2D();
+      if (G.paths.size > 80000) G.paths.clear(); // 너무 많이 쌓이면 비우고 다시 만든다 (메모리)
+      p = new Path2D();
+      G.paths.set(i, p);
       const r = G.xy;
       for (let q = G.cr[i]; q < G.cr[i + 1]; q++) { const a = G.ro[q], b = G.ro[q + 1]; p.moveTo(r[a], r[a + 1]); for (let k = a + 2; k < b; k += 2) p.lineTo(r[k], r[k + 1]); p.closePath(); }
     }
@@ -1214,7 +1219,7 @@
   // ---------- 운영자 관리 ----------
   let resetAsk = 0;
   async function adminAct(body, btn) {
-    if (['resetWorld', 'resetAll', 'hideSchool', 'clearSchool', 'kickSchool', 'ban'].includes(body.act) && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
+    if (['resetWorld', 'resetAll', 'hideSchool', 'clearSchool', 'kickSchool', 'kickAll', 'ban'].includes(body.act) && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
       resetAsk = Date.now();
       return toast('정말 할까요? 3초 안에 한 번 더 누르세요.', 'warn');
     }
@@ -1229,7 +1234,8 @@
     if (body.act === 'hideSchool') { delete schools[body.sid]; await loadWorld(); updateBoard(); renderMini(); requestDraw(); select(-1); }
     if (body.act === 'clearChat') clearChat();
     if (r.bans) renderBans(r.bans);
-    toast(r.text ? '🛠️ ' + r.text : body.act === 'notice' ? '📢 공지를 보냈어요.' : body.act === 'ban' ? `🚫 ${body.nick} 님을 ${body.days >= 3650 ? '영구' : body.days + '일'} 밴했어요.` : `🛠️ 처리했어요${r.n ? ` (${r.n}칸)` : ''}.`, 'ok');
+    if (body.act === 'notice') return r; // 공지는 모두에게 뜨는 공지 자체로 충분 (보냈다는 표시는 안 띄운다)
+    toast(r.text ? '🛠️ ' + r.text : body.act === 'ban' ? `🚫 ${body.nick} 님을 ${body.days >= 3650 ? '영구' : body.days + '일'} 밴했어요.` : `🛠️ 처리했어요${r.n ? ` (${r.n}칸)` : ''}.`, 'ok');
     return r;
   }
   function renderBans(list) {
@@ -1248,6 +1254,7 @@
     $('#admNoticeGo').onclick = async () => { await adminAct({ act: 'notice', text: $('#admNotice').value }); $('#admNotice').value = ''; };
     $('#admChat').onclick = e => adminAct({ act: 'clearChat' }, e.currentTarget);
     $('#admReset').onclick = e => adminAct({ act: 'resetWorld' }, e.currentTarget);
+    $('#admKickAll').onclick = e => adminAct({ act: 'kickAll' }, e.currentTarget);
     $('#admResetAll').onclick = e => adminAct({ act: 'resetAll' }, e.currentTarget);
     $('#admBanGo').onclick = e => adminAct({ act: 'ban', nick: $('#admBanNick').value.trim(), days: Math.round(+$('#admBanDays').value) }, e.currentTarget);
     $('#admBanForever').onclick = () => { $('#admBanDays').value = 3650; };
@@ -1569,7 +1576,7 @@
       txt = `🏷️ ${who}님이 ${short(ev.to)}에 땅 ${ev.n}칸을 팔려고 내놓았어요`;
       if (ev.to === my && ev.sid !== my) { cls = 'alert'; toast(`🏷️ ${short(ev.sid)}가 우리 학교에 땅 ${ev.n}칸을 팔았어요! 🏷️ 땅을 눌러 '땅 사기'를 하세요.`, 'ok'); Sound.play('unlock'); }
     } else if (ev.kind === 'buy') txt = `🛒 ${who}님이 ${short(ev.from)}의 땅 ${ev.n}칸을 샀어요`;
-    else if (ev.kind === 'notice') { txt = `📢 ${ev.by} 공지: ${ev.text}`; cls = 'alert'; toast(`📢 ${ev.text}`, 'warn'); }
+    else if (ev.kind === 'notice') { txt = `📢 ${ev.text}`; cls = 'alert'; toast(`📢 ${ev.text}`, 'warn'); }
     else if (ev.kind === 'admin') { txt = `🛠️ ${ev.by}: ${ev.text}`; if (ev.chatClear) clearChat(); }
     else return;
     if (ev.kind === 'capture' && (ev.far || ev.escape)) txt = `${ev.far ? '🚀' : '🚪'} ${who}님이 ${ev.far ? '멀리 있는' : '탈출길'} 땅을 차지했어요!`;

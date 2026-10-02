@@ -102,7 +102,8 @@
     modChanged();
   }
   const banOf = u => !u.role && mod.bans.find(b => b.until > Date.now() && ((u.profile && b.nick === u.profile.nickname) || (b.accs || []).includes(u.acc) || (cloud && (b.devs || []).includes(local.device))));
-  const kickedNow = u => !u.role && u.profile && (mod.kicks[u.profile.school] || 0) > (u.profile.at || 0);
+  const kickTime = school => Math.max(mod.kicks[school] || 0, mod.kicks['*'] || 0); // '*' = 모든 학교
+  const kickedNow = u => !u.role && u.profile && kickTime(u.profile.school) > (u.profile.at || 0);
   const banInfo = b => ({ until: b.until, by: b.by || '개발자' });
   function failBan(b) { const e = new HttpError(423, '🚫 게임 이용이 정지되었어요.'); e.extra = { ban: banInfo(b) }; throw e; }
   // 밴·퇴장이 바뀌면 지금 이 화면의 사람에게 바로 알린다
@@ -310,7 +311,7 @@
   async function playersOf(grade) {
     if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && gradeOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
     const snap = await cloud.db.collection('players').where('grade', '==', grade).limit(1000).get();
-    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, sid: idByKey.has(p.school) && !((mod.kicks[p.school] || 0) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
+    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
   }
   function newSession(key) {
     const token = rand(24);
@@ -543,6 +544,14 @@
         u.viewGrade = g;
         save();
         return { ok: true, user: publicUser(u) };
+      }
+      if (b.act === 'kickAll') { // 모든 학교 학생을 퇴장 (운영자·개발자는 빼고): 모두 학교를 다시 고른다
+        mod.kicks = { '*': Date.now() };
+        let n = 0;
+        for (const x of Object.values(local.users)) if (!x.role && x.profile) { x.profile = null; n++; }
+        if (cloud) n = (await cloud.db.collection('players').limit(1000).get()).docs.length;
+        await saveMod();
+        return { ok: true, n, text: `모든 학교 학생 ${n}명을 퇴장시켰어요` };
       }
       if (b.act === 'kickSchool') { // 이 학교 학생을 모두 퇴장 (운영자·개발자는 빼고)
         const id = Number(b.sid);

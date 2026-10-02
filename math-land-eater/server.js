@@ -455,6 +455,12 @@ const routes = {
       save();
       return { ok: true, user: publicUser(u) };
     }
+    if (b.act === 'kickAll') { // 모든 학교 학생을 퇴장 (운영자·개발자는 빼고): 모두 학교를 다시 고른다
+      let n = 0;
+      for (const x of Object.values(db.users)) if (!x.role && x.profile) { x.profile = null; n++; notifyUser(x.username, { t: 'kicked' }); }
+      save();
+      return { ok: true, n, text: `모든 학교 학생 ${n}명을 퇴장시켰어요` };
+    }
     if (b.act === 'kickSchool') { // 이 학교 학생을 모두 퇴장 (운영자·개발자는 빼고)
       const id = Number(b.sid);
       if (!Number.isInteger(id) || id < 0 || id >= schoolCount()) fail('학교를 골라 주세요.');

@@ -49,7 +49,7 @@
     return out;
   }
   // 두 칸이 함께 쓰는 변 찾기. ring(c, visit) 는 칸 c 의 고리마다 visit(좌표 배열, 시작, 끝) 을 부른다.
-  // 같은 변을 쓰는 칸을 만나면 fn(c, o, x1, y1, x2, y2). 변(두 꼭짓점)을 열쇠로 하는 타입 배열 해시 표라 50만 칸도 빠르다.
+  // 같은 변을 쓰는 칸을 만나면 fn(c, o, x1, y1, x2, y2, 앞 꼭짓점 자리, 뒤 꼭짓점 자리). 변(두 꼭짓점)을 열쇠로 하는 타입 배열 해시 표라 50만 칸도 빠르다.
   function sharedEdges(n, ring, fn) {
     let total = 0;
     for (let c = 0; c < n; c++) ring(c, (r, s, e) => { total += (e - s) >> 1; });
@@ -68,7 +68,7 @@
           while (val[h] >= 0 && (ka[h] !== a || kb[h] !== b)) h = (h + 1) & mask;
           const o = val[h];
           if (o < 0) { ka[h] = a; kb[h] = b; val[h] = c; }
-          else if (o !== c) fn(c, o, px, py, x, y);
+          else if (o !== c) fn(c, o, px, py, x, y, k === s ? e - 2 : k - 2, k);
         }
         px = x; py = y;
       }
