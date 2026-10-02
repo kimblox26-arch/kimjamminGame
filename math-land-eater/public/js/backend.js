@@ -149,7 +149,7 @@
   async function getWorld(g) {
     if (worlds[g]) return worlds[g];
     const wp = WP;
-    const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Int32Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1, offers: [] };
+    const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Uint8Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1, offers: [] };
     BASE.forEach((s, i) => setHome(rt, i, s.cell));
     if (cloud) {
       const snap = await cloud.db.collection(`${WP}/g${g}/c`).get();

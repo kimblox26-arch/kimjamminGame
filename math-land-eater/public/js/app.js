@@ -136,6 +136,8 @@
 
   // ---------- 지도 불러오기 ----------
   const IB = 1024; // 빠른 찾기 색인 칸 크기
+  // 칸 i 의 이웃 칸들. loadMap 밖에 두어야 불러올 때 쓴 큰 임시 배열(지도 파일 등)을 붙잡지 않는다 (메모리)
+  const nbOf = i => G.nbIdx.subarray(G.nbOff[i], G.nbOff[i + 1]);
   let stamp = 0, marks = null;
   async function loadMap() {
     const res = await fetch(window.MLE_MAP_URL || '/api/map');
@@ -213,7 +215,7 @@
     }
     off[n] = wr;
     G.nbOff = off; G.nbIdx = idx.slice(0, wr);
-    G.nbOf = i => G.nbIdx.subarray(G.nbOff[i], G.nbOff[i + 1]);
+    G.nbOf = nbOf;
     G.paths = new Map();
     G.box = new Float32Array(m.n * 4);
     G.sx = new Float32Array(m.n); G.sy = new Float32Array(m.n);
@@ -281,7 +283,7 @@
       if (dong[i] < 0) { dong[i] = di; queue[qt++] = i; }
     }
     while (qh < qt) { const c = queue[qh++]; for (const m of G.nbOf(c)) if (dong[m] < 0) { dong[m] = dong[c]; queue[qt++] = m; } }
-    const sgg = new Int32Array(n), sido = new Int32Array(n);
+    const sgg = new Uint16Array(n), sido = new Uint8Array(n); // 메모리 아끼기 (시군구 수천 개, 시도 수십 개)
     for (let i = 0; i < n; i++) { const d = dong[i] < 0 ? 0 : dong[i]; dong[i] = d; sgg[i] = dongs[d].up; sido[i] = sggs[sgg[i]].up; }
     // 이름표 자리: 지역 안에서 경계로부터 가장 깊숙한 칸 (경기도 이름이 서울 위에 뜨지 않게)
     const place = (of, list) => {
@@ -310,7 +312,7 @@
       const gx = Math.min(G.ibw - 1, Math.max(0, Math.floor((seg[4 * k] + seg[4 * k + 2]) / 2 / IB))), gy = Math.min(G.ibh - 1, Math.max(0, Math.floor((seg[4 * k + 1] + seg[4 * k + 3]) / 2 / IB)));
       G.segIndex[gy * G.ibw + gx].push(k);
     }
-    Object.assign(G, { dongOf: dong, sggOf: sgg, sidoOf: sido, dongs, sggs, sidoList: sidos });
+    Object.assign(G, { dongOf: dongs.length < 65536 ? Uint16Array.from(dong) : dong, sggOf: sgg, sidoOf: sido, dongs, sggs, sidoList: sidos });
   }
   const regionName = i => (i < 0 || !G.dongOf ? '' : `${G.sidoList[G.sidoOf[i]].name} › ${G.sggs[G.sggOf[i]].name} › ${G.dongs[G.dongOf[i]].name}`);
   // 타일에 경계선 그리기: 시·도는 늘, 시·군·구는 조금 확대하면, 동은 더 확대하면
@@ -1453,7 +1455,7 @@
     if (d.error) { toast(d.error, 'err'); return false; }
     if (d.owner.length !== G.n) { toast('지도가 새로 바뀌었어요. 새로고침 해 주세요.', 'err'); return false; }
     mergeCustom(d.custom);
-    W = { owner: Int32Array.from(d.owner), def: new Int32Array(G.n), home: d.home.slice(), homeCell: new Int32Array(G.n).fill(-1) };
+    W = { owner: Int32Array.from(d.owner), def: new Uint8Array(G.n), home: d.home.slice(), homeCell: new Int32Array(G.n).fill(-1) }; // 방어는 최대 99
     defended = new Set();
     d.def.forEach(([i, v]) => { W.def[i] = v; defended.add(i); });
     owned = new Set();

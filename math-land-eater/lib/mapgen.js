@@ -9,9 +9,9 @@ const crypto = require('crypto');
 const { project, decodeRing, neighborsFromRings } = require('../public/js/shared.js');
 
 const VERSION = 5;
-const SPACING = 17;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 240m)
-const MIN_GAP = 9;     // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈125m)
-const SPACING_NK = 45; // 북한 땅은 칸을 크게 (≈625m): 보너스 땅이고 지도가 너무 무거워지지 않게
+const SPACING = 15;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 210m)
+const MIN_GAP = 8;     // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈110m)
+const SPACING_NK = 40; // 북한 땅은 칸을 크게 (≈560m): 보너스 땅이고 지도가 너무 무거워지지 않게
 const MARGIN = 400;
 
 function mulberry32(a) {
