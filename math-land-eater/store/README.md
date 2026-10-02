@@ -13,18 +13,18 @@
 
 게임 사이트는 저장소 맨 위 `docs/` 폴더에 있어요. 맨 위 주소는 소개 페이지이고, 게임은 `play/`에 있어요. 게임을 고친 뒤에는 `node tools/build-static.js`를 실행하면 `docs/`가 새로 만들어져요.
 
-## 1단계: 무료 웹사이트로 올리기 (GitHub Pages)
+## 1단계: 나만의 무료 주소로 올리기 (GitHub Pages)
 
-1. GitHub 저장소 **Settings → Pages**로 들어가요.
-2. Source를 **Deploy from a branch**로, Branch를 `claude/math-land-eater-game-2fglub`, 폴더를 **/docs**로 고르고 Save를 눌러요.
-3. 몇 분 뒤 `https://kimblox26-arch.github.io/kimjamminGame/` 에서 소개 페이지가 열리고, 게임은 `https://kimblox26-arch.github.io/kimjamminGame/play/` 에서 열려요.
+1. GitHub에서 **New repository**를 눌러 이름이 정확히 `kimblox26-arch.github.io`인 **Public** 저장소를 만들어요.
+2. `docs/` 폴더의 내용을 그 저장소 맨 위(`main` 브랜치)에 그대로 올려요. 이 저장소는 GitHub가 Pages를 자동으로 켜 줘요.
+3. 몇 분 뒤 `https://kimblox26-arch.github.io/` 에서 소개 페이지가 열리고, 게임은 `https://kimblox26-arch.github.io/play/` 에서 열려요.
 4. 폰 크롬으로 열고 **홈 화면에 추가**를 하면 바로 앱처럼 쓸 수 있어요.
 
 ⚠️ `docs/privacy.html`의 **[보호자 연락 이메일을 여기에 적어 주세요]** 부분을 보호자 이메일로 바꾼 뒤 다시 올려 주세요. 구글 플레이 심사에 꼭 필요해요.
 
 ## 2단계: 앱 파일 만들기 (PWABuilder)
 
-1. https://www.pwabuilder.com 에 게임 주소(`…/kimjamminGame/play/`)를 넣고 **Start**를 눌러요.
+1. https://www.pwabuilder.com 에 게임 주소(`https://kimblox26-arch.github.io/play/`)를 넣고 **Start**를 눌러요.
 2. **Package For Stores → Android → Google Play**를 골라요.
    - Package ID 예: `io.github.kimblox26arch.mathlandeater`
    - App name: `매뜨 땅먹`
@@ -32,8 +32,7 @@
    - `*.aab`: 구글 플레이에 올리는 앱 파일
    - `signing.keystore`, `signing-key-info.txt`: **서명 열쇠**. 잃어버리면 앱을 업데이트할 수 없어요. 꼭 안전한 곳에 따로 보관해 주세요.
    - `assetlinks.json`: 앱 위쪽의 주소창을 없애 주는 파일
-4. 주소창을 없애려면 `assetlinks.json`을 `https://kimblox26-arch.github.io/.well-known/assetlinks.json` 주소에 올려야 해요.
-   - 이 주소를 쓰려면 이름이 `kimblox26-arch.github.io`인 저장소가 따로 있어야 해요.
+4. 주소창을 없애려면 `assetlinks.json`을 `kimblox26-arch.github.io` 저장소의 `.well-known/assetlinks.json`에 올려요.
    - 안 올려도 앱은 잘 돌아가요. 대신 위쪽에 작은 주소창이 보여요.
 
 ## 3단계: 구글 플레이 콘솔
@@ -44,7 +43,7 @@
    - 테스터는 가족이나 친구의 구글 계정 이메일로 초대해요.
    - 14일이 지나면 **프로덕션 출시 신청**을 할 수 있어요.
 4. **앱 콘텐츠**에서 아래 항목을 채워요.
-   - 개인정보처리방침: `https://kimblox26-arch.github.io/kimjamminGame/privacy.html`
+   - 개인정보처리방침: `https://kimblox26-arch.github.io/privacy.html`
    - 광고: 없음
    - 타겟층: 6~8세, 9~12세. 어린이가 대상이라 **가족 정책**을 지켜야 해요. 이 게임은 광고가 없고, 채팅은 정해진 문장만 쓸 수 있어요.
    - 데이터 보안: "수집하는 데이터 없음"을 골라요. 게임 정보는 기기 안에만 저장되고 서버로 보내지 않아요.
