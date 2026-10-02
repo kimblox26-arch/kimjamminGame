@@ -58,6 +58,7 @@
     M.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
     BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i }));
     await connectCloud();
+    await loadMod();
     if (cloud) {
       await loadCustom();
       try { // 개발자가 서버를 초기화하면 모두가 새 자리에서 처음부터 시작한다
@@ -80,6 +81,38 @@
     }
   }
   const isShared = () => !!cloud;
+
+  // ---------- 운영: 학교 퇴장·밴 ----------
+  if (!local.device) { local.device = rand(8); save(); } // 이 기기 표시 (밴은 아이디·기기 단위로도 걸린다)
+  let mod = { bans: [], kicks: {} }, listenTok = null, listenFn = null;
+  async function loadMod() {
+    if (!cloud) { mod = { bans: local.bans || [], kicks: local.kicks || {} }; return; }
+    try {
+      const [b, k] = await Promise.all([cloud.db.doc('mod/bans').get(), cloud.db.doc('mod/kicks').get()]);
+      mod.bans = b.exists ? b.data().list || [] : [];
+      mod.kicks = k.exists ? k.data().schools || {} : {};
+    } catch { /* 없으면 빈 목록 */ }
+    cloud.db.doc('mod/bans').onSnapshot(snap => { mod.bans = snap.exists ? snap.data().list || [] : []; modChanged(); }, () => {});
+    cloud.db.doc('mod/kicks').onSnapshot(snap => { mod.kicks = snap.exists ? snap.data().schools || {} : {}; modChanged(); }, () => {});
+  }
+  async function saveMod() {
+    mod.bans = mod.bans.filter(b => b.until > Date.now());
+    if (cloud) { await cloud.db.doc('mod/bans').set({ list: mod.bans }); await cloud.db.doc('mod/kicks').set({ schools: mod.kicks }); }
+    else { local.bans = mod.bans; local.kicks = mod.kicks; save(); }
+    modChanged();
+  }
+  const banOf = u => !u.role && mod.bans.find(b => b.until > Date.now() && ((u.profile && b.nick === u.profile.nickname) || (b.accs || []).includes(u.acc) || (cloud && (b.devs || []).includes(local.device))));
+  const kickedNow = u => !u.role && u.profile && (mod.kicks[u.profile.school] || 0) > (u.profile.at || 0);
+  const banInfo = b => ({ until: b.until, by: b.by || '개발자' });
+  function failBan(b) { const e = new HttpError(423, '🚫 게임 이용이 정지되었어요.'); e.extra = { ban: banInfo(b) }; throw e; }
+  // 밴·퇴장이 바뀌면 지금 이 화면의 사람에게 바로 알린다
+  function modChanged() {
+    const me = listenTok && getAuth(listenTok);
+    if (!me || !listenFn) return;
+    const b = banOf(me.u);
+    if (b) return listenFn({ t: 'banned', ban: banInfo(b) });
+    if (kickedNow(me.u)) { me.u.profile = null; save(); listenFn({ t: 'kicked' }); }
+  }
 
   // ---------- 학교 ----------
   let custom = local.custom; // 공유 모드에서는 db 의 목록
@@ -272,12 +305,12 @@
   async function publishCard(u) {
     if (!cloud || !u.profile) return;
     const st = statsOf(u);
-    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: gradeOf(u), captures: st.captures, solved: st.solved, at: Date.now() }); } catch { /* 다음에 다시 */ }
+    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: gradeOf(u), captures: st.captures, solved: st.solved, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
   }
   async function playersOf(grade) {
     if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && gradeOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
     const snap = await cloud.db.collection('players').where('grade', '==', grade).limit(1000).get();
-    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, sid: idByKey.has(p.school) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0);
+    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, sid: idByKey.has(p.school) && !((mod.kicks[p.school] || 0) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
   }
   function newSession(key) {
     const token = rand(24);
@@ -290,10 +323,11 @@
     const u = s && hasOwn(local.users, s.user) ? local.users[s.user] : null;
     return u ? { token, s, u } : null;
   }
-  function needLogin(token) { const a = getAuth(token); if (!a) fail('로그인이 필요해요.', 401); return a; }
+  function needLogin(token) { const a = getAuth(token); if (!a) fail('로그인이 필요해요.', 401); const b = banOf(a.u); if (b) failBan(b); return a; }
   async function needPlayer(token) {
     const a = needLogin(token), g = gradeOf(a.u);
     if (g < 1 || g > 6) fail('초등학생(1~6학년)만 플레이할 수 있어요.', 403);
+    if (kickedNow(a.u)) { a.u.profile = null; save(); fail('🚪 학교에서 퇴장되었어요. 학교를 다시 골라 주세요.', 409); }
     a.sid = profileSchool(a.u);
     if (a.sid < 0) fail('먼저 학교와 닉네임을 설정해 주세요.', 409);
     a.grade = g;
@@ -329,6 +363,8 @@
       if (g < 1 || g > 6) fail(`나이 인증 실패: 초등학생(${sy - 12}~${sy - 7}년생)만 가입할 수 있어요.`);
       const key = userKey(username);
       if (hasOwn(local.users, key)) fail('이 기기에 이미 있는 아이디예요. 다른 아이디를 써 주세요.');
+      const devBan = cloud && mod.bans.find(b => b.until > Date.now() && (b.devs || []).includes(local.device));
+      if (devBan) failBan(devBan);
       if (cloud) { // 친구들과 함께 쓰는 지도에서는 다른 기기의 아이디와도 겹치면 안 된다
         const idDoc = cloud.db.doc('ids/' + username.toLowerCase());
         if ((await idDoc.get()).exists) fail('이미 있는 아이디예요. 다른 아이디를 써 주세요.');
@@ -346,6 +382,7 @@
         return newSession(key);
       }
       const u = hasOwn(local.users, key) ? local.users[key] : null;
+      if (u && banOf(u) && (await hashPw(String(b.password || ''), u.salt)) === u.hash) failBan(banOf(u));
       if (!u || (await hashPw(String(b.password || ''), u.salt)) !== u.hash) fail('아이디 또는 비밀번호가 틀렸어요. (계정은 가입한 기기에만 있어요)');
       return newSession(key);
     },
@@ -384,7 +421,7 @@
         schoolId = Number(b.schoolId);
         if (!Number.isInteger(schoolId) || schoolId < 0 || schoolId >= schoolCount()) fail('학교를 골라 주세요.');
       }
-      a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname };
+      a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname, at: Date.now() };
       save();
       publishCard(a.u);
       return { user: publicUser(a.u), custom: publicCustom() };
@@ -507,6 +544,36 @@
         save();
         return { ok: true, user: publicUser(u) };
       }
+      if (b.act === 'kickSchool') { // 이 학교 학생을 모두 퇴장 (운영자·개발자는 빼고)
+        const id = Number(b.sid);
+        if (!Number.isInteger(id) || id < 0 || id >= schoolCount()) fail('학교를 골라 주세요.');
+        const key = schoolKey(schoolById(id));
+        mod.kicks[key] = Date.now();
+        let n = 0;
+        for (const x of Object.values(local.users)) if (!x.role && x.profile && x.profile.school === key) { x.profile = null; n++; }
+        if (cloud) n = (await cloud.db.collection('players').where('school', '==', key).limit(1000).get()).docs.length;
+        await saveMod();
+        return { ok: true, n, text: `${schoolById(id).name} 학생 ${n}명을 퇴장시켰어요` };
+      }
+      if (b.act === 'ban' || b.act === 'unban' || b.act === 'bans') { // 개발자만: 밴
+        if (u.role !== 'dev') fail('개발자만 밴할 수 있어요.', 403);
+        if (b.act === 'ban') {
+          const nick = String(b.nick || '').trim(), days = Math.round(Number(b.days));
+          if (!nick) fail('밴할 사람의 닉네임을 써 주세요.');
+          if (!(days >= 1 && days <= 3650)) fail('밴할 날 수는 1~3650일로 골라 주세요.');
+          if (Object.values(local.users).some(x => x.role && x.profile && x.profile.nickname === nick)) fail('운영자·개발자는 밴할 수 없어요.');
+          let accs = Object.values(local.users).filter(x => !x.role && x.profile && x.profile.nickname === nick).map(x => x.acc), devs = [];
+          if (cloud) {
+            const snap = await cloud.db.collection('players').where('nick', '==', nick).limit(100).get();
+            snap.docs.forEach(d => { accs.push(d.id); if (d.data().dev) devs.push(d.data().dev); });
+          }
+          accs = [...new Set(accs)]; devs = [...new Set(devs)].filter(d => d !== local.device); // 내 기기는 막지 않는다
+          mod.bans = mod.bans.filter(x => x.nick !== nick);
+          mod.bans.push({ nick, accs, devs, until: Date.now() + days * 864e5, by: u.profile ? u.profile.nickname : '개발자', at: Date.now() });
+        } else if (b.act === 'unban') mod.bans = mod.bans.filter(x => x.nick !== String(b.nick || ''));
+        if (b.act !== 'bans') await saveMod();
+        return { ok: true, bans: mod.bans.filter(x => x.until > Date.now()).map(x => ({ nick: x.nick, until: x.until, n: (x.accs || []).length })) };
+      }
       if (b.act === 'resetAll') { // 개발자만: 모든 학년 서버를 처음부터
         if (u.role !== 'dev') fail('개발자만 서버를 초기화할 수 있어요.', 403);
         const by = u.profile ? u.profile.nickname : '개발자';
@@ -621,19 +688,21 @@
     try { return await h(token, url.searchParams, body || {}); }
     catch (e) {
       if (!(e instanceof HttpError)) console.error(e);
-      return e instanceof HttpError ? { error: e.message, code: e.code } : { error: '오류가 났어요. 다시 해 주세요.', code: 500 };
+      return e instanceof HttpError ? Object.assign({ error: e.message, code: e.code }, e.extra) : { error: '오류가 났어요. 다시 해 주세요.', code: 500 };
     }
   }
   // 실시간 소식: 학교 채팅은 같은 학교만
   function listen(token, handler) {
     const a = getAuth(token);
+    listenTok = token; listenFn = handler;
+    setTimeout(modChanged, 0);
     emit = (g, msg, onlySid) => {
       const me = getAuth(token);
       if (!me || gradeOf(me.u) !== g) return;
       if (onlySid != null && profileSchool(me.u) !== onlySid) return;
       handler(msg);
     };
-    return a ? () => { emit = () => {}; } : () => {};
+    return a ? () => { emit = () => {}; listenFn = null; } : () => {};
   }
 
   window.MLEBackend = { init, api, listen, isShared };

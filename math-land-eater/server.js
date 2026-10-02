@@ -185,7 +185,18 @@ function getAuth(req, url) {
 function needLogin(req, url) {
   const a = getAuth(req, url);
   if (!a) fail('로그인이 필요해요.', 401);
+  const b = banOf(a.u);
+  if (b) failBan(b);
   return a;
+}
+// ---------- 운영: 학교 퇴장·밴 ----------
+db.bans = db.bans || [];
+const banOf = u => !u.role && db.bans.find(b => b.until > Date.now() && (b.users.includes(u.username) || (u.profile && u.profile.nickname === b.nick)));
+const banInfo = b => ({ until: b.until, by: b.by || '개발자' });
+function failBan(b) { const e = new HttpError(423, '🚫 게임 이용이 정지되었어요.'); e.extra = { ban: banInfo(b) }; throw e; }
+function notifyUser(username, msg) { // 그 사람이 열어 둔 화면에 바로 알린다
+  const data = `data: ${JSON.stringify(msg)}\n\n`;
+  for (const rt of Object.values(worlds)) for (const [res, c] of rt.clients) if (c.user === username) res.write(data);
 }
 function needPlayer(req, url) {
   const a = needLogin(req, url), g = gradeOf(a.u);
@@ -224,6 +235,7 @@ const routes = {
     const key = userKey(b.username || ''), u = hasOwn(db.users, key) ? db.users[key] : null;
     const ok = u && crypto.timingSafeEqual(Buffer.from(hashPw(String(b.password || ''), u.salt), 'hex'), Buffer.from(u.hash, 'hex'));
     if (!ok) fail('아이디 또는 비밀번호가 틀렸어요.');
+    if (banOf(u)) failBan(banOf(u));
     return newSession(key);
   },
 
@@ -268,7 +280,7 @@ const routes = {
       schoolId = Number(b.schoolId);
       if (!Number.isInteger(schoolId) || schoolId < 0 || schoolId >= schoolCount()) fail('학교를 골라 주세요.');
     }
-    a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname };
+    a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname, at: Date.now() };
     save();
     const g = gradeOf(a.u);
     if (g >= 1 && g <= 6) ensurePlaced(getWorld(g), schoolId);
@@ -443,6 +455,30 @@ const routes = {
       save();
       return { ok: true, user: publicUser(u) };
     }
+    if (b.act === 'kickSchool') { // 이 학교 학생을 모두 퇴장 (운영자·개발자는 빼고)
+      const id = Number(b.sid);
+      if (!Number.isInteger(id) || id < 0 || id >= schoolCount()) fail('학교를 골라 주세요.');
+      let n = 0;
+      for (const x of Object.values(db.users)) if (!x.role && profileSchool(x) === id) { x.profile = null; n++; notifyUser(x.username, { t: 'kicked' }); }
+      save();
+      return { ok: true, n, text: `${schoolById(id).name} 학생 ${n}명을 퇴장시켰어요` };
+    }
+    if (b.act === 'ban' || b.act === 'unban' || b.act === 'bans') { // 개발자만: 밴
+      if (u.role !== 'dev') fail('개발자만 밴할 수 있어요.', 403);
+      if (b.act === 'ban') {
+        const nick = String(b.nick || '').trim(), days = Math.round(Number(b.days));
+        if (!nick) fail('밴할 사람의 닉네임을 써 주세요.');
+        if (!(days >= 1 && days <= 3650)) fail('밴할 날 수는 1~3650일로 골라 주세요.');
+        const who = Object.values(db.users).filter(x => x.profile && x.profile.nickname === nick);
+        if (who.some(x => x.role)) fail('운영자·개발자는 밴할 수 없어요.');
+        db.bans = db.bans.filter(x => x.nick !== nick && x.until > Date.now());
+        const ban = { nick, users: who.map(x => x.username), until: Date.now() + days * 864e5, by: u.profile ? u.profile.nickname : '개발자', at: Date.now() };
+        db.bans.push(ban);
+        for (const x of who) notifyUser(x.username, { t: 'banned', ban: banInfo(ban) });
+      } else if (b.act === 'unban') db.bans = db.bans.filter(x => x.nick !== String(b.nick || ''));
+      if (b.act !== 'bans') save();
+      return { ok: true, bans: db.bans.filter(x => x.until > Date.now()).map(x => ({ nick: x.nick, until: x.until, n: x.users.length })) };
+    }
     if (b.act === 'resetAll') { // 개발자만: 모든 학년 서버를 처음부터
       if (u.role !== 'dev') fail('개발자만 서버를 초기화할 수 있어요.', 403);
       const by = u.profile ? u.profile.nickname : '개발자';
@@ -520,7 +556,7 @@ const routes = {
 // 실시간 소식 (Server-Sent Events)
 function events(req, res, url) {
   let a;
-  try { a = needPlayer(req, url); } catch (e) { return send(req, res, e.code || 500, { error: e.message }); }
+  try { a = needPlayer(req, url); } catch (e) { return send(req, res, e.code || 500, Object.assign({ error: e.message }, e.extra)); }
   res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.write('retry: 3000\n\n');
   const rt = a.rt, online = () => broadcast(rt, { t: 'online', n: onlineCount(rt) });
@@ -592,7 +628,7 @@ http.createServer(async (req, res) => {
       send(req, res, 200, await handler(req, url, body));
     } catch (e) {
       if (!(e instanceof HttpError)) console.error(e);
-      send(req, res, e instanceof HttpError ? e.code : 500, { error: e instanceof HttpError ? e.message : '서버 오류가 났어요.' });
+      send(req, res, e instanceof HttpError ? e.code : 500, Object.assign({ error: e instanceof HttpError ? e.message : '서버 오류가 났어요.' }, e.extra));
     }
     return;
   }

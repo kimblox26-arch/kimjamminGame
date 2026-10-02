@@ -77,11 +77,34 @@
   }
 
   // ---------- 공통 ----------
+  // 밴(423)이면 정지 화면, 학교에서 퇴장(409)이면 학교 다시 고르기
+  function special(d) {
+    if (d.code === 423 && d.ban) showBanned(d.ban);
+    else if (d.code === 409 && me && me.profile && /퇴장/.test(d.error || '')) kickedOut();
+    return d;
+  }
+  function showBanned(ban) {
+    if (es) { es.close(); es = null; }
+    W = null; quiz = null;
+    $$('.modal').forEach(m => { m.hidden = true; });
+    const until = new Date(ban.until), forever = ban.until - Date.now() > 3000 * 864e5;
+    $('#banText').innerHTML = forever ? '앞으로 <b>계속</b> 게임에 들어올 수 없어요.' : `<b>${until.getFullYear()}년 ${until.getMonth() + 1}월 ${until.getDate()}일 ${String(until.getHours()).padStart(2, '0')}:${String(until.getMinutes()).padStart(2, '0')}</b>까지 게임에 들어올 수 없어요.`;
+    show('banned');
+  }
+  function kickedOut() {
+    if (!me) return;
+    me.profile = null;
+    if (es) { es.close(); es = null; }
+    W = null; quiz = null;
+    $$('.modal').forEach(m => { m.hidden = true; });
+    toast('🚪 학교에서 퇴장되었어요. 학교를 다시 골라 주세요.', 'warn');
+    openSetup();
+  }
   async function api(path, body) {
     if (window.MLEBackend) { // 서버 없이 브라우저 안에서 돌릴 때
       const d = await window.MLEBackend.api(path, body, token);
       if (d.code === 401 && token) logoutLocal('다시 로그인해 주세요.');
-      return d;
+      return special(d);
     }
     const opt = { method: body ? 'POST' : 'GET', headers: {} };
     if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
@@ -91,7 +114,8 @@
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 && token) logoutLocal('다시 로그인해 주세요.');
       if (!res.ok && !data.error) data.error = '서버 오류가 났어요.';
-      return data;
+      data.code = data.code || (res.ok ? undefined : res.status);
+      return special(data);
     } catch {
       return { error: '서버에 연결할 수 없어요.' };
     }
@@ -1064,6 +1088,10 @@
       <div class="row">${homeLink(sid)}<button type="button" class="link-btn" id="scGo">🗺️ 지도에서 보기</button></div>
       <h4>🧒 함께하는 친구 ${d.memberCount}명</h4>
       <ul class="members">${mem || '<li class="muted">아직 이 학교로 들어온 친구가 없어요.</li>'}</ul>`;
+    if (me.role) {
+      $('#scBody').insertAdjacentHTML('beforeend', `<div class="row"><button type="button" class="btn attack" id="scKick">🚪 이 학교 학생 모두 퇴장</button></div>`);
+      $('#scKick').onclick = async e => { const r = await adminAct({ act: 'kickSchool', sid }, e.currentTarget); if (r && r.ok) openSchool(sid); };
+    }
     $('#scGo').onclick = () => { closeM('schoolModal'); const h = W.home[sid]; if (h >= 0) { flyTo(h, Math.max(view.s, 0.5)); select(h); $('#side').classList.remove('open'); } };
     openM('schoolModal');
   }
@@ -1186,7 +1214,7 @@
   // ---------- 운영자 관리 ----------
   let resetAsk = 0;
   async function adminAct(body, btn) {
-    if (['resetWorld', 'resetAll', 'hideSchool', 'clearSchool'].includes(body.act) && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
+    if (['resetWorld', 'resetAll', 'hideSchool', 'clearSchool', 'kickSchool', 'ban'].includes(body.act) && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
       resetAsk = Date.now();
       return toast('정말 할까요? 3초 안에 한 번 더 누르세요.', 'warn');
     }
@@ -1200,13 +1228,20 @@
     if (r.cells && r.cells.length) applyCells(r.cells, true);
     if (body.act === 'hideSchool') { delete schools[body.sid]; await loadWorld(); updateBoard(); renderMini(); requestDraw(); select(-1); }
     if (body.act === 'clearChat') clearChat();
-    toast(body.act === 'notice' ? '📢 공지를 보냈어요.' : `🛠️ 처리했어요${r.n ? ` (${r.n}칸)` : ''}.`, 'ok');
+    if (r.bans) renderBans(r.bans);
+    toast(r.text ? '🛠️ ' + r.text : body.act === 'notice' ? '📢 공지를 보냈어요.' : body.act === 'ban' ? `🚫 ${body.nick} 님을 ${body.days >= 3650 ? '영구' : body.days + '일'} 밴했어요.` : `🛠️ 처리했어요${r.n ? ` (${r.n}칸)` : ''}.`, 'ok');
+    return r;
+  }
+  function renderBans(list) {
+    const day = t => { const d = new Date(t); return t - Date.now() > 3000 * 864e5 ? '영구' : `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}까지`; };
+    $('#admBans').innerHTML = list.length ? list.map(b => `<li><b>${esc(b.nick)}</b> <small>${day(b.until)} · 계정 ${b.n}개</small><button type="button" class="link-btn" data-unban="${esc(b.nick)}">풀기</button></li>`).join('') : '<li class="muted">밴한 사람이 없어요.</li>';
   }
   function initAdmin() {
     $('#btnAdmin').onclick = () => {
       $('#admGrades').innerHTML = [1, 2, 3, 4, 5, 6].map(g => `<button type="button" class="chip ${g === me.grade ? 'on' : ''}" data-g="${g}">${g}학년</button>`).join('');
       $('#admWho').textContent = `${S.ROLE_NICK[me.role]} · 지금 ${me.grade}학년 서버`;
       $('#admDev').hidden = me.role !== 'dev';
+      if (me.role === 'dev') api('/api/admin', { act: 'bans' }).then(r => { if (r.bans) renderBans(r.bans); });
       openM('adminModal');
     };
     $('#admGrades').onclick = e => { const b = e.target.closest('[data-g]'); if (b && +b.dataset.g !== me.grade) adminAct({ act: 'grade', grade: +b.dataset.g }); };
@@ -1214,6 +1249,9 @@
     $('#admChat').onclick = e => adminAct({ act: 'clearChat' }, e.currentTarget);
     $('#admReset').onclick = e => adminAct({ act: 'resetWorld' }, e.currentTarget);
     $('#admResetAll').onclick = e => adminAct({ act: 'resetAll' }, e.currentTarget);
+    $('#admBanGo').onclick = e => adminAct({ act: 'ban', nick: $('#admBanNick').value.trim(), days: Math.round(+$('#admBanDays').value) }, e.currentTarget);
+    $('#admBanForever').onclick = () => { $('#admBanDays').value = 3650; };
+    $('#admBans').onclick = e => { const b = e.target.closest('[data-unban]'); if (b) adminAct({ act: 'unban', nick: b.dataset.unban }, b).then(r => { if (r && r.ok) toast(`✅ ${b.dataset.unban} 님 밴을 풀었어요.`, 'ok'); }); };
   }
 
   // ---------- 문제 풀기 ----------
@@ -1476,6 +1514,8 @@
     if (m.t === 'online') { online = m.n; hud(); return; }
     if (m.t === 'chat') { chatLine(m); if (m.sid !== mySid() && m.ch === 'school') Sound.play('tap'); return; }
     if (m.t === 'chatClear') return clearChat();
+    if (m.t === 'banned') return showBanned(m.ban);
+    if (m.t === 'kicked') return kickedOut();
     if (m.t === 'offers') { setOffers(m.items); if (m.ev) feed(m.ev); return; }
     if (m.t !== 'upd') return;
     if (m.reload) { loadWorld().then(ok => { if (ok) { updateBoard(); renderPopup(); renderMini(); requestDraw(); } }); if (m.ev) feed(m.ev); return; }
@@ -1627,6 +1667,7 @@
     $('#setNickSave').onclick = async () => { if (await saveProfile({ nickname: $('#setNick').value.trim() })) toast('닉네임을 바꿨어요.', 'ok'); };
     $('#setSchool').onclick = () => { closeM('settingsModal'); if (es) { es.close(); es = null; } W = null; openSetup(); };
     $('#setLogout').onclick = async () => { await api('/api/logout', {}); logoutLocal(); };
+    $('#banLogout').onclick = async () => { await api('/api/logout', {}); logoutLocal(); };
     $('#secretSchool').onclick = e => {
       wiggle(e.currentTarget);
       if (cheat.unlocked) return;
@@ -1695,6 +1736,7 @@
     initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin();
     if (!token) return show('auth');
     const d = await api('/api/me');
+    if (d.code === 423) return; // 정지 화면이 이미 떴다
     if (!d.user) { show('auth'); if (d.error) toast(d.error, 'err'); return; }
     me = d.user;
     cheat.unlocked = !!d.debug || me.role === 'dev';

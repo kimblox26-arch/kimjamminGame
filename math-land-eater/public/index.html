@@ -82,6 +82,17 @@
   </form>
 </section>
 
+<!-- 이용 정지(밴) -->
+<section id="banned" class="screen" hidden>
+  <div class="card auth-card ban-card">
+    <div class="ban-icon">🚫</div>
+    <h2>게임 이용이 정지되었어요</h2>
+    <p id="banText"></p>
+    <p class="muted">운영 규칙을 지키지 않아 개발자가 정지했어요.</p>
+    <button type="button" class="btn" id="banLogout">로그아웃</button>
+  </div>
+</section>
+
 <!-- 게임 -->
 <section id="game" class="screen" hidden>
   <header class="topbar">
@@ -284,7 +295,12 @@
       <h4>🧨 개발자 전용</h4>
       <button type="button" class="btn attack" id="admResetAll">🧨 서버 초기화 (모든 학년 처음부터)</button>
       <p class="muted">1학년~6학년 서버의 땅·방어·땅 팔기·소식·채팅이 모두 처음 상태로 돌아가요. 계정과 내 기록(배지 등)은 그대로예요.</p>
+      <h4>🚫 밴하기</h4>
+      <div class="ban-row"><input id="admBanNick" maxlength="10" placeholder="밴할 닉네임"><input id="admBanDays" type="number" min="1" max="3650" value="7"><span>일</span><button type="button" class="chip" id="admBanForever">영구</button><button type="button" class="btn attack" id="admBanGo">밴</button></div>
+      <p class="muted">밴된 사람은 정한 날까지 게임에 아예 들어올 수 없어요. 그 닉네임을 쓰는 계정과 기기도 함께 막혀요.</p>
+      <ul id="admBans" class="bans"></ul>
     </div>
+    <p class="muted">🚪 학교 학생 모두 퇴장은 <b>학교 정보 창</b>(학교 이름을 누르면 나와요)에 있어요.</p>
   </div>
 </div>
 

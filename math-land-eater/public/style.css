@@ -52,7 +52,7 @@ input:focus, select:focus { border-color: var(--blue); }
 
 /* ---------- 불러오기 / 로그인 / 설정 화면 배경 ---------- */
 .screen { height: 100%; }
-#loading, #auth, #setup {
+#loading, #auth, #setup, #banned {
   display: flex; align-items: center; justify-content: center; padding: 24px 16px; overflow-y: auto;
   background:
     radial-gradient(circle at 18% 22%, #fff7d6 0, transparent 38%),
@@ -347,3 +347,13 @@ input:focus, select:focus { border-color: var(--blue); }
 .qz-preview { min-height: 0; margin-top: 6px; font-size: 17px; display: flex; align-items: center; gap: 6px; color: #475569; }
 .qz-preview:empty { display: none; }
 .qz-preview small { font-size: 14px; color: #64748b; }
+
+/* 밴 */
+.ban-card { text-align: center; }
+.ban-icon { font-size: 64px; }
+.ban-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ban-row #admBanNick { flex: 1; min-width: 120px; }
+.ban-row #admBanDays { width: 70px; text-align: center; }
+.bans { list-style: none; padding: 0; margin: 6px 0; }
+.bans li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; }
+.bans li small { color: #64748b; flex: 1; }
