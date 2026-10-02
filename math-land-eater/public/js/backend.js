@@ -164,6 +164,11 @@
       try { await ref.update(data); } catch { await ref.set(Object.assign({}, (await ref.get()).data() || {}, data)); }
     }
   }
+  // 저장은 순서대로 뒤에서 한다 (화면은 기다리지 않는다)
+  function persist(rt, task) {
+    rt.q = (rt.q || Promise.resolve()).then(task).catch(e => console.warn('저장 실패', e));
+    return rt.q;
+  }
   async function pushFeed(rt, item) {
     item.id = rand(6);
     item.at = Date.now();
@@ -405,9 +410,8 @@
       if (prev >= 0) st.steals++;
       setCell(rt, cell, sid, 0);
       save();
-      const cells = [[cell, sid, 0]];
-      await writeCells(rt, cells);
-      await pushFeed(rt, { t: 'ev', ev: { kind: 'capture', by: a.u.profile.nickname, sid, prev, cell, far: !!cost.far, escape: !!cost.escape } });
+      const cells = [[cell, sid, 0]], ev = { kind: 'capture', by: a.u.profile.nickname, sid, prev, cell, far: !!cost.far, escape: !!cost.escape };
+      persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
       publishCard(a.u);
       return { ok: true, cells, stats: st, badges: newBadges(a.u) };
     },
@@ -425,8 +429,8 @@
       setCell(rt, cell, sid, Math.min(MAX_DEF, rt.def[cell] + amount));
       save();
       const cells = [[cell, sid, rt.def[cell]]];
-      await writeCells(rt, cells);
-      await pushFeed(rt, { t: 'ev', ev: { kind: 'defend', by: a.u.profile.nickname, sid, amount, cell } });
+      const ev = { kind: 'defend', by: a.u.profile.nickname, sid, amount, cell };
+      persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
       publishCard(a.u);
       return { ok: true, cells, stats: st, badges: newBadges(a.u) };
     },

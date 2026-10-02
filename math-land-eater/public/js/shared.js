@@ -86,13 +86,15 @@
   const BASE_COST = 2, FAR_GRADE = 4, FAR_COST = 50;
   // 갇힌 학교의 탈출길: 우리 땅 둘레에 빈 땅이 하나도 없으면 가장 가까운 빈 땅으로 빠져나갈 수 있다
   const nbFn = nb => (typeof nb === 'function' ? nb : i => nb[i]); // 이웃 목록: 배열 또는 함수
-  function escapeCells(owner, nb, sid) {
+  function escapeCells(owner, nb, sid, mine) { // mine: 우리 칸 목록 (없으면 모두 찾아본다)
     nb = nbFn(nb);
-    const n = owner.length, seen = new Uint8Array(n);
-    let cur = [];
-    for (let i = 0; i < n; i++) if (owner[i] === sid) { cur.push(i); seen[i] = 1; }
+    const n = owner.length;
+    let cur = mine ? mine.slice() : [];
+    if (!mine) for (let i = 0; i < n; i++) if (owner[i] === sid) cur.push(i);
     if (!cur.length) return [];
-    for (const i of cur) for (const k of nb(i)) if (owner[k] < 0) return [];
+    for (const i of cur) for (const k of nb(i)) if (owner[k] < 0) return []; // 빈 땅이 닿아 있으면 탈출길이 필요 없다
+    const seen = new Uint8Array(n);
+    for (const i of cur) seen[i] = 1;
     while (cur.length) {
       const next = [], found = [];
       for (const i of cur) for (const k of nb(i)) if (!seen[k]) { seen[k] = 1; (owner[k] < 0 ? found : next).push(k); }

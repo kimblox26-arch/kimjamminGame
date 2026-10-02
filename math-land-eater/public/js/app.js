@@ -1089,18 +1089,33 @@
     if (!$('#panePlayers').hidden) loadPlayers();
     return true;
   }
-  async function doAttack(i) {
+  // 바로 반응하기: 화면을 먼저 바꾸고, 저장(서버·친구 지도)은 뒤에서 한다. 거절되면 되돌린다.
+  function optimistic(i, owner, def, okMsg, kind, send) {
+    const before = [i, W.owner[i], W.def[i]];
+    applyCells([[i, owner, def]], true);
+    toast(okMsg, 'ok');
+    if (kind === 'capture') { Sound.play('capture'); celebrate(i); } else { Sound.play('defend'); flashes.push({ i, t: performance.now() }); requestDraw(); }
+    return send().then(r => {
+      if (!r || r.error || r.need) { applyCells([before], true); if (r && r.error) toast(r.error, 'err'); return r || {}; }
+      if (r.cells) applyCells(r.cells, true);
+      if (r.stats) me.stats = r.stats;
+      gotBadges(r.badges);
+      if (!$('#panePlayers').hidden) loadPlayers();
+      return r;
+    });
+  }
+  function doAttack(i) {
     const prev = W.owner[i];
     const okMsg = prev < 0 ? '🎉 빈 땅을 차지했어요!' : `⚔️ ${short(prev)}의 땅을 빼앗았어요!`;
-    if (cheat.capture) return afterAction(await api('/api/capture', { cell: i, cheat: true }), '🐛 ' + okMsg, i, 'capture');
-    startQuiz({
-      title: '⚔️ 땅 뺏기', total: needToTake(i),
-      onDone: async solved => {
-        const r = await api('/api/capture', { cell: i, solved, streak: best });
-        if (r.need) return { more: r.need, msg: `🛡️ 상대가 방어를 올렸어요! 문제 ${r.need}개를 더 풀어야 해요.` };
-        afterAction(r, okMsg, i, 'capture');
-      },
-    });
+    if (cheat.capture) return optimistic(i, mySid(), 0, '🐛 ' + okMsg, 'capture', () => api('/api/capture', { cell: i, cheat: true }));
+    const done = solved => {
+      optimistic(i, mySid(), 0, okMsg, 'capture', () => api('/api/capture', { cell: i, solved, streak: best })).then(r => {
+        if (!r.need) return;
+        toast(`🛡️ 상대가 방어를 올렸어요! 문제 ${r.need}개를 더 풀어야 해요.`, 'warn'); // 푼 문제는 그대로 두고 이어서 푼다
+        startQuiz({ title: '⚔️ 땅 뺏기', total: r.required, solved, onDone: done });
+      });
+    };
+    startQuiz({ title: '⚔️ 땅 뺏기', total: needToTake(i), onDone: done });
   }
 
   let defCell = -1;
@@ -1125,8 +1140,9 @@
       const i = defCell, n = +$('#defNum').value;
       closeM('defModal');
       const okMsg = `🛡️ 방어 +${n}! 우리 땅이 더 튼튼해졌어요.`;
-      if (cheat.defend) return afterAction(await api('/api/defend', { cell: i, amount: n, cheat: true }), '🐛 ' + okMsg, i, 'defend');
-      startQuiz({ title: `🛡️ 땅 방어하기 (+${n})`, total: n, onDone: async solved => { afterAction(await api('/api/defend', { cell: i, amount: n, solved, streak: best }), okMsg, i, 'defend'); } });
+      const to = () => Math.min(99, W.def[i] + n);
+      if (cheat.defend) return optimistic(i, mySid(), to(), '🐛 ' + okMsg, 'defend', () => api('/api/defend', { cell: i, amount: n, cheat: true }));
+      startQuiz({ title: `🛡️ 땅 방어하기 (+${n})`, total: n, onDone: solved => { optimistic(i, mySid(), to(), okMsg, 'defend', () => api('/api/defend', { cell: i, amount: n, solved, streak: best })); } });
     };
   }
 
@@ -1261,7 +1277,8 @@
       renderStreak();
       $('#qzBar').style.width = (quiz.solved / quiz.total) * 100 + '%';
       feedback('⭕ ' + PRAISE[Math.floor(Math.random() * PRAISE.length)], 'ok');
-      setTimeout(quiz.solved >= quiz.total ? finishQuiz : nextProblem, 700);
+      const last = quiz.solved >= quiz.total;
+      setTimeout(last ? finishQuiz : nextProblem, last ? 250 : 600); // 마지막 문제는 바로 땅에 적용
     } else {
       streak = 0;
       renderStreak();
@@ -1476,21 +1493,21 @@
     scheduleBoard();
     scheduleMini();
     if (sel >= 0) renderPopup();
-    if (mineAction) renderMini();
   }
   function computeFrontier() {
-    const my = mySid();
+    const my = mySid(), mine = [];
     frontier = new Set();
-    for (let i = 0; i < G.n; i++) {
+    for (const i of owned) { // 50만 칸을 다 보지 않고 주인 있는 칸만 본다
       if (W.owner[i] !== my) continue;
+      mine.push(i);
       for (const n of G.nbOf(i)) if (W.owner[n] !== my && W.homeCell[n] < 0) frontier.add(n);
     }
     // 둘레에 빈 땅이 하나도 없으면(다른 학교 땅·본부에 갇히면) 가장 가까운 빈 땅이 탈출길이 된다
-    exits = new Set(S.escapeCells(W.owner, G.nbOf, my));
+    exits = new Set(S.escapeCells(W.owner, G.nbOf, my, mine));
     exitLines = [];
     for (const e of exits) {
       let best = -1, bd = Infinity;
-      for (const k of owned) if (W.owner[k] === my) { const d = (G.sx[k] - G.sx[e]) ** 2 + (G.sy[k] - G.sy[e]) ** 2; if (d < bd) { bd = d; best = k; } }
+      for (const k of mine) { const d = (G.sx[k] - G.sx[e]) ** 2 + (G.sy[k] - G.sy[e]) ** 2; if (d < bd) { bd = d; best = k; } }
       if (best >= 0) exitLines.push([best, e]);
     }
   }
