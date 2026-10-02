@@ -128,14 +128,18 @@
     // map.bin: 칸 모양을 작게 줄여 둔 파일 (만드는 법은 lib/mapgen.js 의 encodeBin).
     // 50만 칸을 칸마다 따로 담으면 메모리가 너무 커서, 꼭짓점을 큰 배열 하나(G.xy)에 이어 담는다:
     // 고리 r 의 좌표 = G.xy[G.ro[r] .. G.ro[r + 1]), 칸 i 의 고리 = G.cr[i] .. G.cr[i + 1] - 1
-    const br = await fetch(window.MLE_MAP_BIN_URL || '/api/map.bin');
-    if (!br.ok) throw new Error('지도를 받을 수 없어요.');
+    const binUrl = window.MLE_MAP_BIN_URL || '/api/map.bin';
     let buf;
-    if (/\.txt$/.test(window.MLE_MAP_BIN_URL || '')) { // base64 글자로 된 지도 (아티팩트용)
-      const t = atob((await br.text()).trim());
+    if (Array.isArray(binUrl)) { // 아티팩트용: base64 글자로 바꿔 여러 파일로 나눈 지도
+      const texts = await Promise.all(binUrl.map(async u => { const r = await fetch(u); if (!r.ok) throw new Error('지도를 받을 수 없어요.'); return (await r.text()).trim(); }));
+      const t = atob(texts.join(''));
       buf = new Uint8Array(t.length);
       for (let k = 0; k < t.length; k++) buf[k] = t.charCodeAt(k);
-    } else buf = new Uint8Array(await br.arrayBuffer());
+    } else {
+      const br = await fetch(binUrl);
+      if (!br.ok) throw new Error('지도를 받을 수 없어요.');
+      buf = new Uint8Array(await br.arrayBuffer());
+    }
     const n = new DataView(buf.buffer).getUint32(4, true);
     if (n !== m.n) throw new Error('지도 파일이 서로 맞지 않아요. 새로고침 해 주세요.');
     G.sides = buf.slice(8, 8 + n);
@@ -1182,7 +1186,7 @@
   // ---------- 운영자 관리 ----------
   let resetAsk = 0;
   async function adminAct(body, btn) {
-    if ((body.act === 'resetWorld' || body.act === 'hideSchool' || body.act === 'clearSchool') && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
+    if (['resetWorld', 'resetAll', 'hideSchool', 'clearSchool'].includes(body.act) && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
       resetAsk = Date.now();
       return toast('정말 할까요? 3초 안에 한 번 더 누르세요.', 'warn');
     }
@@ -1192,6 +1196,7 @@
     if (btn) btn.disabled = false;
     if (r.error) return toast(r.error, 'err');
     if (r.user) { me = r.user; closeM('adminModal'); toast(`🌐 ${me.grade}학년 서버로 옮겼어요.`, 'ok'); return me.profile ? startGame() : openSetup(); }
+    if (r.reload) { closeM('adminModal'); select(-1); await loadWorld(); updateBoard(); renderMini(); requestDraw(); return toast('🧨 서버를 처음부터 다시 시작했어요!', 'ok'); }
     if (r.cells && r.cells.length) applyCells(r.cells, true);
     if (body.act === 'hideSchool') { delete schools[body.sid]; await loadWorld(); updateBoard(); renderMini(); requestDraw(); select(-1); }
     if (body.act === 'clearChat') clearChat();
@@ -1201,12 +1206,14 @@
     $('#btnAdmin').onclick = () => {
       $('#admGrades').innerHTML = [1, 2, 3, 4, 5, 6].map(g => `<button type="button" class="chip ${g === me.grade ? 'on' : ''}" data-g="${g}">${g}학년</button>`).join('');
       $('#admWho').textContent = `${S.ROLE_NICK[me.role]} · 지금 ${me.grade}학년 서버`;
+      $('#admDev').hidden = me.role !== 'dev';
       openM('adminModal');
     };
     $('#admGrades').onclick = e => { const b = e.target.closest('[data-g]'); if (b && +b.dataset.g !== me.grade) adminAct({ act: 'grade', grade: +b.dataset.g }); };
     $('#admNoticeGo').onclick = async () => { await adminAct({ act: 'notice', text: $('#admNotice').value }); $('#admNotice').value = ''; };
     $('#admChat').onclick = e => adminAct({ act: 'clearChat' }, e.currentTarget);
     $('#admReset').onclick = e => adminAct({ act: 'resetWorld' }, e.currentTarget);
+    $('#admResetAll').onclick = e => adminAct({ act: 'resetAll' }, e.currentTarget);
   }
 
   // ---------- 문제 풀기 ----------

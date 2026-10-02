@@ -14,16 +14,18 @@ fs.mkdirSync(path.join(out, 'js'), { recursive: true });
 
 const map = buildMap({ landFile: path.join(root, 'mapdata/korea-land.json'), schoolsFile: path.join(root, 'mapdata/schools.txt') });
 fs.writeFileSync(path.join(out, 'map.json'), map.clientJSON);
-// 아티팩트는 바이너리 파일을 못 올리므로 base64 글자로 바꿔 둔다 (브라우저가 다시 바이트로 푼다)
-fs.writeFileSync(path.join(out, 'map.bin.txt'), map.clientBin.toString('base64'));
-fs.rmSync(path.join(out, 'map.bin'), { force: true });
+// 아티팩트는 바이너리 파일을 못 올리므로 base64 글자로 바꿔 둔다 (브라우저가 다시 바이트로 푼다).
+// 한 파일이 16MB를 넘으면 안 되니 12MB씩 나눈다 (4글자 단위로 잘라야 base64 가 안 깨진다).
+const b64 = map.clientBin.toString('base64'), PART = 12 * 1024 * 1024, parts = [];
+for (const f of fs.readdirSync(out)) if (/^map\.bin/.test(f)) fs.rmSync(path.join(out, f));
+for (let k = 0; k * PART < b64.length; k++) { const name = `map.bin.${k}.txt`; fs.writeFileSync(path.join(out, name), b64.slice(k * PART, (k + 1) * PART)); parts.push(name); }
 for (const f of ['style.css', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js']) fs.copyFileSync(path.join(root, 'public', f), path.join(out, f));
 
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const title = html.match(/<title>[\s\S]*?<\/title>/)[0];
 const links = (html.match(/<link [^>]*>/g) || []).filter(l => !/rel="icon"/.test(l)).join('\n');
 let body = html.slice(html.indexOf('<body>') + 6, html.lastIndexOf('</body>'));
-body = body.replace('<script src="js/app.js"></script>', '<script>window.MLE_MAP_URL = "map.json"; window.MLE_MAP_BIN_URL = "map.bin.txt";</script>\n<script src="js/backend.js"></script>\n<script src="js/app.js"></script>');
+body = body.replace('<script src="js/app.js"></script>', `<script>window.MLE_MAP_URL = "map.json"; window.MLE_MAP_BIN_URL = ${JSON.stringify(parts)};</script>\n<script src="js/backend.js"></script>\n<script src="js/app.js"></script>`);
 const page = `${title}\n${links}\n${body.trim()}\n`;
 fs.writeFileSync(path.join(out, 'artifact.html'), page);
 fs.writeFileSync(path.join(out, 'index.html'), `<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">\n${page.replace(body.trim(), '')}</head>\n<body>\n${body.trim()}\n</body>\n</html>\n`);

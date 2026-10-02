@@ -9,8 +9,8 @@ const crypto = require('crypto');
 const { project, decodeRing, neighborsFromRings } = require('../public/js/shared.js');
 
 const VERSION = 4;
-const SPACING = 25;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 350m)
-const MIN_GAP = 14;    // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈200m)
+const SPACING = 20;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 280m)
+const MIN_GAP = 11;    // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈150m)
 const MARGIN = 400;
 
 function mulberry32(a) {

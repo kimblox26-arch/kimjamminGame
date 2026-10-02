@@ -18,6 +18,9 @@
   const local = Object.assign({ users: {}, sessions: {}, custom: [], worlds: {} }, ls.get('mle_local') || {});
   let saveTimer = 0;
   const save = () => { if (!saveTimer) saveTimer = setTimeout(() => { saveTimer = 0; ls.set('mle_local', local); }, 300); };
+  const flush = () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; ls.set('mle_local', local); } }; // 페이지를 닫거나 숨길 때 바로 저장
+  addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
   const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => b.toString(16).padStart(2, '0')).join('');
   const hex = buf => Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
@@ -46,17 +49,35 @@
   const connectCloud = () => cloudReady;
 
   // ---------- 지도 ----------
-  let M = null, BASE = [], WP = 'w';
+  let M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화마다 새 자리)
   async function init(m, g) { // g: 화면 쪽이 계산한 이웃(nb)과 칸 위치(sx, sy)
     M = { n: m.n, nb: g.nbOf, sx: g.sx, sy: g.sy }; // nb: 칸 → 이웃 칸들 (함수)
     // 지도가 바뀌면 땅 기록은 새로 시작한다 (칸 번호가 달라지니까)
-    WP = 'w' + m.hash;
+    WP = MAPWP = 'w' + m.hash;
     if (local.mapHash !== m.hash) { local.mapHash = m.hash; local.worlds = {}; local.custom.forEach(c => { c.homes = {}; }); save(); }
     M.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
     BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i }));
     await connectCloud();
-    if (cloud) await loadCustom();
+    if (cloud) {
+      await loadCustom();
+      try { // 개발자가 서버를 초기화하면 모두가 새 자리에서 처음부터 시작한다
+        const r = await cloud.db.doc('meta/reset').get();
+        epoch = r.exists ? r.data().epoch || 0 : 0;
+        WP = MAPWP + (epoch ? 'r' + epoch : '');
+        cloud.db.doc('meta/reset').onSnapshot(snap => { const e = snap.exists ? snap.data().epoch || 0 : 0; if (e !== epoch) startOver(e, snap.data().by); }, () => {});
+      } catch { /* 초기화 기록이 없으면 그대로 */ }
+    }
     indexSchools();
+  }
+  // 서버 초기화: 학년마다 들고 있던 땅을 버리고 처음부터 (화면에는 다시 불러오라고 알린다)
+  function startOver(e, by) {
+    epoch = e;
+    WP = MAPWP + (epoch ? 'r' + epoch : '');
+    for (const [g, rt] of Object.entries(worlds)) {
+      (rt.unsubs || []).forEach(u => { try { u(); } catch { /* 이미 끊김 */ } });
+      delete worlds[g];
+      emit(+g, { t: 'upd', reload: true, ev: { kind: 'admin', by: by || '개발자', text: '🧨 서버를 처음부터 다시 시작했어요! 모든 땅이 처음 상태예요.' } });
+    }
   }
   const isShared = () => !!cloud;
 
@@ -91,6 +112,7 @@
   }
   async function getWorld(g) {
     if (worlds[g]) return worlds[g];
+    const wp = WP;
     const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Int32Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1, offers: [] };
     BASE.forEach((s, i) => setHome(rt, i, s.cell));
     if (cloud) {
@@ -101,6 +123,7 @@
       (f.exists ? f.data().items || [] : []).forEach(it => { rt.seen.add(it.id); rt.feed.push(it); });
       const o = await cloud.db.doc(`${WP}/g${g}/o/main`).get();
       rt.offers = o.exists ? o.data().items || [] : [];
+      if (wp !== WP) return getWorld(g); // 불러오는 사이 서버가 초기화됐다
       subscribe(rt);
     } else {
       const w = local.worlds[g] || (local.worlds[g] = { cells: {} });
@@ -114,7 +137,9 @@
   // 다른 친구가 바꾼 땅·소식을 실시간으로 받는다
   function subscribe(rt) {
     const g = rt.g;
-    cloud.db.collection(`${WP}/g${g}/c`).onSnapshot(snap => {
+    const live = () => worlds[g] === rt, keep = u => { if (typeof u === 'function') (rt.unsubs = rt.unsubs || []).push(u); };
+    keep(cloud.db.collection(`${WP}/g${g}/c`).onSnapshot(snap => {
+      if (!live()) return;
       const cells = [];
       for (const ch of snap.docChanges()) {
         if (ch.type === 'removed') continue;
@@ -124,8 +149,9 @@
         }
       }
       if (cells.length) emit(g, { t: 'upd', cells });
-    }, () => {});
-    cloud.db.doc(`${WP}/g${g}/f/main`).onSnapshot(snap => {
+    }, () => {}));
+    keep(cloud.db.doc(`${WP}/g${g}/f/main`).onSnapshot(snap => {
+      if (!live()) return;
       for (const it of (snap.exists ? snap.data().items || [] : [])) {
         if (rt.seen.has(it.id)) continue;
         rt.seen.add(it.id);
@@ -133,16 +159,16 @@
         if (it.t === 'chat') emit(g, Object.assign({}, it, { t: 'chat' }), it.ch === 'school' ? it.sid : null);
         else emit(g, { t: 'upd', ev: it.ev, school: it.school, home: it.home });
       }
-    }, () => {});
-    cloud.db.doc(`${WP}/g${g}/o/main`).onSnapshot(snap => { rt.offers = snap.exists ? snap.data().items || [] : []; emit(g, { t: 'offers', items: liveOffers(rt) }); }, () => {});
-    cloud.db.doc('meta/custom').onSnapshot(async snap => {
-      if (!snap.exists) return;
+    }, () => {}));
+    keep(cloud.db.doc(`${WP}/g${g}/o/main`).onSnapshot(snap => { if (!live()) return; rt.offers = snap.exists ? snap.data().items || [] : []; emit(g, { t: 'offers', items: liveOffers(rt) }); }, () => {}));
+    keep(cloud.db.doc('meta/custom').onSnapshot(async snap => {
+      if (!live() || !snap.exists) return;
       const list = snap.data().list || [];
       if (list.length <= custom.length) return;
       custom = list.map(c => Object.assign({}, c, { homes: Object.assign({}, c.homes) }));
       indexSchools();
       for (const w of Object.values(worlds)) applyCustomHomes(w, w.g);
-    }, () => {});
+    }, () => {}));
     if (cloud.room) {
       try {
         cloud.room.presence({ grade: g });
@@ -480,6 +506,23 @@
         u.viewGrade = g;
         save();
         return { ok: true, user: publicUser(u) };
+      }
+      if (b.act === 'resetAll') { // 개발자만: 모든 학년 서버를 처음부터
+        if (u.role !== 'dev') fail('개발자만 서버를 초기화할 수 있어요.', 403);
+        const by = u.profile ? u.profile.nickname : '개발자';
+        if (cloud) await loadCustom();
+        custom.forEach(c => { c.homes = {}; });
+        await saveCustom();
+        if (cloud) {
+          const r = await cloud.db.doc('meta/reset').get(), e = (r.exists ? r.data().epoch || 0 : 0) + 1;
+          await cloud.db.doc('meta/reset').set({ epoch: e, by, at: Date.now() });
+          startOver(e, by);
+        } else {
+          local.worlds = {};
+          save();
+          startOver(epoch, by);
+        }
+        return { ok: true, reload: true };
       }
       const a = await needPlayer(t), rt = a.rt, by = u.profile.nickname, changed = [];
       const clear = c => { if (rt.homeCell[c] < 0 && (rt.owner[c] >= 0 || rt.def[c])) { setCell(rt, c, -1, 0); changed.push([c, -1, 0]); } };

@@ -443,6 +443,19 @@ const routes = {
       save();
       return { ok: true, user: publicUser(u) };
     }
+    if (b.act === 'resetAll') { // 개발자만: 모든 학년 서버를 처음부터
+      if (u.role !== 'dev') fail('개발자만 서버를 초기화할 수 있어요.', 403);
+      const by = u.profile ? u.profile.nickname : '개발자';
+      for (const g of Object.keys(db.worlds)) delete db.worlds[g];
+      for (const [g, old] of Object.entries(worlds)) {
+        delete worlds[g];
+        const rt = getWorld(+g);
+        rt.clients = old.clients; // 접속한 친구들은 새 월드로 옮기고 다시 불러오게 한다
+        broadcast(rt, { t: 'upd', reload: true, ev: { kind: 'admin', by, text: '🧨 서버를 처음부터 다시 시작했어요! 모든 땅이 처음 상태예요.' } });
+      }
+      save();
+      return { ok: true, reload: true };
+    }
     const p = needPlayer(req, url), rt = p.rt, w = rt.w, by = u.profile.nickname, changed = [];
     const clear = c => { if (rt.homeCell[c] < 0 && (w.owner[c] >= 0 || w.def[c])) { w.owner[c] = -1; w.def[c] = 0; changed.push(cellState(rt, c)); } };
     let text = '';
