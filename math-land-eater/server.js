@@ -30,6 +30,8 @@ const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const MAP = buildMap({ landFile: path.join(__dirname, 'mapdata/korea-land.json'), schoolsFile: path.join(__dirname, 'mapdata/schools.txt'), cacheDir: DATA_DIR });
 const L = MAP.n;
 const BASE = MAP.schools;
+const NK_SIDO = new Set(BASE.filter(s => s.nk).map(s => s.sido)); // 북한 (가상) 소학교의 시·도
+const landOf = (w, sid) => { let n = 0; for (const o of w.owner) if (o === sid) n++; return n; };
 const MAP_GZ = zlib.gzipSync(MAP.clientJSON, { level: 9 }), MAP_BIN_GZ = zlib.gzipSync(MAP.clientBin, { level: 6 });
 
 // ---------- 저장 ----------
@@ -264,6 +266,7 @@ const routes = {
     if (b.custom) {
       const di = Number(b.custom.di), d = Number.isInteger(di) ? MAP.districts[di] : null;
       if (!d) fail('학교가 있는 지역을 골라 주세요.');
+      if (NK_SIDO.has(d.sido)) fail('북한에는 학교를 등록할 수 없어요.');
       const stem = String(b.custom.name || '').replace(/\s+/g, '').replace(/(초등학교|초교|초)$/, '');
       if (!/^[가-힣A-Za-z0-9]{1,12}$/.test(stem)) fail('학교 이름은 한글·영어·숫자로 1~12자 써 주세요.');
       const sc = { name: stem + '초등학교', sido: d.sido, sigungu: d.sigungu, dong: cleanDong(b.custom.dong) };
@@ -279,6 +282,7 @@ const routes = {
     } else {
       schoolId = Number(b.schoolId);
       if (!Number.isInteger(schoolId) || schoolId < 0 || schoolId >= schoolCount()) fail('학교를 골라 주세요.');
+      if (schoolId < BASE.length && BASE[schoolId].nk) fail('북한 학교는 고를 수 없어요.');
     }
     a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname, at: Date.now() };
     save();
@@ -385,7 +389,7 @@ const routes = {
     const a = needPlayer(req, url), { w, homeCell } = a.rt, sid = a.sid, cell = targetCell(b), prev = w.owner[cell];
     if (prev === sid) fail('이미 우리 학교 땅이에요.');
     if (homeCell[cell] >= 0) fail('학교 본부는 뺏을 수 없어요.');
-    const cost = S.captureCost({ owner: w.owner, def: w.def, nb: MAP.nb, sid, cell, grade: a.grade });
+    const cost = S.captureCost({ owner: w.owner, def: w.def, nb: MAP.nb, sid, cell, grade: a.grade, nk: c => MAP.nk[c] === 1, size: () => landOf(w, sid) });
     if (cost.error) fail(cost.error);
     const required = cost.cost;
     const st = statsOf(a.u);

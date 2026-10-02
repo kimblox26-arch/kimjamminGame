@@ -49,14 +49,16 @@
   const connectCloud = () => cloudReady;
 
   // ---------- 지도 ----------
-  let M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화마다 새 자리)
+  let NK_SIDO = new Set(), M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화마다 새 자리)
   async function init(m, g) { // g: 화면 쪽이 계산한 이웃(nb)과 칸 위치(sx, sy)
-    M = { n: m.n, nb: g.nbOf, sx: g.sx, sy: g.sy }; // nb: 칸 → 이웃 칸들 (함수)
+    M = { n: m.n, nb: g.nbOf, sx: g.sx, sy: g.sy, nk: c => g.nkCell[c] === 1 }; // nb: 칸 → 이웃 칸들 (함수), nk: 북한 칸인지
     // 지도가 바뀌면 땅 기록은 새로 시작한다 (칸 번호가 달라지니까)
     WP = MAPWP = 'w' + m.hash;
     if (local.mapHash !== m.hash) { local.mapHash = m.hash; local.worlds = {}; local.custom.forEach(c => { c.homes = {}; }); save(); }
     M.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
-    BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i }));
+    const nkS = m.nkSchools || [m.schools.length, m.schools.length];
+    BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i, nk: i >= nkS[0] && i < nkS[1] }));
+    NK_SIDO = new Set(BASE.filter(s => s.nk).map(s => s.sido));
     await connectCloud();
     await loadMod();
     if (cloud) {
@@ -401,6 +403,7 @@
       if (b.custom) {
         const di = Number(b.custom.di), d = Number.isInteger(di) ? M.districts[di] : null;
         if (!d) fail('학교가 있는 지역을 골라 주세요.');
+        if (NK_SIDO.has(d.sido)) fail('북한에는 학교를 등록할 수 없어요.');
         const stem = String(b.custom.name || '').replace(/\s+/g, '').replace(/(초등학교|초교|초)$/, '');
         if (!/^[가-힣A-Za-z0-9]{1,12}$/.test(stem)) fail('학교 이름은 한글·영어·숫자로 1~12자 써 주세요.');
         const sc = { name: stem + '초등학교', sido: d.sido, sigungu: d.sigungu, dong: cleanDong(b.custom.dong) };
@@ -421,6 +424,7 @@
       } else {
         schoolId = Number(b.schoolId);
         if (!Number.isInteger(schoolId) || schoolId < 0 || schoolId >= schoolCount()) fail('학교를 골라 주세요.');
+        if (schoolId < BASE.length && BASE[schoolId].nk) fail('북한 학교는 고를 수 없어요.');
       }
       a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname, at: Date.now() };
       save();
@@ -459,7 +463,7 @@
       const a = await needPlayer(t), rt = a.rt, sid = a.sid, cell = targetCell(b), prev = rt.owner[cell];
       if (prev === sid) fail('이미 우리 학교 땅이에요.');
       if (rt.homeCell[cell] >= 0) fail('학교 본부는 뺏을 수 없어요.');
-      const cost = S.captureCost({ owner: rt.owner, def: rt.def, nb: M.nb, sid, cell, grade: a.grade });
+      const cost = S.captureCost({ owner: rt.owner, def: rt.def, nb: M.nb, sid, cell, grade: a.grade, nk: M.nk, size: () => { let k = 0; for (const o of rt.owner) if (o === sid) k++; return k; } });
       if (cost.error) fail(cost.error);
       const required = cost.cost;
       const st = statsOf(a.u);

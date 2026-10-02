@@ -19,7 +19,7 @@
   const cheat = { unlocked: false, capture: false, defend: false };
   const mySid = () => (me && me.profile ? me.profile.schoolId : -1);
   const short = sid => (schools[sid] ? schools[sid].name.replace(/초등학교$/, '초') : '어떤 학교');
-  const costOf = i => S.captureCost({ owner: W.owner, def: W.def, nb: G.nbOf, sid: mySid(), cell: i, grade: me.grade, escape: exits });
+  const costOf = i => S.captureCost({ owner: W.owner, def: W.def, nb: G.nbOf, sid: mySid(), cell: i, grade: me.grade, escape: exits, nk: c => G.nkCell[c] === 1, size: myLand });
   const needToTake = i => { const c = costOf(i); return c.error ? Math.max(S.BASE_COST, W.def[i]) : c.cost; };
 
   // ---------- 소리 (파일 없이 직접 만든 효과음) ----------
@@ -166,7 +166,9 @@
     }
     const n = new DataView(buf.buffer).getUint32(4, true);
     if (n !== m.n) throw new Error('지도 파일이 서로 맞지 않아요. 새로고침 해 주세요.');
-    G.sides = buf.slice(8, 8 + n);
+    G.sides = buf.slice(8, 8 + n); // 칸마다 변 수, 높은 비트(128)는 북한 칸
+    G.nkCell = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (G.sides[i] & 128) { G.nkCell[i] = 1; G.sides[i] &= 127; }
     const u = () => { let v = 0, sh = 0, b; do { b = buf[p++]; v += (b & 0x7f) * 2 ** sh; sh += 7; } while (b & 0x80); return v; };
     let p = 8 + n, R = 0, X = 0; // 먼저 고리·꼭짓점 수만 세어서 배열을 딱 맞게 만든다 (메모리 아끼기)
     for (let i = 0; i < n; i++) { const rc = u(); R += rc; for (let k = 0; k < rc; k++) { const L = u(); X += 2 * L; for (let q = 0; q < 2 * L; q++) u(); } }
@@ -196,7 +198,7 @@
     S.sharedEdges(n, eachRing, (c, o, x1, y1, x2, y2, k1, k2) => {
       if (2 * ne + 2 > ec.length) { const t = new Int32Array(ec.length * 2); t.set(ec); ec = t; const t2 = new Int32Array(es.length * 2); t2.set(es); es = t2; }
       ec[2 * ne] = c; ec[2 * ne + 1] = o; es[2 * ne] = k1; es[2 * ne + 1] = k2; ne++; // es: 변 두 끝의 G.xy 자리
-    });
+    }, { W: m.W, H: m.H });
     G.edges = { c: ec, s: es, n: ne }; // computeRegions 가 경계선을 만든 뒤 버린다
     const off = new Int32Array(n + 1), pairs = ne + m.routes.length;
     const pa = k => (k < ne ? ec[2 * k] : m.routes[k - ne][0]), pb = k => (k < ne ? ec[2 * k + 1] : m.routes[k - ne][1]);
@@ -231,12 +233,12 @@
     G.landPaths = G.land.map(r => toPath([r]));
     G.landBox = G.land.map(r => boxOf([r]));
     // 북한: 게임 땅은 아니고 보기만 한다. 전체 보기는 한반도 전체가 보이게
-    const north = (m.north || []).map(dec);
-    G.northPath = north.length ? toPath(north) : null;
-    const nbx = north.length ? boxOf(north) : [0, 0, 0, 0];
-    G.northBox = nbx;
-    G.northLabel = { name: '북한', x: (nbx[0] + nbx[2]) / 2, y: (nbx[1] + nbx[3]) / 2, size: 99 };
-    G.vb = { x0: Math.min(0, nbx[0]), y0: Math.min(0, nbx[1]), x1: Math.max(G.W, nbx[2]), y1: Math.max(G.H, nbx[3]) };
+    // 북한 땅도 칸으로 나뉜 진짜 땅이다 (land 고리 nkLand 번부터). 작은 지도는 남한만
+    G.nkLand = m.nkLand != null ? m.nkLand : G.land.length;
+    G.vb = { x0: 0, y0: 0, x1: G.W, y1: G.H };
+    const sk = [Infinity, Infinity, -Infinity, -Infinity];
+    G.landBox.forEach((b, k) => { if (k < G.nkLand) { sk[0] = Math.min(sk[0], b[0]); sk[1] = Math.min(sk[1], b[1]); sk[2] = Math.max(sk[2], b[2]); sk[3] = Math.max(sk[3], b[3]); } });
+    G.miniBox = { x0: sk[0] - 300, y0: sk[1] - 300, w: sk[2] - sk[0] + 600, h: sk[3] - sk[1] + 600 };
     // 산·섬 이름
     G.places = (m.places || []).map(([type, name, x, y, h]) => ({ type, name, x, y, h }));
     G.peaks = G.places.filter(p => p.type === '산').sort((a, b) => b.h - a.h);
@@ -253,7 +255,9 @@
       for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) G.index[gy * G.ibw + gx].push(i);
     }
     marks = new Uint32Array(m.n);
-    schools = m.schools.map(([name, sido, sigungu, url, dong], id) => ({ id, name, sido, sigungu, dong: dong || '', url: url || '' }));
+    const nkS = m.nkSchools || [m.schools.length, m.schools.length]; // 북한 (가상) 소학교 번호 범위
+    schools = m.schools.map(([name, sido, sigungu, url, dong], id) => ({ id, name, sido, sigungu, dong: dong || '', url: url || '', nk: id >= nkS[0] && id < nkS[1] }));
+    G.nkSido = new Set(schools.filter(s => s.nk).map(s => s.sido));
     $('#loadMsg').textContent = '시·도, 시·군·구, 동 경계를 그리는 중…';
     await new Promise(r => setTimeout(r, 0));
     computeRegions();
@@ -261,7 +265,8 @@
 
   // ---------- 지역 표시: 경기도 › 남양주시 › 호평동 ----------
   // 땅 칸마다 가장 가까운 학교(이웃 칸을 따라 잰 거리)의 동네를 붙여 대략의 경계를 만든다.
-  const SIDO_FULL = { 서울: '서울특별시', 부산: '부산광역시', 대구: '대구광역시', 인천: '인천광역시', 광주: '광주광역시', 대전: '대전광역시', 울산: '울산광역시', 세종: '세종특별자치시', 경기: '경기도', 강원: '강원특별자치도', 충북: '충청북도', 충남: '충청남도', 전북: '전북특별자치도', 전남: '전라남도', 경북: '경상북도', 경남: '경상남도', 제주: '제주특별자치도' };
+  const SIDO_FULL = { 서울: '서울특별시', 부산: '부산광역시', 대구: '대구광역시', 인천: '인천광역시', 광주: '광주광역시', 대전: '대전광역시', 울산: '울산광역시', 세종: '세종특별자치시', 경기: '경기도', 강원: '강원특별자치도', 충북: '충청북도', 충남: '충청남도', 전북: '전북특별자치도', 전남: '전라남도', 경북: '경상북도', 경남: '경상남도', 제주: '제주특별자치도',
+    평양: '평양직할시', 남포: '남포특별시', 개성: '개성특별시', 라선: '라선특별시', 평남: '평안남도', 평북: '평안북도', 자강: '자강도', 양강: '양강도', 함남: '함경남도', 함북: '함경북도', 황남: '황해남도', 황북: '황해북도', 북강원: '강원도(북한)' };
   function computeRegions() {
     const n = G.n, dongs = [], sggs = [], sidos = [], dIdx = new Map(), gIdx = new Map(), sIdx = new Map();
     const dong = new Int32Array(n).fill(-1), queue = new Int32Array(n);
@@ -385,7 +390,6 @@
       }
     };
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (G.northPath && cp < 8) draw([G.northLabel], Math.round(Math.max(18, Math.min(30, cp * 4))), 'rgba(90,82,70,.8)', 0, 0);
     if (cp < 8) draw(G.sidoList, Math.round(Math.max(14, Math.min(26, cp * 3.5))), 'rgba(70,40,150,.85)', 0, 0);
     if (G.places) drawScenery(cp, SX, SY, free);
     if (cp >= 2.2 && cp < 30) draw(G.sggs, Math.round(Math.max(12, Math.min(17, cp * 1.4))), 'rgba(85,60,160,.8)', cp < 4 ? 6 : 1, below);
@@ -507,7 +511,7 @@
     renderSchoolList();
   }
   function initSetup() {
-    const sidos = [...new Set(G.districts.map(d => d.sido))];
+    const sidos = [...new Set(G.districts.filter(d => !G.nkSido.has(d.sido)).map(d => d.sido))]; // 북한 학교는 고를 수 없다
     $('#stSido').innerHTML = opt('', '시·도 고르기') + sidos.map(s => opt(s, s)).join('');
     $('#stSido').onchange = () => setArea($('#stSido').value);
     $('#stSigungu').onchange = () => setArea($('#stSido').value, $('#stSigungu').value);
@@ -590,6 +594,7 @@
     else if (q) { res = searchSchools(q, 120); title = `"${q}" 검색 결과`; }
     else if (sigungu) { res = schools.filter(s => s && s.sido === sido && s.sigungu === sigungu && (!dong || s.dong === dong)); title = `${dong || sigungu}에 있는 모든 학교`; }
     else { box.innerHTML = `<div class="muted pad">시·도 → 시·군·구 → 동을 고르거나, "호평동"·"남양주시"처럼 동네 이름이나 학교 이름으로 찾아보세요. (전국 ${schools.length.toLocaleString()}개 학교)</div>`; return; }
+    res = res.filter(s => !s.nk);
     box.innerHTML = res.length
       ? `<div class="list-title">🏫 ${esc(title)} <b>${res.length}곳</b></div>` + schoolListHTML(res, null, chosen)
       : '<div class="muted pad">이 동네에는 등록된 학교가 없어요. 아래 "직접 등록하기"를 눌러 보세요.</div>';
@@ -621,8 +626,8 @@
   let SPACING = 150;
   const tiles = new Map();
   let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set(), owned = new Set();
-  let exits = new Set(), exitLines = [], offerOf = new Map(); // 탈출길, 팔려고 내놓은 땅
-  const NEUTRAL = [196, 201, 208], MINE = [255, 193, 7];
+  let exits = new Set(), exitLines = [], offerOf = new Map(), myLand = 0; // 탈출길, 팔려고 내놓은 땅, 우리 학교 땅 칸 수
+  const NEUTRAL = [196, 201, 208], NK_LAND = [214, 205, 188], MINE = [255, 193, 7]; // NK_LAND: 북한 빈 땅 (베이지)
   const colorCache = new Map();
   const baseS = () => TILE / Math.max(G.W, G.H);
   const cellPx = () => SPACING * view.s;
@@ -679,11 +684,12 @@
   // 같은 색 칸을 한 묶음으로 모아 한 번에 칠한다 (칸마다 칠하는 것보다 훨씬 빠르다)
   function groupKey(i) {
     const o = W.owner[i];
-    if (o < 0) return 'n' + (i % 3);
+    if (o < 0) return (G.nkCell[i] ? 'k' : 'n') + (i % 3); // 북한 빈 땅은 베이지
     return (W.def[i] > 0 ? 'd' : 'o') + o;
   }
   function groupStyle(key) {
     if (key[0] === 'n') return { fill: shade(NEUTRAL, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.8)' };
+    if (key[0] === 'k') return { fill: shade(NK_LAND, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.7)' };
     const c = rgbOf(+key.slice(1)), f = key[0] === 'd' ? 0.8 : 1;
     return { fill: shade(c, f), line: shade(c, 0.6 * f) };
   }
@@ -717,8 +723,7 @@
     g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = (cp > 20 ? 6 : 4) * px; // 하얀 물거품
     for (const k of lands) g.stroke(G.landPaths[k]);
     if (cp < 6) { // 멀리서 볼 때: 회색 땅을 한 번에 칠하고 주인 있는 칸만 덧칠한다
-      g.fillStyle = shade(NEUTRAL, 1);
-      for (const k of lands) g.fill(G.landPaths[k]);
+      for (const k of lands) { g.fillStyle = shade(k >= G.nkLand ? NK_LAND : NEUTRAL, 1); g.fill(G.landPaths[k]); }
       const ids = [];
       for (const i of owned) { const b = i * 4; if (G.box[b] <= x0 + tw && G.box[b + 2] >= x0 && G.box[b + 1] <= y0 + tw && G.box[b + 3] >= y0) ids.push(i); }
       drawGroups(g, ids, px, false);
@@ -755,7 +760,6 @@
     const s = view.s, now = performance.now();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, vw, vh); // 바다는 뒤쪽 배경(CSS)이 보여 준다
-    if (G.northPath) drawNorth(s);
 
     // 1) 땅 조각 그림
     const z = Math.max(0, Math.min(ZMAX, Math.ceil(Math.log2((s * dpr) / baseS()) - 0.05)));
@@ -878,18 +882,6 @@
     if (more || flashes.length) requestDraw();
     else if (animate && (myVis || exitLines.length || (cp >= 16 && frontier.size)) && !ambient) ambient = setTimeout(() => { ambient = 0; requestDraw(); }, 90); // 반짝이는 표시는 천천히
   }
-  // 북한 땅: 게임 칸이 없는 보기용 땅 (조각 그림 밖이라 매번 직접 그린다)
-  function drawNorth(s) {
-    const px = 1 / s, cp = SPACING * s, b = G.northBox;
-    if (view.x + b[2] * s < 0 || view.x + b[0] * s > vw || view.y + b[3] * s < 0 || view.y + b[1] * s > vh) return; // 화면 밖
-    ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * view.x, dpr * view.y);
-    ctx.lineJoin = 'round';
-    if (!fast && !moving) for (const [u, m, c] of SEA_BANDS) { ctx.strokeStyle = c; ctx.lineWidth = Math.max(u, m * px); ctx.stroke(G.northPath); }
-    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = (cp > 20 ? 6 : 4) * px; ctx.stroke(G.northPath);
-    ctx.fillStyle = '#d3cdc1'; ctx.fill(G.northPath);
-    ctx.strokeStyle = 'rgba(30,80,120,.5)'; ctx.lineWidth = 1.1 * px; ctx.stroke(G.northPath);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
   function shield(x, y, r) {
     ctx.beginPath();
     ctx.moveTo(x, y - r); ctx.lineTo(x + r, y - r * 0.6); ctx.lineTo(x + r * 0.8, y + r * 0.5); ctx.lineTo(x, y + r * 1.05); ctx.lineTo(x - r * 0.8, y + r * 0.5); ctx.lineTo(x - r, y - r * 0.6); ctx.closePath();
@@ -916,11 +908,12 @@
   let miniImg = null, miniTimer = null, miniW = 0, miniH = 0;
   function renderMini() {
     if (!G || !W) return;
-    miniW = Math.min(170, Math.max(110, vw * 0.16)); miniH = miniW * G.H / G.W;
+    const mb = G.miniBox;
+    miniW = Math.min(170, Math.max(110, vw * 0.16)); miniH = miniW * mb.h / mb.w;
     const d = dpr, c = miniImg || document.createElement('canvas');
     c.width = Math.round(miniW * d); c.height = Math.round(miniH * d);
-    const g = c.getContext('2d'), k = (miniW * d) / G.W;
-    g.setTransform(k, 0, 0, k, 0, 0);
+    const g = c.getContext('2d'), k = (miniW * d) / mb.w;
+    g.setTransform(k, 0, 0, k, -mb.x0 * k, -mb.y0 * k);
     g.lineWidth = 1 / k;
     g.fillStyle = '#c4c9d0';
     for (const p of G.landPaths) g.fill(p);
@@ -936,13 +929,13 @@
     mctx.setTransform(1, 0, 0, 1, 0, 0);
     mctx.clearRect(0, 0, mini.width, mini.height);
     mctx.drawImage(miniImg, 0, 0);
-    const k = mini.width / G.W, s = view.s;
+    const mb = G.miniBox, k = mini.width / mb.w, s = view.s;
     mctx.strokeStyle = '#ff2d55'; mctx.lineWidth = 2 * dpr;
-    mctx.strokeRect((-view.x / s) * k, (-view.y / s) * k, (vw / s) * k, (vh / s) * k);
+    mctx.strokeRect((-view.x / s - mb.x0) * k, (-view.y / s - mb.y0) * k, (vw / s) * k, (vh / s) * k);
   }
   function miniJump(e) {
     const r = mini.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * G.W, y = ((e.clientY - r.top) / r.height) * G.H;
+    const mb = G.miniBox, x = mb.x0 + ((e.clientX - r.left) / r.width) * mb.w, y = mb.y0 + ((e.clientY - r.top) / r.height) * mb.h;
     view.x = vw / 2 - x * view.s; view.y = vh / 2 - y * view.s;
     nudge();
   }
@@ -1039,7 +1032,7 @@
     const near = hs >= 0 ? schools[hs] : nearestSchool(G.sx[i], G.sy[i]), dist = near && near.dong ? near : nearestDistrict(G.sx[i], G.sy[i]);
     const shape = G.sides[i] ? SHAPE[G.sides[i]] || '다각형' : '바닷가';
     const title = hs >= 0 ? (mine ? '🏫 우리 학교 본부' : `🏫 ${schools[hs].name}`) : o < 0 ? `⬜ ${shape} 빈 땅` : mine ? `⭐ 우리 학교 ${shape} 땅` : `🚩 ${short(o)}의 ${shape} 땅`;
-    const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : cost.error ? `노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요. (${S.FAR_GRADE}학년부터는 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏어요)` : '';
+    const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : cost.nk ? cost.error : cost.error ? `노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요. (${S.FAR_GRADE}학년부터는 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏어요)` : '';
     const defWhy = !mine ? '우리 학교 땅만 방어할 수 있어요.' : hs >= 0 ? '본부는 언제나 안전해요.' : d >= 99 ? '방어가 가장 높아요(99).' : '';
     let ownedN = 0;
     if (o >= 0) for (const k of owned) if (W.owner[k] === o) ownedN++;
@@ -1047,6 +1040,8 @@
     if (o >= 0 && !mine) tags.push(`<span class="tag" style="--c:${cssColor(o)}">🚩 ${esc(schools[o].name)} · ${ownedN}칸</span>`);
     if (o >= 0 && hs < 0) tags.push(`<span class="tag">🛡️ 방어 <b>${d}</b></span>`);
     if (!mine && hs < 0 && !cost.error) tags.push(`<span class="tag hot">${cost.far ? '🚀 멀리 있는 땅 · ' : cost.escape ? '🚪 탈출길 · ' : '⚔️ '}문제 <b>${cost.cost}개</b> 풀면 뺏어요</span>`);
+    if (G.nkCell[i]) tags.push(`<span class="tag" style="--c:#b08d57">🗺️ 북한 땅 · 우리 땅 ${S.NK_MIN}칸 이상이면 뺏을 수 있어요</span>`);
+    if (hs >= 0 && schools[hs] && schools[hs].nk) tags.push('<span class="tag">북한 학교 (실제 학교가 아닌 가상의 소학교예요)</span>');
     if (off) tags.push(`<span class="tag" style="--c:#9333ea">🏷️ ${esc(short(off.from))} → ${esc(short(off.to))}에 판 땅 ${off.cells.length}칸</span>`);
     const deal = off && off.to === my ? `<button type="button" class="btn buy" id="btnBuy">🛒 땅 사기 (${off.cells.length}칸 · 문제 없이)</button>`
       : off && off.from === my ? `<button type="button" class="link-btn" id="btnUnsell">🏷️ 땅 팔기 취소</button>` : '';
@@ -1557,6 +1552,7 @@
       for (const n of G.nbOf(i)) if (W.owner[n] !== my && W.homeCell[n] < 0) frontier.add(n);
     }
     // 둘레에 빈 땅이 하나도 없으면(다른 학교 땅·본부에 갇히면) 가장 가까운 빈 땅이 탈출길이 된다
+    myLand = mine.length;
     exits = new Set(S.escapeCells(W.owner, G.nbOf, my, mine));
     exitLines = [];
     for (const e of exits) {

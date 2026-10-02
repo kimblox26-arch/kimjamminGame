@@ -8,9 +8,10 @@ const path = require('path');
 const crypto = require('crypto');
 const { project, decodeRing, neighborsFromRings } = require('../public/js/shared.js');
 
-const VERSION = 4;
+const VERSION = 5;
 const SPACING = 17;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 240m)
 const MIN_GAP = 9;     // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈125m)
+const SPACING_NK = 45; // 북한 땅은 칸을 크게 (≈625m): 보너스 땅이고 지도가 너무 무거워지지 않게
 const MARGIN = 400;
 
 function mulberry32(a) {
@@ -89,14 +90,14 @@ function encodeRing(p) {
 
 // map.bin: 'MLE1', 칸 수(4바이트), 칸마다 변 수(1바이트), 그다음 칸 모양.
 // 칸 모양 = [고리 수, (꼭짓점 수, 첫 점(앞 고리 첫 점과의 차이), 나머지 점(바로 앞 점과의 차이))…] 를 지그재그 가변 길이 정수로 적는다.
-function encodeBin(encoded, sides) {
+function encodeBin(encoded, sides, nk) {
   const n = encoded.length;
   let cap = 8 + n + 16;
   for (const rings of encoded) for (const r of rings) cap += 6 + r.length * 3;
   const buf = Buffer.alloc(cap);
   buf.write('MLE1', 0, 'latin1');
   buf.writeUInt32LE(n, 4);
-  for (let i = 0; i < n; i++) buf[8 + i] = Math.min(255, sides[i] || 0);
+  for (let i = 0; i < n; i++) buf[8 + i] = Math.min(127, sides[i] || 0) | (nk && nk[i] ? 128 : 0); // 높은 비트 = 북한 칸
   let p = 8 + n, px = 0, py = 0;
   const u = v => { while (v >= 0x80) { buf[p++] = (v & 0x7f) | 0x80; v >>>= 7; } buf[p++] = v; };
   const z = v => u(((v << 1) ^ (v >> 31)) >>> 0);
@@ -112,11 +113,14 @@ function encodeBin(encoded, sides) {
 }
 
 function buildMap({ landFile, schoolsFile, cacheDir }) {
-  const t0 = Date.now();
-  const landRings = JSON.parse(fs.readFileSync(landFile, 'utf8')).rings;
-  const schoolsText = fs.readFileSync(schoolsFile, 'utf8');
-  const schools = parseSchools(schoolsText);
-  const hash = crypto.createHash('sha1').update(`${VERSION}|${SPACING}|${MIN_GAP}|`).update(JSON.stringify(landRings)).update(schoolsText).digest('hex').slice(0, 12);
+  const t0 = Date.now(), dir = path.dirname(landFile);
+  const readOpt = f => { try { return fs.readFileSync(path.join(dir, f), 'utf8'); } catch { return ''; } };
+  // 남한 땅 + 북한 땅 (북한 땅 고리는 nkStart 번부터)
+  const skRings = JSON.parse(fs.readFileSync(landFile, 'utf8')).rings, nkText = readOpt('north-korea.json'), nkRings = nkText ? JSON.parse(nkText).rings : [];
+  const landRings = skRings.concat(nkRings), nkStart = skRings.length;
+  const schoolsText = fs.readFileSync(schoolsFile, 'utf8'), nkSchoolsText = nkRings.length ? readOpt('nk-schools.txt') : '';
+  const skSchools = parseSchools(schoolsText), schools = skSchools.concat(parseSchools(nkSchoolsText)); // 북한 (가상) 소학교는 뒤에
+  const hash = crypto.createHash('sha1').update(`${VERSION}|${SPACING}|${SPACING_NK}|${MIN_GAP}|`).update(JSON.stringify(landRings)).update(schoolsText).update(nkSchoolsText).digest('hex').slice(0, 12);
   // 같은 재료로 만든 지도가 있으면 그대로 쓴다 (만드는 데 십몇 초 걸리니까)
   const cacheFile = cacheDir ? path.join(cacheDir, `map-${hash}.json`) : null;
   if (cacheFile && fs.existsSync(cacheFile)) {
@@ -206,36 +210,51 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   }
   const schoolCount = sx.length;
 
-  // 포아송 원판 표본 (브리드슨): 서로 SPACING 이상 떨어진 무작위 점
-  const cs = SPACING / Math.SQRT2, gw = Math.ceil(W / cs), gh = Math.ceil(H / cs), pg = new Int32Array(gw * gh).fill(-1);
-  const px = [], py = [], active = [];
-  const addP = (x, y) => { const k = px.length; px.push(x); py.push(y); pg[Math.floor(y / cs) * gw + Math.floor(x / cs)] = k; active.push(k); };
-  const farEnough = (x, y) => {
-    const gx = Math.floor(x / cs), gy = Math.floor(y / cs);
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-      const cx = gx + dx, cy = gy + dy;
-      if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) continue;
-      const k = pg[cy * gw + cx];
-      if (k >= 0 && (px[k] - x) ** 2 + (py[k] - y) ** 2 < SPACING * SPACING) return false;
+  // 포아송 원판 표본 (브리드슨): 네모 안에서 서로 R 이상 떨어진 무작위 점
+  function poisson(x0, y0, x1, y1, R) {
+    const cs = R / Math.SQRT2, gw = Math.ceil((x1 - x0) / cs) + 1, gh = Math.ceil((y1 - y0) / cs) + 1, pg = new Int32Array(gw * gh).fill(-1);
+    const px = [], py = [], active = [];
+    const gi = (x, y) => Math.floor((y - y0) / cs) * gw + Math.floor((x - x0) / cs);
+    const addP = (x, y) => { const k = px.length; px.push(x); py.push(y); pg[gi(x, y)] = k; active.push(k); };
+    const farEnough = (x, y) => {
+      const gx = Math.floor((x - x0) / cs), gy = Math.floor((y - y0) / cs);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const cx = gx + dx, cy = gy + dy;
+        if (cx < 0 || cy < 0 || cx >= gw || cy >= gh) continue;
+        const k = pg[cy * gw + cx];
+        if (k >= 0 && (px[k] - x) ** 2 + (py[k] - y) ** 2 < R * R) return false;
+      }
+      return true;
+    };
+    addP((x0 + x1) / 2, (y0 + y1) / 2);
+    while (active.length) {
+      const ai = Math.floor(rand() * active.length), k = active[ai];
+      let placed = false;
+      for (let t = 0; t < 24 && !placed; t++) {
+        const a = rand() * Math.PI * 2, d = R * (1 + rand()), x = px[k] + Math.cos(a) * d, y = py[k] + Math.sin(a) * d;
+        if (x >= x0 && y >= y0 && x < x1 && y < y1 && farEnough(x, y)) { addP(x, y); placed = true; }
+      }
+      if (!placed) { active[ai] = active[active.length - 1]; active.pop(); }
     }
-    return true;
-  };
-  addP(W / 2, H / 2);
-  while (active.length) {
-    const ai = Math.floor(rand() * active.length), k = active[ai];
-    let placed = false;
-    for (let t = 0; t < 24 && !placed; t++) {
-      const a = rand() * Math.PI * 2, d = SPACING * (1 + rand()), x = px[k] + Math.cos(a) * d, y = py[k] + Math.sin(a) * d;
-      if (x >= 0 && y >= 0 && x < W && y < H && farEnough(x, y)) { addP(x, y); placed = true; }
-    }
-    if (!placed) { active[ai] = active[active.length - 1]; active.pop(); }
+    return [px, py];
   }
-  for (let k = 0; k < px.length; k++) {
-    if (landAt(px[k], py[k]) < 0) continue;
-    let near = false;
-    const gx = Math.floor(px[k] / SB), gy = Math.floor(py[k] / SB);
-    for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1 && !near; dx++) for (const s of sgrid.get((gy + dy) * sgw + gx + dx) || []) if (s < schoolCount && Math.hypot(sx[s] - px[k], sy[s] - py[k]) < SPACING * 0.7) { near = true; break; }
-    if (!near) addSeed(px[k], py[k]);
+  const boxOfRings = list => { const b = [Infinity, Infinity, -Infinity, -Infinity]; for (const pi of list) { const q = pbox[pi]; b[0] = Math.min(b[0], q[0]); b[1] = Math.min(b[1], q[1]); b[2] = Math.max(b[2], q[2]); b[3] = Math.max(b[3], q[3]); } return b; };
+  const nearSeed = (x, y, R, onlySchools) => { // R 안에 씨앗(또는 학교)이 있나
+    const gx = Math.floor(x / SB), gy = Math.floor(y / SB), rr = Math.ceil(R / SB);
+    for (let dy = -rr; dy <= rr; dy++) for (let dx = -rr; dx <= rr; dx++) for (const s of sgrid.get((gy + dy) * sgw + gx + dx) || []) if ((!onlySchools || s < schoolCount) && Math.hypot(sx[s] - x, sy[s] - y) < R) return true;
+    return false;
+  };
+  // 남한: 촘촘하게 (SPACING)
+  const skIdx = polys.map((_, i) => i).filter(i => i < nkStart), skBox = boxOfRings(skIdx);
+  {
+    const [px, py] = poisson(Math.max(0, skBox[0] - SPACING), Math.max(0, skBox[1] - SPACING), Math.min(W, skBox[2] + SPACING), Math.min(H, skBox[3] + SPACING), SPACING);
+    for (let k = 0; k < px.length; k++) { const m = landAt(px[k], py[k]); if (m >= 0 && m < nkStart && !nearSeed(px[k], py[k], SPACING * 0.7, true)) addSeed(px[k], py[k]); }
+  }
+  // 북한: 크게 (SPACING_NK), 남한 칸과 너무 가까운 점은 뺀다
+  if (nkRings.length) {
+    const nkBox = boxOfRings(polys.map((_, i) => i).filter(i => i >= nkStart));
+    const [px, py] = poisson(Math.max(0, nkBox[0] - SPACING), Math.max(0, nkBox[1] - SPACING), Math.min(W, nkBox[2] + SPACING), Math.min(H, nkBox[3] + SPACING), SPACING_NK);
+    for (let k = 0; k < px.length; k++) if (landAt(px[k], py[k]) >= nkStart && !nearSeed(px[k], py[k], SPACING_NK * 0.6)) addSeed(px[k], py[k]);
   }
   // 씨앗이 하나도 없는 섬에도 칸을 하나씩
   const massOfSeed = sx.map((x, i) => landAt(x, sy[i]));
@@ -250,7 +269,7 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   const n = sx.length;
 
   // ---- 3) 보로노이 다각형 (반평면 자르기) ----
-  const LIM = SPACING * 5;
+  const LIM = Math.max(SPACING * 5, SPACING_NK * 2.5);
   const vor = new Array(n);
   for (let i = 0; i < n; i++) {
     const x = sx[i], y = sy[i];
@@ -299,7 +318,7 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
       const bb = pbox[pi];
       if (bb[0] > x1 || bb[2] < x0 || bb[1] > y1 || bb[3] < y0) return;
       const r = clipByConvex(poly, P);
-      if (r.length >= 3 && Math.abs(area(r)) > 150) rings.push(r);
+      if (r.length >= 3 && Math.abs(area(r)) > SPACING * SPACING * 0.15) rings.push(r);
     });
     if (!rings.length) fallback++;
     cells[i] = rings.length ? rings : [P.map(v => [v[0], v[1]])];
@@ -320,7 +339,8 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   };
   const encoded = cells.map(rings => rings.map(r => encodeRing(r.map(([x, y]) => canon(x, y)))).filter(r => r.length >= 6));
   // 브라우저와 똑같이 정수 좌표로 이웃을 구한다
-  const nb = neighborsFromRings(encoded.map(rings => rings.map(decodeRing)));
+  const nb = neighborsFromRings(encoded.map(rings => rings.map(decodeRing)), { W, H });
+  const nk = massOfSeed.map(m => (m >= nkStart ? 1 : 0)); // 북한 칸 표시
 
   // ---- 6) 모든 땅이 이어지도록 섬에 뱃길을 놓는다 ----
   const routes = [];
@@ -355,19 +375,19 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   const districts = [...dmap.values()].map(d => ({ sido: d.sido, sigungu: d.sigungu, x: d.x / d.n, y: d.y / d.n, lat: d.lat / d.n, lon: d.lon / d.n }));
 
   const map = {
-    hash, W, H, n, ox, oy, schoolCount, seedX: sx, seedY: sy, nb, routes, sides, mass: massOfSeed, districts,
-    schools: schools.map((s, i) => ({ name: s.name, sido: s.sido, sigungu: s.sigungu, dong: s.dong, url: s.url, cell: i })),
+    hash, W, H, n, ox, oy, schoolCount, seedX: sx, seedY: sy, nb, routes, sides, mass: massOfSeed, districts, nk,
+    schools: schools.map((s, i) => ({ name: s.name, sido: s.sido, sigungu: s.sigungu, dong: s.dong, url: s.url, cell: i, nk: i >= skSchools.length })),
     toMap, landAt,
   };
   map.clientJSON = JSON.stringify({
-    hash, W, H, n, spacing: SPACING, schoolCount,
+    hash, W, H, n, spacing: SPACING, schoolCount, nkLand: nkStart, nkSchools: [skSchools.length, schools.length],
     bin: true, routes, // 칸 모양과 변 수는 map.bin 에 (훨씬 작다)
     seeds: sx.slice(0, schoolCount).flatMap((x, i) => [Math.round(x), Math.round(sy[i])]), // 학교 칸만 (나머지는 칸 가운데)
     land: polys.map(encodeRing),
     schools: schools.map(s => [s.name, s.sido, s.sigungu, s.url || '', s.dong || '']),
     districts: districts.map(d => [d.sido, d.sigungu, Math.round(d.x), Math.round(d.y)]),
   });
-  map.clientBin = encodeBin(encoded, sides);
+  map.clientBin = encodeBin(encoded, sides, nk);
   map.stats = { cells: n, schools: schoolCount, coastal, fallback, routes: routes.length, ms: Date.now() - t0 };
   if (cacheFile) {
     try {
@@ -380,11 +400,10 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   return addScenery(map, landFile);
 }
 
-// 북한 땅(보기만 하는 땅)과 산·섬 이름 (칸 모양과 상관없어서 지도 번호(hash)에 넣지 않는다: 바꿔도 땅 기록이 그대로다)
+// 산·섬 이름 (칸 모양과 상관없어서 지도 번호(hash)에 넣지 않는다: 바꿔도 땅 기록이 그대로다)
 function addScenery(map, landFile) {
   const dir = path.dirname(landFile), xy = (lat, lon) => { const [x, y] = project(lon, lat); return [x - map.ox, y - map.oy]; };
-  let north = [], txt = '';
-  try { north = JSON.parse(fs.readFileSync(path.join(dir, 'north-korea.json'), 'utf8')).rings.map(r => encodeRing(r.map(([lon, lat]) => xy(lat, lon)))).filter(e => e.length >= 6); } catch { /* 없으면 남한만 */ }
+  let txt = '';
   try { txt = fs.readFileSync(path.join(dir, 'korea-places.txt'), 'utf8'); } catch { /* 이름 없이 */ }
   const places = [];
   for (const line of txt.split('\n')) {
@@ -394,7 +413,7 @@ function addScenery(map, landFile) {
     places.push([m[1], m[2], Math.round(x), Math.round(y), m[5] ? +m[5] : 0]);
   }
   const j = JSON.parse(map.clientJSON);
-  j.north = north; j.places = places;
+  j.places = places;
   map.clientJSON = JSON.stringify(j);
   return map;
 }

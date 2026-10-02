@@ -50,22 +50,23 @@
   }
   // 두 칸이 함께 쓰는 변 찾기. ring(c, visit) 는 칸 c 의 고리마다 visit(좌표 배열, 시작, 끝) 을 부른다.
   // 같은 변을 쓰는 칸을 만나면 fn(c, o, x1, y1, x2, y2, 앞 꼭짓점 자리, 뒤 꼭짓점 자리). 변(두 꼭짓점)을 열쇠로 하는 타입 배열 해시 표라 50만 칸도 빠르다.
-  function sharedEdges(n, ring, fn) {
+  function sharedEdges(n, ring, fn, dims) { // dims: 지도 크기 {W, H} (꼭짓점 하나를 32비트 수 하나로 줄이는 데 쓴다)
     let total = 0;
     for (let c = 0; c < n; c++) ring(c, (r, s, e) => { total += (e - s) >> 1; });
-    let cap = 1024;
-    while (cap < total * 0.6) cap *= 2; // 서로 다른 변은 꼭짓점 수의 절반쯤
-    const ka = new Uint32Array(cap), kb = new Uint32Array(cap), val = new Int32Array(cap).fill(-1), mask = cap - 1, O = 4096;
+    const cap = Math.ceil(total * 0.75) + 1024; // 서로 다른 변은 꼭짓점 수의 절반쯤 → 표가 2/3쯤 찬다
+    const ka = new Uint32Array(cap), kb = new Uint32Array(cap), val = new Int32Array(cap).fill(-1);
+    const O = dims ? 2 : 4096, HH = dims ? dims.H + 5 : 65536;
+    if (dims && (dims.W + 5) * HH >= 4294967296) throw new Error('지도가 너무 커요');
     for (let c = 0; c < n; c++) ring(c, (r, s, e) => {
       if (e - s < 4) return;
       let px = r[e - 2], py = r[e - 1];
       for (let k = s; k < e; k += 2) {
         const x = r[k], y = r[k + 1];
         if (x !== px || y !== py) {
-          const v = ((x + O) * 65536 + (y + O)) >>> 0, w = ((px + O) * 65536 + (py + O)) >>> 0, a = v < w ? v : w, b = v < w ? w : v;
+          const v = ((x + O) * HH + (y + O)) >>> 0, w = ((px + O) * HH + (py + O)) >>> 0, a = v < w ? v : w, b = v < w ? w : v;
           let h = Math.imul(a ^ Math.imul(b, 0x9e3779b1), 0x85ebca6b);
-          h = (h ^ (h >>> 15)) & mask;
-          while (val[h] >= 0 && (ka[h] !== a || kb[h] !== b)) h = (h + 1) & mask;
+          h = ((h ^ (h >>> 15)) >>> 0) % cap;
+          while (val[h] >= 0 && (ka[h] !== a || kb[h] !== b)) if (++h === cap) h = 0;
           const o = val[h];
           if (o < 0) { ka[h] = a; kb[h] = b; val[h] = c; }
           else if (o !== c) fn(c, o, px, py, x, y, k === s ? e - 2 : k - 2, k);
@@ -76,14 +77,14 @@
   }
   // 이웃한 땅: 변(꼭짓점 두 개)을 함께 쓰는 칸끼리 이웃이다.
   // 서버와 브라우저가 같은 정수 좌표로 계산하므로 결과가 항상 같다. (지도 파일에 이웃 목록을 안 넣어도 된다)
-  function neighborsFromRings(cellRings) {
+  function neighborsFromRings(cellRings, dims) {
     const nb = cellRings.map(() => []);
-    sharedEdges(cellRings.length, (c, visit) => { for (const r of cellRings[c]) visit(r, 0, r.length); }, (c, o) => { if (!nb[c].includes(o)) { nb[c].push(o); nb[o].push(c); } });
+    sharedEdges(cellRings.length, (c, visit) => { for (const r of cellRings[c]) visit(r, 0, r.length); }, (c, o) => { if (!nb[c].includes(o)) { nb[c].push(o); nb[o].push(c); } }, dims);
     return nb;
   }
 
   // ---------- 게임 규칙 (서버와 브라우저가 똑같이 쓴다) ----------
-  const BASE_COST = 2, FAR_GRADE = 4, FAR_COST = 50;
+  const BASE_COST = 2, FAR_GRADE = 4, FAR_COST = 50, NK_MIN = 200; // 북한 땅은 우리 땅이 200칸 이상이어야
   // 갇힌 학교의 탈출길: 우리 땅 둘레에 빈 땅이 하나도 없으면 가장 가까운 빈 땅으로 빠져나갈 수 있다
   const nbFn = nb => (typeof nb === 'function' ? nb : i => nb[i]); // 이웃 목록: 배열 또는 함수
   function escapeCells(owner, nb, sid, mine) { // mine: 우리 칸 목록 (없으면 모두 찾아본다)
@@ -106,6 +107,10 @@
   // 땅을 뺏는 데 필요한 문제 수. 닿은 땅 = 2(또는 방어 수), 탈출길 = 2, 4학년부터 멀리 있는 땅 = 50(또는 방어 수)
   function captureCost(o) { // { owner, def, nb, sid, cell, grade, escape(Set, 없으면 계산) }
     const { owner, def, sid, cell, grade } = o, nb = nbFn(o.nb), prev = owner[cell], d = prev < 0 ? 0 : def[cell];
+    if (o.nk && o.nk(cell)) { // o.nk: 북한 칸인지, o.size: 우리 학교 땅 칸 수 (수 또는 함수)
+      const size = typeof o.size === 'function' ? o.size() : o.size || 0;
+      if (size < NK_MIN) return { error: `북한 땅은 우리 학교 땅이 ${NK_MIN}칸 이상이어야 뺏을 수 있어요. (지금 ${size}칸)`, nk: true };
+    }
     if (nb(cell).some(k => owner[k] === sid)) return { cost: Math.max(BASE_COST, d) };
     const esc = o.escape || new Set(escapeCells(owner, nb, sid));
     if (esc.has(cell)) return { cost: BASE_COST, escape: true };
@@ -127,5 +132,5 @@
   const ROLE_NICK = { admin: '운영자', dev: '개발자' };
 
   return { PROJ, project, unproject, schoolYear, gradeFromBirthYear, BADGES, CHAT, decodeRing, sharedEdges, neighborsFromRings,
-    BASE_COST, FAR_GRADE, FAR_COST, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK };
+    BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK };
 });
