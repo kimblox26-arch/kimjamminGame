@@ -11,20 +11,20 @@
 | `screen-1.png` ~ `screen-4.png` | 휴대전화 스크린샷 (1080×1920) |
 | `privacy.html` | 개인정보처리방침 (웹에는 `docs/privacy.html`로 올라가요) |
 
-앱판 웹사이트는 저장소 맨 위 `docs/` 폴더에 있어요. 게임을 고친 뒤에는 `node tools/build-static.js`를 실행하면 `docs/`가 새로 만들어져요.
+게임 사이트는 저장소 맨 위 `docs/` 폴더에 있어요. 맨 위 주소는 소개 페이지이고, 게임은 `play/`에 있어요. 게임을 고친 뒤에는 `node tools/build-static.js`를 실행하면 `docs/`가 새로 만들어져요.
 
 ## 1단계: 무료 웹사이트로 올리기 (GitHub Pages)
 
 1. GitHub 저장소 **Settings → Pages**로 들어가요.
 2. Source를 **Deploy from a branch**로, Branch를 `claude/math-land-eater-game-2fglub`, 폴더를 **/docs**로 고르고 Save를 눌러요.
-3. 몇 분 뒤 `https://kimblox26-arch.github.io/kimjamminGame/` 에서 게임이 열려요.
+3. 몇 분 뒤 `https://kimblox26-arch.github.io/kimjamminGame/` 에서 소개 페이지가 열리고, 게임은 `https://kimblox26-arch.github.io/kimjamminGame/play/` 에서 열려요.
 4. 폰 크롬으로 열고 **홈 화면에 추가**를 하면 바로 앱처럼 쓸 수 있어요.
 
 ⚠️ `docs/privacy.html`의 **[보호자 연락 이메일을 여기에 적어 주세요]** 부분을 보호자 이메일로 바꾼 뒤 다시 올려 주세요. 구글 플레이 심사에 꼭 필요해요.
 
 ## 2단계: 앱 파일 만들기 (PWABuilder)
 
-1. https://www.pwabuilder.com 에 게임 주소를 넣고 **Start**를 눌러요.
+1. https://www.pwabuilder.com 에 게임 주소(`…/kimjamminGame/play/`)를 넣고 **Start**를 눌러요.
 2. **Package For Stores → Android → Google Play**를 골라요.
    - Package ID 예: `io.github.kimblox26arch.mathlandeater`
    - App name: `매뜨 땅먹`
