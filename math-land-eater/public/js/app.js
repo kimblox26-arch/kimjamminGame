@@ -10,7 +10,6 @@
     get: k => { try { return localStorage.getItem(k); } catch { return null; } },
     set: (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* 저장 불가 */ } },
   };
-  const SHAPE = { 3: '삼각형', 4: '사각형', 5: '오각형', 6: '육각형', 7: '칠각형', 8: '팔각형', 9: '구각형' };
   const PRAISE = ['정답이에요!', '잘했어요!', '최고예요!', '완벽해요!', '수학 천재!', '멋져요!'];
 
   let G = null;          // 지도 모양
@@ -627,7 +626,7 @@
   const tiles = new Map();
   let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set(), owned = new Set();
   let exits = new Set(), exitLines = [], offerOf = new Map(), myLand = 0; // 탈출길, 팔려고 내놓은 땅, 우리 학교 땅 칸 수
-  const NEUTRAL = [196, 201, 208], NK_LAND = [214, 205, 188], MINE = [255, 193, 7]; // NK_LAND: 북한 빈 땅 (베이지)
+  const NEUTRAL = [196, 201, 208], MINE = [255, 193, 7];
   const colorCache = new Map();
   const baseS = () => TILE / Math.max(G.W, G.H);
   const cellPx = () => SPACING * view.s;
@@ -684,12 +683,11 @@
   // 같은 색 칸을 한 묶음으로 모아 한 번에 칠한다 (칸마다 칠하는 것보다 훨씬 빠르다)
   function groupKey(i) {
     const o = W.owner[i];
-    if (o < 0) return (G.nkCell[i] ? 'k' : 'n') + (i % 3); // 북한 빈 땅은 베이지
+    if (o < 0) return 'n' + (i % 3);
     return (W.def[i] > 0 ? 'd' : 'o') + o;
   }
   function groupStyle(key) {
     if (key[0] === 'n') return { fill: shade(NEUTRAL, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.8)' };
-    if (key[0] === 'k') return { fill: shade(NK_LAND, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.7)' };
     const c = rgbOf(+key.slice(1)), f = key[0] === 'd' ? 0.8 : 1;
     return { fill: shade(c, f), line: shade(c, 0.6 * f) };
   }
@@ -723,7 +721,8 @@
     g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = (cp > 20 ? 6 : 4) * px; // 하얀 물거품
     for (const k of lands) g.stroke(G.landPaths[k]);
     if (cp < 6) { // 멀리서 볼 때: 회색 땅을 한 번에 칠하고 주인 있는 칸만 덧칠한다
-      for (const k of lands) { g.fillStyle = shade(k >= G.nkLand ? NK_LAND : NEUTRAL, 1); g.fill(G.landPaths[k]); }
+      g.fillStyle = shade(NEUTRAL, 1);
+      for (const k of lands) g.fill(G.landPaths[k]);
       const ids = [];
       for (const i of owned) { const b = i * 4; if (G.box[b] <= x0 + tw && G.box[b + 2] >= x0 && G.box[b + 1] <= y0 + tw && G.box[b + 3] >= y0) ids.push(i); }
       drawGroups(g, ids, px, false);
@@ -1030,8 +1029,7 @@
     const i = sel, o = W.owner[i], d = W.def[i], hs = W.homeCell[i], my = mySid(), mine = o === my;
     const cost = !mine && hs < 0 ? costOf(i) : {}, off = offerOf.get(i);
     const near = hs >= 0 ? schools[hs] : nearestSchool(G.sx[i], G.sy[i]), dist = near && near.dong ? near : nearestDistrict(G.sx[i], G.sy[i]);
-    const shape = G.sides[i] ? SHAPE[G.sides[i]] || '다각형' : '바닷가';
-    const title = hs >= 0 ? (mine ? '🏫 우리 학교 본부' : `🏫 ${schools[hs].name}`) : o < 0 ? `⬜ ${shape} 빈 땅` : mine ? `⭐ 우리 학교 ${shape} 땅` : `🚩 ${short(o)}의 ${shape} 땅`;
+    const title = hs >= 0 ? (mine ? '🏫 우리 학교 본부' : `🏫 ${schools[hs].name}`) : o < 0 ? '⬜ 빈 땅' : mine ? '⭐ 우리 학교 땅' : `🚩 ${short(o)}의 땅`;
     const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : cost.nk ? cost.error : cost.error ? `노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요. (${S.FAR_GRADE}학년부터는 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏어요)` : '';
     const defWhy = !mine ? '우리 학교 땅만 방어할 수 있어요.' : hs >= 0 ? '본부는 언제나 안전해요.' : d >= 99 ? '방어가 가장 높아요(99).' : '';
     let ownedN = 0;
