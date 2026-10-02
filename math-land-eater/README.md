@@ -17,6 +17,8 @@ node server.js          # 또는 npm start
 - 계정·기록·오답 노트는 그 기기(브라우저)에 저장돼요.
 - claude.ai 페이지로 올리면, 같은 링크로 들어온 친구들과 땅·소식·채팅·순위를 함께 써요. (공유 저장소를 못 쓰는 사람은 혼자 하기)
 - `dist/static/index.html` 은 GitHub Pages 같은 정적 호스팅에도 그대로 올릴 수 있어요. (이때는 혼자 하기)
+- 같은 명령이 앱(PWA)판도 만들어요: `dist/web/` → 저장소 맨 위 `docs/`. 홈 화면 아이콘(`manifest.webmanifest`), 오프라인 저장(`sw.js`), 개인정보처리방침이 들어 있어요.
+  GitHub Pages(브랜치의 `/docs`)로 올린 뒤 구글 플레이 앱으로 만드는 방법은 [`store/README.md`](store/README.md)에 있어요.
 
 ## 게임 규칙
 | 항목 | 내용 |

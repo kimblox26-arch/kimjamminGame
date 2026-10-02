@@ -1,6 +1,6 @@
 'use strict';
 // 매뜨 땅먹 SNS(틱톡·유튜브) 프로필 이미지 만들기: 육각형 한반도 + 로고 (Playwright 필요)
-//   node tools/make-branding.js  →  branding/profile-logo.png, profile-map.png, youtube-banner.png
+//   node tools/make-branding.js  →  branding/(프로필·배너), public/icons/(앱 아이콘), store/(플레이 스토어 아이콘·그래픽)
 const { chromium } = require(require('child_process').execSync('npm root -g').toString().trim() + '/playwright');
 const fs = require('fs');
 const path = require('path'), ROOT = path.join(__dirname, '..'), OUT = path.join(ROOT, 'branding'); // 먼저 node tools/build-static.js 로 dist/static/map.json 을 만든다
@@ -68,5 +68,15 @@ function drawScene(opts) {
   await make('youtube-banner.png', 2560, 1440, `${syms}<div class="t" style="left:0;right:0;top:520px;font-size:190px;line-height:1;--sw:16px">매뜨 <span class="y">땅먹</span></div>
     <div class="t" style="left:0;right:0;top:745px;font-size:62px;--sw:8px;text-shadow:0 5px 0 #0f3d6b">수학 문제 풀고 · 땅 먹고 · 우리 학교 1등!</div>`,
     { map: { x: 1880, y: 120, w: 620, h: 1200 }, hexR: 14, seed: 11, bg: [0.5, 0.3], fill: 0.8 });
+  // 4) 앱 아이콘 (구글 플레이 512, 홈 화면 192·512, 마스커블: 가운데 80% 안에 지도)
+  const ICON = path.join(ROOT, 'public/icons'), STORE = path.join(ROOT, 'store');
+  const save = async (name, w, h, body, opts, dirs) => { await make(name, w, h, body, opts); for (const d of dirs) fs.copyFileSync(path.join(OUT, name), path.join(d, name)); fs.rmSync(path.join(OUT, name)); };
+  await save('icon-512.png', 512, 512, '', { map: { x: 70, y: 22, w: 372, h: 468 }, hexR: 6.5, seed: 3, bg: [0.5, 0.15] }, [ICON, STORE]);
+  await save('icon-192.png', 192, 192, '', { map: { x: 26, y: 8, w: 140, h: 176 }, hexR: 3, seed: 3, bg: [0.5, 0.15] }, [ICON]);
+  await save('icon-maskable-512.png', 512, 512, '', { map: { x: 118, y: 80, w: 276, h: 352 }, hexR: 5, seed: 3, bg: [0.5, 0.15] }, [ICON]);
+  // 5) 구글 플레이 그래픽 이미지 1024x500
+  await save('feature-graphic.png', 1024, 500, `<div class="t" style="left:60px;top:150px;font-size:110px;line-height:1;text-align:left;--sw:10px">매뜨 <span class="y">땅먹</span></div>
+    <div class="t" style="left:64px;top:290px;font-size:34px;text-align:left;--sw:6px;text-shadow:0 4px 0 #0f3d6b">수학 문제 풀고 우리 학교 땅 넓히기!</div>`,
+    { map: { x: 700, y: 20, w: 300, h: 460 }, hexR: 6, seed: 11, bg: [0.35, 0.3] }, [STORE]);
   await b.close();
 })().catch(e => { console.error(e); process.exit(1); });

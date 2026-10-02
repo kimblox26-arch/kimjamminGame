@@ -1,0 +1,19 @@
+{
+  "name": "매뜨 땅먹",
+  "short_name": "매뜨 땅먹",
+  "description": "수학 문제를 풀어 우리 학교 땅을 넓히는 초등학생 땅따먹기 게임",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "lang": "ko",
+  "background_color": "#4fb0ea",
+  "theme_color": "#ff7a1a",
+  "categories": ["education", "games"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
