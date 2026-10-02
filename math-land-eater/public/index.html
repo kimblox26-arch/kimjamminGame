@@ -13,12 +13,18 @@
 <body>
 
 <!-- 불러오는 중 -->
-<section id="loading" class="screen">
-  <div class="load-box">
-    <div class="load-logo">매뜨 땅먹</div>
-    <div class="load-map">🗺️</div>
-    <div class="load-bar"><i></i></div>
-    <p id="loadMsg">전국 지도를 그리는 중…</p>
+<section id="loading" class="screen intro">
+  <div class="intro-box">
+    <h1 class="intro-logo" aria-label="매뜨 땅먹"><span>매</span><span>뜨</span> <b><span>땅</span><span>먹</span></b></h1>
+    <p class="intro-sub">수학으로 넓히는 우리 학교 땅</p>
+    <canvas id="introMap" class="intro-map" aria-hidden="true"></canvas>
+    <p id="introLine" class="intro-line"></p>
+    <div id="introProgress">
+      <div class="intro-progress"><div class="intro-bar"><i id="loadBar"></i></div><b id="loadPct">0%</b></div>
+      <p id="loadMsg" class="intro-msg">지도를 받는 중…</p>
+    </div>
+    <button type="button" id="introStart" class="btn primary big intro-start" hidden>▶ 시작하기</button>
+    <p id="introTip" class="intro-tip"></p>
   </div>
 </section>
 
@@ -352,6 +358,7 @@
 
 <canvas id="fx"></canvas>
 <div id="toasts"></div>
+<script src="js/intro.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/problems.js"></script>
 <script src="js/app.js"></script>

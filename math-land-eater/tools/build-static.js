@@ -19,7 +19,7 @@ fs.writeFileSync(path.join(out, 'map.json'), map.clientJSON);
 const b64 = map.clientBin.toString('base64'), PART = 12 * 1024 * 1024, parts = [];
 for (const f of fs.readdirSync(out)) if (/^map\.bin/.test(f)) fs.rmSync(path.join(out, f));
 for (let k = 0; k * PART < b64.length; k++) { const name = `map.bin.${k}.txt`; fs.writeFileSync(path.join(out, name), b64.slice(k * PART, (k + 1) * PART)); parts.push(name); }
-for (const f of ['style.css', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js']) fs.copyFileSync(path.join(root, 'public', f), path.join(out, f));
+for (const f of ['style.css', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js']) fs.copyFileSync(path.join(root, 'public', f), path.join(out, f));
 
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const title = html.match(/<title>[\s\S]*?<\/title>/)[0];

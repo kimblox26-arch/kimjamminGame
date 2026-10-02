@@ -139,12 +139,16 @@
   // 칸 i 의 이웃 칸들. loadMap 밖에 두어야 불러올 때 쓴 큰 임시 배열(지도 파일 등)을 붙잡지 않는다 (메모리)
   const nbOf = i => G.nbIdx.subarray(G.nbOff[i], G.nbOff[i + 1]);
   let stamp = 0, marks = null;
+  // 로딩 화면 진행률 (인트로가 없으면 글만)
+  const prog = (p, msg) => { if (window.MLEIntro) window.MLEIntro.progress(p, msg); else if (msg) $('#loadMsg').textContent = msg; };
+  const breathe = () => new Promise(r => setTimeout(r, 0)); // 화면이 진행률을 그릴 틈
   async function loadMap() {
+    prog(2, '지도를 받는 중…');
     const res = await fetch(window.MLE_MAP_URL || '/api/map');
     if (!res.ok) throw new Error('지도를 받을 수 없어요.');
     const m = await res.json();
-    $('#loadMsg').textContent = `다각형 땅 ${m.n.toLocaleString()}칸을 그리는 중…`;
-    await new Promise(r => setTimeout(r, 30));
+    if (window.MLEIntro) window.MLEIntro.setLand(m.land, m.W, m.H); // 인트로에 진짜 한반도 모양
+    prog(6, `땅 ${m.n.toLocaleString()}칸 지도를 받는 중…`);
     const dec = arr => { const out = new Float32Array(arr.length); let x = 0, y = 0; for (let k = 0; k < arr.length; k += 2) { x += arr[k]; y += arr[k + 1]; out[k] = x; out[k + 1] = y; } return out; };
     const toPath = rings => { const p = new Path2D(); for (const r of rings) { p.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) p.lineTo(r[k], r[k + 1]); p.closePath(); } return p; };
     const boxOf = rings => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const r of rings) for (let k = 0; k < r.length; k += 2) { x0 = Math.min(x0, r[k]); x1 = Math.max(x1, r[k]); y0 = Math.min(y0, r[k + 1]); y1 = Math.max(y1, r[k + 1]); } return [x0, y0, x1, y1]; };
@@ -156,7 +160,9 @@
     const binUrl = window.MLE_MAP_BIN_URL || '/api/map.bin';
     let buf;
     if (Array.isArray(binUrl)) { // 아티팩트용: base64 글자로 바꿔 여러 파일로 나눈 지도
-      const texts = await Promise.all(binUrl.map(async u => { const r = await fetch(u); if (!r.ok) throw new Error('지도를 받을 수 없어요.'); return (await r.text()).trim(); }));
+      let got = 0;
+      const texts = await Promise.all(binUrl.map(async u => { const r = await fetch(u); if (!r.ok) throw new Error('지도를 받을 수 없어요.'); const t = (await r.text()).trim(); got++; prog(6 + 30 * got / binUrl.length, `지도를 받는 중… ${got}/${binUrl.length}`); return t; }));
+      prog(37, '지도 파일을 푸는 중…'); await breathe();
       const t = atob(texts.join(''));
       buf = new Uint8Array(t.length);
       for (let k = 0; k < t.length; k++) buf[k] = t.charCodeAt(k);
@@ -164,7 +170,9 @@
       const br = await fetch(binUrl);
       if (!br.ok) throw new Error('지도를 받을 수 없어요.');
       buf = new Uint8Array(await br.arrayBuffer());
+      prog(36);
     }
+    prog(40, `땅 ${m.n.toLocaleString()}칸을 만드는 중…`); await breathe();
     const n = new DataView(buf.buffer).getUint32(4, true);
     if (n !== m.n) throw new Error('지도 파일이 서로 맞지 않아요. 새로고침 해 주세요.');
     G.sides = buf.slice(8, 8 + n); // 칸마다 변 수, 높은 비트(128)는 북한 칸
@@ -187,12 +195,11 @@
         xy[nx++] = x; xy[nx++] = y;
         for (let q = 1; q < L; q++) { x += z(); y += z(); xy[nx++] = x; xy[nx++] = y; }
       }
-      if (i % 50000 === 49999) await new Promise(r => setTimeout(r, 0)); // 화면이 멈추지 않게 쉬어 간다
+      if (i % 50000 === 49999) { prog(40 + 24 * i / n); await breathe(); } // 화면이 멈추지 않게 쉬어 간다
     }
     cr[n] = nr; ro[nr] = nx;
     G.xy = xy; G.ro = ro; G.cr = cr;
-    $('#loadMsg').textContent = `이웃한 땅 ${m.n.toLocaleString()}칸을 잇는 중…`;
-    await new Promise(r => setTimeout(r, 0));
+    prog(65, '이웃한 땅을 잇는 중…'); await breathe();
     // 이웃한 땅은 칸 모양으로 직접 계산한다 (서버와 같은 방법) + 섬 뱃길. 칸끼리 함께 쓰는 변은 지역 경계선에도 쓴다.
     const eachRing = (c, visit) => { for (let r = G.cr[c]; r < G.cr[c + 1]; r++) visit(G.xy, G.ro[r], G.ro[r + 1]); };
     let ec = new Int32Array(2 * (Math.ceil(X / 4 * 1.1) + 1024)), es = new Int32Array(ec.length), ne = 0; // 함께 쓰는 변은 꼭짓점 수의 절반쯤
@@ -229,7 +236,8 @@
       for (let k = a; k < b; k += 2) { x += G.xy[k]; y += G.xy[k + 1]; }
       G.sx[i] = x / ((b - a) / 2); G.sy[i] = y / ((b - a) / 2);
     }
-    if (window.MLEBackend) { $('#loadMsg').textContent = '친구들과 함께 쓰는 지도에 연결하는 중…'; await window.MLEBackend.init(m, G); }
+    prog(84, '땅 위치를 정리하는 중…');
+    if (window.MLEBackend) { prog(88, '친구들과 함께 쓰는 지도에 연결하는 중…'); await window.MLEBackend.init(m, G); }
     G.land = m.land.map(dec);
     G.landPaths = G.land.map(r => toPath([r]));
     G.landBox = G.land.map(r => boxOf([r]));
@@ -259,7 +267,7 @@
     const nkS = m.nkSchools || [m.schools.length, m.schools.length]; // 북한 (가상) 소학교 번호 범위
     schools = m.schools.map(([name, sido, sigungu, url, dong], id) => ({ id, name, sido, sigungu, dong: dong || '', url: url || '', nk: id >= nkS[0] && id < nkS[1] }));
     G.nkSido = new Set(schools.filter(s => s.nk).map(s => s.sido));
-    $('#loadMsg').textContent = '시·도, 시·군·구, 동 경계를 그리는 중…';
+    prog(94, '시·도, 시·군·구, 동 경계를 그리는 중…');
     await new Promise(r => setTimeout(r, 0));
     computeRegions();
   }
@@ -1781,6 +1789,7 @@
   // ---------- 시작 ----------
   async function boot() {
     try { await loadMap(); } catch (e) { $('#loadMsg').textContent = '😢 ' + (e.message || '지도를 불러오지 못했어요.') + ' 새로고침 해 주세요.'; return; }
+    if (window.MLEIntro) { await window.MLEIntro.done(); Sound.play('tap'); } // 인트로: 시작하기를 누르면 들어간다
     initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin();
     if (!token) return show('auth');
     const d = await api('/api/me');
