@@ -945,7 +945,7 @@
 
   // ---------- 지도 움직이기 ----------
   const fitScale = () => Math.min(vw / (G.vb.x1 - G.vb.x0), vh / (G.vb.y1 - G.vb.y0)) * 0.94; // 북한까지 한반도 전체
-  const clampS = s => Math.max(fitScale() * 0.8, Math.min(2.4, s));
+  const clampS = s => Math.max(fitScale() * 0.8, Math.min(3.2, s)); // 가장 크게: 3.2배
   function zoomAt(px, py, ns) {
     ns = clampS(ns);
     const wx = (px - view.x) / view.s, wy = (py - view.y) / view.s;
