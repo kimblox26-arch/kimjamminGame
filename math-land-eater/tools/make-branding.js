@@ -24,8 +24,7 @@ function drawScene(opts) {
   const sc = Math.min(map.w / (box[2] - box[0]), map.h / (box[3] - box[1])), ox = map.x + (map.w - (box[2] - box[0]) * sc) / 2 - box[0] * sc, oy = map.y + (map.h - (box[3] - box[1]) * sc) / 2 - box[1] * sc;
   const path = new Path2D();
   for (const r of land) { path.moveTo(r[0] * sc + ox, r[1] * sc + oy); for (let k = 2; k < r.length; k += 2) path.lineTo(r[k] * sc + ox, r[k + 1] * sc + oy); path.closePath(); }
-  g.save(); g.shadowColor = 'rgba(0,40,90,.35)'; g.shadowBlur = hexR * 4; g.shadowOffsetY = hexR * 1.2; g.fillStyle = '#e4e9ef'; g.fill(path); g.restore();
-  g.lineWidth = hexR * 2.2; g.strokeStyle = 'rgba(255,255,255,.35)'; g.stroke(path);
+  g.save(); g.shadowColor = 'rgba(0,40,90,.35)'; g.shadowBlur = hexR * 4; g.shadowOffsetY = hexR * 1.2; g.fillStyle = '#5b6b7d'; g.fill(path); g.restore(); // 반투명 하얀 테두리 없이
   const R = hexR, dx = Math.sqrt(3) * R, dy = 1.5 * R, hx = [], at = new Map();
   for (let row = 0, y = map.y; y < map.y + map.h + R; row++, y += dy) for (let col = 0, x = map.x + (row % 2 ? dx / 2 : 0); x < map.x + map.w + R; col++, x += dx) if (g.isPointInPath(path, x, y)) { at.set(row + ',' + col, hx.length); hx.push({ x, y, row, col, nb: [] }); }
   const odd = [[0, -1], [0, 1], [-1, 0], [-1, 1], [1, 0], [1, 1]], even = [[0, -1], [0, 1], [-1, -1], [-1, 0], [1, -1], [1, 0]];
@@ -33,8 +32,10 @@ function drawScene(opts) {
   const COLORS = ['#ff6b6b', '#ffb020', '#3ec46d', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#6366f1'];
   const owner = new Int8Array(hx.length).fill(-1), fronts = [], seeds = [];
   for (let i = 0; i < 9; i++) { const k = Math.floor(rnd() * hx.length); if (owner[k] < 0) { owner[k] = i; fronts.push([k]); seeds.push(k); } }
-  const fill = opts.fill || 0.82; let taken = seeds.length;
+  const fill = 1; let taken = seeds.length;
   while (taken < hx.length * fill) { let any = false; fronts.forEach((f, s) => { for (let t = 0; t < 6 && f.length; t++) { const i = Math.floor(rnd() * f.length), free = hx[f[i]].nb.filter(j => owner[j] < 0); if (!free.length) { f.splice(i, 1); continue; } const j = free[Math.floor(rnd() * free.length)]; owner[j] = s; f.push(j); taken++; any = true; break; } }); if (!any) break; }
+  // 섬처럼 이어지지 않은 칸까지 모두 가장 가까운 학교 색으로 (알록달록하게)
+  for (let i = 0; i < hx.length; i++) if (owner[i] < 0) { let best = 0, bd = Infinity; seeds.forEach((k, s) => { const d = (hx[k].x - hx[i].x) ** 2 + (hx[k].y - hx[i].y) ** 2; if (d < bd) { bd = d; best = s; } }); owner[i] = best; }
   for (let i = 0; i < hx.length; i++) {
     const q = hx[i]; g.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; g.lineTo(q.x + R * 0.95 * Math.cos(a), q.y + R * 0.95 * Math.sin(a)); } g.closePath();
     g.fillStyle = owner[i] >= 0 ? COLORS[owner[i] % COLORS.length] : '#cfd5dd'; g.fill(); g.lineWidth = Math.max(1, R * 0.14); g.strokeStyle = 'rgba(255,255,255,.9)'; g.stroke();
@@ -57,7 +58,7 @@ function drawScene(opts) {
   };
   // 1) 프로필 사진 A: 글자 (원으로 잘려도 잘 보이게 가운데에 크게)
   await make('profile-logo.png', 1080, 1080, `<div class="t" style="left:0;right:0;top:215px;font-size:300px;line-height:1.02;--sw:22px">매뜨<br><span class="y">땅먹</span></div>`,
-    { map: { x: 90, y: 90, w: 900, h: 900 }, hexR: 15, seed: 7, bg: [0.5, 0.2], fill: 0.85, wash: 0.45 });
+    { map: { x: 90, y: 90, w: 900, h: 900 }, hexR: 15, seed: 7, bg: [0.5, 0.2] });
   // 2) 프로필 사진 B: 육각형 한반도 지도 + 작은 로고
   await make('profile-map.png', 1080, 1080, `<div class="t" style="left:0;right:0;bottom:60px;font-size:130px;--sw:12px">매뜨 <span class="y">땅먹</span></div>`,
     { map: { x: 200, y: 70, w: 680, h: 780 }, hexR: 12, seed: 3, bg: [0.5, 0.15], fill: 0.86 });
