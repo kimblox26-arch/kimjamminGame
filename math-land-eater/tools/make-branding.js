@@ -59,9 +59,9 @@ function drawScene(opts) {
   // 1) 프로필 사진 A: 글자 (원으로 잘려도 잘 보이게 가운데에 크게)
   await make('profile-logo.png', 1080, 1080, `<div class="t" style="left:0;right:0;top:215px;font-size:300px;line-height:1.02;--sw:22px">매뜨<br><span class="y">땅먹</span></div>`,
     { map: { x: 90, y: 90, w: 900, h: 900 }, hexR: 15, seed: 7, bg: [0.5, 0.2] });
-  // 2) 프로필 사진 B: 육각형 한반도 지도 + 작은 로고
-  await make('profile-map.png', 1080, 1080, `<div class="t" style="left:0;right:0;bottom:60px;font-size:130px;--sw:12px">매뜨 <span class="y">땅먹</span></div>`,
-    { map: { x: 200, y: 70, w: 680, h: 780 }, hexR: 12, seed: 3, bg: [0.5, 0.15], fill: 0.86 });
+  // 2) 프로필 사진 B: 글씨 없는 육각형 한반도 지도
+  await make('profile-map.png', 1080, 1080, '', // 글씨 없이 지도만 (원으로 잘려도 지도가 가운데)
+    { map: { x: 150, y: 55, w: 780, h: 970 }, hexR: 13, seed: 3, bg: [0.5, 0.15] });
   // 3) 유튜브 배너 2560x1440 (모든 기기에 보이는 가운데 1546x423 안에 글자)
   const syms = [['+', 230, 300, 170, '#ff6b6b', -12], ['×', 470, 560, 140, '#ffb020', 10], ['÷', 190, 820, 150, '#3ec46d', 8], ['−', 520, 1020, 120, '#a855f7', -8], ['=', 330, 1180, 110, '#3b82f6', 14], ['?', 640, 260, 110, '#ec4899', 6]]
     .map(([t, x, y, sz, c, r]) => `<div class="sym" style="left:${x}px;top:${y}px;--s:${sz}px;--c:${c};--r:${r}deg">${t}</div>`).join('');
