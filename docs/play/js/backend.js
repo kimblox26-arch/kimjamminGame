@@ -42,7 +42,9 @@
     const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
     if (!window.firebase) { await loadScript(V + 'firebase-app-compat.js'); await Promise.all([loadScript(V + 'firebase-auth-compat.js'), loadScript(V + 'firebase-firestore-compat.js')]); }
     if (!firebase.apps.length) firebase.initializeApp(cfg);
-    try { await firebase.auth().signInAnonymously(); } catch { /* 익명 로그인이 꺼져 있어도 규칙이 허락하면 쓸 수 있다 */ }
+    for (let k = 0; k < 4; k++) { // 익명 로그인 (인터넷이 잠깐 끊겨도 몇 번 더 해 본다)
+      try { await firebase.auth().signInAnonymously(); break; } catch (e) { if (k === 3) console.warn('익명 로그인 실패', e); else await new Promise(res => setTimeout(res, 1500 * (k + 1))); }
+    }
     const db = firebase.firestore();
     await db.doc('meta/ping').get(); // 읽을 수 있는지 확인 (규칙이 막으면 혼자 하기)
     return { db, room: presenceRoom(db), kind: 'firebase' };
@@ -58,7 +60,7 @@
   // 페이지가 열리자마자 연결을 시작하고, 정해진 시간 안에 안 되면(로그인 안 한 사람 등) 혼자 하기
   const cloudReady = (async () => {
     if (window.MLE_FIREBASE && window.MLE_FIREBASE.projectId) {
-      try { cloud = await Promise.race([firebaseCloud(window.MLE_FIREBASE), new Promise(res => setTimeout(() => res(null), 9000))]); } catch (e) { console.warn('Firebase 연결 실패', e); cloud = null; }
+      try { cloud = await Promise.race([firebaseCloud(window.MLE_FIREBASE), new Promise(res => setTimeout(() => res(null), 45000))]); } catch (e) { console.warn('Firebase 연결 실패', e); cloud = null; }
       return;
     }
     if (!window.claude || typeof window.claude.use !== 'function') return;
@@ -86,18 +88,16 @@
     BASE = m.schools.map(([name, sido, sigungu, url, dong], i) => ({ name, sido, sigungu, dong: dong || '', url: url || '', cell: i, nk: i >= nkS[0] && i < nkS[1] }));
     NK_SIDO = new Set(BASE.filter(s => s.nk).map(s => s.sido));
     await connectCloud();
-    await loadMod();
-    if (cloud) {
-      await loadCustom();
-      try { // 개발자가 서버를 초기화하면 모두가 새 자리에서 처음부터 시작한다
+    const loadReset = async () => { // 개발자가 서버를 초기화하면 모두가 새 자리에서 처음부터 시작한다
+      try {
         const r = await cloud.db.doc('meta/reset').get();
         epoch = r.exists ? r.data().epoch || 0 : 0;
         cloud.db.doc('meta/reset').onSnapshot(snap => { const e = snap.exists ? snap.data().epoch || 0 : 0; if (e !== epoch) startOver(e, snap.data().by); }, () => {});
       } catch { /* 초기화 기록이 없으면 그대로 */ }
-    }
+    };
+    await Promise.all([loadMod(), loadFlags(), cloud && loadCustom(), cloud && loadReset()]); // 서버에 한꺼번에 물어봐서 빨리 시작
     indexSchools();
     setWP();
-    await loadFlags();
   }
   // 학년마다 들고 있던 땅을 버리고 새 자리에서 처음부터 (화면에는 다시 불러오라고 알린다)
   function dropWorlds(ev) {
