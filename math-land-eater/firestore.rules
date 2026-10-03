@@ -1,0 +1,10 @@
+rules_version = '2';
+// 매뜨 땅먹 Firestore 규칙: 익명 로그인한 사람만 읽고 쓸 수 있어요. (게임이 쓰는 자리만 열어 둠)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    match /{top}/{rest=**} {
+      allow read, write: if signedIn() && (top.matches('w[0-9a-f]+.*') || top in ['meta', 'mod', 'ids', 'players', 'presence', 'hall', 'invites', 'staff']);
+    }
+  }
+}

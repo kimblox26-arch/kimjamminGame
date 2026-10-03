@@ -130,7 +130,62 @@
   // 운영자·개발자 이름은 다른 사람이 못 쓴다
   const RESERVED_NICK = /운영|관리자|개발|어드민|admin|develop|^gm$|staff|매니저|manager/i;
   const ROLE_NICK = { admin: '운영자', dev: '개발자' };
+  const MARK = { dev: '♛', admin: '✦' }; // 이름 오른쪽에 붙는 표시 (그림 문자가 아닌 특수문자)
+
+  // ---------- 코인 · 상점 ----------
+  const SHOP = [
+    { id: 'shield', icon: '🛡️', name: '방패', price: 40, desc: '우리 땅 1칸을 24시간 동안 아무도 못 뺏어요.' },
+    { id: 'bomb', icon: '💣', name: '폭탄', price: 60, desc: '뺏을 수 있는 땅과 그 옆 땅 2칸까지, 문제 없이 한 번에 3칸!' },
+    { id: 'scope', icon: '🔭', name: '망원경', price: 25, desc: '10분 동안 우리 땅 둘레에서 가장 약한 땅을 반짝반짝 알려 주고, 멀리서도 방어 수가 보여요.' },
+    { id: 'flag', icon: '🚩', name: '학교 깃발 꾸미기', price: 50, desc: '우리 학교 땅 색깔과 마크를 바꿔요. (다른 학교 친구들에게 보여요)' },
+  ];
+  const SHIELD_HOURS = 24, SCOPE_MIN = 10, BOMB_EXTRA = 2, BOMB_MAX_DEF = 10;
+  const FLAG_COLORS = ['#ef4444', '#f97316', '#d97706', '#84cc16', '#16a34a', '#14b8a6', '#0891b2', '#2563eb', '#4f46e5', '#9333ea', '#db2777', '#57534e'];
+  const FLAG_MARKS = ['★', '◆', '▲', '●', '♪', '☾', '✿', '■', '✚', '✱', '✪', '❀', '✸', '♡'];
+  const attendCoins = streak => 10 + 5 * Math.min(6, Math.max(0, streak - 1)); // 출석: 10코인, 연속이면 하루에 5씩 더 (최대 40)
+
+  // ---------- 오늘의 미션 ----------
+  const MISSIONS = [
+    { id: 'solve', icon: '✏️', key: 'solved', n: [10, 20, 30], coin: 20, text: n => `문제 ${n}개 풀기` },
+    { id: 'cap', icon: '🚩', key: 'captures', n: [3, 5, 8], coin: 25, text: n => `땅 ${n}칸 차지하기` },
+    { id: 'steal', icon: '⚔️', key: 'steals', n: [1, 2], coin: 30, text: n => `다른 학교 땅 ${n}칸 뺏기` },
+    { id: 'def', icon: '🛡️', key: 'defends', n: [5, 10], coin: 20, text: n => `방어 ${n} 올리기` },
+    { id: 'streak', icon: '🔥', key: 'streak', n: [5, 8], coin: 25, max: true, text: n => `${n}문제 연속으로 맞히기` },
+    { id: 'speed', icon: '⏱️', key: 'speed', n: [8, 12], coin: 30, max: true, text: n => `스피드 퀴즈에서 ${n}문제 이상 맞히기` },
+    { id: 'item', icon: '🛒', key: 'items', n: [1], coin: 20, text: () => '상점 아이템 1번 쓰기' },
+  ];
+  const MISSION_ALL = 30; // 세 개를 모두 끝내면 보너스
+  function dailyMissions(day, seed) { // 날짜·계정마다 다른 미션 3개 (같은 날에는 늘 같다)
+    let h = 2166136261;
+    for (const ch of day + '|' + seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+    const rnd = () => { h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0; h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+    const pool = MISSIONS.slice(), out = [];
+    while (out.length < 3) { const m = pool.splice(Math.floor(rnd() * pool.length), 1)[0]; out.push({ id: m.id, n: m.n[Math.floor(rnd() * m.n.length)] }); }
+    return out;
+  }
+
+  // ---------- 시즌 (한 달에 한 번, 한국 시간 매달 1일 0시에 바뀐다) ----------
+  const SEASON0 = { y: 2026, m: 10 }; // 시즌 1 = 2026년 10월
+  const kst = now => new Date((now || Date.now()) + 9 * 3600e3);
+  const seasonOf = (now, shift) => Math.max(1, (kst(now).getUTCFullYear() - SEASON0.y) * 12 + kst(now).getUTCMonth() + 1 - SEASON0.m + 1) + (shift || 0);
+  const seasonEnd = now => { const d = kst(now); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - 9 * 3600e3; };
+  // 시즌마다 바뀌는 특별 규칙 (매달 새 규칙이 열린다)
+  const SEASON_RULES = [
+    { icon: '🌱', name: '새싹 시즌', desc: '빈 땅을 차지하면 코인 2배!', color: '#16a34a', emptyX: 2 },
+    { icon: '⚔️', name: '결투 시즌', desc: '결투에서 이기면 코인 +10 보너스!', color: '#dc2626', duelBonus: 10 },
+    { icon: '🛡️', name: '수비 시즌', desc: '방어를 올리면 코인 2배!', color: '#2563eb', defendX: 2 },
+    { icon: '💣', name: '폭탄 시즌', desc: '상점 폭탄이 반값!', color: '#ea580c', sale: { bomb: 0.5 } },
+    { icon: '🎯', name: '미션 시즌', desc: '오늘의 미션 보상 2배!', color: '#9333ea', missionX: 2 },
+    { icon: '⏱️', name: '스피드 시즌', desc: '스피드 퀴즈 코인 2배!', color: '#0891b2', speedX: 2 },
+  ];
+  const seasonRule = n => SEASON_RULES[(Math.max(1, n) - 1) % SEASON_RULES.length];
+  const SEASON_PRIZE = [300, 200, 100], SEASON_JOIN = 50; // 학년 서버 1·2·3등 학교 학생, 참가한 학생 모두
+  const priceOf = (item, season) => { const it = SHOP.find(x => x.id === item), s = seasonRule(season).sale; return it ? Math.round(it.price * ((s && s[item]) || 1)) : Infinity; };
+  // 1:1 결투: 땅 주인 학교가 문제 하나를 푸는 데 걸리는 시간(초). 학년이 높고 방어가 높을수록 빠르다
+  const duelPace = (grade, def) => Math.max(4.5, 8.5 - grade * 0.35 - Math.min(def || 0, 20) * 0.05);
 
   return { PROJ, project, unproject, schoolYear, gradeFromBirthYear, BADGES, CHAT, decodeRing, sharedEdges, neighborsFromRings,
-    BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK };
+    BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK, MARK,
+    SHOP, SHIELD_HOURS, SCOPE_MIN, BOMB_EXTRA, BOMB_MAX_DEF, FLAG_COLORS, FLAG_MARKS, attendCoins, MISSIONS, MISSION_ALL, dailyMissions,
+    SEASON0, seasonOf, seasonEnd, SEASON_RULES, seasonRule, SEASON_PRIZE, SEASON_JOIN, priceOf, duelPace };
 });

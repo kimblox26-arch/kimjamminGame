@@ -394,3 +394,72 @@ input:focus, select:focus { border-color: var(--blue); }
 .rank-table small { color: #94a3b8; display: block; font-size: 11.5px; }
 .rank-more { display: block; margin: 6px auto 0; }
 @media (max-width: 480px) { .top-actions .icon-btn { padding: 6px 4px; font-size: 19px; } } /* 폰: 버튼이 많아도 위 칸이 덜 잘리게 */
+
+/* ---------- 새 기능: 코인 · 시즌 · 미션 · 상점 · 결투 · 운영자 표시 ---------- */
+.mark { display: inline-block; margin-left: 3px; font-weight: 700; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+.mark.dev { color: #e0a100; text-shadow: 0 0 1px #8a5a00; }
+.mark.admin { color: #2f80ed; }
+button.pill { border: 0; cursor: pointer; font: inherit; }
+.pill.season { background: color-mix(in srgb, var(--c, #16a34a) 14%, #fff); color: var(--c, #16a34a); font-weight: 700; }
+.pill.coins { background: #fff4cc; color: #8a5a00; font-weight: 700; }
+.pill.coins.bump { animation: bump .5s; }
+.pill.scope { background: #fde2e2; color: #b42318; font-weight: 700; }
+@keyframes bump { 30% { transform: scale(1.25); } }
+.icon-btn { position: relative; }
+.count.dot { min-width: 10px; width: 10px; height: 10px; padding: 0; font-size: 0; background: var(--red); }
+.study { display: grid; gap: 10px; }
+.study .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.study small { font-family: system-ui, sans-serif; font-size: 12.5px; opacity: .8; }
+.missions { display: grid; gap: 10px; margin: 6px 0 12px; }
+.mission { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 10px; padding: 12px; border-radius: 14px; background: #f6f8fa; }
+.mission.ready { background: linear-gradient(180deg, #fff8e6, #ffe9b3); box-shadow: var(--shadow-sm); }
+.mission.done { opacity: .6; }
+.mission .mi { font-size: 28px; text-align: center; }
+.mission b { display: block; font-size: 15px; }
+.mission .bar { margin: 6px 0 0; height: 8px; }
+.mission small { color: var(--muted); }
+.ms-bonus { padding: 12px; border-radius: 14px; border: 2px dashed #ffd66b; text-align: center; margin-bottom: 10px; }
+.coin-big { margin-left: auto; margin-right: 8px; font-family: var(--font-title); font-size: 22px; color: #8a5a00; }
+.shop-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.shop-item { border-radius: 16px; padding: 12px; background: #f6f8fa; display: grid; gap: 6px; align-content: start; }
+.shop-item .si { font-size: 34px; }
+.shop-item b { font-size: 16px; }
+.shop-item p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.shop-item .own { font-size: 13px; font-weight: 700; color: #1d5fbf; }
+.shop-item .sale { color: var(--red); font-weight: 700; }
+.shop-item .row { margin-top: 4px; }
+.flag-box { margin-top: 14px; padding: 12px; border-radius: 16px; background: #fffbe8; border: 2px dashed #ffd66b; }
+.flag-box h4 { margin: 0 0 6px; }
+.flag-box .label { font-size: 13px; color: var(--muted); margin: 6px 0 4px; }
+.chip.color { width: 30px; height: 30px; padding: 0; border-radius: 50%; }
+.chip.mk { font-size: 18px; min-width: 38px; background: #fff; color: var(--ink); border: 2px solid var(--line); }
+.flag-preview { text-align: center; margin: 12px 0 4px; }
+.flag-preview span { display: inline-block; padding: 8px 16px; border-radius: 99px; color: #fff; font-family: var(--font-title); font-size: 20px; box-shadow: var(--shadow-sm); }
+.duel { display: grid; gap: 6px; margin: 4px 0 8px; padding: 10px 12px; border-radius: 14px; background: #fff1f1; border: 2px solid #ffd0d0; }
+.duel .dl { display: grid; grid-template-columns: 110px 1fr 46px; align-items: center; gap: 8px; font-size: 14px; }
+.duel .dl span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duel .bar { margin: 0; height: 10px; }
+.duel .opp .bar i { background: linear-gradient(90deg, #ff9a9a, var(--red)); }
+.duel .dl em { font-style: normal; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.season-card { max-width: 480px !important; padding: 0 !important; overflow: hidden; }
+.season-card > .row { padding: 0 18px 18px; }
+.se-head { padding: 22px 18px 18px; color: #fff; text-align: center; background: linear-gradient(160deg, var(--c, #16a34a), #1d3447); }
+.se-head .se-n { font-family: var(--font-title); font-size: 40px; text-shadow: 0 3px 0 rgba(0, 0, 0, .25); }
+.se-head .se-rule { display: inline-block; margin-top: 8px; padding: 6px 14px; border-radius: 99px; background: rgba(255, 255, 255, .2); font-size: 15px; }
+.se-body { padding: 14px 18px; display: grid; gap: 10px; }
+.se-box { padding: 12px; border-radius: 14px; background: #f6f8fa; }
+.se-box h4 { margin: 0 0 6px; }
+.se-box ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 4px; }
+.se-box li small { color: var(--muted); margin-left: 6px; }
+.se-gift { background: linear-gradient(180deg, #fff8e6, #ffe9b3); font-weight: 700; text-align: center; }
+.se-new { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.7; }
+.hall-season { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }
+.hall-season h4 { margin: 0 0 4px; }
+.hall-season ol { margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.7; }
+.trophy { margin-left: 4px; font-size: 12px; }
+.invite-card { text-align: center; }
+.inv-icon { font-size: 48px; }
+.inv-text { font-size: 18px; }
+.invite-card form { text-align: left; margin-top: 10px; }
+.invite-card .label { font-size: 14px; margin-bottom: 6px; }
+@media (max-width: 480px) { .shop-list { grid-template-columns: 1fr 1fr; } .shop-item { padding: 10px; } .shop-item p { font-size: 12px; } .duel .dl { grid-template-columns: 84px 1fr 40px; font-size: 13px; } }

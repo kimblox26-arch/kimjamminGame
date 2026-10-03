@@ -47,13 +47,14 @@ fs.mkdirSync(path.join(app, 'js'), { recursive: true }); fs.mkdirSync(path.join(
 fs.writeFileSync(path.join(app, 'map.json'), map.clientJSON);
 fs.writeFileSync(path.join(app, 'map.bin'), map.clientBin);
 const ver = crypto.createHash('sha1').update(map.clientBin).update(map.clientJSON);
-for (const f of ['style.css', 'manifest.webmanifest', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png']) {
+for (const f of ['style.css', 'manifest.webmanifest', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/firebase-config.js', 'js/backend.js', 'js/app.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png']) {
   fs.copyFileSync(path.join(root, 'public', f), path.join(app, f)); ver.update(fs.readFileSync(path.join(app, f)));
 }
 const v = ver.digest('hex').slice(0, 10), mv = map.stats.cells.toString(36) + '-' + v; // 지도 주소에 판 번호를 붙여 새 지도면 새로 받게
 fs.writeFileSync(path.join(app, 'sw.js'), fs.readFileSync(path.join(root, 'public/sw.js'), 'utf8').replace("const VERSION = 'dev', MAPS = [];", `const VERSION = '${v}', MAPS = ${JSON.stringify(['map.json?v=' + mv, 'map.bin?v=' + mv])};`));
 const head = `<link rel="manifest" href="manifest.webmanifest">\n<link rel="icon" type="image/png" href="icons/icon-192.png">\n<link rel="apple-touch-icon" href="icons/icon-192.png">\n<meta name="mobile-web-app-capable" content="yes">\n${title}\n${links}\n`;
 const webBody = body.replace(/window\.MLE_MAP_URL = [^<]*;/, `window.MLE_MAP_URL = "map.json?v=${mv}"; window.MLE_MAP_BIN_URL = "map.bin?v=${mv}";`)
+  .replace('<script src="js/backend.js"></script>', '<script src="js/firebase-config.js"></script>\n<script src="js/backend.js"></script>') // 사이트판만: Firebase 온라인 대결 설정
   .replace('<script src="js/app.js"></script>', `<script src="js/app.js"></script>\n<script>if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});</script>`);
 fs.writeFileSync(path.join(app, 'index.html'), `<!doctype html>\n<html lang="ko">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">\n<meta name="theme-color" content="#ff7a1a">\n${head}</head>\n<body>\n${webBody.trim()}\n</body>\n</html>\n`);
 fs.writeFileSync(path.join(web, '.nojekyll'), '');

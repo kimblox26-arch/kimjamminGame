@@ -1,14 +1,16 @@
 /* 매뜨 땅먹 — 서버 없이 브라우저 안에서 돌아가는 게임 서버 (폰 브라우저 / claude.ai 페이지용)
  * server.js 와 같은 API 를 흉내 낸다.
  *  - 계정·기록·오답 노트: 이 기기(localStorage)에 저장
- *  - 땅·소식·채팅·친구 순위: claude.ai 의 공유 저장소(db)를 쓸 수 있으면 같은 링크의 친구들과 함께,
- *    아니면 이 기기 안에서만 */
+ *  - 땅·소식·채팅·친구 순위: 공유 저장소를 쓸 수 있으면 친구들과 함께, 아니면 이 기기 안에서만
+ *    공유 저장소: claude.ai 페이지의 db, 또는 firebase-config.js 에 설정을 넣은 Firebase(Firestore) — 둘 다 같은 모양(doc/collection)으로 쓴다 */
 (function () {
   'use strict';
   const S = window.MLE;
-  const MAX_DEF = 99, MAX_DEF_STEP = 20, CHUNK = 2048, OFFER_HOURS = 48;
+  const MAX_DEF = 99, MAX_DEF_STEP = 20, OFFER_HOURS = 48;
+  const chunkSize = () => (cloud && cloud.kind === 'firebase' ? 16384 : 2048); // 땅 기록을 이 칸 수만큼 묶어 한 문서에 (Firebase 는 읽는 횟수를 줄이려고 크게)
   // 운영자·개발자 계정 (비밀번호는 SHA-256 으로만 적어 둔다)
   const ROLES = { 'game-admin': ['admin', '7371439df8022882e6ea2877671f337a6886350bb33a90bd3f724eee7ad96ac7'], 'game-developer': ['dev', 'fcda475b1c997a1f4f065359003a8357cc888f8a001cd253de9405c633c845bf'] };
+  const isBuiltin = u => Object.prototype.hasOwnProperty.call(ROLES, String(u.username || '').toLowerCase()); // 처음부터 있던 운영자·개발자 계정 (초대로 된 운영자가 아니라)
 
   // ---------- 이 기기 저장 ----------
   const ls = {
@@ -33,9 +35,32 @@
   sha('kim1234school').then(h => { debugSha = h; });
 
   // ---------- 공유 저장소 (claude.ai) ----------
-  let cloud = null; // { db, room }
-  // 페이지가 열리자마자 연결을 시작하고, 3.5초 안에 안 되면(로그인 안 한 사람 등) 혼자 하기
+  let cloud = null; // { db, room, kind }
+  // Firebase: 스크립트를 받아서 Firestore 를 연다 (익명 로그인이 켜져 있으면 로그인도)
+  const loadScript = src => new Promise((ok, no) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = no; document.head.appendChild(el); });
+  async function firebaseCloud(cfg) {
+    const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
+    if (!window.firebase) { await loadScript(V + 'firebase-app-compat.js'); await Promise.all([loadScript(V + 'firebase-auth-compat.js'), loadScript(V + 'firebase-firestore-compat.js')]); }
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+    try { await firebase.auth().signInAnonymously(); } catch { /* 익명 로그인이 꺼져 있어도 규칙이 허락하면 쓸 수 있다 */ }
+    const db = firebase.firestore();
+    await db.doc('meta/ping').get(); // 읽을 수 있는지 확인 (규칙이 막으면 혼자 하기)
+    return { db, room: presenceRoom(db), kind: 'firebase' };
+  }
+  // 접속 중인 친구 수: 기기마다 30초에 한 번 '여기 있어요'를 남기고, 75초 안에 남긴 기기만 센다
+  function presenceRoom(db) {
+    let mine = {}, timer = 0;
+    return {
+      presence(p) { mine = p; const beat = () => db.doc('presence/' + local.device).set(Object.assign({ at: Date.now() }, mine)).catch(() => {}); beat(); clearInterval(timer); timer = setInterval(beat, 30000); },
+      onPeers(cb) { return db.collection('presence').onSnapshot(snap => { const now = Date.now(); cb({ peers: snap.docs.map(d => ({ presence: d.data() })).filter(p => now - (p.presence.at || 0) < 75000) }); }, () => {}); },
+    };
+  }
+  // 페이지가 열리자마자 연결을 시작하고, 정해진 시간 안에 안 되면(로그인 안 한 사람 등) 혼자 하기
   const cloudReady = (async () => {
+    if (window.MLE_FIREBASE && window.MLE_FIREBASE.projectId) {
+      try { cloud = await Promise.race([firebaseCloud(window.MLE_FIREBASE), new Promise(res => setTimeout(() => res(null), 9000))]); } catch (e) { console.warn('Firebase 연결 실패', e); cloud = null; }
+      return;
+    }
     if (!window.claude || typeof window.claude.use !== 'function') return;
     const timeout = new Promise(r => setTimeout(() => r(null), 3500));
     try {
@@ -49,7 +74,10 @@
   const connectCloud = () => cloudReady;
 
   // ---------- 지도 ----------
-  let NK_SIDO = new Set(), M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화마다 새 자리)
+  let NK_SIDO = new Set(), M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화·시즌마다 새 자리)
+  let season = 1, seasonShift = 0; // 시즌 번호 (한 달에 하나), 개발자가 '다음 시즌'을 누른 횟수
+  const wpFor = (ep, sn) => MAPWP + (ep ? 'r' + ep : '') + (sn > 1 ? 's' + sn : ''); // 시즌 1은 예전 자리를 그대로 쓴다
+  const setWP = () => { WP = wpFor(epoch, season); };
   async function init(m, g) { // g: 화면 쪽이 계산한 이웃(nb)과 칸 위치(sx, sy)
     M = { n: m.n, nb: g.nbOf, sx: g.sx, sy: g.sy, nk: c => g.nkCell[c] === 1 }; // nb: 칸 → 이웃 칸들 (함수), nk: 북한 칸인지
     // 지도가 바뀌면 땅 기록은 새로 시작한다 (칸 번호가 달라지니까)
@@ -66,21 +94,116 @@
       try { // 개발자가 서버를 초기화하면 모두가 새 자리에서 처음부터 시작한다
         const r = await cloud.db.doc('meta/reset').get();
         epoch = r.exists ? r.data().epoch || 0 : 0;
-        WP = MAPWP + (epoch ? 'r' + epoch : '');
         cloud.db.doc('meta/reset').onSnapshot(snap => { const e = snap.exists ? snap.data().epoch || 0 : 0; if (e !== epoch) startOver(e, snap.data().by); }, () => {});
       } catch { /* 초기화 기록이 없으면 그대로 */ }
     }
     indexSchools();
+    await loadFlags();
+    await loadSeason();
   }
-  // 서버 초기화: 학년마다 들고 있던 땅을 버리고 처음부터 (화면에는 다시 불러오라고 알린다)
-  function startOver(e, by) {
-    epoch = e;
-    WP = MAPWP + (epoch ? 'r' + epoch : '');
+  // 학년마다 들고 있던 땅을 버리고 새 자리에서 처음부터 (화면에는 다시 불러오라고 알린다)
+  function dropWorlds(ev) {
     for (const [g, rt] of Object.entries(worlds)) {
       (rt.unsubs || []).forEach(u => { try { u(); } catch { /* 이미 끊김 */ } });
       delete worlds[g];
-      emit(+g, { t: 'upd', reload: true, ev: { kind: 'admin', by: by || '개발자', text: '🧨 서버를 처음부터 다시 시작했어요! 모든 땅이 처음 상태예요.' } });
+      emit(+g, { t: 'upd', reload: true, ev });
     }
+  }
+  // 서버 초기화
+  function startOver(e, by) {
+    epoch = e;
+    setWP();
+    dropWorlds({ kind: 'admin', by: by || '개발자', text: '🧨 서버를 처음부터 다시 시작했어요! 모든 땅이 처음 상태예요.' });
+  }
+
+  // ---------- 시즌: 매달 1일에 새 시즌 (땅은 처음부터, 지난 시즌 1·2·3등 학교는 명예의 전당에) ----------
+  async function loadSeason() {
+    if (cloud) {
+      try { const r = await cloud.db.doc('meta/season').get(); seasonShift = r.exists ? r.data().shift || 0 : 0; } catch { /* 없으면 0 */ }
+      cloud.db.doc('meta/season').onSnapshot(snap => { const sh = snap.exists ? snap.data().shift || 0 : 0; if (sh !== seasonShift) { seasonShift = sh; checkSeason(); } }, () => {});
+    } else seasonShift = local.seasonShift || 0;
+    season = S.seasonOf(Date.now(), seasonShift);
+    if (!cloud) {
+      if (local.season != null && local.season !== season) rollLocal(local.season); // 게임을 안 켠 사이에 시즌이 바뀌었다
+      local.season = season;
+      save();
+    }
+    setWP();
+    if (cloud && season > 1) ensureHall(season - 1);
+    setInterval(checkSeason, 60e3);
+  }
+  function checkSeason() {
+    const n = S.seasonOf(Date.now(), seasonShift);
+    if (n === season) return;
+    if (!cloud) { rollLocal(season); local.season = n; save(); }
+    season = n;
+    setWP();
+    if (cloud) ensureHall(n - 1);
+    dropWorlds({ kind: 'season', season: n, text: `🎉 시즌 ${n} 시작! 모든 땅이 처음 상태로 돌아갔어요.` });
+  }
+  const topSchools = cnt => [...cnt.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 3)
+    .map(([sid, n]) => { const sc = schoolById(sid) || {}; return { sid, name: sc.name || '', sido: sc.sido || '', sigungu: sc.sigungu || '', land: n + 1 }; }); // +1: 본부
+  function rollLocal(prev) { // 이 기기: 지난 시즌 결과를 남기고 땅을 비운다
+    const grades = {};
+    for (const [g, w] of Object.entries(local.worlds || {})) {
+      const cnt = new Map();
+      for (const v of Object.values(w.cells || {})) if (v[0] >= 0) cnt.set(v[0], (cnt.get(v[0]) || 0) + 1);
+      if (cnt.size) grades[g] = topSchools(cnt);
+    }
+    local.hall = [{ season: prev, at: Date.now(), grades }].concat((local.hall || []).filter(h => h.season !== prev)).slice(0, 24);
+    local.worlds = {};
+  }
+  async function ensureHall(n) { // 친구들과 함께: 지난 시즌 결과를 처음 본 사람이 계산해서 남긴다
+    if (n < 1 || !cloud) return;
+    try {
+      const ref = cloud.db.doc('hall/s' + n);
+      if ((await ref.get()).exists) return;
+      const wp = wpFor(epoch, n), grades = {};
+      for (let g = 1; g <= 6; g++) {
+        const snap = await cloud.db.collection(`${wp}/g${g}/c`).get(), cnt = new Map();
+        snap.docs.forEach(d => { for (const v of Object.values(d.data() || {})) if (v[0] >= 0) cnt.set(v[0], (cnt.get(v[0]) || 0) + 1); });
+        if (cnt.size) grades[g] = topSchools(cnt);
+      }
+      await ref.set({ season: n, at: Date.now(), grades });
+    } catch (e) { console.warn('명예의 전당 저장 실패', e); }
+  }
+  async function hallList() {
+    if (!cloud) return local.hall || [];
+    try { const snap = await cloud.db.collection('hall').get(); return snap.docs.map(d => d.data()).sort((a, b) => b.season - a.season).slice(0, 24); } catch { return []; }
+  }
+  const seasonView = () => ({ n: season, end: S.seasonEnd(), shift: seasonShift });
+  // 새 시즌에 처음 들어오면: 지난 시즌 결과와 상 (한 번만)
+  async function seasonNews(u, grade) {
+    if (u.seenSeason === season) return null;
+    const prevN = season - 1;
+    let list = prevN >= 1 ? await hallList() : [], prev = list.find(h => h.season === prevN);
+    if (prevN >= 1 && cloud && !prev) { await ensureHall(prevN); list = await hallList(); prev = list.find(h => h.season === prevN); }
+    const top = prev && prev.grades ? prev.grades[grade] || [] : [], out = { n: season, prev: prevN >= 1 ? { n: prevN, top } : null, coins: 0, place: 0, joined: false };
+    if (prevN >= 1 && !(u.seasonPaid || {})[prevN]) {
+      const k = top.findIndex(x => x.sid === profileSchool(u));
+      if (k >= 0) { out.place = k + 1; out.coins += S.SEASON_PRIZE[k]; (u.trophies = u.trophies || []).push({ season: prevN, place: k + 1, school: top[k].name }); }
+      if (u.seasonCap && u.seasonCap.s === prevN && u.seasonCap.n > 0) { out.joined = true; out.coins += S.SEASON_JOIN; }
+      u.seasonPaid = Object.assign({}, u.seasonPaid, { [prevN]: true });
+      earn(u, out.coins);
+    }
+    u.seenSeason = season;
+    save();
+    return out;
+  }
+  const bumpSeason = (u, n) => { if (!u.seasonCap || u.seasonCap.s !== season) u.seasonCap = { s: season, n: 0 }; u.seasonCap.n += n; };
+
+  // ---------- 학교 깃발 (색깔 + 마크): 학교 이름으로 기억하고, 시즌이 바뀌어도 그대로 ----------
+  let flags = {};
+  const flagView = () => { const out = {}; for (const [k, v] of Object.entries(flags)) if (idByKey.has(k)) out[idByKey.get(k)] = { c: v.c, m: v.m }; return out; };
+  async function loadFlags() {
+    if (!cloud) { flags = local.flags || {}; return; }
+    try { const r = await cloud.db.doc('meta/flags').get(); flags = r.exists ? r.data().items || {} : {}; } catch { /* 없으면 빈 것 */ }
+    cloud.db.doc('meta/flags').onSnapshot(snap => { flags = snap.exists ? snap.data().items || {} : {}; emit(null, { t: 'flags', items: flagView() }); }, () => {});
+  }
+  async function saveFlags() {
+    if (cloud) await cloud.db.doc('meta/flags').set({ items: flags });
+    else { local.flags = flags; save(); }
+    emit(null, { t: 'flags', items: flagView() });
   }
   const isShared = () => !!cloud;
 
@@ -149,7 +272,7 @@
   async function getWorld(g) {
     if (worlds[g]) return worlds[g];
     const wp = WP;
-    const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Uint8Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1, offers: [] };
+    const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Uint8Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1, offers: [], shields: {} };
     BASE.forEach((s, i) => setHome(rt, i, s.cell));
     if (cloud) {
       const snap = await cloud.db.collection(`${WP}/g${g}/c`).get();
@@ -159,12 +282,15 @@
       (f.exists ? f.data().items || [] : []).forEach(it => { rt.seen.add(it.id); rt.feed.push(it); });
       const o = await cloud.db.doc(`${WP}/g${g}/o/main`).get();
       rt.offers = o.exists ? o.data().items || [] : [];
+      const sh = await cloud.db.doc(`${WP}/g${g}/s/main`).get();
+      rt.shields = sh.exists ? sh.data().items || {} : {};
       if (wp !== WP) return getWorld(g); // 불러오는 사이 서버가 초기화됐다
       subscribe(rt);
     } else {
       const w = local.worlds[g] || (local.worlds[g] = { cells: {} });
       for (const [k, v] of Object.entries(w.cells)) setCell(rt, +k, v[0], v[1]);
       rt.offers = w.offers || [];
+      rt.shields = w.shields || {};
       applyCustomHomes(rt, g);
     }
     worlds[g] = rt;
@@ -196,6 +322,7 @@
         else emit(g, { t: 'upd', ev: it.ev, school: it.school, home: it.home });
       }
     }, () => {}));
+    keep(cloud.db.doc(`${WP}/g${g}/s/main`).onSnapshot(snap => { if (!live()) return; rt.shields = snap.exists ? snap.data().items || {} : {}; emit(g, { t: 'shields', items: liveShields(rt) }); }, () => {}));
     keep(cloud.db.doc(`${WP}/g${g}/o/main`).onSnapshot(snap => { if (!live()) return; rt.offers = snap.exists ? snap.data().items || [] : []; emit(g, { t: 'offers', items: liveOffers(rt) }); }, () => {}));
     keep(cloud.db.doc('meta/custom').onSnapshot(async snap => {
       if (!live() || !snap.exists) return;
@@ -220,7 +347,7 @@
       return;
     }
     const byChunk = new Map();
-    for (const [i, o, d] of cells) { const k = Math.floor(i / CHUNK); if (!byChunk.has(k)) byChunk.set(k, {}); byChunk.get(k)[i] = [o, d]; }
+    for (const [i, o, d] of cells) { const k = Math.floor(i / chunkSize()); if (!byChunk.has(k)) byChunk.set(k, {}); byChunk.get(k)[i] = [o, d]; }
     for (const [k, data] of byChunk) {
       const ref = cloud.db.doc(`${WP}/g${rt.g}/c/${k}`);
       try { await ref.update(data); } catch { await ref.set(Object.assign({}, (await ref.get()).data() || {}, data)); }
@@ -251,6 +378,15 @@
     if (cloud) { try { await cloud.db.doc(`${WP}/g${rt.g}/o/main`).set({ items: rt.offers }); } catch { /* 다음에 */ } }
     else { (local.worlds[rt.g] || (local.worlds[rt.g] = { cells: {} })).offers = rt.offers; save(); }
     emit(rt.g, { t: 'offers', items: rt.offers });
+  }
+  // 방패: 칸 → 끝나는 시각
+  const liveShields = rt => { const now = Date.now(), out = []; for (const [c, t] of Object.entries(rt.shields)) { if (t > now) out.push([+c, t]); else delete rt.shields[c]; } return out; };
+  const shieldedNow = (rt, c) => (rt.shields[c] || 0) > Date.now();
+  async function saveShields(rt) {
+    liveShields(rt);
+    if (cloud) { try { await cloud.db.doc(`${WP}/g${rt.g}/s/main`).set({ items: rt.shields }); } catch { /* 다음에 */ } }
+    else { (local.worlds[rt.g] || (local.worlds[rt.g] = { cells: {} })).shields = rt.shields; save(); }
+    emit(rt.g, { t: 'shields', items: liveShields(rt) });
   }
   function ensurePlaced(rt, id, a) {
     const h = rt.home[id];
@@ -287,8 +423,28 @@
     st.dayStreak = st.lastDay === koreaDay(1) ? st.dayStreak + 1 : 1;
     st.days++;
     st.lastDay = d;
+    const coins = S.attendCoins(st.dayStreak); // 출석 보상
+    earn(u, coins);
     save();
-    return { days: st.days, streak: st.dayStreak };
+    return { days: st.days, streak: st.dayStreak, coins };
+  }
+  // 코인과 아이템
+  const walletOf = u => { u.coins = u.coins || 0; u.items = Object.assign({ shield: 0, bomb: 0, scope: 0 }, u.items); return u; };
+  const earn = (u, n) => { walletOf(u).coins += Math.max(0, Math.round(n || 0)); };
+  const rule = () => S.seasonRule(season);
+  // 오늘의 미션: 날짜가 바뀌면 새 미션 3개
+  function missionOf(u) {
+    const day = koreaDay();
+    if (!u.mission || u.mission.day !== day) u.mission = { day, list: S.dailyMissions(day, u.acc).map(m => ({ id: m.id, n: m.n, p: 0, done: false })), bonus: false };
+    return u.mission;
+  }
+  function track(u, key, v) {
+    for (const m of missionOf(u).list) { const d = S.MISSIONS.find(x => x.id === m.id); if (d.key === key) m.p = d.max ? Math.max(m.p, v) : m.p + v; }
+  }
+  function missionView(u) {
+    const ms = missionOf(u), x = rule().missionX || 1;
+    const list = ms.list.map(m => { const d = S.MISSIONS.find(y => y.id === m.id); return { id: m.id, icon: d.icon, text: d.text(m.n), n: m.n, p: Math.min(m.p, m.n), done: m.done, coin: d.coin * x }; });
+    return { day: ms.day, list, bonus: ms.bonus, bonusCoin: S.MISSION_ALL * x, ready: list.filter(m => !m.done && m.p >= m.n).length + (!ms.bonus && list.every(m => m.done) ? 1 : 0) };
   }
   function newBadges(u) {
     const st = statsOf(u), have = new Set(u.badges = u.badges || []), out = [];
@@ -296,11 +452,12 @@
     if (out.length) save();
     return out;
   }
-  const noteStreak = (u, v) => { const st = statsOf(u); st.bestStreak = Math.max(st.bestStreak, Math.min(1000, Math.floor(Number(v) || 0))); };
+  const noteStreak = (u, v) => { const st = statsOf(u), n = Math.min(1000, Math.floor(Number(v) || 0)); st.bestStreak = Math.max(st.bestStreak, n); track(u, 'streak', n); };
   function publicUser(u) {
     const sid = profileSchool(u);
     return {
-      username: u.username, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u), badges: u.badges || [], role: u.role || null,
+      username: u.username, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u), badges: u.badges || [], role: u.role || null, builtin: isBuiltin(u),
+      coins: walletOf(u).coins, items: u.items, scopeUntil: u.scopeUntil || 0, trophies: u.trophies || [],
       profile: sid >= 0 ? { schoolId: sid, semester: u.profile.semester, nickname: u.profile.nickname } : null,
     };
   }
@@ -308,12 +465,12 @@
   async function publishCard(u) {
     if (!cloud || !u.profile) return;
     const st = statsOf(u);
-    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: gradeOf(u), captures: st.captures, solved: st.solved, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
+    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: gradeOf(u), captures: st.captures, solved: st.solved, role: u.role || null, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
   }
   async function playersOf(grade) {
-    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && gradeOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
+    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && gradeOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, role: u.role || null, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
     const snap = await cloud.db.collection('players').where('grade', '==', grade).limit(1000).get();
-    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
+    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, role: p.role || null, sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
   }
   function newSession(key) {
     const token = rand(24);
@@ -354,6 +511,37 @@
     return out;
   }
 
+  // ---------- 운영자 초대: 개발자가 아이디로 초대 → 그 사람이 들어오면 수락/거절 → 비밀번호로 본인 인증 ----------
+  const lc = s => String(s || '').trim().toLowerCase();
+  async function inviteRaw(name) {
+    if (!cloud) return (local.invites || {})[name] || null;
+    const s = await cloud.db.doc('invites/' + name).get();
+    return s.exists ? s.data() : null;
+  }
+  async function inviteOf(u) {
+    if (u.role) return null;
+    try { const inv = await inviteRaw(lc(u.username)); return inv && inv.status === 'pending' ? { by: inv.by, at: inv.at } : null; } catch { return null; }
+  }
+  async function setInvite(name, patch) {
+    const v = Object.assign({}, await inviteRaw(name).catch(() => null), patch);
+    if (cloud) await cloud.db.doc('invites/' + name).set(v);
+    else { local.invites = Object.assign({}, local.invites, { [name]: v }); save(); }
+  }
+  async function getStaff() { // 초대로 운영자가 된 아이디들
+    if (!cloud) return Object.values(local.users).filter(x => x.role === 'admin' && !isBuiltin(x)).map(x => lc(x.username));
+    const s = await cloud.db.doc('staff/list').get();
+    return s.exists ? s.data().admins || [] : [];
+  }
+  async function syncRole(u) { // 친구들과 함께: 개발자가 운영자를 해제했으면 이 기기 계정도 내린다
+    if (!cloud || u.role !== 'admin' || isBuiltin(u)) return;
+    try { if (!(await getStaff()).includes(lc(u.username))) { u.role = null; delete u.viewGrade; save(); } } catch { /* 다음에 */ }
+  }
+  async function staffView() {
+    const invites = !cloud ? Object.entries(local.invites || {}).map(([username, v]) => Object.assign({ username }, v))
+      : (await cloud.db.collection('invites').limit(200).get()).docs.map(d => Object.assign({ username: d.id }, d.data()));
+    return { admins: await getStaff(), invites: invites.filter(x => x.status === 'pending' || x.status === 'declined').sort((a, b) => b.at - a.at) };
+  }
+
   // ---------- API ----------
   const routes = {
     'POST /api/signup': async (t, q, b) => {
@@ -390,13 +578,13 @@
       return newSession(key);
     },
     'POST /api/logout': async t => { if (getAuth(t)) { delete local.sessions[t]; save(); } return { ok: true }; },
-    'GET /api/me': async t => { const a = needLogin(t); return { user: publicUser(a.u), debug: !!a.s.debug, shared: isShared() }; },
+    'GET /api/me': async t => { const a = needLogin(t); await syncRole(a.u); return { user: publicUser(a.u), debug: !!a.s.debug, shared: isShared(), feat: 2, invite: await inviteOf(a.u) }; },
     'GET /api/schools': async () => ({ custom: publicCustom() }),
     'POST /api/profile': async (t, q, b) => {
       const a = needLogin(t), semester = Number(b.semester);
       if (semester !== 1 && semester !== 2) fail('학기를 골라 주세요.');
       let nickname = String(b.nickname || '').replace(/[\u0000-\u001f<>]/g, '').trim();
-      if (a.u.role) nickname = S.ROLE_NICK[a.u.role];
+      if (a.u.role && isBuiltin(a.u)) nickname = S.ROLE_NICK[a.u.role];
       else if (S.RESERVED_NICK.test(nickname.replace(/\s+/g, ''))) fail('운영자·개발자 닉네임은 쓸 수 없어요. 다른 닉네임을 써 주세요.');
       if (nickname.length < 1 || nickname.length > 10) fail('닉네임은 1~10자로 써 주세요.');
       let schoolId;
@@ -436,7 +624,9 @@
       rt.def.forEach((d, i) => { if (d > 0) def.push([i, d]); });
       for (let i = 0; i < schoolCount(); i++) home.push(rt.home[i] != null ? rt.home[i] : -1);
       const chat = rt.feed.filter(m => m.t === 'chat' && (m.ch === 'all' || m.sid === a.sid)).map(m => Object.assign({}, m, { t: 'chat' }));
-      const res = { grade: a.grade, owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared() };
+      await syncRole(a.u);
+      const res = { grade: a.grade, owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared(),
+        user: publicUser(a.u), shields: liveShields(rt), flags: flagView(), season: seasonView(), news: await seasonNews(a.u, a.grade), mission: missionView(a.u).ready, invite: await inviteOf(a.u) };
       publishCard(a.u);
       return res;
     },
@@ -449,7 +639,7 @@
       const land = cnt.get(id) || 0;
       let rank = 1;
       for (const v of cnt.values()) if (v > land) rank++;
-      const members = (await playersOf(a.grade)).filter(p => p.sid === id).map(p => ({ nick: p.nick, captures: p.captures, solved: p.solved, online: p.acc === a.u.acc, me: p.acc === a.u.acc }));
+      const members = (await playersOf(a.grade)).filter(p => p.sid === id).map(p => ({ nick: p.nick, role: p.role, captures: p.captures, solved: p.solved, online: p.acc === a.u.acc, me: p.acc === a.u.acc }));
       members.sort((x, y) => y.online - x.online || y.captures - x.captures);
       const sc = schoolById(id);
       return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, dong: sc.dong || '', url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
@@ -464,25 +654,32 @@
       const a = await needPlayer(t), rt = a.rt, sid = a.sid, cell = targetCell(b), prev = rt.owner[cell];
       if (prev === sid) fail('이미 우리 학교 땅이에요.');
       if (rt.homeCell[cell] >= 0) fail('학교 본부는 뺏을 수 없어요.');
+      if (shieldedNow(rt, cell)) fail(`🛡️ 방패가 지키고 있어요! ${Math.ceil((rt.shields[cell] - Date.now()) / 3600e3)}시간 뒤에 뺏을 수 있어요.`);
       const cost = S.captureCost({ owner: rt.owner, def: rt.def, nb: M.nb, sid, cell, grade: a.grade, nk: M.nk, size: () => { let k = 0; for (const o of rt.owner) if (o === sid) k++; return k; } });
       if (cost.error) fail(cost.error);
       const required = cost.cost;
       const st = statsOf(a.u);
+      let got = 0;
       if (b.cheat) { if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403); }
       else {
         const solved = Number(b.solved) || 0;
         if (solved < required) return { need: required - solved, required };
         st.solved += required;
         noteStreak(a.u, b.streak);
+        track(a.u, 'solved', required);
+        got = required * (prev < 0 ? rule().emptyX || 1 : 1) + (b.duel && prev >= 0 ? rule().duelBonus || 0 : 0); // 푼 문제 1개 = 1코인
+        earn(a.u, got);
       }
       st.captures++;
       if (prev >= 0) st.steals++;
+      track(a.u, 'captures', 1); if (prev >= 0) track(a.u, 'steals', 1);
+      bumpSeason(a.u, 1);
       setCell(rt, cell, sid, 0);
       save();
-      const cells = [[cell, sid, 0]], ev = { kind: 'capture', by: a.u.profile.nickname, sid, prev, cell, far: !!cost.far, escape: !!cost.escape };
+      const cells = [[cell, sid, 0]], ev = { kind: 'capture', by: a.u.profile.nickname, role: a.u.role || null, sid, prev, cell, far: !!cost.far, escape: !!cost.escape, duel: !!b.duel };
       persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
       publishCard(a.u);
-      return { ok: true, cells, stats: st, badges: newBadges(a.u) };
+      return { ok: true, cells, stats: st, badges: newBadges(a.u), coins: a.u.coins, got, mission: missionView(a.u).ready };
     },
     'POST /api/defend': async (t, q, b) => {
       const a = await needPlayer(t), rt = a.rt, sid = a.sid, cell = targetCell(b), amount = Number(b.amount);
@@ -493,15 +690,16 @@
       const st = statsOf(a.u);
       if (b.cheat) { if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403); }
       else if ((Number(b.solved) || 0) < amount) fail(`문제를 ${amount}개 풀어야 방어할 수 있어요.`);
-      else { st.solved += amount; noteStreak(a.u, b.streak); }
+      else { st.solved += amount; noteStreak(a.u, b.streak); track(a.u, 'solved', amount); earn(a.u, amount * (rule().defendX || 1)); }
       st.defends += amount;
+      track(a.u, 'defends', amount);
       setCell(rt, cell, sid, Math.min(MAX_DEF, rt.def[cell] + amount));
       save();
       const cells = [[cell, sid, rt.def[cell]]];
-      const ev = { kind: 'defend', by: a.u.profile.nickname, sid, amount, cell };
+      const ev = { kind: 'defend', by: a.u.profile.nickname, role: a.u.role || null, sid, amount, cell };
       persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
       publishCard(a.u);
-      return { ok: true, cells, stats: st, badges: newBadges(a.u) };
+      return { ok: true, cells, stats: st, badges: newBadges(a.u), coins: a.u.coins, mission: missionView(a.u).ready };
     },
     // 땅 팔기: 고른 학교에 우리 땅을 내놓는다 (3학년까지는 그 학교 땅과 닿아 있어야 한다)
     'POST /api/sell': async (t, q, b) => {
@@ -543,6 +741,34 @@
     'POST /api/admin': async (t, q, b) => {
       const a0 = needLogin(t), u = a0.u;
       if (!u.role) fail('운영자만 할 수 있어요.', 403);
+      if (['invite', 'staff', 'unstaff', 'nextSeason'].includes(b.act)) { // 개발자만: 운영자 추가·해제, 다음 시즌
+        if (u.role !== 'dev') fail('개발자만 할 수 있어요.', 403);
+        const by = u.profile ? u.profile.nickname : '개발자';
+        if (b.act === 'nextSeason') {
+          seasonShift++;
+          if (cloud) await cloud.db.doc('meta/season').set({ shift: seasonShift, by, at: Date.now() });
+          else { local.seasonShift = seasonShift; save(); }
+          checkSeason();
+          return { ok: true, reload: true, text: `시즌 ${season}을(를) 바로 시작했어요` };
+        }
+        let text = '';
+        if (b.act === 'invite') {
+          const name = lc(b.username), lu = local.users[userKey(name)];
+          if (!/^[a-z0-9_]{4,16}$/.test(name)) fail('운영자로 만들 사람의 아이디를 써 주세요.');
+          if (lu && isBuiltin(lu)) fail('처음부터 있는 운영자·개발자 계정이에요.');
+          if (!lu && !(cloud && (await cloud.db.doc('ids/' + name).get()).exists)) fail('그런 아이디가 없어요.');
+          if ((lu && lu.role) || (await getStaff()).includes(name)) fail('이미 운영자예요.');
+          await setInvite(name, { by, at: Date.now(), status: 'pending' });
+          text = `${name} 님에게 운영자 초대를 보냈어요. 게임에 들어오면 초대 창이 떠요.`;
+        } else if (b.act === 'unstaff') {
+          const name = lc(b.username), lu = local.users[userKey(name)];
+          if (lu && !isBuiltin(lu) && lu.role === 'admin') { lu.role = null; delete lu.viewGrade; save(); }
+          if (cloud) await cloud.db.doc('staff/list').set({ admins: (await getStaff()).filter(x => x !== name) });
+          await setInvite(name, { status: 'removed', at: Date.now() });
+          text = `${name} 님을 운영자에서 해제했어요.`;
+        }
+        return { ok: true, text, staff: await staffView() };
+      }
       if (b.act === 'grade') {
         const g = Number(b.grade);
         if (!Number.isInteger(g) || g < 1 || g > 6) fail('학년을 골라 주세요.');
@@ -667,19 +893,140 @@
       return { ok: true, count: a.u.wrong.length };
     },
     'POST /api/practice': async (t, q, b) => {
-      const a = await needPlayer(t), st = statsOf(a.u);
-      st.solved += Math.max(0, Math.min(50, Math.floor(Number(b.solved) || 0)));
+      const a = await needPlayer(t), st = statsOf(a.u), n = Math.max(0, Math.min(50, Math.floor(Number(b.solved) || 0)));
+      st.solved += n;
       noteStreak(a.u, b.streak);
+      track(a.u, 'solved', n);
+      earn(a.u, n);
       save();
       publishCard(a.u);
-      return { stats: st, badges: newBadges(a.u) };
+      return { stats: st, badges: newBadges(a.u), coins: a.u.coins, got: n, mission: missionView(a.u).ready };
     },
     'POST /api/chat': async (t, q, b) => {
       const a = await needPlayer(t), m = Number(b.m), ch = b.ch === 'school' ? 'school' : 'all', now = Date.now();
       if (!Number.isInteger(m) || !S.CHAT[m]) fail('보낼 말을 골라 주세요.');
       if (now - (a.s.lastChat || 0) < 2500) fail('조금 천천히 보내 주세요.');
       a.s.lastChat = now;
-      await pushFeed(a.rt, { t: 'chat', ch, sid: a.sid, by: a.u.profile.nickname, m });
+      await pushFeed(a.rt, { t: 'chat', ch, sid: a.sid, by: a.u.profile.nickname, role: a.u.role || null, m });
+      return { ok: true };
+    },
+    // ⏱️ 스피드 퀴즈: 1분 동안 맞힌 수만큼 코인
+    'POST /api/speed': async (t, q, b) => {
+      const a = await needPlayer(t), st = statsOf(a.u), n = Math.max(0, Math.min(60, Math.floor(Number(b.score) || 0))), got = n * (rule().speedX || 1);
+      st.solved += n;
+      st.speedBest = Math.max(st.speedBest || 0, n);
+      noteStreak(a.u, b.streak);
+      track(a.u, 'solved', n); track(a.u, 'speed', n);
+      earn(a.u, got);
+      save();
+      publishCard(a.u);
+      return { stats: st, best: st.speedBest, coins: a.u.coins, got, badges: newBadges(a.u), mission: missionView(a.u).ready };
+    },
+    // 🎯 오늘의 미션
+    'GET /api/missions': async t => { const a = needLogin(t); return Object.assign(missionView(a.u), { coins: walletOf(a.u).coins }); },
+    'POST /api/missions/claim': async (t, q, b) => {
+      const a = needLogin(t), u = a.u, ms = missionOf(u), x = rule().missionX || 1;
+      let got;
+      if (b.id === 'bonus') {
+        if (ms.bonus || !ms.list.every(m => m.done)) fail('미션 세 개의 보상을 모두 받아야 해요.');
+        ms.bonus = true; got = S.MISSION_ALL * x;
+      } else {
+        const m = ms.list.find(y => y.id === b.id);
+        if (!m || m.done) fail('이미 받았거나 없는 미션이에요.');
+        if (m.p < m.n) fail('아직 미션을 다 하지 못했어요.');
+        m.done = true; got = S.MISSIONS.find(y => y.id === m.id).coin * x;
+      }
+      earn(u, got);
+      save();
+      return Object.assign(missionView(u), { coins: u.coins, got });
+    },
+    // 🛒 상점
+    'GET /api/shop': async t => { const u = walletOf(needLogin(t).u); return { coins: u.coins, items: u.items, prices: Object.fromEntries(S.SHOP.map(it => [it.id, S.priceOf(it.id, season)])), scopeUntil: u.scopeUntil || 0 }; },
+    'POST /api/shop/buy': async (t, q, b) => {
+      const u = walletOf(needLogin(t).u), id = String(b.id || ''), price = S.priceOf(id, season);
+      if (!['shield', 'bomb', 'scope'].includes(id)) fail('없는 아이템이에요.');
+      if (u.coins < price) fail(`코인이 모자라요. (${price}코인 필요)`);
+      u.coins -= price;
+      u.items[id]++;
+      save();
+      return { coins: u.coins, items: u.items };
+    },
+    'POST /api/item/shield': async (t, q, b) => {
+      const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), cell = targetCell(b);
+      if (rt.owner[cell] !== a.sid || rt.homeCell[cell] >= 0) fail('우리 학교 땅(본부 말고)에만 방패를 쓸 수 있어요.');
+      if (u.items.shield < 1) fail('방패가 없어요. 🛒 상점에서 사 주세요.');
+      if (shieldedNow(rt, cell)) fail('이미 방패가 지키고 있어요.');
+      u.items.shield--;
+      track(u, 'items', 1);
+      save();
+      rt.shields[cell] = Date.now() + S.SHIELD_HOURS * 3600e3;
+      await saveShields(rt);
+      persist(rt, () => pushFeed(rt, { t: 'ev', ev: { kind: 'shield', by: u.profile.nickname, role: u.role || null, sid: a.sid, cell } }));
+      return { ok: true, shields: liveShields(rt), items: u.items, coins: u.coins, mission: missionView(u).ready };
+    },
+    'POST /api/item/bomb': async (t, q, b) => {
+      const a = await needPlayer(t), rt = a.rt, sid = a.sid, u = walletOf(a.u), cell = targetCell(b);
+      if (u.items.bomb < 1) fail('폭탄이 없어요. 🛒 상점에서 사 주세요.');
+      const size = () => { let k = 0; for (const o of rt.owner) if (o === sid) k++; return k; };
+      const ok = c => rt.owner[c] !== sid && rt.homeCell[c] < 0 && !shieldedNow(rt, c);
+      if (!ok(cell)) fail(rt.owner[cell] === sid ? '이미 우리 학교 땅이에요.' : rt.homeCell[cell] >= 0 ? '학교 본부는 뺏을 수 없어요.' : '🛡️ 방패가 지키는 땅이에요.');
+      const cost = S.captureCost({ owner: rt.owner, def: rt.def, nb: M.nb, sid, cell, grade: a.grade, nk: M.nk, size });
+      if (cost.error) fail(cost.error);
+      const nkOk = size() >= S.NK_MIN; // 옆 칸이 북한 땅이면 200칸 규칙도 지킨다
+      const extra = [...M.nb(cell)].filter(c => ok(c) && rt.def[c] <= S.BOMB_MAX_DEF && (nkOk || !M.nk(c))).sort((x, y) => rt.def[x] - rt.def[y]).slice(0, S.BOMB_EXTRA);
+      const cells = [cell, ...extra].map(c => [c, sid, 0]), st = statsOf(u);
+      let steals = 0;
+      for (const [c] of cells) { if (rt.owner[c] >= 0) steals++; setCell(rt, c, sid, 0); }
+      u.items.bomb--;
+      st.captures += cells.length; st.steals += steals;
+      track(u, 'items', 1); track(u, 'captures', cells.length); if (steals) track(u, 'steals', steals);
+      bumpSeason(u, cells.length);
+      save();
+      const ev = { kind: 'bomb', by: u.profile.nickname, role: u.role || null, sid, n: cells.length, cell };
+      persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
+      publishCard(u);
+      return { ok: true, cells, stats: st, items: u.items, coins: u.coins, badges: newBadges(u), mission: missionView(u).ready };
+    },
+    'POST /api/item/scope': async t => {
+      const u = walletOf(needLogin(t).u);
+      if (u.items.scope < 1) fail('망원경이 없어요. 🛒 상점에서 사 주세요.');
+      u.items.scope--;
+      u.scopeUntil = Math.max(Date.now(), u.scopeUntil || 0) + S.SCOPE_MIN * 60e3;
+      track(u, 'items', 1);
+      save();
+      return { ok: true, until: u.scopeUntil, items: u.items, coins: u.coins, mission: missionView(u).ready };
+    },
+    // 🚩 학교 깃발 꾸미기
+    'POST /api/flag': async (t, q, b) => {
+      const a = await needPlayer(t), u = walletOf(a.u), c = String(b.c || ''), m = String(b.m || ''), price = S.priceOf('flag', season);
+      if (!S.FLAG_COLORS.includes(c) || !S.FLAG_MARKS.includes(m)) fail('색깔과 마크를 골라 주세요.');
+      if (u.coins < price) fail(`코인이 모자라요. (${price}코인 필요)`);
+      u.coins -= price;
+      track(u, 'items', 1);
+      save();
+      flags[schoolKey(schoolById(a.sid))] = { c, m, by: u.profile.nickname, at: Date.now() };
+      await saveFlags();
+      return { ok: true, flags: flagView(), coins: u.coins, mission: missionView(u).ready };
+    },
+    // 🏛️ 명예의 전당 (시즌마다 학년 서버 1·2·3등 학교)
+    'GET /api/hall': async t => { needLogin(t); return { list: await hallList(), season: seasonView() }; },
+    // 📨 운영자 초대 받기
+    'POST /api/invite/accept': async (t, q, b) => {
+      const a = needLogin(t), u = a.u, name = lc(u.username);
+      if (!(await inviteOf(u))) fail('받은 운영자 초대가 없어요.');
+      if ((await hashPw(String(b.password || ''), u.salt)) !== u.hash) fail('비밀번호가 틀렸어요. 내 게임 비밀번호를 써 주세요.');
+      u.role = 'admin';
+      const g = S.gradeFromBirthYear(u.birthYear);
+      u.viewGrade = g >= 1 && g <= 6 ? g : 3;
+      if (cloud) { const list = await getStaff(); if (!list.includes(name)) await cloud.db.doc('staff/list').set({ admins: list.concat([name]) }); }
+      await setInvite(name, { status: 'accepted', at: Date.now() });
+      save();
+      publishCard(u);
+      return { ok: true, user: publicUser(u) };
+    },
+    'POST /api/invite/decline': async t => {
+      const a = needLogin(t);
+      if (await inviteOf(a.u)) await setInvite(lc(a.u.username), { status: 'declined', at: Date.now() });
       return { ok: true };
     },
     'POST /api/password': async (t, q, b) => {
@@ -712,7 +1059,7 @@
     setTimeout(modChanged, 0);
     emit = (g, msg, onlySid) => {
       const me = getAuth(token);
-      if (!me || gradeOf(me.u) !== g) return;
+      if (!me || (g != null && gradeOf(me.u) !== g)) return; // g 가 null 이면 모든 학년에게
       if (onlySid != null && profileSchool(me.u) !== onlySid) return;
       handler(msg);
     };

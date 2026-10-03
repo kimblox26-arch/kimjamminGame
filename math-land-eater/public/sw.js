@@ -4,7 +4,7 @@
 const VERSION = 'dev', MAPS = []; // tools/build-static.js 가 만들 때마다 판 번호와 지도 주소를 넣는다
 const CACHE = 'mle-' + VERSION;
 const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
-  'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js'];
+  'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/firebase-config.js', 'js/backend.js', 'js/app.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.concat(MAPS))).then(() => self.skipWaiting()));

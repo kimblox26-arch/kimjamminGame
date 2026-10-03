@@ -17,6 +17,11 @@
     '🔥 연속으로 맞히면 불꽃이 붙어요',
     '📒 틀린 문제는 오답 노트에 모여요',
     '📊 랭킹표에서 학교·학생·시도 순위를 볼 수 있어요',
+    '🪙 문제 1개를 맞히면 1코인! 상점에서 방패·폭탄·망원경을 사요',
+    '🎯 오늘의 미션을 깨면 코인을 받아요',
+    '⚔️ 다른 학교 땅은 1:1 수학 결투로 뺏어요',
+    '🏆 시즌은 한 달에 한 번! 1·2·3등 학교는 명예의 전당에',
+    '⏱️ 스피드 퀴즈: 1분 동안 몇 문제나 맞힐까요?',
   ];
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let W = 0, H = 0, dpr = 1, land = null, hexes = [], owner = null, fronts = [], seeds = [], raf = 0, hold = 0, running = true;

@@ -107,6 +107,9 @@
     <div class="brand">매뜨<b>땅먹</b></div>
     <div class="hud">
       <span id="hudServer" class="pill server"></span>
+      <button type="button" id="hudSeason" class="pill season" hidden></button>
+      <button type="button" id="hudCoins" class="pill coins" hidden>🪙 <b id="hudCoinN">0</b></button>
+      <span id="hudScope" class="pill scope" hidden></span>
       <span id="hudOnline" class="pill online"></span>
       <span class="pill school">⭐ <b id="hudSchool"></b> · 땅 <b id="hudLand">0</b>칸 · <b id="hudRank">-</b>위</span>
       <span id="hudUser" class="pill"></span>
@@ -114,9 +117,11 @@
     </div>
     <div class="top-actions">
       <button type="button" id="btnAdmin" class="icon-btn" title="운영자 관리" hidden>🛠️</button>
-      <button type="button" id="btnPractice" class="icon-btn" title="연습하기">✏️</button>
-      <button type="button" id="btnWrong" class="icon-btn" title="오답 노트">📒<i id="wrongCount" class="count" hidden></i></button>
+      <button type="button" id="btnStudy" class="icon-btn" title="공부방 (연습 · 스피드 퀴즈 · 오답 노트)">✏️<i id="wrongCount" class="count" hidden></i></button>
+      <button type="button" id="btnMission" class="icon-btn" title="오늘의 미션" hidden>🎯<i id="missionDot" class="count dot" hidden></i></button>
+      <button type="button" id="btnShop" class="icon-btn" title="상점" hidden>🛒</button>
       <button type="button" id="btnBadges" class="icon-btn" title="내 배지와 기록">🏅</button>
+      <button type="button" id="btnBgm" class="icon-btn wide-only" title="배경 음악">🎵</button>
       <button type="button" id="btnSound" class="icon-btn wide-only" title="소리">🔊</button>
       <button type="button" id="btnHelp" class="icon-btn wide-only" title="놀이 방법">❓</button>
       <button type="button" id="btnRank" class="icon-btn" title="랭킹표">📊</button>
@@ -179,6 +184,7 @@
   <div class="card quiz">
     <div class="quiz-head"><b id="qzTitle"></b><span id="qzStreak" class="streak" hidden></span><button type="button" id="qzClose" class="icon-btn" title="그만하기">✕</button></div>
     <div class="bar"><i id="qzBar"></i></div>
+    <div id="qzDuel" class="duel" hidden></div>
     <div id="qzCount" class="muted"></div>
     <div id="qzQ" class="question"></div>
     <div id="qzAnswer"></div>
@@ -225,6 +231,9 @@
     <div class="field"><div class="label">😀 닉네임</div>
       <div class="row"><input id="setNick" maxlength="10"><button type="button" id="setNickSave" class="btn">저장</button></div>
     </div>
+    <div class="field"><div class="label">🎵 소리</div>
+      <div class="row"><button type="button" class="btn toggle" id="setBgm"></button><button type="button" class="btn toggle" id="setSound"></button></div>
+    </div>
     <div class="field"><div class="label">🚀 게임 속도</div>
       <button type="button" class="btn toggle fast-toggle">⚡ 빠르게 모드</button>
       <p class="muted small-note">렉이 걸리면 켜 보세요. 화면을 조금 덜 선명하게, 움직임 효과를 줄여서 더 빨라져요.</p>
@@ -262,7 +271,7 @@
 <div id="rankModal" class="modal" hidden>
   <div class="card rank-card">
     <div class="row between"><h3>📊 랭킹표</h3><button type="button" class="icon-btn" data-close="rankModal">✕</button></div>
-    <div class="seg rank-tabs"><button type="button" class="rtab on" data-t="school">🏫 학교</button><button type="button" class="rtab" data-t="player">🧒 학생</button><button type="button" class="rtab" data-t="sido">🗺️ 시·도</button></div>
+    <div class="seg rank-tabs"><button type="button" class="rtab on" data-t="school">🏫 학교</button><button type="button" class="rtab" data-t="player">🧒 학생</button><button type="button" class="rtab" data-t="sido">🗺️ 시·도</button><button type="button" class="rtab" data-t="hall">🏛️ 명예의 전당</button></div>
     <p id="rankSum" class="muted"></p>
     <div class="rank-wrap"><table class="rank-table"><thead id="rankHead"></thead><tbody id="rankBody"></tbody></table></div>
   </div>
@@ -320,6 +329,14 @@
       <div class="ban-row"><input id="admBanNick" maxlength="10" placeholder="밴할 닉네임"><input id="admBanDays" type="number" min="1" max="3650" value="7"><span>일</span><button type="button" class="chip" id="admBanForever">영구</button><button type="button" class="btn attack" id="admBanGo">밴</button></div>
       <p class="muted">밴된 사람은 정한 날까지 게임에 아예 들어올 수 없어요. 그 닉네임을 쓰는 계정과 기기도 함께 막혀요.</p>
       <ul id="admBans" class="bans"></ul>
+      <h4>✦ 운영자 추가</h4>
+      <div class="answer-row"><input id="admInvId" maxlength="16" placeholder="운영자로 만들 사람의 아이디" autocomplete="off"><button type="button" class="btn primary" id="admInvGo">📨 초대 보내기</button></div>
+      <p class="muted">그 사람이 게임에 들어오면 <b>초대 창</b>이 떠요. 수락하고 자기 비밀번호로 <b>본인 인증</b>을 하면 운영자가 되고, 이름 오른쪽에 <span class="mark admin">✦</span> 표시가 생겨요. (개발자는 <span class="mark dev">♛</span>)</p>
+      <ul id="admStaff" class="bans"></ul>
+      <h4>🏆 시즌</h4>
+      <p class="muted" id="admSeason"></p>
+      <button type="button" class="btn attack" id="admNextSeason">⏭️ 다음 시즌 바로 시작</button>
+      <p class="muted">모든 학년 서버의 땅이 처음 상태가 되고, 지난 시즌 1·2·3등 학교가 명예의 전당에 올라가요.</p>
     </div>
     <p class="muted">🚪 학교 학생 모두 퇴장은 <b>학교 정보 창</b>(학교 이름을 누르면 나와요)에 있어요.</p>
   </div>
@@ -332,6 +349,71 @@
     <button type="button" id="bugCapture" class="btn toggle"></button>
     <button type="button" id="bugDefend" class="btn toggle"></button>
     <div class="row end"><button type="button" class="btn" data-close="bugModal">닫기</button></div>
+  </div>
+</div>
+
+<!-- 공부방 -->
+<div id="studyModal" class="modal" hidden>
+  <div class="card small">
+    <div class="row between"><h3>✏️ 공부방</h3><button type="button" class="icon-btn" data-close="studyModal">✕</button></div>
+    <div class="study">
+      <button type="button" class="btn big" id="stPractice">✏️ 연습하기 <small>문제 10개 · 1문제 = 🪙1</small></button>
+      <button type="button" class="btn big primary" id="stSpeed">⏱️ 스피드 퀴즈 <small id="stSpeedBest">1분 동안 많이 맞히기</small></button>
+      <button type="button" class="btn big" id="stWrong">📒 오답 노트 <small id="stWrongN"></small></button>
+    </div>
+  </div>
+</div>
+
+<!-- 오늘의 미션 -->
+<div id="missionModal" class="modal" hidden>
+  <div class="card">
+    <div class="row between"><h3>🎯 오늘의 미션</h3><button type="button" class="icon-btn" data-close="missionModal">✕</button></div>
+    <p class="muted" id="msInfo"></p>
+    <div id="msList" class="missions"></div>
+    <div id="msBonus" class="ms-bonus"></div>
+    <p class="muted small-note">📅 매일 처음 들어오면 출석 코인을 받아요. 연속으로 출석할수록 더 많이 받아요! (최대 40🪙)</p>
+  </div>
+</div>
+
+<!-- 상점 -->
+<div id="shopModal" class="modal" hidden>
+  <div class="card wide">
+    <div class="row between"><h3>🛒 상점</h3><span class="coin-big">🪙 <b id="shopCoins">0</b></span><button type="button" class="icon-btn" data-close="shopModal">✕</button></div>
+    <p class="muted">문제 1개를 맞히면 <b>🪙 1코인</b>! 오늘의 미션 · 출석 · 스피드 퀴즈 · 시즌 보상으로도 모아요.</p>
+    <div id="shopList" class="shop-list"></div>
+    <div id="flagBox" class="flag-box" hidden>
+      <h4>🚩 우리 학교 깃발 꾸미기</h4>
+      <div class="label">색깔</div><div id="flagColors" class="chips"></div>
+      <div class="label">마크</div><div id="flagMarks" class="chips"></div>
+      <div class="flag-preview"><span id="flagPreview"></span></div>
+      <div class="row end"><button type="button" class="btn" id="flagCancel">취소</button><button type="button" class="btn primary" id="flagGo"></button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 시즌 -->
+<div id="seasonModal" class="modal" hidden>
+  <div class="card season-card">
+    <div id="seBody"></div>
+    <div class="row end"><button type="button" class="btn" id="seHall">🏛️ 명예의 전당</button><button type="button" class="btn primary" data-close="seasonModal">좋아요!</button></div>
+  </div>
+</div>
+
+<!-- 운영자 초대 -->
+<div id="inviteModal" class="modal" hidden>
+  <div class="card small invite-card">
+    <div class="inv-icon">📨</div>
+    <h3>운영자 초대</h3>
+    <p class="inv-text"><b>개발자가 당신을 운영자로 만들고 싶어 합니다.</b></p>
+    <p class="muted" id="invBy"></p>
+    <p class="muted">운영자가 되면 공지 보내기 · 땅 정리 · 학생 퇴장 같은 게임 관리를 할 수 있어요. 이름 오른쪽에 <span class="mark admin">✦</span> 표시가 생겨요.</p>
+    <div id="invAsk" class="row end"><button type="button" class="btn danger" id="invNo">거절</button><button type="button" class="btn primary" id="invYes">수락</button></div>
+    <form id="invAuth" hidden>
+      <div class="label">🔐 본인 인증: 내 게임 아이디 <b id="invId"></b>의 비밀번호를 써 주세요.</div>
+      <input id="invPw" type="password" placeholder="비밀번호" autocomplete="current-password">
+      <p id="invErr" class="err"></p>
+      <div class="row end"><button type="button" class="btn" id="invBack">취소</button><button class="btn primary">인증하고 운영자 되기</button></div>
+    </form>
   </div>
 </div>
 
@@ -353,6 +435,10 @@
       <li>지도에는 <b>산 이름(높이)</b>과 <b>섬 이름</b>이 나오고, <b>북한</b> 땅도 보여요(게임 땅은 아니에요). 섬은 <b>뱃길</b>로 이어져 있어요(섬 끝 땅을 누르면 점선이 보여요). 학년마다 서버가 따로 있고, 같은 학교 친구들과 함께 땅을 넓혀요.</li>
       <li>✏️ <b>연습하기</b>로 문제만 풀 수도 있고, 틀린 문제는 📒 <b>오답 노트</b>에 모여요. 🏅 배지도 모아 보세요!</li>
       <li>💬 소식 탭에서 우리 학교 친구들에게 <b>빠른 채팅</b>을 보낼 수 있어요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>
+      <li>⚔️ <b>다른 학교 땅</b>을 뺏을 때는 땅 주인 학교와 <b>1:1 수학 결투</b>! 상대보다 <b>먼저</b> 다 맞혀야 땅을 가져와요.</li>
+      <li>🪙 문제 1개를 맞히면 <b>1코인</b>! 🛒 <b>상점</b>에서 🛡️ 방패(24시간 못 뺏김) · 💣 폭탄(한 번에 3칸) · 🔭 망원경(약한 땅 찾기) · 🚩 학교 깃발을 사요.</li>
+      <li>🎯 <b>오늘의 미션</b>을 깨면 코인을 받아요. 매일 출석하면 출석 코인도! ✏️ 공부방의 <b>⏱️ 스피드 퀴즈</b>는 1분 동안 최대한 많이 맞히기예요.</li>
+      <li>🏆 <b>시즌</b>은 한 달에 한 번 바뀌어요. 새 시즌이 되면 모든 땅이 처음으로 돌아가고, 학년 서버 <b>1·2·3등 학교</b>는 🏛️ 명예의 전당에 올라가요. 시즌마다 특별 규칙도 바뀌어요!</li>
     </ol>
     <div class="row end"><button type="button" class="btn primary" data-close="helpModal">알겠어요!</button></div>
   </div>
@@ -363,7 +449,8 @@
 <script src="js/intro.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/problems.js"></script>
-<script>window.MLE_MAP_URL = "map.json?v=zj1s-c66c5c9c1f"; window.MLE_MAP_BIN_URL = "map.bin?v=zj1s-c66c5c9c1f";</script>
+<script>window.MLE_MAP_URL = "map.json?v=zj1s-240a7ae2a9"; window.MLE_MAP_BIN_URL = "map.bin?v=zj1s-240a7ae2a9";</script>
+<script src="js/firebase-config.js"></script>
 <script src="js/backend.js"></script>
 <script src="js/app.js"></script>
 <script>if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
