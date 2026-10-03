@@ -1,7 +1,9 @@
 // FREE FREELY - 설정 저장/불러오기
 import { clamp } from './utils.js';
 
-const KEY = 'freefreely.settings.v1';
+// 다른 게임(예: fighter/)이 같은 엔진을 쓰면서 설정을 따로 저장할 수 있도록 키/기본값 재정의 허용
+const G = typeof window !== 'undefined' ? window : {};
+const KEY = G.SETTINGS_KEY || 'freefreely.settings.v1';
 
 export const DEFAULTS = {
   // 그래픽
@@ -35,6 +37,7 @@ export const DEFAULTS = {
   windStrength: 3.5,
   turbulence: 0.4,
   seaState: 0.5,
+  ...(G.SETTINGS_DEFAULTS || {}),
 };
 
 export const QUALITY_PRESETS = {
