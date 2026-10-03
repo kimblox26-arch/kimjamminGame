@@ -49,12 +49,22 @@
     await db.doc('meta/ping').get(); // 읽을 수 있는지 확인 (규칙이 막으면 혼자 하기)
     return { db, room: presenceRoom(db), kind: 'firebase' };
   }
-  // 접속 중인 친구 수: 기기마다 30초에 한 번 '여기 있어요'를 남기고, 75초 안에 남긴 기기만 센다
+  // 접속 중인 친구 수: 기기마다 1분에 한 번 '여기 있어요'를 남기고, 2분 30초 안에 남긴 기기만 센다
+  // (무료 한도를 아끼려고: 쓰기는 1분에 한 번, 읽기는 최근에 남긴 기기만)
   function presenceRoom(db) {
     let mine = {}, timer = 0;
     return {
-      presence(p) { mine = p; const beat = () => db.doc('presence/' + local.device).set(Object.assign({ at: Date.now() }, mine)).catch(() => {}); beat(); clearInterval(timer); timer = setInterval(beat, 30000); },
-      onPeers(cb) { return db.collection('presence').onSnapshot(snap => { const now = Date.now(); cb({ peers: snap.docs.map(d => ({ presence: d.data() })).filter(p => now - (p.presence.at || 0) < 75000) }); }, () => {}); },
+      presence(p) { mine = p; const beat = () => { if (!document.hidden) db.doc('presence/' + local.device).set(Object.assign({ at: Date.now() }, mine)).catch(() => {}); }; beat(); clearInterval(timer); timer = setInterval(beat, 60000); },
+      onPeers(cb) {
+        let unsub = null;
+        const sub = () => { // 오래전에 들어왔던 기기는 읽지 않는다 (10분마다 기준 시각을 새로)
+          if (unsub) unsub();
+          unsub = db.collection('presence').where('at', '>', Date.now() - 5 * 60e3).onSnapshot(snap => { const now = Date.now(); cb({ peers: snap.docs.map(d => ({ presence: d.data() })).filter(p => now - (p.presence.at || 0) < 150000) }); }, () => {});
+        };
+        sub();
+        setInterval(sub, 10 * 60e3);
+        return () => { if (unsub) unsub(); };
+      },
     };
   }
   // 페이지가 열리자마자 연결을 시작하고, 정해진 시간 안에 안 되면(로그인 안 한 사람 등) 혼자 하기
