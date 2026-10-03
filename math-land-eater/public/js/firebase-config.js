@@ -11,6 +11,7 @@
 window.MLE_FIREBASE = {
   apiKey: 'AIzaSyABkINqTDwzpe0IxwBiNzqu1HLSvuldFIY',
   authDomain: 'math-land-eater.firebaseapp.com',
+  databaseURL: 'https://math-land-eater-default-rtdb.asia-southeast1.firebasedatabase.app',
   projectId: 'math-land-eater',
   storageBucket: 'math-land-eater.firebasestorage.app',
   messagingSenderId: '648653661538',

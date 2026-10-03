@@ -1,0 +1,18 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "meta": { ".read": "auth != null", ".write": "auth != null" },
+    "mod": { ".read": "auth != null", ".write": "auth != null" },
+    "ids": { ".read": "auth != null", ".write": "auth != null" },
+    "invites": { ".read": "auth != null", ".write": "auth != null" },
+    "staff": { ".read": "auth != null", ".write": "auth != null" },
+    "presence": { ".read": "auth != null", ".write": "auth != null" },
+    "players": { ".read": "auth != null", ".write": "auth != null", ".indexOn": ["grade", "nick", "school"] },
+    "$wp": {
+      ".read": "auth != null && $wp.matches(/^w[0-9a-f]+/)",
+      ".write": "auth != null && $wp.matches(/^w[0-9a-f]+/)",
+      "$g": { "f": { ".indexOn": ["at"] } }
+    }
+  }
+}

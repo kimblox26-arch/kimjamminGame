@@ -2,7 +2,7 @@
  * server.js 와 같은 API 를 흉내 낸다.
  *  - 계정·기록·오답 노트: 이 기기(localStorage)에 저장
  *  - 땅·소식·채팅·친구 순위: 공유 저장소를 쓸 수 있으면 친구들과 함께, 아니면 이 기기 안에서만
- *    공유 저장소: claude.ai 페이지의 db, 또는 firebase-config.js 에 설정을 넣은 Firebase(Firestore) — 둘 다 같은 모양(doc/collection)으로 쓴다 */
+ *    공유 저장소: claude.ai 페이지의 db, 또는 firebase-config.js 에 설정을 넣은 Firebase(Realtime Database, 없으면 Firestore) — 모두 같은 모양(doc/collection)으로 쓴다 */
 (function () {
   'use strict';
   const S = window.MLE;
@@ -38,13 +38,88 @@
   let cloud = null; // { db, room, kind }
   // Firebase: 스크립트를 받아서 Firestore 를 연다 (익명 로그인이 켜져 있으면 로그인도)
   const loadScript = src => new Promise((ok, no) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = no; document.head.appendChild(el); });
-  async function firebaseCloud(cfg) {
+  async function firebaseStart(cfg, part) {
     const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
-    if (!window.firebase) { await loadScript(V + 'firebase-app-compat.js'); await Promise.all([loadScript(V + 'firebase-auth-compat.js'), loadScript(V + 'firebase-firestore-compat.js')]); }
+    if (!window.firebase) await loadScript(V + 'firebase-app-compat.js');
+    await Promise.all([loadScript(V + 'firebase-auth-compat.js'), loadScript(V + `firebase-${part}-compat.js`)]);
     if (!firebase.apps.length) firebase.initializeApp(cfg);
     for (let k = 0; k < 4; k++) { // 익명 로그인 (인터넷이 잠깐 끊겨도 몇 번 더 해 본다)
       try { await firebase.auth().signInAnonymously(); break; } catch (e) { if (k === 3) console.warn('익명 로그인 실패', e); else await new Promise(res => setTimeout(res, 1500 * (k + 1))); }
     }
+  }
+  // Realtime Database: 읽고 쓴 횟수가 아니라 주고받은 양만 세서, 바뀐 것만 주고받으면 무료로 넉넉하다
+  async function rtdbCloud(cfg) {
+    await firebaseStart(cfg, 'database');
+    const rdb = firebase.database();
+    await rdb.ref('meta/ping').once('value'); // 읽을 수 있는지 확인 (규칙이 막으면 혼자 하기)
+    return { db: rtAdapter(rdb), rdb, room: rtPresence(rdb), kind: 'rtdb' };
+  }
+  // RTDB 키에 못 쓰는 글자(. $ # [ ] /)는 %2E 처럼 바꿔 저장하고, 읽을 때 되돌린다
+  const encKey = k => String(k).replace(/[%.$#[\]/]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const decKey = k => String(k).replace(/%(25|2E|24|23|5B|5D|2F)/gi, (m, h) => String.fromCharCode(parseInt(h, 16)));
+  const holey = v => { for (let i = 0; i < v.length; i++) if (v[i] == null) return true; return false; };
+  const toObj = (v, f) => { const o = {}; v.forEach((x, i) => { if (x != null) o[i] = f(x); }); return o; };
+  function toRt(v) { // 빈칸 있는 배열(방패처럼 칸 번호를 키로 쓰는 것)은 객체로
+    if (Array.isArray(v)) return holey(v) ? toObj(v, toRt) : v.map(toRt);
+    if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v)) if (x !== undefined) o[encKey(k)] = toRt(x); return o; }
+    return v === undefined ? null : v;
+  }
+  function fromRt(v) { // RTDB 는 숫자 키 객체를 (빈칸 있는) 배열로 돌려줄 때가 있다
+    if (Array.isArray(v)) return holey(v) ? toObj(v, fromRt) : v.map(fromRt);
+    if (v && typeof v === 'object') { const o = {}; for (const [k, x] of Object.entries(v)) o[decKey(k)] = fromRt(x); return o; }
+    return v;
+  }
+  // Firestore 와 같은 모양(doc/collection)으로 쓰게 해 준다 (작은 문서용. 땅·소식은 아래에서 따로)
+  function rtAdapter(rdb) {
+    const ref = p => rdb.ref(p.split('/').map(encKey).join('/'));
+    const snapOf = s => ({ id: decKey(s.key), exists: s.exists(), data: () => fromRt(s.val()) || {} });
+    const coll = (p, conds, lim) => ({
+      where: (f, op, v) => coll(p, conds.concat([[f, op, v]]), lim),
+      limit: n => coll(p, conds, n),
+      async get() {
+        let q = ref(p);
+        for (const [f, op, v] of conds) q = op === '==' ? q.orderByChild(f).equalTo(v) : q.orderByChild(f).startAfter(v);
+        if (lim) q = q.limitToFirst(lim);
+        const s = await q.once('value'), docs = [];
+        s.forEach(c => { docs.push(snapOf(c)); });
+        return { docs };
+      },
+    });
+    return {
+      collection: p => coll(p, [], 0),
+      doc: p => ({
+        get: async () => snapOf(await ref(p).once('value')),
+        set: v => ref(p).set(toRt(v)),
+        update: v => ref(p).update(toRt(v)),
+        onSnapshot(cb, err) { const r = ref(p), f = s => cb(snapOf(s)); r.on('value', f, err); return () => r.off('value', f); },
+      }),
+    };
+  }
+  // 접속 중인 친구 수: 접속하면 '여기 있어요'를 남기고, 연결이 끊기면 서버가 알아서 지운다 (바뀐 기기만 주고받는다)
+  function rtPresence(rdb) {
+    let mine = null;
+    const put = () => {
+      if (!mine) return;
+      const me = rdb.ref('presence/' + local.device);
+      me.onDisconnect().remove();
+      me.set(Object.assign({ at: firebase.database.ServerValue.TIMESTAMP }, mine)).catch(() => {});
+    };
+    rdb.ref('.info/connected').on('value', s => { if (s.val() === true) put(); }); // 다시 연결되면 다시 남긴다
+    setInterval(() => { if (!document.hidden) put(); }, 30 * 60e3);
+    return {
+      presence(p) { mine = p; put(); },
+      onPeers(cb) {
+        const r = rdb.ref('presence'), peers = new Map();
+        let t = 0;
+        const tell = () => { clearTimeout(t); t = setTimeout(() => { const now = Date.now(); cb({ peers: [...peers.values()].filter(p => now - (p.at || 0) < 12 * 3600e3).map(p => ({ presence: p })) }); }, 200); };
+        const add = s => { peers.set(s.key, s.val() || {}); tell(); }, del = s => { peers.delete(s.key); tell(); };
+        r.on('child_added', add); r.on('child_changed', add); r.on('child_removed', del);
+        return () => { r.off('child_added', add); r.off('child_changed', add); r.off('child_removed', del); };
+      },
+    };
+  }
+  async function firebaseCloud(cfg) {
+    await firebaseStart(cfg, 'firestore');
     const db = firebase.firestore();
     await db.doc('meta/ping').get(); // 읽을 수 있는지 확인 (규칙이 막으면 혼자 하기)
     return { db, room: presenceRoom(db), kind: 'firebase' };
@@ -69,8 +144,9 @@
   }
   // 페이지가 열리자마자 연결을 시작하고, 정해진 시간 안에 안 되면(로그인 안 한 사람 등) 혼자 하기
   const cloudReady = (async () => {
-    if (window.MLE_FIREBASE && window.MLE_FIREBASE.projectId) {
-      try { cloud = await Promise.race([firebaseCloud(window.MLE_FIREBASE), new Promise(res => setTimeout(() => res(null), 45000))]); } catch (e) { console.warn('Firebase 연결 실패', e); cloud = null; }
+    const fb = window.MLE_FIREBASE;
+    if (fb && fb.projectId) {
+      try { cloud = await Promise.race([(fb.databaseURL ? rtdbCloud : firebaseCloud)(fb), new Promise(res => setTimeout(() => res(null), 45000))]); } catch (e) { console.warn('Firebase 연결 실패', e); cloud = null; }
       return;
     }
     if (!window.claude || typeof window.claude.use !== 'function') return;
@@ -207,16 +283,18 @@
     const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Uint8Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1, offers: [], shields: {} };
     BASE.forEach((s, i) => setHome(rt, i, s.cell));
     if (cloud) {
-      const snap = await cloud.db.collection(`${WP}/g${g}/c`).get();
-      snap.docs.forEach(d => { for (const [k, v] of Object.entries(d.data() || {})) setCell(rt, +k, v[0], v[1]); });
+      if (cloud.rdb) await rtLoad(rt);
+      else {
+        const snap = await cloud.db.collection(`${WP}/g${g}/c`).get();
+        snap.docs.forEach(d => { for (const [k, v] of Object.entries(d.data() || {})) setCell(rt, +k, v[0], v[1]); });
+        const f = await cloud.db.doc(`${WP}/g${g}/f/main`).get();
+        (f.exists ? f.data().items || [] : []).forEach(it => { rt.seen.add(it.id); rt.feed.push(it); });
+      }
       applyCustomHomes(rt, g);
-      const f = await cloud.db.doc(`${WP}/g${g}/f/main`).get();
-      (f.exists ? f.data().items || [] : []).forEach(it => { rt.seen.add(it.id); rt.feed.push(it); });
-      const o = await cloud.db.doc(`${WP}/g${g}/o/main`).get();
+      const [o, sh] = await Promise.all([cloud.db.doc(`${WP}/g${g}/o/main`).get(), cloud.db.doc(`${WP}/g${g}/s/main`).get()]);
       rt.offers = o.exists ? o.data().items || [] : [];
-      const sh = await cloud.db.doc(`${WP}/g${g}/s/main`).get();
       rt.shields = sh.exists ? sh.data().items || {} : {};
-      if (wp !== WP) return getWorld(g); // 불러오는 사이 서버가 초기화됐다
+      if (wp !== WP) { (rt.unsubs || []).forEach(u => u()); return getWorld(g); } // 불러오는 사이 서버가 초기화됐다
       subscribe(rt);
     } else {
       const w = local.worlds[g] || (local.worlds[g] = { cells: {} });
@@ -228,11 +306,42 @@
     worlds[g] = rt;
     return rt;
   }
+  // Realtime Database: 땅은 칸마다 따로 두고(바뀐 칸만 주고받는다), 소식은 목록에 하나씩 쌓는다
+  // 듣기를 먼저 걸고 처음 내용이 다 올 때까지 기다린다 (처음 받은 것은 화면에 따로 알리지 않는다)
+  async function rtLoad(rt) {
+    const g = rt.g, live = () => worlds[g] === rt, base = cloud.rdb.ref(`${WP}/g${g}`);
+    const on = (q, ev, fn) => { q.on(ev, fn, () => {}); (rt.unsubs = rt.unsubs || []).push(() => q.off(ev, fn)); };
+    let pend = null;
+    const cell = s => {
+      const i = +s.key, v = s.val();
+      if (!Array.isArray(v) || !(i >= 0 && i < M.n) || (rt.owner[i] === v[0] && rt.def[i] === v[1])) return;
+      setCell(rt, i, v[0], v[1]);
+      if (!live()) return;
+      if (!pend) { pend = []; setTimeout(() => { const cells = pend; pend = null; emit(g, { t: 'upd', cells }); }, 0); } // 한 번에 바뀐 칸은 묶어서
+      pend.push([i, v[0], v[1]]);
+    };
+    const cRef = base.child('c'), fQ = base.child('f').orderByKey().limitToLast(40);
+    on(cRef, 'child_added', cell);
+    on(cRef, 'child_changed', cell);
+    rt.fmax = '';
+    on(fQ, 'child_added', s => {
+      const it = fromRt(s.val());
+      if (!it || rt.seen.has(it.id)) return;
+      rt.seen.add(it.id);
+      if (s.key < rt.fmax) return; // 채팅을 지워서 뒤로 밀려 보인 옛 소식은 다시 알리지 않는다
+      rt.fmax = s.key;
+      rt.feed.push(it);
+      if (!live()) return;
+      if (it.t === 'chat') emit(g, Object.assign({}, it, { t: 'chat' }), it.ch === 'school' ? it.sid : null);
+      else emit(g, { t: 'upd', ev: it.ev, school: it.school, home: it.home });
+    });
+    await Promise.all([cRef.once('value'), fQ.once('value')]);
+  }
   // 다른 친구가 바꾼 땅·소식을 실시간으로 받는다
   function subscribe(rt) {
     const g = rt.g;
     const live = () => worlds[g] === rt, keep = u => { if (typeof u === 'function') (rt.unsubs = rt.unsubs || []).push(u); };
-    keep(cloud.db.collection(`${WP}/g${g}/c`).onSnapshot(snap => {
+    if (!cloud.rdb) keep(cloud.db.collection(`${WP}/g${g}/c`).onSnapshot(snap => {
       if (!live()) return;
       const cells = [];
       for (const ch of snap.docChanges()) {
@@ -244,7 +353,7 @@
       }
       if (cells.length) emit(g, { t: 'upd', cells });
     }, () => {}));
-    keep(cloud.db.doc(`${WP}/g${g}/f/main`).onSnapshot(snap => {
+    if (!cloud.rdb) keep(cloud.db.doc(`${WP}/g${g}/f/main`).onSnapshot(snap => {
       if (!live()) return;
       for (const it of (snap.exists ? snap.data().items || [] : [])) {
         if (rt.seen.has(it.id)) continue;
@@ -278,6 +387,7 @@
       save();
       return;
     }
+    if (cloud.rdb) { const up = {}; for (const [i, o, d] of cells) up[i] = [o, d]; return cloud.rdb.ref(`${WP}/g${rt.g}/c`).update(up); }
     const byChunk = new Map();
     for (const [i, o, d] of cells) { const k = Math.floor(i / chunkSize()); if (!byChunk.has(k)) byChunk.set(k, {}); byChunk.get(k)[i] = [o, d]; }
     for (const [k, data] of byChunk) {
@@ -297,6 +407,16 @@
       rt.feed.push(item);
       if (item.t === 'chat') emit(rt.g, Object.assign({}, item, { t: 'chat' }), item.ch === 'school' ? item.sid : null);
       else emit(rt.g, { t: 'upd', ev: item.ev, school: item.school, home: item.home });
+      return;
+    }
+    if (cloud.rdb) {
+      const f = cloud.rdb.ref(`${WP}/g${rt.g}/f`);
+      await f.push(toRt(item));
+      if (Math.random() < 0.05) { // 가끔 3일 지난 소식을 지워 저장소를 가볍게
+        const old = await f.orderByChild('at').endAt(Date.now() - 3 * 864e5).limitToFirst(200).once('value'), del = {};
+        old.forEach(c => { del[c.key] = null; });
+        if (Object.keys(del).length) await f.update(del);
+      }
       return;
     }
     const ref = cloud.db.doc(`${WP}/g${rt.g}/f/main`), cur = await ref.get();
@@ -745,9 +865,10 @@
         custom.forEach(c => { c.homes = {}; });
         await saveCustom();
         if (cloud) {
-          const r = await cloud.db.doc('meta/reset').get(), e = (r.exists ? r.data().epoch || 0 : 0) + 1;
+          const r = await cloud.db.doc('meta/reset').get(), e = (r.exists ? r.data().epoch || 0 : 0) + 1, old = WP;
           await cloud.db.doc('meta/reset').set({ epoch: e, by, at: Date.now() });
-          startOver(e, by);
+          if (epoch !== e) startOver(e, by); // (저장하면서 바로 알림이 와서 이미 바뀌었을 수도 있다)
+          if (cloud.rdb) cloud.rdb.ref(old).remove().catch(() => {}); // 지난 땅 기록은 지워서 저장소를 비운다
         } else {
           local.worlds = {};
           save();
@@ -783,7 +904,11 @@
         }
       } else if (b.act === 'clearChat') {
         rt.feed = rt.feed.filter(m => m.t !== 'chat');
-        if (cloud) await cloud.db.doc(`${WP}/g${rt.g}/f/main`).set({ items: rt.feed.slice(-40) });
+        if (cloud && cloud.rdb) {
+          const f = cloud.rdb.ref(`${WP}/g${rt.g}/f`), all = await f.once('value'), del = {};
+          all.forEach(c => { const it = c.val(); if (it && it.t === 'chat') del[c.key] = null; });
+          if (Object.keys(del).length) await f.update(del);
+        } else if (cloud) await cloud.db.doc(`${WP}/g${rt.g}/f/main`).set({ items: rt.feed.slice(-40) });
         text = '채팅을 모두 지웠어요'; extra = { chatClear: true };
       } else if (b.act === 'resetWorld') {
         for (let c = 0; c < M.n; c++) clear(c);
