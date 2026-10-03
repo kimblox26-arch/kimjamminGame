@@ -22,19 +22,12 @@
   const needToTake = i => { const c = costOf(i); return c.error ? Math.max(S.BASE_COST, W.def[i]) : c.cost; };
   // 새 기능(코인·상점·미션·시즌·결투·운영자 초대)은 브라우저 안 게임 서버(backend.js)에서 돌아간다
   const FEAT = !!window.MLEBackend;
-  let flagsOf = {}, shieldOf = new Map(), seasonInfo = null, missionReady = 0, hallCache = null, weakCells = [], inviteShown = false;
+  let flagsOf = {}, shieldOf = new Map(), missionReady = 0, weakCells = [], inviteShown = false;
   const markOf = role => (role && S.MARK[role] ? `<span class="mark ${role}" title="${S.ROLE_NICK[role]}">${S.MARK[role]}</span>` : '');
   const nameHTML = (nick, role) => esc(nick) + markOf(role); // 이름 + 운영자(✦)·개발자(♛) 표시
   const flagMark = sid => (flagsOf[sid] ? flagsOf[sid].m + ' ' : '');
   const shielded = i => (shieldOf.get(i) || 0) > Date.now();
   const scopeOn = () => me && (me.scopeUntil || 0) > Date.now();
-  const trophyOf = sid => { // 🏆 지난 시즌 1등을 한 학교 (명예의 전당, 우리 학년 서버)
-    if (!hallCache || !me) return '';
-    let k = 0;
-    for (const h of hallCache) { const t = h.grades && h.grades[me.grade]; if (t && t[0] && t[0].sid === sid) k++; }
-    return k ? `<span class="trophy" title="시즌 1등 ${k}번">🏆${k > 1 ? '×' + k : ''}</span>` : '';
-  };
-
   // ---------- 소리 (파일 없이 직접 만든 효과음) ----------
   const Sound = (() => {
     let ac = null, on = store.get('mle_sound') !== 'off';
@@ -1176,7 +1169,7 @@
   async function openSchool(sid) {
     const d = await api('/api/school?id=' + sid);
     if (d.error) return toast(d.error, 'err');
-    $('#scName').innerHTML = `<i class="sw" style="background:${cssColor(sid)}"></i>${esc(flagMark(sid) + d.name)}${trophyOf(sid)}`;
+    $('#scName').innerHTML = `<i class="sw" style="background:${cssColor(sid)}"></i>${esc(flagMark(sid) + d.name)}`;
     const mem = d.members.map(m => `<li class="${m.me ? 'me' : ''}"><i class="dot ${m.online ? 'on' : ''}"></i><span class="nm">${nameHTML(m.nick, m.role)}</span><small>뺏은 땅 ${m.captures} · 문제 ${m.solved}</small></li>`).join('');
     $('#scBody').innerHTML = `
       <p class="muted">📍 ${esc(d.sido)} ${esc(d.sigungu)}${d.dong ? ' ' + esc(d.dong) : ''} · ${me.grade}학년 서버</p>
@@ -1350,7 +1343,7 @@
   // ---------- 운영자 관리 ----------
   let resetAsk = 0;
   async function adminAct(body, btn) {
-    if (['resetWorld', 'resetAll', 'hideSchool', 'clearSchool', 'kickSchool', 'kickAll', 'ban', 'nextSeason', 'unstaff'].includes(body.act) && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
+    if (['resetWorld', 'resetAll', 'hideSchool', 'clearSchool', 'kickSchool', 'kickAll', 'ban', 'unstaff'].includes(body.act) && Date.now() - resetAsk > 3000) { // 확인 창 대신 한 번 더 누르기
       resetAsk = Date.now();
       return toast('정말 할까요? 3초 안에 한 번 더 누르세요.', 'warn');
     }
@@ -1362,11 +1355,9 @@
     if (r.user) { me = r.user; closeM('adminModal'); toast(`🌐 ${me.grade}학년 서버로 옮겼어요.`, 'ok'); return me.profile ? startGame() : openSetup(); }
     if (r.reload) {
       closeM('adminModal'); select(-1);
-      const d = await loadWorld();
+      await loadWorld();
       updateBoard(); renderMini(); requestDraw(); hud();
-      if (d && d.news) showSeason(d.news);
-      if (body.act === 'nextSeason') loadHall();
-      return toast(r.text ? '🏆 ' + r.text : '🧨 서버를 처음부터 다시 시작했어요!', 'ok');
+      return toast('🧨 서버를 처음부터 다시 시작했어요!', 'ok');
     }
     if (r.staff) renderStaff(r.staff);
     if (r.cells && r.cells.length) applyCells(r.cells, true);
@@ -1388,7 +1379,6 @@
       $('#admDev').hidden = me.role !== 'dev';
       if (me.role === 'dev') api('/api/admin', { act: 'bans' }).then(r => { if (r.bans) renderBans(r.bans); });
       if (me.role === 'dev' && FEAT) api('/api/admin', { act: 'staff' }).then(r => { if (r.staff) renderStaff(r.staff); });
-      $('#admSeason').textContent = seasonInfo ? `지금은 시즌 ${seasonInfo.n} (${S.seasonRule(seasonInfo.n).name}) · 다음 시즌까지 D-${dday()}` : '';
       openM('adminModal');
     };
     $('#admGrades').onclick = e => { const b = e.target.closest('[data-g]'); if (b && +b.dataset.g !== me.grade) adminAct({ act: 'grade', grade: +b.dataset.g }); };
@@ -1401,7 +1391,6 @@
     $('#admBanForever').onclick = () => { $('#admBanDays').value = 3650; };
     $('#admInvGo').onclick = async e => { const r = await adminAct({ act: 'invite', username: $('#admInvId').value.trim() }, e.currentTarget); if (r && r.ok) $('#admInvId').value = ''; };
     $('#admStaff').onclick = e => { const b = e.target.closest('[data-unstaff]'); if (b) adminAct({ act: 'unstaff', username: b.dataset.unstaff }, b); };
-    $('#admNextSeason').onclick = e => adminAct({ act: 'nextSeason' }, e.currentTarget);
     $('#admBans').onclick = e => { const b = e.target.closest('[data-unban]'); if (b) adminAct({ act: 'unban', nick: b.dataset.unban }, b).then(r => { if (r && r.ok) toast(`✅ ${b.dataset.unban} 님 밴을 풀었어요.`, 'ok'); }); };
   }
 
@@ -1652,10 +1641,18 @@
   function chatLine(m) {
     const li = document.createElement('li'), mine = m.sid === mySid();
     li.className = 'chat' + (m.ch === 'school' ? ' school' : '');
-    li.innerHTML = `<span class="t">${new Date(m.at).toTimeString().slice(0, 5)}</span><span class="ch">${m.ch === 'school' ? '🏫' : '🌐'}</span><b style="color:${mine ? '#b45309' : cssColor(m.sid)}">${nameHTML(m.by, m.role)}</b><small>${esc(short(m.sid))}</small> ${esc(S.CHAT[m.m] || '')}`;
+    li.innerHTML = `<span class="t">${new Date(m.at).toTimeString().slice(0, 5)}</span><span class="ch">${m.ch === 'school' ? '🏫' : '🌐'}</span><b style="color:${mine ? '#b45309' : cssColor(m.sid)}">${nameHTML(m.by, m.role)}</b><small>${esc(short(m.sid))}</small> ${esc(m.text != null ? m.text : S.CHAT[m.m] || '')}`;
     $('#feed').prepend(li);
     while ($('#feed').children.length > 60) $('#feed').lastChild.remove();
     if ($('#paneFeed').hidden) $('#feedDot').hidden = false;
+    if (!mine && ($('#paneFeed').hidden || (innerWidth <= 820 && !$('#side').classList.contains('open')))) $('#chatDot').hidden = false;
+  }
+  function openChat() { // 💬 채팅: 옆 칸(폰은 펼쳐서)의 소식 탭을 열고 글자 칸에 바로
+    $('#side').classList.add('open');
+    $$('.stab').forEach(x => x.classList.toggle('on', x.dataset.pane === 'paneFeed'));
+    $$('.pane').forEach(p => { p.hidden = p.id !== 'paneFeed'; });
+    $('#feedDot').hidden = true; $('#chatDot').hidden = true;
+    if (!coarse) setTimeout(() => $('#chatInput').focus(), 50);
   }
   function initQuiz() {
     $('#qzAnswer').addEventListener('click', e => { const b = e.target.closest('.choice'); if (b) answer(b.dataset.v); });
@@ -1696,7 +1693,6 @@
     if (d.stats) me.stats = d.stats;
     flagsOf = d.flags || {};
     shieldOf = new Map(d.shields || []);
-    if (d.season) seasonInfo = d.season;
     if (d.mission != null) setMissionDot(d.mission);
     colorCache.clear();
     tiles.clear();
@@ -1719,9 +1715,7 @@
     if (!d) return;
     (d.chat || []).forEach(chatLine);
     if (d.attend) setTimeout(() => toast(`📅 출석 체크! ${d.attend.days}일째${d.attend.streak > 1 ? ` (${d.attend.streak}일 연속)` : ''}${d.attend.coins ? ` · 🪙 +${d.attend.coins}` : ''}`, 'ok'), 1200);
-    if (FEAT) loadHall();
-    if (d.news) setTimeout(() => showSeason(d.news), 700);
-    if (d.invite) setTimeout(() => showInvite(d.invite), d.news ? 1600 : 900);
+    if (d.invite) setTimeout(() => showInvite(d.invite), 900);
     gotBadges(d.badges);
     api('/api/wrong').then(r => { if (r.list) setWrongCount(r.list.length); });
     if (!store.get('mle_tut')) { store.set('mle_tut', '1'); setTimeout(() => openM('helpModal'), 900); }
@@ -1736,7 +1730,9 @@
     if (es) es.close();
     if (window.MLEBackend) {
       es = { close: window.MLEBackend.listen(token, onEvent) };
-      $('#conn span').textContent = window.MLEBackend.isShared() ? '친구들과 함께' : '혼자 하기 (이 기기)';
+      const on = window.MLEBackend.isShared();
+      $('#conn span').textContent = on ? '온라인' : '오프라인 (온라인 서버 연결 전)';
+      $('#conn').classList.toggle('off', !on);
       return;
     }
     let broken = false;
@@ -1760,7 +1756,7 @@
     if (m.t === 'shields') return setShields(m.items);
     if (m.t === 'flags') return setFlags(m.items);
     if (m.t !== 'upd') return;
-    if (m.reload) { loadWorld().then(d => { if (d) { updateBoard(); renderPopup(); renderMini(); requestDraw(); hud(); if (d.news) showSeason(d.news); if (m.ev && m.ev.kind === 'season') loadHall(); } }); if (m.ev) feed(m.ev); return; }
+    if (m.reload) { loadWorld().then(d => { if (d) { updateBoard(); renderPopup(); renderMini(); requestDraw(); hud(); } }); if (m.ev) feed(m.ev); return; }
     if (m.school) { schools[m.school.id] = m.school; W.home[m.school.id] = m.home; if (m.home >= 0) W.homeCell[m.home] = m.school.id; }
     if (m.cells) {
       applyCells(m.cells);
@@ -1816,7 +1812,6 @@
     } else if (ev.kind === 'buy') txt = `🛒 ${who}님이 ${short(ev.from)}의 땅 ${ev.n}칸을 샀어요`;
     else if (ev.kind === 'notice') { txt = `📢 ${ev.text}`; cls = 'alert'; toast(`📢 ${ev.text}`, 'warn'); }
     else if (ev.kind === 'admin') { txt = `🛠️ ${ev.by}: ${ev.text}`; if (ev.chatClear) clearChat(); }
-    else if (ev.kind === 'season') { txt = ev.text || `🎉 시즌 ${ev.season} 시작!`; cls = 'alert'; toast(txt, 'ok'); }
     else if (ev.kind === 'bomb') txt = `💣 ${who}님이 폭탄으로 땅 ${ev.n}칸을 한 번에 차지했어요!`;
     else if (ev.kind === 'shield') txt = `🛡️ ${who}님이 방패를 세웠어요 (${S.SHIELD_HOURS}시간)`;
     else return;
@@ -1843,10 +1838,7 @@
     $('#btnSound').textContent = Sound.on ? '🔊' : '🔇';
     $('#btnBgm').style.opacity = Music.on ? 1 : 0.4;
     $('#btnMission').hidden = $('#btnShop').hidden = $('#hudCoins').hidden = !FEAT;
-    $('#hudCoinN').textContent = me.coins || 0;
-    const se = $('#hudSeason');
-    se.hidden = !(FEAT && seasonInfo);
-    if (seasonInfo) { const rl = S.seasonRule(seasonInfo.n); se.innerHTML = `${rl.icon} 시즌 ${seasonInfo.n} · D-${dday()}`; se.style.setProperty('--c', rl.color); }
+    $('#hudCoinN').textContent = me.infCoins ? '∞' : me.coins || 0;
     const left = (me.scopeUntil || 0) - Date.now(), sc = $('#hudScope');
     sc.hidden = left <= 0;
     if (left > 0) { sc.textContent = `🔭 ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`; if (!scopeTimer) scopeTimer = setInterval(() => { hud(); if (!scopeOn()) { clearInterval(scopeTimer); scopeTimer = 0; if (W) { computeFrontier(); requestDraw(); } } }, 1000); }
@@ -1861,7 +1853,7 @@
     const my = mySid(), rank = arr.findIndex(e => e[0] === my) + 1, mine = cnt.get(my) || 0;
     const medal = k => ['🥇', '🥈', '🥉'][k] || k + 1;
     $('#board').innerHTML = arr.slice(0, 10).map(([sid, n], k) =>
-      `<li class="${sid === my ? 'me' : ''}" data-sid="${sid}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(sid)}"></i><span class="nm">${esc(flagMark(sid) + short(sid))}${trophyOf(sid)}</span><b>${n}</b></li>`).join('');
+      `<li class="${sid === my ? 'me' : ''}" data-sid="${sid}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(sid)}"></i><span class="nm">${esc(flagMark(sid) + short(sid))}</span><b>${n}</b></li>`).join('');
     $('#myRank').innerHTML = `⭐ 우리 학교 <b>${rank || '-'}위</b> · 땅 <b>${mine}</b>칸 · 뺏을 수 있는 땅 <b>${frontier.size}</b>칸` + (exits.size ? '<br>🚪 빈 땅이 막혔어요! 초록 점선 <b>탈출길</b>로 빠져나가요.' : '') + (me.grade >= S.FAR_GRADE ? `<br>🚀 ${S.FAR_GRADE}학년부터: 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏을 수 있어요.` : '');
     $('#hudLand').textContent = mine;
     $('#hudRank').textContent = rank || '-';
@@ -1876,15 +1868,6 @@
     const my = mySid(), medal = k => ['🥇', '🥈', '🥉'][k] || k + 1, TOP = 50;
     const where = sid => { const sc = schools[sid]; return sc ? `${SIDO_FULL[sc.sido] || sc.sido} ${sc.sigungu}` : ''; };
     let head = '', rows = [], sum = '';
-    if (rankTab === 'hall') {
-      $('#rankHead').innerHTML = '';
-      $('#rankBody').innerHTML = '<tr><td class="muted">불러오는 중…</td></tr>';
-      const list = await loadHall();
-      if (rankTab !== 'hall') return;
-      $('#rankBody').innerHTML = `<tr><td>${hallRows(list)}</td></tr>`;
-      $('#rankSum').innerHTML = seasonInfo ? `지금은 <b>시즌 ${seasonInfo.n}</b> (D-${dday()}) · 시즌마다 학년 서버 1·2·3등 학교가 여기에 올라가요` : '';
-      return;
-    }
     if (rankTab === 'player') {
       $('#rankBody').innerHTML = '<tr><td class="muted">불러오는 중…</td></tr>';
       const d = await api('/api/players?n=' + TOP);
@@ -1898,7 +1881,7 @@
       for (const i of owned) { const o = W.owner[i]; land.set(o, (land.get(o) || 0) + 1); if (W.def[i]) def.set(o, (def.get(o) || 0) + W.def[i]); }
       if (rankTab === 'school') {
         const arr = [...land.entries()].sort((a, b) => b[1] - a[1] || (def.get(b[0]) || 0) - (def.get(a[0]) || 0) || a[0] - b[0]), mine = arr.findIndex(e => e[0] === my);
-        const row = (sid, n, k) => `<tr class="${sid === my ? 'me' : ''}" data-sid="${sid}"><td class="rk">${medal(k)}</td><td><i class="sw" style="background:${cssColor(sid)}"></i>${esc(flagMark(sid) + short(sid))}${trophyOf(sid)}<small>${esc(where(sid))}</small></td><td class="num">${n}</td><td class="num">${def.get(sid) || 0}</td></tr>`;
+        const row = (sid, n, k) => `<tr class="${sid === my ? 'me' : ''}" data-sid="${sid}"><td class="rk">${medal(k)}</td><td><i class="sw" style="background:${cssColor(sid)}"></i>${esc(flagMark(sid) + short(sid))}<small>${esc(where(sid))}</small></td><td class="num">${n}</td><td class="num">${def.get(sid) || 0}</td></tr>`;
         head = '<tr><th>순위</th><th>학교</th><th class="num">땅</th><th class="num">방어</th></tr>';
         rows = arr.slice(0, TOP).map(([sid, n], k) => row(sid, n, k));
         if (mine >= TOP) rows.push('<tr class="gap"><td colspan="4">⋯</td></tr>', row(my, arr[mine][1], mine));
@@ -1958,6 +1941,9 @@
     $('#bugDefend').textContent = `🛡️ 문제 안풀고 땅 방어하기 : ${cheat.defend ? '켜짐 ✅' : '꺼짐'}`;
     $('#bugCapture').classList.toggle('on', cheat.capture);
     $('#bugDefend').classList.toggle('on', cheat.defend);
+    $('#bugCoins').textContent = `🪙 코인 무한 : ${me && me.infCoins ? '켜짐 ✅' : '꺼짐'}`;
+    $('#bugCoins').classList.toggle('on', !!(me && me.infCoins));
+    $('#bugCoins').hidden = !FEAT;
     hud();
   }
   function wiggle(el) { el.classList.remove('tap'); void el.offsetWidth; el.classList.add('tap'); }
@@ -1983,8 +1969,6 @@
     $('#btnBgm').onclick = () => { Music.toggle(); hud(); toast(Music.on ? '🎵 배경 음악을 켰어요.' : '🎵 배경 음악을 껐어요.', 'ok'); };
     $('#setBgm').onclick = () => { Music.toggle(); renderSoundBtns(); };
     $('#setSound').onclick = () => { Sound.toggle(); Sound.play('tap'); renderSoundBtns(); };
-    $('#hudSeason').onclick = () => showSeason(null);
-    $('#seHall').onclick = () => { closeM('seasonModal'); openRank('hall'); };
     $$('.sem2').forEach(b => { b.onclick = async () => { if (await saveProfile({ semester: +b.dataset.sem })) { $$('.sem2').forEach(x => x.classList.toggle('on', x === b)); toast(`${b.dataset.sem}학기 문제가 나와요.`, 'ok'); } }; });
     $('#setNickSave').onclick = async () => { if (await saveProfile({ nickname: $('#setNick').value.trim() })) toast('닉네임을 바꿨어요.', 'ok'); };
     $('#setSchool').onclick = () => { closeM('settingsModal'); if (es) { es.close(); es = null; } W = null; openSetup(); };
@@ -2011,6 +1995,12 @@
     };
     $('#bugCapture').onclick = () => { cheat.capture = !cheat.capture; renderBug(); };
     $('#bugDefend').onclick = () => { cheat.defend = !cheat.defend; renderBug(); };
+    $('#bugCoins').onclick = async () => {
+      const r = await api('/api/debug/coins', { on: !me.infCoins });
+      if (r.error) return toast(r.error, 'err');
+      me = r.user; renderBug();
+      toast(me.infCoins ? '🪙 코인 무한! 상점에서 마음껏 사요.' : '🪙 코인 무한을 껐어요.', 'ok');
+    };
   }
 
   function initGameUi() {
@@ -2030,6 +2020,17 @@
       if (!b) return;
       const r = await api('/api/chat', { ch: chatCh, m: +b.dataset.m });
       if (r.error) toast(r.error, 'warn'); else Sound.play('tap');
+    };
+    $('#btnChat').onclick = openChat;
+    $('#chatForm').hidden = !FEAT;
+    $('#chatForm').onsubmit = async e => {
+      e.preventDefault();
+      const text = $('#chatInput').value.trim();
+      if (!text) return;
+      const r = await api('/api/chat', { ch: chatCh, text });
+      if (r.error) return toast(r.error, 'warn');
+      $('#chatInput').value = '';
+      Sound.play('tap');
     };
     $$('.chch').forEach(b => { b.onclick = () => { chatCh = b.dataset.ch; $$('.chch').forEach(x => x.classList.toggle('on', x === b)); }; });
     const landOf = () => { const m = new Map(); for (const i of owned) m.set(W.owner[i], (m.get(W.owner[i]) || 0) + 1); return id => m.get(id) || 0; };
@@ -2061,8 +2062,7 @@
   }
   function renderMissions(d) {
     setMissionDot(d.ready);
-    const rl = seasonInfo && S.seasonRule(seasonInfo.n);
-    $('#msInfo').innerHTML = `오늘 미션 3개를 깨고 코인을 받아요! 내일이 되면 새 미션이 나와요.${rl && rl.missionX ? ` <b>${rl.icon} ${rl.name}: 보상 2배!</b>` : ''}`;
+    $('#msInfo').innerHTML = '오늘 미션 3개를 깨고 코인을 받아요! 내일이 되면 새 미션이 나와요.';
     $('#msList').innerHTML = d.list.map(m => {
       const ready = !m.done && m.p >= m.n;
       return `<div class="mission ${m.done ? 'done' : ready ? 'ready' : ''}"><div class="mi">${m.icon}</div><div><b>${esc(m.text)}</b><div class="bar"><i style="width:${(m.p / m.n) * 100}%"></i></div><small>${m.p} / ${m.n}</small></div>`
@@ -2099,14 +2099,14 @@
     hud();
   }
   function renderShop() {
-    const d = shopData, rl = seasonInfo && S.seasonRule(seasonInfo.n);
-    $('#shopCoins').textContent = me.coins || 0;
+    const d = shopData;
+    $('#shopCoins').textContent = me.infCoins ? '∞' : me.coins || 0;
     $('#shopList').innerHTML = S.SHOP.map(it => {
-      const price = d.prices[it.id], sale = price < it.price, own = it.id === 'flag' ? '' : `<span class="own">가진 개수: ${(me.items || {})[it.id] || 0}개</span>`;
+      const price = d.prices[it.id], own = it.id === 'flag' ? '' : `<span class="own">가진 개수: ${(me.items || {})[it.id] || 0}개</span>`;
       const use = it.id === 'scope' ? `<button type="button" class="btn" data-use="scope" ${(me.items || {}).scope ? '' : 'disabled'}>쓰기</button>`
         : it.id === 'flag' ? '' : '<small class="muted">지도에서 땅을 눌러 써요</small>';
       return `<div class="shop-item"><div class="si">${it.icon}</div><b>${esc(it.name)}</b><p>${esc(it.desc)}</p>${own}`
-        + `<div>${sale ? `<s class="muted">${it.price}</s> <span class="sale">${price}🪙 (${esc(rl.name)} 할인!)</span>` : `🪙 <b>${price}</b>`}</div>`
+        + `<div>🪙 <b>${price}</b></div>`
         + `<div class="row">${it.id === 'flag' ? `<button type="button" class="btn primary" data-flag="1">꾸미기</button>` : `<button type="button" class="btn primary" data-buy="${it.id}" ${(me.coins || 0) >= price ? '' : 'disabled'}>사기</button>${use}`}</div></div>`;
     }).join('');
   }
@@ -2163,41 +2163,6 @@
       Sound.play('unlock'); confetti(innerWidth / 2, innerHeight * 0.4, 50);
       toast(`🚩 우리 학교 깃발을 바꿨어요! 다른 학교 친구들에게 ${flagPick.m} 마크와 새 색깔로 보여요.`, 'ok');
     };
-  }
-
-  // ---------- 🏆 시즌 · 🏛️ 명예의 전당 ----------
-  const medal3 = k => ['🥇', '🥈', '🥉'][k];
-  const dday = () => Math.max(0, Math.ceil((seasonInfo.end - Date.now()) / 864e5));
-  function showSeason(news) {
-    if (!seasonInfo) return;
-    const n = news ? news.n : seasonInfo.n, rl = S.seasonRule(n), end = new Date(seasonInfo.end + 9 * 3600e3); // 한국 시간으로 읽는다
-    const top = news && news.prev && news.prev.top.length ? `<div class="se-box"><h4>🏛️ 지난 시즌 ${news.prev.n} · ${me.grade}학년 서버 순위</h4><ol>${news.prev.top.map((t, k) => `<li>${medal3(k)} <b>${esc(t.name.replace(/초등학교$/, '초'))}</b><small>${esc(t.sido)} ${esc(t.sigungu)} · 땅 ${t.land}칸</small></li>`).join('')}</ol></div>` : '';
-    const gift = news && news.coins ? `<div class="se-box se-gift">🎁 시즌 보상 🪙 +${news.coins}<br><small>${news.place ? `우리 학교 ${news.place}등 상 ${S.SEASON_PRIZE[news.place - 1]}🪙` : ''}${news.place && news.joined ? ' + ' : ''}${news.joined ? `참가 상 ${S.SEASON_JOIN}🪙` : ''}</small></div>` : '';
-    $('#seBody').innerHTML = `<div class="se-head" style="--c:${rl.color}"><div>${news ? '🎉 새 시즌이 시작됐어요!' : '🏆 지금 시즌'}</div><div class="se-n">시즌 ${n}</div><div class="se-rule">${rl.icon} <b>${esc(rl.name)}</b> · ${esc(rl.desc)}</div></div>
-      <div class="se-body">${gift}${top}
-        <div class="se-box"><h4>📅 시즌 ${n} 기간</h4>${end.getUTCMonth() + 1}월 1일 0시(한국 시간)까지 · <b>D-${dday()}</b></div>
-        <div class="se-box"><h4>✨ 이번 시즌</h4><ul class="se-new">
-          <li>${news ? '모든 학년 서버의 땅이 처음 상태로 돌아갔어요. 다시 넓혀 봐요!' : '시즌이 끝나면 모든 땅이 처음 상태로 돌아가요.'}</li>
-          <li>${rl.icon} 특별 규칙: <b>${esc(rl.desc)}</b></li>
-          <li>시즌이 끝날 때 학년 서버 <b>1·2·3등 학교</b> 학생은 🪙 ${S.SEASON_PRIZE.join(' · ')}, 땅을 하나라도 차지한 학생은 🪙 ${S.SEASON_JOIN}!</li>
-          <li>1·2·3등 학교는 <b>🏛️ 명예의 전당</b>에 이름이 남고, 1등 학교에는 🏆 표시가 붙어요.</li>
-        </ul></div>
-      </div>`;
-    openM('seasonModal');
-    if (news && news.coins) { Sound.play('unlock'); confetti(innerWidth / 2, innerHeight * 0.3, 90); }
-  }
-  async function loadHall() {
-    const d = await api('/api/hall');
-    if (!d.error) { hallCache = d.list || []; scheduleBoard(); }
-    return hallCache || [];
-  }
-  function hallRows(list) {
-    const mine = (me.trophies || []).map(t => `<li>${medal3(t.place - 1)} 시즌 ${t.season} · ${esc(t.school.replace(/초등학교$/, '초'))} ${t.place}등</li>`).join('');
-    const seasons = list.map(h => {
-      const top = (h.grades && h.grades[me.grade]) || [];
-      return `<div class="hall-season"><h4>🏆 시즌 ${h.season} <small class="muted">${me.grade}학년 서버</small></h4><ol>${top.length ? top.map((t, k) => `<li>${medal3(k)} <b>${esc(t.name.replace(/초등학교$/, '초'))}</b> <small class="muted">${esc(t.sido)} ${esc(t.sigungu)} · 땅 ${t.land}칸</small></li>`).join('') : '<li class="muted">이 학년 서버에는 기록이 없어요.</li>'}</ol></div>`;
-    }).join('');
-    return (mine ? `<div class="hall-season"><h4>🎖️ 나의 트로피</h4><ol>${mine}</ol></div>` : '') + (seasons || `<p class="pad muted">아직 끝난 시즌이 없어요. 시즌 ${seasonInfo ? seasonInfo.n : 1}이 끝나면 1·2·3등 학교가 여기에 올라가요!</p>`);
   }
 
   // ---------- 📨 운영자 초대 받기 ----------

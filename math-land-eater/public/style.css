@@ -457,6 +457,9 @@ button.pill { border: 0; cursor: pointer; font: inherit; }
 .hall-season h4 { margin: 0 0 4px; }
 .hall-season ol { margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 1.7; }
 .trophy { margin-left: 4px; font-size: 12px; }
+.chat-form { display: flex; gap: 6px; margin: 6px 0; }
+.chat-form input { flex: 1; min-width: 0; padding: 9px 10px; }
+.chat-form .btn { padding: 8px 12px; }
 .invite-card { text-align: center; }
 .inv-icon { font-size: 48px; }
 .inv-text { font-size: 18px; }

@@ -41,6 +41,17 @@
   // 빠른 채팅: 아이들이 안전하게 쓰도록 정해진 말만 보낸다
   const CHAT = ['같이 땅 넓히자! 💪', '여기 방어해 줘! 🛡️', '공격 간다! ⚔️', '도와줘! 🆘', '잘했어! 👍', '고마워! 😊', '화이팅! 🔥', '문제 어렵다 😵', '내가 해볼게! ✋', 'ㅋㅋㅋ 😆'];
 
+  // 직접 쓰는 채팅: 60자까지, 나쁜 말은 ♡ 로, 전화번호처럼 긴 숫자는 * 로 가린다 (어린이 안전)
+  const BAD_WORDS = ['시발', '씨발', '씨바', '씨빨', '시바', '쉬발', '슈발', 'ㅅㅂ', 'ㅆㅂ', 'ㅅ ㅂ', '병신', '븅신', '빙신', 'ㅂㅅ', '개새', '개색', '개세', '새끼', '색기', '쌔끼', '존나', '졸라', 'ㅈㄴ', '좆', '졷', '지랄', 'ㅈㄹ', '닥쳐', '꺼져', '미친놈', '미친년', '미친새', '썅', '등신', '엿먹', '니애미', '느금', '애미', '애비', 'fuck', 'shit', 'bitch', 'damn', 'sex', '섹스', '야동'];
+  function cleanChat(s) {
+    let t = String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    for (const w of BAD_WORDS) {
+      const re = new RegExp(w.split('').map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s.\\-_~!@#*]*'), 'gi'); // 사이에 띄어쓰기·기호를 넣어도 찾는다
+      t = t.replace(re, m => '♡'.repeat(Math.min(4, m.replace(/[\s.\-_~!@#*]/g, '').length)));
+    }
+    return t.replace(/\d[\d\s-]{6,}\d/g, m => m.replace(/\d/g, '*')); // 전화번호
+  }
+
   // 지도 칸 모양: [x0, y0, dx1, dy1, …] 로 줄여 둔 꼭짓점을 원래 좌표로
   function decodeRing(arr) {
     const out = new Int32Array(arr.length);
@@ -133,6 +144,7 @@
   const MARK = { dev: '♛', admin: '✦' }; // 이름 오른쪽에 붙는 표시 (그림 문자가 아닌 특수문자)
 
   // ---------- 코인 · 상점 ----------
+  const DUEL_BONUS = 5; // 1:1 결투에서 이기면 코인 보너스
   const SHOP = [
     { id: 'shield', icon: '🛡️', name: '방패', price: 40, desc: '우리 땅 1칸을 24시간 동안 아무도 못 뺏어요.' },
     { id: 'bomb', icon: '💣', name: '폭탄', price: 60, desc: '뺏을 수 있는 땅과 그 옆 땅 2칸까지, 문제 없이 한 번에 3칸!' },
@@ -164,28 +176,12 @@
     return out;
   }
 
-  // ---------- 시즌 (한 달에 한 번, 한국 시간 매달 1일 0시에 바뀐다) ----------
-  const SEASON0 = { y: 2026, m: 10 }; // 시즌 1 = 2026년 10월
-  const kst = now => new Date((now || Date.now()) + 9 * 3600e3);
-  const seasonOf = (now, shift) => Math.max(1, (kst(now).getUTCFullYear() - SEASON0.y) * 12 + kst(now).getUTCMonth() + 1 - SEASON0.m + 1) + (shift || 0);
-  const seasonEnd = now => { const d = kst(now); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - 9 * 3600e3; };
-  // 시즌마다 바뀌는 특별 규칙 (매달 새 규칙이 열린다)
-  const SEASON_RULES = [
-    { icon: '🌱', name: '새싹 시즌', desc: '빈 땅을 차지하면 코인 2배!', color: '#16a34a', emptyX: 2 },
-    { icon: '⚔️', name: '결투 시즌', desc: '결투에서 이기면 코인 +10 보너스!', color: '#dc2626', duelBonus: 10 },
-    { icon: '🛡️', name: '수비 시즌', desc: '방어를 올리면 코인 2배!', color: '#2563eb', defendX: 2 },
-    { icon: '💣', name: '폭탄 시즌', desc: '상점 폭탄이 반값!', color: '#ea580c', sale: { bomb: 0.5 } },
-    { icon: '🎯', name: '미션 시즌', desc: '오늘의 미션 보상 2배!', color: '#9333ea', missionX: 2 },
-    { icon: '⏱️', name: '스피드 시즌', desc: '스피드 퀴즈 코인 2배!', color: '#0891b2', speedX: 2 },
-  ];
-  const seasonRule = n => SEASON_RULES[(Math.max(1, n) - 1) % SEASON_RULES.length];
-  const SEASON_PRIZE = [300, 200, 100], SEASON_JOIN = 50; // 학년 서버 1·2·3등 학교 학생, 참가한 학생 모두
-  const priceOf = (item, season) => { const it = SHOP.find(x => x.id === item), s = seasonRule(season).sale; return it ? Math.round(it.price * ((s && s[item]) || 1)) : Infinity; };
+  const priceOf = item => { const it = SHOP.find(x => x.id === item); return it ? it.price : Infinity; };
   // 1:1 결투: 땅 주인 학교가 문제 하나를 푸는 데 걸리는 시간(초). 학년이 높고 방어가 높을수록 빠르다
   const duelPace = (grade, def) => Math.max(4.5, 8.5 - grade * 0.35 - Math.min(def || 0, 20) * 0.05);
 
   return { PROJ, project, unproject, schoolYear, gradeFromBirthYear, BADGES, CHAT, decodeRing, sharedEdges, neighborsFromRings,
     BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK, MARK,
     SHOP, SHIELD_HOURS, SCOPE_MIN, BOMB_EXTRA, BOMB_MAX_DEF, FLAG_COLORS, FLAG_MARKS, attendCoins, MISSIONS, MISSION_ALL, dailyMissions,
-    SEASON0, seasonOf, seasonEnd, SEASON_RULES, seasonRule, SEASON_PRIZE, SEASON_JOIN, priceOf, duelPace };
+    priceOf, duelPace, DUEL_BONUS, cleanChat };
 });

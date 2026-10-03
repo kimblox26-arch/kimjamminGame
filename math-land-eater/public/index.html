@@ -105,7 +105,6 @@
     <div class="brand">매뜨<b>땅먹</b></div>
     <div class="hud">
       <span id="hudServer" class="pill server"></span>
-      <button type="button" id="hudSeason" class="pill season" hidden></button>
       <button type="button" id="hudCoins" class="pill coins" hidden>🪙 <b id="hudCoinN">0</b></button>
       <span id="hudScope" class="pill scope" hidden></span>
       <span id="hudOnline" class="pill online"></span>
@@ -118,6 +117,7 @@
       <button type="button" id="btnStudy" class="icon-btn" title="공부방 (연습 · 스피드 퀴즈 · 오답 노트)">✏️<i id="wrongCount" class="count" hidden></i></button>
       <button type="button" id="btnMission" class="icon-btn" title="오늘의 미션" hidden>🎯<i id="missionDot" class="count dot" hidden></i></button>
       <button type="button" id="btnShop" class="icon-btn" title="상점" hidden>🛒</button>
+      <button type="button" id="btnChat" class="icon-btn" title="채팅">💬<i id="chatDot" class="count dot" hidden></i></button>
       <button type="button" id="btnBadges" class="icon-btn" title="내 배지와 기록">🏅</button>
       <button type="button" id="btnBgm" class="icon-btn wide-only" title="배경 음악">🎵</button>
       <button type="button" id="btnSound" class="icon-btn wide-only" title="소리">🔊</button>
@@ -164,6 +164,7 @@
         <ul id="feed" class="feed"></ul>
         <div class="chatbox">
           <div class="seg small"><button type="button" class="chch on" data-ch="school">🏫 우리 학교</button><button type="button" class="chch" data-ch="all">🌐 전체</button></div>
+          <form id="chatForm" class="chat-form"><input id="chatInput" maxlength="60" placeholder="메시지 쓰기 (나쁜 말은 가려져요)" autocomplete="off" enterkeyhint="send"><button class="btn primary">보내기</button></form>
           <div id="chatBtns" class="chat-btns"></div>
         </div>
       </div>
@@ -269,7 +270,7 @@
 <div id="rankModal" class="modal" hidden>
   <div class="card rank-card">
     <div class="row between"><h3>📊 랭킹표</h3><button type="button" class="icon-btn" data-close="rankModal">✕</button></div>
-    <div class="seg rank-tabs"><button type="button" class="rtab on" data-t="school">🏫 학교</button><button type="button" class="rtab" data-t="player">🧒 학생</button><button type="button" class="rtab" data-t="sido">🗺️ 시·도</button><button type="button" class="rtab" data-t="hall">🏛️ 명예의 전당</button></div>
+    <div class="seg rank-tabs"><button type="button" class="rtab on" data-t="school">🏫 학교</button><button type="button" class="rtab" data-t="player">🧒 학생</button><button type="button" class="rtab" data-t="sido">🗺️ 시·도</button></div>
     <p id="rankSum" class="muted"></p>
     <div class="rank-wrap"><table class="rank-table"><thead id="rankHead"></thead><tbody id="rankBody"></tbody></table></div>
   </div>
@@ -331,10 +332,6 @@
       <div class="answer-row"><input id="admInvId" maxlength="16" placeholder="운영자로 만들 사람의 아이디" autocomplete="off"><button type="button" class="btn primary" id="admInvGo">📨 초대 보내기</button></div>
       <p class="muted">그 사람이 게임에 들어오면 <b>초대 창</b>이 떠요. 수락하고 자기 비밀번호로 <b>본인 인증</b>을 하면 운영자가 되고, 이름 오른쪽에 <span class="mark admin">✦</span> 표시가 생겨요. (개발자는 <span class="mark dev">♛</span>)</p>
       <ul id="admStaff" class="bans"></ul>
-      <h4>🏆 시즌</h4>
-      <p class="muted" id="admSeason"></p>
-      <button type="button" class="btn attack" id="admNextSeason">⏭️ 다음 시즌 바로 시작</button>
-      <p class="muted">모든 학년 서버의 땅이 처음 상태가 되고, 지난 시즌 1·2·3등 학교가 명예의 전당에 올라가요.</p>
     </div>
     <p class="muted">🚪 학교 학생 모두 퇴장은 <b>학교 정보 창</b>(학교 이름을 누르면 나와요)에 있어요.</p>
   </div>
@@ -346,6 +343,7 @@
     <p class="muted">켜 두면 문제를 풀지 않고 바로 할 수 있어요.</p>
     <button type="button" id="bugCapture" class="btn toggle"></button>
     <button type="button" id="bugDefend" class="btn toggle"></button>
+    <button type="button" id="bugCoins" class="btn toggle"></button>
     <div class="row end"><button type="button" class="btn" data-close="bugModal">닫기</button></div>
   </div>
 </div>
@@ -377,7 +375,7 @@
 <div id="shopModal" class="modal" hidden>
   <div class="card wide">
     <div class="row between"><h3>🛒 상점</h3><span class="coin-big">🪙 <b id="shopCoins">0</b></span><button type="button" class="icon-btn" data-close="shopModal">✕</button></div>
-    <p class="muted">문제 1개를 맞히면 <b>🪙 1코인</b>! 오늘의 미션 · 출석 · 스피드 퀴즈 · 시즌 보상으로도 모아요.</p>
+    <p class="muted">문제 1개를 맞히면 <b>🪙 1코인</b>! 오늘의 미션 · 출석 · 스피드 퀴즈 · 결투 승리 보너스로도 모아요.</p>
     <div id="shopList" class="shop-list"></div>
     <div id="flagBox" class="flag-box" hidden>
       <h4>🚩 우리 학교 깃발 꾸미기</h4>
@@ -386,14 +384,6 @@
       <div class="flag-preview"><span id="flagPreview"></span></div>
       <div class="row end"><button type="button" class="btn" id="flagCancel">취소</button><button type="button" class="btn primary" id="flagGo"></button></div>
     </div>
-  </div>
-</div>
-
-<!-- 시즌 -->
-<div id="seasonModal" class="modal" hidden>
-  <div class="card season-card">
-    <div id="seBody"></div>
-    <div class="row end"><button type="button" class="btn" id="seHall">🏛️ 명예의 전당</button><button type="button" class="btn primary" data-close="seasonModal">좋아요!</button></div>
   </div>
 </div>
 
@@ -432,11 +422,10 @@
       <li>🏷️ 우리 땅을 눌러 <b>땅 팔기</b>! 살 학교를 고르면(3학년까지는 닿아 있는 학교만) 그 학교는 <b>🛒 땅 사기</b>로 문제 없이 가져가요.</li>
       <li>지도에는 <b>산 이름(높이)</b>과 <b>섬 이름</b>이 나오고, <b>북한</b> 땅도 보여요(게임 땅은 아니에요). 섬은 <b>뱃길</b>로 이어져 있어요(섬 끝 땅을 누르면 점선이 보여요). 학년마다 서버가 따로 있고, 같은 학교 친구들과 함께 땅을 넓혀요.</li>
       <li>✏️ <b>연습하기</b>로 문제만 풀 수도 있고, 틀린 문제는 📒 <b>오답 노트</b>에 모여요. 🏅 배지도 모아 보세요!</li>
-      <li>💬 소식 탭에서 우리 학교 친구들에게 <b>빠른 채팅</b>을 보낼 수 있어요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>
-      <li>⚔️ <b>다른 학교 땅</b>을 뺏을 때는 땅 주인 학교와 <b>1:1 수학 결투</b>! 상대보다 <b>먼저</b> 다 맞혀야 땅을 가져와요.</li>
+      <li>💬 <b>채팅</b>: 위 💬 버튼을 누르면 우리 학교 친구들이나 전체에게 말을 쓸 수 있어요. 나쁜 말과 전화번호는 저절로 가려져요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>
+      <li>⚔️ <b>다른 학교 땅</b>을 뺏을 때는 땅 주인 학교와 <b>1:1 수학 결투</b>! 상대보다 <b>먼저</b> 다 맞혀야 땅을 가져오고, 이기면 🪙 보너스!</li>
       <li>🪙 문제 1개를 맞히면 <b>1코인</b>! 🛒 <b>상점</b>에서 🛡️ 방패(24시간 못 뺏김) · 💣 폭탄(한 번에 3칸) · 🔭 망원경(약한 땅 찾기) · 🚩 학교 깃발을 사요.</li>
       <li>🎯 <b>오늘의 미션</b>을 깨면 코인을 받아요. 매일 출석하면 출석 코인도! ✏️ 공부방의 <b>⏱️ 스피드 퀴즈</b>는 1분 동안 최대한 많이 맞히기예요.</li>
-      <li>🏆 <b>시즌</b>은 한 달에 한 번 바뀌어요. 새 시즌이 되면 모든 땅이 처음으로 돌아가고, 학년 서버 <b>1·2·3등 학교</b>는 🏛️ 명예의 전당에 올라가요. 시즌마다 특별 규칙도 바뀌어요!</li>
     </ol>
     <div class="row end"><button type="button" class="btn primary" data-close="helpModal">알겠어요!</button></div>
   </div>

@@ -74,10 +74,8 @@
   const connectCloud = () => cloudReady;
 
   // ---------- 지도 ----------
-  let NK_SIDO = new Set(), M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화·시즌마다 새 자리)
-  let season = 1, seasonShift = 0; // 시즌 번호 (한 달에 하나), 개발자가 '다음 시즌'을 누른 횟수
-  const wpFor = (ep, sn) => MAPWP + (ep ? 'r' + ep : '') + (sn > 1 ? 's' + sn : ''); // 시즌 1은 예전 자리를 그대로 쓴다
-  const setWP = () => { WP = wpFor(epoch, season); };
+  let NK_SIDO = new Set(), M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화마다 새 자리)
+  const setWP = () => { WP = MAPWP + (epoch ? 'r' + epoch : ''); };
   async function init(m, g) { // g: 화면 쪽이 계산한 이웃(nb)과 칸 위치(sx, sy)
     M = { n: m.n, nb: g.nbOf, sx: g.sx, sy: g.sy, nk: c => g.nkCell[c] === 1 }; // nb: 칸 → 이웃 칸들 (함수), nk: 북한 칸인지
     // 지도가 바뀌면 땅 기록은 새로 시작한다 (칸 번호가 달라지니까)
@@ -98,8 +96,8 @@
       } catch { /* 초기화 기록이 없으면 그대로 */ }
     }
     indexSchools();
+    setWP();
     await loadFlags();
-    await loadSeason();
   }
   // 학년마다 들고 있던 땅을 버리고 새 자리에서 처음부터 (화면에는 다시 불러오라고 알린다)
   function dropWorlds(ev) {
@@ -115,82 +113,6 @@
     setWP();
     dropWorlds({ kind: 'admin', by: by || '개발자', text: '🧨 서버를 처음부터 다시 시작했어요! 모든 땅이 처음 상태예요.' });
   }
-
-  // ---------- 시즌: 매달 1일에 새 시즌 (땅은 처음부터, 지난 시즌 1·2·3등 학교는 명예의 전당에) ----------
-  async function loadSeason() {
-    if (cloud) {
-      try { const r = await cloud.db.doc('meta/season').get(); seasonShift = r.exists ? r.data().shift || 0 : 0; } catch { /* 없으면 0 */ }
-      cloud.db.doc('meta/season').onSnapshot(snap => { const sh = snap.exists ? snap.data().shift || 0 : 0; if (sh !== seasonShift) { seasonShift = sh; checkSeason(); } }, () => {});
-    } else seasonShift = local.seasonShift || 0;
-    season = S.seasonOf(Date.now(), seasonShift);
-    if (!cloud) {
-      if (local.season != null && local.season !== season) rollLocal(local.season); // 게임을 안 켠 사이에 시즌이 바뀌었다
-      local.season = season;
-      save();
-    }
-    setWP();
-    if (cloud && season > 1) ensureHall(season - 1);
-    setInterval(checkSeason, 60e3);
-  }
-  function checkSeason() {
-    const n = S.seasonOf(Date.now(), seasonShift);
-    if (n === season) return;
-    if (!cloud) { rollLocal(season); local.season = n; save(); }
-    season = n;
-    setWP();
-    if (cloud) ensureHall(n - 1);
-    dropWorlds({ kind: 'season', season: n, text: `🎉 시즌 ${n} 시작! 모든 땅이 처음 상태로 돌아갔어요.` });
-  }
-  const topSchools = cnt => [...cnt.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 3)
-    .map(([sid, n]) => { const sc = schoolById(sid) || {}; return { sid, name: sc.name || '', sido: sc.sido || '', sigungu: sc.sigungu || '', land: n + 1 }; }); // +1: 본부
-  function rollLocal(prev) { // 이 기기: 지난 시즌 결과를 남기고 땅을 비운다
-    const grades = {};
-    for (const [g, w] of Object.entries(local.worlds || {})) {
-      const cnt = new Map();
-      for (const v of Object.values(w.cells || {})) if (v[0] >= 0) cnt.set(v[0], (cnt.get(v[0]) || 0) + 1);
-      if (cnt.size) grades[g] = topSchools(cnt);
-    }
-    local.hall = [{ season: prev, at: Date.now(), grades }].concat((local.hall || []).filter(h => h.season !== prev)).slice(0, 24);
-    local.worlds = {};
-  }
-  async function ensureHall(n) { // 친구들과 함께: 지난 시즌 결과를 처음 본 사람이 계산해서 남긴다
-    if (n < 1 || !cloud) return;
-    try {
-      const ref = cloud.db.doc('hall/s' + n);
-      if ((await ref.get()).exists) return;
-      const wp = wpFor(epoch, n), grades = {};
-      for (let g = 1; g <= 6; g++) {
-        const snap = await cloud.db.collection(`${wp}/g${g}/c`).get(), cnt = new Map();
-        snap.docs.forEach(d => { for (const v of Object.values(d.data() || {})) if (v[0] >= 0) cnt.set(v[0], (cnt.get(v[0]) || 0) + 1); });
-        if (cnt.size) grades[g] = topSchools(cnt);
-      }
-      await ref.set({ season: n, at: Date.now(), grades });
-    } catch (e) { console.warn('명예의 전당 저장 실패', e); }
-  }
-  async function hallList() {
-    if (!cloud) return local.hall || [];
-    try { const snap = await cloud.db.collection('hall').get(); return snap.docs.map(d => d.data()).sort((a, b) => b.season - a.season).slice(0, 24); } catch { return []; }
-  }
-  const seasonView = () => ({ n: season, end: S.seasonEnd(), shift: seasonShift });
-  // 새 시즌에 처음 들어오면: 지난 시즌 결과와 상 (한 번만)
-  async function seasonNews(u, grade) {
-    if (u.seenSeason === season) return null;
-    const prevN = season - 1;
-    let list = prevN >= 1 ? await hallList() : [], prev = list.find(h => h.season === prevN);
-    if (prevN >= 1 && cloud && !prev) { await ensureHall(prevN); list = await hallList(); prev = list.find(h => h.season === prevN); }
-    const top = prev && prev.grades ? prev.grades[grade] || [] : [], out = { n: season, prev: prevN >= 1 ? { n: prevN, top } : null, coins: 0, place: 0, joined: false };
-    if (prevN >= 1 && !(u.seasonPaid || {})[prevN]) {
-      const k = top.findIndex(x => x.sid === profileSchool(u));
-      if (k >= 0) { out.place = k + 1; out.coins += S.SEASON_PRIZE[k]; (u.trophies = u.trophies || []).push({ season: prevN, place: k + 1, school: top[k].name }); }
-      if (u.seasonCap && u.seasonCap.s === prevN && u.seasonCap.n > 0) { out.joined = true; out.coins += S.SEASON_JOIN; }
-      u.seasonPaid = Object.assign({}, u.seasonPaid, { [prevN]: true });
-      earn(u, out.coins);
-    }
-    u.seenSeason = season;
-    save();
-    return out;
-  }
-  const bumpSeason = (u, n) => { if (!u.seasonCap || u.seasonCap.s !== season) u.seasonCap = { s: season, n: 0 }; u.seasonCap.n += n; };
 
   // ---------- 학교 깃발 (색깔 + 마크): 학교 이름으로 기억하고, 시즌이 바뀌어도 그대로 ----------
   let flags = {};
@@ -429,9 +351,9 @@
     return { days: st.days, streak: st.dayStreak, coins };
   }
   // 코인과 아이템
-  const walletOf = u => { u.coins = u.coins || 0; u.items = Object.assign({ shield: 0, bomb: 0, scope: 0 }, u.items); return u; };
+  const INF = 999999;
+  const walletOf = u => { u.coins = u.infCoins ? INF : u.coins || 0; u.items = Object.assign({ shield: 0, bomb: 0, scope: 0 }, u.items); return u; }; // 🐛 코인 무한이면 늘 가득
   const earn = (u, n) => { walletOf(u).coins += Math.max(0, Math.round(n || 0)); };
-  const rule = () => S.seasonRule(season);
   // 오늘의 미션: 날짜가 바뀌면 새 미션 3개
   function missionOf(u) {
     const day = koreaDay();
@@ -442,7 +364,7 @@
     for (const m of missionOf(u).list) { const d = S.MISSIONS.find(x => x.id === m.id); if (d.key === key) m.p = d.max ? Math.max(m.p, v) : m.p + v; }
   }
   function missionView(u) {
-    const ms = missionOf(u), x = rule().missionX || 1;
+    const ms = missionOf(u), x = 1;
     const list = ms.list.map(m => { const d = S.MISSIONS.find(y => y.id === m.id); return { id: m.id, icon: d.icon, text: d.text(m.n), n: m.n, p: Math.min(m.p, m.n), done: m.done, coin: d.coin * x }; });
     return { day: ms.day, list, bonus: ms.bonus, bonusCoin: S.MISSION_ALL * x, ready: list.filter(m => !m.done && m.p >= m.n).length + (!ms.bonus && list.every(m => m.done) ? 1 : 0) };
   }
@@ -457,7 +379,7 @@
     const sid = profileSchool(u);
     return {
       username: u.username, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u), badges: u.badges || [], role: u.role || null, builtin: isBuiltin(u),
-      coins: walletOf(u).coins, items: u.items, scopeUntil: u.scopeUntil || 0, trophies: u.trophies || [],
+      coins: walletOf(u).coins, infCoins: !!u.infCoins, items: u.items, scopeUntil: u.scopeUntil || 0, trophies: u.trophies || [],
       profile: sid >= 0 ? { schoolId: sid, semester: u.profile.semester, nickname: u.profile.nickname } : null,
     };
   }
@@ -626,7 +548,7 @@
       const chat = rt.feed.filter(m => m.t === 'chat' && (m.ch === 'all' || m.sid === a.sid)).map(m => Object.assign({}, m, { t: 'chat' }));
       await syncRole(a.u);
       const res = { grade: a.grade, owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared(),
-        user: publicUser(a.u), shields: liveShields(rt), flags: flagView(), season: seasonView(), news: await seasonNews(a.u, a.grade), mission: missionView(a.u).ready, invite: await inviteOf(a.u) };
+        user: publicUser(a.u), shields: liveShields(rt), flags: flagView(), mission: missionView(a.u).ready, invite: await inviteOf(a.u) };
       publishCard(a.u);
       return res;
     },
@@ -667,13 +589,12 @@
         st.solved += required;
         noteStreak(a.u, b.streak);
         track(a.u, 'solved', required);
-        got = required * (prev < 0 ? rule().emptyX || 1 : 1) + (b.duel && prev >= 0 ? rule().duelBonus || 0 : 0); // 푼 문제 1개 = 1코인
+        got = required + (b.duel && prev >= 0 ? S.DUEL_BONUS : 0); // 푼 문제 1개 = 1코인, 결투에서 이기면 보너스
         earn(a.u, got);
       }
       st.captures++;
       if (prev >= 0) st.steals++;
       track(a.u, 'captures', 1); if (prev >= 0) track(a.u, 'steals', 1);
-      bumpSeason(a.u, 1);
       setCell(rt, cell, sid, 0);
       save();
       const cells = [[cell, sid, 0]], ev = { kind: 'capture', by: a.u.profile.nickname, role: a.u.role || null, sid, prev, cell, far: !!cost.far, escape: !!cost.escape, duel: !!b.duel };
@@ -690,7 +611,7 @@
       const st = statsOf(a.u);
       if (b.cheat) { if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403); }
       else if ((Number(b.solved) || 0) < amount) fail(`문제를 ${amount}개 풀어야 방어할 수 있어요.`);
-      else { st.solved += amount; noteStreak(a.u, b.streak); track(a.u, 'solved', amount); earn(a.u, amount * (rule().defendX || 1)); }
+      else { st.solved += amount; noteStreak(a.u, b.streak); track(a.u, 'solved', amount); earn(a.u, amount); }
       st.defends += amount;
       track(a.u, 'defends', amount);
       setCell(rt, cell, sid, Math.min(MAX_DEF, rt.def[cell] + amount));
@@ -741,16 +662,9 @@
     'POST /api/admin': async (t, q, b) => {
       const a0 = needLogin(t), u = a0.u;
       if (!u.role) fail('운영자만 할 수 있어요.', 403);
-      if (['invite', 'staff', 'unstaff', 'nextSeason'].includes(b.act)) { // 개발자만: 운영자 추가·해제, 다음 시즌
+      if (['invite', 'staff', 'unstaff'].includes(b.act)) { // 개발자만: 운영자 추가·해제
         if (u.role !== 'dev') fail('개발자만 할 수 있어요.', 403);
         const by = u.profile ? u.profile.nickname : '개발자';
-        if (b.act === 'nextSeason') {
-          seasonShift++;
-          if (cloud) await cloud.db.doc('meta/season').set({ shift: seasonShift, by, at: Date.now() });
-          else { local.seasonShift = seasonShift; save(); }
-          checkSeason();
-          return { ok: true, reload: true, text: `시즌 ${season}을(를) 바로 시작했어요` };
-        }
         let text = '';
         if (b.act === 'invite') {
           const name = lc(b.username), lu = local.users[userKey(name)];
@@ -878,6 +792,15 @@
       save();
       return { ok: true };
     },
+    'POST /api/debug/coins': async (t, q, b) => { // 🐛 버그 창: 코인 무한
+      const a = needLogin(t);
+      if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403);
+      if (b.on && !a.u.infCoins) a.u.coinsBefore = a.u.coins || 0;
+      if (!b.on && a.u.infCoins) a.u.coins = a.u.coinsBefore || 0; // 끄면 켜기 전 코인으로
+      a.u.infCoins = !!b.on;
+      save();
+      return { ok: true, user: publicUser(a.u) };
+    },
     'GET /api/wrong': async t => ({ list: needLogin(t).u.wrong || [] }),
     'POST /api/wrong': async (t, q, b) => {
       const a = needLogin(t), p = cleanProblem(b.p), list = (a.u.wrong || []).filter(x => x.p.q !== p.q);
@@ -903,16 +826,24 @@
       return { stats: st, badges: newBadges(a.u), coins: a.u.coins, got: n, mission: missionView(a.u).ready };
     },
     'POST /api/chat': async (t, q, b) => {
-      const a = await needPlayer(t), m = Number(b.m), ch = b.ch === 'school' ? 'school' : 'all', now = Date.now();
-      if (!Number.isInteger(m) || !S.CHAT[m]) fail('보낼 말을 골라 주세요.');
+      const a = await needPlayer(t), ch = b.ch === 'school' ? 'school' : 'all', now = Date.now(), item = { t: 'chat', ch, sid: a.sid, by: a.u.profile.nickname, role: a.u.role || null };
+      if (b.text != null) { // 직접 쓴 말: 나쁜 말·전화번호는 가린다
+        const text = S.cleanChat(b.text);
+        if (!text) fail('보낼 말을 써 주세요.');
+        item.text = text;
+      } else {
+        const m = Number(b.m);
+        if (!Number.isInteger(m) || !S.CHAT[m]) fail('보낼 말을 골라 주세요.');
+        item.m = m;
+      }
       if (now - (a.s.lastChat || 0) < 2500) fail('조금 천천히 보내 주세요.');
       a.s.lastChat = now;
-      await pushFeed(a.rt, { t: 'chat', ch, sid: a.sid, by: a.u.profile.nickname, role: a.u.role || null, m });
+      await pushFeed(a.rt, item);
       return { ok: true };
     },
     // ⏱️ 스피드 퀴즈: 1분 동안 맞힌 수만큼 코인
     'POST /api/speed': async (t, q, b) => {
-      const a = await needPlayer(t), st = statsOf(a.u), n = Math.max(0, Math.min(60, Math.floor(Number(b.score) || 0))), got = n * (rule().speedX || 1);
+      const a = await needPlayer(t), st = statsOf(a.u), n = Math.max(0, Math.min(60, Math.floor(Number(b.score) || 0))), got = n;
       st.solved += n;
       st.speedBest = Math.max(st.speedBest || 0, n);
       noteStreak(a.u, b.streak);
@@ -925,7 +856,7 @@
     // 🎯 오늘의 미션
     'GET /api/missions': async t => { const a = needLogin(t); return Object.assign(missionView(a.u), { coins: walletOf(a.u).coins }); },
     'POST /api/missions/claim': async (t, q, b) => {
-      const a = needLogin(t), u = a.u, ms = missionOf(u), x = rule().missionX || 1;
+      const a = needLogin(t), u = a.u, ms = missionOf(u), x = 1;
       let got;
       if (b.id === 'bonus') {
         if (ms.bonus || !ms.list.every(m => m.done)) fail('미션 세 개의 보상을 모두 받아야 해요.');
@@ -941,9 +872,9 @@
       return Object.assign(missionView(u), { coins: u.coins, got });
     },
     // 🛒 상점
-    'GET /api/shop': async t => { const u = walletOf(needLogin(t).u); return { coins: u.coins, items: u.items, prices: Object.fromEntries(S.SHOP.map(it => [it.id, S.priceOf(it.id, season)])), scopeUntil: u.scopeUntil || 0 }; },
+    'GET /api/shop': async t => { const u = walletOf(needLogin(t).u); return { coins: u.coins, items: u.items, prices: Object.fromEntries(S.SHOP.map(it => [it.id, S.priceOf(it.id)])), scopeUntil: u.scopeUntil || 0 }; },
     'POST /api/shop/buy': async (t, q, b) => {
-      const u = walletOf(needLogin(t).u), id = String(b.id || ''), price = S.priceOf(id, season);
+      const u = walletOf(needLogin(t).u), id = String(b.id || ''), price = S.priceOf(id);
       if (!['shield', 'bomb', 'scope'].includes(id)) fail('없는 아이템이에요.');
       if (u.coins < price) fail(`코인이 모자라요. (${price}코인 필요)`);
       u.coins -= price;
@@ -980,7 +911,6 @@
       u.items.bomb--;
       st.captures += cells.length; st.steals += steals;
       track(u, 'items', 1); track(u, 'captures', cells.length); if (steals) track(u, 'steals', steals);
-      bumpSeason(u, cells.length);
       save();
       const ev = { kind: 'bomb', by: u.profile.nickname, role: u.role || null, sid, n: cells.length, cell };
       persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
@@ -998,7 +928,7 @@
     },
     // 🚩 학교 깃발 꾸미기
     'POST /api/flag': async (t, q, b) => {
-      const a = await needPlayer(t), u = walletOf(a.u), c = String(b.c || ''), m = String(b.m || ''), price = S.priceOf('flag', season);
+      const a = await needPlayer(t), u = walletOf(a.u), c = String(b.c || ''), m = String(b.m || ''), price = S.priceOf('flag');
       if (!S.FLAG_COLORS.includes(c) || !S.FLAG_MARKS.includes(m)) fail('색깔과 마크를 골라 주세요.');
       if (u.coins < price) fail(`코인이 모자라요. (${price}코인 필요)`);
       u.coins -= price;
@@ -1008,8 +938,6 @@
       await saveFlags();
       return { ok: true, flags: flagView(), coins: u.coins, mission: missionView(u).ready };
     },
-    // 🏛️ 명예의 전당 (시즌마다 학년 서버 1·2·3등 학교)
-    'GET /api/hall': async t => { needLogin(t); return { list: await hallList(), season: seasonView() }; },
     // 📨 운영자 초대 받기
     'POST /api/invite/accept': async (t, q, b) => {
       const a = needLogin(t), u = a.u, name = lc(u.username);
