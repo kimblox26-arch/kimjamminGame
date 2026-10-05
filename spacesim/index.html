@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#02040a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SpaceSim">
+<title>SpaceSim</title>
+<meta name="description" content="SpaceSim — 웹 기반 3D 천체물리 시뮬레이터: N-체 중력, 블랙홀 광선추적, 은하 충돌, 구상성단, 삼체 문제">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Orbitron:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="gl" tabindex="0"></canvas>
+<div id="labels"></div>
+
+<header id="topbar">
+  <button id="btn-menu" class="icon-btn glass" aria-label="시나리오" data-icon="menu"></button>
+  <div class="brand-block glass">
+    <div class="app-name">SPACE<b>SIM</b></div>
+    <div id="scenario-name">—</div>
+  </div>
+  <div class="spacer"></div>
+  <div id="clock" class="glass"><div id="clock-main">—</div><div id="clock-sub"></div></div>
+  <div class="top-actions glass">
+    <button id="btn-shot" class="icon-btn btn-opt" aria-label="스크린샷" data-icon="camera"></button>
+    <button id="btn-hide" class="icon-btn" aria-label="UI 숨기기" data-icon="eye"></button>
+    <button id="btn-full" class="icon-btn" aria-label="전체 화면" data-icon="expand"></button>
+    <button id="btn-settings" class="icon-btn" aria-label="설정" data-icon="gear"></button>
+  </div>
+</header>
+
+<div id="drawer-scrim"></div>
+<nav id="drawer">
+  <div class="drawer-head"><h2>SCENARIOS</h2><button id="btn-drawer-close" class="icon-btn" data-icon="close" aria-label="닫기"></button></div>
+  <p class="drawer-sub">천체물리 시뮬레이션을 선택하세요</p>
+  <div id="scn-list"></div>
+</nav>
+
+<aside id="info" class="glass hidden"></aside>
+<aside id="panel" class="glass hidden"></aside>
+
+<footer id="dock" class="glass">
+  <button id="btn-reset" class="icon-btn" aria-label="초기화" data-icon="reset"></button>
+  <button id="btn-play" class="icon-btn" aria-label="재생/일시정지" data-icon="pause"></button>
+  <div class="warp">
+    <div class="warp-label"><span>시간 배속</span><b id="warp-text">—</b></div>
+    <input id="warp" type="range" min="0" max="1000" value="500" aria-label="시간 배속">
+  </div>
+  <div class="dock-sep"></div>
+  <button id="btn-trails" class="icon-btn on opt" aria-label="궤적" data-icon="trail"></button>
+  <button id="btn-labels" class="icon-btn on opt" aria-label="이름표" data-icon="tag"></button>
+  <button id="btn-focus" class="icon-btn" aria-label="시점 초기화" data-icon="target"></button>
+  <button id="btn-panel" class="icon-btn" aria-label="시나리오 제어" data-icon="sliders"></button>
+</footer>
+
+<div id="perf"></div>
+<div id="toast" class="glass"></div>
+
+<div id="settings" class="hidden">
+  <div class="modal glass">
+    <h2>SETTINGS <button id="btn-settings-close" class="icon-btn" data-icon="close" aria-label="닫기"></button></h2>
+    <section>
+      <h5>그래픽 품질</h5>
+      <div class="chips" id="q-chips"></div>
+      <p class="hint" id="q-hint"></p>
+    </section>
+    <section>
+      <div class="ctl"><div class="ctl-label">블룸 강도 <i id="bloom-v"></i></div><input id="s-bloom" type="range" min="0" max="200" value="100"></div>
+      <div class="ctl"><div class="ctl-label">노출 <i id="exp-v"></i></div><input id="s-exposure" type="range" min="30" max="250" value="100"></div>
+    </section>
+    <section>
+      <h5>표시</h5>
+      <label class="toggle">궤도 타원 표시 <input type="checkbox" id="s-orbits" checked><span class="sw"></span></label>
+      <label class="toggle">천체 위치 마커 <input type="checkbox" id="s-markers" checked><span class="sw"></span></label>
+      <label class="toggle">시네마틱 자동 회전 <input type="checkbox" id="s-autorot"><span class="sw"></span></label>
+      <label class="toggle">동적 해상도 (프레임 유지) <input type="checkbox" id="s-dynres" checked><span class="sw"></span></label>
+      <label class="toggle">성능 정보 <input type="checkbox" id="s-perf" checked><span class="sw"></span></label>
+      <label class="toggle">우주 앰비언트 사운드 <input type="checkbox" id="s-sound"><span class="sw"></span></label>
+    </section>
+    <section>
+      <h5>조작</h5>
+      <p class="hint">한 손가락/마우스 드래그: 회전 · 두 손가락 핀치/휠: 확대 · 두 손가락 드래그/우클릭: 이동 · 천체 탭: 추적 · 더블탭: 근접<br>
+      키보드: Space 재생/정지 · [ ] 배속 · R 초기화 · F 추적 해제 · H UI 숨김 · 1–7 시나리오</p>
+    </section>
+  </div>
+</div>
+
+<section id="intro">
+  <canvas id="intro-stars"></canvas>
+  <div class="intro-inner">
+    <div class="logo">SPACE<span>SIM</span></div>
+    <div class="tagline">Astrophysical Simulation Software</div>
+    <div class="load-bar"><i id="load-bar"></i></div>
+    <div id="load-text">초기화 중…</div>
+    <button id="btn-start" hidden>시뮬레이션 시작</button>
+    <div class="intro-feats">N-BODY GRAVITY · SCHWARZSCHILD RAY TRACING · GALACTIC DYNAMICS</div>
+  </div>
+</section>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

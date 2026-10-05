@@ -1,0 +1,10 @@
+{
+  "name": "SpaceSim — Astrophysical Simulation Software",
+  "short_name": "SpaceSim",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#02040a",
+  "theme_color": "#02040a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
