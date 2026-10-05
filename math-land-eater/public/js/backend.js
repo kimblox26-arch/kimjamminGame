@@ -37,7 +37,8 @@
   // ---------- 공유 저장소 (claude.ai) ----------
   let cloud = null; // { db, room, kind }
   // Firebase: 스크립트를 받아서 Firestore 를 연다 (익명 로그인이 켜져 있으면 로그인도)
-  const loadScript = src => new Promise((ok, no) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = no; document.head.appendChild(el); });
+  const scripts = {}; // 같은 스크립트는 한 번만 받는다
+  const loadScript = src => scripts[src] || (scripts[src] = new Promise((ok, no) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = no; document.head.appendChild(el); }));
   async function firebaseStart(cfg, part) {
     const V = 'https://www.gstatic.com/firebasejs/10.12.2/';
     if (!window.firebase) await loadScript(V + 'firebase-app-compat.js');
@@ -146,7 +147,11 @@
   const cloudReady = (async () => {
     const fb = window.MLE_FIREBASE;
     if (fb && fb.projectId) {
-      try { cloud = await Promise.race([(fb.databaseURL ? rtdbCloud : firebaseCloud)(fb), new Promise(res => setTimeout(() => res(null), 45000))]); } catch (e) { console.warn('Firebase 연결 실패', e); cloud = null; }
+      const within = pr => Promise.race([pr, new Promise(res => setTimeout(() => res(null), 45000))]);
+      try { cloud = await within(fb.databaseURL ? rtdbCloud(fb) : firebaseCloud(fb)); } catch (e) {
+        console.warn('Firebase 연결 실패', e); cloud = null;
+        if (fb.databaseURL) try { cloud = await within(firebaseCloud(fb)); } catch { cloud = null; } // Realtime Database 규칙이 아직 막혀 있으면 예전 저장소(Firestore)로
+      }
       return;
     }
     if (!window.claude || typeof window.claude.use !== 'function') return;
