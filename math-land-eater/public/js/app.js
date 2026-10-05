@@ -17,8 +17,34 @@
   let token = store.get('mle_token'), me = null, W = null, es = null, online = 0, sel = -1, streak = 0, best = 0, chatCh = 'school', wrongN = 0;
   const cheat = { unlocked: false, capture: false, defend: false };
   const mySid = () => (me && me.profile ? me.profile.schoolId : -1);
-  const short = sid => (schools[sid] ? schools[sid].name.replace(/초등학교$/, '초') : '어떤 학교');
-  const costOf = i => S.captureCost({ owner: W.owner, def: W.def, nb: G.nbOf, sid: mySid(), cell: i, grade: me.grade, escape: exits, nk: c => G.nkCell[c] === 1, size: myLand });
+  const short = sid => (schools[sid] ? schools[sid].name.replace(/초등학교$/, '초').replace(/중학교$/, '중').replace(/고등학교$/, '고') : '어떤 학교');
+  const srvName = () => S.serverName(S.serverOf(me.grade)); // 4학년 서버 / 중학교 서버 / 고등학교 서버
+  const LVL = () => (G && G.level) || 'e'; // 지금 불러온 지도의 학교급
+  // 전쟁 (중·고등학교): 학교 키로 편을 가른다
+  let wars = [], warSkew = 0;
+  const skeyOf = sid => (schools[sid] ? `${schools[sid].sido}|${schools[sid].sigungu}|${schools[sid].name}` : '');
+  const sidByKey = k => schools.findIndex(x => x && `${x.sido}|${x.sigungu}|${x.name}` === k);
+  const nowS = () => Date.now() + warSkew;
+  function actSid(i) { // 동맹 학교가 상대편 땅을 뺏으면 돕는 학교 땅이 된다
+    const prev = W.owner[i];
+    if (!wars.length || prev < 0) return mySid();
+    const mk = skeyOf(mySid()), pk = skeyOf(prev), now = nowS();
+    for (const w of wars) {
+      if (!S.warLive(w, now)) continue;
+      const ms = S.warSide(w, mk), ps = S.warSide(w, pk);
+      if (ms && ps && ms !== ps) { const id = sidByKey(ms === 'a' ? w.a : w.b); return id >= 0 ? id : mySid(); }
+    }
+    return mySid();
+  }
+  const landOf = sid => { let k = 0; for (const i of owned) if (W.owner[i] === sid) k++; return k; };
+  const hasPort = sid => { for (const i of owned) if (W.owner[i] === sid && !G.sides[i]) return true; return false; };
+  const costOf = i => {
+    const sid = actSid(i), mine = sid === mySid(), jp = G.jpCell ? c => G.jpCell[c] === 1 : null;
+    const ship = jp && jp(i) ? { coast: !G.sides[i], get port() { return hasPort(sid); }, have: ((me.items || {}).ship || 0) > 0 } : null; // 일본 땅: 배를 댈 수 있는지
+    const c = S.captureCost({ owner: W.owner, def: W.def, nb: G.nbOf, sid, cell: i, grade: me.grade, escape: mine ? exits : undefined, nk: c => G.nkCell[c] === 1, jp, ship, size: mine ? myLand : () => landOf(sid) });
+    if (!c.error && wars.length && W.owner[i] >= 0) { const b = S.warRule(wars, nowS(), skeyOf(mySid()), skeyOf(W.owner[i])); if (b) return Object.assign(b, { war: true }); }
+    return c;
+  };
   const needToTake = i => { const c = costOf(i); return c.error ? Math.max(S.BASE_COST, W.def[i]) : c.cost; };
   // 새 기능(코인·상점·미션·시즌·결투·운영자 초대)은 브라우저 안 게임 서버(backend.js)에서 돌아간다
   const FEAT = !!window.MLEBackend;
@@ -133,7 +159,8 @@
   // ---------- 공통 ----------
   // 밴(423)이면 정지 화면, 학교에서 퇴장(409)이면 학교 다시 고르기
   function special(d) {
-    if (d.code === 423 && d.ban) showBanned(d.ban);
+    if (d.code === 426 && d.level) switchLevel(d.level); // 다른 학교급 지도가 필요하다
+    else if (d.code === 423 && d.ban) showBanned(d.ban);
     else if (d.code === 409 && me && me.profile && /퇴장/.test(d.error || '')) kickedOut();
     return d;
   }
@@ -199,7 +226,8 @@
   const breathe = () => new Promise(r => setTimeout(r, 0)); // 화면이 진행률을 그릴 틈
   async function loadMap() {
     prog(2, '지도를 받는 중…');
-    const res = await fetch(window.MLE_MAP_URL || '/api/map');
+    const lvWant = store.get('mle_level'), lvUrls = window.MLE_MAPS && window.MLE_MAPS[lvWant]; // 중·고등학생은 자기 학교급 지도
+    const res = await fetch(lvUrls ? lvUrls[0] : window.MLE_MAP_URL || '/api/map');
     if (!res.ok) throw new Error('지도를 받을 수 없어요.');
     const m = await res.json();
     if (window.MLEIntro) window.MLEIntro.setLand(m.land, m.W, m.H); // 인트로에 진짜 한반도 모양
@@ -212,7 +240,7 @@
     // map.bin: 칸 모양을 작게 줄여 둔 파일 (만드는 법은 lib/mapgen.js 의 encodeBin).
     // 50만 칸을 칸마다 따로 담으면 메모리가 너무 커서, 꼭짓점을 큰 배열 하나(G.xy)에 이어 담는다:
     // 고리 r 의 좌표 = G.xy[G.ro[r] .. G.ro[r + 1]), 칸 i 의 고리 = G.cr[i] .. G.cr[i + 1] - 1
-    const binUrl = window.MLE_MAP_BIN_URL || '/api/map.bin';
+    const binUrl = lvUrls ? lvUrls[1] : window.MLE_MAP_BIN_URL || '/api/map.bin';
     let buf;
     if (Array.isArray(binUrl)) { // 아티팩트용: base64 글자로 바꿔 여러 파일로 나눈 지도
       let got = 0;
@@ -230,9 +258,15 @@
     prog(40, `땅 ${m.n.toLocaleString()}칸을 만드는 중…`); await breathe();
     const n = new DataView(buf.buffer).getUint32(4, true);
     if (n !== m.n) throw new Error('지도 파일이 서로 맞지 않아요. 새로고침 해 주세요.');
-    G.sides = buf.slice(8, 8 + n); // 칸마다 변 수, 높은 비트(128)는 북한 칸
+    G.sides = buf.slice(8, 8 + n); // 칸마다 변 수, 높은 비트(128)는 북한 칸, 그다음 비트(64)는 일본 칸 (일본이 있는 지도만)
     G.nkCell = new Uint8Array(n);
-    for (let i = 0; i < n; i++) if (G.sides[i] & 128) { G.nkCell[i] = 1; G.sides[i] &= 127; }
+    G.level = m.level || 'e';
+    G.jpLand = m.jpLand != null ? m.jpLand : null;
+    if (G.jpLand != null) G.jpCell = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      if (G.sides[i] & 128) { G.nkCell[i] = 1; G.sides[i] &= 127; }
+      if (G.jpCell && G.sides[i] & 64) { G.jpCell[i] = 1; G.sides[i] &= 63; }
+    }
     const u = () => { let v = 0, sh = 0, b; do { b = buf[p++]; v += (b & 0x7f) * 2 ** sh; sh += 7; } while (b & 0x80); return v; };
     let p = 8 + n, R = 0, X = 0; // 먼저 고리·꼭짓점 수만 세어서 배열을 딱 맞게 만든다 (메모리 아끼기)
     for (let i = 0; i < n; i++) { const rc = u(); R += rc; for (let k = 0; k < rc; k++) { const L = u(); X += 2 * L; for (let q = 0; q < 2 * L; q++) u(); } }
@@ -301,7 +335,7 @@
     G.nkLand = m.nkLand != null ? m.nkLand : G.land.length;
     G.vb = { x0: 0, y0: 0, x1: G.W, y1: G.H };
     const sk = [Infinity, Infinity, -Infinity, -Infinity];
-    G.landBox.forEach((b, k) => { if (k < G.nkLand) { sk[0] = Math.min(sk[0], b[0]); sk[1] = Math.min(sk[1], b[1]); sk[2] = Math.max(sk[2], b[2]); sk[3] = Math.max(sk[3], b[3]); } });
+    G.landBox.forEach((b, k) => { if (k < G.nkLand || (G.jpLand != null && k >= G.jpLand)) { sk[0] = Math.min(sk[0], b[0]); sk[1] = Math.min(sk[1], b[1]); sk[2] = Math.max(sk[2], b[2]); sk[3] = Math.max(sk[3], b[3]); } });
     G.miniBox = { x0: sk[0] - 300, y0: sk[1] - 300, w: sk[2] - sk[0] + 600, h: sk[3] - sk[1] + 600 };
     // 산·섬 이름
     G.places = (m.places || []).map(([type, name, x, y, h]) => ({ type, name, x, y, h }));
@@ -509,8 +543,9 @@
     birth.innerHTML = '<option value="">출생연도를 골라요</option>' +
       Array.from({ length: 17 }, (_, k) => sy - 4 - k).map(y => `<option value="${y}">${y}년생</option>`).join('');
     birth.onchange = () => {
-      const y = +birth.value, g = S.gradeFromBirthYear(y), ok = g >= 1 && g <= 6;
-      $('#suGrade').textContent = !y ? '' : ok ? `✅ ${y}년생 → ${g}학년 (${g}학년 서버에서 놀아요)` : `❌ 초등학생(${sy - 12}~${sy - 7}년생)만 가입할 수 있어요.`;
+      const y = +birth.value, g = S.gradeFromBirthYear(y), ok = g >= 1 && g <= S.MAX_GRADE, lv = S.levelOf(g), there = lv === LVL() || !!(window.MLE_MAPS && window.MLE_MAPS[lv]);
+      $('#suGrade').textContent = !y ? '' : !ok ? `❌ 초등학생부터 고등학생까지(${sy - 18}~${sy - 7}년생)만 가입할 수 있어요.`
+        : !there ? `❌ ${S.LEVEL_NAME[lv]} 서버는 게임 사이트(math-land-eater.github.io/play)에서 열려요.` : `✅ ${y}년생 → ${S.gradeName(g)} (${S.serverName(S.serverOf(g))}에서 놀아요)`;
       $('#suGrade').className = 'note ' + (y && !ok ? 'bad' : '');
     };
     $('#loginForm').onsubmit = async e => {
@@ -538,8 +573,17 @@
     route();
   }
   function route() {
-    if (me.grade < 1 || me.grade > 6) { toast('초등학생(1~6학년)만 플레이할 수 있어요.', 'err'); return logoutLocal(); }
+    if (me.grade < 1 || me.grade > S.MAX_GRADE) { toast('초등학생부터 고등학생까지만 플레이할 수 있어요.', 'err'); return logoutLocal(); }
+    if (S.levelOf(me.grade) !== LVL()) return switchLevel(S.levelOf(me.grade));
+    document.body.dataset.lv = LVL(); // 학교급마다 화면 꾸밈 (고등학교는 새 화면)
     if (me.profile) startGame(); else openSetup();
+  }
+  // 학교급이 다르면 그 학교급 지도를 받아서 다시 연다 (로그인은 그대로)
+  function switchLevel(lv) {
+    if (!(window.MLE_MAPS && window.MLE_MAPS[lv])) { toast(`${S.LEVEL_NAME[lv]} 서버는 게임 사이트(math-land-eater.github.io/play)에서 열려요.`, 'err'); return logoutLocal(); }
+    store.set('mle_level', lv);
+    toast(`🏫 ${S.LEVEL_NAME[lv]} 지도를 불러올게요…`, 'ok');
+    setTimeout(() => location.reload(), 700);
   }
   function logoutLocal(msg) {
     token = null;
@@ -664,12 +708,13 @@
       : '<div class="muted pad">이 동네에는 등록된 학교가 없어요. 아래 "직접 등록하기"를 눌러 보세요.</div>';
   }
   async function openSetup() {
+    $('#stCName').placeholder = `학교 이름 (예: 햇살${S.LEVEL_NAME[LVL()]})`;
     show('setup');
     const d = await api('/api/schools');
     mergeCustom(d.custom);
     const p = me.profile || {}, m = new Date().getMonth(), cur = p.schoolId != null ? schools[p.schoolId] : null;
-    $('#stGrade').innerHTML = me.role ? `<b>${me.grade}학년 서버</b> <span class="muted">(${S.ROLE_NICK[me.role]} 계정 · 🛠️ 관리 창에서 학년 서버를 바꿀 수 있어요)</span>`
-      : `<b>${me.grade}학년</b> <span class="muted">(${me.birthYear}년생 · 나이 인증으로 정해졌어요 · ${me.grade}학년 서버)</span>`;
+    $('#stGrade').innerHTML = me.role ? `<b>${srvName()}</b> <span class="muted">(${S.ROLE_NICK[me.role]} 계정 · 🛠️ 관리 창에서 서버를 바꿀 수 있어요)</span>`
+      : `<b>${S.gradeName(me.grade)}</b> <span class="muted">(${me.birthYear}년생 · 나이 인증으로 정해졌어요 · ${srvName()})</span>`;
     setSemester(p.semester || (m >= 1 && m <= 6 ? 1 : 2));
     $('#stNick').value = me.role ? S.ROLE_NICK[me.role] : p.nickname || '';
     $('#stNick').readOnly = !!me.role;
@@ -691,7 +736,7 @@
   const tiles = new Map();
   let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set(), owned = new Set();
   let exits = new Set(), exitLines = [], offerOf = new Map(), myLand = 0; // 탈출길, 팔려고 내놓은 땅, 우리 학교 땅 칸 수
-  const NEUTRAL = [196, 201, 208], MINE = [255, 193, 7];
+  const NEUTRAL = [196, 201, 208], NEUTRAL_JP = [214, 196, 188], MINE = [255, 193, 7]; // 일본 빈 땅은 살짝 붉은 회색
   const colorCache = new Map();
   const baseS = () => TILE / Math.max(G.W, G.H);
   const cellPx = () => SPACING * view.s;
@@ -752,11 +797,11 @@
   // 같은 색 칸을 한 묶음으로 모아 한 번에 칠한다 (칸마다 칠하는 것보다 훨씬 빠르다)
   function groupKey(i) {
     const o = W.owner[i];
-    if (o < 0) return 'n' + (i % 3);
+    if (o < 0) return (G.jpCell && G.jpCell[i] ? 'j' : 'n') + (i % 3);
     return (W.def[i] > 0 ? 'd' : 'o') + o;
   }
   function groupStyle(key) {
-    if (key[0] === 'n') return { fill: shade(NEUTRAL, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.8)' };
+    if (key[0] === 'n' || key[0] === 'j') return { fill: shade(key[0] === 'j' ? NEUTRAL_JP : NEUTRAL, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.8)' };
     const c = rgbOf(+key.slice(1)), f = key[0] === 'd' ? 0.8 : 1;
     return { fill: shade(c, f), line: shade(c, 0.6 * f) };
   }
@@ -790,8 +835,7 @@
     g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = (cp > 20 ? 6 : 4) * px; // 하얀 물거품
     for (const k of lands) g.stroke(G.landPaths[k]);
     if (cp < 6) { // 멀리서 볼 때: 회색 땅을 한 번에 칠하고 주인 있는 칸만 덧칠한다
-      g.fillStyle = shade(NEUTRAL, 1);
-      for (const k of lands) g.fill(G.landPaths[k]);
+      for (const k of lands) { g.fillStyle = shade(G.jpLand != null && k >= G.jpLand ? NEUTRAL_JP : NEUTRAL, 1); g.fill(G.landPaths[k]); }
       const ids = [];
       for (const i of owned) { const b = i * 4; if (G.box[b] <= x0 + tw && G.box[b + 2] >= x0 && G.box[b + 1] <= y0 + tw && G.box[b + 3] >= y0) ids.push(i); }
       drawGroups(g, ids, px, false);
@@ -917,6 +961,7 @@
       ctx.lineWidth = 7 / s; ctx.strokeStyle = 'rgba(255,45,85,.35)'; ctx.stroke(pathOf(sel));
       ctx.lineWidth = 3 / s; ctx.strokeStyle = '#ff2d55'; ctx.stroke(pathOf(sel));
     }
+    const sailing = drawSails(now); // ⛵ 일본으로 건너가는 배
 
     // 3) 화면 좌표 표시: 시도 이름, 방어, 학교
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -961,7 +1006,7 @@
     // 너무 느리면 빠르게 모드로
     const spent = performance.now() - now;
     if (!fast && spent > 45 && ++slow >= 8) setFast(true, true);
-    if (more || flashes.length) requestDraw();
+    if (more || flashes.length || sailing) requestDraw();
     else if (animate && (myVis || exitLines.length || scoping || (cp >= 16 && frontier.size)) && !ambient) ambient = setTimeout(() => { ambient = 0; requestDraw(); }, 90); // 반짝이는 표시는 천천히
   }
   function shield(x, y, r) {
@@ -991,7 +1036,7 @@
   function renderMini() {
     if (!G || !W) return;
     const mb = G.miniBox;
-    miniW = Math.min(170, Math.max(110, vw * 0.16)); miniH = miniW * mb.h / mb.w;
+    miniW = G.jpCell ? Math.min(230, Math.max(140, vw * 0.2)) : Math.min(170, Math.max(110, vw * 0.16)); miniH = miniW * mb.h / mb.w; // 고등학교: 일본까지 보이게 더 크게
     const d = dpr, c = miniImg || document.createElement('canvas');
     c.width = Math.round(miniW * d); c.height = Math.round(miniH * d);
     const g = c.getContext('2d'), k = (miniW * d) / mb.w;
@@ -1114,7 +1159,7 @@
     const near = hs >= 0 ? schools[hs] : nearestSchool(G.sx[i], G.sy[i]), dist = near && near.dong ? near : nearestDistrict(G.sx[i], G.sy[i]);
     const title = hs >= 0 ? (mine ? '🏫 우리 학교 본부' : `🏫 ${schools[hs].name}`) : o < 0 ? '⬜ 빈 땅' : mine ? '⭐ 우리 학교 땅' : `🚩 ${short(o)}의 땅`;
     const shut = !mine && hs < 0 && shielded(i), hoursLeft = shut ? Math.ceil((shieldOf.get(i) - Date.now()) / 3600e3) : 0;
-    const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : shut ? `🛡️ 방패가 지키고 있어요. ${hoursLeft}시간 뒤에 뺏을 수 있어요.` : cost.nk ? cost.error : cost.error ? `노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요. (${S.FAR_GRADE}학년부터는 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏어요)` : '';
+    const atkWhy = mine ? '이미 우리 학교 땅이에요.' : hs >= 0 ? '학교 본부는 뺏을 수 없어요.' : shut ? `🛡️ 방패가 지키고 있어요. ${hoursLeft}시간 뒤에 뺏을 수 있어요.` : cost.nk || cost.jp || cost.war ? cost.error : cost.error ? `노란색 우리 땅과 닿아 있는 땅만 뺏을 수 있어요. (${S.FAR_GRADE}학년부터는 멀리 있는 땅도 문제 ${S.FAR_COST}개, 중학생부터는 ${S.FAR_COST_MH}개로 뺏어요)` : '';
     const defWhy = !mine ? '우리 학교 땅만 방어할 수 있어요.' : hs >= 0 ? '본부는 언제나 안전해요.' : d >= 99 ? '방어가 가장 높아요(99).' : '';
     let ownedN = 0;
     if (o >= 0) for (const k of owned) if (W.owner[k] === o) ownedN++;
@@ -1124,6 +1169,9 @@
     if (shielded(i)) tags.push(`<span class="tag" style="--c:#f5b301">✨ 방패가 지키는 중 · ${Math.ceil((shieldOf.get(i) - Date.now()) / 3600e3)}시간 남음</span>`);
     if (o >= 0 && !mine && hs < 0 && FEAT && !shut) tags.push('<span class="tag" style="--c:#e5484d">⚔️ 1:1 수학 결투로 뺏어요</span>');
     if (!mine && hs < 0 && !cost.error && !shut) tags.push(`<span class="tag hot">${cost.far ? '🚀 멀리 있는 땅 · ' : cost.escape ? '🚪 탈출길 · ' : '⚔️ '}문제 <b>${cost.cost}개</b> 풀면 뺏어요</span>`);
+    if (G.jpCell && G.jpCell[i]) tags.push(`<span class="tag" style="--c:#c2410c">🗾 일본 땅 · 우리 땅 ${S.JP_MIN}칸 이상 + ⛵ 배로 건너가요${!G.sides[i] ? ' · 🌊 바닷가' : ''}</span>`);
+    if (!mine && hs < 0 && cost.ship) tags.push(`<span class="tag hot">⛵ 배를 타고 건너가요 (배 ${(me.items || {}).ship || 0}척)</span>`);
+    if (o >= 0 && warOf(o)) tags.push(`<span class="tag" style="--c:#dc2626">${warOf(o)}</span>`);
     if (G.nkCell[i]) tags.push(`<span class="tag" style="--c:#b08d57">🗺️ 북한 땅 · 우리 땅 ${S.NK_MIN}칸 이상이면 뺏을 수 있어요</span>`);
     if (hs >= 0 && schools[hs] && schools[hs].nk) tags.push('<span class="tag">북한 학교 (실제 학교가 아닌 가상의 소학교예요)</span>');
     if (off) tags.push(`<span class="tag" style="--c:#9333ea">🏷️ ${esc(short(off.from))} → ${esc(short(off.to))}에 판 땅 ${off.cells.length}칸</span>`);
@@ -1172,7 +1220,7 @@
     $('#scName').innerHTML = `<i class="sw" style="background:${cssColor(sid)}"></i>${esc(flagMark(sid) + d.name)}`;
     const mem = d.members.map(m => `<li class="${m.me ? 'me' : ''}"><i class="dot ${m.online ? 'on' : ''}"></i><span class="nm">${nameHTML(m.nick, m.role)}</span><small>뺏은 땅 ${m.captures} · 문제 ${m.solved}</small></li>`).join('');
     $('#scBody').innerHTML = `
-      <p class="muted">📍 ${esc(d.sido)} ${esc(d.sigungu)}${d.dong ? ' ' + esc(d.dong) : ''} · ${me.grade}학년 서버</p>
+      <p class="muted">📍 ${esc(d.sido)} ${esc(d.sigungu)}${d.dong ? ' ' + esc(d.dong) : ''} · ${srvName()}</p>
       <div class="stats"><div><b>${d.land}</b><span>땅</span></div><div><b>${d.rank ? d.rank + '위' : '-'}</b><span>학교 순위</span></div><div><b>${d.def}</b><span>방어 합계</span></div></div>
       <div class="row">${homeLink(sid)}<button type="button" class="link-btn" id="scGo">🗺️ 지도에서 보기</button></div>
       <h4>🧒 함께하는 친구 ${d.memberCount}명</h4>
@@ -1230,11 +1278,13 @@
   function doAttack(i) {
     const prev = W.owner[i];
     const okMsg = prev < 0 ? '🎉 빈 땅을 차지했어요!' : `⚔️ ${short(prev)}의 땅을 빼앗았어요!`;
-    if (cheat.capture) return optimistic(i, mySid(), 0, '🐛 ' + okMsg, 'capture', () => api('/api/capture', { cell: i, cheat: true }));
+    const to = actSid(i), ship = costOf(i).ship; // 동맹이면 돕는 학교 땅으로, 일본 첫 땅이면 배를 타고
+    const sail = r => { if (r && r.ship != null && r.ship >= 0) sailShip(r.ship, i); return r; };
+    if (cheat.capture) return optimistic(i, to, 0, '🐛 ' + okMsg, 'capture', () => api('/api/capture', { cell: i, cheat: true }).then(sail));
     // 다른 학교 땅은 1:1 수학 결투: 땅 주인 학교보다 먼저 다 맞혀야 가져온다
     const duel = prev >= 0 && FEAT ? { cell: i, name: short(prev), pace: S.duelPace(me.grade, W.def[i]) * 1000 } : null;
     const done = solved => {
-      optimistic(i, mySid(), 0, duel ? `🏆 결투 승리! ${okMsg}` : okMsg, 'capture', () => api('/api/capture', { cell: i, solved, streak: best, duel: !!duel })).then(r => {
+      optimistic(i, to, 0, duel ? `🏆 결투 승리! ${okMsg}` : ship ? `⛵ 배를 타고 건너가 ${okMsg}` : okMsg, 'capture', () => api('/api/capture', { cell: i, solved, streak: best, duel: !!duel }).then(sail)).then(r => {
         if (!r.need) return;
         toast(`🛡️ 상대가 방어를 올렸어요! 문제 ${r.need}개를 더 풀어야 해요.`, 'warn'); // 푼 문제는 그대로 두고 이어서 푼다
         startQuiz({ title: '⚔️ 땅 뺏기', total: r.required, solved, onDone: done });
@@ -1314,7 +1364,7 @@
     const my = mySid(), near = new Map(); // 우리 땅과 닿아 있는 학교
     for (const k of owned) if (W.owner[k] === my) for (const n of G.nbOf(k)) { const o = W.owner[n]; if (o >= 0 && o !== my) near.set(o, (near.get(o) || 0) + 1); }
     const far = me.grade >= S.FAR_GRADE;
-    $('#sellRule').innerHTML = far ? `${me.grade}학년은 <b>멀리 있는 학교</b>에도 팔 수 있어요.` : '3학년까지는 <b>우리 땅과 닿아 있는 학교</b>에만 팔 수 있어요.';
+    $('#sellRule').innerHTML = far ? `${S.gradeName(me.grade)}부터는 <b>멀리 있는 학교</b>에도 팔 수 있어요.` : '3학년까지는 <b>우리 땅과 닿아 있는 학교</b>에만 팔 수 있어요.';
     $('#sellFind').hidden = !far; $('#sellFind').value = '';
     const render = () => {
       const q = $('#sellFind').value.trim(), ids = q ? searchSchools(q, 20).map(sc => sc.id).filter(id => id !== my && W.home[id] >= 0) : [...near.keys()];
@@ -1352,7 +1402,7 @@
     const r = await api('/api/admin', body);
     if (btn) btn.disabled = false;
     if (r.error) return toast(r.error, 'err');
-    if (r.user) { me = r.user; closeM('adminModal'); toast(`🌐 ${me.grade}학년 서버로 옮겼어요.`, 'ok'); return me.profile ? startGame() : openSetup(); }
+    if (r.user) { me = r.user; closeM('adminModal'); toast(`🌐 ${srvName()}로 옮겼어요.`, 'ok'); if (S.levelOf(me.grade) !== LVL()) return switchLevel(S.levelOf(me.grade)); return me.profile ? startGame() : openSetup(); }
     if (r.reload) {
       closeM('adminModal'); select(-1);
       await loadWorld();
@@ -1374,8 +1424,8 @@
   }
   function initAdmin() {
     $('#btnAdmin').onclick = () => {
-      $('#admGrades').innerHTML = [1, 2, 3, 4, 5, 6].map(g => `<button type="button" class="chip ${g === me.grade ? 'on' : ''}" data-g="${g}">${g}학년</button>`).join('');
-      $('#admWho').textContent = `${S.ROLE_NICK[me.role]} · 지금 ${me.grade}학년 서버`;
+      $('#admGrades').innerHTML = S.SERVERS.map(g => `<button type="button" class="chip ${g === S.serverOf(me.grade) ? 'on' : ''}" data-g="${g}">${g <= 6 ? g + '학년' : g === 7 ? '중학교' : '고등학교'}</button>`).join('');
+      $('#admWho').textContent = `${S.ROLE_NICK[me.role]} · 지금 ${srvName()}`;
       $('#admDev').hidden = me.role !== 'dev';
       if (me.role === 'dev') api('/api/admin', { act: 'bans' }).then(r => { if (r.bans) renderBans(r.bans); });
       if (me.role === 'dev' && FEAT) api('/api/admin', { act: 'staff' }).then(r => { if (r.staff) renderStaff(r.staff); });
@@ -1497,7 +1547,7 @@
         ${p.unit ? `<span class="unit">${esc(p.unit)}</span>` : ''}<button class="btn primary">확인</button></form><div id="qzPreview" class="qz-preview"></div>`;
       $('#qzInput').oninput = showPreview;
       $('#qzForm').onsubmit = e => { e.preventDefault(); answer($('#qzInput').value); };
-      const keys = ['7', '8', '9', '⌫', '4', '5', '6', 'C', '1', '2', '3', '.', '0', '/', '와', '확인'];
+      const keys = ['7', '8', '9', '⌫', '4', '5', '6', 'C', '1', '2', '3', '.', '0', '/', me.grade >= 7 ? '-' : '와', '확인']; // 중·고: 음수를 쓰는 - 키
       $('#qzPad').innerHTML = keys.map(k => `<button type="button" data-k="${k}" class="${k === '확인' ? 'go' : /\d/.test(k) ? '' : 'op'}">${k}</button>`).join('');
       $('#qzPad').hidden = false;
       if (!coarse) setTimeout(() => { const el = $('#qzInput'); if (el) el.focus(); }, 60);
@@ -1690,6 +1740,8 @@
     W.home.forEach((c, sid) => { if (c >= 0) W.homeCell[c] = sid; });
     online = d.online || 0;
     if (d.user) me = d.user; // 코인·아이템·운영자 여부 등 최신으로
+    wars = d.wars || [];
+    setTimeout(() => { renderWarBar(); checkAsks(); }, 0);
     if (d.stats) me.stats = d.stats;
     flagsOf = d.flags || {};
     shieldOf = new Map(d.shields || []);
@@ -1753,6 +1805,8 @@
     if (m.t === 'banned') return showBanned(m.ban);
     if (m.t === 'kicked') return kickedOut();
     if (m.t === 'offers') { setOffers(m.items); if (m.ev) feed(m.ev); return; }
+    if (m.t === 'wars') return setWars(m.items);
+    if (m.t === 'warscore') { const w = wars.find(x => x.id === m.id); if (w) { w.sc = m.sc || {}; renderWarBar(); if (!$('#warModal').hidden) renderWar(); } return; }
     if (m.t === 'shields') return setShields(m.items);
     if (m.t === 'flags') return setFlags(m.items);
     if (m.t !== 'upd') return;
@@ -1814,8 +1868,11 @@
     else if (ev.kind === 'admin') { txt = `🛠️ ${ev.by}: ${ev.text}`; if (ev.chatClear) clearChat(); }
     else if (ev.kind === 'bomb') txt = `💣 ${who}님이 폭탄으로 땅 ${ev.n}칸을 한 번에 차지했어요!`;
     else if (ev.kind === 'shield') txt = `🛡️ ${who}님이 방패를 세웠어요 (${S.SHIELD_HOURS}시간)`;
+    else if (ev.kind === 'war') { txt = ev.w === 'ask' ? `⚔️ ${ev.an}가 ${ev.bn}에 전쟁을 신청했어요!` : ev.w === 'on' ? `🔥 ${ev.an} vs ${ev.bn} 전쟁 시작! (${S.WAR_MIN}분)` : ev.w === 'no' ? `🕊️ ${ev.bn}가 전쟁 신청을 거절했어요.` : `🤝 ${ev.an}가 ${ev.bn}의 동맹이 되었어요!`; cls = 'alert'; }
     else return;
     if (ev.kind === 'capture' && ev.duel && ev.prev >= 0) txt = `⚔️ ${who}님이 1:1 결투에서 이겨 ${short(ev.prev)}의 땅을 빼앗았어요!`;
+    if (ev.kind === 'capture' && ev.ally != null) txt = `🤝 ${who}님(${short(ev.ally)})이 동맹으로 ${short(ev.sid)}를 도와 ${short(ev.prev)}의 땅을 빼앗았어요!`;
+    if (ev.kind === 'capture' && ev.ship != null) { txt = `⛵ ${who}님이 배를 타고 일본으로 건너가 땅을 차지했어요!`; if (ev.sid !== my) sailShip(ev.ship, ev.cell); }
     if (ev.kind === 'bomb' && ev.sid !== my) flashes.push({ i: ev.cell, t: performance.now() });
     if (ev.kind === 'capture' && (ev.far || ev.escape)) txt = `${ev.far ? '🚀' : '🚪'} ${who}님이 ${ev.far ? '멀리 있는' : '탈출길'} 땅을 차지했어요!`;
     if (ev.kind === 'capture' && ev.prev === my && ev.sid !== my) { cls = 'alert'; toast(`😱 ${short(ev.sid)}에게 우리 땅을 빼앗겼어요!`, 'warn'); Sound.play('lose'); }
@@ -1829,15 +1886,16 @@
   }
   function hud() {
     if (!me || !me.profile) return;
-    $('#hudServer').textContent = `🌐 ${me.grade}학년 서버`;
+    $('#hudServer').textContent = `🌐 ${srvName()}`;
     $('#hudOnline').innerHTML = `<i></i>${online}명 접속 중`;
     $('#hudSchool').textContent = short(mySid());
-    $('#hudUser').innerHTML = `😀 ${nameHTML(me.profile.nickname, me.role)} · ${me.grade}-${me.profile.semester}`;
+    $('#hudUser').innerHTML = `😀 ${nameHTML(me.profile.nickname, me.role)} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
     $('#cheatBadge').hidden = !(cheat.capture || cheat.defend);
     $('#btnAdmin').hidden = !me.role;
     $('#btnSound').textContent = Sound.on ? '🔊' : '🔇';
     $('#btnBgm').style.opacity = Music.on ? 1 : 0.4;
     $('#btnMission').hidden = $('#btnShop').hidden = $('#hudCoins').hidden = !FEAT;
+    $('#btnWar').hidden = !FEAT || LVL() === 'e'; // 전쟁·동맹은 중·고등학교
     $('#hudCoinN').textContent = me.infCoins ? '∞' : me.coins || 0;
     const left = (me.scopeUntil || 0) - Date.now(), sc = $('#hudScope');
     sc.hidden = left <= 0;
@@ -1854,7 +1912,7 @@
     const medal = k => ['🥇', '🥈', '🥉'][k] || k + 1;
     $('#board').innerHTML = arr.slice(0, 10).map(([sid, n], k) =>
       `<li class="${sid === my ? 'me' : ''}" data-sid="${sid}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(sid)}"></i><span class="nm">${esc(flagMark(sid) + short(sid))}</span><b>${n}</b></li>`).join('');
-    $('#myRank').innerHTML = `⭐ 우리 학교 <b>${rank || '-'}위</b> · 땅 <b>${mine}</b>칸 · 뺏을 수 있는 땅 <b>${frontier.size}</b>칸` + (exits.size ? '<br>🚪 빈 땅이 막혔어요! 초록 점선 <b>탈출길</b>로 빠져나가요.' : '') + (me.grade >= S.FAR_GRADE ? `<br>🚀 ${S.FAR_GRADE}학년부터: 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏을 수 있어요.` : '');
+    $('#myRank').innerHTML = `⭐ 우리 학교 <b>${rank || '-'}위</b> · 땅 <b>${mine}</b>칸 · 뺏을 수 있는 땅 <b>${frontier.size}</b>칸` + (exits.size ? '<br>🚪 빈 땅이 막혔어요! 초록 점선 <b>탈출길</b>로 빠져나가요.' : '') + (me.grade >= 7 ? `<br>🚀 중학생부터: 멀리 있는 땅도 문제 ${S.FAR_COST_MH}개로 뺏을 수 있어요.` : me.grade >= S.FAR_GRADE ? `<br>🚀 ${S.FAR_GRADE}학년부터: 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏을 수 있어요.` : '');
     $('#hudLand').textContent = mine;
     $('#hudRank').textContent = rank || '-';
   }
@@ -1875,7 +1933,7 @@
       head = '<tr><th>순위</th><th>친구</th><th class="num">뺏은 땅</th><th class="num">푼 문제</th></tr>';
       rows = d.top.map((p, k) => `<tr class="${p.me ? 'me' : ''}" data-sid="${p.sid}"><td class="rk">${medal(k)}</td><td><i class="sw" style="background:${cssColor(p.sid)}"></i>${nameHTML(p.nick, p.role)}<small>${esc(short(p.sid))}</small></td><td class="num">${p.captures}</td><td class="num">${p.solved}</td></tr>`);
       if (d.rank > TOP) rows.push('<tr class="gap"><td colspan="4">⋯</td></tr>', `<tr class="me"><td class="rk">${d.rank}</td><td>😀 나</td><td class="num">${me.stats.captures}</td><td class="num">${me.stats.solved}</td></tr>`);
-      sum = `${me.grade}학년 서버 친구 ${d.total}명 · 나는 <b>${d.rank || '-'}위</b>`;
+      sum = `${srvName()} 친구 ${d.total}명 · 나는 <b>${d.rank || '-'}위</b>`;
     } else {
       const land = new Map(), def = new Map();
       for (const i of owned) { const o = W.owner[i]; land.set(o, (land.get(o) || 0) + 1); if (W.def[i]) def.set(o, (def.get(o) || 0) + W.def[i]); }
@@ -1904,8 +1962,193 @@
     if (d.error) return;
     const medal = k => ['🥇', '🥈', '🥉'][k] || k + 1;
     $('#players').innerHTML = d.top.length ? d.top.map((p, k) =>
-      `<li class="${p.me ? 'me' : ''}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(p.sid)}"></i><span class="nm">${nameHTML(p.nick, p.role)} <small>${esc(short(p.sid))}</small></span><b>${p.captures}</b></li>`).join('') : '<li class="muted">아직 아무도 없어요</li>';
+      `<li class="${p.me ? 'me' : ''}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(p.sid)}"></i><span class="nm">${nameHTML(p.nick, p.role)} <small>${esc(short(p.sid))}</small></span><b>${p.captures}</b>${p.votes != null && !p.me && !p.role ? `<button type="button" class="vote-btn ${p.voted ? 'on' : ''}" data-vote="${esc(p.acc)}" data-nick="${esc(p.nick)}" data-n="${p.votes}" title="밴 투표 (${S.VOTE_BAN}표면 정지)">🗳️${p.votes ? ' ' + p.votes : ''}</button>` : ''}</li>`).join('') : '<li class="muted">아직 아무도 없어요</li>';
     $('#myPlayer').innerHTML = `😀 나 <b>${d.rank || '-'}위</b> / ${d.total}명 · 뺏은 땅 <b>${me.stats.captures}</b> · 푼 문제 <b>${me.stats.solved}</b>`;
+  }
+
+  // ---------- ⚔️ 전쟁 · 🤝 동맹 (중·고등학교) ----------
+  let warData = null, askOpen = null, warTick = 0;
+  const answered = new Set(), settled = new Set();
+  const ASK_MS = S.WAR_ASK_SEC * 1000, mmss = ms => { const t = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+  function warOf(sid) { // 땅 정보 창에 붙는 글
+    const k = skeyOf(sid), now = nowS();
+    for (const w of wars) {
+      const sd = S.warLive(w, now) && S.warSide(w, k);
+      if (!sd) continue;
+      if (k !== w.a && k !== w.b) return `🤝 ${esc(sd === 'a' ? w.an : w.bn)} 동맹 · 전쟁이 끝날 때까지 아무도 못 뺏어요`;
+      return `⚔️ 전쟁 중: ${esc(w.an)} vs ${esc(w.bn)} · 상대편만 뺏을 수 있어요`;
+    }
+    return '';
+  }
+  const myWar = () => { const k = skeyOf(mySid()), now = nowS(); return wars.find(w => S.warLive(w, now) && S.warSide(w, k)) || wars.find(w => w.st === 'on' && S.warSide(w, k) && now >= w.end && !settled.has(w.id)); };
+  function setWars(items) {
+    const sc = new Map(wars.map(w => [w.id, w.sc]));
+    wars = (items || []).map(w => Object.assign({ sc: sc.get(w.id) || {} }, w, Object.keys(w.sc || {}).length ? {} : { sc: sc.get(w.id) || {} }));
+    renderWarBar();
+    checkAsks();
+    if (!$('#warModal').hidden) renderWar();
+    if (sel >= 0) renderPopup();
+  }
+  function checkAsks() { // 나에게 온 전쟁·동맹 신청
+    if (!me || !me.profile || askOpen || !W) return;
+    const now = nowS();
+    for (const w of wars) {
+      if (w.st === 'ask' && w.to === me.acc && now - w.at < ASK_MS && !answered.has(w.id)) return showAsk({ kind: 'war', w });
+      for (const r of w.rq || []) if (r.st === 'ask' && r.to === me.acc && now - r.at < ASK_MS && S.warLive(w, now) && !answered.has(r.id)) return showAsk({ kind: 'ally', w, r });
+    }
+  }
+  function showAsk(a) {
+    askOpen = a;
+    const w = a.w, helped = a.r && (a.r.side === 'a' ? w.an : w.bn);
+    $('#askIcon').textContent = a.kind === 'war' ? '⚔️' : '🤝';
+    $('#askTitle').textContent = a.kind === 'war' ? '전쟁 신청이 왔어요!' : '동맹 신청이 왔어요!';
+    $('#askText').innerHTML = a.kind === 'war' ? `<b>${esc(w.an)}</b>의 ${esc(w.by)}님이 우리 학교에 <b>전쟁</b>을 선포했어요!`
+      : `<b>${esc(helped)}</b>의 ${esc(a.r.by)}님이 ${esc(w.an)} vs ${esc(w.bn)} 전쟁을 <b>동맹</b>으로 도와 달래요.`;
+    $('#askNote').textContent = a.kind === 'war' ? `수락하면 ${S.WAR_MIN}분 동안 전쟁! 다른 학교는 두 학교 땅을 못 뺏고, 상대 학교 땅을 더 많이 뺏은 편이 이겨요. (2분 안에 골라 주세요)`
+      : `동맹은 코인을 쓰지 않아요. 전쟁이 끝날 때까지 우리 학교 땅은 아무도 못 뺏고, 상대편 땅을 뺏으면 ${helped} 땅이 돼요.`;
+    openM('askModal');
+  }
+  async function answerAsk(yes) {
+    const a = askOpen;
+    if (!a) return;
+    askOpen = null;
+    closeM('askModal');
+    answered.add(a.kind === 'war' ? a.w.id : a.r.id);
+    const r = a.kind === 'war' ? await api('/api/war/answer', { id: a.w.id, yes }) : await api('/api/war/allyAnswer', { id: a.w.id, rid: a.r.id, yes });
+    if (r.error) toast(r.error, 'err');
+    else if (yes) { toast(a.kind === 'war' ? `🔥 전쟁 시작! ${S.WAR_MIN}분 동안 상대 학교 땅을 뺏어요.` : '🤝 동맹이 되었어요! 상대편 땅을 뺏어 도와줘요.', 'ok'); Sound.play('capture'); }
+    else toast('거절했어요.', 'warn');
+    setTimeout(checkAsks, 400);
+  }
+  function renderWarBar() { // 지도 위 전쟁 막대: 점수와 남은 시간
+    const bar = $('#warBar'), w = myWar();
+    $('#warDot').hidden = !w;
+    clearInterval(warTick);
+    if (!w || !W) { bar.hidden = true; return; }
+    const draw = () => {
+      const left = w.end - nowS(), sc = w.sc || {}, k = skeyOf(mySid()), side = S.warSide(w, k), ally = k !== w.a && k !== w.b;
+      bar.innerHTML = `<b class="wa ${side === 'a' ? 'us' : ''}">${esc(short(sidByKey(w.a)))}</b><span class="sc">${sc.a || 0} : ${sc.b || 0}</span><b class="wb ${side === 'b' ? 'us' : ''}">${esc(short(sidByKey(w.b)))}</b>`
+        + `<span class="tm">${left > 0 ? '⏱️ ' + mmss(left) : '🏁 끝!'}</span>${ally ? '<span class="al">🤝 동맹</span>' : ''}`;
+      if (left <= 0) { clearInterval(warTick); settleWar(w); }
+    };
+    bar.hidden = false;
+    draw();
+    warTick = setInterval(draw, 1000);
+  }
+  async function settleWar(w) {
+    if (settled.has(w.id)) return;
+    settled.add(w.id);
+    const r = await api('/api/war/settle', { id: w.id });
+    setTimeout(() => { $('#warBar').hidden = true; renderWarBar(); }, 6000);
+    if (r.error) return;
+    gotWallet(r);
+    const res = !r.win ? '🤝 무승부예요!' : r.win === r.side ? '🏆 우리 편이 이겼어요!' : '😢 아쉽게 졌어요.';
+    toast(`${res} (${r.a} : ${r.b})${r.got ? ` 🪙 +${r.got}코인!` : ''}`, r.win && r.win === r.side ? 'ok' : 'warn');
+    if (r.win && r.win === r.side) Sound.play('badge');
+  }
+  async function openWar() {
+    const d = await api('/api/war');
+    if (d.error) return toast(d.error, 'err');
+    warData = d;
+    me.items = d.items; me.coins = d.coins;
+    setWars(d.wars);
+    renderWar();
+    openM('warModal');
+  }
+  function renderWar() {
+    const d = warData;
+    if (!d) return;
+    const now = nowS(), mk = d.me.key, it = me.items || {}, mine = wars.find(w => S.warLive(w, now) && S.warSide(w, mk));
+    const pending = wars.find(w => w.st === 'ask' && now - w.at < ASK_MS && S.warSide(w, mk));
+    const busyKeys = new Set();
+    for (const w of wars) if (S.warLive(w, now) || (w.st === 'ask' && now - w.at < ASK_MS)) { busyKeys.add(w.a); busyKeys.add(w.b); Object.keys(w.al || {}).forEach(k => busyKeys.add(k)); }
+    const others = d.peers.filter(p => !p.mine);
+    let html = '';
+    if (mine) {
+      const side = S.warSide(mine, mk), main = mk === mine.a || mk === mine.b, sc = mine.sc || {};
+      const al = Object.entries(mine.al || {}).map(([k, sd]) => `<span class="tag">🤝 ${esc(nameOf(k))} → ${esc(sd === 'a' ? mine.an : mine.bn)}</span>`).join('');
+      html += `<div class="war-now"><div class="vs"><b>${esc(mine.an)}</b><span>${sc.a || 0} : ${sc.b || 0}</span><b>${esc(mine.bn)}</b></div>
+        <p>⏱️ 남은 시간 <b>${mmss(mine.end - now)}</b> · 우리는 <b>${side === 'a' ? esc(mine.an) : esc(mine.bn)}</b> 편${main ? '' : ' (동맹)'}</p>${al ? `<div class="chips">${al}</div>` : ''}</div>`;
+      if (main) {
+        const cand = others.filter(p => !busyKeys.has(p.key));
+        html += `<h4>🤝 동맹 신청하기</h4><p class="muted">게임에 있는 다른 학교 친구에게 도와 달라고 해요. 동맹은 코인을 안 쓰고, 땅도 안 뺏겨요.</p>`
+          + (cand.length ? `<ul class="war-peers">${cand.map(p => `<li><span>${esc(p.nick)} <small>${esc(p.school)}</small></span><button type="button" class="btn" data-ally="${esc(p.acc)}">🤝 동맹 신청</button></li>`).join('')}</ul>` : '<p class="muted">지금 동맹을 신청할 수 있는 친구가 없어요.</p>');
+      }
+    } else if (pending) {
+      html += `<div class="war-now"><p>⏳ <b>${esc(pending.bn)}</b> ${esc(pending.toNick)}님에게 전쟁을 신청했어요. 수락을 기다리는 중… (${mmss(ASK_MS - (now - pending.at))})</p></div>`;
+    } else {
+      html += `<p>🕊️ 지금은 평화로워요. <b>⚔️ 전쟁 선포권</b> ${it.war || 0}개 <span class="muted">(🛒 상점에서 ${S.priceOf('war')}코인)</span></p>
+        <h4>⚔️ 전쟁 걸기</h4><p class="muted">게임에 들어와 있는 다른 학교 친구에게만 걸 수 있고, 그 친구가 수락해야 시작해요.</p>`
+        + (others.length ? `<ul class="war-peers">${others.map(p => `<li><span>${esc(p.nick)} <small>${esc(p.school)}</small></span><button type="button" class="btn danger" data-war="${esc(p.acc)}" ${(it.war || 0) > 0 && !busyKeys.has(p.key) ? '' : 'disabled'}>${busyKeys.has(p.key) ? '전쟁 중' : '⚔️ 전쟁 걸기'}</button></li>`).join('')}</ul>`
+          : '<p class="muted">지금 게임에 있는 다른 학교 친구가 없어요. 친구들이 들어오면 다시 열어 보세요.</p>')
+        + ((it.war || 0) < 1 ? '<div class="row end"><button type="button" class="btn primary" id="warShop">🛒 전쟁 선포권 사러 가기</button></div>' : '');
+    }
+    const live = wars.filter(w => S.warLive(w, now) && w !== mine);
+    if (live.length) html += `<h4>🔥 다른 전쟁</h4><ul class="war-list">${live.map(w => `<li>${esc(w.an)} <b>${(w.sc || {}).a || 0} : ${(w.sc || {}).b || 0}</b> ${esc(w.bn)} <small>${mmss(w.end - now)}</small></li>`).join('')}</ul>`;
+    html += `<details class="war-rules"><summary>📜 전쟁 규칙</summary><ul>
+      <li>⚔️ 전쟁 선포권(${S.priceOf('war')}코인)이 있어야 선포할 수 있어요. 거절되거나 2분 안에 답이 없으면 돌려받아요.</li>
+      <li>전쟁은 ${S.WAR_MIN}분! 그동안 <b>다른 학교는 두 학교 땅을 못 뺏어요</b>. 상대 학교 땅만 뺏을 수 있어요.</li>
+      <li>🤝 동맹 학교는 코인을 안 쓰고, 전쟁 동안 땅을 안 뺏겨요. 상대편 땅을 뺏으면 돕는 학교 땅이 돼요.</li>
+      <li>🏆 상대편 땅을 더 많이 뺏은 편이 이기고, 이긴 편에서 땅을 뺏은 사람은 🪙 ${S.WAR_WIN}코인!</li></ul></details>
+      <div class="row end"><button type="button" class="btn" id="warRefresh">🔄 새로 보기</button></div>`;
+    $('#warBody').innerHTML = html;
+    if ($('#warShop')) $('#warShop').onclick = () => { closeM('warModal'); openShop(); };
+    $('#warRefresh').onclick = openWar;
+  }
+  const nameOf = k => { const id = sidByKey(k); return id >= 0 ? schools[id].name : String(k).split('|')[2] || k; };
+  function initWar() {
+    $('#btnWar').onclick = openWar;
+    $('#askYes').onclick = () => answerAsk(true);
+    $('#askNo').onclick = () => answerAsk(false);
+    $('#warBar').onclick = openWar;
+    $('#warBody').addEventListener('click', async e => {
+      const wb = e.target.closest('[data-war]'), ab = e.target.closest('[data-ally]');
+      if (wb) {
+        wb.disabled = true;
+        const r = await api('/api/war/declare', { acc: wb.dataset.war });
+        if (r.error) { toast(r.error, 'err'); return openWar(); }
+        gotWallet(r);
+        toast('⚔️ 전쟁을 신청했어요! 상대가 2분 안에 수락하면 시작해요.', 'ok');
+        return openWar();
+      }
+      if (ab) {
+        ab.disabled = true;
+        const w = myWar(), r = w ? await api('/api/war/ally', { id: w.id, acc: ab.dataset.ally }) : { error: '지금 하고 있는 전쟁이 없어요.' };
+        toast(r.error || '🤝 동맹을 신청했어요! 상대가 수락하면 함께 싸워요.', r.error ? 'err' : 'ok');
+        return openWar();
+      }
+    });
+    setInterval(checkAsks, 5000); // 신청이 와 있는지 가끔 다시 본다
+  }
+  // ---------- 🗳️ 밴 투표 (중·고등학교) ----------
+  async function votePlayer(acc, nick, n) {
+    if (!confirm(`🗳️ ${nick}님을 밴 투표할까요? (지금 ${n}/${S.VOTE_BAN}표)\n나쁜 말이나 방해를 하는 친구에게만 투표해 주세요.\n${S.VOTE_BAN}표가 모이면 ${S.VOTE_BAN_HOURS}시간 동안 정지돼요.`)) return;
+    const r = await api('/api/vote', { acc });
+    if (r.error) return toast(r.error, 'err');
+    toast(r.banned ? `🚫 ${nick}님이 ${S.VOTE_BAN}표를 받아 정지됐어요.` : `🗳️ 투표했어요. (${r.votes}/${S.VOTE_BAN}표)`, 'ok');
+    loadPlayers();
+  }
+  // ---------- ⛵ 배 타고 일본으로 (고등학교) ----------
+  let sails = [];
+  function sailShip(from, to) {
+    if (from < 0 || !G) return;
+    sails.push({ x0: G.sx[from], y0: G.sy[from], x1: G.sx[to], y1: G.sy[to], t: performance.now() });
+    requestDraw();
+  }
+  function drawSails(now) { // 지도 좌표계에서 그린다
+    if (!sails.length) return false;
+    sails = sails.filter(s => now - s.t < 2600);
+    for (const s of sails) {
+      const k = Math.min(1, (now - s.t) / 2000), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2, x = s.x0 + (s.x1 - s.x0) * e, y = s.y0 + (s.y1 - s.y0) * e;
+      ctx.save();
+      ctx.setLineDash([10 / view.s, 8 / view.s]); ctx.lineWidth = 3 / view.s; ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(x, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = `${30 / view.s}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('⛵', x, y - 6 / view.s);
+      ctx.restore();
+    }
+    return true;
   }
 
   // ---------- 설정 + 비밀 버그 창 ----------
@@ -1915,7 +2158,7 @@
     const s = schools[mySid()], st = me.stats || {};
     $('#setInfo').innerHTML = `
       <div>👤 아이디: <b>${esc(me.username)}</b>${markOf(me.role)}</div>
-      <div>${me.role ? `🛠️ <b>${S.ROLE_NICK[me.role]}</b> ${me.builtin ? '계정' : '(초대로 된 운영자)'} · ${me.grade}학년 서버` : `🎂 나이 인증: <b>${me.birthYear}년생</b> → <b>${me.grade}학년</b> (${me.grade}학년 서버)`}</div>
+      <div>${me.role ? `🛠️ <b>${S.ROLE_NICK[me.role]}</b> ${me.builtin ? '계정' : '(초대로 된 운영자)'} · ${srvName()}` : `🎂 나이 인증: <b>${me.birthYear}년생</b> → <b>${S.gradeName(me.grade)}</b> (${srvName()})`}</div>
       <div>🏫 학교: <b>${esc(s ? s.name : '')}</b> <span class="muted">${esc(s ? s.sido + ' ' + s.sigungu : '')}</span></div>`;
     $('#setStats').innerHTML = `<div><b>${st.solved || 0}</b><span>푼 문제</span></div><div><b>${st.captures || 0}</b><span>뺏은 땅</span></div><div><b>${st.defends || 0}</b><span>올린 방어</span></div>`;
     $$('.sem2').forEach(b => b.classList.toggle('on', +b.dataset.sem === me.profile.semester));
@@ -2101,9 +2344,11 @@
   function renderShop() {
     const d = shopData;
     $('#shopCoins').textContent = me.infCoins ? '∞' : me.coins || 0;
-    $('#shopList').innerHTML = S.SHOP.map(it => {
+    $('#shopList').innerHTML = S.shopFor(LVL()).map(it => { // 전쟁 선포권은 중·고, 배는 고등학교만
       const price = d.prices[it.id], own = it.id === 'flag' ? '' : `<span class="own">가진 개수: ${(me.items || {})[it.id] || 0}개</span>`;
       const use = it.id === 'scope' ? `<button type="button" class="btn" data-use="scope" ${(me.items || {}).scope ? '' : 'disabled'}>쓰기</button>`
+        : it.id === 'war' ? '<button type="button" class="btn" data-use="war">⚔️ 전쟁 창</button>'
+        : it.id === 'ship' ? '<small class="muted">지도에서 일본 바닷가 땅을 눌러 건너가요</small>'
         : it.id === 'flag' ? '' : '<small class="muted">지도에서 땅을 눌러 써요</small>';
       return `<div class="shop-item"><div class="si">${it.icon}</div><b>${esc(it.name)}</b><p>${esc(it.desc)}</p>${own}`
         + `<div>🪙 <b>${price}</b></div>`
@@ -2140,8 +2385,9 @@
         gotWallet(r); renderShop();
         Sound.play('unlock');
         const it = S.SHOP.find(x => x.id === buy.dataset.buy);
-        toast(`${it.icon} ${it.name}을(를) 샀어요!${it.id === 'scope' ? '' : ' 지도에서 땅을 눌러 써요.'}`, 'ok');
+        toast(`${it.icon} ${it.name}을(를) 샀어요!${it.id === 'scope' ? '' : it.id === 'war' ? ' ⚔️ 전쟁 창에서 써요.' : it.id === 'ship' ? ' 지도에서 일본 바닷가 땅을 눌러요.' : ' 지도에서 땅을 눌러 써요.'}`, 'ok');
       }
+      if (use && use.dataset.use === 'war') { closeM('shopModal'); return openWar(); }
       if (use) {
         const r = await api('/api/item/scope', {});
         if (r.error) return toast(r.error, 'err');
@@ -2201,7 +2447,8 @@
     try { await loadMap(); } catch (e) { $('#loadMsg').textContent = '😢 ' + (e.message || '지도를 불러오지 못했어요.') + ' 새로고침 해 주세요.'; return; }
     if (window.MLEIntro) { await window.MLEIntro.done(); Sound.play('tap'); Music.start(); } // 인트로: 시작하기를 누르면 들어간다 (배경 음악도 이때)
     else document.addEventListener('pointerdown', () => Music.start(), { once: true });
-    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin(); initShop(); initInvite();
+    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin(); initShop(); initInvite(); initWar();
+    $('#players').addEventListener('click', e => { const b = e.target.closest('[data-vote]'); if (b) votePlayer(b.dataset.vote, b.dataset.nick, +b.dataset.n); });
     if (!token) return show('auth');
     const d = await api('/api/me');
     if (d.code === 423) return; // 정지 화면이 이미 떴다

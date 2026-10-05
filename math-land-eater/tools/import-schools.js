@@ -10,8 +10,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const [file, infoFile] = process.argv.slice(2);
-if (!file) { console.error('사용법: node tools/import-schools.js 전국초중등학교위치표준데이터.csv [학교기본정보.csv]'); process.exit(1); }
+// --level=m (중학교) / --level=h (고등학교): mapdata/schools-m.txt, schools-h.txt 를 만든다 (없으면 초등학교 → schools.txt)
+const args = process.argv.slice(2), lvArg = (args.find(a => a.startsWith('--level=')) || '').slice(8) || 'e';
+const LV = { e: ['초등학교', 'schools.txt'], m: ['중학교', 'schools-m.txt'], h: ['고등학교', 'schools-h.txt'] }[lvArg];
+const [file, infoFile] = args.filter(a => !a.startsWith('--'));
+if (!file || !LV) { console.error('사용법: node tools/import-schools.js 전국초중등학교위치표준데이터.csv [학교기본정보.csv] [--level=m|h]'); process.exit(1); }
 
 function readText(f) {
   const buf = fs.readFileSync(f);
@@ -63,7 +66,7 @@ const groups = new Map();
 let count = 0, skipped = 0;
 for (const r of rows) {
   if (!r[C.name]) continue;
-  if (!/초등학교/.test(r[C.level] || r[C.name])) continue;
+  if (!(r[C.level] || r[C.name]).includes(LV[0])) continue;
   if (C.state >= 0 && r[C.state] && !/운영/.test(r[C.state])) continue;
   const lat = parseFloat(r[C.lat]), lon = parseFloat(r[C.lon]);
   const addr = (r[C.addr] || (C.road >= 0 ? r[C.road] : '') || '').trim().split(/\s+/);
@@ -74,6 +77,7 @@ for (const r of rows) {
   const sigungu = sido === '세종' ? '세종시' : ((addr[1] || '') + gu).replace(/[|;:,@]/g, '');
   const dong = (addr.slice(1).find(t => /(동|읍|면|\d가)$/.test(t)) || '').replace(/[|;:,@]/g, '');
   const name = r[C.name].trim().replace(/[|;:,@]/g, '');
+  if (lvArg !== 'e' && !name.endsWith(LV[0])) { skipped++; continue; } // 중·고: 캠퍼스·실습지·국제학교 같은 것은 뺀다
   const key = sido + '|' + sigungu;
   if (!groups.has(key)) groups.set(key, []);
   const url = homepage.get(sido + '|' + name);
@@ -81,9 +85,9 @@ for (const r of rows) {
   count++;
 }
 
-const out = ['# 공공데이터포털 전국초중등학교위치표준데이터에서 만든 초등학교 목록', `# 원본: ${path.basename(file)}  (${new Date().toISOString().slice(0, 10)})`, '# 형식: 시도|시군구|학교[@동]:위도,경도[,홈페이지주소];…'];
+const out = [`# 공공데이터포털 전국초중등학교위치표준데이터에서 만든 ${LV[0]} 목록`, `# 원본: ${path.basename(file)}  (${new Date().toISOString().slice(0, 10)})`, '# 형식: 시도|시군구|학교[@동]:위도,경도[,홈페이지주소];…'];
 for (const [key, list] of [...groups.entries()].sort()) out.push(`${key}|${list.join(';')}`);
-const dest = path.join(__dirname, '..', 'mapdata', 'schools.txt');
+const dest = path.join(__dirname, '..', 'mapdata', LV[1]);
 fs.writeFileSync(dest, out.join('\n') + '\n');
-console.log(`초등학교 ${count}곳을 ${dest} 에 저장했어요. (위치가 이상해서 뺀 학교 ${skipped}곳${infoFile ? `, 홈페이지 ${homepage.size}곳` : ''})`);
+console.log(`${LV[0]} ${count}곳을 ${dest} 에 저장했어요. (위치가 이상해서 뺀 학교 ${skipped}곳${infoFile ? `, 홈페이지 ${homepage.size}곳` : ''})`);
 console.log('서버를 다시 켜면 새 지도가 만들어져요.');

@@ -12,6 +12,7 @@ const VERSION = 5;
 const SPACING = 15;    // 칸 사이 평균 거리 (지도 단위 1 ≈ 13.9m → 약 210m)
 const MIN_GAP = 8;     // 학교끼리 이보다 가까우면 살짝 떨어뜨린다 (≈110m)
 const SPACING_NK = 40; // 북한 땅은 칸을 크게 (≈560m): 보너스 땅이고 지도가 너무 무거워지지 않게
+const SPACING_JP = 100; // 일본 땅 (고등학교 지도만): 더 크게 (≈1.4km)
 const MARGIN = 400;
 
 function mulberry32(a) {
@@ -90,14 +91,14 @@ function encodeRing(p) {
 
 // map.bin: 'MLE1', 칸 수(4바이트), 칸마다 변 수(1바이트), 그다음 칸 모양.
 // 칸 모양 = [고리 수, (꼭짓점 수, 첫 점(앞 고리 첫 점과의 차이), 나머지 점(바로 앞 점과의 차이))…] 를 지그재그 가변 길이 정수로 적는다.
-function encodeBin(encoded, sides, nk) {
+function encodeBin(encoded, sides, nk, jp) {
   const n = encoded.length;
   let cap = 8 + n + 16;
   for (const rings of encoded) for (const r of rings) cap += 6 + r.length * 3;
   const buf = Buffer.alloc(cap);
   buf.write('MLE1', 0, 'latin1');
   buf.writeUInt32LE(n, 4);
-  for (let i = 0; i < n; i++) buf[8 + i] = Math.min(127, sides[i] || 0) | (nk && nk[i] ? 128 : 0); // 높은 비트 = 북한 칸
+  for (let i = 0; i < n; i++) buf[8 + i] = Math.min(jp ? 63 : 127, sides[i] || 0) | (nk && nk[i] ? 128 : 0) | (jp && jp[i] ? 64 : 0); // 높은 비트 = 북한 칸, 그다음 = 일본 칸
   let p = 8 + n, px = 0, py = 0;
   const u = v => { while (v >= 0x80) { buf[p++] = (v & 0x7f) | 0x80; v >>>= 7; } buf[p++] = v; };
   const z = v => u(((v << 1) ^ (v >> 31)) >>> 0);
@@ -112,15 +113,19 @@ function encodeBin(encoded, sides, nk) {
   return buf.subarray(0, p);
 }
 
-function buildMap({ landFile, schoolsFile, cacheDir }) {
+// level: 'e' 초등학교(북한 소학교 포함) / 'm' 중학교 / 'h' 고등학교. japan: 일본 땅도 넣는다 (학교는 없다)
+function buildMap({ landFile, schoolsFile, cacheDir, level = 'e', japan = false }) {
   const t0 = Date.now(), dir = path.dirname(landFile);
   const readOpt = f => { try { return fs.readFileSync(path.join(dir, f), 'utf8'); } catch { return ''; } };
-  // 남한 땅 + 북한 땅 (북한 땅 고리는 nkStart 번부터)
+  // 남한 땅 + 북한 땅 (북한 땅 고리는 nkStart 번부터) + 일본 땅 (jpStart 번부터)
   const skRings = JSON.parse(fs.readFileSync(landFile, 'utf8')).rings, nkText = readOpt('north-korea.json'), nkRings = nkText ? JSON.parse(nkText).rings : [];
-  const landRings = skRings.concat(nkRings), nkStart = skRings.length;
-  const schoolsText = fs.readFileSync(schoolsFile, 'utf8'), nkSchoolsText = nkRings.length ? readOpt('nk-schools.txt') : '';
+  const jpText = japan ? readOpt('japan.json') : '', jpRings = jpText ? JSON.parse(jpText).rings : [];
+  const landRings = skRings.concat(nkRings, jpRings), nkStart = skRings.length, jpStart = skRings.length + nkRings.length;
+  const schoolsText = fs.readFileSync(schoolsFile, 'utf8'), nkSchoolsText = nkRings.length && level === 'e' ? readOpt('nk-schools.txt') : '';
   const skSchools = parseSchools(schoolsText), schools = skSchools.concat(parseSchools(nkSchoolsText)); // 북한 (가상) 소학교는 뒤에
-  const hash = crypto.createHash('sha1').update(`${VERSION}|${SPACING}|${SPACING_NK}|${MIN_GAP}|`).update(JSON.stringify(landRings)).update(schoolsText).update(nkSchoolsText).digest('hex').slice(0, 12);
+  const h = crypto.createHash('sha1').update(`${VERSION}|${SPACING}|${SPACING_NK}|${MIN_GAP}|`).update(JSON.stringify(landRings)).update(schoolsText).update(nkSchoolsText);
+  if (level !== 'e' || jpRings.length) h.update(`|${level}|${jpRings.length ? SPACING_JP : ''}`); // 초등 지도는 번호가 그대로 (땅 기록 유지)
+  const hash = h.digest('hex').slice(0, 12);
   // 같은 재료로 만든 지도가 있으면 그대로 쓴다 (만드는 데 십몇 초 걸리니까)
   const cacheFile = cacheDir ? path.join(cacheDir, `map-${hash}.json`) : null;
   if (cacheFile && fs.existsSync(cacheFile)) {
@@ -254,7 +259,13 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   if (nkRings.length) {
     const nkBox = boxOfRings(polys.map((_, i) => i).filter(i => i >= nkStart));
     const [px, py] = poisson(Math.max(0, nkBox[0] - SPACING), Math.max(0, nkBox[1] - SPACING), Math.min(W, nkBox[2] + SPACING), Math.min(H, nkBox[3] + SPACING), SPACING_NK);
-    for (let k = 0; k < px.length; k++) if (landAt(px[k], py[k]) >= nkStart && !nearSeed(px[k], py[k], SPACING_NK * 0.6)) addSeed(px[k], py[k]);
+    for (let k = 0; k < px.length; k++) { const m = landAt(px[k], py[k]); if (m >= nkStart && m < jpStart && !nearSeed(px[k], py[k], SPACING_NK * 0.6)) addSeed(px[k], py[k]); }
+  }
+  // 일본: 아주 크게 (SPACING_JP)
+  if (jpRings.length) {
+    const jpBox = boxOfRings(polys.map((_, i) => i).filter(i => i >= jpStart));
+    const [px, py] = poisson(Math.max(0, jpBox[0] - SPACING), Math.max(0, jpBox[1] - SPACING), Math.min(W, jpBox[2] + SPACING), Math.min(H, jpBox[3] + SPACING), SPACING_JP);
+    for (let k = 0; k < px.length; k++) if (landAt(px[k], py[k]) >= jpStart && !nearSeed(px[k], py[k], SPACING_JP * 0.6)) addSeed(px[k], py[k]);
   }
   // 씨앗이 하나도 없는 섬에도 칸을 하나씩
   const massOfSeed = sx.map((x, i) => landAt(x, sy[i]));
@@ -269,7 +280,7 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   const n = sx.length;
 
   // ---- 3) 보로노이 다각형 (반평면 자르기) ----
-  const LIM = Math.max(SPACING * 5, SPACING_NK * 2.5);
+  const LIM = Math.max(SPACING * 5, SPACING_NK * 2.5, jpRings.length ? SPACING_JP * 2.5 : 0);
   const vor = new Array(n);
   for (let i = 0; i < n; i++) {
     const x = sx[i], y = sy[i];
@@ -340,7 +351,9 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   const encoded = cells.map(rings => rings.map(r => encodeRing(r.map(([x, y]) => canon(x, y)))).filter(r => r.length >= 6));
   // 브라우저와 똑같이 정수 좌표로 이웃을 구한다
   const nb = neighborsFromRings(encoded.map(rings => rings.map(decodeRing)), { W, H });
-  const nk = massOfSeed.map(m => (m >= nkStart ? 1 : 0)); // 북한 칸 표시
+  const nk = massOfSeed.map(m => (m >= nkStart && m < jpStart ? 1 : 0)); // 북한 칸 표시
+  const jp = jpRings.length ? massOfSeed.map(m => (m >= jpStart ? 1 : 0)) : null; // 일본 칸 표시
+  const cty = i => (jp && jp[i] ? 1 : 0); // 나라: 뱃길은 나라 안에서만 (일본으로는 배를 사서 간다)
 
   // ---- 6) 모든 땅이 이어지도록 섬에 뱃길을 놓는다 ----
   const routes = [];
@@ -351,12 +364,15 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   for (;;) {
     const comps = new Map();
     for (let i = 0; i < n; i++) { const r = find(i); if (!comps.has(r)) comps.set(r, []); comps.get(r).push(i); }
-    if (comps.size <= 1) break;
-    const comp = [...comps.values()].sort((a, b) => a.length - b.length)[0], root = find(comp[0]);
+    const per = [0, 0];
+    for (const c of comps.values()) per[cty(c[0])]++;
+    const cand = [...comps.values()].filter(c => per[cty(c[0])] > 1);
+    if (!cand.length) break;
+    const comp = cand.sort((a, b) => a.length - b.length)[0], root = find(comp[0]), ct = cty(comp[0]);
     const small = comp.some(i => !sides[i]) ? comp.filter(i => !sides[i]) : comp;
     let best = null, bd = Infinity;
     for (const a of small) for (const b of coast) { // 가장 가까운 두 칸은 언제나 바닷가 칸이다
-      if (find(b) === root) continue;
+      if (find(b) === root || cty(b) !== ct) continue;
       const d = (sx[a] - sx[b]) ** 2 + (sy[a] - sy[b]) ** 2;
       if (d < bd) { bd = d; best = [a, b]; }
     }
@@ -375,19 +391,20 @@ function buildMap({ landFile, schoolsFile, cacheDir }) {
   const districts = [...dmap.values()].map(d => ({ sido: d.sido, sigungu: d.sigungu, x: d.x / d.n, y: d.y / d.n, lat: d.lat / d.n, lon: d.lon / d.n }));
 
   const map = {
-    hash, W, H, n, ox, oy, schoolCount, seedX: sx, seedY: sy, nb, routes, sides, mass: massOfSeed, districts, nk,
+    hash, W, H, n, ox, oy, schoolCount, seedX: sx, seedY: sy, nb, routes, sides, mass: massOfSeed, districts, nk, jp, level,
     schools: schools.map((s, i) => ({ name: s.name, sido: s.sido, sigungu: s.sigungu, dong: s.dong, url: s.url, cell: i, nk: i >= skSchools.length })),
     toMap, landAt,
   };
   map.clientJSON = JSON.stringify({
     hash, W, H, n, spacing: SPACING, schoolCount, nkLand: nkStart, nkSchools: [skSchools.length, schools.length],
+    ...(level !== 'e' ? { level } : {}), ...(jp ? { jpLand: jpStart } : {}),
     bin: true, routes, // 칸 모양과 변 수는 map.bin 에 (훨씬 작다)
     seeds: sx.slice(0, schoolCount).flatMap((x, i) => [Math.round(x), Math.round(sy[i])]), // 학교 칸만 (나머지는 칸 가운데)
     land: polys.map(encodeRing),
     schools: schools.map(s => [s.name, s.sido, s.sigungu, s.url || '', s.dong || '']),
     districts: districts.map(d => [d.sido, d.sigungu, Math.round(d.x), Math.round(d.y)]),
   });
-  map.clientBin = encodeBin(encoded, sides, nk);
+  map.clientBin = encodeBin(encoded, sides, nk, jp);
   map.stats = { cells: n, schools: schoolCount, coastal, fallback, routes: routes.length, ms: Date.now() - t0 };
   if (cacheFile) {
     try {
@@ -405,6 +422,7 @@ function addScenery(map, landFile) {
   const dir = path.dirname(landFile), xy = (lat, lon) => { const [x, y] = project(lon, lat); return [x - map.ox, y - map.oy]; };
   let txt = '';
   try { txt = fs.readFileSync(path.join(dir, 'korea-places.txt'), 'utf8'); } catch { /* 이름 없이 */ }
+  if (map.jp) try { txt += '\n' + fs.readFileSync(path.join(dir, 'japan-places.txt'), 'utf8'); } catch { /* 일본 이름 없이 */ }
   const places = [];
   for (const line of txt.split('\n')) {
     const m = line.trim().match(/^(산|섬)\|([^|]+)\|(-?[\d.]+)\|(-?[\d.]+)(?:\|(\d+))?$/);

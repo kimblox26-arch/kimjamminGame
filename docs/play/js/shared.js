@@ -16,6 +16,14 @@
     return now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1;
   }
   const gradeFromBirthYear = (birthYear, now) => schoolYear(now) - birthYear - 6;
+  // 학교급: 초등(1~6학년, 학년마다 서버) · 중학교(7~9 → 서버 하나) · 고등학교(10~12 → 서버 하나)
+  const MAX_GRADE = 12;
+  const levelOf = g => (g >= 10 ? 'h' : g >= 7 ? 'm' : 'e');
+  const serverOf = g => (g >= 10 ? 10 : g >= 7 ? 7 : g);
+  const gradeName = g => (g >= 10 ? `고${g - 9}` : g >= 7 ? `중${g - 6}` : `${g}학년`);
+  const serverName = g => (g >= 10 ? '고등학교 서버' : g >= 7 ? '중학교 서버' : `${g}학년 서버`);
+  const LEVEL_NAME = { e: '초등학교', m: '중학교', h: '고등학교' };
+  const SERVERS = [1, 2, 3, 4, 5, 6, 7, 10];
 
   // 배지: 기록(key)이 n 이상이면 받는다
   const BADGES = [
@@ -65,16 +73,16 @@
     let total = 0;
     for (let c = 0; c < n; c++) ring(c, (r, s, e) => { total += (e - s) >> 1; });
     const cap = Math.ceil(total * 0.75) + 1024; // 서로 다른 변은 꼭짓점 수의 절반쯤 → 표가 2/3쯤 찬다
-    const ka = new Uint32Array(cap), kb = new Uint32Array(cap), val = new Int32Array(cap).fill(-1);
     const O = dims ? 2 : 4096, HH = dims ? dims.H + 5 : 65536;
-    if (dims && (dims.W + 5) * HH >= 4294967296) throw new Error('지도가 너무 커요');
+    const big = dims && (dims.W + 5) * HH >= 4294967296, K = big ? Float64Array : Uint32Array; // 일본까지 넣은 큰 지도: 꼭짓점 열쇠가 32비트를 넘는다
+    const ka = new K(cap), kb = new K(cap), val = new Int32Array(cap).fill(-1);
     for (let c = 0; c < n; c++) ring(c, (r, s, e) => {
       if (e - s < 4) return;
       let px = r[e - 2], py = r[e - 1];
       for (let k = s; k < e; k += 2) {
         const x = r[k], y = r[k + 1];
         if (x !== px || y !== py) {
-          const v = ((x + O) * HH + (y + O)) >>> 0, w = ((px + O) * HH + (py + O)) >>> 0, a = v < w ? v : w, b = v < w ? w : v;
+          const v = (x + O) * HH + (y + O), w = (px + O) * HH + (py + O), a = v < w ? v : w, b = v < w ? w : v;
           let h = Math.imul(a ^ Math.imul(b, 0x9e3779b1), 0x85ebca6b);
           h = ((h ^ (h >>> 15)) >>> 0) % cap;
           while (val[h] >= 0 && (ka[h] !== a || kb[h] !== b)) if (++h === cap) h = 0;
@@ -96,6 +104,8 @@
 
   // ---------- 게임 규칙 (서버와 브라우저가 똑같이 쓴다) ----------
   const BASE_COST = 2, FAR_GRADE = 4, FAR_COST = 50, NK_MIN = 200; // 북한 땅은 우리 땅이 200칸 이상이어야
+  const FAR_COST_MH = 20, JP_MIN = 300; // 중학생부터 멀리 있는 땅은 문제 20개, 일본 땅은 우리 땅이 300칸 이상이어야 (고등학교)
+  const farCost = grade => (grade >= 7 ? FAR_COST_MH : FAR_COST);
   // 갇힌 학교의 탈출길: 우리 땅 둘레에 빈 땅이 하나도 없으면 가장 가까운 빈 땅으로 빠져나갈 수 있다
   const nbFn = nb => (typeof nb === 'function' ? nb : i => nb[i]); // 이웃 목록: 배열 또는 함수
   function escapeCells(owner, nb, sid, mine) { // mine: 우리 칸 목록 (없으면 모두 찾아본다)
@@ -122,10 +132,20 @@
       const size = typeof o.size === 'function' ? o.size() : o.size || 0;
       if (size < NK_MIN) return { error: `북한 땅은 우리 학교 땅이 ${NK_MIN}칸 이상이어야 뺏을 수 있어요. (지금 ${size}칸)`, nk: true };
     }
+    if (o.jp && o.jp(cell)) { // 일본 땅 (고등학교): 붙어 있으면 그냥, 처음에는 배를 타고 바닷가에 내린다
+      const size = typeof o.size === 'function' ? o.size() : o.size || 0;
+      if (size < JP_MIN) return { error: `일본 땅은 우리 학교 땅이 ${JP_MIN}칸 이상이어야 뺏을 수 있어요. (지금 ${size}칸)`, jp: true };
+      if (nb(cell).some(k => owner[k] === sid)) return { cost: Math.max(BASE_COST, d) };
+      const sh = o.ship || {};
+      if (!sh.coast) return { error: '🌊 일본에는 배를 타고 가요. 바다에 닿은 일본 땅을 골라 주세요.', jp: true };
+      if (!sh.port) return { error: '⚓ 우리 학교 땅 중에 바다에 닿은 땅(항구)이 있어야 배를 띄울 수 있어요.', jp: true };
+      if (!sh.have) return { error: `⛵ 배가 있어야 일본으로 건너갈 수 있어요. 🛒 상점에서 배를 사 주세요. (${priceOf('ship')}코인)`, jp: true, needShip: true };
+      return { cost: Math.max(BASE_COST, d), ship: true };
+    }
     if (nb(cell).some(k => owner[k] === sid)) return { cost: Math.max(BASE_COST, d) };
     const esc = o.escape || new Set(escapeCells(owner, nb, sid));
     if (esc.has(cell)) return { cost: BASE_COST, escape: true };
-    if (grade >= FAR_GRADE) return { cost: Math.max(FAR_COST, d), far: true };
+    if (grade >= FAR_GRADE) return { cost: Math.max(farCost(grade), d), far: true };
     return { error: '우리 학교 땅과 닿아 있는 땅만 뺏을 수 있어요. (4학년부터는 멀리 있는 땅도 문제 50개로 뺏을 수 있어요)' };
   }
   // 땅 팔기: 고른 칸에서 이어진 우리 땅(본부 빼고)을 count 칸까지 모은다
@@ -150,7 +170,28 @@
     { id: 'bomb', icon: '💣', name: '폭탄', price: 60, desc: '뺏을 수 있는 땅과 그 옆 땅 2칸까지, 문제 없이 한 번에 3칸!' },
     { id: 'scope', icon: '🔭', name: '망원경', price: 25, desc: '10분 동안 우리 땅 둘레에서 가장 약한 땅을 반짝반짝 알려 주고, 멀리서도 방어 수가 보여요.' },
     { id: 'flag', icon: '🚩', name: '학교 깃발 꾸미기', price: 50, desc: '우리 학교 땅 색깔과 마크를 바꿔요. (다른 학교 친구들에게 보여요)' },
+    { id: 'war', icon: '⚔️', name: '전쟁 선포권', price: 30, lv: 'mh', desc: '게임에 있는 다른 학교 친구에게 전쟁을 걸어요. 상대가 수락하면 30분 동안 전쟁! (중·고등학교)' },
+    { id: 'ship', icon: '⛵', name: '배', price: 20, lv: 'h', desc: '우리 학교 바닷가 땅에서 일본 바닷가 땅으로 건너가 뺏어요. 한 번 건너면 없어져요. (고등학교)' },
   ];
+  const shopFor = lv => SHOP.filter(it => !it.lv || it.lv.includes(lv));
+
+  // ---------- 전쟁 · 동맹 (중·고등학교) ----------
+  const WAR_MIN = 30, WAR_ASK_SEC = 120, WAR_WIN = 40; // 전쟁 30분, 신청은 2분 안에 수락, 이긴 편에서 땅을 뺏은 사람은 40코인
+  const warLive = (w, now) => w.st === 'on' && now < w.end;
+  const warSide = (w, key) => (key === w.a ? 'a' : key === w.b ? 'b' : (w.al && w.al[key]) || null); // 학교 키 → 'a' / 'b' / null
+  // 전쟁 중인 학교 땅은 상대편만 뺏을 수 있고, 동맹 학교 땅은 아무도 못 뺏는다 (뺏을 수 있으면 null)
+  function warRule(wars, now, atkKey, defKey) {
+    for (const w of wars || []) {
+      if (!warLive(w, now)) continue;
+      const ds = warSide(w, defKey);
+      if (!ds) continue;
+      if (defKey !== w.a && defKey !== w.b) return { error: '🤝 전쟁을 돕는 동맹 학교의 땅은 전쟁이 끝날 때까지 아무도 못 뺏어요.' };
+      const as = warSide(w, atkKey);
+      if (!as || as === ds) return { error: '⚔️ 전쟁 중인 학교의 땅은 상대편만 뺏을 수 있어요.' };
+    }
+    return null;
+  }
+  const VOTE_BAN = 20, VOTE_BAN_HOURS = 24, VOTE_DAYS = 7; // 7일 안에 20표가 모이면 하루 동안 정지
   const SHIELD_HOURS = 24, SCOPE_MIN = 10, BOMB_EXTRA = 2, BOMB_MAX_DEF = 10;
   const FLAG_COLORS = ['#ef4444', '#f97316', '#d97706', '#84cc16', '#16a34a', '#14b8a6', '#0891b2', '#2563eb', '#4f46e5', '#9333ea', '#db2777', '#57534e'];
   const FLAG_MARKS = ['★', '◆', '▲', '●', '♪', '☾', '✿', '■', '✚', '✱', '✪', '❀', '✸', '♡'];
@@ -181,6 +222,8 @@
   const duelPace = (grade, def) => Math.max(4.5, 8.5 - grade * 0.35 - Math.min(def || 0, 20) * 0.05);
 
   return { PROJ, project, unproject, schoolYear, gradeFromBirthYear, BADGES, CHAT, decodeRing, sharedEdges, neighborsFromRings,
+    MAX_GRADE, levelOf, serverOf, gradeName, serverName, LEVEL_NAME, SERVERS, FAR_COST_MH, JP_MIN, farCost,
+    WAR_MIN, WAR_ASK_SEC, WAR_WIN, warLive, warSide, warRule, VOTE_BAN, VOTE_BAN_HOURS, VOTE_DAYS, shopFor,
     BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK, MARK,
     SHOP, SHIELD_HOURS, SCOPE_MIN, BOMB_EXTRA, BOMB_MAX_DEF, FLAG_COLORS, FLAG_MARKS, attendCoins, MISSIONS, MISSION_ALL, dailyMissions,
     priceOf, duelPace, DUEL_BONUS, cleanChat };

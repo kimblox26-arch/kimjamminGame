@@ -119,6 +119,7 @@
       <button type="button" id="btnStudy" class="icon-btn" title="공부방 (연습 · 스피드 퀴즈 · 오답 노트)">✏️<i id="wrongCount" class="count" hidden></i></button>
       <button type="button" id="btnMission" class="icon-btn" title="오늘의 미션" hidden>🎯<i id="missionDot" class="count dot" hidden></i></button>
       <button type="button" id="btnShop" class="icon-btn" title="상점" hidden>🛒</button>
+      <button type="button" id="btnWar" class="icon-btn" title="전쟁 · 동맹 (중·고등학교)" hidden>⚔️<i id="warDot" class="count dot" hidden></i></button>
       <button type="button" id="btnChat" class="icon-btn" title="채팅">💬<i id="chatDot" class="count dot" hidden></i></button>
       <button type="button" id="btnBadges" class="icon-btn" title="내 배지와 기록">🏅</button>
       <button type="button" id="btnBgm" class="icon-btn wide-only" title="배경 음악">🎵</button>
@@ -139,6 +140,7 @@
         <button type="button" id="zFit" title="전국 지도">🗺️</button>
       </div>
       <div class="minimap"><canvas id="mini"></canvas></div>
+      <div id="warBar" class="war-bar" hidden></div>
       <div id="conn" class="conn" title="서버 연결 상태"><i></i><span>연결됨</span></div>
       <div id="where" class="where" hidden></div>
       <div id="tip" class="tip"></div>
@@ -390,6 +392,21 @@
 </div>
 
 <!-- 운영자 초대 -->
+<div id="warModal" class="modal" hidden>
+  <div class="card wide war-card">
+    <div class="row between"><h3>⚔️ 전쟁 · 🤝 동맹</h3><button type="button" class="icon-btn" data-close="warModal">✕</button></div>
+    <div id="warBody"></div>
+  </div>
+</div>
+<div id="askModal" class="modal" hidden>
+  <div class="card small invite-card">
+    <div class="inv-icon" id="askIcon">⚔️</div>
+    <h3 id="askTitle"></h3>
+    <p class="inv-text" id="askText"></p>
+    <p class="muted" id="askNote"></p>
+    <div class="row end"><button type="button" class="btn danger" id="askNo">거절</button><button type="button" class="btn primary" id="askYes">수락</button></div>
+  </div>
+</div>
 <div id="inviteModal" class="modal" hidden>
   <div class="card small invite-card">
     <div class="inv-icon">📨</div>
@@ -427,6 +444,11 @@
       <li>💬 <b>채팅</b>: 위 💬 버튼을 누르면 우리 학교 친구들이나 전체에게 말을 쓸 수 있어요. 나쁜 말과 전화번호는 저절로 가려져요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>
       <li>⚔️ <b>다른 학교 땅</b>을 뺏을 때는 땅 주인 학교와 <b>1:1 수학 결투</b>! 상대보다 <b>먼저</b> 다 맞혀야 땅을 가져오고, 이기면 🪙 보너스!</li>
       <li>🪙 문제 1개를 맞히면 <b>1코인</b>! 🛒 <b>상점</b>에서 🛡️ 방패(24시간 못 뺏김) · 💣 폭탄(한 번에 3칸) · 🔭 망원경(약한 땅 찾기) · 🚩 학교 깃발을 사요.</li>
+      <li>🏫 <b>중학교 서버</b>(중1~중3)와 <b>고등학교 서버</b>(고1~고3)도 있어요. 출생연도로 정해지고, 학교급마다 진짜 중·고등학교가 놓인 지도를 따로 써요. 중학생부터는 멀리 있는 땅을 <b>문제 20개</b>로 뺏어요.</li>
+      <li>⚔️ <b>전쟁</b>(중·고): 🛒 전쟁 선포권(30코인)을 사서 <b>게임에 있는</b> 다른 학교 친구에게 전쟁을 걸어요. 상대가 수락하면 30분 동안 전쟁! 그동안 <b>다른 학교는 두 학교 땅을 못 뺏고</b>, 상대 학교 땅을 더 많이 뺏은 편이 이겨요.</li>
+      <li>🤝 <b>동맹</b>: 전쟁 중인 학교는 다른 학교에 동맹을 신청할 수 있어요. 동맹은 코인을 안 쓰고 땅도 안 뺏기며, 상대편 땅을 뺏어 돕는 학교 땅으로 만들어 줘요.</li>
+      <li>🗳️ <b>밴 투표</b>(중·고): 순위 목록의 🗳️를 눌러 나쁜 행동을 하는 친구에게 투표해요. 7일 안에 <b>20표</b>가 모이면 하루 동안 정지돼요.</li>
+      <li>🗾 <b>일본 땅</b>(고등학교): 지도가 일본까지 넓어졌어요. 우리 학교 땅이 <b>300칸 이상</b>이고 <b>바닷가 땅</b>이 있으면, 🛒 <b>⛵ 배</b>(20코인)를 타고 일본 바닷가 땅으로 건너가 뺏어요. 그다음부터는 이어서 넓혀요.</li>
       <li>🎯 <b>오늘의 미션</b>을 깨면 코인을 받아요. 매일 출석하면 출석 코인도! ✏️ 공부방의 <b>⏱️ 스피드 퀴즈</b>는 1분 동안 최대한 많이 맞히기예요.</li>
     </ol>
     <div class="row end"><button type="button" class="btn primary" data-close="helpModal">알겠어요!</button></div>
@@ -438,7 +460,7 @@
 <script src="js/intro.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/problems.js"></script>
-<script>window.MLE_MAP_URL = "map.json?v=zj1s-c0c7325201"; window.MLE_MAP_BIN_URL = "map.bin?v=zj1s-c0c7325201";</script>
+<script>window.MLE_MAP_URL = "map.json?v=zj1s-6df6ea5824"; window.MLE_MAP_BIN_URL = "map.bin?v=zj1s-6df6ea5824"; window.MLE_MAPS = {"e":["map.json?v=zj1s-6df6ea5824","map.bin?v=zj1s-6df6ea5824"],"m":["map-m.json?v=ziyc-1b821eca46","map-m.bin?v=ziyc-1b821eca46"],"h":["map-h.json?v=124a4-e8d3b6c6b5","map-h.bin?v=124a4-e8d3b6c6b5"]};</script>
 <script src="js/firebase-config.js"></script>
 <script src="js/backend.js"></script>
 <script src="js/app.js"></script>
