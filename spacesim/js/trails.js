@@ -107,7 +107,7 @@ export class OrbitLine {
 const FLASH_FRAG = /* glsl */ `
 uniform vec3 uColor; uniform float uK; varying vec2 vUv;
 void main(){ vec2 c=vUv*2.-1.; float r=length(c); float ring=exp(-pow((r-uK*.8)*10.,2.))*(1.-uK); float core=exp(-r*r*18.)*(1.-uK)*2.;
- float a=atan(c.y,c.x); float spikes=pow(abs(cos(a*2.)),40.)*exp(-r*3.)*(1.-uK)*1.5;
+ float spikes=0.;
  gl_FragColor=vec4(uColor*(ring*2.+core+spikes),1.); }`;
 const FLASH_VERT = /* glsl */ `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`;
 
@@ -119,7 +119,7 @@ export class Flashes {
   }
   spawn(pos, size, color = 0xffc58a, life = 1.6) {
     if (this.list.length >= 16) return;
-    const mat = new THREE.ShaderMaterial({ vertexShader: FLASH_VERT, fragmentShader: FLASH_FRAG, uniforms: { uColor: { value: new THREE.Color(color).multiplyScalar(3) }, uK: { value: 0 } }, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+    const mat = new THREE.ShaderMaterial({ vertexShader: FLASH_VERT, fragmentShader: FLASH_FRAG, uniforms: { uColor: { value: new THREE.Color(color).multiplyScalar(1.4) }, uK: { value: 0 } }, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
     const m = new THREE.Mesh(this.geo, mat);
     m.position.copy(pos);
     m.scale.setScalar(size);

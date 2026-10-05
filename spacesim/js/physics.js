@@ -129,28 +129,35 @@ export class NBody {
   }
 
   resolveMerges() {
-    const pairs = this.pairs.slice();
-    const bs = pairs.map((i) => this.bodies[i]);
+    const bs = this.pairs.map((i) => this.bodies[i]);
+    this.pairs.length = 0;
     for (let k = 0; k < bs.length; k += 2) {
-      let a = bs[k], b = bs[k + 1];
+      const a = bs[k], b = bs[k + 1];
       if (a.dead || b.dead || a === b) continue;
-      const i = a.idx, j = b.idx;
-      if (this.m[j] > this.m[i]) { [a, b] = [b, a]; }
-      const ia = a.idx, ib = b.idx;
-      const ma = this.m[ia], mb = this.m[ib], M = ma + mb;
-      const w = M > 0 ? mb / M : 0.5;
-      const info = { survivor: a, absorbed: b, massA: ma, massB: mb, pos: [this.x[ib], this.y[ib], this.z[ib]] };
-      for (const [p, v] of [['x', 'vx'], ['y', 'vy'], ['z', 'vz']]) {
-        this[p][ia] += (this[p][ib] - this[p][ia]) * w;
-        this[v][ia] += (this[v][ib] - this[v][ia]) * w;
-      }
-      this.m[ia] = M;
-      this.r[ia] = Math.cbrt(this.r[ia] ** 3 + this.r[ib] ** 3);
-      this.removeAt(ib);
-      if (this.onMerge) this.onMerge(info);
+      if (this.onCollision && this.onCollision(a, b)) continue;
+      this.mergeBodies(a, b);
     }
     this.pairs.length = 0;
     this.computeAcc();
+  }
+
+  // 완전 비탄성 병합 (운동량·질량중심 보존). 무거운 쪽이 남음.
+  mergeBodies(a, b) {
+    if (this.m[b.idx] > this.m[a.idx]) [a, b] = [b, a];
+    const ia = a.idx, ib = b.idx;
+    const ma = this.m[ia], mb = this.m[ib], M = ma + mb;
+    const w = M > 0 ? mb / M : 0.5;
+    const info = { survivor: a, absorbed: b, massA: ma, massB: mb, pos: [this.x[ib], this.y[ib], this.z[ib]], posA: [this.x[ia], this.y[ia], this.z[ia]] };
+    for (const [p, v] of [['x', 'vx'], ['y', 'vy'], ['z', 'vz']]) {
+      this[p][ia] += (this[p][ib] - this[p][ia]) * w;
+      this[v][ia] += (this[v][ib] - this[v][ia]) * w;
+    }
+    this.m[ia] = M;
+    this.r[ia] = Math.cbrt(this.r[ia] ** 3 + this.r[ib] ** 3);
+    this.removeAt(ib);
+    if (this.onMerge) this.onMerge(info);
+    this.accValid = false;
+    return info;
   }
 
   energy() {

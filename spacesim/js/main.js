@@ -17,13 +17,14 @@ import { GalaxyScenario } from './scenarios/galaxy.js';
 import { ClusterScenario } from './scenarios/cluster.js';
 import { ThreeBodyScenario } from './scenarios/threebody.js';
 import { BinaryScenario } from './scenarios/binary.js';
-import { SandboxScenario } from './scenarios/sandbox.js';
+import { LabScenario } from './scenarios/lab.js';
+import { preloadTextures, setAnisotropy, PLANET_KEYS } from './textures.js';
 
 const QUALITY = {
-  low: { name: '낮음', pr: 1, msaa: 0, seg: 40, oct: 4, stars: 7000, belt: 2500, galaxy: 16000, cluster: 256, proto: 70, bhSteps: 140, bhScale: 0.55, bhCube: 512, budget: 6 },
-  medium: { name: '중간', pr: 1.5, msaa: 2, seg: 64, oct: 5, stars: 12000, belt: 5000, galaxy: 32000, cluster: 400, proto: 110, bhSteps: 190, bhScale: 0.7, bhCube: 768, budget: 7 },
-  high: { name: '높음', pr: 2, msaa: 4, seg: 96, oct: 6, stars: 18000, belt: 9000, galaxy: 60000, cluster: 640, proto: 150, bhSteps: 260, bhScale: 0.8, bhCube: 1024, budget: 9 },
-  ultra: { name: '울트라', pr: 2.5, msaa: 4, seg: 128, oct: 7, stars: 26000, belt: 14000, galaxy: 100000, cluster: 1024, proto: 200, bhSteps: 360, bhScale: 1, bhCube: 2048, budget: 11 },
+  low: { name: '낮음', pr: 1, msaa: 0, seg: 40, oct: 4, stars: 7000, belt: 2500, galaxy: 16000, cluster: 256, proto: 70, bhSteps: 140, bhScale: 0.55, bhCube: 512, budget: 6, debris: 70, debrisCap: 700, maxBodies: 120, sky: 'milkyway_4k' },
+  medium: { name: '중간', pr: 1.5, msaa: 2, seg: 64, oct: 5, stars: 12000, belt: 5000, galaxy: 32000, cluster: 400, proto: 110, bhSteps: 190, bhScale: 0.7, bhCube: 768, budget: 7, debris: 120, debrisCap: 1200, maxBodies: 180, sky: 'milkyway_4k' },
+  high: { name: '높음', pr: 2, msaa: 4, seg: 96, oct: 6, stars: 18000, belt: 9000, galaxy: 60000, cluster: 640, proto: 150, bhSteps: 260, bhScale: 0.8, bhCube: 1024, budget: 9, debris: 200, debrisCap: 2200, maxBodies: 240, sky: 'milkyway_8k' },
+  ultra: { name: '울트라', pr: 2.5, msaa: 4, seg: 128, oct: 7, stars: 26000, belt: 14000, galaxy: 100000, cluster: 1024, proto: 200, bhSteps: 360, bhScale: 1, bhCube: 2048, budget: 11, debris: 300, debrisCap: 3200, maxBodies: 300, sky: 'milkyway_8k' },
 };
 const Q_HINT = {
   auto: '기기에 맞춰 자동 선택합니다.',
@@ -34,13 +35,13 @@ const Q_HINT = {
 };
 
 export const SCENARIOS = [
-  { id: 'solar', title: '태양계', sub: '오늘 날짜의 실제 행성 배치에서 시작하는 N-체 중력 시뮬레이션 · 위성 · 소행성대', cls: SolarScenario, thumb: 'radial-gradient(circle at 30% 50%, #fff3c4 0 10%, #ffb347 14%, transparent 24%), radial-gradient(circle at 74% 40%, #6fb2ff 0 6%, transparent 8%), radial-gradient(circle at 60% 72%, #e0b98c 0 8%, transparent 10%), #0a1124' },
+  { id: 'solar', title: '태양계', sub: '지금 이 순간(또는 원하는 날짜)의 실제 위치·자전에서 시작 · 실제 표면 사진', cls: SolarScenario, thumb: 'radial-gradient(circle at 30% 50%, #fff3c4 0 10%, #ffb347 14%, transparent 24%), radial-gradient(circle at 74% 40%, #6fb2ff 0 6%, transparent 8%), radial-gradient(circle at 60% 72%, #e0b98c 0 8%, transparent 10%), #0a1124' },
   { id: 'blackhole', title: '블랙홀', sub: '슈바르츠실트 측지선 광선추적 — 중력 렌즈 · 광자 고리 · 도플러 빔', cls: BlackHoleScenario, thumb: 'radial-gradient(circle, #000 0 22%, #ffe9c8 25%, #ff9a4a 30%, transparent 38%), linear-gradient(transparent 44%, #ffcf8a 48%, #ff7a3a 52%, transparent 56%), #070a14' },
   { id: 'galaxy', title: '은하 충돌', sub: '두 나선은하의 조석 상호작용과 병합 · 최대 10만 입자', cls: GalaxyScenario, thumb: 'radial-gradient(ellipse 30% 14% at 34% 44%, #fff0d0, #8fb0ff 60%, transparent), radial-gradient(ellipse 20% 30% at 70% 62%, #ffe2b8, #b08cff 60%, transparent), #060914' },
   { id: 'cluster', title: '구상성단', sub: '플러머 구 직접 N-체 · 질량 분리 · 별의 증발', cls: ClusterScenario, thumb: 'radial-gradient(circle at 50% 50%, #fff8e0 0 8%, #ffd29a 18%, rgba(255,190,120,.35) 34%, transparent 52%), #070b16' },
   { id: 'threebody', title: '삼체 문제', sub: '8자 궤도 · 나비 해 · 라그랑주 삼각형 · 피타고라스 혼돈', cls: ThreeBodyScenario, thumb: 'radial-gradient(circle at 25% 50%, #8fb8ff 0 7%, transparent 9%), radial-gradient(circle at 75% 50%, #ffd27a 0 7%, transparent 9%), radial-gradient(circle at 50% 50%, #ff7a5a 0 6%, transparent 8%), #0a0f20' },
   { id: 'binary', title: '쌍성계', sub: 'Kepler-16 — 두 개의 태양을 도는 행성 (타투인)', cls: BinaryScenario, thumb: 'radial-gradient(circle at 42% 50%, #ffd09a 0 10%, transparent 14%), radial-gradient(circle at 60% 52%, #ff8a6a 0 6%, transparent 9%), radial-gradient(circle at 82% 34%, #e0c8a0 0 4%, transparent 5%), #0b0f1e' },
-  { id: 'sandbox', title: '샌드박스', sub: '행성·별·블랙홀을 던져 충돌시키고 원시행성 원반에서 행성을 키워 보세요', cls: SandboxScenario, thumb: 'radial-gradient(circle at 50% 50%, #fff3c4 0 8%, #ffb347 12%, transparent 18%), radial-gradient(circle at 20% 30%, #ffa060 0 3%, transparent 5%), radial-gradient(circle at 76% 70%, #6fb2ff 0 4%, transparent 6%), #0a1020' },
+  { id: 'sandbox', title: '우주 실험실', sub: '빈 우주에 실제 천체를 배치·발사 — 충돌하면 파편이 튀고 원시 위성이 생깁니다', cls: LabScenario, thumb: 'radial-gradient(circle at 50% 50%, #fff3c4 0 8%, #ffb347 12%, transparent 18%), radial-gradient(circle at 20% 30%, #ffa060 0 3%, transparent 5%), radial-gradient(circle at 76% 70%, #6fb2ff 0 4%, transparent 6%), #0a1020' },
 ];
 
 const DEFAULTS = { quality: 'auto', bloom: 1, exposure: 1, orbits: true, markers: true, autorot: false, dynres: true, perf: true, sound: false, trails: true, labels: true, scenario: 'solar' };
@@ -89,8 +90,12 @@ class App {
     this.controls = new OrbitCam(this.camera, this.canvas);
     this.controls.onTap = (x, y) => this.scenario?.pick(x, y);
     this.controls.onDoubleTap = (x, y) => { if (this.scenario?.pick(x, y)) this.controls.zoom(0.45); };
+    setAnisotropy(Math.min(8, r.capabilities.getMaxAnisotropy()));
+    if (r.capabilities.maxTextureSize < 8192) this.quality = { ...this.quality, sky: 'milkyway_4k' };
     await tick();
-    progress(0.3, `항성 ${this.quality.stars.toLocaleString()}개 · 은하수 생성`);
+    const keys = [...PLANET_KEYS, this.quality.sky];
+    await preloadTextures(keys, (f) => progress(0.12 + f * 0.33, `실제 천체 표면 텍스처 불러오는 중… (${Math.round(f * keys.length)}/${keys.length})`));
+    progress(0.46, '은하수 파노라마 · 밝은 별 배치');
     this.buildSky();
     this.buildComposer();
     this.resize();
@@ -112,8 +117,9 @@ class App {
   }
 
   buildSky() {
-    if (this.sky) { this.scene.remove(this.sky.group); this.sky.stars.geometry.dispose(); }
-    this.sky = new Sky({ count: this.quality.stars, pixelRatio: this.pixelRatio });
+    if (this.sky) this.scene.remove(this.sky.group);
+    if (this.sky) this.sky.dispose();
+    this.sky = new Sky({ count: this.quality.stars, pixelRatio: this.pixelRatio, texKey: this.quality.sky });
     this.scene.add(this.sky.group);
   }
 
@@ -294,6 +300,7 @@ class App {
   async applyQuality() {
     this.qualityKey = this.resolveQuality();
     this.quality = QUALITY[this.qualityKey];
+    if (this.renderer.capabilities.maxTextureSize < 8192) this.quality = { ...this.quality, sky: 'milkyway_4k' };
     this.dynScale = 1;
     this.buildSky();
     this.buildComposer();

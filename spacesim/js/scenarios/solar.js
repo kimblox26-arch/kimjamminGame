@@ -1,50 +1,16 @@
-// SpaceSim — 태양계: JPL 근사 궤도 요소로 오늘 날짜의 실제 배치에서 시작하는 N-체 적분
+// SpaceSim — 태양계: 실제 날짜의 실제 위치에서 시작하는 N-체 적분
+// · 행성: JPL 근사 궤도 요소 → 지정한 날짜(기본: 지금)의 일심 위치/속도
+// · 달: Meeus 평균 요소 · 갈릴레이 위성: Meeus 44장 위상 · 자전축과 자전 위상: IAU WGCCRE 2015
+// · 표면: 실제 행성 사진 텍스처 (지구 낮/밤/구름/바다 반사, 토성 고리 등)
 import * as THREE from 'three';
 import { NBodyScenario } from './nbody-base.js';
-import { G_AU, DEG, TAU, AU_KM, ecl, keplerToState, rng, fmtDuration } from '../util.js';
+import { G_AU, DEG, TAU, AU_KM, ecl, keplerToState, rng, fmtDuration, daysSinceJ2000, iauFrame, galileanU } from '../util.js';
+import { BODIES, visRadius } from '../catalog.js';
 
 const KM = 1 / AU_KM;
-const visR = (km) => 0.04 * Math.pow(km / 6371, 0.46);
-
-// a, e, I, L, ϖ, Ω (J2000) + 세기당 변화율 — JPL "Approximate Positions of the Planets"
-const PLANETS = [
-  { name: '수성', type: '지구형 행성', el: [0.38709927, 0.20563593, 7.00497902, 252.2503235, 77.45779628, 48.33076593], rt: [0.00000037, 0.00001906, -0.00594749, 149472.67411175, 0.16047689, -0.12534081],
-    m: 1.6601e-7, R: 2440, tilt: 0.03, rot: 1407.6, style: 'rocky', look: { colA: 0x8f8a84, colB: 0x5f5b56, colC: 0x45423f, spot: 0.25 }, color: 0xb5aea6,
-    desc: '태양에 가장 가까운 행성. 대기가 거의 없어 낮 430 °C, 밤 −180 °C의 극단적 온도차를 보입니다.' },
-  { name: '금성', type: '지구형 행성', el: [0.72333566, 0.00677672, 3.39467605, 181.9790995, 131.60246718, 76.67984255], rt: [0.0000039, -0.00004107, -0.0007889, 58517.81538729, 0.00268329, -0.27769418],
-    m: 2.4478e-6, R: 6052, tilt: 177.4, rot: -5832.5, style: 'cloudy', look: { colA: 0xe9d4a6, colB: 0xc49c5e, colC: 0xfff3d6, atmo: 0xffd9a0, atmoDensity: 1.3 }, color: 0xf0d9a8,
-    desc: '두꺼운 이산화탄소 대기와 황산 구름이 폭주 온실효과를 일으켜 표면 온도가 465 °C에 달합니다. 역방향으로 자전합니다.' },
-  { name: '지구', type: '지구형 행성', el: [1.00000261, 0.01671123, -0.00001531, 100.46457166, 102.93768193, 0], rt: [0.00000562, -0.00004392, -0.01294668, 35999.37244981, 0.32327364, 0],
-    m: 3.0034e-6, R: 6371, tilt: 23.44, rot: 23.934, style: 'earth', look: { clouds: true, atmo: 0x5aa6ff, atmoDensity: 1.7, atmoPower: 3.0, atmoScale: 1.04 }, color: 0x6fb2ff, emb: true,
-    desc: '액체 상태의 물과 생명이 확인된 유일한 행성. 자전축이 23.4° 기울어져 계절이 생깁니다.' },
-  { name: '화성', type: '지구형 행성', el: [1.52371034, 0.0933941, 1.84969142, -4.55343205, -23.94362959, 49.55953891], rt: [0.00001847, 0.00007882, -0.00813131, 19140.30268499, 0.44441088, -0.29257343],
-    m: 3.2271e-7, R: 3390, tilt: 25.19, rot: 24.62, style: 'mars', look: { colA: 0xb8582c, colB: 0x5c2c18, colC: 0xd99466, atmo: 0xff9e70, atmoDensity: 0.55, atmoPower: 4.5 }, color: 0xe07850,
-    desc: '산화철 먼지로 붉게 보이는 행성. 태양계 최대 화산 올림푸스 산과 거대 협곡 마리네리스가 있습니다.' },
-  { name: '목성', type: '가스 거대 행성', el: [5.202887, 0.04838624, 1.30439695, 34.39644051, 14.72847983, 100.47390909], rt: [-0.00011607, -0.00013253, -0.00183714, 3034.74612775, 0.21252668, 0.20469106],
-    m: 9.5479e-4, R: 69911, tilt: 3.13, rot: 9.925, style: 'gas', look: { colA: 0xdcc6a6, colB: 0xa36a45, colC: 0xf2e9da, spot: 1, bands: 14, atmo: 0xd8c8b0, atmoDensity: 0.45 }, color: 0xe0b98c,
-    desc: '태양계에서 가장 큰 행성. 지구보다 큰 폭풍인 대적점이 350년 넘게 지속되고 있습니다.' },
-  { name: '토성', type: '가스 거대 행성', el: [9.53667594, 0.05386179, 2.48599187, 49.95424423, 92.59887831, 113.66242448], rt: [-0.0012506, -0.00050991, 0.00193609, 1222.49362201, -0.41897216, -0.28867794],
-    m: 2.8589e-4, R: 58232, tilt: 26.73, rot: 10.656, style: 'gas', look: { colA: 0xead9b2, colB: 0xc4a46c, colC: 0xf5ecd4, bands: 18, rings: true, atmo: 0xe8d8b0, atmoDensity: 0.4 }, color: 0xf0d9a0,
-    desc: '얼음과 암석 조각으로 이루어진 장대한 고리를 가진 행성. 평균 밀도가 물보다 낮습니다.' },
-  { name: '천왕성', type: '얼음 거대 행성', el: [19.18916464, 0.04725744, 0.77263783, 313.23810451, 170.9542763, 74.01692503], rt: [-0.00196176, -0.00004397, -0.00242939, 428.48202785, 0.40805281, 0.04240589],
-    m: 4.3662e-5, R: 25362, tilt: 97.77, rot: -17.24, style: 'ice', look: { colA: 0xa6e6ec, colB: 0x83cbd8, colC: 0x5aa0b8, bands: 6, atmo: 0xaaf0ff, atmoDensity: 0.7 }, color: 0x9fe6f0,
-    desc: '자전축이 98° 기울어 옆으로 누운 채 공전합니다. 메테인 대기가 청록색을 띱니다.' },
-  { name: '해왕성', type: '얼음 거대 행성', el: [30.06992276, 0.00859048, 1.77004347, -55.12002969, 44.96476227, 131.78422574], rt: [0.00026291, 0.00005105, 0.00035372, 218.45945325, -0.32241464, -0.00508664],
-    m: 5.1514e-5, R: 24622, tilt: 28.32, rot: 16.11, style: 'ice', look: { colA: 0x4170e0, colB: 0x2c50b8, colC: 0x14204e, bands: 8, spot: 1, atmo: 0x6a9cff, atmoDensity: 0.8 }, color: 0x5d8bff,
-    desc: '태양계 가장 바깥의 행성. 시속 2,000 km가 넘는 태양계 최강의 바람이 붑니다.' },
-  { name: '명왕성', type: '왜소행성', el: [39.48211675, 0.2488273, 17.14001206, 238.92903833, 224.06891629, 110.30393684], rt: [-0.00031596, 0.0000517, 0.00004818, 145.20780515, -0.04062942, -0.01183482],
-    m: 6.58e-9, R: 1188, tilt: 122.5, rot: -153.3, style: 'pluto', look: { colA: 0xc9a98a, colB: 0x7a5a44 }, color: 0xd8c0a8, dwarf: true,
-    desc: '카이퍼 벨트의 왜소행성. 하트 모양의 질소 얼음 평원 스푸트니크 평원이 유명합니다.' },
-];
-
-// 위성: 모행성, 장반경(km), 질량(M☉), 반지름(km), 공전 주기(일)
-const MOONS = [
-  { name: '이오', parent: '목성', a: 421700, m: 4.4797e-8, R: 1822, style: 'io', look: { colA: 0xe8d36a, colB: 0xcf9a3a, colC: 0xf6f0d6 }, color: 0xf0d870, desc: '태양계에서 화산 활동이 가장 활발한 천체. 목성의 조석 가열로 400개 이상의 활화산이 있습니다.' },
-  { name: '유로파', parent: '목성', a: 671034, m: 2.4078e-8, R: 1561, style: 'europa', look: { colA: 0xece4d6, colB: 0xcbbca3, colC: 0x8a5634 }, color: 0xe8dcc8, desc: '얼음 지각 아래 전 지구적 액체 바다가 있을 것으로 추정되는, 생명 탐사의 핵심 후보지입니다.' },
-  { name: '가니메데', parent: '목성', a: 1070412, m: 7.4539e-8, R: 2634, style: 'rocky', look: { colA: 0x9d8f80, colB: 0x6a5f54, colC: 0xbab0a2, spot: 0.6 }, color: 0xb8aa98, desc: '태양계 최대의 위성으로 수성보다 큽니다. 고유 자기장을 가진 유일한 위성입니다.' },
-  { name: '칼리스토', parent: '목성', a: 1882709, m: 5.4074e-8, R: 2410, style: 'rocky', look: { colA: 0x62584d, colB: 0x3d362f, colC: 0x8f8574, spot: 0.15 }, color: 0x8a8070, desc: '태양계에서 크레이터가 가장 많은 천체 중 하나. 40억 년 된 오래된 표면을 간직하고 있습니다.' },
-  { name: '타이탄', parent: '토성', a: 1221870, m: 6.7628e-8, R: 2575, style: 'cloudy', look: { colA: 0xd99a4a, colB: 0xb47530, colC: 0xeab872, atmo: 0xffb060, atmoDensity: 1.1 }, color: 0xe8a858, desc: '두꺼운 질소 대기를 가진 위성. 표면에는 액체 메테인 호수와 강이 흐릅니다.' },
-];
+const PLANET_KEYS = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
+const MOON_KEYS = ['io', 'europa', 'ganymede', 'callisto', 'titan'];
+const SEC_YR = 1 / 31557600;
 
 const BELT_VERT = /* glsl */ `
 attribute vec4 aOrb; attribute vec3 aOrb2;
@@ -94,80 +60,91 @@ export class SolarScenario extends NBodyScenario {
   constructor(app) {
     super(app, { G: G_AU, dtMax: 0.00005, primary: 'heaviest', trailLen: 360, minFocus: 0.05 });
     this.realScale = false;
-    this.startMs = Date.now();
+    this.startMs = app.solarStart ?? Date.now();
     this.build();
   }
 
   build() {
     const app = this.app;
-    const T = (this.startMs - Date.UTC(2000, 0, 1, 12)) / (86400000 * 36525);
+    const d0 = daysSinceJ2000(this.startMs), T = d0 / 36525;
+    this.d0 = d0;
     const R = rng(42);
+    const S = BODIES.sun;
     this.sun = this.addBody({
-      name: '태양', type: 'G2V 주계열성', kind: 'star', temp: 5772, m: 1, visR: 0.15, realR: 695700 * KM, p: [0, 0, 0], v: [0, 0, 0],
-      rotRate: TAU / (25.4 / 365.25), glow: 1.9, coronaI: 1.1, orbit: false, trailLen: 2, color: 0xffe2b0,
-      desc: '태양계 질량의 99.86%를 차지하는 G형 주계열성. 중심핵에서 매초 6억 톤의 수소를 헬륨으로 융합합니다.',
+      ...S, kind: 'star', visR: 0.15, realR: S.R * KM, p: [0, 0, 0], v: [0, 0, 0], rotRate: 0, glow: 1.15, coronaI: 0.75, orbit: false, trailLen: 2,
     });
-    const byName = {};
-    for (const P of PLANETS) {
-      const el = P.el.map((v, k) => v + P.rt[k] * T);
-      const [a, e, I, L, wb, Om] = el;
+    this.sun.key = 'sun';
+    const byKey = { sun: this.sun };
+    const helio = {};
+    for (const key of PLANET_KEYS) {
+      const P = BODIES[key];
+      const [a, e, I, L, wb, Om] = P.el.map((v, k) => v + P.rt[k] * T);
       const M = ((((L - wb) % 360) + 540) % 360) - 180;
-      const s = keplerToState(a, e, I * DEG, Om * DEG, (wb - Om) * DEG, M * DEG, G_AU * (1 + P.m));
+      const st = keplerToState(a, e, I * DEG, Om * DEG, (wb - Om) * DEG, M * DEG, G_AU * (1 + P.m));
       const period = Math.pow(a, 1.5);
-      const common = {
-        name: P.name, type: P.type, style: P.style, look: P.look, color: P.color, tilt: P.tilt, desc: P.desc,
-        rotRate: (TAU * 8766) / P.rot, trailDt: period / 340, visR: visR(P.R) * (P.dwarf ? 1.2 : 1), realR: P.R * KM,
-      };
+      const common = { ...P, rotRate: 0, trailDt: period / 340, visR: visRadius(P), realR: P.R * KM };
       if (P.emb) {
         // 지구-달 질량 중심 분리 (Meeus 평균 요소)
-        const mM = 3.6943e-8, mE = P.m, mu = G_AU * (mE + mM);
+        const mM = BODIES.moon.m, mE = P.m, mu = G_AU * (mE + mM);
         const Lm = 218.3165 + 481267.8813 * T, Nm = 125.0445 - 1934.1363 * T, Pm = 83.3532 + 4069.0137 * T;
         const rel = keplerToState(0.00256955, 0.0549, 5.145 * DEG, Nm * DEG, (Pm - Nm) * DEG, (Lm - Pm) * DEG, mu);
         const fE = mM / (mE + mM), fM = mE / (mE + mM);
-        const pe = s.p.map((v, k) => v - rel.p[k] * fE), ve = s.v.map((v, k) => v - rel.v[k] * fE);
-        const pm = s.p.map((v, k) => v + rel.p[k] * fM), vm = s.v.map((v, k) => v + rel.v[k] * fM);
+        const pe = st.p.map((v, k) => v - rel.p[k] * fE), ve = st.v.map((v, k) => v - rel.v[k] * fE);
+        const pm = st.p.map((v, k) => v + rel.p[k] * fM), vm = st.v.map((v, k) => v + rel.v[k] * fM);
         const earth = this.addBody({ ...common, m: mE, p: ecl(...pe), v: ecl(...ve) });
-        byName[P.name] = earth;
-        this.addBody({
-          name: '달', type: '지구의 위성', parent: earth, moonScale: 50, m: mM, p: ecl(...pm), v: ecl(...vm),
-          style: 'rocky', look: { colA: 0x9c9a95, colB: 0x6e6c68, colC: 0x3a3938, spot: 1 }, color: 0xcfcac2,
-          visR: visR(1737), realR: 1737 * KM, rotRate: TAU / (27.32 / 365.25), trailDt: 27.32 / 365.25 / 120, trailLen: 130,
-          desc: '지구의 유일한 자연 위성. 조석 고정되어 항상 같은 면을 지구로 향합니다.',
+        const Mo = BODIES.moon;
+        const moon = this.addBody({
+          ...Mo, parent: earth, moonScale: 50, p: ecl(...pm), v: ecl(...vm), visR: visRadius(Mo), realR: Mo.R * KM, rotRate: 0,
+          trailDt: 27.32 / 365.25 / 120, trailLen: 130,
         });
+        byKey.earth = earth; byKey.moon = moon; earth.key = 'earth'; moon.key = 'moon';
+        helio.earth = ecl(...pe);
       } else {
-        byName[P.name] = this.addBody({ ...common, m: P.m, p: ecl(...s.p), v: ecl(...s.v) });
+        byKey[key] = this.addBody({ ...common, p: ecl(...st.p), v: ecl(...st.v) });
+        byKey[key].key = key;
+        helio[key] = ecl(...st.p);
       }
     }
-    // 목성/토성 위성 (모행성 적도면)
-    for (const Mo of MOONS) {
-      const host = byName[Mo.parent], hi = host.idx, sim = this.sim;
-      const a = Mo.a * KM, Mhost = sim.m[hi];
-      const ang = R() * TAU, vc = Math.sqrt((G_AU * (Mhost + Mo.m)) / a);
-      const tilt = host.tilt * DEG;
-      const loc = new THREE.Vector3(Math.cos(ang) * a, 0, Math.sin(ang) * a);
-      const vel = new THREE.Vector3(-Math.sin(ang) * vc, 0, Math.cos(ang) * vc);
-      const rot = new THREE.Euler(0, 0, tilt);
-      loc.applyEuler(rot); vel.applyEuler(rot);
+    // 위성: 모행성 적도면 (IAU 극), 갈릴레이 위성은 Meeus 위상
+    const gal = galileanU(d0);
+    for (const key of MOON_KEYS) {
+      const Mo = BODIES[key], host = byKey[Mo.parent], hi = host.idx, sim = this.sim;
+      const a = Mo.a * KM, Mhost = sim.m[hi], vc = Math.sqrt((G_AU * (Mhost + Mo.m)) / a);
+      const pole = iauFrame(host.iau, d0).pole;
+      let ref;
+      if (Mo.gal !== undefined) ref = new THREE.Vector3(...helio.earth).sub(new THREE.Vector3(sim.x[hi], sim.y[hi], sim.z[hi]));
+      else ref = new THREE.Vector3(1, 0, 0);
+      ref.addScaledVector(pole, -ref.dot(pole)).normalize();
+      const side = new THREE.Vector3().crossVectors(pole, ref);
+      const u = (Mo.gal !== undefined ? gal[Mo.gal] : R() * 360) * DEG;
+      const loc = ref.clone().multiplyScalar(Math.cos(u) * a).addScaledVector(side, Math.sin(u) * a);
+      const vel = ref.clone().multiplyScalar(-Math.sin(u) * vc).addScaledVector(side, Math.cos(u) * vc);
       const per = TAU * Math.sqrt((a * a * a) / (G_AU * Mhost));
-      this.addBody({
-        name: Mo.name, type: `${Mo.parent}의 위성`, parent: host, moonScale: Mo.parent === '목성' ? 85 : 55, m: Mo.m,
+      byKey[key] = this.addBody({
+        ...Mo, parent: host, moonScale: Mo.parent === 'jupiter' ? 85 : 55,
         p: [sim.x[hi] + loc.x, sim.y[hi] + loc.y, sim.z[hi] + loc.z], v: [sim.vx[hi] + vel.x, sim.vy[hi] + vel.y, sim.vz[hi] + vel.z],
-        style: Mo.style, look: Mo.look, color: Mo.color, visR: visR(Mo.R), realR: Mo.R * KM, rotRate: TAU / per, trailDt: per / 120, trailLen: 130, desc: Mo.desc,
+        visR: visRadius(Mo), realR: Mo.R * KM, rotRate: 0, trailDt: per / 120, trailLen: 130,
       });
+      byKey[key].key = key;
     }
     this.sim.toCOM();
     this.sim.computeAcc();
-
+    // 실제 자전축 방향
+    for (const b of this.bodies) {
+      if (!b.iau) continue;
+      const f = iauFrame(b.iau, d0);
+      b.visual.setOrientation(f.quat);
+      b.spin = f.W;
+      b.wRate = b.iau[5] * DEG * 365.25; // rad/yr
+    }
     const q = app.quality;
     this.belt = makeBelt(q.belt, 2.1, 3.3, 0.18, 0.3, 3, 0.4, app.pixelRatio);
     this.kuiper = makeBelt(Math.round(q.belt * 0.6), 30, 48, 0.12, 0.25, 9, 0.35, app.pixelRatio);
     this.root.add(this.belt, this.kuiper);
-    this.byName = byName;
+    this.byKey = byKey;
   }
 
-  get warp() { return { min: 1 / 8766, max: 25, def: 0.03, fmt: (w) => `${fmtDuration(w)}/초` }; }
-
-  view() { return { theta: 0.5, phi: 1.05, radius: 5.5, from: 60 }; }
+  get warp() { return { min: SEC_YR, max: 25, def: 1 / 365.25, fmt: (w) => (Math.abs(w - SEC_YR) < SEC_YR * 0.05 ? '실시간 (1초/초)' : `${fmtDuration(w)}/초`) }; }
 
   start() {
     const c = this.app.controls;
@@ -185,12 +162,20 @@ export class SolarScenario extends NBodyScenario {
       b.visual.setRadius(b.visR);
       if (b.parent) b.trail.reset();
     }
-    this.app.toast(on ? '실제 크기 비율: 행성은 점보다 작습니다 — 이름표를 눌러 접근하세요' : '시각 강조 크기 (행성 확대 · 위성 거리 확대)');
+    this.app.toast(on ? '실제 크기·거리 비율 — 행성은 점보다 작습니다. 이름표를 눌러 접근하세요' : '시각 강조 (행성 확대 · 위성 거리 확대)');
   }
 
   update(dt) {
     super.update(dt);
-    const t = this.sim.time + (this.startMs - Date.UTC(2000, 0, 1, 12)) / (86400000 * 365.25);
+    // 자전: IAU 본초자오선 각 W(t). 프레임당 회전이 크면(고배속) 화면용 각속도로 제한
+    const d = this.d0 + this.sim.time * 365.25;
+    for (const b of this.bodies) {
+      if (!b.iau) continue;
+      const perFrame = Math.abs(b.wRate * (this.simRate || 0) * dt);
+      if (perFrame < 0.35) b.spin = ((((b.iau[4] + b.iau[5] * d) % 360) + 360) % 360) * DEG;
+      else b.spin += Math.sign(b.wRate) * 1.2 * dt;
+    }
+    const t = this.sim.time + this.d0 / 365.25;
     this.belt.material.uniforms.uTime.value = t;
     this.kuiper.material.uniforms.uTime.value = t;
     this.belt.position.copy(this.sun.vis);
@@ -198,28 +183,45 @@ export class SolarScenario extends NBodyScenario {
     this.belt.visible = this.kuiper.visible = this.showBelts !== false;
   }
 
+  nowMs() { return this.startMs + this.sim.time * 365.25 * 86400000; }
+
   clock() {
-    const d = new Date(this.startMs + this.sim.time * 365.25 * 86400000);
+    const d = new Date(this.nowMs());
+    if (!isFinite(d)) return { main: '—', sub: '' };
     const p = (n) => String(n).padStart(2, '0');
+    const off = -d.getTimezoneOffset() / 60;
     return {
-      main: isFinite(d) ? `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC` : '—',
-      sub: `경과 ${fmtDuration(this.sim.time)}`,
+      main: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,
+      sub: `UTC${off >= 0 ? '+' : ''}${off} · 시작 후 ${fmtDuration(Math.abs(this.sim.time))}`,
     };
   }
 
+  jumpTo(ms) {
+    this.app.solarStart = ms;
+    this.app.setScenario('solar');
+  }
+
   panel() {
-    const names = ['태양', '수성', '금성', '지구', '화성', '목성', '토성', '천왕성', '해왕성', '명왕성'];
+    const keys = ['sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
     return [
-      { type: 'chips', label: '천체로 이동', items: names.map((n) => ({ label: n, on: () => { const b = n === '태양' ? this.sun : this.byName[n]; if (b && !b.dead) this.select(b, true); } })) },
+      { type: 'datetime', label: '날짜·시각 (이 순간의 실제 위치로 이동)', value: this.startMs, on: (ms) => this.jumpTo(ms) },
+      { type: 'chips', label: '시간', items: [
+        { label: '지금 시각', act: true, on: () => this.jumpTo(Date.now()) },
+        { label: '실시간 재생', on: () => this.app.setWarp(SEC_YR) },
+        { label: '1일/초', on: () => this.app.setWarp(1 / 365.25) },
+        { label: '1개월/초', on: () => this.app.setWarp(1 / 12) },
+        { label: '1년/초', on: () => this.app.setWarp(1) },
+      ] },
+      { type: 'chips', label: '천체로 이동', items: keys.map((k) => ({ label: BODIES[k].name, on: () => { const b = this.byKey[k]; if (b && !b.dead) this.select(b, true); } })) },
       { type: 'chips', label: '전경', items: [
         { label: '내행성계', on: () => { this.select(null); this.app.controls.focus(() => this.sun.vis, 5); } },
         { label: '외행성계', on: () => { this.select(null); this.app.controls.focus(() => this.sun.vis, 75); } },
         { label: '카이퍼대', on: () => { this.select(null); this.app.controls.focus(() => this.sun.vis, 160); } },
       ] },
-      { type: 'toggle', label: '실제 크기 비율', value: false, on: (v) => this.setRealScale(v) },
-      { type: 'toggle', label: '소행성대 · 카이퍼대', value: true, on: (v) => (this.showBelts = v) },
+      { type: 'toggle', label: '실제 크기·거리 비율', value: this.realScale, on: (v) => this.setRealScale(v) },
+      { type: 'toggle', label: '소행성대 · 카이퍼대', value: this.showBelts !== false, on: (v) => (this.showBelts = v) },
       { type: 'readouts', items: ['천체 수', '적분 스텝/프레임', '에너지 보존 오차', '적분기'] },
-      { type: 'hint', text: '행성 크기는 보기 쉽도록 강조되어 있고, 위성은 모행성 주위 거리가 확대되어 표시됩니다. 물리 계산은 실제 질량·거리로 수행됩니다.' },
+      { type: 'hint', text: '행성·달·갈릴레이 위성의 위치, 자전축 방향, 자전 위상(낮/밤)은 선택한 날짜의 실제 값입니다(JPL·Meeus·IAU). 지구의 낮밤 경계는 지금 이 순간과 같습니다. 크기는 보기 쉽도록 강조되어 있습니다.' },
     ];
   }
 

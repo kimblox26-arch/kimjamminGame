@@ -3,7 +3,8 @@ import * as THREE from 'three';
 import { NBody } from '../physics.js';
 import { createBodyVisual, LIGHTS } from '../bodies.js';
 import { Trail, Markers, OrbitLine, Flashes } from '../trails.js';
-import { orbitalElements, ellipsePoints, blackbody, clamp, fmtNum, fmtMass, fmtDuration, AUYR_KMS, AU_KM } from '../util.js';
+import { Debris } from '../debris.js';
+import { orbitalElements, ellipsePoints, blackbody, clamp, fmtNum, fmtMass, fmtDuration, AUYR_KMS, AU_KM, TAU } from '../util.js';
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _r = new THREE.Vector3(), _u = new THREE.Vector3();
 const WHITE = new THREE.Color(1, 1, 1);
@@ -30,6 +31,11 @@ export class NBodyScenario {
     this.dE = 0;
     this.sim.onStep = () => { if (this.sim.time >= this._trailDue) this._pushTrails(); };
     this.sim.onMerge = (info) => this._onMerge(info);
+    this.maxBodies = opt.maxBodies ?? 220;
+    if (opt.merge) {
+      this.debris = new Debris(this, app.quality.debrisCap);
+      this.sim.onCollision = (a, b) => this._collide(a, b);
+    }
   }
 
   // ── 천체 추가 ──
@@ -44,7 +50,7 @@ export class NBodyScenario {
       desc: d.desc ?? '', label: d.label !== false, small: !!d.small,
       trailDt: d.trailDt ?? this.opt.trailDt ?? 0.01, nextTrail: this.sim.time, orbit: d.orbit ?? true,
       vis: new THREE.Vector3(), px: 0, glow: d.glow, coronaI: d.coronaI, lightW: d.lightW ?? 1, heat: d.heat ?? 0,
-      noMarker: !!d.noMarker, markerA: d.markerA, extra: d.extra,
+      noMarker: !!d.noMarker, markerA: d.markerA, extra: d.extra, tex: d.tex, iau: d.iau,
     };
     if (b.kind === 'star') b.lightCol = blackbody(temp).multiplyScalar(b.lightW);
     this.sim.add(b, d.m, d.p, d.v, d.collideR ?? d.visR * (this.opt.collideScale ?? 1));
@@ -90,13 +96,88 @@ export class NBodyScenario {
     }
     a.heat = Math.min(1, (a.heat ?? 0) + 0.6);
     _v.set(info.pos[0], info.pos[1], info.pos[2]).multiplyScalar(this.distScale);
-    this.flashes.spawn(_v, Math.max(a.visR, b.visR) * 4 * Math.min(k, 3), a.kind === 'star' ? 0xffd2a0 : 0xffa060);
+    this.flashes.spawn(_v, Math.max(a.visR, b.visR) * 2.2 * Math.min(k, 2), a.kind === 'star' ? 0xffd2a0 : 0xffa060);
     this.app.audio?.blip(a.kind === 'star' ? 90 : 160 + Math.random() * 80);
     const wasSel = this.selected === b;
     this._disposeBody(b);
     if (wasSel) this.select(a, false);
     this.E0 = null;
     this.onMerged?.(info);
+  }
+
+  // ── 충돌: 파편 분출 · 표면 가열 · (고속) 파괴와 원시 위성 생성 ──
+  _collide(a, b) {
+    const s = this.sim, G = s.G;
+    if (s.m[b.idx] > s.m[a.idx]) [a, b] = [b, a];
+    const ia = a.idx, ib = b.idx, m1 = s.m[ia], m2 = s.m[ib], M = m1 + m2;
+    const n = [s.x[ib] - s.x[ia], s.y[ib] - s.y[ia], s.z[ib] - s.z[ia]];
+    const dist = Math.hypot(n[0], n[1], n[2]) || 1;
+    n[0] /= dist; n[1] /= dist; n[2] /= dist;
+    const dv = Math.hypot(s.vx[ib] - s.vx[ia], s.vy[ib] - s.vy[ia], s.vz[ib] - s.vz[ia]);
+    const R1 = s.r[ia], R2 = s.r[ib];
+    const vesc = Math.sqrt((2 * G * M) / Math.max(R1 + R2, 1e-15));
+    const ratio = dv / Math.max(vesc, 1e-15);
+    const vcm = ['vx', 'vy', 'vz'].map((k) => (s[k][ia] * m1 + s[k][ib] * m2) / M);
+    const contact = [s.x[ia] + n[0] * R1, s.y[ia] + n[1] * R1, s.z[ia] + n[2] * R1];
+    const compactA = a.kind === 'star' || a.kind === 'blackhole', compactB = b.kind === 'star' || b.kind === 'blackhole';
+    const q = m2 / Math.max(m1, 1e-30);
+    if (this.debris && !(compactA && compactB)) {
+      const energy = Math.min(1, Math.cbrt(q) * 2.2 + 0.08) * clamp(ratio, 0.35, 3);
+      const cnt = Math.round(this.app.quality.debris * Math.min(1.6, energy) * (compactA ? 0.45 : 1));
+      if (cnt > 2) this.debris.burst({ pos: contact, n, vcm, vej: vesc * (compactA ? 0.3 : 0.65), size: Math.max(b.visR, a.visR * 0.3), count: cnt, hot: compactA ? 0.5 : 1 });
+    }
+    if (!compactA) {
+      _w.set(n[0], n[1], n[2]);
+      a.visual.impact(_w, Math.min(1.4, 0.35 + 0.45 * ratio) * Math.min(1, Math.cbrt(q) * 3 + 0.12), q > 0.03 ? Math.min(1.1, q * 6) : 0);
+    }
+    const catastrophic = this.opt.fragments && !compactA && !compactB && ratio > 1.3 && q > 0.008 && s.n < this.maxBodies;
+    s.mergeBodies(a, b);
+    if (catastrophic) this._fragment(a, n, ratio, M, m2);
+    return true;
+  }
+
+  _fragment(a, n, ratio, M, m2) {
+    const s = this.sim, G = s.G, R = Math.random, ia = a.idx;
+    const flr = clamp(1 - 0.26 * (ratio - 1), 0.5, 0.94);
+    const mFrag = Math.min(M * (1 - flr), m2 * 1.4);
+    const k = Math.min(7, Math.max(2, Math.round(1 + ratio * 1.3)), this.maxBodies - s.n);
+    if (k < 1 || mFrag / k < (this.opt.minFrag ?? 1e-11)) return;
+    const Ra = s.r[ia], rRatio = Ra / Math.cbrt(M), vRatio = a.visR / Math.cbrt(M);
+    const vesc = Math.sqrt((2 * G * M) / Ra);
+    const w = Array.from({ length: k }, () => 0.25 + R() ** 2);
+    const ws = w.reduce((x, y) => x + y, 0);
+    const nv = new THREE.Vector3(n[0], n[1], n[2]);
+    const up = Math.abs(nv.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const t1 = new THREE.Vector3().crossVectors(nv, up).normalize(), t2 = new THREE.Vector3().crossVectors(nv, t1);
+    let px = 0, py = 0, pz = 0, qx = 0, qy = 0, qz = 0;
+    const base = [s.x[ia], s.y[ia], s.z[ia], s.vx[ia], s.vy[ia], s.vz[ia]];
+    for (let j = 0; j < k; j++) {
+      const mj = (mFrag * w[j]) / ws, rj = rRatio * Math.cbrt(mj);
+      const ang = R() * TAU, spr = 0.35 + R() * 0.8;
+      const dir = nv.clone().addScaledVector(t1, Math.cos(ang) * spr).addScaledVector(t2, Math.sin(ang) * spr).normalize();
+      const tang = new THREE.Vector3().crossVectors(t2, dir).normalize();
+      const off = (Ra + rj) * (1.35 + R() * 0.5), sp = vesc * (0.62 + R() * 0.5);
+      const d = [dir.x * sp * 0.75 + tang.x * sp * 0.55, dir.y * sp * 0.75 + tang.y * sp * 0.55, dir.z * sp * 0.75 + tang.z * sp * 0.55];
+      px += mj * d[0]; py += mj * d[1]; pz += mj * d[2];
+      qx += mj * dir.x * off; qy += mj * dir.y * off; qz += mj * dir.z * off;
+      this.addBody({
+        name: '', label: false, small: true, style: 'lava', look: { colA: 0x2c241f, colB: 0x6a5446, spot: 1 }, heat: 1, color: 0xffa070,
+        m: mj, visR: vRatio * Math.cbrt(mj), realR: a.realR * Math.cbrt(mj / M), collideR: rj,
+        p: [base[0] + dir.x * off, base[1] + dir.y * off, base[2] + dir.z * off], v: [base[3] + d[0], base[4] + d[1], base[5] + d[2]],
+        orbit: false, trailLen: 160, trailOpacity: 0.6, trailDt: this.opt.trailDt ?? 0.002, markerA: 0.6, type: '충돌 파편',
+        desc: '거대 충돌로 떨어져 나온 용융 파편. 다시 떨어지거나 궤도를 돌다 뭉쳐 위성이 될 수 있습니다(달 형성 가설).',
+      });
+    }
+    const Mr = M - mFrag;
+    s.m[ia] = Mr;
+    s.vx[ia] -= px / Mr; s.vy[ia] -= py / Mr; s.vz[ia] -= pz / Mr;
+    s.x[ia] -= qx / Mr; s.y[ia] -= qy / Mr; s.z[ia] -= qz / Mr;
+    s.r[ia] = rRatio * Math.cbrt(Mr);
+    a.visR = a.enhR = vRatio * Math.cbrt(Mr);
+    a.realR *= Math.cbrt(Mr / M);
+    a.visual.setRadius(a.visR);
+    s.accValid = false;
+    this.app.toast?.(`파괴적 충돌! 파편 ${k}개 생성 (충돌 속도 = 탈출 속도의 ${ratio.toFixed(1)}배)`);
   }
 
   // ── 좌표 ──
@@ -190,10 +271,12 @@ export class NBodyScenario {
     this.lagging = done < want * 0.97;
     this.simRate = dt > 0 ? done / dt : 0;
     this.lastAdvance = done;
+    this.debris?.step(done, this.sim.lastSteps || 1);
   }
 
   update(dt) {
     this.frame++;
+    if (this.opt.trailFrame) { const td = Math.max(this.app.warp / 90, 1e-12); for (const b of this.bodies) b.trailDt = td; }
     for (const b of this.bodies) this._visOf(b, b.vis);
     const adv = this.lastAdvance || 0;
     this.lastAdvance = 0;
@@ -208,7 +291,7 @@ export class NBodyScenario {
     const trails = this.app.settings.trails;
     for (const b of this.bodies) {
       b.spin += clamp(b.rotRate * adv, -1.2 * dt, 1.2 * dt);
-      if (b.heat > 0) { b.heat *= Math.exp(-adv * 0.35); if (b.visual.mat?.uniforms.uSpot && b.style === 'lava') b.visual.mat.uniforms.uSpot.value = b.heat; }
+      if (b.heat > 0) { b.heat *= Math.exp(-dt / 7); if (b.visual.mat?.uniforms.uSpot && b.style === 'lava') b.visual.mat.uniforms.uSpot.value = b.heat; }
       b.visual.object.position.copy(b.vis);
       b.trail.line.visible = trails;
       if (b.parent && !b.parent.dead) b.trail.line.position.copy(b.parent.vis);
@@ -228,12 +311,13 @@ export class NBodyScenario {
     const cam = this.app.camera;
     const f = this.app.height / (2 * Math.tan((cam.fov * Math.PI) / 360));
     for (const b of this.bodies) {
-      b.visual.update(cam);
+      b.visual.update(cam, dt);
       const d = cam.position.distanceTo(b.vis);
       b.px = d > 0 ? (b.visR / d) * f : 1e9;
     }
     this.markers.update(this.bodies, this.app.settings.markers);
     this.flashes.update(dt, cam);
+    this.debris?.update(dt);
     this._updateLabels();
   }
 
@@ -313,7 +397,7 @@ export class NBodyScenario {
   refreshInfo() { if (this.selected && !this.selected.dead && this.frame % 10 === 0) this.app.ui.showInfo(this.info(this.selected)); }
 
   stats() {
-    return { bodies: this.sim.n, steps: this.sim.lastSteps || 0, dE: this.dE };
+    return { bodies: this.sim.n, steps: this.sim.lastSteps || 0, dE: this.dE, debris: this.debris?.count || 0 };
   }
 
   dispose() {
@@ -321,6 +405,7 @@ export class NBodyScenario {
     this.sim.clear();
     this.markers.dispose();
     this.flashes.dispose();
+    this.debris?.dispose();
     this.app.scene.remove(this.root);
   }
 }

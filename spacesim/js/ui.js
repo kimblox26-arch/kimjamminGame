@@ -96,6 +96,11 @@ export class UI {
       } else if (d.type === 'toggle') {
         wrap.innerHTML = `<label class="toggle">${d.label}<input type="checkbox" ${d.value ? 'checked' : ''}><span class="sw"></span></label>`;
         wrap.querySelector('input').onchange = (e) => d.on(e.target.checked);
+      } else if (d.type === 'datetime') {
+        const dt = new Date(d.value), local = new Date(d.value - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        wrap.innerHTML = `<div class="ctl-label">${d.label}</div><div class="dt-row"><input type="datetime-local" min="1800-01-01T00:00" max="2050-12-31T23:59" value="${local}"><button class="chip act">이동</button></div>`;
+        const inp = wrap.querySelector('input');
+        wrap.querySelector('button').onclick = () => { const ms = new Date(inp.value).getTime(); if (isFinite(ms)) d.on(ms); };
       } else if (d.type === 'readouts') {
         wrap.className = 'readouts';
         wrap.innerHTML = d.items.map((k) => `<dt>${k}</dt><dd data-k="${k}">—</dd>`).join('');

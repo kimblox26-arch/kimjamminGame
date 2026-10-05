@@ -121,6 +121,9 @@ const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵
 const sup = (n) => String(n).split('').map((c) => SUP[c] ?? c).join('');
 
 export function fmtDuration(yr) {
+  const sec = yr * 31557600;
+  if (sec < 90) return `${sec.toFixed(sec < 10 ? 1 : 0)}초`;
+  if (sec < 5400) return `${(sec / 60).toFixed(1)}분`;
   const d = yr * 365.25;
   if (d < 1) return `${(d * 24).toFixed(1)}시간`;
   if (d < 60) return `${d.toFixed(1)}일`;
@@ -137,4 +140,49 @@ export function fmtMass(mSun) {
   if (me < 50) return `${fmtNum(me, 3)} M⊕`;
   if (mSun < 0.05) return `${fmtNum(mSun * MSUN_MJUP, 3)} M♃`;
   return `${fmtNum(mSun, 4)} M☉`;
+}
+
+// ── 좌표계 · IAU 자전 모델 ──
+export const OBL = 23.4392911 * DEG;   // J2000 황도 경사
+const cO = Math.cos(OBL), sO = Math.sin(OBL);
+// 적도 좌표(ICRF) → 장면 좌표 (황도 기준, y = 황도 북극)
+export function equToScene(x, y, z, out = new THREE.Vector3()) {
+  const ye = y * cO + z * sO, ze = -y * sO + z * cO;
+  return out.set(x, ze, -ye);
+}
+export function radecToScene(raDeg, decDeg, out = new THREE.Vector3()) {
+  const a = raDeg * DEG, d = decDeg * DEG;
+  return equToScene(Math.cos(d) * Math.cos(a), Math.cos(d) * Math.sin(a), Math.sin(d), out);
+}
+export const daysSinceJ2000 = (ms) => (ms - Date.UTC(2000, 0, 1, 12)) / 86400000;
+
+// IAU 자전 요소 [α0, α̇(/세기), δ0, δ̇(/세기), W0, Ẇ(°/일)] → 자세 쿼터니언(극·노드) + 본초자오선 각 W
+const _q = new THREE.Vector3(), _z = new THREE.Vector3(), _y = new THREE.Vector3(), _m = new THREE.Matrix4();
+export function iauFrame(iau, d, outQuat = new THREE.Quaternion()) {
+  const T = d / 36525;
+  const a0 = iau[0] + iau[1] * T, d0 = iau[2] + iau[3] * T;
+  radecToScene(a0, d0, _z);
+  const a = a0 * DEG;
+  equToScene(-Math.sin(a), Math.cos(a), 0, _q);
+  _y.crossVectors(_z, _q).negate();
+  _m.makeBasis(_q, _z, _y);
+  outQuat.setFromRotationMatrix(_m);
+  const W = ((((iau[4] + iau[5] * d) % 360) + 360) % 360) * DEG;
+  return { quat: outQuat, W, pole: _z.clone() };
+}
+
+// 갈릴레이 위성 위상 (Meeus, Astronomical Algorithms 44장 저정밀) — 지구 방향 기준 각 u (도)
+export function galileanU(d) {
+  const sd = (x) => Math.sin(x * DEG), cd = (x) => Math.cos(x * DEG);
+  const V = 172.74 + 0.00111588 * d, M = 357.529 + 0.9856003 * d;
+  const N = 20.02 + 0.0830853 * d + 0.329 * sd(V);
+  const J = 66.115 + 0.9025179 * d - 0.329 * sd(V);
+  const A = 1.915 * sd(M) + 0.02 * sd(2 * M);
+  const B = 5.555 * sd(N) + 0.168 * sd(2 * N);
+  const K = J + A - B;
+  const R = 1.00014 - 0.01671 * cd(M) - 0.00014 * cd(2 * M);
+  const r = 5.20872 - 0.25208 * cd(N) - 0.00611 * cd(2 * N);
+  const D = Math.sqrt(r * r + R * R - 2 * r * R * cd(K));
+  const psi = Math.asin((R / D) * sd(K)) / DEG;
+  return [[163.8069, 203.4058646], [358.414, 101.2916335], [5.7176, 50.234518], [224.8092, 21.48798]].map(([b, n]) => b + n * d + psi - B);
 }
