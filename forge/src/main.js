@@ -36,6 +36,7 @@ class Game {
     const canvas = document.getElementById('gl');
     this.input = new Input(canvas);
     this.input.onUnlock = () => { if (this.ui.st === 'play' || this.ui.st === 'drive') this.pause(); };
+    this.input.onFallback = () => { document.body.classList.add('nolock'); this.ui.toast('이 화면에서는 마우스 잠금이 지원되지 않아요 — 우클릭 드래그나 방향키로 둘러보세요 (X: 보조 동작)'); };
     this.renderer = new Renderer(canvas, this.settings.quality);
     const scene = (this.scene = new THREE.Scene());
     const camera = (this.camera = new THREE.PerspectiveCamera(this.settings.fov, innerWidth / innerHeight, 0.02, 5000));
@@ -159,8 +160,9 @@ class Game {
     const seat = this.vehicles.seat, r = seat?.s?.rig;
     if (!seat || !seat.s) { this.exitVehicle(); return; }
     const q = seat.s.group.quaternion, F = (r ? r.F : new THREE.Vector3(0, 0, -1)).clone().applyQuaternion(q), U = (r ? r.U : new THREE.Vector3(0, 1, 0)).clone().applyQuaternion(q);
-    this.camYaw -= input.mx * this.player.sens; this.camPitch = clamp(this.camPitch - input.my * this.player.sens, -1.2, 0.9);
-    if (!input.mx && !input.my) { this.camYaw = damp(this.camYaw, 0, 0.8, dt); }
+    const kx = input.axis('ArrowLeft', 'ArrowRight'), ky = input.axis('ArrowDown', 'ArrowUp');
+    this.camYaw -= input.mx * this.player.sens + kx * 2.2 * dt; this.camPitch = clamp(this.camPitch - input.my * this.player.sens + ky * 1.6 * dt, -1.2, 0.9);
+    if (!input.mx && !input.my && !kx) { this.camYaw = damp(this.camYaw, 0, 0.8, dt); }
     const cam = this.camera;
     if (this.camMode === 'fp') {
       const eye = seat.toWorld(new THREE.Vector3(0, 0.58, 0.12));
@@ -255,4 +257,8 @@ class Game {
 
 const game = new Game();
 window.forge = game;
-game.boot().catch((e) => { console.error(e); document.getElementById('load-label').textContent = '오류: ' + e.message; });
+game.boot().catch((e) => {
+  console.error(e);
+  const el = document.getElementById('load-label'); el.textContent = '시작하지 못했습니다: ' + (e?.message || e) + ' — WebGL·WebAssembly를 지원하는 최신 브라우저에서 열어 주세요. ';
+  const a = document.createElement('a'); a.href = 'https://github.com/kimblox26-arch/kimjamminGame'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'GitHub 저장소'; a.style.color = 'var(--acc2)'; el.appendChild(a);
+});

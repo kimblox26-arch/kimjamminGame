@@ -1,5 +1,5 @@
 // Rapier 물리 월드 래퍼 — 고정 시간 간격(120Hz), 레이캐스트, 충돌 이벤트
-import RAPIER from '../../vendor/rapier/rapier.mjs';
+import RAPIER from 'rapier';
 import * as THREE from 'three';
 
 export const GROUP = { PART: 0x0001, WORLD: 0x0002, PLAYER: 0x0004, GHOST: 0x0008 };

@@ -39,7 +39,12 @@ export class UI {
       case 'resume': g.resume(); break;
       case 'close': g.resume(); break;
       case 'menu': g.toMenu(); break;
-      case 'clear': if (confirm('작업장의 모든 구조물을 지울까요?')) { g.mgr.clearAll(); g.vehicles.seat = null; g.resume(); } break;
+      case 'clear': { // 대화상자 대신 두 번 눌러 확인
+        const b = el.querySelector('b');
+        if (!el.dataset.armed || performance.now() - +el.dataset.armed > 4000) { el.dataset.armed = performance.now(); b.textContent = '한 번 더 누르면 모두 지웁니다'; setTimeout(() => { delete el.dataset.armed; b.textContent = '작업장 비우기'; }, 4000); break; }
+        delete el.dataset.armed; b.textContent = '작업장 비우기';
+        if (g.driving) g.exitVehicle(); g.mgr.clearAll(); g.vehicles.seat = null; g.tools.undo = []; g.resume(); g.ui.toast('작업장을 비웠습니다'); break;
+      }
       case 'save': g.save(+el.dataset.slot); this.renderSlots(); break;
       case 'load': g.load(+el.dataset.slot); break;
       case 'select': g.tools.selectItem(this.detailDef); g.tools.dims = this.detailDims.slice(); g.resume(); break;

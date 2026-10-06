@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./css/forge.css">
 <script type="importmap">
-{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
+{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/", "rapier": "../vendor/rapier/rapier.js" } }
 </script>
 </head>
 <body data-state="loading">
@@ -27,7 +27,7 @@
   <div id="hotbar"></div>
   <div id="toasts"></div>
   <div id="vhud"><b id="v-speed">0</b><span>km/h</span><div id="v-keys">W/S 가속·후진 · A/D 조향 · Space 핸드브레이크 · Shift 추진기 · L 라이트 · H 경적 · V 시점 · E 하차</div></div>
-  <div id="keys">Tab 자재 카탈로그 · 1–8 공구 · E 상호작용 · F 앵커 고정 · Q 이전 공구 · Esc 메뉴</div>
+  <div id="keys">Tab 자재 카탈로그 · 1–8 공구 · E 상호작용 · F 앵커 고정 · Q 이전 공구 · X 보조 동작 · Esc 메뉴</div>
   <div id="fps"></div>
 </div>
 
@@ -117,7 +117,7 @@
   <div class="help-body">
     <div>
       <h3>이동</h3>
-      <p><kbd>W A S D</kbd> 이동 · <kbd>Shift</kbd> 달리기 · <kbd>Space</kbd> 점프 · <kbd>C</kbd> 앉기 · 마우스 시점</p>
+      <p><kbd>W A S D</kbd> 이동 · <kbd>Shift</kbd> 달리기 · <kbd>Space</kbd> 점프 · <kbd>C</kbd> 앉기 · 마우스(또는 <kbd>방향키</kbd>) 시점 · <kbd>X</kbd> = 우클릭(보조 동작)</p>
       <h3>공구 (숫자키)</h3>
       <table>
         <tr><td><kbd>1</kbd> 손</td><td>좌클릭 유지로 잡기/운반 (약 75 kg 까지 들 수 있음) · 우클릭 던지기 · 휠 거리 · R/T 회전</td></tr>

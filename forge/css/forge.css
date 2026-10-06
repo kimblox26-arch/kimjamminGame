@@ -143,3 +143,4 @@ body.touch #keys { display: none; } body.touch #hotbar { bottom: 8px; transform:
   .menu-r { margin-left: 0; } .brand.big { font-size: 60px; } .help-body { grid-template-columns: 1fr; }
   #cat-detail { width: 220px; } .panel { inset: 2vh 2vw; } .slotb { width: 52px; height: 56px; } .slotb span { display: none; }
 }
+body.nolock #keys::after { content: ' · 우클릭 드래그 / 방향키: 둘러보기'; color: var(--acc2); }

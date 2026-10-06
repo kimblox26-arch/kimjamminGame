@@ -19,7 +19,8 @@ export class Player {
   setEnabled(on) { this.col.setEnabled(on); }
   teleport(p) { this.body.setNextKinematicTranslation(p); this.body.setTranslation(p, true); this.pos.copy(p); this.prev.copy(p); this.vy = 0; }
   look(input, dt) {
-    this.yaw -= input.mx * this.sens; this.pitch = clamp(this.pitch - input.my * this.sens, -1.5, 1.5);
+    const kx = input.axis('ArrowLeft', 'ArrowRight'), ky = input.axis('ArrowDown', 'ArrowUp');
+    this.yaw -= input.mx * this.sens + kx * 2.2 * dt; this.pitch = clamp(this.pitch - input.my * this.sens + ky * 1.6 * dt, -1.5, 1.5);
   }
   // 입력 → 원하는 이동 (매 프레임)
   input(input) {
