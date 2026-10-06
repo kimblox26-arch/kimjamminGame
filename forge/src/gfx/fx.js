@@ -24,6 +24,12 @@ export class FX {
     lg.setAttribute('color', new THREE.BufferAttribute(this.lCol, 3).setUsage(THREE.DynamicDrawUsage));
     this.lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false }));
     this.lines.frustumCulled = false; scene.add(this.lines);
+    this.glowTex0 = radialTex([[0, 'rgba(255,255,255,1)'], [0.3, 'rgba(255,255,255,0.5)'], [1, 'rgba(255,255,255,0)']], 32);
+    const hg = new THREE.BufferGeometry(); this.hPos = new Float32Array(MAX_SPARK * 3); this.hCol = new Float32Array(MAX_SPARK * 3);
+    hg.setAttribute('position', new THREE.BufferAttribute(this.hPos, 3).setUsage(THREE.DynamicDrawUsage));
+    hg.setAttribute('color', new THREE.BufferAttribute(this.hCol, 3).setUsage(THREE.DynamicDrawUsage));
+    this.heads = new THREE.Points(hg, new THREE.PointsMaterial({ size: 0.014, map: this.glowTex0, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false }));
+    this.heads.frustumCulled = false; scene.add(this.heads);
     // 부드러운 입자 (연기/분진/안개) — 일반 블렌딩, 가산 블렌딩 2계통
     this.glowTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.25, 'rgba(255,255,255,0.6)'], [1, 'rgba(255,255,255,0)']], 64);
     this.soft = this.makeSoft(smokeTex(), THREE.NormalBlending, MAX_SOFT);
@@ -159,10 +165,12 @@ export class FX {
       this.lPos[i6] = s.p.x; this.lPos[i6 + 1] = s.p.y; this.lPos[i6 + 2] = s.p.z;
       this.lPos[i6 + 3] = s.p.x - s.v.x * tl; this.lPos[i6 + 4] = s.p.y - s.v.y * tl; this.lPos[i6 + 5] = s.p.z - s.v.z * tl;
       this.lCol[i6] = c[0]; this.lCol[i6 + 1] = c[1]; this.lCol[i6 + 2] = c[2]; this.lCol[i6 + 3] = c[0] * 0.2; this.lCol[i6 + 4] = c[1] * 0.1; this.lCol[i6 + 5] = c[2] * 0.05;
+      const i3 = k * 3; this.hPos[i3] = s.p.x; this.hPos[i3 + 1] = s.p.y; this.hPos[i3 + 2] = s.p.z; this.hCol[i3] = c[0] * 0.6; this.hCol[i3 + 1] = c[1] * 0.6; this.hCol[i3 + 2] = c[2] * 0.6;
       k++;
     }
     this.lines.geometry.setDrawRange(0, k * 2);
     this.lines.geometry.attributes.position.needsUpdate = true; this.lines.geometry.attributes.color.needsUpdate = true;
+    this.heads.geometry.setDrawRange(0, k); this.heads.geometry.attributes.position.needsUpdate = true; this.heads.geometry.attributes.color.needsUpdate = true;
     // 부드러운 입자
     const scale = this.renderer.domElement.height / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     for (const o of [this.soft, this.add]) {

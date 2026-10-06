@@ -26,7 +26,7 @@ export class ToolSystem {
   constructor(g) {
     this.g = g; // game context: ph, mgr, fx, sfx, camera, player, vehicles, ui, mats, presets
     this.vm = buildViewmodels(g.mats);
-    this.vmRoot = new THREE.Group(); this.vmRoot.position.set(0.24, -0.22, -0.42); g.camera.add(this.vmRoot);
+    this.vmRoot = new THREE.Group(); this.vmRoot.position.set(0.2, -0.165, -0.4); g.camera.add(this.vmRoot);
     for (const k in this.vm) this.vmRoot.add(this.vm[k]);
     this.idx = 0; this.prevIdx = 1; this.aimHit = null; this.info = null; this.hint = '';
     this.sel = CAT_BY_ID.plate5; this.dims = this.sel.dims.slice();

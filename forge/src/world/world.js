@@ -46,7 +46,7 @@ export class World {
     // 환경맵 (반사)
     const pm = new THREE.PMREMGenerator(this.renderer), envScene = new THREE.Scene();
     const sky2 = new Sky(); sky2.material.fragmentShader = sky.material.fragmentShader; sky2.scale.setScalar(9000); for (const k in u) sky2.material.uniforms[k].value = u[k].value; envScene.add(sky2);
-    const gnd = new THREE.Mesh(new THREE.CircleGeometry(4000, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3a3d33 })); gnd.position.y = -5; envScene.add(gnd);
+    const gnd = new THREE.Mesh(new THREE.CircleGeometry(4000, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x6a665e })); gnd.position.y = -5; envScene.add(gnd);
     this.env = pm.fromScene(envScene, 0.02).texture; this.scene.environment = this.env; pm.dispose();
     this.mats.envMap = this.env;
     this.scene.fog = new THREE.FogExp2(0x9fb2c4, 0.00042);

@@ -133,7 +133,7 @@ export const SKIN_DEFS = {
     const a = fbm(u, v, 3, 3, 6, 111), b = fbm(u, v, 24, 24, 4, 112), st = sstep(0.55, 0.75, fbm(u, v, 5, 5, 5, 113));
     const crack = 1 - sstep(0.0, 0.012, Math.abs(fbm(u, v, 4, 4, 5, 114) - 0.5)) * (fbm(u, v, 2, 2, 2, 115) > 0.55 ? 1 : 0);
     const c = 0.4 + a * 0.08 + b * 0.04 - st * 0.07;
-    o[0] = c - crack * 0.12; o[1] = c * 0.99 - crack * 0.12; o[2] = c * 0.96 - crack * 0.12; o[3] = 0.7 + b * 0.18 - st * 0.22; o[4] = 0; o[5] = b * 0.5 - crack;
+    o[0] = c - crack * 0.12; o[1] = c * 0.99 - crack * 0.12; o[2] = c * 0.96 - crack * 0.12; o[3] = 0.78 + b * 0.14 - st * 0.14; o[4] = 0; o[5] = b * 0.5 - crack;
   } },
   asphalt: { scale: 2, size: 512, ns: 1.2, f(u, v, o) {
     const a = fbm(u, v, 4, 4, 4, 121), g = fbm(u, v, 160, 160, 2, 122), stone = sstep(0.66, 0.74, g), tar = fbm(u, v, 12, 12, 3, 123);
