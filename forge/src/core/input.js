@@ -11,40 +11,43 @@ export class Input {
     this.btnUp = [false, false, false];
     this.locked = false; this.everLocked = false;
     this.fallback = false; // 포인터 잠금이 막힌 환경(일부 앱/임베드): 우클릭 드래그로 둘러보기
-    this.rdrag = null;
+    this.rdrag = null; this.xHeld = false; this.rmbHeld = false;
     this.enabled = false; // 게임 플레이 중일 때만 입력 받음
     this.touch = { active: false, mx: 0, my: 0 }; // 가상 조이스틱 이동 (-1~1)
-    this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    this.isTouch = matchMedia('(pointer: coarse)').matches;
 
     addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
       if (!this.keys.has(e.code)) this.hit.add(e.code);
       this.keys.add(e.code);
-      if (e.code === 'KeyX' && this.enabled && !e.repeat) { this.btn[2] = true; this.btnHit[2] = true; } // X = 보조 동작(우클릭)
+      if (e.code === 'KeyX' && this.enabled && !e.repeat) { this.xHeld = true; if (!this.btn[2]) this.btnHit[2] = true; this.btn[2] = true; } // X = 보조 동작(우클릭)
       if (this.enabled && ['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'F1'].includes(e.code)) e.preventDefault();
       if (this.enabled && (e.ctrlKey || e.metaKey) && ['KeyS', 'KeyZ', 'KeyW'].includes(e.code)) e.preventDefault();
     });
     addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
-      if (e.code === 'KeyX' && this.btn[2] && !this.rdrag) { this.btnUp[2] = true; this.btn[2] = false; }
+      if (e.code === 'KeyX') { this.xHeld = false; this.releaseSecondary(); }
     });
-    addEventListener('blur', () => { this.keys.clear(); this.btn = [false, false, false]; });
+    addEventListener('blur', () => { this.keys.clear(); this.btn = [false, false, false]; this.rdrag = null; this.xHeld = false; this.rmbHeld = false; });
     canvas.addEventListener('mousedown', (e) => {
       if (!this.enabled) return;
       if (!this.locked && !this.isTouch && !this.fallback) { this.lock(); return; }
       if (this.fallback && e.button === 2) { this.rdrag = { moved: 0 }; return; }
+      if (e.button === 2) this.rmbHeld = true;
       this.btn[e.button] = true; this.btnHit[e.button] = true;
     });
     addEventListener('mouseup', (e) => {
       if (e.button === 2 && this.rdrag) { if (this.rdrag.moved < 6) { this.btnHit[2] = true; this.btnUp[2] = true; } this.rdrag = null; return; }
+      if (e.button === 2) { this.rmbHeld = false; this.releaseSecondary(); return; }
       if (this.btn[e.button]) this.btnUp[e.button] = true; this.btn[e.button] = false;
     });
     addEventListener('mousemove', (e) => {
       if (this.locked) { this.mx += e.movementX; this.my += e.movementY; }
+      else if (this.fallback && this.rdrag && !(e.buttons & 2)) this.rdrag = null; // 창 밖에서 버튼을 뗀 경우
       else if (this.fallback && this.rdrag) { this.rdrag.moved += Math.abs(e.movementX) + Math.abs(e.movementY); this.mx += e.movementX; this.my += e.movementY; }
     });
     addEventListener('wheel', (e) => { if (this.enabled) this.wheel += Math.sign(e.deltaY); }, { passive: true });
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    addEventListener('contextmenu', (e) => { if (this.enabled || e.target === canvas) e.preventDefault(); });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === canvas;
       if (this.locked) { this.everLocked = true; this.fallback = false; }
@@ -61,6 +64,7 @@ export class Input {
   // 한 번도 잠금에 성공하지 못한 채 거부되면 대체 조작으로 전환 (Esc 직후 재요청 실패는 무시)
   noLock() { if (this.everLocked || this.fallback || this.isTouch) return; this.fallback = true; this.onFallback?.(); }
   unlock() { if (document.pointerLockElement) document.exitPointerLock(); }
+  releaseSecondary() { if (this.xHeld || this.rmbHeld) return; if (this.btn[2]) this.btnUp[2] = true; this.btn[2] = false; }
   down(c) { return this.keys.has(c); }
   pressed(c) { return this.hit.has(c); }
   axis(neg, pos) { return (this.down(pos) ? 1 : 0) - (this.down(neg) ? 1 : 0); }

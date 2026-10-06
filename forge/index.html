@@ -117,7 +117,7 @@
   <div class="help-body">
     <div>
       <h3>이동</h3>
-      <p><kbd>W A S D</kbd> 이동 · <kbd>Shift</kbd> 달리기 · <kbd>Space</kbd> 점프 · <kbd>C</kbd> 앉기 · 마우스(또는 <kbd>방향키</kbd>) 시점 · <kbd>X</kbd> = 우클릭(보조 동작)</p>
+      <p><kbd>W A S D</kbd> 이동 · <kbd>Shift</kbd> 달리기 · <kbd>Space</kbd> 점프 · <kbd>C</kbd> 앉기 · 마우스(또는 <kbd>방향키</kbd>) 시점 · <kbd>X</kbd> = 우클릭(보조 동작)<br>마우스 잠금이 안 되는 화면(일부 앱·임베드)에서는 <b>우클릭 드래그</b>로 둘러봅니다.</p>
       <h3>공구 (숫자키)</h3>
       <table>
         <tr><td><kbd>1</kbd> 손</td><td>좌클릭 유지로 잡기/운반 (약 75 kg 까지 들 수 있음) · 우클릭 던지기 · 휠 거리 · R/T 회전</td></tr>
@@ -157,6 +157,13 @@
   </div>
 </div>
 
+<script>
+  (function () {
+    var msg = function (t) { var l = document.getElementById('load-label'); if (l) l.textContent = t; };
+    if (window.HTMLScriptElement && HTMLScriptElement.supports && !HTMLScriptElement.supports('importmap')) msg('이 브라우저는 지원되지 않습니다 — 최신 Chrome · Edge · Firefox · Safari 16.4 이상에서 열어 주세요.');
+    setTimeout(function () { if (!window.forge) msg('게임 파일을 아직 불러오는 중입니다… 계속 멈춰 있으면 새로고침하거나 최신 브라우저에서 열어 주세요.'); }, 30000);
+  })();
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

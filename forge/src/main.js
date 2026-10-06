@@ -119,9 +119,9 @@ class Game {
     this.ui.state(this.driving ? 'drive' : 'play'); this.paused = false; this.input.enabled = true; this.input.lock();
     this.tools.setVisible(!this.driving); this.ui.setTool(this.tools.idx);
   }
-  pause() { if (this.ui.st === 'pause') return; this.ui.state('pause'); this.paused = true; this.ui.renderSlots(); this.tools.setVisible(false); this.input.unlock(); }
+  pause() { if (this.ui.st === 'pause') return; this.ui.state('pause'); this.paused = true; this.input.enabled = false; this.ui.renderSlots(); this.tools.setVisible(false); this.input.unlock(); }
   toMenu() { this.autosave(); if (this.driving) this.exitVehicle(); this.ui.state('menu'); this.ui.menuInfo(); this.paused = true; this.input.enabled = false; this.amb?.set(0); }
-  openCatalog() { this.ui.state('catalog'); this.paused = true; this.tools.setVisible(false); this.input.unlock(); this.ui.openCatalog(); }
+  openCatalog() { this.ui.state('catalog'); this.paused = true; this.input.enabled = false; this.tools.setVisible(false); this.input.unlock(); this.ui.openCatalog(); }
   key(e) {
     const st = this.ui.st;
     if (e.code === 'Tab' && (st === 'play' || st === 'catalog')) { e.preventDefault(); if (st === 'play') this.openCatalog(); else this.resume(); }
@@ -260,5 +260,5 @@ window.forge = game;
 game.boot().catch((e) => {
   console.error(e);
   const el = document.getElementById('load-label'); el.textContent = '시작하지 못했습니다: ' + (e?.message || e) + ' — WebGL·WebAssembly를 지원하는 최신 브라우저에서 열어 주세요. ';
-  const a = document.createElement('a'); a.href = 'https://github.com/kimblox26-arch/kimjamminGame'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'GitHub 저장소'; a.style.color = 'var(--acc2)'; el.appendChild(a);
+  const a = document.createElement('span'); a.textContent = 'github.com/kimblox26-arch/kimjamminGame'; a.style.cssText = 'color:var(--acc2);user-select:text;-webkit-user-select:text'; el.appendChild(a);
 });

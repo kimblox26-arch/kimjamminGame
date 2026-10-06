@@ -143,4 +143,4 @@ body.touch #keys { display: none; } body.touch #hotbar { bottom: 8px; transform:
   .menu-r { margin-left: 0; } .brand.big { font-size: 60px; } .help-body { grid-template-columns: 1fr; }
   #cat-detail { width: 220px; } .panel { inset: 2vh 2vw; } .slotb { width: 52px; height: 56px; } .slotb span { display: none; }
 }
-body.nolock #keys::after { content: ' · 우클릭 드래그 / 방향키: 둘러보기'; color: var(--acc2); }
+body.nolock #hud::before { content: '우클릭 드래그 · 방향키: 둘러보기   X: 보조 동작'; position: absolute; left: 50%; top: 10px; transform: translateX(-50%); white-space: nowrap; font-size: 12px; color: var(--acc2); background: rgba(10, 12, 14, 0.6); border: 1px solid var(--line); padding: 4px 12px; border-radius: 14px; }

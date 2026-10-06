@@ -486,7 +486,7 @@ export class ToolSystem {
     st.drSnd = st.drSnd || g.sfx.loop('drill');
     const unscrew = input.btn[2] && P && close;
     const run = (input.btn[0] || unscrew) && close;
-    this.hint = P ? (close ? '좌클릭(유지): 구멍 뚫고 볼트 체결 · 우클릭(유지): 볼트 풀기' : '더 가까이') : '';
+    this.hint = P ? (close ? `좌클릭(유지): 구멍 뚫고 볼트 체결 · ${g.input.fallback ? 'X' : '우클릭'}(유지): 볼트 풀기` : '더 가까이') : '';
     if (!run || !P) { st.drSnd?.set(input.btn[0] ? 0.25 : 0, input.btn[0] ? 1 : 0.3, 0); st.prog = 0; st.target = null; g.ui.progress(0); return; }
     const key = P.id;
     if (st.target !== key) { st.target = key; st.prog = 0; }
