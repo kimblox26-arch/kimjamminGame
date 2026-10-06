@@ -13,7 +13,8 @@
   const PRAISE = ['정답이에요!', '잘했어요!', '최고예요!', '완벽해요!', '수학 천재!', '멋져요!'];
 
   let G = null;          // 지도 모양
-  let whereText = '';    // 지금 보고 있는 곳 글자
+  let UIF = getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim() || 'sans-serif'; // 고른 글씨체 (지도 글자에도)
+  let whereText = '', hudUserHTML = '';    // 지금 보고 있는 곳 글자
   let schools = [];      // 학교 목록 (지도의 실제 학교 + 직접 등록한 학교)
   let token = store.get('mle_token'), me = null, W = null, es = null, online = 0, sel = -1, streak = 0, best = 0, chatCh = 'school', wrongN = 0;
   const cheat = { unlocked: false, capture: false, defend: false };
@@ -55,7 +56,33 @@
   const rankBadge = k => `<span class="rkb${k < 3 ? ' r' + (k + 1) : ''}">${k + 1}</span>`; // 1·2·3등은 금·은·동
   const markOf = role => (role && S.MARK[role] ? `<span class="mark ${role}" title="${S.ROLE_NICK[role]}">${S.MARK[role]}</span>` : '');
   // 이름 + 운영자(✦)·개발자(♛) 표시 + 🧑‍🎨 꾸미기 (캐릭터 · 이름 테두리 · 칭호)
-  const nameHTML = (nick, role, lk) => (lk && lk.av && lk.av !== '😀' ? `<span class="av">${esc(lk.av)}</span>` : '') + `<span class="nmx${lk && lk.fr ? ' fr fr-' + esc(lk.fr) : ''}">${esc(nick)}</span>` + markOf(role) + (lk && lk.ti ? ` <small class="ttl">${esc(lk.ti)}</small>` : '');
+  // 🪪 프로필 사진: 목록에는 작은 사진을 한 번만 받아 와서 계속 쓴다 (못 받으면 캐릭터 이모티콘)
+  const picOk = d => typeof d === 'string' && d.length < 500000 && /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(d);
+  const thumbs = new Map(), thumbDone = new Map();
+  function thumbOf(acc, v) {
+    const k = acc + ':' + v;
+    if (!thumbs.has(k)) thumbs.set(k, api('/api/pic?acc=' + encodeURIComponent(acc)).then(r => { const d = picOk(r.d) ? r.d : null; thumbDone.set(k, d); return d; }).catch(() => null));
+    return thumbs.get(k);
+  }
+  const avHTML = (lk, cls = 'av') => {
+    if (!lk) return '';
+    const pf = lk.acc ? ` data-pf="${esc(lk.acc)}"` : '';
+    if (lk.pv && lk.acc) {
+      const d = thumbDone.get(lk.acc + ':' + lk.pv);
+      return d ? `<span class="${cls} pic has"${pf} data-got="1" style="background-image:url(&quot;${d}&quot;)">${esc(lk.av || '😀')}</span>`
+        : `<span class="${cls} pic"${pf} data-pa="${esc(lk.acc)}" data-pv="${Number(lk.pv) || 0}">${esc(lk.av || '😀')}</span>`;
+    }
+    return lk.av ? `<span class="${cls}"${pf}>${esc(lk.av)}</span>` : '';
+  };
+  function fillPics() {
+    document.querySelectorAll('[data-pa]:not([data-got])').forEach(el => {
+      el.dataset.got = '1';
+      thumbOf(el.dataset.pa, el.dataset.pv).then(d => { if (d) { el.style.backgroundImage = `url("${d}")`; el.classList.add('has'); } });
+    });
+  }
+  let picPend = false;
+  new MutationObserver(() => { if (!picPend) { picPend = true; requestAnimationFrame(() => { picPend = false; fillPics(); }); } }).observe(document.documentElement, { childList: true, subtree: true });
+  const nameHTML = (nick, role, lk) => (lk && ((lk.pv && lk.acc) || (lk.av && lk.av !== '😀')) ? avHTML(lk) : '') + `<span class="nmx${lk && lk.fr ? ' fr fr-' + esc(lk.fr) : ''}"${lk && lk.acc ? ` data-pf="${esc(lk.acc)}"` : ''}>${esc(nick)}</span>` + markOf(role) + (lk && lk.ti ? ` <small class="ttl">${esc(lk.ti)}</small>` : '');
   const flagMark = sid => (flagsOf[sid] ? flagsOf[sid].m + ' ' : '');
   const shielded = i => (shieldOf.get(i) || 0) > Date.now();
   const scopeOn = () => me && (me.scopeUntil || 0) > Date.now();
@@ -487,7 +514,7 @@
   function drawScenery(cp, SX, SY, free) {
     const out = (x, y) => x < -60 || y < -20 || x > vw + 60 || y > vh + 20;
     const label = (text, x, y, size, color) => {
-      ctx.font = `800 ${size}px 'Pretendard Variable', Pretendard, sans-serif`;
+      ctx.font = `800 ${size}px ${UIF}`;
       const w = ctx.measureText(text).width + 6;
       if (!free(x - w / 2, y - size / 2 - 1, w, size + 2)) return false;
       ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.strokeText(text, x, y);
@@ -518,7 +545,7 @@
     const boxes = [], free = (x, y, w, h) => { for (const b of boxes) if (x < b[0] + b[2] && x + w > b[0] && y < b[1] + b[3] && y + h > b[1]) return false; boxes.push([x, y, w, h]); return true; };
     const below = cp >= 11 ? Math.max(16, cp * 0.42) : 0; // 학교 표시 아래로 비켜 쓴다
     const draw = (list, size, color, minSize, dy) => {
-      ctx.font = `800 ${size}px 'Pretendard Variable', Pretendard, sans-serif`;
+      ctx.font = `800 ${size}px ${UIF}`;
       for (const r of list) {
         if (r.size < minSize) continue;
         const x = SX(r.x), y = SY(r.y) + dy;
@@ -1083,7 +1110,7 @@
     ctx.fillStyle = mine ? '#e8553d' : '#4a5563'; ctx.fill();
     if (!withLabel) return;
     const text = flagMark(sid) + short(sid), star = mine ? 15 : 0; // 우리 학교는 앞에 별 아이콘
-    ctx.font = `800 ${mine ? 15 : 13}px 'Pretendard Variable', Pretendard, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.font = `800 ${mine ? 15 : 13}px ${UIF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     const w = ctx.measureText(text).width + 14 + star, ly = y - r - 4;
     ctx.fillStyle = mine ? 'rgba(232,85,61,.96)' : 'rgba(255,255,255,.94)';
     roundRect(x - w / 2, ly - 21, w, 21, 10.5); ctx.fill();
@@ -2083,7 +2110,8 @@
     $('#hudServer').textContent = `🌐 ${srvName()}`;
     $('#hudOnline').innerHTML = `<i></i>${online}명 접속 중`;
     $('#hudSchool').textContent = short(mySid());
-    $('#hudUser').innerHTML = `<span class="av">${esc((me.looks && me.looks.av) || '😀')}</span> ${nameHTML(me.profile.nickname, me.role, Object.assign({}, me.looks, { av: '' }))} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
+    const hu = `${avHTML(Object.assign({ av: '😀' }, me.looks, { acc: me.acc }))} ${nameHTML(me.profile.nickname, me.role, Object.assign({}, me.looks, { av: '', pv: 0 }))} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
+    if (hudUserHTML !== hu) { hudUserHTML = hu; $('#hudUser').innerHTML = hu; }
     $('#cheatBadge').hidden = !(cheat.capture || cheat.defend);
     $('#btnAdmin').hidden = !me.role;
     $('#btnSound').classList.toggle('off', !Sound.on); $('#btnSound').querySelector('span').textContent = Sound.on ? '소리' : '소리 꺼짐';
@@ -2688,7 +2716,7 @@
   function renderLooks() {
     const l = me.looks || { av: '😀', ti: '', fr: '', own: [] }, st = me.stats || {};
     $('#lkCoins').textContent = me.infCoins ? '∞' : me.coins || 0;
-    $('#lkPreview').innerHTML = `<span class="lp-av">${esc(l.av || '😀')}</span><div>${nameHTML(me.profile ? me.profile.nickname : me.username, me.role, Object.assign({}, l, { av: '' }))}<div class="muted">${esc(short(mySid()))}</div></div>`;
+    $('#lkPreview').innerHTML = `${avHTML(Object.assign({ av: '😀' }, l, { acc: me.acc }), 'lp-av')}<div>${nameHTML(me.profile ? me.profile.nickname : me.username, me.role, Object.assign({}, l, { av: '', pv: 0 }))}<div class="muted">${esc(short(mySid()))}</div></div>`;
     $$('#lkTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.lk === lkTab));
     $('#lkList').innerHTML = S.LOOKS[lkTab].map(it => {
       const owned = !it.price || (l.own || []).includes(lkTab + ':' + it.id), worn = (l[lkTab] || '') === it.id;
@@ -2713,6 +2741,326 @@
       if (buy) { Sound.play('unlock'); toast('🧑‍🎨 새로 꾸몄어요!', 'ok'); }
       renderLooks(); hud();
     };
+  }
+  // 🪪 프로필 카드 (배너 + 프로필 사진) — 내 것은 그리기 · 사진 · 동영상으로 바꿀 수 있다
+  let pfData = null;
+  function setMedia(el, m) { // 사진 한 장, 또는 동영상(여러 장을 옆으로 이어 붙인 그림)을 움직이게
+    el.classList.toggle('has', !!m);
+    el.style.backgroundImage = m ? `url("${m.d}")` : '';
+    el.style.backgroundSize = m && m.n > 1 ? `${m.n * 100}% 100%` : '';
+    el.style.animation = m && m.n > 1 ? `spr ${(m.n / m.fps).toFixed(2)}s steps(${m.n}, jump-none) infinite` : '';
+  }
+  async function openProfile(acc) {
+    if (!me) return;
+    acc = acc || me.acc;
+    if (!pfData || pfData.acc !== acc) { $('#pfName').innerHTML = '<span class="muted">불러오는 중…</span>'; $('#pfStats').innerHTML = ''; setMedia($('#pfBanner'), null); setMedia($('#pfAv'), null); $('#pfAv').textContent = ''; $('#pfMine').hidden = $('#pfOther').hidden = true; }
+    openM('profileModal');
+    const r = await api('/api/profile?acc=' + encodeURIComponent(acc));
+    if (r.error) { closeM('profileModal'); return toast(r.error, 'err'); }
+    if (r.a && !picOk(r.a.d)) r.a = null;
+    if (r.b && !picOk(r.b.d)) r.b = null;
+    pfData = r;
+    if (r.me) {
+      me.looks = Object.assign({}, me.looks, { pv: r.pv, bv: r.bv });
+      hud();
+      if (r.removed) toast('🚨 신고가 많아서 프로필 사진 · 배너가 지워졌어요.', 'warn');
+    }
+    renderProfile();
+  }
+  function renderProfile() {
+    const r = pfData;
+    $('#pfBanner').style.setProperty('--c', r.sid >= 0 ? cssColor(r.sid) : '#94a3b8');
+    setMedia($('#pfBanner'), r.b);
+    $('#pfAv').textContent = r.a ? '' : r.av || '😀';
+    setMedia($('#pfAv'), r.a);
+    $('#pfName').innerHTML = `<b>${nameHTML(r.nick, r.role, { ti: r.ti, fr: r.fr })}</b><div class="muted">${esc(r.school || '')}${r.yr ? ' · ' + (r.yr <= 6 ? r.yr + '학년' : S.gradeName(r.yr)) : ''}</div>`;
+    $('#pfStats').innerHTML = `<span>⚔️ 뺏은 땅 <b>${r.captures}</b></span><span>✏️ 푼 문제 <b>${r.solved}</b></span>`;
+    $('#pfMine').hidden = !r.me;
+    const pic = !!(r.pv || r.bv);
+    $('#pfReport').hidden = r.me || !pic;
+    $('#pfWipe').hidden = r.me || !pic || !r.staff;
+    $('#pfOther').hidden = r.me || !pic;
+  }
+
+  // 🖌️ 그리기 · 📷 사진 · 🎬 동영상 편집 창
+  const MD = { av: { w: 256, h: 256, out: [192, 192], vid: [112, 112], max: 190000 }, bn: { w: 768, h: 256, out: [600, 200], vid: [336, 112], max: 400000 } };
+  const VID_FPS = 8, VID_SEC = 3; // 동영상은 3초 · 1초에 8장 (소리 없는 움짤)
+  const PALETTE = ['#111827', '#ffffff', '#9ca3af', '#ef4444', '#f97316', '#facc15', '#84cc16', '#22c55e', '#14b8a6', '#38bdf8', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#f9a8d4', '#92400e'];
+  let md = null, mdTool = 'pen', mdColor = '#111827', mdSize = 8, mdUndo = [], mdBusy = false;
+  const mdCv = () => $('#mdCanvas'), mdCx = () => $('#mdCanvas').getContext('2d', { willReadFrequently: true });
+  function encPic(c, q) { // webp 가 되면 webp (더 작다), 안 되면 jpeg
+    let d = '';
+    try { d = c.toDataURL('image/webp', q); } catch { d = ''; }
+    if (!d.startsWith('data:image/webp')) d = c.toDataURL('image/jpeg', q);
+    return d;
+  }
+  const newCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  function mdStage(slot, crop) {
+    const cv = mdCv(), cfg = MD[slot];
+    cv.width = cfg.w; cv.height = cfg.h;
+    $('#mdStage').className = 'md-stage ' + slot + (crop ? ' crop' : '');
+    $('#mdDraw').hidden = !!crop; $('#mdCrop').hidden = !crop;
+    $('#mdMsg').textContent = '';
+    $('#mdSave').disabled = false;
+  }
+  function mdTitle(slot, kind) { $('#mdTitle').innerHTML = `${kind === 'draw' ? '🖌️' : kind === 'vid' ? '🎬' : '📷'} ${slot === 'av' ? '프로필 사진' : '배너'} ${kind === 'draw' ? '그리기' : kind === 'vid' ? '동영상' : '사진'}`; }
+  function openDraw(slot) {
+    mdClose();
+    md = { slot, kind: 'draw' };
+    mdStage(slot, false); mdTitle(slot, 'draw');
+    const cx = mdCx();
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, MD[slot].w, MD[slot].h);
+    mdUndo = [];
+    openM('mediaModal');
+  }
+  const once = (el, ev, ms) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error('timeout')), ms); el.addEventListener(ev, () => { clearTimeout(t); res(); }, { once: true }); el.addEventListener('error', () => { clearTimeout(t); rej(new Error('error')); }, { once: true }); });
+  function seekTo(v, t) {
+    t = Math.max(0, Math.min(t, (v.duration || 0) - 0.05));
+    if (Math.abs(v.currentTime - t) < 0.001) return Promise.resolve();
+    return new Promise(res => { const done = () => { clearTimeout(tm); v.removeEventListener('seeked', done); res(); }; const tm = setTimeout(done, 2500); v.addEventListener('seeked', done); v.currentTime = t; });
+  }
+  async function openCrop(slot, kind, file) {
+    if (!file) return;
+    if (kind === 'vid' ? !/^video\//.test(file.type) : !/^image\//.test(file.type)) return toast(kind === 'vid' ? '🎬 동영상 파일을 골라 주세요.' : '📷 사진 파일을 골라 주세요.', 'warn');
+    mdClose();
+    const url = URL.createObjectURL(file);
+    md = { slot, kind, url, z: 1, start: 0 };
+    try {
+      if (kind === 'img') {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        Object.assign(md, { src: img, iw: img.naturalWidth, ih: img.naturalHeight });
+      } else {
+        const v = document.createElement('video');
+        v.muted = true; v.playsInline = true; v.preload = 'auto'; v.setAttribute('playsinline', ''); v.src = url;
+        await once(v, 'loadeddata', 15000);
+        try { await v.play(); v.pause(); } catch { /* 소리 없는 동영상은 보통 된다 */ }
+        await seekTo(v, 0);
+        Object.assign(md, { src: v, iw: v.videoWidth, ih: v.videoHeight, dur: v.duration || 0 });
+        const mx = Math.max(0, Math.floor(((md.dur || 0) - 0.5) * 10) / 10);
+        $('#mdStart').max = mx; $('#mdStart').value = 0;
+      }
+      if (!md.iw || !md.ih) throw new Error('empty');
+    } catch {
+      mdClose();
+      return toast(kind === 'vid' ? '🎬 이 동영상은 열 수 없어요. 다른 동영상을 골라 주세요.' : '📷 이 사진은 열 수 없어요.', 'err');
+    }
+    mdStage(slot, true); mdTitle(slot, kind);
+    $('#mdStartRow').hidden = kind !== 'vid';
+    $('#mdHint').textContent = kind === 'vid' ? `손가락으로 끌어서 위치를 맞추고, ⏱️ 막대로 시작할 곳을 골라요. ${VID_SEC}초 동안 움직이는 사진이 돼요. (소리는 없어요)` : '손가락으로 끌어서 위치를 맞추고, 🔍 막대로 크게 · 작게 해요.';
+    cropReset(); cropPaint(); mdStartText();
+    openM('mediaModal');
+  }
+  function mdClose() {
+    if (md && md.url) URL.revokeObjectURL(md.url);
+    if (md && md.src && md.src.pause) { try { md.src.pause(); md.src.removeAttribute('src'); md.src.load(); } catch { /* */ } }
+    md = null;
+  }
+  const mdStartText = () => { $('#mdStartText').textContent = md && md.kind === 'vid' ? `${(+$('#mdStart').value).toFixed(1)}초부터` : ''; };
+  function cropReset() {
+    const W = MD[md.slot].w, H = MD[md.slot].h;
+    md.s0 = Math.max(W / md.iw, H / md.ih); md.z = 1;
+    md.ox = (W - md.iw * md.s0) / 2; md.oy = (H - md.ih * md.s0) / 2;
+    $('#mdZoom').value = 1;
+  }
+  function cropClamp() {
+    const W = MD[md.slot].w, H = MD[md.slot].h, s = md.s0 * md.z;
+    md.ox = Math.min(0, Math.max(W - md.iw * s, md.ox));
+    md.oy = Math.min(0, Math.max(H - md.ih * s, md.oy));
+  }
+  function cropPaint(cx = mdCx(), k = 1) {
+    const s = md.s0 * md.z;
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, MD[md.slot].w * k, MD[md.slot].h * k);
+    cx.drawImage(md.src, md.ox * k, md.oy * k, md.iw * s * k, md.ih * s * k);
+  }
+  // 그리기
+  function mdPos(e) { const cv = mdCv(), r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; }
+  function mdPush() { const cv = mdCv(); mdUndo.push(mdCx().getImageData(0, 0, cv.width, cv.height)); if (mdUndo.length > 20) mdUndo.shift(); }
+  function mdLine(a, b) {
+    const cx = mdCx(), cv = mdCv();
+    cx.strokeStyle = mdTool === 'eraser' ? '#ffffff' : mdColor;
+    cx.lineWidth = mdSize * (mdTool === 'eraser' ? 2 : 1) * cv.width / Math.max(1, cv.clientWidth);
+    cx.lineCap = cx.lineJoin = 'round';
+    cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x + (a === b ? 0.01 : 0), b.y); cx.stroke();
+  }
+  function mdFill(p) { // 🪣 같은 색으로 이어진 곳을 한 번에 칠하기
+    const cv = mdCv(), cx = mdCx(), W = cv.width, H = cv.height, img = cx.getImageData(0, 0, W, H), d = new Uint32Array(img.data.buffer);
+    const x0 = Math.floor(p.x), y0 = Math.floor(p.y);
+    if (x0 < 0 || y0 < 0 || x0 >= W || y0 >= H) return;
+    const n = parseInt(mdColor.slice(1), 16), fill = ((255 << 24) | ((n & 255) << 16) | (((n >> 8) & 255) << 8) | (n >> 16)) >>> 0;
+    const t = d[y0 * W + x0], tr = t & 255, tg = (t >>> 8) & 255, tb = (t >>> 16) & 255;
+    if (t === fill) return;
+    const near = c => Math.abs((c & 255) - tr) + Math.abs(((c >>> 8) & 255) - tg) + Math.abs(((c >>> 16) & 255) - tb) < 96;
+    const seen = new Uint8Array(W * H), st = [y0 * W + x0];
+    while (st.length) {
+      const i = st.pop();
+      if (seen[i]) continue;
+      seen[i] = 1;
+      if (!near(d[i])) continue;
+      d[i] = fill;
+      const x = i % W;
+      if (x > 0) st.push(i - 1);
+      if (x < W - 1) st.push(i + 1);
+      if (i >= W) st.push(i - W);
+      if (i < W * (H - 1)) st.push(i + W);
+    }
+    cx.putImageData(img, 0, 0);
+  }
+  async function mdSave() {
+    if (!md || mdBusy) return;
+    mdBusy = true; $('#mdSave').disabled = true;
+    const slot = md.slot, cfg = MD[slot], msg = t => { $('#mdMsg').textContent = t; };
+    try {
+      const body = { slot, kind: md.kind };
+      let first;
+      if (md.kind === 'vid') {
+        const [fw, fh] = cfg.vid, v = md.src, left = Math.max(0, (md.dur || 0) - md.start);
+        const n = Math.max(2, Math.min(VID_FPS * VID_SEC, Math.floor(left * VID_FPS) || 2));
+        const strip = newCanvas(fw * n, fh), sx = strip.getContext('2d'), k = fw / cfg.w;
+        for (let i = 0; i < n; i++) {
+          msg(`🎬 만드는 중… ${Math.round(i / n * 100)}%`);
+          await seekTo(v, md.start + i / VID_FPS);
+          sx.save(); sx.translate(i * fw, 0); sx.beginPath(); sx.rect(0, 0, fw, fh); sx.clip(); cropPaint(sx, k); sx.restore();
+        }
+        let q = 0.62, d = encPic(strip, q);
+        while (d.length > cfg.max && q > 0.25) { q -= 0.09; d = encPic(strip, q); }
+        if (d.length > cfg.max) throw new Error('big');
+        Object.assign(body, { d, n, fps: VID_FPS });
+        first = newCanvas(fw, fh); first.getContext('2d').drawImage(strip, 0, 0, fw, fh, 0, 0, fw, fh);
+      } else {
+        const [tw, th] = cfg.out, out = newCanvas(tw, th), ox = out.getContext('2d');
+        if (md.kind === 'draw') ox.drawImage(mdCv(), 0, 0, tw, th); else cropPaint(ox, tw / cfg.w);
+        let q = md.kind === 'draw' ? 0.9 : 0.8, d = encPic(out, q);
+        while (d.length > cfg.max && q > 0.3) { q -= 0.1; d = encPic(out, q); }
+        if (d.length > cfg.max) throw new Error('big');
+        body.d = d;
+        first = out;
+      }
+      if (slot === 'av') { const t = newCanvas(64, 64); t.getContext('2d').drawImage(first, 0, 0, 64, 64); body.th = encPic(t, 0.82); }
+      msg('☁️ 올리는 중…');
+      const r = await api('/api/profile/media', body);
+      if (r.error) { msg(''); return toast(r.error, 'err'); }
+      me.looks = r.looks;
+      if (slot === 'av') { const k = me.acc + ':' + r.looks.pv; thumbDone.set(k, body.th); thumbs.set(k, Promise.resolve(body.th)); }
+      closeM('mediaModal'); mdClose();
+      hud(); Sound.play('unlock');
+      toast(slot === 'av' ? '🪪 프로필 사진을 바꿨어요!' : '🏞️ 배너를 바꿨어요!', 'ok');
+      if (!$('#looksModal').hidden) renderLooks();
+      openProfile();
+    } catch {
+      msg('');
+      toast('😢 만들지 못했어요. 더 짧거나 작은 파일로 다시 해 주세요.', 'err');
+    } finally { mdBusy = false; $('#mdSave').disabled = false; }
+  }
+  // 🔤 글씨체
+  const FONTS = [
+    { id: 'round', name: '둥근 글씨', css: "'NanumSquareRound', 'NanumSquareRoundR'" },
+    { id: 'soft', name: '단정한 글씨', css: "'Gowun Dodum'" },
+    { id: 'cute', name: '동글 글씨', css: "'Jua'" },
+    { id: 'hand', name: '손글씨', css: "'Gaegu'" },
+    { id: 'basic', name: '깔끔한 글씨', css: "'Pretendard Variable', 'Pretendard'" },
+  ];
+  const fontNow = () => document.documentElement.dataset.font || 'round';
+  function uiFont() {
+    UIF = getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim() || 'sans-serif';
+    tiles.clear(); requestDraw();
+  }
+  function renderFonts() {
+    $('#setFont').innerHTML = FONTS.map(f => `<button type="button" data-font="${f.id}" class="${fontNow() === f.id ? 'on' : ''}"><b style="font-family:${f.css}, sans-serif">가나다 123</b><small>${f.name}</small></button>`).join('');
+  }
+  function initProfile() {
+    $('#btnProfile').onclick = () => openProfile();
+    $('#lkProfile').onclick = () => openProfile();
+    $('#hudUser').onclick = () => openProfile();
+    document.addEventListener('click', e => { // 이름이나 프로필 사진을 누르면 그 친구 프로필
+      const el = e.target.closest('[data-pf]');
+      if (!el || !me) return;
+      e.preventDefault(); e.stopPropagation();
+      openProfile(el.dataset.pf);
+    }, true);
+    $('#pfMine').onclick = async e => {
+      const b = e.target.closest('[data-pe]');
+      if (!b) return;
+      const [slot, kind] = b.dataset.pe.split(':');
+      if (kind === 'draw') return openDraw(slot);
+      if (kind === 'clear') {
+        const r = await api('/api/profile/clear', { slot });
+        if (r.error) return toast(r.error, 'err');
+        me.looks = r.looks; hud();
+        toast(slot === 'av' ? '😀 캐릭터로 돌아왔어요.' : '🗑️ 배너를 없앴어요.', 'ok');
+        return openProfile();
+      }
+      const f = $('#pfFile');
+      f.accept = kind === 'vid' ? 'video/*' : 'image/*';
+      f.value = '';
+      f.onchange = () => openCrop(slot, kind, f.files && f.files[0]);
+      f.click();
+    };
+    $('#pfReport').onclick = async () => {
+      if (!pfData || !confirm('🚨 이 친구의 프로필 사진 · 배너가 나쁜 사진인가요? 신고할까요?')) return;
+      const r = await api('/api/profile/report', { acc: pfData.acc });
+      if (r.error) return toast(r.error, 'err');
+      toast(r.removed ? '🚨 신고가 모여서 사진을 지웠어요.' : `🚨 신고했어요. (${r.n}/${S.PIC_REPORT})`, 'ok');
+      if (r.removed) openProfile(pfData.acc);
+    };
+    $('#pfWipe').onclick = async () => {
+      if (!pfData || !confirm('이 친구의 프로필 사진 · 배너를 지울까요?')) return;
+      const r = await api('/api/profile/clear', { slot: 'all', acc: pfData.acc });
+      if (r.error) return toast(r.error, 'err');
+      toast('🗑️ 사진을 지웠어요.', 'ok');
+      openProfile(pfData.acc);
+    };
+    // 편집 창
+    $('#mdColors').innerHTML = PALETTE.map(c => `<button type="button" class="md-sw${c === mdColor ? ' on' : ''}" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join('') + '<label class="md-sw custom" title="다른 색"><input type="color" id="mdPick" value="#ff6a1a"></label>';
+    const pickColor = c => { mdColor = c; if (mdTool === 'eraser') mdTool = 'pen'; $$('#mdColors .md-sw').forEach(x => x.classList.toggle('on', x.dataset.c === c)); $$('#mdTools button').forEach(x => x.classList.toggle('on', x.dataset.tool === mdTool)); };
+    $('#mdColors').onclick = e => { const b = e.target.closest('[data-c]'); if (b) pickColor(b.dataset.c); };
+    $('#mdPick').oninput = e => { pickColor(e.target.value); $('.md-sw.custom').classList.add('on'); };
+    $('#mdTools').onclick = e => { const b = e.target.closest('[data-tool]'); if (!b) return; mdTool = b.dataset.tool; $$('#mdTools button').forEach(x => x.classList.toggle('on', x === b)); };
+    $('#mdSizes').onclick = e => { const b = e.target.closest('[data-size]'); if (!b) return; mdSize = +b.dataset.size; $$('#mdSizes button').forEach(x => x.classList.toggle('on', x === b)); };
+    $('#mdUndo').onclick = () => { const im = mdUndo.pop(); if (im) mdCx().putImageData(im, 0, 0); };
+    $('#mdClear').onclick = () => { if (!md) return; mdPush(); const cx = mdCx(); cx.fillStyle = '#fff'; cx.fillRect(0, 0, mdCv().width, mdCv().height); };
+    $('#mdZoom').oninput = e => {
+      if (!md || !md.src) return;
+      const W = MD[md.slot].w, H = MD[md.slot].h, old = md.s0 * md.z, cx0 = (W / 2 - md.ox) / old, cy0 = (H / 2 - md.oy) / old;
+      md.z = +e.target.value;
+      const s = md.s0 * md.z;
+      md.ox = W / 2 - cx0 * s; md.oy = H / 2 - cy0 * s;
+      cropClamp(); cropPaint();
+    };
+    $('#mdStart').oninput = async e => { if (!md || md.kind !== 'vid') return; md.start = +e.target.value; mdStartText(); await seekTo(md.src, md.start); if (md) cropPaint(); };
+    $('#mdSave').onclick = mdSave;
+    $('#mdCancel').onclick = () => { closeM('mediaModal'); mdClose(); };
+    $('#mediaModal [data-close]').addEventListener('click', mdClose);
+    const cv = mdCv();
+    let drawing = null, drag = null;
+    cv.addEventListener('pointerdown', e => {
+      if (!md) return;
+      e.preventDefault();
+      try { cv.setPointerCapture(e.pointerId); } catch { /* */ }
+      if (md.kind === 'draw') {
+        const p = mdPos(e);
+        mdPush();
+        if (mdTool === 'fill') return mdFill(p);
+        drawing = p; mdLine(p, p);
+      } else if (md.src) drag = { x: e.clientX, y: e.clientY, ox: md.ox, oy: md.oy };
+    });
+    cv.addEventListener('pointermove', e => {
+      if (drawing) { const p = mdPos(e); mdLine(drawing, p); drawing = p; }
+      else if (drag && md) { const k = cv.width / Math.max(1, cv.clientWidth); md.ox = drag.ox + (e.clientX - drag.x) * k; md.oy = drag.oy + (e.clientY - drag.y) * k; cropClamp(); cropPaint(); }
+    });
+    const up = () => { drawing = null; drag = null; };
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    // 글씨체
+    renderFonts();
+    $('#setFont').onclick = e => {
+      const b = e.target.closest('[data-font]');
+      if (!b) return;
+      document.documentElement.dataset.font = b.dataset.font;
+      try { localStorage.setItem('mle_font', b.dataset.font); } catch { /* */ }
+      renderFonts(); uiFont(); Sound.play('tap');
+    };
+    if (document.fonts) { document.fonts.addEventListener('loadingdone', () => { tiles.clear(); requestDraw(); }); }
   }
   function initShop() {
     $('#btnStudy').onclick = openStudy;
@@ -2802,7 +3150,7 @@
     try { await loadMap(); } catch (e) { $('#loadMsg').textContent = '😢 ' + (e.message || '지도를 불러오지 못했어요.') + ' 새로고침 해 주세요.'; return; }
     if (window.MLEIntro) { await window.MLEIntro.done(); Sound.play('tap'); Music.start(); } // 인트로: 시작하기를 누르면 들어간다 (배경 음악도 이때)
     else document.addEventListener('pointerdown', () => Music.start(), { once: true });
-    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin(); initShop(); initInvite(); initWar(); initLooks(); initUnion(); initTeacher();
+    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin(); initShop(); initInvite(); initWar(); initLooks(); initProfile(); initUnion(); initTeacher();
     $('#players').addEventListener('click', e => { const b = e.target.closest('[data-vote]'); if (b) votePlayer(b.dataset.vote, b.dataset.nick, +b.dataset.n); });
     if (!token) return show('auth');
     const d = await api('/api/me');

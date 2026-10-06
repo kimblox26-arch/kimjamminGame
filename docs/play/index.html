@@ -10,7 +10,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <title>매뜨 땅먹</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Gowun+Dodum&family=Jua&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/innks/NanumSquareRound@master/nanumsquareround.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -189,6 +190,7 @@
   <div id="moreMenu" class="more-menu" hidden>
     <button type="button" class="mm mm-mission" data-act="btnMission"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg><span>미션</span><i id="mmMissionDot" class="count dot" hidden></i></button>
     <button type="button" class="mm mm-union" id="btnUnion"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>연합</span></button>
+    <button type="button" class="mm" id="btnProfile"><svg class="ic" aria-hidden="true"><use href="#i-idcard"/></svg><span>프로필</span></button>
     <button type="button" class="mm" id="btnLooks"><svg class="ic" aria-hidden="true"><use href="#i-smile"/></svg><span>꾸미기</span></button>
     <button type="button" class="mm" id="btnBadges"><svg class="ic" aria-hidden="true"><use href="#i-medal"/></svg><span>배지</span></button>
     <button type="button" class="mm" id="btnRank"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg><span>랭킹표</span></button>
@@ -251,6 +253,7 @@
     <div class="field"><div class="label">🗓️ 학기 (문제 범위)</div>
       <div class="seg"><button type="button" class="sem2" data-sem="1">1학기</button><button type="button" class="sem2" data-sem="2">2학기</button></div>
     </div>
+    <div class="field"><div class="label">🔤 글씨체</div><div class="font-pick" id="setFont"></div></div>
     <div class="field"><div class="label">😀 닉네임</div>
       <div class="row"><input id="setNick" maxlength="10"><button type="button" id="setNickSave" class="btn">저장</button></div>
     </div>
@@ -438,8 +441,49 @@
     <div class="tabs" id="lkTabs"><button type="button" class="tab on" data-lk="av">캐릭터</button><button type="button" class="tab" data-lk="ti">칭호</button><button type="button" class="tab" data-lk="fr">이름 테두리</button></div>
     <div id="lkList" class="look-list"></div>
     <p class="muted">꾸민 모습은 순위표 · 채팅 · 학교 친구 목록에서 친구들에게 보여요.</p>
+    <button type="button" class="btn" id="lkProfile">🪪 프로필 사진 · 배너 바꾸기</button>
   </div>
 </div>
+<div id="profileModal" class="modal" hidden>
+  <div class="card wide pf-wrap">
+    <div class="row between"><h3>🪪 프로필</h3><button type="button" class="icon-btn" data-close="profileModal">✕</button></div>
+    <div class="pf" id="pfCard">
+      <div class="pf-banner" id="pfBanner"></div>
+      <div class="pf-top"><span class="pf-av" id="pfAv"></span><div class="pf-name" id="pfName"></div></div>
+      <div class="pf-stats" id="pfStats"></div>
+    </div>
+    <div id="pfMine" hidden>
+      <div class="pf-edit"><div class="label">🖼️ 프로필 사진</div>
+        <div class="pf-btns"><button type="button" class="btn" data-pe="av:draw">🖌️ 그리기</button><button type="button" class="btn" data-pe="av:img">📷 사진</button><button type="button" class="btn" data-pe="av:vid">🎬 동영상</button><button type="button" class="btn ghost" data-pe="av:clear">😀 캐릭터로</button></div></div>
+      <div class="pf-edit"><div class="label">🏞️ 배너</div>
+        <div class="pf-btns"><button type="button" class="btn" data-pe="bn:draw">🖌️ 그리기</button><button type="button" class="btn" data-pe="bn:img">📷 사진</button><button type="button" class="btn" data-pe="bn:vid">🎬 동영상</button><button type="button" class="btn ghost" data-pe="bn:clear">🗑️ 없애기</button></div></div>
+      <p class="muted small">🔒 얼굴 · 이름표 · 집 주소처럼 나를 알아볼 수 있는 사진은 올리지 마세요. 나쁜 사진은 친구들이 신고하면 지워져요.</p>
+    </div>
+    <div id="pfOther" class="row end" hidden><button type="button" class="btn ghost" id="pfReport">🚨 신고</button><button type="button" class="btn danger" id="pfWipe" hidden>🗑️ 사진 지우기</button></div>
+  </div>
+</div>
+<div id="mediaModal" class="modal" hidden>
+  <div class="card wide md-card">
+    <div class="row between"><h3 id="mdTitle">🖌️ 그리기</h3><button type="button" class="icon-btn" data-close="mediaModal">✕</button></div>
+    <div class="md-stage" id="mdStage"><canvas id="mdCanvas"></canvas></div>
+    <div id="mdDraw" class="md-tools">
+      <div class="md-colors" id="mdColors"></div>
+      <div class="md-row">
+        <div class="md-seg" id="mdTools"><button type="button" data-tool="pen" class="on" title="펜">✏️</button><button type="button" data-tool="fill" title="채우기">🪣</button><button type="button" data-tool="eraser" title="지우개">🧽</button></div>
+        <div class="md-seg" id="mdSizes"><button type="button" data-size="3"><i style="--s:5px"></i></button><button type="button" data-size="8" class="on"><i style="--s:9px"></i></button><button type="button" data-size="18"><i style="--s:15px"></i></button></div>
+        <button type="button" class="md-ib" id="mdUndo" title="되돌리기">↩️</button><button type="button" class="md-ib" id="mdClear" title="모두 지우기">🗑️</button>
+      </div>
+    </div>
+    <div id="mdCrop" class="md-tools" hidden>
+      <label class="md-slider"><span>🔍</span><input type="range" id="mdZoom" min="1" max="4" step="0.01" value="1"></label>
+      <label class="md-slider" id="mdStartRow"><span>⏱️</span><input type="range" id="mdStart" min="0" max="0" step="0.1" value="0"><b id="mdStartText"></b></label>
+      <p class="muted small" id="mdHint">손가락으로 끌어서 위치를 맞추고, 🔍 막대로 크게 · 작게 해요.</p>
+    </div>
+    <p class="md-msg" id="mdMsg"></p>
+    <div class="row end"><button type="button" class="btn ghost" id="mdCancel">취소</button><button type="button" class="btn primary" id="mdSave">✅ 저장</button></div>
+  </div>
+</div>
+<input type="file" id="pfFile" hidden>
 <div id="raidModal" class="modal" hidden>
   <div class="card small raid-card">
     <div class="row between"><h3>👾 보스 레이드</h3><button type="button" class="icon-btn" data-close="raidModal">✕</button></div>

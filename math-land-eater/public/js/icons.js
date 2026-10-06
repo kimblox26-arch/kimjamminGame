@@ -92,6 +92,15 @@
     anchor: C(12, 5, 2) + 'M12 7v14 M5 13a7 7 0 0 0 14 0 M3 13h4 M17 13h4',
     heart: 'M12 20s-8-5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 9c0 6-8 11-8 11Z',
     logout: 'M15 4h4v16h-4 M10 8l-4 4 4 4 M6 12h10',
+    image: R(3, 5, 18, 14, 2.5) + C(8.5, 10, 1.6) + 'M3.5 17l5-5 4 4 2.5-2.5 5.5 5',
+    video: R(3, 6, 13, 12, 2.5) + 'M16 10.5l5-3v9l-5-3',
+    brush: 'M19.5 3.5c-3 1.5-7.5 6-9.5 9l2 2c3-2 7.5-6.5 9-9.5l-1.5-1.5Z M9.5 13.5c-2 0-3.5 1.5-3.5 3.5 0 1.3-.8 2.3-2 2.5 3.5 1.2 8 .5 7.5-4Z',
+    idcard: R(3, 5, 18, 14, 2.5) + C(8.5, 11, 2) + 'M5.5 16.5c.6-1.6 1.6-2.4 3-2.4s2.4.8 3 2.4 M14 10h4 M14 14h3',
+    eraser: 'M8 20h12 M4.5 15.5l9-9.5a2 2 0 0 1 2.8 0l3 3a2 2 0 0 1 0 2.8L12 19.5H8l-3.5-3.5a1 1 0 0 1 0-.5Z M9 11l5 5',
+    bucket: 'M5 11l7-7 7 7-7 7-7-7Z M5 11h14 M20 15s1.5 2 1.5 3a1.5 1.5 0 0 1-3 0c0-1 1.5-3 1.5-3Z',
+    undo: 'M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3',
+    siren: 'M6 18v-6a6 6 0 0 1 12 0v6 M4 21h16 M12 3v1 M4.5 6l.8.8 M19.5 6l-.8.8 M10 12a2 2 0 0 1 2-2',
+    font: 'M4 20L10 4h1l6 16 M6.5 14h8 M17 20v-6.5a2.5 2.5 0 0 1 5 0V20 M17 16.5h5',
     copy: R(8, 8, 12, 12, 2) + 'M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3',
   };
   // 이모티콘 → 아이콘 (변형 선택자 FE0F 가 있든 없든)
@@ -101,7 +110,7 @@
     star: '⭐🌟', globe: '🌐', refresh: '🔄♻️', note: '📒📘', target: '🎯', palette: '🧑‍🎨', ballot: '🗳️', trophy: '🏆', map: '🗺️🗾', chat: '💬', chart: '📊', bolt: '⚡💪', mail: '📨',
     xc: '❌🙅', party: '🎉', ban: '🚫✋', bug: '🐛', bulb: '💡', music: '🎵', tower: '🗼🏰🏯', sad: '😢😵', books: '📚', calendar: '🗓️📅', medal: '🏅🥇🥈🥉', megaphone: '📢', broom: '🧹',
     boom: '🧨💥', wall: '🧱', crown: '👑', key: '🔑', lock: '🔐🔒🔓', help: '❓', search: '🔎🔍', compass: '🧭', pole: '🎌', wave: '🌊', hammer: '🔨', leaf: '🕊️🌱', hourglass: '⏳',
-    scroll: '📜', city: '🏙️🏘️', sliders: '⚙️', sparkles: '✨', alert: '😱', cake: '🎂', clipboard: '📋', volume: '🔊', smile: '😊😆', check: '👍', anchor: '⚓', x: '✕',
+    scroll: '📜', city: '🏙️🏘️', sliders: '⚙️', sparkles: '✨', alert: '😱', cake: '🎂', clipboard: '📋', volume: '🔊', smile: '😊😆', check: '👍', anchor: '⚓', x: '✕', image: '🖼️📷📸🏞️', video: '🎬📹🎥', brush: '🖌️🖍️', idcard: '🪪', eraser: '🧽', bucket: '🪣', undo: '↩️', siren: '🚨', font: '🔤🔠',
   };
   const MAP = {};
   const seg = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('ko', { granularity: 'grapheme' }) : null;
@@ -133,7 +142,7 @@
     return s;
   }
   // 글자 속 이모티콘을 아이콘으로 (캐릭터 꾸미기·보스·사람이 쓴 글·입력칸은 그대로)
-  const SKIP = '.av, .lk-av, .lp-av, .boss, .no-ic, option, select, textarea, script, style, svg, canvas, input, .keep-emoji';
+  const SKIP = '.av, .lk-av, .lp-av, .pf-av, .boss, .no-ic, option, select, textarea, script, style, svg, canvas, input, .keep-emoji';
   function decoText(t) {
     const s = t.nodeValue;
     RE.lastIndex = 0;

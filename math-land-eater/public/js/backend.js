@@ -574,6 +574,33 @@
     const cur = await readDoc(path);
     await mergeDoc(path, { [field]: (cur[field] || 0) + n });
   }
+  async function dropDoc(path) {
+    if (!cloud) { if (local.docs) { delete local.docs[path]; save(); } return; }
+    if (cloud.rdb) return cloud.rdb.ref(path).remove();
+    return cloud.db.doc(path).set({});
+  }
+  // ---------- 🪪 프로필 사진 · 배너 (그림 · 사진 · 동영상) ----------
+  // 사진은 학교 땅 기록과 따로 'wface/' 에 둔다 (서버를 초기화해도 남는다). 목록에는 작은 사진(t_)만, 큰 사진(a_)·배너(b_)는 프로필을 열 때만 읽는다.
+  const PIC_MAX = { av: 200000, bn: 420000, th: 16000 };
+  const picOk = (d, max) => typeof d === 'string' && d.length <= max && /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(d);
+  const accOk = acc => typeof acc === 'string' && /^[0-9a-f]{6,40}$/.test(acc);
+  async function cardOf(acc) {
+    if (!cloud) {
+      const u = Object.values(local.users).find(x => x.acc === acc);
+      if (!u || !u.profile) return null;
+      const l = lookOf(u), st = statsOf(u);
+      return { nick: u.profile.nickname, school: u.profile.school, yr: gradeOf(u), av: l.av, ti: l.ti, fr: l.fr, pv: l.pv, bv: l.bv, captures: st.captures, solved: st.solved, role: u.role || null };
+    }
+    const p = await readDoc('players/' + acc);
+    return p.nick ? p : null;
+  }
+  const mediaOf = d => (d && picOk(d.d, PIC_MAX.bn) ? { k: d.k, d: d.d, n: d.n || 1, fps: d.fps || 8, v: d.v || 0 } : null);
+  async function dropMedia(acc, slot) {
+    const jobs = [];
+    if (slot !== 'bn') jobs.push(dropDoc('wface/a_' + acc), dropDoc('wface/t_' + acc));
+    if (slot !== 'av') jobs.push(dropDoc('wface/b_' + acc));
+    await Promise.all(jobs);
+  }
   const warView = rt => (rt.wars || []).map(w => Object.assign({}, w, { sc: (rt.warScore || {})[w.id] || {} }));
   // 진행 중인 전쟁의 점수(상대편 땅을 뺏은 칸 수)를 실시간으로
   function watchScores(rt) {
@@ -721,7 +748,7 @@
     return out;
   }
   const noteStreak = (u, v) => { const st = statsOf(u), n = Math.min(1000, Math.floor(Number(v) || 0)); st.bestStreak = Math.max(st.bestStreak, n); track(u, 'streak', n); };
-  const lookOf = u => { const l = u.looks || {}; return { av: l.av || '😀', ti: l.ti || '', fr: l.fr || '', own: l.own || [] }; }; // 🧑‍🎨 꾸미기
+  const lookOf = u => { const l = u.looks || {}; return { av: l.av || '😀', ti: l.ti || '', fr: l.fr || '', own: l.own || [], pv: l.pv || 0, bv: l.bv || 0 }; }; // 🧑‍🎨 꾸미기 (pv·bv: 프로필 사진·배너를 바꾼 때)
   function publicUser(u) {
     const sid = profileSchool(u);
     return {
@@ -745,12 +772,12 @@
     publishClass(u);
     if (!cloud || !u.profile) return;
     const st = statsOf(u);
-    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: srvOf(u), yr: gradeOf(u), av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, captures: st.captures, solved: st.solved, role: u.role || null, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
+    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: srvOf(u), yr: gradeOf(u), av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, pv: lookOf(u).pv, bv: lookOf(u).bv, captures: st.captures, solved: st.solved, role: u.role || null, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
   }
   async function playersOf(grade) {
-    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && srvOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, role: u.role || null, av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
+    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && srvOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, role: u.role || null, av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, pv: lookOf(u).pv, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
     const snap = await cloud.db.collection('players').where('grade', '==', grade).limit(1000).get(); // grade 칸 = 서버 번호
-    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, role: p.role || null, dev: p.dev || '', yr: p.yr || p.grade, av: p.av || '', ti: p.ti || '', fr: p.fr || '', sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
+    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, role: p.role || null, dev: p.dev || '', yr: p.yr || p.grade, av: p.av || '', ti: p.ti || '', fr: p.fr || '', pv: p.pv || 0, sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
   }
   function newSession(key) {
     const token = rand(24);
@@ -929,7 +956,7 @@
       const land = cnt.get(id) || 0;
       let rank = 1;
       for (const v of cnt.values()) if (v > land) rank++;
-      const members = (await playersOf(a.srv)).filter(p => p.sid === id).map(p => ({ nick: p.nick, role: p.role, av: p.av, ti: p.ti, fr: p.fr, captures: p.captures, solved: p.solved, online: p.acc === a.u.acc, me: p.acc === a.u.acc }));
+      const members = (await playersOf(a.srv)).filter(p => p.sid === id).map(p => ({ acc: p.acc, nick: p.nick, role: p.role, av: p.av, ti: p.ti, fr: p.fr, pv: p.pv, captures: p.captures, solved: p.solved, online: p.acc === a.u.acc, me: p.acc === a.u.acc }));
       members.sort((x, y) => y.online - x.online || y.captures - x.captures);
       const sc = schoolById(id);
       return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, dong: sc.dong || '', url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
@@ -1230,7 +1257,7 @@
     'POST /api/chat': async (t, q, b) => {
       const a = await needPlayer(t), ch = ['school', 'union'].includes(b.ch) ? b.ch : 'all', now = Date.now(), myU = ch === 'union' && unionOf(a.rt, a.u.profile.school);
       if (ch === 'union' && !myU) fail('우리 학교가 연합에 들어가 있어야 연합 채팅을 쓸 수 있어요.');
-      const item = { t: 'chat', ch, ...(myU ? { uid: myU.id } : {}), sid: a.sid, by: a.u.profile.nickname, role: a.u.role || null, av: lookOf(a.u).av, ti: lookOf(a.u).ti, fr: lookOf(a.u).fr };
+      const item = { t: 'chat', ch, ...(myU ? { uid: myU.id } : {}), sid: a.sid, by: a.u.profile.nickname, role: a.u.role || null, av: lookOf(a.u).av, ti: lookOf(a.u).ti, fr: lookOf(a.u).fr, acc: a.u.acc, pv: lookOf(a.u).pv };
       if (b.text != null) { // 직접 쓴 말: 나쁜 말·전화번호는 가린다
         const text = S.cleanChat(b.text);
         if (!text) fail('보낼 말을 써 주세요.');
@@ -1609,6 +1636,81 @@
       save();
       if (u.profile) publishCard(u);
       return { ok: true, looks: lookOf(u) };
+    },
+    'POST /api/profile/media': async (t, q, b) => { // 프로필 사진(av) · 배너(bn) 올리기
+      const a = needLogin(t), u = a.u, slot = b.slot === 'bn' ? 'bn' : 'av', kind = ['draw', 'img', 'vid'].includes(b.kind) ? b.kind : 'img';
+      if (!u.profile) fail('먼저 학교와 닉네임을 설정해 주세요.', 409);
+      if (!picOk(b.d, PIC_MAX[slot])) fail('사진이 너무 크거나 잘못됐어요. 다시 골라 주세요.');
+      const n = kind === 'vid' ? Math.floor(Number(b.n)) : 1, fps = Math.floor(Number(b.fps)) || 8;
+      if (!(n >= 1 && n <= 40) || !(fps >= 1 && fps <= 15)) fail('동영상이 잘못됐어요.');
+      if (slot === 'av' && !picOk(b.th, PIC_MAX.th)) fail('작은 사진이 잘못됐어요.');
+      const v = Date.now(), l = (u.looks = u.looks || {});
+      if (slot === 'av') {
+        await Promise.all([mergeDoc('wface/a_' + u.acc, { k: kind, d: b.d, n, fps, v }), mergeDoc('wface/t_' + u.acc, { d: b.th, v })]);
+        l.pv = v;
+      } else {
+        await mergeDoc('wface/b_' + u.acc, { k: kind, d: b.d, n, fps, v });
+        l.bv = v;
+      }
+      save();
+      publishCard(u);
+      return { ok: true, looks: lookOf(u) };
+    },
+    'POST /api/profile/clear': async (t, q, b) => { // 내 사진 지우기 (운영자·개발자는 다른 친구 것도)
+      const a = needLogin(t), u = a.u, slot = b.slot === 'bn' ? 'bn' : b.slot === 'av' ? 'av' : 'all', acc = b.acc && b.acc !== u.acc ? String(b.acc) : u.acc;
+      if (acc !== u.acc) {
+        if (!u.role) fail('운영자만 할 수 있어요.', 403);
+        if (!accOk(acc)) fail('그 친구를 찾을 수 없어요.');
+        await dropMedia(acc, slot);
+        await mergeDoc('wface/x_' + acc, { at: Date.now(), by: 'staff' });
+        return { ok: true };
+      }
+      const l = (u.looks = u.looks || {});
+      await dropMedia(acc, slot);
+      if (slot !== 'bn') l.pv = 0;
+      if (slot !== 'av') l.bv = 0;
+      save();
+      publishCard(u);
+      return { ok: true, looks: lookOf(u) };
+    },
+    'GET /api/profile': async (t, q) => { // 프로필 카드 (배너 · 큰 사진 포함)
+      const a = needLogin(t), u = a.u, acc = String(q.get('acc') || u.acc), self = acc === u.acc;
+      if (!accOk(acc)) fail('그 친구를 찾을 수 없어요.');
+      const p = self ? null : await cardOf(acc);
+      if (!self && !p) fail('그 친구를 찾을 수 없어요.');
+      const [av, bn, x] = await Promise.all([readDoc('wface/a_' + acc), readDoc('wface/b_' + acc), readDoc('wface/x_' + acc)]);
+      let removed = false;
+      if (self) {
+        const l = (u.looks = u.looks || {});
+        if (x.at && x.at > Math.max(l.pv || 0, l.bv || 0) && (l.pv || l.bv)) { l.pv = 0; l.bv = 0; save(); publishCard(u); removed = true; } // 신고가 많아 지워졌다
+      }
+      const c = self ? Object.assign(lookOf(u), { nick: u.profile ? u.profile.nickname : u.username, school: u.profile ? u.profile.school : '', yr: gradeOf(u), captures: statsOf(u).captures, solved: statsOf(u).solved, role: u.role || null }) : p;
+      const sid = c.school && idByKey.has(c.school) ? idByKey.get(c.school) : -1;
+      return {
+        acc, me: self, nick: c.nick, sid, school: c.school ? nameOfKey(c.school) : '', yr: c.yr || 0, role: c.role || null,
+        av: c.av || '😀', ti: c.ti || '', fr: c.fr || '', pv: c.pv || 0, bv: c.bv || 0, captures: c.captures || 0, solved: c.solved || 0,
+        a: c.pv ? mediaOf(av) : null, b: c.bv ? mediaOf(bn) : null, removed, staff: !!u.role,
+      };
+    },
+    'GET /api/pic': async (t, q) => { // 목록에 쓰는 작은 프로필 사진
+      needLogin(t);
+      const acc = String(q.get('acc') || '');
+      if (!accOk(acc)) return { d: null };
+      const d = await readDoc('wface/t_' + acc);
+      return { d: picOk(d.d, PIC_MAX.th) ? d.d : null, v: d.v || 0 };
+    },
+    'POST /api/profile/report': async (t, q, b) => { // 🚨 나쁜 사진 신고 — 여러 명이 신고하면 저절로 지워진다
+      const a = needLogin(t), acc = String(b.acc || ''), now = Date.now();
+      if (!accOk(acc) || acc === a.u.acc) fail('그 친구를 찾을 수 없어요.');
+      const p = await cardOf(acc);
+      if (!p) fail('그 친구를 찾을 수 없어요.');
+      if (!p.pv && !p.bv) fail('신고할 사진이 없어요.');
+      const since = Math.max(p.pv || 0, p.bv || 0), path = 'wface/r_' + acc, cur = await readDoc(path);
+      if (cur[local.device] > since) fail('이미 신고했어요.');
+      await mergeDoc(path, { [local.device]: now });
+      const n = Object.values(Object.assign(cur, { [local.device]: now })).filter(x => x > since).length;
+      if (n >= S.PIC_REPORT) { await dropMedia(acc, 'all'); await mergeDoc('wface/x_' + acc, { at: now, by: 'report' }); return { ok: true, n, removed: true }; }
+      return { ok: true, n };
     },
     // ---------- 👾 보스 레이드 ----------
     'GET /api/raid': async t => {
