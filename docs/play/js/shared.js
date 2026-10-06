@@ -191,7 +191,46 @@
     }
     return null;
   }
-  const VOTE_BAN = 20, VOTE_BAN_HOURS = 24, VOTE_DAYS = 7; // 7일 안에 20표가 모이면 하루 동안 정지
+  const VOTE_BAN = 20, VOTE_BAN_HOURS = 24, VOTE_DAYS = 7;
+  const UNION_PRICE = 50, UNION_MAX = 5; // 🛡️ 연합 만들기 50코인, 학교 5곳까지
+
+  // ---------- 🎁 보물 상자 · 🏗️ 건물 ----------
+  const TREASURE_N = 15; // 서버마다 하루에 15개 (학교 근처에)
+  const TREASURE_REWARDS = [['c20', 30], ['c30', 25], ['c50', 14], ['c80', 5], ['i:shield', 8], ['i:bomb', 7], ['i:scope', 9], ['i:war', 6, 'mh'], ['i:ship', 6, 'h']]; // [보상, 뽑힐 무게, 학교급]
+  const ITEM_NAME = { shield: '🛡️ 방패', bomb: '💣 폭탄', scope: '🔭 망원경', war: '⚔️ 전쟁 선포권', ship: '⛵ 배' };
+  const rewardText = r => (r[0] === 'c' ? `🪙 ${r.slice(1)}코인` : ITEM_NAME[r.slice(2)] || '선물');
+  const BUILDINGS = [
+    { id: 'tower', icon: '🗼', name: '망루', price: 50, desc: '붙어 있는 우리 땅을 뺏으려면 문제가 2개 더 필요해요.' },
+    { id: 'wall', icon: '🧱', name: '성벽', price: 40, desc: '이 땅을 뺏으려면 문제가 3개 더 필요하고, 폭탄으로도 못 뺏어요.' },
+    { id: 'pole', icon: '🎌', name: '깃대', price: 20, desc: '우리 학교 깃발을 높이 세워요. 멀리서도 잘 보여요.' },
+  ];
+  const BUILD_MAX = 20; // 한 학교에 건물 20개까지
+
+  // ---------- 👾 보스 레이드: 일주일(월~일, 한국 시간)마다 서버에 보스 하나 ----------
+  const BOSSES = [['👾', '숫자 먹는 괴물'], ['🐉', '분수 드래곤'], ['🤖', '계산 로봇'], ['🦑', '방정식 크라켄'], ['👹', '구구단 도깨비'], ['🦖', '도형 공룡'], ['🧟', '오답 좀비'], ['🐙', '소수 문어']];
+  const RAID_HP = { e: 200, m: 300, h: 300 }, RAID_WIN = 50, RAID_SET = 10; // 문제 1개 = 데미지 1, 쓰러뜨리면 공격한 사람마다 50코인 + 아이템
+  const raidWeek = now => Math.floor(((now || Date.now()) + 9 * 3600e3) / 864e5 + 3) / 7 | 0; // 월요일에 바뀐다
+  const raidEnds = week => (week * 7 - 3 + 7) * 864e5 - 9 * 3600e3; // 다음 월요일 0시 (한국 시간)
+  // ---------- 🧑‍🎨 내 캐릭터 꾸미기: 캐릭터(av) · 칭호(ti) · 이름 테두리(fr). need: [기록, 수] 이 있어야 살 수 있다 ----------
+  const LOOKS = {
+    av: [{ id: '😀', price: 0 }, { id: '🐯', price: 30 }, { id: '🐶', price: 30 }, { id: '🐱', price: 30 }, { id: '🦊', price: 30 }, { id: '🐼', price: 30 }, { id: '🐸', price: 30 }, { id: '🐧', price: 30 },
+      { id: '🦉', price: 30 }, { id: '🐬', price: 30 }, { id: '🦄', price: 60 }, { id: '🐲', price: 60 }, { id: '🤖', price: 60 }, { id: '👽', price: 60 }, { id: '🦖', price: 60 }, { id: '👑', price: 150 }],
+    ti: [{ id: '', price: 0 }, { id: '수학 새싹', price: 20 }, { id: '계산 달인', price: 40 }, { id: '땅의 왕', price: 60, need: ['captures', 50] }, { id: '보물 사냥꾼', price: 50, need: ['treasures', 3] },
+      { id: '레이드 용사', price: 50, need: ['raidWins', 1] }, { id: '수학 천재', price: 100, need: ['solved', 500] }, { id: '전설의 학생', price: 200, need: ['solved', 2000] }],
+    fr: [{ id: '', price: 0, name: '기본' }, { id: 'gold', price: 50, name: '금빛' }, { id: 'fire', price: 60, name: '불꽃' }, { id: 'ice', price: 60, name: '얼음' }, { id: 'star', price: 70, name: '별빛' }, { id: 'rainbow', price: 100, name: '무지개' }],
+  };
+  const NEED_NAME = { captures: '땅 차지', treasures: '보물 상자 열기', raidWins: '보스 쓰러뜨리기', solved: '문제 풀기' };
+  const bossOf = week => BOSSES[((week % BOSSES.length) + BOSSES.length) % BOSSES.length];
+  // 건물 때문에 더 풀어야 하는 문제 수 (builds: 칸 → [종류, 학교]. 주인이 바뀐 칸의 건물은 무너진 것)
+  function buildExtra(cell, owner, nb, builds) {
+    const o = owner[cell];
+    if (o < 0 || !builds) return 0;
+    let x = 0;
+    const b = builds[cell];
+    if (b && b[0] === 'wall' && b[1] === o) x += 3;
+    for (const k of nbFn(nb)(cell)) { const t = builds[k]; if (t && t[0] === 'tower' && t[1] === o && owner[k] === o) { x += 2; break; } }
+    return x;
+  } // 7일 안에 20표가 모이면 하루 동안 정지
   const SHIELD_HOURS = 24, SCOPE_MIN = 10, BOMB_EXTRA = 2, BOMB_MAX_DEF = 10;
   const FLAG_COLORS = ['#ef4444', '#f97316', '#d97706', '#84cc16', '#16a34a', '#14b8a6', '#0891b2', '#2563eb', '#4f46e5', '#9333ea', '#db2777', '#57534e'];
   const FLAG_MARKS = ['★', '◆', '▲', '●', '♪', '☾', '✿', '■', '✚', '✱', '✪', '❀', '✸', '♡'];
@@ -224,6 +263,8 @@
   return { PROJ, project, unproject, schoolYear, gradeFromBirthYear, BADGES, CHAT, decodeRing, sharedEdges, neighborsFromRings,
     MAX_GRADE, levelOf, serverOf, gradeName, serverName, LEVEL_NAME, SERVERS, FAR_COST_MH, JP_MIN, farCost,
     WAR_MIN, WAR_ASK_SEC, WAR_WIN, warLive, warSide, warRule, VOTE_BAN, VOTE_BAN_HOURS, VOTE_DAYS, shopFor,
+    TREASURE_N, TREASURE_REWARDS, ITEM_NAME, rewardText, BUILDINGS, BUILD_MAX, buildExtra,
+    BOSSES, RAID_HP, RAID_WIN, RAID_SET, raidWeek, raidEnds, bossOf, LOOKS, NEED_NAME, UNION_PRICE, UNION_MAX,
     BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK, MARK,
     SHOP, SHIELD_HOURS, SCOPE_MIN, BOMB_EXTRA, BOMB_MAX_DEF, FLAG_COLORS, FLAG_MARKS, attendCoins, MISSIONS, MISSION_ALL, dailyMissions,
     priceOf, duelPace, DUEL_BONUS, cleanChat };

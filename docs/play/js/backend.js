@@ -328,7 +328,9 @@
         (f.exists ? f.data().items || [] : []).forEach(it => { rt.seen.add(it.id); rt.feed.push(it); });
       }
       applyCustomHomes(rt, g);
-      const [o, sh, wr] = await Promise.all([cloud.db.doc(`${WP}/g${g}/o/main`).get(), cloud.db.doc(`${WP}/g${g}/s/main`).get(), LV !== 'e' ? readDoc(`${WP}/g${g}/w/main`) : {}]);
+      const [o, sh, wr, bd] = await Promise.all([cloud.db.doc(`${WP}/g${g}/o/main`).get(), cloud.db.doc(`${WP}/g${g}/s/main`).get(), LV !== 'e' ? readDoc(`${WP}/g${g}/w/main`) : {}, readDoc(`${WP}/g${g}/b/main`)]);
+      rt.builds = buildsOf(bd);
+      rt.unions = LV !== 'e' ? (await readDoc(`${WP}/g${g}/u/main`)).items || [] : [];
       rt.offers = o.exists ? o.data().items || [] : [];
       rt.shields = sh.exists ? sh.data().items || {} : {};
       setWars(rt, wr.items || []);
@@ -340,9 +342,12 @@
       rt.offers = w.offers || [];
       rt.shields = w.shields || {};
       setWars(rt, w.wars || []);
+      rt.builds = buildsOf((local.docs || {})[`${WP}/g${g}/b/main`]);
+      rt.unions = w.unions || [];
       applyCustomHomes(rt, g);
     }
     worlds[g] = rt;
+    treasureSet(rt);
     return rt;
   }
   // Realtime Database: 땅은 칸마다 따로 두고(바뀐 칸만 주고받는다), 소식은 목록에 하나씩 쌓는다
@@ -371,7 +376,7 @@
       rt.fmax = s.key;
       rt.feed.push(it);
       if (!live()) return;
-      if (it.t === 'chat') emit(g, Object.assign({}, it, { t: 'chat' }), it.ch === 'school' ? it.sid : null);
+      if (it.t === 'chat') emit(g, Object.assign({}, it, { t: 'chat' }), chatTarget(rt, it));
       else emit(g, { t: 'upd', ev: it.ev, school: it.school, home: it.home });
     });
     await Promise.all([cRef.once('value'), fQ.once('value')]);
@@ -398,11 +403,13 @@
         if (rt.seen.has(it.id)) continue;
         rt.seen.add(it.id);
         rt.feed.push(it);
-        if (it.t === 'chat') emit(g, Object.assign({}, it, { t: 'chat' }), it.ch === 'school' ? it.sid : null);
+        if (it.t === 'chat') emit(g, Object.assign({}, it, { t: 'chat' }), chatTarget(rt, it));
         else emit(g, { t: 'upd', ev: it.ev, school: it.school, home: it.home });
       }
     }, () => {}));
+    keep(cloud.db.doc(`${WP}/g${g}/b/main`).onSnapshot(snap => { if (!live()) return; rt.builds = buildsOf(snap.exists ? snap.data() : {}); emit(g, { t: 'builds', items: buildView(rt) }); }, () => {}));
     keep(cloud.db.doc(`${WP}/g${g}/s/main`).onSnapshot(snap => { if (!live()) return; rt.shields = snap.exists ? snap.data().items || {} : {}; emit(g, { t: 'shields', items: liveShields(rt) }); }, () => {}));
+    if (LV !== 'e') keep(cloud.db.doc(`${WP}/g${g}/u/main`).onSnapshot(snap => { if (!live()) return; rt.unions = snap.exists ? snap.data().items || [] : []; emit(g, { t: 'unions', items: rt.unions }); }, () => {}));
     if (LV !== 'e') keep(cloud.db.doc(`${WP}/g${g}/w/main`).onSnapshot(snap => { if (!live()) return; setWars(rt, snap.exists ? snap.data().items || [] : []); emit(g, { t: 'wars', items: warView(rt) }); }, () => {}));
     keep(cloud.db.doc(`${WP}/g${g}/o/main`).onSnapshot(snap => { if (!live()) return; rt.offers = snap.exists ? snap.data().items || [] : []; emit(g, { t: 'offers', items: liveOffers(rt) }); }, () => {}));
     keep(cloud.db.doc('meta/custom').onSnapshot(async snap => {
@@ -445,7 +452,7 @@
     item.at = Date.now();
     if (!cloud) {
       rt.feed.push(item);
-      if (item.t === 'chat') emit(rt.g, Object.assign({}, item, { t: 'chat' }), item.ch === 'school' ? item.sid : null);
+      if (item.t === 'chat') emit(rt.g, Object.assign({}, item, { t: 'chat' }), chatTarget(rt, item));
       else emit(rt.g, { t: 'upd', ev: item.ev, school: item.school, home: item.home });
       return;
     }
@@ -480,6 +487,68 @@
     else { (local.worlds[rt.g] || (local.worlds[rt.g] = { cells: {} })).shields = rt.shields; save(); }
     emit(rt.g, { t: 'shields', items: liveShields(rt) });
   }
+  // ---------- 🎁 보물 상자 (하루마다 서버에 15개, 학교 근처) · 🏗️ 건물 ----------
+  // 보물 자리는 날짜·서버로 정해져서 모든 기기가 똑같이 계산하고, 누가 열었는지만 공유 저장소에 적는다 (문서 칸 "c칸번호")
+  function seededRand(str) {
+    let h = 2166136261;
+    for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+    return () => { h = (h + 0x6d2b79f5) | 0; let t = Math.imul(h ^ (h >>> 15), 1 | h); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  function treasureSet(rt) {
+    const day = koreaDay();
+    if (rt.trDay === day && rt.trCells) return rt.trCells;
+    rt.trDay = day;
+    const rnd = seededRand(`${day}|${rt.g}|${MAPWP}`), out = new Map(), homes = [];
+    BASE.forEach((s, i) => { if (!s.nk && !delSid.has(i)) homes.push(s.cell); });
+    const pool = S.TREASURE_REWARDS.filter(r => !r[2] || r[2].includes(LV)), total = pool.reduce((t, r) => t + r[1], 0);
+    for (let k = 0; homes.length && out.size < S.TREASURE_N && k < 500; k++) {
+      let c = homes[Math.floor(rnd() * homes.length)];
+      for (let st = 4 + Math.floor(rnd() * 10); st > 0; st--) { const nb = M.nb(c); if (nb.length) c = nb[Math.floor(rnd() * nb.length)]; }
+      if (rt.homeCell[c] >= 0 || out.has(c)) continue;
+      let x = rnd() * total, r = pool[0][0];
+      for (const p of pool) { x -= p[1]; if (x < 0) { r = p[0]; break; } }
+      out.set(c, r);
+    }
+    rt.trCells = out;
+    rt.trClaimed = {};
+    if (rt.trUnsub) { try { rt.trUnsub(); } catch { /* 이미 끊김 */ } rt.trUnsub = null; }
+    if (cloud) { // 다른 친구가 연 보물은 실시간으로 지운다
+      const un = cloud.db.doc(`${WP}/g${rt.g}/t/${day}`).onSnapshot(s => { rt.trClaimed = s.exists ? s.data() || {} : {}; if (worlds[rt.g] === rt) emit(rt.g, { t: 'treasures', items: treasureView(rt) }); }, () => {});
+      if (typeof un === 'function') { rt.trUnsub = un; (rt.unsubs = rt.unsubs || []).push(un); }
+    } else rt.trClaimed = Object.assign({}, (local.docs || {})[`${WP}/g${rt.g}/t/${day}`]);
+    return out;
+  }
+  const treasureView = rt => [...treasureSet(rt)].filter(([c]) => !rt.trClaimed['c' + c]).map(([c, r]) => [c, r]);
+  // 보물이 있는 땅을 차지하면 보상 (이미 누가 열었으면 없음)
+  function claimTreasure(a, rt, cell) {
+    const r = treasureSet(rt).get(cell);
+    if (!r || rt.trClaimed['c' + cell]) return null;
+    const u = walletOf(a.u), info = { by: a.u.profile.nickname, sid: a.sid, at: Date.now() };
+    rt.trClaimed['c' + cell] = info;
+    if (r[0] === 'c') earn(u, +r.slice(1)); else u.items[r.slice(2)] = (u.items[r.slice(2)] || 0) + 1;
+    u.treasures = (u.treasures || 0) + 1;
+    persist(rt, () => mergeDoc(`${WP}/g${rt.g}/t/${rt.trDay}`, { ['c' + cell]: info }));
+    if (!cloud) emit(rt.g, { t: 'treasures', items: treasureView(rt) });
+    pushFeed(rt, { t: 'ev', ev: { kind: 'treasure', by: info.by, role: a.u.role || null, sid: a.sid, r, cell } });
+    return { r, text: S.rewardText(r) };
+  }
+  // 건물: 문서 칸 "c칸번호" = [종류, 학교, 지은 때]. 땅 주인이 바뀌면 무너진 것으로 본다
+  const buildsOf = d => { const out = {}; for (const [k, v] of Object.entries(d || {})) if (k[0] === 'c' && Array.isArray(v)) out[+k.slice(1)] = v; return out; };
+  const buildView = rt => { const out = {}; for (const [c, b] of Object.entries(rt.builds || {})) if (rt.owner[c] === b[1]) out[c] = b; return out; };
+  // ---------- 🛡️ 연합 (중·고): 전쟁이 끝나도 이어지는 학교 모임. 연합 채팅 · 연합 순위 · 연합 학교 전쟁에 바로 참전 ----------
+  const unionOf = (rt, key) => (rt.unions || []).find(x => (x.schools || []).includes(key));
+  async function saveUnions(rt, mutate) { // 최신 목록을 읽고 고친 뒤 저장 (mutate 안에서 fail 하면 저장 안 함)
+    const path = `${WP}/g${rt.g}/u/main`;
+    if (cloud) rt.unions = (await readDoc(path)).items || [];
+    const out = mutate(rt.unions);
+    rt.unions = rt.unions.filter(x => (x.schools || []).length);
+    if (cloud) await cloud.db.doc(path).set({ items: rt.unions });
+    else { (local.worlds[rt.g] || (local.worlds[rt.g] = { cells: {} })).unions = rt.unions; save(); }
+    emit(rt.g, { t: 'unions', items: rt.unions });
+    return out;
+  }
+  // 채팅을 누구에게 보일지: 학교 채팅은 그 학교, 연합 채팅은 그 연합 학교들만
+  const chatTarget = (rt, it) => (it.ch === 'school' ? it.sid : it.ch === 'union' ? u => { const x = u.profile && unionOf(rt, u.profile.school); return !!x && x.id === it.uid; } : null);
   // ---------- 전쟁 · 동맹 · 밴 투표 (중·고등학교) ----------
   const keyOfSid = id => (id >= 0 && id < schoolCount() ? schoolKey(schoolById(id)) : '');
   const nameOfKey = k => (idByKey.has(k) ? schoolById(idByKey.get(k)).name : String(k).split('|')[2] || '?');
@@ -499,11 +568,11 @@
     for (const [k, v] of Object.entries(fields)) { if (v === null) delete cur[k]; else cur[k] = v; }
     await cloud.db.doc(path).set(cur);
   }
-  async function bump(path, field) {
-    if (cloud && cloud.rdb) return cloud.rdb.ref(path).update({ [field]: firebase.database.ServerValue.increment(1) });
-    if (cloud && cloud.kind === 'firebase') return cloud.db.doc(path).set({ [field]: firebase.firestore.FieldValue.increment(1) }, { merge: true });
+  async function bump(path, field, n = 1) {
+    if (cloud && cloud.rdb) return cloud.rdb.ref(path).update({ [field]: firebase.database.ServerValue.increment(n) });
+    if (cloud && cloud.kind === 'firebase') return cloud.db.doc(path).set({ [field]: firebase.firestore.FieldValue.increment(n) }, { merge: true });
     const cur = await readDoc(path);
-    await mergeDoc(path, { [field]: (cur[field] || 0) + 1 });
+    await mergeDoc(path, { [field]: (cur[field] || 0) + n });
   }
   const warView = rt => (rt.wars || []).map(w => Object.assign({}, w, { sc: (rt.warScore || {})[w.id] || {} }));
   // 진행 중인 전쟁의 점수(상대편 땅을 뺏은 칸 수)를 실시간으로
@@ -555,7 +624,7 @@
   function warScored(a, rt, wc) {
     if (!wc.war) return;
     (a.u.warHit = a.u.warHit || {})[wc.war] = wc.side;
-    if (cloud) persist(rt, () => bump(`${WP}/g${rt.g}/ws/${wc.war}`, wc.side));
+    if (cloud) persist(rt, () => Promise.all([bump(`${WP}/g${rt.g}/ws/${wc.war}`, wc.side), bump(`${WP}/g${rt.g}/ws/${wc.war}`, 'p_' + a.u.acc), mergeDoc(`${WP}/g${rt.g}/ws/${wc.war}`, { ['n_' + a.u.acc]: a.u.profile.nickname })])); // 점수 + 전쟁 영웅
     else { const sc = (rt.warScore[wc.war] = rt.warScore[wc.war] || {}); sc[wc.side] = (sc[wc.side] || 0) + 1; emit(rt.g, { t: 'warscore', id: wc.war, sc }); }
   }
   // 일본 땅 (고등학교): 배를 댈 수 있는지
@@ -652,6 +721,7 @@
     return out;
   }
   const noteStreak = (u, v) => { const st = statsOf(u), n = Math.min(1000, Math.floor(Number(v) || 0)); st.bestStreak = Math.max(st.bestStreak, n); track(u, 'streak', n); };
+  const lookOf = u => { const l = u.looks || {}; return { av: l.av || '😀', ti: l.ti || '', fr: l.fr || '', own: l.own || [] }; }; // 🧑‍🎨 꾸미기
   function publicUser(u) {
     const sid = profileSchool(u);
     return {
@@ -659,18 +729,28 @@
       coins: walletOf(u).coins, infCoins: !!u.infCoins, items: u.items, scopeUntil: u.scopeUntil || 0, trophies: u.trophies || [],
       profile: sid >= 0 ? { schoolId: sid, semester: u.profile.semester, nickname: u.profile.nickname } : null,
       deleted: !u.role && u.profile && deleted[u.profile.school] ? deleted[u.profile.school] : undefined, // 우리 학교가 삭제됐을 때 개발자의 글
+      looks: lookOf(u), treasures: u.treasures || 0, raidWins: u.raidWins || 0, cls: u.cls || null, clsName: u.clsName || null, teacher: !!u.teacher, classes: u.teacher ? u.classes || [] : undefined,
     };
   }
   // 친구 순위·학교 친구 목록에 보이는 카드 (비밀번호 같은 건 절대 안 올린다)
+  // 👩‍🏫 반에 들어간 학생은 공부 기록을 반 문서에 올린다 (30초에 한 번까지)
+  const clsAt = {};
+  function publishClass(u) {
+    if (!u.cls || !u.profile || Date.now() - (clsAt[u.acc] || 0) < 30000) return;
+    clsAt[u.acc] = Date.now();
+    const st = statsOf(u), top = Object.entries(u.wrongTopics || {}).sort((x, y) => y[1] - x[1]).slice(0, 3);
+    mergeDoc('meta/cls_' + u.cls, { ['s_' + u.acc]: { nick: u.profile.nickname, school: u.profile.school.split('|')[2] || '', grade: gradeOf(u), solved: st.solved, wrongs: st.wrongs || 0, captures: st.captures, days: st.days, top, at: Date.now() } }).catch(() => {});
+  }
   async function publishCard(u) {
+    publishClass(u);
     if (!cloud || !u.profile) return;
     const st = statsOf(u);
-    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: srvOf(u), yr: gradeOf(u), captures: st.captures, solved: st.solved, role: u.role || null, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
+    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: srvOf(u), yr: gradeOf(u), av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, captures: st.captures, solved: st.solved, role: u.role || null, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
   }
   async function playersOf(grade) {
-    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && srvOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, role: u.role || null, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
+    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && srvOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, role: u.role || null, av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
     const snap = await cloud.db.collection('players').where('grade', '==', grade).limit(1000).get(); // grade 칸 = 서버 번호
-    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, role: p.role || null, dev: p.dev || '', yr: p.yr || p.grade, sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
+    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, role: p.role || null, dev: p.dev || '', yr: p.yr || p.grade, av: p.av || '', ti: p.ti || '', fr: p.fr || '', sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
   }
   function newSession(key) {
     const token = rand(24);
@@ -686,6 +766,7 @@
   function needLogin(token) { const a = getAuth(token); if (!a) fail('로그인이 필요해요.', 401); const b = banOf(a.u); if (b) failBan(b); return a; }
   async function needPlayer(token) {
     const a = needLogin(token), g = gradeOf(a.u);
+    if (a.u.teacher) fail('👩‍🏫 선생님 계정은 선생님 화면을 써요.', 403);
     if (g < 1 || g > S.MAX_GRADE) fail('초등학생부터 고등학생까지만 플레이할 수 있어요.', 403);
     if (S.levelOf(g) !== LV) { const e = new HttpError(426, `${S.LEVEL_NAME[S.levelOf(g)]} 지도를 불러와야 해요.`); e.extra = { level: S.levelOf(g) }; throw e; } // 화면이 그 학교급 지도로 다시 연다
     if (kickedNow(a.u)) { a.u.profile = null; save(); fail('🚪 학교에서 퇴장되었어요. 학교를 다시 골라 주세요.', 409); }
@@ -709,6 +790,7 @@
     if (Array.isArray(p.choices)) { out.choices = p.choices.slice(0, 6).map(c => str(c, 30)); out.a = str(p.a, 30); }
     else { out.a = Number(p.a); if (!Number.isFinite(out.a)) fail('잘못된 문제예요.'); }
     if (p.unit) out.unit = str(p.unit, 10);
+    if (p.topic) out.topic = str(p.topic, 20); // 단원
     if (p.frac) out.frac = true;
     if (p.simplest) out.simplest = true;
     if (!out.q) fail('잘못된 문제예요.');
@@ -753,9 +835,10 @@
       if (!/^[A-Za-z0-9_]{4,16}$/.test(username)) fail('아이디는 영어·숫자 4~16자로 만들어 주세요.');
       if (/admin|develop|game_?(admin|dev)/i.test(username)) fail('운영자·개발자용 아이디는 쓸 수 없어요.');
       if (password.length < 4 || password.length > 64) fail('비밀번호는 4자 이상으로 만들어 주세요.');
-      if (!Number.isInteger(birthYear)) fail('나이 인증을 위해 출생연도를 골라 주세요.');
+      const teacher = !!b.teacher; // 👩‍🏫 선생님 계정: 게임은 안 하고 반 학생들의 공부 기록을 본다
+      if (!teacher && !Number.isInteger(birthYear)) fail('나이 인증을 위해 출생연도를 골라 주세요.');
       const g = S.gradeFromBirthYear(birthYear), sy = S.schoolYear();
-      if (g < 1 || g > S.MAX_GRADE) fail(`나이 인증 실패: 초등학생부터 고등학생까지(${sy - 18}~${sy - 7}년생)만 가입할 수 있어요.`);
+      if (!teacher && (g < 1 || g > S.MAX_GRADE)) fail(`나이 인증 실패: 초등학생부터 고등학생까지(${sy - 18}~${sy - 7}년생)만 가입할 수 있어요.`);
       const key = userKey(username);
       if (hasOwn(local.users, key)) fail('이 기기에 이미 있는 아이디예요. 다른 아이디를 써 주세요.');
       const devBan = cloud && mod.bans.find(b => b.until > Date.now() && (b.devs || []).includes(local.device));
@@ -766,7 +849,7 @@
         await idDoc.set({ at: Date.now() });
       }
       const salt = rand(16);
-      local.users[key] = { username, acc: rand(8), salt, hash: await hashPw(password, salt), birthYear, profile: null, stats: Object.assign({}, STAT0), at: Date.now() };
+      local.users[key] = { username, acc: rand(8), salt, hash: await hashPw(password, salt), birthYear: teacher ? null : birthYear, profile: null, stats: Object.assign({}, STAT0), at: Date.now(), ...(teacher ? { teacher: true, classes: [] } : {}) };
       return newSession(key);
     },
     'POST /api/login': async (t, q, b) => {
@@ -828,10 +911,11 @@
       const a = await needPlayer(t), rt = a.rt, def = [], home = [];
       rt.def.forEach((d, i) => { if (d > 0) def.push([i, d]); });
       for (let i = 0; i < schoolCount(); i++) home.push(rt.home[i] != null ? rt.home[i] : -1);
-      const chat = rt.feed.filter(m => m.t === 'chat' && (m.ch === 'all' || m.sid === a.sid)).map(m => Object.assign({}, m, { t: 'chat' }));
+      const myU = LV !== 'e' && unionOf(rt, a.u.profile.school);
+      const chat = rt.feed.filter(m => m.t === 'chat' && (m.ch === 'all' || (m.ch !== 'union' && m.sid === a.sid) || (m.ch === 'union' && myU && m.uid === myU.id))).map(m => Object.assign({}, m, { t: 'chat' }));
       await syncRole(a.u);
       if (LV !== 'e') warBook(a);
-      const res = { grade: a.grade, srv: a.srv, level: LV, wars: warView(rt), gone: Object.keys(deleted), owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared(),
+      const res = { grade: a.grade, srv: a.srv, level: LV, wars: warView(rt), unions: rt.unions || [], gone: Object.keys(deleted), treasures: treasureView(rt), builds: buildView(rt), owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared(),
         user: publicUser(a.u), shields: liveShields(rt), flags: flagView(), mission: missionView(a.u).ready, invite: await inviteOf(a.u) };
       publishCard(a.u);
       return res;
@@ -845,7 +929,7 @@
       const land = cnt.get(id) || 0;
       let rank = 1;
       for (const v of cnt.values()) if (v > land) rank++;
-      const members = (await playersOf(a.srv)).filter(p => p.sid === id).map(p => ({ nick: p.nick, role: p.role, captures: p.captures, solved: p.solved, online: p.acc === a.u.acc, me: p.acc === a.u.acc }));
+      const members = (await playersOf(a.srv)).filter(p => p.sid === id).map(p => ({ nick: p.nick, role: p.role, av: p.av, ti: p.ti, fr: p.fr, captures: p.captures, solved: p.solved, online: p.acc === a.u.acc, me: p.acc === a.u.acc }));
       members.sort((x, y) => y.online - x.online || y.captures - x.captures);
       const sc = schoolById(id);
       return { id, name: sc.name, sido: sc.sido, sigungu: sc.sigungu, dong: sc.dong || '', url: sc.url || '', land, rank: land ? rank : null, def, members: members.slice(0, 30), memberCount: members.length };
@@ -866,7 +950,8 @@
       if (prev === sid) fail('이미 우리 편 학교 땅이에요.');
       const cost = S.captureCost({ owner: rt.owner, def: rt.def, nb: M.nb, sid, cell, grade: a.grade, nk: M.nk, jp: M.jp, ship: shipInfo(rt, sid, cell, a.u), size: () => { let k = 0; for (const o of rt.owner) if (o === sid) k++; return k; } });
       if (cost.error) fail(cost.error);
-      const required = cost.cost;
+      const extra = prev >= 0 ? S.buildExtra(cell, rt.owner, M.nb, rt.builds) : 0; // 🗼 망루 · 🧱 성벽
+      const required = cost.cost + extra;
       const st = statsOf(a.u);
       let got = 0;
       if (b.cheat) { if (!a.s.debug) fail('버그 창이 잠겨 있어요.', 403); }
@@ -886,11 +971,13 @@
       if (cost.ship) walletOf(a.u).items.ship--; // 배는 한 번 건너면 없어진다
       setCell(rt, cell, sid, 0);
       warScored(a, rt, wc);
+      const treasure = claimTreasure(a, rt, cell); // 🎁
+      if (rt.builds[cell]) { delete rt.builds[cell]; persist(rt, () => mergeDoc(`${WP}/g${rt.g}/b/main`, { ['c' + cell]: null })); } // 건물이 무너진다
       save();
       const cells = [[cell, sid, 0]], ev = { kind: 'capture', by: a.u.profile.nickname, role: a.u.role || null, sid, prev, cell, far: !!cost.far, escape: !!cost.escape, duel: !!b.duel, ...(cost.ship ? { ship: port } : {}), ...(sid !== a.sid ? { ally: a.sid } : {}), ...(wc.war ? { war: 1 } : {}) };
       persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
       publishCard(a.u);
-      return { ok: true, cells, stats: st, badges: newBadges(a.u), coins: a.u.coins, got, mission: missionView(a.u).ready, items: walletOf(a.u).items, ship: cost.ship ? port : undefined };
+      return { ok: true, cells, stats: st, badges: newBadges(a.u), coins: a.u.coins, got, mission: missionView(a.u).ready, items: walletOf(a.u).items, ship: cost.ship ? port : undefined, treasure };
     },
     'POST /api/defend': async (t, q, b) => {
       const a = await needPlayer(t), rt = a.rt, sid = a.sid, cell = targetCell(b), amount = Number(b.amount);
@@ -1114,10 +1201,12 @@
       save();
       return { ok: true, user: publicUser(a.u) };
     },
-    'GET /api/wrong': async t => ({ list: needLogin(t).u.wrong || [] }),
+    'GET /api/wrong': async t => { const u = needLogin(t).u; return { list: u.wrong || [], topics: u.wrongTopics || {} }; },
     'POST /api/wrong': async (t, q, b) => {
       const a = needLogin(t), p = cleanProblem(b.p), list = (a.u.wrong || []).filter(x => x.p.q !== p.q);
       list.unshift({ id: rand(5), p, given: String(b.given || '').slice(0, 30), at: Date.now() });
+      if (p.topic) { const wt = (a.u.wrongTopics = a.u.wrongTopics || {}); wt[p.topic] = (wt[p.topic] || 0) + 1; } // 단원별로 틀린 수 (선생님 화면에도)
+      statsOf(a.u).wrongs = (statsOf(a.u).wrongs || 0) + 1;
       a.u.wrong = list.slice(0, 30);
       save();
       return { ok: true, count: a.u.wrong.length };
@@ -1139,7 +1228,9 @@
       return { stats: st, badges: newBadges(a.u), coins: a.u.coins, got: n, mission: missionView(a.u).ready };
     },
     'POST /api/chat': async (t, q, b) => {
-      const a = await needPlayer(t), ch = b.ch === 'school' ? 'school' : 'all', now = Date.now(), item = { t: 'chat', ch, sid: a.sid, by: a.u.profile.nickname, role: a.u.role || null };
+      const a = await needPlayer(t), ch = ['school', 'union'].includes(b.ch) ? b.ch : 'all', now = Date.now(), myU = ch === 'union' && unionOf(a.rt, a.u.profile.school);
+      if (ch === 'union' && !myU) fail('우리 학교가 연합에 들어가 있어야 연합 채팅을 쓸 수 있어요.');
+      const item = { t: 'chat', ch, ...(myU ? { uid: myU.id } : {}), sid: a.sid, by: a.u.profile.nickname, role: a.u.role || null, av: lookOf(a.u).av, ti: lookOf(a.u).ti, fr: lookOf(a.u).fr };
       if (b.text != null) { // 직접 쓴 말: 나쁜 말·전화번호는 가린다
         const text = S.cleanChat(b.text);
         if (!text) fail('보낼 말을 써 주세요.');
@@ -1219,12 +1310,15 @@
       const cost = S.captureCost({ owner: rt.owner, def: rt.def, nb: M.nb, sid, cell, grade: a.grade, nk: M.nk, jp: M.jp, ship: shipInfo(rt, sid, cell, u), size });
       if (cost.error) fail(cost.error);
       if (cost.ship) fail('⛵ 일본에 처음 갈 때는 폭탄 말고 배를 타고 건너가요.');
+      const walled = c => { const x = rt.builds[c]; return x && x[0] === 'wall' && x[1] === rt.owner[c]; };
+      if (walled(cell)) fail('🧱 성벽이 있는 땅은 폭탄으로 뺏을 수 없어요.');
       const nkOk = size() >= S.NK_MIN, jpOk = size() >= S.JP_MIN; // 옆 칸이 북한·일본 땅이면 칸 수 규칙도 지킨다
-      const extra = [...M.nb(cell)].filter(c => ok(c) && warOk(c) && rt.def[c] <= S.BOMB_MAX_DEF && (nkOk || !M.nk(c)) && (jpOk || !M.jp(c))).sort((x, y) => rt.def[x] - rt.def[y]).slice(0, S.BOMB_EXTRA);
+      const extra = [...M.nb(cell)].filter(c => ok(c) && warOk(c) && !walled(c) && rt.def[c] <= S.BOMB_MAX_DEF && (nkOk || !M.nk(c)) && (jpOk || !M.jp(c))).sort((x, y) => rt.def[x] - rt.def[y]).slice(0, S.BOMB_EXTRA);
       const cells = [cell, ...extra].map(c => [c, sid, 0]), st = statsOf(u);
       let steals = 0;
       for (const [c] of cells) { if (rt.owner[c] >= 0) steals++; setCell(rt, c, sid, 0); }
       warScored(a, rt, wc);
+      const treasures = cells.map(([c]) => claimTreasure(a, rt, c)).filter(Boolean);
       u.items.bomb--;
       st.captures += cells.length; st.steals += steals;
       track(u, 'items', 1); track(u, 'captures', cells.length); if (steals) track(u, 'steals', steals);
@@ -1232,7 +1326,7 @@
       const ev = { kind: 'bomb', by: u.profile.nickname, role: u.role || null, sid, n: cells.length, cell };
       persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
       publishCard(u);
-      return { ok: true, cells, stats: st, items: u.items, coins: u.coins, badges: newBadges(u), mission: missionView(u).ready };
+      return { ok: true, cells, stats: st, items: u.items, coins: u.coins, badges: newBadges(u), mission: missionView(u).ready, treasure: treasures[0] || null };
     },
     'POST /api/item/scope': async t => {
       const u = walletOf(needLogin(t).u);
@@ -1251,7 +1345,8 @@
       warBook(a);
       const peers = (rt.peers || []).filter(p => p.acc && p.acc !== a.u.acc && p.key && idByKey.has(p.key) && !seen.has(p.acc) && seen.add(p.acc))
         .map(p => ({ acc: p.acc, nick: p.nick, key: p.key, school: nameOfKey(p.key), mine: p.key === mk }));
-      return { wars: warView(rt), peers, me: { acc: a.u.acc, key: mk, school: nameOfKey(mk) }, items: walletOf(a.u).items, coins: a.u.coins, now: Date.now() };
+      const rec = Object.values(await readDoc(`${WP}/g${a.srv}/wr/main`)).filter(x => x && x.end).sort((x, y) => y.end - x.end);
+      return { wars: warView(rt), peers, me: { acc: a.u.acc, key: mk, school: nameOfKey(mk) }, items: walletOf(a.u).items, coins: a.u.coins, now: Date.now(), records: rec.slice(0, 30), unions: rt.unions || [] };
     },
     'POST /api/war/declare': async (t, q, b) => {
       const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), mk = a.u.profile.school, now = Date.now();
@@ -1322,6 +1417,88 @@
       if (res.r.st === 'yes') pushFeed(rt, { t: 'ev', ev: { kind: 'war', w: 'ally', an: res.r.kn, bn: res.r.side === 'a' ? res.w.an : res.w.bn, by: a.u.profile.nickname } });
       return { ok: true, war: res.w };
     },
+    'POST /api/war/join': async (t, q, b) => { // 🛡️ 같은 연합 학교의 전쟁에 바로 참전 (신청 없이)
+      const a = await needPlayer(t), rt = a.rt, mk = a.u.profile.school, now = Date.now(), u0 = unionOf(rt, mk);
+      mhOnly();
+      if (!u0) fail('연합에 들어간 학교만 바로 참전할 수 있어요.');
+      const w = await saveWars(rt, ws => {
+        const x = ws.find(y => y.id === b.id);
+        if (!x || !S.warLive(x, now)) fail('지금 하고 있는 전쟁이 아니에요.');
+        if (ws.some(y => S.warLive(y, now) && S.warSide(y, mk))) fail('우리 학교는 이미 전쟁에 참여하고 있어요.');
+        const side = u0.schools.includes(x.a) ? 'a' : u0.schools.includes(x.b) ? 'b' : null;
+        if (!side) fail('우리 연합 학교의 전쟁이 아니에요.');
+        x.al = x.al || {}; x.al[mk] = side;
+        return x;
+      });
+      pushFeed(rt, { t: 'ev', ev: { kind: 'war', w: 'ally', an: nameOfKey(mk), bn: S.warSide(w, mk) === 'a' ? w.an : w.bn, by: a.u.profile.nickname } });
+      return { ok: true, war: w };
+    },
+    // ---------- 🛡️ 연합 ----------
+    'POST /api/union/create': async (t, q, b) => {
+      const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), mk = a.u.profile.school;
+      mhOnly();
+      const name = S.cleanChat(String(b.name || '')).replace(/[<>]/g, '').trim().slice(0, 8);
+      if (name.length < 2) fail('연합 이름을 2~8자로 지어 주세요.');
+      if (!S.FLAG_MARKS.includes(b.mark) || !S.FLAG_COLORS.includes(b.color)) fail('연합 마크와 색깔을 골라 주세요.');
+      if (u.coins < S.UNION_PRICE) fail(`코인이 모자라요. (${S.UNION_PRICE}코인 필요)`);
+      const x = await saveUnions(rt, us => {
+        if (us.some(y => y.schools.includes(mk))) fail('우리 학교는 이미 연합에 들어가 있어요.');
+        if (us.some(y => y.name === name)) fail('같은 이름의 연합이 있어요.');
+        const y = { id: rand(4), name, mark: b.mark, color: b.color, lead: mk, schools: [mk], by: a.u.profile.nickname, at: Date.now(), rq: [] };
+        us.push(y);
+        return y;
+      });
+      u.coins -= S.UNION_PRICE; track(u, 'items', 1); save();
+      pushFeed(rt, { t: 'ev', ev: { kind: 'union', w: 'new', name: x.name, mark: x.mark, school: nameOfKey(mk), by: a.u.profile.nickname } });
+      return { ok: true, union: x, coins: u.coins, items: u.items };
+    },
+    'POST /api/union/invite': async (t, q, b) => {
+      const a = await needPlayer(t), rt = a.rt, mk = a.u.profile.school, now = Date.now();
+      mhOnly();
+      const p = (rt.peers || []).find(x => x.acc === b.acc && x.key && idByKey.has(x.key));
+      if (!p) fail('그 친구는 지금 게임에 없어요.');
+      const r = await saveUnions(rt, us => {
+        const y = us.find(z => z.schools.includes(mk));
+        if (!y) fail('우리 학교가 연합에 들어가 있어야 초대할 수 있어요.');
+        if (us.some(z => z.schools.includes(p.key))) fail('그 학교는 이미 다른 연합에 있어요.');
+        if (y.schools.length >= S.UNION_MAX) fail(`연합은 학교 ${S.UNION_MAX}곳까지예요.`);
+        y.rq = (y.rq || []).filter(x => now - x.at < S.WAR_ASK_SEC * 1000 * 5);
+        if (y.rq.some(x => x.key === p.key && x.st === 'ask')) fail('그 학교에는 이미 초대를 보냈어요.');
+        const x = { id: rand(4), to: p.acc, toNick: p.nick, key: p.key, kn: nameOfKey(p.key), by: a.u.profile.nickname, at: now, st: 'ask' };
+        y.rq.push(x);
+        return x;
+      });
+      return { ok: true, req: r };
+    },
+    'POST /api/union/answer': async (t, q, b) => {
+      const a = await needPlayer(t), rt = a.rt, mk = a.u.profile.school;
+      mhOnly();
+      const res = await saveUnions(rt, us => {
+        const y = us.find(z => z.id === b.id), r = y && (y.rq || []).find(x => x.id === b.rid);
+        if (!r || r.to !== a.u.acc || r.st !== 'ask') fail('이미 끝난 초대예요.');
+        if (b.yes) {
+          if (us.some(z => z.schools.includes(mk))) fail('우리 학교는 이미 다른 연합에 있어요.');
+          if (y.schools.length >= S.UNION_MAX) fail('연합이 가득 찼어요.');
+          y.schools.push(mk); r.st = 'yes';
+        } else r.st = 'no';
+        return { y, r };
+      });
+      if (res.r.st === 'yes') pushFeed(rt, { t: 'ev', ev: { kind: 'union', w: 'join', name: res.y.name, mark: res.y.mark, school: nameOfKey(mk), by: a.u.profile.nickname } });
+      return { ok: true, union: res.y };
+    },
+    'POST /api/union/leave': async t => {
+      const a = await needPlayer(t), rt = a.rt, mk = a.u.profile.school;
+      mhOnly();
+      const y = await saveUnions(rt, us => {
+        const z = us.find(x => x.schools.includes(mk));
+        if (!z) fail('우리 학교는 연합에 없어요.');
+        z.schools = z.schools.filter(k => k !== mk);
+        if (z.lead === mk) z.lead = z.schools[0] || '';
+        return z;
+      });
+      pushFeed(rt, { t: 'ev', ev: { kind: 'union', w: 'leave', name: y.name, mark: y.mark, school: nameOfKey(mk), by: a.u.profile.nickname } });
+      return { ok: true };
+    },
     'POST /api/war/settle': async (t, q, b) => { // 전쟁이 끝나면: 이긴 편에서 상대 땅을 뺏은 사람은 코인
       const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), w = (rt.wars || []).find(x => x.id === b.id);
       if (!w || w.st !== 'on') fail('없는 전쟁이에요.');
@@ -1333,6 +1510,9 @@
       if (hit && win === hit && !u.warPaid[w.id]) { got = S.WAR_WIN; earn(u, got); }
       if (hit) u.warPaid[w.id] = 1;
       save();
+      let hero = null; // ⭐ 전쟁 영웅: 상대 땅을 가장 많이 뺏은 사람
+      for (const [k, v] of Object.entries(sc)) if (k.startsWith('p_') && (!hero || v > hero.n)) hero = { nick: sc['n_' + k.slice(2)] || '?', n: v };
+      if (cloud) mergeDoc(`${WP}/g${a.srv}/wr/main`, { ['w_' + w.id]: { an: w.an, bn: w.bn, a: w.a, b: w.b, sa: A, sb: B, win: win || 'draw', end: w.end, al: Object.keys(w.al || {}).length, ...(hero ? { hero } : {}) } }).catch(() => {}); // 📜 전쟁 기록 (누가 먼저 적어도 같은 내용)
       return { ok: true, a: A, b: B, win, side: hit || S.warSide(w, a.u.profile.school), got, coins: u.coins };
     },
     'POST /api/vote': async (t, q, b) => { // 밴 투표: 7일 안에 20표가 모이면 하루 동안 정지
@@ -1354,6 +1534,137 @@
       await mergeDoc(path, clear);
       pushFeed(a.rt, { t: 'ev', ev: { kind: 'notice', by: '투표', text: `🗳️ 친구들 투표 ${n}표로 ${p.nick}님이 ${S.VOTE_BAN_HOURS}시간 동안 정지됐어요.` } });
       return { ok: true, votes: n, banned: true };
+    },
+    // ---------- 👩‍🏫 선생님 모드 ----------
+    'POST /api/class/create': async (t, q, b) => {
+      const u = needLogin(t).u;
+      if (!u.teacher) fail('선생님 계정만 반을 만들 수 있어요.', 403);
+      const name = String(b.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 20);
+      if (!name) fail('반 이름을 써 주세요. (예: 6학년 3반)');
+      if ((u.classes || []).length >= 10) fail('반은 10개까지 만들 수 있어요.');
+      const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let k = 0; k < 6; k++) code += A[crypto.getRandomValues(new Uint8Array(1))[0] % A.length];
+      await mergeDoc('meta/cls_' + code, { name, by: u.username, tacc: u.acc, at: Date.now() });
+      u.classes = (u.classes || []).concat([{ code, name }]);
+      save();
+      return { ok: true, classes: u.classes };
+    },
+    'POST /api/class/remove': async (t, q, b) => {
+      const u = needLogin(t).u;
+      if (!u.teacher) fail('선생님 계정만 할 수 있어요.', 403);
+      u.classes = (u.classes || []).filter(c => c.code !== b.code);
+      save();
+      mergeDoc('meta/cls_' + b.code, { closed: true }).catch(() => {});
+      return { ok: true, classes: u.classes };
+    },
+    'GET /api/class': async (t, q) => { // 선생님: 반 학생들의 기록
+      const u = needLogin(t).u;
+      if (!u.teacher) fail('선생님 계정만 볼 수 있어요.', 403);
+      const code = q.get('code'), c = (u.classes || []).find(x => x.code === code);
+      if (!c) return { classes: u.classes || [] };
+      const d = await readDoc('meta/cls_' + code);
+      const students = Object.entries(d).filter(([k]) => k.startsWith('s_')).map(([k, v]) => Object.assign({ acc: k.slice(2) }, v)).sort((x, y) => (y.solved || 0) - (x.solved || 0));
+      return { classes: u.classes, cls: c, students };
+    },
+    'POST /api/class/join': async (t, q, b) => { // 학생: 선생님이 알려 준 반 코드로 들어가기
+      const a = needLogin(t), u = a.u, code = String(b.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (u.teacher) fail('선생님 계정은 반에 들어갈 수 없어요.');
+      if (code.length !== 6) fail('반 코드 6자리를 써 주세요.');
+      const d = await readDoc('meta/cls_' + code);
+      if (!d.name || d.closed) fail('그런 반이 없어요. 선생님께 코드를 다시 물어보세요.');
+      if (u.cls && u.cls !== code) mergeDoc('meta/cls_' + u.cls, { ['s_' + u.acc]: null }).catch(() => {});
+      u.cls = code; u.clsName = d.name;
+      save();
+      clsAt[u.acc] = 0;
+      publishClass(u);
+      return { ok: true, cls: code, name: d.name };
+    },
+    'POST /api/class/leave': async t => {
+      const u = needLogin(t).u;
+      if (u.cls) mergeDoc('meta/cls_' + u.cls, { ['s_' + u.acc]: null }).catch(() => {});
+      u.cls = null; u.clsName = null;
+      save();
+      return { ok: true };
+    },
+    // ---------- 🧑‍🎨 꾸미기 ----------
+    'POST /api/looks/buy': async (t, q, b) => {
+      const a = needLogin(t), u = walletOf(a.u), kind = String(b.kind), it = (S.LOOKS[kind] || []).find(x => x.id === b.id), l = (u.looks = u.looks || {}), own = (l.own = l.own || []);
+      if (!it) fail('없는 꾸미기예요.');
+      if (it.price && own.includes(kind + ':' + it.id)) fail('이미 가지고 있어요.');
+      if (it.need) { const have = it.need[0] === 'treasures' || it.need[0] === 'raidWins' ? u[it.need[0]] || 0 : statsOf(u)[it.need[0]] || 0; if (have < it.need[1]) fail(`${S.NEED_NAME[it.need[0]]} ${it.need[1]}번을 해야 살 수 있어요. (지금 ${have})`); }
+      if (u.coins < it.price) fail(`코인이 모자라요. (${it.price}코인 필요)`);
+      u.coins -= it.price;
+      if (it.price) own.push(kind + ':' + it.id);
+      l[kind] = it.id; // 사면 바로 꾸민다
+      save();
+      if (u.profile) publishCard(u);
+      return { ok: true, looks: lookOf(u), coins: u.coins };
+    },
+    'POST /api/looks/wear': async (t, q, b) => {
+      const a = needLogin(t), u = a.u, kind = String(b.kind), it = (S.LOOKS[kind] || []).find(x => x.id === b.id), l = (u.looks = u.looks || {});
+      if (!it) fail('없는 꾸미기예요.');
+      if (it.price && !(l.own || []).includes(kind + ':' + it.id)) fail('먼저 사야 해요.');
+      l[kind] = it.id;
+      save();
+      if (u.profile) publishCard(u);
+      return { ok: true, looks: lookOf(u) };
+    },
+    // ---------- 👾 보스 레이드 ----------
+    'GET /api/raid': async t => {
+      const a = await needPlayer(t), week = S.raidWeek(), d = await readDoc(`${WP}/g${a.srv}/raid/w${week}`), hp = S.RAID_HP[LV];
+      const top = Object.keys(d).filter(k => k.startsWith('p_')).map(k => ({ nick: d['n_' + k.slice(2)] || '?', n: d[k], me: k.slice(2) === a.u.acc })).sort((x, y) => y.n - x.n);
+      return { week, boss: S.bossOf(week), hp, dmg: Math.min(hp, d.dmg || 0), top: top.slice(0, 5), players: top.length, mine: d['p_' + a.u.acc] || 0, claimed: !!(a.u.raidPaid || {})[week], ends: S.raidEnds(week), now: Date.now() };
+    },
+    'POST /api/raid/hit': async (t, q, b) => { // 맞힌 문제 수만큼 데미지 (연습처럼 코인도)
+      const a = await needPlayer(t), n = Math.max(0, Math.min(S.RAID_SET * 2, Math.floor(Number(b.n) || 0))), st = statsOf(a.u), week = S.raidWeek(), path = `${WP}/g${a.srv}/raid/w${week}`;
+      if (!n) fail('맞힌 문제가 없어요.');
+      st.solved += n; noteStreak(a.u, b.streak); track(a.u, 'solved', n); earn(a.u, n);
+      a.u.raidHits = (a.u.raidHits || 0) + n;
+      save();
+      await Promise.all([bump(path, 'dmg', n), bump(path, 'p_' + a.u.acc, n), mergeDoc(path, { ['n_' + a.u.acc]: a.u.profile.nickname })]);
+      publishCard(a.u);
+      const d = await readDoc(path), hp = S.RAID_HP[LV];
+      if ((d.dmg || 0) >= hp && (d.dmg || 0) - n < hp) pushFeed(a.rt, { t: 'ev', ev: { kind: 'raid', by: a.u.profile.nickname, boss: S.bossOf(week) } }); // 마지막 한 방
+      return { ok: true, dmg: Math.min(hp, d.dmg || 0), hp, mine: d['p_' + a.u.acc] || 0, stats: st, coins: a.u.coins, got: n, badges: newBadges(a.u), mission: missionView(a.u).ready };
+    },
+    'POST /api/raid/claim': async t => { // 쓰러뜨렸으면 공격한 사람마다 보상 (한 주에 한 번)
+      const a = await needPlayer(t), u = walletOf(a.u), week = S.raidWeek(), d = await readDoc(`${WP}/g${a.srv}/raid/w${week}`);
+      if ((d.dmg || 0) < S.RAID_HP[LV]) fail('아직 보스가 살아 있어요! 친구들과 함께 공격해요.');
+      if (!d['p_' + u.acc]) fail('보스를 한 번도 공격하지 않았어요. 다음 보스는 꼭 함께해요!');
+      u.raidPaid = u.raidPaid || {};
+      if (u.raidPaid[week]) fail('이번 주 보상은 이미 받았어요.');
+      u.raidPaid[week] = 1;
+      const item = ['shield', 'bomb', 'scope'][Math.floor(Math.random() * 3)];
+      earn(u, S.RAID_WIN); u.items[item]++;
+      u.raidWins = (u.raidWins || 0) + 1;
+      save();
+      return { ok: true, got: S.RAID_WIN, item, coins: u.coins, items: u.items };
+    },
+    'POST /api/build': async (t, q, b) => { // 🏗️ 우리 땅에 건물 짓기
+      const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), cell = targetCell(b), def = S.BUILDINGS.find(x => x.id === b.kind);
+      if (!def) fail('없는 건물이에요.');
+      if (rt.owner[cell] !== a.sid || rt.homeCell[cell] >= 0) fail('우리 학교 땅(본부 말고)에만 지을 수 있어요.');
+      const view = buildView(rt);
+      if (view[cell]) fail('이미 건물이 있어요. 허물고 다시 지어요.');
+      if (Object.values(view).filter(x => x[1] === a.sid).length >= S.BUILD_MAX) fail(`한 학교에 건물은 ${S.BUILD_MAX}개까지예요.`);
+      if (u.coins < def.price) fail(`코인이 모자라요. (${def.price}코인 필요)`);
+      u.coins -= def.price;
+      track(u, 'items', 1);
+      save();
+      rt.builds[cell] = [def.id, a.sid, Date.now()];
+      await mergeDoc(`${WP}/g${rt.g}/b/main`, { ['c' + cell]: rt.builds[cell] });
+      emit(rt.g, { t: 'builds', items: buildView(rt) });
+      pushFeed(rt, { t: 'ev', ev: { kind: 'build', by: a.u.profile.nickname, role: a.u.role || null, sid: a.sid, b: def.id, cell } });
+      return { ok: true, builds: buildView(rt), coins: u.coins, items: u.items, mission: missionView(u).ready };
+    },
+    'POST /api/build/remove': async (t, q, b) => {
+      const a = await needPlayer(t), rt = a.rt, cell = targetCell(b), x = buildView(rt)[cell];
+      if (!x || x[1] !== a.sid) fail('우리 학교 건물만 허물 수 있어요.');
+      delete rt.builds[cell];
+      await mergeDoc(`${WP}/g${rt.g}/b/main`, { ['c' + cell]: null });
+      emit(rt.g, { t: 'builds', items: buildView(rt) });
+      return { ok: true, builds: buildView(rt) };
     },
     'POST /api/flag': async (t, q, b) => {
       const a = await needPlayer(t), u = walletOf(a.u), c = String(b.c || ''), m = String(b.m || ''), price = S.priceOf('flag');
@@ -1416,7 +1727,7 @@
     emit = (g, msg, onlySid) => {
       const me = getAuth(token);
       if (!me || (g != null && srvOf(me.u) !== g)) return; // g: 서버 번호 (null 이면 모든 서버에게)
-      if (onlySid != null && profileSchool(me.u) !== onlySid) return;
+      if (typeof onlySid === 'function' ? !onlySid(me.u) : onlySid != null && profileSchool(me.u) !== onlySid) return;
       handler(msg);
     };
     return a ? () => { emit = () => {}; listenFn = null; } : () => {};

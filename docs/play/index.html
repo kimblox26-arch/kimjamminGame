@@ -22,6 +22,7 @@
   <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5Z"/></symbol>
   <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/><path d="M16 5h3v2a3 3 0 0 1-3 3"/><path d="M8 5H5v2a3 3 0 0 0 3 3"/><path d="M12 13v4"/><path d="M8 20h8"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
+  <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14a4 4 0 0 0 7 0"/><path d="M9 9.5h.01"/><path d="M15 9.5h.01"/></symbol>
   <symbol id="i-medal" viewBox="0 0 24 24"><circle cx="12" cy="15" r="5"/><path d="M8.5 11 6 3h4l2 4.5L14 3h4l-2.5 8"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7 16v-4"/><path d="M12 16V7"/><path d="M17 16v-7"/></symbol>
   <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
@@ -71,7 +72,8 @@
       <label>아이디 <small>영어·숫자 4~16자</small><input id="suId" autocomplete="username" required></label>
       <label>비밀번호 <small>4자 이상</small><input id="suPw" type="password" autocomplete="new-password" required></label>
       <label>비밀번호 확인<input id="suPw2" type="password" autocomplete="new-password" required></label>
-      <label>나이 인증 <small>출생연도로 학년이 정해져요</small><select id="suBirth" required></select></label>
+      <label class="check"><input type="checkbox" id="suTeacher"> 👩‍🏫 저는 선생님이에요 <small>(게임 대신 반 학생들의 공부 기록을 봐요)</small></label>
+      <label id="suBirthRow">나이 인증 <small>출생연도로 학년이 정해져요</small><select id="suBirth" required></select></label>
       <p id="suGrade" class="note"></p>
       <p id="suErr" class="err"></p>
       <button class="btn primary big">회원가입</button>
@@ -80,6 +82,16 @@
 </section>
 
 <!-- 게임 시작 전 설정 -->
+<section id="teacher" class="screen" hidden>
+  <div class="teacher-wrap">
+    <div class="row between"><h2>👩‍🏫 선생님 화면</h2><button type="button" class="btn" id="tcLogout">로그아웃</button></div>
+    <p class="muted">반을 만들고 <b>반 코드</b>를 학생들에게 알려 주세요. 학생은 게임의 <b>더보기 → 설정 → 👩‍🏫 우리 반</b>에 코드를 넣어요. 학생이 문제를 풀면 기록이 여기에 모여요.</p>
+    <div class="answer-row"><input id="tcName" maxlength="20" placeholder="반 이름 (예: 6학년 3반)"><button type="button" class="btn primary" id="tcCreate">반 만들기</button></div>
+    <div id="tcClasses" class="chips"></div>
+    <div id="tcBody"></div>
+  </div>
+</section>
+
 <section id="setup" class="screen" hidden>
   <form id="setupForm" class="card setup-card">
     <h2>🎒 게임 시작 전 설정</h2>
@@ -174,7 +186,7 @@
       <div id="paneFeed" class="pane feed-pane" hidden>
         <ul id="feed" class="feed"></ul>
         <div class="chatbox">
-          <div class="seg small"><button type="button" class="chch on" data-ch="school">🏫 우리 학교</button><button type="button" class="chch" data-ch="all">🌐 전체</button></div>
+          <div class="seg small"><button type="button" class="chch on" data-ch="school">🏫 우리 학교</button><button type="button" class="chch" data-ch="all">🌐 전체</button><button type="button" class="chch" data-ch="union" hidden>🛡️ 연합</button></div>
           <form id="chatForm" class="chat-form"><input id="chatInput" maxlength="60" placeholder="메시지 쓰기 (나쁜 말은 가려져요)" autocomplete="off" enterkeyhint="send"><button class="btn primary">보내기</button></form>
           <div id="chatBtns" class="chat-btns"></div>
         </div>
@@ -198,6 +210,8 @@
   </nav>
   <div id="moreMenu" class="more-menu" hidden>
     <button type="button" class="mm mm-mission" data-act="btnMission"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg><span>미션</span><i id="mmMissionDot" class="count dot" hidden></i></button>
+    <button type="button" class="mm mm-union" id="btnUnion"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>연합</span></button>
+    <button type="button" class="mm" id="btnLooks"><svg class="ic" aria-hidden="true"><use href="#i-smile"/></svg><span>꾸미기</span></button>
     <button type="button" class="mm" id="btnBadges"><svg class="ic" aria-hidden="true"><use href="#i-medal"/></svg><span>배지</span></button>
     <button type="button" class="mm" id="btnRank"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg><span>랭킹표</span></button>
     <button type="button" class="mm" id="btnBgm"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>음악</span></button>
@@ -254,6 +268,8 @@
     </div>
     <div id="setInfo" class="set-info"></div>
     <div id="setStats" class="stats"></div>
+    <h4>👩‍🏫 우리 반</h4>
+    <div id="setClass" class="set-class"></div>
     <div class="field"><div class="label">🗓️ 학기 (문제 범위)</div>
       <div class="seg"><button type="button" class="sem2" data-sem="1">1학기</button><button type="button" class="sem2" data-sem="2">2학기</button></div>
     </div>
@@ -292,6 +308,7 @@
   <div class="card wide">
     <div class="row between"><h3>📒 오답 노트</h3><button type="button" class="icon-btn" data-close="wrongModal">✕</button></div>
     <p class="muted">틀렸던 문제를 다시 풀어 보세요. 맞히면 노트에서 지워져요.</p>
+    <div id="wrongTopics" class="wrong-topics"></div>
     <div id="wrongList" class="wrong-list"></div>
   </div>
 </div>
@@ -391,9 +408,12 @@
   <div class="card small">
     <div class="row between"><h3>✏️ 공부방</h3><button type="button" class="icon-btn" data-close="studyModal">✕</button></div>
     <div class="study">
-      <button type="button" class="btn big" id="stPractice">✏️ 연습하기 <small>문제 10개 · 1문제 = 🪙1</small></button>
+      <div class="label">📚 연습할 단원</div>
+      <div id="stTopics" class="chips topics"></div>
+      <button type="button" class="btn big" id="stPractice">✏️ 연습하기 <small id="stPracticeSub">문제 10개 · 1문제 = 🪙1</small></button>
       <button type="button" class="btn big primary" id="stSpeed">⏱️ 스피드 퀴즈 <small id="stSpeedBest">1분 동안 많이 맞히기</small></button>
       <button type="button" class="btn big" id="stWrong">📒 오답 노트 <small id="stWrongN"></small></button>
+      <button type="button" class="btn big raid" id="stRaid">👾 보스 레이드 <small id="stRaidSub">서버 친구들과 함께 이번 주 보스를 쓰러뜨려요</small></button>
     </div>
   </div>
 </div>
@@ -405,6 +425,7 @@
     <p class="muted" id="msInfo"></p>
     <div id="msList" class="missions"></div>
     <div id="msBonus" class="ms-bonus"></div>
+    <div id="msTreasure" class="ms-treasure"></div>
     <p class="muted small-note">📅 매일 처음 들어오면 출석 코인을 받아요. 연속으로 출석할수록 더 많이 받아요! (최대 40🪙)</p>
   </div>
 </div>
@@ -426,6 +447,39 @@
 </div>
 
 <!-- 운영자 초대 -->
+<div id="unionModal" class="modal" hidden>
+  <div class="card wide">
+    <div class="row between"><h3>🛡️ 연합</h3><button type="button" class="icon-btn" data-close="unionModal">✕</button></div>
+    <div id="unionBody"></div>
+  </div>
+</div>
+<div id="looksModal" class="modal" hidden>
+  <div class="card wide">
+    <div class="row between"><h3>🧑‍🎨 내 캐릭터 꾸미기</h3><span class="coin-big">🪙 <b id="lkCoins">0</b></span><button type="button" class="icon-btn" data-close="looksModal">✕</button></div>
+    <div class="look-preview" id="lkPreview"></div>
+    <div class="tabs" id="lkTabs"><button type="button" class="tab on" data-lk="av">캐릭터</button><button type="button" class="tab" data-lk="ti">칭호</button><button type="button" class="tab" data-lk="fr">이름 테두리</button></div>
+    <div id="lkList" class="look-list"></div>
+    <p class="muted">꾸민 모습은 순위표 · 채팅 · 학교 친구 목록에서 친구들에게 보여요.</p>
+  </div>
+</div>
+<div id="raidModal" class="modal" hidden>
+  <div class="card small raid-card">
+    <div class="row between"><h3>👾 보스 레이드</h3><button type="button" class="icon-btn" data-close="raidModal">✕</button></div>
+    <div class="boss" id="rdBoss"></div>
+    <div class="boss-name" id="rdName"></div>
+    <div class="hpbar"><i id="rdHp"></i><span id="rdHpText"></span></div>
+    <p class="muted" id="rdInfo"></p>
+    <ol id="rdTop" class="raid-top"></ol>
+    <div class="row end" id="rdBtns"></div>
+  </div>
+</div>
+<div id="buildModal" class="modal" hidden>
+  <div class="card small">
+    <div class="row between"><h3>🏗️ 건물 짓기</h3><button type="button" class="icon-btn" data-close="buildModal">✕</button></div>
+    <p class="muted" id="bdInfo"></p>
+    <div id="bdList" class="build-list"></div>
+  </div>
+</div>
 <div id="goneModal" class="modal" hidden>
   <div class="card small invite-card">
     <div class="inv-icon">🗑️</div>
@@ -494,6 +548,13 @@
       <li>🤝 <b>동맹</b>: 전쟁 중인 학교는 다른 학교에 동맹을 신청할 수 있어요. 동맹은 코인을 안 쓰고 땅도 안 뺏기며, 상대편 땅을 뺏어 돕는 학교 땅으로 만들어 줘요.</li>
       <li>🗳️ <b>밴 투표</b>(중·고): 순위 목록의 🗳️를 눌러 나쁜 행동을 하는 친구에게 투표해요. 7일 안에 <b>20표</b>가 모이면 하루 동안 정지돼요.</li>
       <li>🗾 <b>일본 땅</b>(고등학교): 지도가 일본까지 넓어졌어요. 우리 학교 땅이 <b>300칸 이상</b>이고 <b>바닷가 땅</b>이 있으면, 🛒 <b>⛵ 배</b>(20코인)를 타고 일본 바닷가 땅으로 건너가 뺏어요. 그다음부터는 이어서 넓혀요.</li>
+      <li>🎁 <b>보물 상자</b>: 매일 학교 근처에 보물 상자 15개가 생겨요. 그 땅을 먼저 차지하면 코인이나 아이템! (작은 지도의 노란 점, 🎯 미션 창의 '가까운 보물 찾기')</li>
+      <li>🏗️ <b>건물</b>: 우리 땅을 눌러 건물 짓기 — 🗼 망루(옆 우리 땅 문제 +2), 🧱 성벽(이 땅 문제 +3, 폭탄 막기), 🎌 깃대(깃발 자랑). 땅을 뺏기면 건물도 무너져요.</li>
+      <li>👾 <b>보스 레이드</b>: ✏️ 공부방에서 이번 주 보스를 서버 친구들과 함께 공격해요. 맞힌 문제 1개 = 데미지 1, 쓰러뜨리면 공격한 사람마다 🪙 50 + 아이템!</li>
+      <li>🧑‍🎨 <b>꾸미기</b>(더보기): 캐릭터 · 칭호 · 이름 테두리를 사서 순위표와 채팅에서 뽐내요.</li>
+      <li>📚 공부방에서 <b>단원을 골라</b> 연습하고, 📒 오답 노트에서 <b>많이 틀린 단원</b>을 볼 수 있어요.</li>
+      <li>🛡️ <b>연합</b>(중·고, 더보기): 학교 모임을 만들어 연합 채팅을 하고, 연합 학교의 전쟁에 <b>바로 참전</b>해요. ⚔️ 전쟁 창에는 <b>전쟁 기록</b>과 ⭐ 전쟁 영웅이 남아요.</li>
+      <li>👩‍🏫 <b>선생님 모드</b>: 선생님은 가입할 때 '선생님이에요'를 골라 반을 만들고, 학생은 설정 → 우리 반에 반 코드를 넣어요. 선생님은 학생들의 푼 문제 · 정답률 · 많이 틀린 단원을 봐요.</li>
       <li>🎯 <b>오늘의 미션</b>을 깨면 코인을 받아요. 매일 출석하면 출석 코인도! ✏️ 공부방의 <b>⏱️ 스피드 퀴즈</b>는 1분 동안 최대한 많이 맞히기예요.</li>
     </ol>
     <div class="row end"><button type="button" class="btn primary" data-close="helpModal">알겠어요!</button></div>

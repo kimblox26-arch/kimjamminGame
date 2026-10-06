@@ -577,3 +577,86 @@ body[data-lv="h"] .mm { color: #cbd5e1; }
 body[data-lv="h"] .mm:hover { color: #f5b301; background: rgba(245, 179, 1, .1); }
 body[data-lv="h"] .map-ctrl button { color: #e8eefc; }
 body[data-lv="m"] .dk:hover, body[data-lv="m"] .dk.on { color: #6d28d9; background: rgba(109, 40, 217, .08); }
+
+/* ---------- 📚 단원 ---------- */
+.chips.topics { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.wrong-topics h4 { margin: 4px 0 6px; }
+.wt-row { display: grid; grid-template-columns: minmax(0, 9em) 1fr 2em auto; align-items: center; gap: 8px; font-size: 14px; margin: 4px 0; }
+.wt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-bar { height: 10px; background: #eef2f6; border-radius: 99px; overflow: hidden; }
+.wt-bar i { display: block; height: 100%; background: linear-gradient(90deg, #fb923c, var(--red)); border-radius: 99px; }
+
+/* ---------- 🏗️ 건물 · 🎁 보물 ---------- */
+.build-list { display: grid; gap: 8px; }
+.build-item { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px; padding: 10px; background: #f6f8fa; border-radius: 14px; }
+.build-item .bi { font-size: 30px; text-align: center; }
+.build-item p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.ms-treasure { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: linear-gradient(135deg, #fff7d6, #ffe9b8); font-size: 14px; line-height: 1.6; }
+.ms-treasure .btn { margin-top: 6px; font-size: 15px; padding: 7px 12px; }
+
+/* ---------- 👾 보스 레이드 ---------- */
+.btn.big.raid { background: linear-gradient(135deg, #7c3aed, #db2777); color: #fff; }
+.btn.big.raid small { color: rgba(255, 255, 255, .85); }
+.raid-card { text-align: center; }
+.boss { font-size: 84px; line-height: 1.1; margin: 4px 0; animation: bossIdle 2.4s ease-in-out infinite; }
+.boss.hit { animation: bossHit .5s; }
+@keyframes bossIdle { 50% { transform: translateY(-6px) scale(1.03); } }
+@keyframes bossHit { 20% { transform: translateX(-10px) rotate(-8deg); filter: brightness(2); } 60% { transform: translateX(10px) rotate(8deg); } }
+.boss-name { font-family: var(--font-title); font-size: 22px; margin-bottom: 8px; }
+.hpbar { position: relative; height: 22px; background: #2a1a3a; border-radius: 99px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0, 0, 0, .4); }
+.hpbar i { display: block; height: 100%; background: linear-gradient(90deg, #ef4444, #f97316, #facc15); transition: width .6s; }
+.hpbar span { position: absolute; inset: 0; color: #fff; font-size: 13px; font-weight: 700; line-height: 22px; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.raid-top { text-align: left; margin: 8px 0; padding-left: 26px; font-size: 14px; }
+.raid-top li { padding: 3px 0; }
+.raid-top li.me { font-weight: 700; color: var(--primary-dark); }
+.raid-top b { float: right; }
+
+/* ---------- 🧑‍🎨 꾸미기 ---------- */
+.av { margin-right: 3px; }
+.ttl { display: inline-block; font-size: 11px; font-weight: 700; color: #7c3aed; background: #f3e8ff; border-radius: 99px; padding: 1px 7px; vertical-align: 1px; }
+.ttl.big { font-size: 14px; padding: 4px 10px; }
+.fr { font-weight: 800; }
+.fr-gold { color: #b7791f; text-shadow: 0 0 6px rgba(250, 204, 21, .55); }
+.fr-fire { color: #ea580c; text-shadow: 0 0 6px rgba(249, 115, 22, .6); }
+.fr-ice { color: #0284c7; text-shadow: 0 0 6px rgba(56, 189, 248, .6); }
+.fr-star { color: #7c3aed; text-shadow: 0 0 6px rgba(167, 139, 250, .7); }
+.fr-rainbow { background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.look-preview { display: flex; align-items: center; gap: 12px; padding: 12px; margin: 8px 0 12px; border-radius: 16px; background: linear-gradient(135deg, #fff7ed, #fdf2f8); font-size: 18px; }
+.lp-av { font-size: 46px; }
+.look-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.look-item { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 6px; border-radius: 14px; background: #f6f8fa; text-align: center; min-height: 96px; }
+.look-item.on { outline: 3px solid var(--primary); background: #fff7ed; }
+.look-item .btn { font-size: 14px; padding: 6px 12px; }
+.lk-av { font-size: 34px; }
+body[data-lv="h"] .ttl { color: #ffd166; background: rgba(245, 179, 1, .15); }
+
+/* ---------- 🛡️ 연합 · 📜 전쟁 기록 ---------- */
+.mm-union { display: none; }
+body[data-lv="m"] .mm-union, body[data-lv="h"] .mm-union { display: flex; }
+.u-badge { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; color: #fff; font-size: 15px; vertical-align: middle; }
+.u-head { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px; background: color-mix(in srgb, var(--uc) 14%, #fff); border-left: 6px solid var(--uc); }
+.u-head .u-badge { width: 44px; height: 44px; font-size: 24px; border-radius: 12px; }
+.u-head b { font-family: var(--font-title); font-size: 21px; }
+.u-members { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 4px; }
+.u-members li { display: flex; justify-content: space-between; padding: 6px 10px; background: #f6f8fa; border-radius: 10px; font-size: 14px; }
+.u-rank { padding-left: 22px; margin: 6px 0; }
+.u-rank li { padding: 5px 0; display: flex; align-items: center; gap: 6px; }
+.u-rank li span:last-child { margin-left: auto; color: var(--muted); font-size: 13px; }
+.u-rank li.me { font-weight: 700; }
+.war-list.rec li span.w { color: var(--green); }
+.war-list.rec small { color: var(--muted); }
+
+/* ---------- 👩‍🏫 선생님 ---------- */
+.check { display: flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; }
+.check input { width: 20px; height: 20px; flex: none; }
+#teacher { overflow-y: auto; background: var(--bg); }
+.teacher-wrap { max-width: 980px; margin: 0 auto; padding: 18px 16px 40px; }
+.teacher-wrap h2 { margin: 0; }
+#tcClasses { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.tc-code { font-size: 18px; margin: 8px 0 12px; }
+.tc-code b { font-family: var(--font-title); font-size: 28px; letter-spacing: 3px; color: var(--primary-dark); background: #fff; border-radius: 12px; padding: 2px 12px; box-shadow: var(--shadow-sm); }
+.tc-table-wrap { overflow-x: auto; background: #fff; border-radius: 16px; box-shadow: var(--shadow-sm); margin: 12px 0; }
+.tc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tc-table th, .tc-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.tc-table th { background: #f6f8fa; font-weight: 700; }
+.set-class { font-size: 14px; line-height: 1.7; }
