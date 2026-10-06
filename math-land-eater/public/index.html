@@ -11,6 +11,27 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.3"/></symbol>
+  <symbol id="i-swords" viewBox="0 0 24 24"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="m5 14 4 4"/><path d="m7 17-3 3"/><path d="m3 19 2 2"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 8V7a3 3 0 0 1 6 0v1"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5Z"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z"/><path d="M16 5h3v2a3 3 0 0 1-3 3"/><path d="M8 5H5v2a3 3 0 0 0 3 3"/><path d="M12 13v4"/><path d="M8 20h8"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
+  <symbol id="i-medal" viewBox="0 0 24 24"><circle cx="12" cy="15" r="5"/><path d="M8.5 11 6 3h4l2 4.5L14 3h4l-2.5 8"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7 16v-4"/><path d="M12 16V7"/><path d="M17 16v-7"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18.5 6a8 8 0 0 1 0 12"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.5"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9"/><path d="M17 7h3"/><circle cx="15" cy="7" r="2"/><path d="M4 12h3"/><path d="M11 12h9"/><circle cx="9" cy="12" r="2"/><path d="M4 17h11"/><path d="M19 17h1"/><circle cx="17" cy="17" r="2"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-5h4v5"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14"/><path d="M15 6v14"/></symbol>
+</svg>
+
 
 <!-- 불러오는 중 -->
 <section id="loading" class="screen intro">
@@ -112,30 +133,15 @@
       <span id="hudUser" class="pill"></span>
       <span id="cheatBadge" class="pill bug" hidden>🐛 버그 모드</span>
     </div>
-    <div class="top-actions">
-      <button type="button" id="btnAdmin" class="icon-btn" title="운영자 관리" hidden>🛠️</button>
-      <button type="button" id="btnStudy" class="icon-btn" title="공부방 (연습 · 스피드 퀴즈 · 오답 노트)">✏️<i id="wrongCount" class="count" hidden></i></button>
-      <button type="button" id="btnMission" class="icon-btn" title="오늘의 미션" hidden>🎯<i id="missionDot" class="count dot" hidden></i></button>
-      <button type="button" id="btnShop" class="icon-btn" title="상점" hidden>🛒</button>
-      <button type="button" id="btnWar" class="icon-btn" title="전쟁 · 동맹 (중·고등학교)" hidden>⚔️<i id="warDot" class="count dot" hidden></i></button>
-      <button type="button" id="btnChat" class="icon-btn" title="채팅">💬<i id="chatDot" class="count dot" hidden></i></button>
-      <button type="button" id="btnBadges" class="icon-btn" title="내 배지와 기록">🏅</button>
-      <button type="button" id="btnBgm" class="icon-btn wide-only" title="배경 음악">🎵</button>
-      <button type="button" id="btnSound" class="icon-btn wide-only" title="소리">🔊</button>
-      <button type="button" id="btnHelp" class="icon-btn wide-only" title="놀이 방법">❓</button>
-      <button type="button" id="btnRank" class="icon-btn" title="랭킹표">📊</button>
-      <button type="button" id="btnBoard" class="icon-btn" title="순위">🏆</button>
-      <button type="button" id="btnSettings" class="icon-btn" title="설정">⚙️</button>
-    </div>
-  </header>
+</header>
   <main class="game-main">
     <div id="mapWrap">
       <canvas id="map"></canvas>
       <div class="map-ctrl">
-        <button type="button" id="zIn" title="크게">＋</button>
-        <button type="button" id="zOut" title="작게">－</button>
-        <button type="button" id="zHome" title="우리 학교로">🏠</button>
-        <button type="button" id="zFit" title="전국 지도">🗺️</button>
+        <button type="button" id="zIn" title="크게"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <button type="button" id="zOut" title="작게"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
+        <button type="button" id="zHome" title="우리 학교로"><svg class="ic" aria-hidden="true"><use href="#i-home"/></svg></button>
+        <button type="button" id="zFit" title="전체 지도"><svg class="ic" aria-hidden="true"><use href="#i-map"/></svg></button>
       </div>
       <div class="minimap"><canvas id="mini"></canvas></div>
       <div id="warBar" class="war-bar" hidden></div>
@@ -178,6 +184,25 @@
       </div>
     </aside>
   </main>
+  <nav id="dock" class="dock" aria-label="게임 메뉴">
+    <button type="button" id="btnStudy" class="dk" title="공부방 (연습 · 스피드 퀴즈 · 오답 노트)"><svg class="ic" aria-hidden="true"><use href="#i-pencil"/></svg><span>공부</span><i id="wrongCount" class="count" hidden></i></button>
+    <button type="button" id="btnMission" class="dk" title="오늘의 미션" hidden><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg><span>미션</span><i id="missionDot" class="count dot" hidden></i></button>
+    <button type="button" id="btnWar" class="dk" title="전쟁 · 동맹 (중·고등학교)" hidden><svg class="ic" aria-hidden="true"><use href="#i-swords"/></svg><span>전쟁</span><i id="warDot" class="count dot" hidden></i></button>
+    <button type="button" id="btnShop" class="dk" title="상점" hidden><svg class="ic" aria-hidden="true"><use href="#i-bag"/></svg><span>상점</span></button>
+    <button type="button" id="btnChat" class="dk" title="채팅"><svg class="ic" aria-hidden="true"><use href="#i-chat"/></svg><span>채팅</span><i id="chatDot" class="count dot" hidden></i></button>
+    <button type="button" id="btnBoard" class="dk" title="순위 · 소식"><svg class="ic" aria-hidden="true"><use href="#i-trophy"/></svg><span>순위</span></button>
+    <button type="button" id="btnMore" class="dk" title="더보기"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg><span>더보기</span><i id="moreDot" class="count dot" hidden></i></button>
+  </nav>
+  <div id="moreMenu" class="more-menu" hidden>
+    <button type="button" class="mm mm-mission" data-act="btnMission"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg><span>미션</span><i id="mmMissionDot" class="count dot" hidden></i></button>
+    <button type="button" class="mm" id="btnBadges"><svg class="ic" aria-hidden="true"><use href="#i-medal"/></svg><span>배지</span></button>
+    <button type="button" class="mm" id="btnRank"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg><span>랭킹표</span></button>
+    <button type="button" class="mm" id="btnBgm"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>음악</span></button>
+    <button type="button" class="mm" id="btnSound"><svg class="ic" aria-hidden="true"><use href="#i-volume"/></svg><span>소리</span></button>
+    <button type="button" class="mm" id="btnHelp"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg><span>도움말</span></button>
+    <button type="button" class="mm" id="btnSettings"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg><span>설정</span></button>
+    <button type="button" class="mm" id="btnAdmin" hidden><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>관리</span></button>
+  </div>
 </section>
 
 <!-- 문제 풀기 -->
@@ -334,6 +359,14 @@
       <div class="answer-row"><input id="admInvId" maxlength="16" placeholder="운영자로 만들 사람의 아이디" autocomplete="off"><button type="button" class="btn primary" id="admInvGo">📨 초대 보내기</button></div>
       <p class="muted">그 사람이 게임에 들어오면 <b>초대 창</b>이 떠요. 수락하고 자기 비밀번호로 <b>본인 인증</b>을 하면 운영자가 되고, 이름 오른쪽에 <span class="mark admin">✦</span> 표시가 생겨요. (개발자는 <span class="mark dev">♛</span>)</p>
       <ul id="admStaff" class="bans"></ul>
+      <h4>🗑️ 학교 삭제</h4>
+      <input id="admDelFind" maxlength="20" placeholder="삭제할 학교 이름 (예: 햇살초)" autocomplete="off">
+      <ul id="admDelList" class="del-find"></ul>
+      <div id="admDelPick" class="chosen" hidden></div>
+      <textarea id="admDelMsg" maxlength="300" rows="3" placeholder="그 학교 학생들에게 보낼 글 (예: 실제로 없는 학교라서 삭제했어요. 다니는 학교를 다시 골라 주세요.)"></textarea>
+      <div class="row end"><button type="button" class="btn attack" id="admDelGo" disabled>🗑️ 학교 삭제</button></div>
+      <p class="muted">삭제하면 그 학교와 땅이 지도에서 사라지고, 그 학교 학생들은 위 글을 본 뒤 새 학교를 골라요. 실수했으면 아래에서 되살릴 수 있어요.</p>
+      <ul id="admDeleted" class="bans"></ul>
     </div>
     <p class="muted">🚪 학교 학생 모두 퇴장은 <b>학교 정보 창</b>(학교 이름을 누르면 나와요)에 있어요.</p>
   </div>
@@ -390,6 +423,16 @@
 </div>
 
 <!-- 운영자 초대 -->
+<div id="goneModal" class="modal" hidden>
+  <div class="card small invite-card">
+    <div class="inv-icon">🗑️</div>
+    <h3>우리 학교가 삭제되었어요</h3>
+    <p class="inv-text" id="goneName"></p>
+    <div class="gone-msg" id="goneMsg"></div>
+    <p class="muted" id="goneBy"></p>
+    <div class="row end"><button type="button" class="btn primary" id="goneOk">🏫 새 학교 고르기</button></div>
+  </div>
+</div>
 <div id="warModal" class="modal" hidden>
   <div class="card wide war-card">
     <div class="row between"><h3>⚔️ 전쟁 · 🤝 동맹</h3><button type="button" class="icon-btn" data-close="warModal">✕</button></div>
@@ -439,7 +482,8 @@
       <li>🏷️ 우리 땅을 눌러 <b>땅 팔기</b>! 살 학교를 고르면(3학년까지는 닿아 있는 학교만) 그 학교는 <b>🛒 땅 사기</b>로 문제 없이 가져가요.</li>
       <li>지도에는 <b>산 이름(높이)</b>과 <b>섬 이름</b>이 나오고, <b>북한</b> 땅도 보여요(게임 땅은 아니에요). 섬은 <b>뱃길</b>로 이어져 있어요(섬 끝 땅을 누르면 점선이 보여요). 학년마다 서버가 따로 있고, 같은 학교 친구들과 함께 땅을 넓혀요.</li>
       <li>✏️ <b>연습하기</b>로 문제만 풀 수도 있고, 틀린 문제는 📒 <b>오답 노트</b>에 모여요. 🏅 배지도 모아 보세요!</li>
-      <li>💬 <b>채팅</b>: 위 💬 버튼을 누르면 우리 학교 친구들이나 전체에게 말을 쓸 수 있어요. 나쁜 말과 전화번호는 저절로 가려져요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>
+      <li>🧭 아래 메뉴 막대: <b>공부 · 미션(중·고는 전쟁) · 상점 · 채팅 · 순위 · 더보기</b>. 배지·랭킹표·음악·소리·도움말·설정은 <b>더보기</b> 안에 있어요.</li>
+      <li>💬 <b>채팅</b>: 아래 <b>채팅</b> 버튼을 누르면 우리 학교 친구들이나 전체에게 말을 쓸 수 있어요. 나쁜 말과 전화번호는 저절로 가려져요. 학교를 누르면 <b>학교 홈페이지</b>로 갈 수 있어요.</li>
       <li>⚔️ <b>다른 학교 땅</b>을 뺏을 때는 땅 주인 학교와 <b>1:1 수학 결투</b>! 상대보다 <b>먼저</b> 다 맞혀야 땅을 가져오고, 이기면 🪙 보너스!</li>
       <li>🪙 문제 1개를 맞히면 <b>1코인</b>! 🛒 <b>상점</b>에서 🛡️ 방패(24시간 못 뺏김) · 💣 폭탄(한 번에 3칸) · 🔭 망원경(약한 땅 찾기) · 🚩 학교 깃발을 사요.</li>
       <li>🏫 <b>중학교 서버</b>(중1~중3)와 <b>고등학교 서버</b>(고1~고3)도 있어요. 출생연도로 정해지고, 학교급마다 진짜 중·고등학교가 놓인 지도를 따로 써요. 중학생부터는 멀리 있는 땅을 <b>문제 20개</b>로 뺏어요.</li>

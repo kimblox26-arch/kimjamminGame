@@ -430,8 +430,16 @@ function addScenery(map, landFile) {
     const [x, y] = xy(+m[3], +m[4]);
     places.push([m[1], m[2], Math.round(x), Math.round(y), m[5] ? +m[5] : 0]);
   }
+  const jpRegions = []; // 일본 지역: [도도부현, 도시, 동네, x, y] (화면이 칸마다 가장 가까운 곳으로 지역을 나눈다)
+  if (map.jp) for (const line of txt.split('\n')) {
+    const m = line.trim().match(/^지역\|([^|]+)\|([^|]+)\|([^|]*)\|(-?[\d.]+)\|(-?[\d.]+)$/);
+    if (!m) continue;
+    const [x, y] = xy(+m[4], +m[5]);
+    jpRegions.push([m[1], m[2], m[3] || m[2], Math.round(x), Math.round(y)]);
+  }
   const j = JSON.parse(map.clientJSON);
   j.places = places;
+  if (jpRegions.length) j.jpRegions = jpRegions;
   map.clientJSON = JSON.stringify(j);
   return map;
 }

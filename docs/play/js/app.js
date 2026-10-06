@@ -160,6 +160,7 @@
   // 밴(423)이면 정지 화면, 학교에서 퇴장(409)이면 학교 다시 고르기
   function special(d) {
     if (d.code === 426 && d.level) switchLevel(d.level); // 다른 학교급 지도가 필요하다
+    else if (d.code === 410 && d.deleted) { if (me) me.profile = null; showGone(d.deleted); } // 우리 학교가 삭제됐다
     else if (d.code === 423 && d.ban) showBanned(d.ban);
     else if (d.code === 409 && me && me.profile && /퇴장/.test(d.error || '')) kickedOut();
     return d;
@@ -171,6 +172,24 @@
     const until = new Date(ban.until), forever = ban.until - Date.now() > 3000 * 864e5;
     $('#banText').innerHTML = forever ? '앞으로 <b>계속</b> 게임에 들어올 수 없어요.' : `<b>${until.getFullYear()}년 ${until.getMonth() + 1}월 ${until.getDate()}일 ${String(until.getHours()).padStart(2, '0')}:${String(until.getMinutes()).padStart(2, '0')}</b>까지 게임에 들어올 수 없어요.`;
     show('banned');
+  }
+  // 🗑️ 개발자가 삭제한 학교: 목록·검색에서 빼고, 그 학교 학생에게는 개발자의 글을 보여 준다
+  let goneKeys = new Set(), goneShown = false;
+  function markGone(list) {
+    if (!list) return;
+    goneKeys = new Set(list);
+    schools.forEach((s, id) => { if (s) s.gone = goneKeys.has(skeyOf(id)); });
+  }
+  function showGone(info) {
+    if (!info || goneShown) return;
+    goneShown = true;
+    if (es) { es.close(); es = null; }
+    W = null; quiz = null;
+    $$('.modal').forEach(m => { m.hidden = true; });
+    $('#goneName').innerHTML = `<b>${esc(info.name)}</b> <small class="muted">${esc(info.where || '')}</small>`;
+    $('#goneMsg').textContent = info.msg || '';
+    $('#goneBy').textContent = `— ${info.by || '개발자'}${info.at ? ' · ' + new Date(info.at).toLocaleDateString('ko-KR') : ''}`;
+    openM('goneModal');
   }
   function kickedOut() {
     if (!me) return;
@@ -339,6 +358,7 @@
     G.miniBox = { x0: sk[0] - 300, y0: sk[1] - 300, w: sk[2] - sk[0] + 600, h: sk[3] - sk[1] + 600 };
     // 산·섬 이름
     G.places = (m.places || []).map(([type, name, x, y, h]) => ({ type, name, x, y, h }));
+    G.jpRegions = m.jpRegions || []; // 일본 도도부현 › 도시 › 동네 (고등학교 지도)
     G.peaks = G.places.filter(p => p.type === '산').sort((a, b) => b.h - a.h);
     G.districts = m.districts.map(([sido, sigungu, x, y]) => ({ sido, sigungu, x, y }));
     const sm = new Map();
@@ -378,6 +398,23 @@
       let di = dIdx.get(dk);
       if (di === undefined) { di = dongs.length; dIdx.set(dk, di); dongs.push({ name: s.dong || s.sigungu, up: gi }); }
       if (dong[i] < 0) { dong[i] = di; queue[qt++] = i; }
+    }
+    if (G.jpRegions.length && G.jpCell) { // 일본은 학교가 없어서 도시·동네 자리에서 퍼져 나간다
+      const jp = [];
+      for (let i = 0; i < n; i++) if (G.jpCell[i]) jp.push(i);
+      for (const [pref, city, dg, x, y] of G.jpRegions) {
+        let c = -1, bd = Infinity;
+        for (const i of jp) { const d = (G.sx[i] - x) ** 2 + (G.sy[i] - y) ** 2; if (d < bd) { bd = d; c = i; } }
+        if (c < 0 || dong[c] >= 0) continue;
+        const gk = '일본|' + pref + '|' + city, dk = gk + '|' + dg;
+        let si = sIdx.get('일본|' + pref);
+        if (si === undefined) { si = sidos.length; sIdx.set('일본|' + pref, si); sidos.push({ name: pref, jp: true }); }
+        let gi = gIdx.get(gk);
+        if (gi === undefined) { gi = sggs.length; gIdx.set(gk, gi); sggs.push({ name: city, up: si }); }
+        let di = dIdx.get(dk);
+        if (di === undefined) { di = dongs.length; dIdx.set(dk, di); dongs.push({ name: dg, up: gi }); }
+        dong[c] = di; queue[qt++] = c;
+      }
     }
     while (qh < qt) { const c = queue[qh++]; for (const m of G.nbOf(c)) if (dong[m] < 0) { dong[m] = dong[c]; queue[qt++] = m; } }
     const sgg = new Uint16Array(n), sido = new Uint8Array(n); // 메모리 아끼기 (시군구 수천 개, 시도 수십 개)
@@ -576,6 +613,7 @@
     if (me.grade < 1 || me.grade > S.MAX_GRADE) { toast('초등학생부터 고등학생까지만 플레이할 수 있어요.', 'err'); return logoutLocal(); }
     if (S.levelOf(me.grade) !== LVL()) return switchLevel(S.levelOf(me.grade));
     document.body.dataset.lv = LVL(); // 학교급마다 화면 꾸밈 (고등학교는 새 화면)
+    if (!me.profile && me.deleted) return showGone(me.deleted);
     if (me.profile) startGame(); else openSetup();
   }
   // 학교급이 다르면 그 학교급 지도를 받아서 다시 연다 (로그인은 그대로)
@@ -606,7 +644,7 @@
   }
   function fillDong(keep) {
     const { sido, sigungu } = area(), set = new Set();
-    for (const s of schools) if (s && s.sido === sido && s.sigungu === sigungu && s.dong) set.add(s.dong);
+    for (const s of schools) if (s && !s.gone && s.sido === sido && s.sigungu === sigungu && s.dong) set.add(s.dong);
     const list = [...set].sort((a, b) => a.localeCompare(b, 'ko'));
     $('#stDong').innerHTML = opt('', sigungu ? `전체 (${list.length}개 동네)` : '동·읍·면') + list.map(d => opt(d, d, d === keep)).join('');
     $('#stDongList').innerHTML = list.map(d => `<option value="${esc(d)}">`).join('');
@@ -665,11 +703,11 @@
     q = q.replace(/\s+/g, '');
     if (q.length < 2) return null;
     const norm = t => (t || '').replace(/\s+/g, '');
-    let list = schools.filter(s => s && s.dong && (s.dong === q || s.dong === q + '동'));
+    let list = schools.filter(s => s && !s.gone && s.dong && (s.dong === q || s.dong === q + '동'));
     if (list.length) return { label: list[0].dong, list };
-    list = schools.filter(s => s && /[시군구]$/.test(q.length > 1 ? norm(s.sigungu) : '') && (norm(s.sigungu) === q || norm(s.sigungu).startsWith(q) || norm(s.sigungu).endsWith(q)));
+    list = schools.filter(s => s && !s.gone && /[시군구]$/.test(q.length > 1 ? norm(s.sigungu) : '') && (norm(s.sigungu) === q || norm(s.sigungu).startsWith(q) || norm(s.sigungu).endsWith(q)));
     if (list.length) { const g = new Set(list.map(s => s.sigungu)); return { label: g.size === 1 ? list[0].sigungu : q, list }; }
-    list = schools.filter(s => s && s.sido === q);
+    list = schools.filter(s => s && !s.gone && s.sido === q);
     return list.length ? { label: q, list } : null;
   }
   // 동네별로 묶어서 보여 준다
@@ -689,18 +727,19 @@
     const res = [];
     if (!q) return res;
     for (const s of schools) {
-      if (s && (s.name + s.sido + s.sigungu + (s.dong || '')).includes(q)) res.push(s);
+      if (s && !s.gone && (s.name + s.sido + s.sigungu + (s.dong || '')).includes(q)) res.push(s);
       if (res.length >= max) break;
     }
     return res;
   };
   function renderSchoolList() {
+    if (window.MLEBackend && window.MLEBackend.gone) markGone(window.MLEBackend.gone()); // 그사이 삭제·되살린 학교
     const q = $('#stSearch').value.trim(), box = $('#stList'), { sido, sigungu, dong } = area();
     let title = '', res;
     const region = q ? regionSchools(q) : null;
     if (region) { res = region.list; title = `${region.label}에 있는 모든 학교`; }
     else if (q) { res = searchSchools(q, 120); title = `"${q}" 검색 결과`; }
-    else if (sigungu) { res = schools.filter(s => s && s.sido === sido && s.sigungu === sigungu && (!dong || s.dong === dong)); title = `${dong || sigungu}에 있는 모든 학교`; }
+    else if (sigungu) { res = schools.filter(s => s && !s.gone && s.sido === sido && s.sigungu === sigungu && (!dong || s.dong === dong)); title = `${dong || sigungu}에 있는 모든 학교`; }
     else { box.innerHTML = `<div class="muted pad">시·도 → 시·군·구 → 동을 고르거나, "호평동"·"남양주시"처럼 동네 이름이나 학교 이름으로 찾아보세요. (전국 ${schools.length.toLocaleString()}개 학교)</div>`; return; }
     res = res.filter(s => !s.nk);
     box.innerHTML = res.length
@@ -712,6 +751,7 @@
     show('setup');
     const d = await api('/api/schools');
     mergeCustom(d.custom);
+    markGone(d.gone);
     const p = me.profile || {}, m = new Date().getMonth(), cur = p.schoolId != null ? schools[p.schoolId] : null;
     $('#stGrade').innerHTML = me.role ? `<b>${srvName()}</b> <span class="muted">(${S.ROLE_NICK[me.role]} 계정 · 🛠️ 관리 창에서 서버를 바꿀 수 있어요)</span>`
       : `<b>${S.gradeName(me.grade)}</b> <span class="muted">(${me.birthYear}년생 · 나이 인증으로 정해졌어요 · ${srvName()})</span>`;
@@ -1163,7 +1203,9 @@
     const defWhy = !mine ? '우리 학교 땅만 방어할 수 있어요.' : hs >= 0 ? '본부는 언제나 안전해요.' : d >= 99 ? '방어가 가장 높아요(99).' : '';
     let ownedN = 0;
     if (o >= 0) for (const k of owned) if (W.owner[k] === o) ownedN++;
-    const tags = [`<span class="tag">📍 ${esc(dist.sido)} ${esc(dist.sigungu)}${dist.dong ? ' ' + esc(dist.dong) : ''}${hs < 0 ? ' 근처' : ''}</span>`];
+    const jpc = G.jpCell && G.jpCell[i] && G.dongOf; // 일본 칸은 일본 지역 이름으로
+    const tags = [jpc ? `<span class="tag">📍 일본 ${esc(G.sidoList[G.sidoOf[i]].name)} ${esc(G.sggs[G.sggOf[i]].name)}${G.dongs[G.dongOf[i]].name !== G.sggs[G.sggOf[i]].name ? ' ' + esc(G.dongs[G.dongOf[i]].name) : ''}</span>`
+      : `<span class="tag">📍 ${esc(dist.sido)} ${esc(dist.sigungu)}${dist.dong ? ' ' + esc(dist.dong) : ''}${hs < 0 ? ' 근처' : ''}</span>`];
     if (o >= 0 && !mine) tags.push(`<span class="tag" style="--c:${cssColor(o)}">🚩 ${esc(schools[o].name)} · ${ownedN}칸</span>`);
     if (o >= 0 && hs < 0) tags.push(`<span class="tag">🛡️ 방어 <b>${d}</b></span>`);
     if (shielded(i)) tags.push(`<span class="tag" style="--c:#f5b301">✨ 방패가 지키는 중 · ${Math.ceil((shieldOf.get(i) - Date.now()) / 3600e3)}시간 남음</span>`);
@@ -1327,7 +1369,7 @@
     if (r.mission != null) setMissionDot(r.mission);
     hud();
   }
-  function setMissionDot(n) { missionReady = n; $('#missionDot').hidden = !n; }
+  function setMissionDot(n) { missionReady = n; $('#missionDot').hidden = $('#mmMissionDot').hidden = !n; $('#moreDot').hidden = !n || LVL() === 'e'; } // 중·고는 미션이 더보기 안에
 
   let defCell = -1;
   function openDefense(i) {
@@ -1429,8 +1471,49 @@
       $('#admDev').hidden = me.role !== 'dev';
       if (me.role === 'dev') api('/api/admin', { act: 'bans' }).then(r => { if (r.bans) renderBans(r.bans); });
       if (me.role === 'dev' && FEAT) api('/api/admin', { act: 'staff' }).then(r => { if (r.staff) renderStaff(r.staff); });
+      if (me.role === 'dev') api('/api/admin', { act: 'listDeleted' }).then(r => { if (r.list) renderDeleted(r.list); });
       openM('adminModal');
     };
+    // 🗑️ 학교 삭제: 이름으로 찾아 고르고, 학생들에게 보낼 글을 쓰고 삭제
+    let delPick = null;
+    const delReset = () => { delPick = null; $('#admDelPick').hidden = true; $('#admDelGo').disabled = true; };
+    $('#admDelFind').oninput = () => {
+      delReset();
+      const q = $('#admDelFind').value.replace(/\s+/g, '');
+      const list = q.length < 2 ? [] : schools.filter(s => s && !s.gone && !s.nk && s.name.replace(/\s+/g, '').includes(q)).slice(0, 8);
+      $('#admDelList').innerHTML = list.map(s => `<li><button type="button" data-delpick="${s.id}">🏫 ${esc(s.name)} <small>${esc(s.sido)} ${esc(s.sigungu)}${s.dong ? ' ' + esc(s.dong) : ''}</small></button></li>`).join('')
+        || (q.length >= 2 ? '<li class="muted">그런 학교가 없어요</li>' : '');
+    };
+    $('#admDelList').onclick = e => {
+      const b = e.target.closest('[data-delpick]');
+      if (!b) return;
+      delPick = schools[+b.dataset.delpick];
+      $('#admDelPick').hidden = false;
+      $('#admDelPick').innerHTML = `🗑️ 삭제할 학교: <b>${esc(delPick.name)}</b> <small class="muted">${esc(delPick.sido)} ${esc(delPick.sigungu)}</small>`;
+      $('#admDelList').innerHTML = '';
+      $('#admDelGo').disabled = false;
+    };
+    $('#admDelGo').onclick = async e => {
+      const msg = $('#admDelMsg').value.trim();
+      if (!delPick) return;
+      if (!msg) return toast('그 학교 학생들에게 보낼 글을 써 주세요.', 'warn');
+      if (!confirm(`🗑️ ${delPick.name}를 정말 삭제할까요?\n그 학교 학생들에게 이 글이 보여요:\n"${msg}"`)) return;
+      e.currentTarget.disabled = true;
+      const r = await api('/api/admin', { act: 'delSchool', key: skeyOf(delPick.id), msg });
+      if (r.error) { e.currentTarget.disabled = false; return toast(r.error, 'err'); }
+      toast(`🗑️ ${delPick.name}를 삭제했어요. 그 학교 학생들에게 글이 전해져요.`, 'ok');
+      $('#admDelFind').value = ''; $('#admDelMsg').value = ''; delReset();
+      renderDeleted(r.list);
+    };
+    $('#admDeleted').onclick = async e => {
+      const b = e.target.closest('[data-undel]');
+      if (!b || !confirm('이 학교를 되살릴까요? 땅도 삭제하기 전으로 돌아와요.')) return;
+      const r = await api('/api/admin', { act: 'undelSchool', key: b.dataset.undel });
+      if (r.error) return toast(r.error, 'err');
+      toast('🏫 학교를 되살렸어요.', 'ok');
+      renderDeleted(r.list);
+    };
+    $('#goneOk').onclick = () => { closeM('goneModal'); goneShown = false; openSetup(); };
     $('#admGrades').onclick = e => { const b = e.target.closest('[data-g]'); if (b && +b.dataset.g !== me.grade) adminAct({ act: 'grade', grade: +b.dataset.g }); };
     $('#admNoticeGo').onclick = async () => { await adminAct({ act: 'notice', text: $('#admNotice').value }); $('#admNotice').value = ''; };
     $('#admChat').onclick = e => adminAct({ act: 'clearChat' }, e.currentTarget);
@@ -1732,6 +1815,7 @@
     if (d.error) { toast(d.error, 'err'); return false; }
     if (d.owner.length !== G.n) { toast('지도가 새로 바뀌었어요. 새로고침 해 주세요.', 'err'); return false; }
     mergeCustom(d.custom);
+    markGone(d.gone);
     W = { owner: Int32Array.from(d.owner), def: new Uint8Array(G.n), home: d.home.slice(), homeCell: new Int32Array(G.n).fill(-1) }; // 방어는 최대 99
     defended = new Set();
     d.def.forEach(([i, v]) => { W.def[i] = v; defended.add(i); });
@@ -1804,6 +1888,7 @@
     if (m.t === 'chatClear') return clearChat();
     if (m.t === 'banned') return showBanned(m.ban);
     if (m.t === 'kicked') return kickedOut();
+    if (m.t === 'schoolDeleted') { me.profile = null; return showGone(m.info); }
     if (m.t === 'offers') { setOffers(m.items); if (m.ev) feed(m.ev); return; }
     if (m.t === 'wars') return setWars(m.items);
     if (m.t === 'warscore') { const w = wars.find(x => x.id === m.id); if (w) { w.sc = m.sc || {}; renderWarBar(); if (!$('#warModal').hidden) renderWar(); } return; }
@@ -1892,8 +1977,8 @@
     $('#hudUser').innerHTML = `😀 ${nameHTML(me.profile.nickname, me.role)} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
     $('#cheatBadge').hidden = !(cheat.capture || cheat.defend);
     $('#btnAdmin').hidden = !me.role;
-    $('#btnSound').textContent = Sound.on ? '🔊' : '🔇';
-    $('#btnBgm').style.opacity = Music.on ? 1 : 0.4;
+    $('#btnSound').classList.toggle('off', !Sound.on); $('#btnSound').querySelector('span').textContent = Sound.on ? '소리' : '소리 꺼짐';
+    $('#btnBgm').classList.toggle('off', !Music.on); $('#btnBgm').querySelector('span').textContent = Music.on ? '음악' : '음악 꺼짐';
     $('#btnMission').hidden = $('#btnShop').hidden = $('#hudCoins').hidden = !FEAT;
     $('#btnWar').hidden = !FEAT || LVL() === 'e'; // 전쟁·동맹은 중·고등학교
     $('#hudCoinN').textContent = me.infCoins ? '∞' : me.coins || 0;
@@ -2203,7 +2288,12 @@
       $('#pwOld').value = $('#pwNew').value = '';
       toast('🔑 비밀번호를 바꿨어요.', 'ok');
     };
-    $('#btnBoard').onclick = () => $('#side').classList.toggle('open');
+    $('#btnBoard').onclick = () => { if (innerWidth <= 820) $('#side').classList.toggle('open'); else openRank(); }; // 폰: 순위·소식 창, 넓은 화면: 랭킹표
+    // 더보기: 자주 안 쓰는 버튼 모음 (누르면 닫힌다)
+    const more = $('#moreMenu'), closeMore = () => { more.hidden = true; $('#btnMore').classList.remove('on'); };
+    $('#btnMore').onclick = e => { e.stopPropagation(); more.hidden = !more.hidden; $('#btnMore').classList.toggle('on', !more.hidden); };
+    more.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; closeMore(); if (b.dataset.act) $('#' + b.dataset.act).click(); });
+    document.addEventListener('pointerdown', e => { if (!more.hidden && !more.contains(e.target) && !$('#btnMore').contains(e.target)) closeMore(); });
     $('#btnRank').onclick = () => openRank();
     $('#btnRankMore').onclick = () => openRank('school');
     $$('.rtab').forEach(b => { b.onclick = () => openRank(b.dataset.t); });
@@ -2436,6 +2526,10 @@
       toast(`${S.MARK.admin} 운영자가 되었어요! 위쪽 🛠️ 버튼으로 게임을 관리할 수 있어요.`, 'ok');
     };
   }
+  function renderDeleted(list) {
+    $('#admDeleted').innerHTML = list.length ? list.map(x => `<li><b>${esc(x.name)}</b> <small>${esc(x.where || '')}</small><button type="button" class="link-btn" data-undel="${esc(x.key)}">되살리기</button><br><small class="muted">"${esc(x.msg)}" · ${esc(x.by || '')}</small></li>`).join('')
+      : '<li class="muted">삭제한 학교가 없어요.</li>';
+  }
   function renderStaff(st) {
     const label = { pending: '⏳ 기다리는 중', declined: '🙅 거절함' };
     $('#admStaff').innerHTML = (st.admins.map(n => `<li><b>${esc(n)}</b><span class="mark admin">${S.MARK.admin}</span> <small>운영자</small><button type="button" class="link-btn" data-unstaff="${esc(n)}">해제</button></li>`).join('')
@@ -2454,6 +2548,7 @@
     if (d.code === 423) return; // 정지 화면이 이미 떴다
     if (!d.user) { show('auth'); if (d.error) toast(d.error, 'err'); return; }
     me = d.user;
+    markGone(d.gone);
     cheat.unlocked = !!d.debug || me.role === 'dev';
     route();
     if (d.invite && me.profile) setTimeout(() => showInvite(d.invite), 1500);

@@ -226,8 +226,23 @@
   // ---------- 운영: 학교 퇴장·밴 ----------
   if (!local.device) { local.device = rand(8); save(); } // 이 기기 표시 (밴은 아이디·기기 단위로도 걸린다)
   let mod = { bans: [], kicks: {} }, listenTok = null, listenFn = null;
+  // 🗑️ 개발자가 삭제한 학교: 학교 키 → { name, msg(학생들에게 보내는 글), by, at }. 삭제된 학교와 그 땅은 지도에서 사라지고, 되살리면 돌아온다
+  let deleted = {}, delSid = new Set();
+  const delList = d => Object.fromEntries((d.list || []).filter(x => x && x.key).map(x => [x.key, x]));
+  function deletedChanged(next, by) {
+    const before = Object.keys(deleted).length, same = JSON.stringify(Object.keys(next).sort()) === JSON.stringify(Object.keys(deleted).sort());
+    deleted = next;
+    if (!M || same) return;
+    indexSchools();
+    const newest = Object.values(deleted).sort((x, y) => (y.at || 0) - (x.at || 0))[0];
+    const text = Object.keys(deleted).length > before && newest ? `🗑️ ${newest.name}가 지도에서 삭제되었어요.` : '🏫 삭제했던 학교를 되살렸어요.';
+    dropWorlds({ kind: 'admin', by: by || (newest && newest.by) || '개발자', text }); // 모두 땅을 다시 불러온다
+    modChanged();
+  }
   async function loadMod() {
-    if (!cloud) { mod = { bans: local.bans || [], kicks: local.kicks || {} }; return; }
+    if (!cloud) { mod = { bans: local.bans || [], kicks: local.kicks || {} }; deleted = local.deleted || {}; return; }
+    try { const r = await cloud.db.doc('mod/deleted').get(); deleted = r.exists ? delList(r.data()) : {}; } catch { /* 없으면 빈 목록 */ }
+    cloud.db.doc('mod/deleted').onSnapshot(snap => deletedChanged(snap.exists ? delList(snap.data()) : {}), () => {});
     try {
       const [b, k] = await Promise.all([cloud.db.doc('mod/bans').get(), cloud.db.doc('mod/kicks').get()]);
       mod.bans = b.exists ? b.data().list || [] : [];
@@ -235,6 +250,11 @@
     } catch { /* 없으면 빈 목록 */ }
     cloud.db.doc('mod/bans').onSnapshot(snap => { mod.bans = snap.exists ? snap.data().list || [] : []; modChanged(); }, () => {});
     cloud.db.doc('mod/kicks').onSnapshot(snap => { mod.kicks = snap.exists ? snap.data().schools || {} : {}; modChanged(); }, () => {});
+  }
+  async function saveDeleted(next, by) {
+    if (cloud) await cloud.db.doc('mod/deleted').set({ list: Object.values(next) });
+    else { local.deleted = next; save(); }
+    deletedChanged(next, by);
   }
   async function saveMod() {
     mod.bans = mod.bans.filter(b => b.until > Date.now());
@@ -253,6 +273,7 @@
     if (!me || !listenFn) return;
     const b = banOf(me.u);
     if (b) return listenFn({ t: 'banned', ban: banInfo(b) });
+    if (!me.u.role && me.u.profile && deleted[me.u.profile.school]) return listenFn({ t: 'schoolDeleted', info: deleted[me.u.profile.school] });
     if (kickedNow(me.u)) { me.u.profile = null; save(); listenFn({ t: 'kicked' }); }
   }
 
@@ -264,7 +285,14 @@
   const idByKey = new Map();
   // 같은 학교가 두 번 있으면 번호가 작은 쪽(진짜 학교 목록)이 이긴다. 손으로 만든 가짜는 숨긴다.
   // 직접 등록한 학교는 등록한 학교급 지도에만 (예전 것은 초등학교)
-  function indexSchools() { idByKey.clear(); for (let i = schoolCount() - 1; i >= 0; i--) { const sc = schoolById(i); if (!sc.hidden && !(i >= BASE.length && (sc.lv || 'e') !== LV)) idByKey.set(schoolKey(sc), i); } }
+  function indexSchools() {
+    idByKey.clear(); delSid = new Set();
+    for (let i = schoolCount() - 1; i >= 0; i--) {
+      const sc = schoolById(i), k = schoolKey(sc);
+      if (deleted[k]) { delSid.add(i); continue; } // 삭제된 학교
+      if (!sc.hidden && !(i >= BASE.length && (sc.lv || 'e') !== LV)) idByKey.set(k, i);
+    }
+  }
   const isDup = k => idByKey.get(schoolKey(custom[k])) !== BASE.length + k;
   const publicCustom = () => custom.map((c, i) => ({ id: BASE.length + i, name: c.name, sido: c.sido, sigungu: c.sigungu, dong: c.dong || '', url: c.url || '' })).filter((c, i) => !isDup(i));
   const cleanDong = v => { const d = String(v || '').replace(/\s+/g, ''); if (d && !/^[가-힣0-9·.]{1,12}(동|읍|면|가|리)$/.test(d)) fail('동 이름은 "대치동"처럼 동·읍·면으로 끝나게 써 주세요.'); return d; };
@@ -281,7 +309,7 @@
   // ---------- 학년별 월드 ----------
   const worlds = {};
   let emit = () => {};
-  function setCell(rt, i, o, d) { rt.owner[i] = o; rt.def[i] = d; }
+  function setCell(rt, i, o, d) { if (o >= 0 && delSid.has(o)) { o = -1; d = 0; } rt.owner[i] = o; rt.def[i] = d; } // 삭제된 학교 땅은 빈 땅으로
   function setHome(rt, sid, cell) { rt.home[sid] = cell; rt.homeCell[cell] = sid; rt.owner[cell] = sid; }
   function applyCustomHomes(rt, g) {
     custom.forEach((c, k) => { const h = c.homes && c.homes[WP + g]; if (!isDup(k) && h != null && h >= 0 && rt.home[BASE.length + k] == null) setHome(rt, BASE.length + k, h); });
@@ -290,7 +318,7 @@
     if (worlds[g]) return worlds[g];
     const wp = WP;
     const n = M.n, rt = { g, owner: new Int32Array(n).fill(-1), def: new Uint8Array(n), home: [], homeCell: new Int32Array(n).fill(-1), feed: [], seen: new Set(), online: 1, offers: [], shields: {} };
-    BASE.forEach((s, i) => setHome(rt, i, s.cell));
+    BASE.forEach((s, i) => { if (!delSid.has(i)) setHome(rt, i, s.cell); });
     if (cloud) {
       if (cloud.rdb) await rtLoad(rt);
       else {
@@ -630,6 +658,7 @@
       username: u.username, acc: u.acc, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u), badges: u.badges || [], role: u.role || null, builtin: isBuiltin(u),
       coins: walletOf(u).coins, infCoins: !!u.infCoins, items: u.items, scopeUntil: u.scopeUntil || 0, trophies: u.trophies || [],
       profile: sid >= 0 ? { schoolId: sid, semester: u.profile.semester, nickname: u.profile.nickname } : null,
+      deleted: !u.role && u.profile && deleted[u.profile.school] ? deleted[u.profile.school] : undefined, // 우리 학교가 삭제됐을 때 개발자의 글
     };
   }
   // 친구 순위·학교 친구 목록에 보이는 카드 (비밀번호 같은 건 절대 안 올린다)
@@ -660,6 +689,7 @@
     if (g < 1 || g > S.MAX_GRADE) fail('초등학생부터 고등학생까지만 플레이할 수 있어요.', 403);
     if (S.levelOf(g) !== LV) { const e = new HttpError(426, `${S.LEVEL_NAME[S.levelOf(g)]} 지도를 불러와야 해요.`); e.extra = { level: S.levelOf(g) }; throw e; } // 화면이 그 학교급 지도로 다시 연다
     if (kickedNow(a.u)) { a.u.profile = null; save(); fail('🚪 학교에서 퇴장되었어요. 학교를 다시 골라 주세요.', 409); }
+    if (!a.u.role && a.u.profile && deleted[a.u.profile.school]) { const e = new HttpError(410, '🗑️ 우리 학교가 삭제되었어요. 새 학교를 골라 주세요.'); e.extra = { deleted: deleted[a.u.profile.school] }; throw e; }
     a.sid = profileSchool(a.u);
     if (a.sid < 0) fail('먼저 학교와 닉네임을 설정해 주세요.', 409);
     a.grade = g; // 문제 수준 (7 = 중1 … 12 = 고3)
@@ -752,8 +782,8 @@
       return newSession(key);
     },
     'POST /api/logout': async t => { if (getAuth(t)) { delete local.sessions[t]; save(); } return { ok: true }; },
-    'GET /api/me': async t => { const a = needLogin(t); await syncRole(a.u); return { user: publicUser(a.u), debug: !!a.s.debug, shared: isShared(), feat: 2, invite: await inviteOf(a.u) }; },
-    'GET /api/schools': async () => ({ custom: publicCustom() }),
+    'GET /api/me': async t => { const a = needLogin(t); await syncRole(a.u); return { user: publicUser(a.u), debug: !!a.s.debug, shared: isShared(), feat: 2, invite: await inviteOf(a.u), gone: Object.keys(deleted) }; },
+    'GET /api/schools': async () => ({ custom: publicCustom(), gone: Object.keys(deleted) }),
     'POST /api/profile': async (t, q, b) => {
       const a = needLogin(t), semester = Number(b.semester);
       if (semester !== 1 && semester !== 2) fail('학기를 골라 주세요.');
@@ -787,6 +817,7 @@
         schoolId = Number(b.schoolId);
         if (!Number.isInteger(schoolId) || schoolId < 0 || schoolId >= schoolCount()) fail('학교를 골라 주세요.');
         if (schoolId < BASE.length && BASE[schoolId].nk) fail('북한 학교는 고를 수 없어요.');
+        if (deleted[schoolKey(schoolById(schoolId))]) fail('🗑️ 삭제된 학교예요. 다른 학교를 골라 주세요.');
       }
       a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname, at: Date.now() };
       save();
@@ -800,7 +831,7 @@
       const chat = rt.feed.filter(m => m.t === 'chat' && (m.ch === 'all' || m.sid === a.sid)).map(m => Object.assign({}, m, { t: 'chat' }));
       await syncRole(a.u);
       if (LV !== 'e') warBook(a);
-      const res = { grade: a.grade, srv: a.srv, level: LV, wars: warView(rt), owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared(),
+      const res = { grade: a.grade, srv: a.srv, level: LV, wars: warView(rt), gone: Object.keys(deleted), owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared(),
         user: publicUser(a.u), shields: liveShields(rt), flags: flagView(), mission: missionView(a.u).ready, invite: await inviteOf(a.u) };
       publishCard(a.u);
       return res;
@@ -941,6 +972,24 @@
           text = `${name} 님을 운영자에서 해제했어요.`;
         }
         return { ok: true, text, staff: await staffView() };
+      }
+      if (b.act === 'delSchool' || b.act === 'undelSchool' || b.act === 'listDeleted') { // 🗑️ 학교 삭제 (개발자만)
+        if (u.role !== 'dev') fail('개발자만 학교를 삭제할 수 있어요.', 403);
+        const by = u.profile ? u.profile.nickname : '개발자';
+        if (b.act === 'delSchool') {
+          const id = idByKey.get(String(b.key || ''));
+          if (id == null) fail('삭제할 학교를 목록에서 골라 주세요.');
+          const msg = String(b.msg || '').replace(/[\u0000-\u0008\u000b-\u001f<>]/g, '').trim().slice(0, 300);
+          if (!msg) fail('그 학교 학생들에게 보낼 글(삭제한 까닭)을 써 주세요.');
+          const sc = schoolById(id);
+          await saveDeleted(Object.assign({}, deleted, { [b.key]: { key: b.key, name: sc.name, where: `${sc.sido} ${sc.sigungu}`, msg, by, at: Date.now() } }), by);
+        } else if (b.act === 'undelSchool') {
+          if (!deleted[b.key]) fail('삭제된 학교가 아니에요.');
+          const next = Object.assign({}, deleted);
+          delete next[b.key];
+          await saveDeleted(next, by);
+        }
+        return { ok: true, list: Object.values(deleted).sort((x, y) => y.at - x.at) };
       }
       if (b.act === 'grade') {
         const g = Number(b.grade);
@@ -1373,5 +1422,5 @@
     return a ? () => { emit = () => {}; listenFn = null; } : () => {};
   }
 
-  window.MLEBackend = { init, api, listen, isShared };
+  window.MLEBackend = { init, api, listen, isShared, gone: () => Object.keys(deleted) }; // gone: 삭제된 학교 키 (학교 고르기 화면이 늘 최신으로)
 })();
