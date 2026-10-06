@@ -13,6 +13,7 @@
   const PRAISE = ['정답이에요!', '잘했어요!', '최고예요!', '완벽해요!', '수학 천재!', '멋져요!'];
 
   let G = null;          // 지도 모양
+  let whereText = '';    // 지금 보고 있는 곳 글자
   let schools = [];      // 학교 목록 (지도의 실제 학교 + 직접 등록한 학교)
   let token = store.get('mle_token'), me = null, W = null, es = null, online = 0, sel = -1, streak = 0, best = 0, chatCh = 'school', wrongN = 0;
   const cheat = { unlocked: false, capture: false, defend: false };
@@ -51,6 +52,7 @@
   // 새 기능(코인·상점·미션·시즌·결투·운영자 초대)은 브라우저 안 게임 서버(backend.js)에서 돌아간다
   const FEAT = !!window.MLEBackend;
   let flagsOf = {}, shieldOf = new Map(), missionReady = 0, weakCells = [], inviteShown = false;
+  const rankBadge = k => `<span class="rkb${k < 3 ? ' r' + (k + 1) : ''}">${k + 1}</span>`; // 1·2·3등은 금·은·동
   const markOf = role => (role && S.MARK[role] ? `<span class="mark ${role}" title="${S.ROLE_NICK[role]}">${S.MARK[role]}</span>` : '');
   // 이름 + 운영자(✦)·개발자(♛) 표시 + 🧑‍🎨 꾸미기 (캐릭터 · 이름 테두리 · 칭호)
   const nameHTML = (nick, role, lk) => (lk && lk.av && lk.av !== '😀' ? `<span class="av">${esc(lk.av)}</span>` : '') + `<span class="nmx${lk && lk.fr ? ' fr fr-' + esc(lk.fr) : ''}">${esc(nick)}</span>` + markOf(role) + (lk && lk.ti ? ` <small class="ttl">${esc(lk.ti)}</small>` : '');
@@ -485,7 +487,7 @@
   function drawScenery(cp, SX, SY, free) {
     const out = (x, y) => x < -60 || y < -20 || x > vw + 60 || y > vh + 20;
     const label = (text, x, y, size, color) => {
-      ctx.font = `${size}px Jua, sans-serif`;
+      ctx.font = `800 ${size}px 'Pretendard Variable', Pretendard, sans-serif`;
       const w = ctx.measureText(text).width + 6;
       if (!free(x - w / 2, y - size / 2 - 1, w, size + 2)) return false;
       ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.strokeText(text, x, y);
@@ -516,7 +518,7 @@
     const boxes = [], free = (x, y, w, h) => { for (const b of boxes) if (x < b[0] + b[2] && x + w > b[0] && y < b[1] + b[3] && y + h > b[1]) return false; boxes.push([x, y, w, h]); return true; };
     const below = cp >= 11 ? Math.max(16, cp * 0.42) : 0; // 학교 표시 아래로 비켜 쓴다
     const draw = (list, size, color, minSize, dy) => {
-      ctx.font = `${size}px Jua, sans-serif`;
+      ctx.font = `800 ${size}px 'Pretendard Variable', Pretendard, sans-serif`;
       for (const r of list) {
         if (r.size < minSize) continue;
         const x = SX(r.x), y = SY(r.y) + dy;
@@ -1014,7 +1016,7 @@
     if (G.dongOf && (calm || !fast)) drawRegionLabels(cp, SX, SY);
     if (calm && G.dongOf) { // 지금 보고 있는 곳: 경기도 › 남양주시 › 호평동
       const c = hitTest((vw / 2 - view.x) / s, (vh / 2 - view.y) / s), text = c >= 0 ? '📍 ' + (cp < 2 ? G.sidoList[G.sidoOf[c]].name : cp < 9 ? G.sidoList[G.sidoOf[c]].name + ' › ' + G.sggs[G.sggOf[c]].name : regionName(c)) : '';
-      if ($('#where').textContent !== text) { $('#where').textContent = text; $('#where').hidden = !text; }
+      if (whereText !== text) { whereText = text; $('#where').textContent = text; $('#where').hidden = !text; } // 아이콘으로 바뀐 글자와 비교하지 않게 따로 기억
     }
     if (calm && (cp >= 34 || (scoping && cp >= 10))) { // 망원경이 있으면 멀리서도 방어 수가 보인다
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `bold ${Math.round(Math.max(9, Math.min(15, cp * 0.2)))}px sans-serif`;
@@ -1028,27 +1030,25 @@
     const my = mySid();
     if (calm && cp >= 8) { // 🏷️ 팔 땅, 🚪 탈출길 글자
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(Math.min(18, 8 + cp * 0.15))}px sans-serif`;
-      for (const i of offerOf.keys()) if (vis(i)) ctx.fillText('🏷️', SX(G.sx[i]), SY(G.sy[i]));
-      for (const i of exits) if (vis(i)) ctx.fillText('🚪', SX(G.sx[i]), SY(G.sy[i]));
+      const mk = Math.round(Math.min(26, 12 + cp * 0.15)), IC = window.MLEIcons; // 선 아이콘 배지
+      for (const i of offerOf.keys()) if (vis(i)) IC.draw(ctx, 'tag', SX(G.sx[i]), SY(G.sy[i]), mk, '#9333ea');
+      for (const i of exits) if (vis(i)) IC.draw(ctx, 'door', SX(G.sx[i]), SY(G.sy[i]), mk, '#16a34a');
       const t = Date.now();
-      for (const [i, until] of shieldOf) if (until > t && vis(i) && !defended.has(i)) ctx.fillText('🛡️', SX(G.sx[i]), SY(G.sy[i]));
-      if (scoping) for (const i of weakCells) if (vis(i) && !defended.has(i)) ctx.fillText('🎯', SX(G.sx[i]), SY(G.sy[i]));
+      for (const [i, until] of shieldOf) if (until > t && vis(i) && !defended.has(i)) IC.draw(ctx, 'shield', SX(G.sx[i]), SY(G.sy[i]), mk, '#2563eb');
+      if (scoping) for (const i of weakCells) if (vis(i) && !defended.has(i)) IC.draw(ctx, 'target', SX(G.sx[i]), SY(G.sy[i]), mk, '#e11d48');
     }
     if (cp >= 6) { // 🏗️ 건물 (땅 주인이 바뀌면 무너진 것)
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `${Math.round(Math.min(26, 10 + cp * 0.25))}px sans-serif`;
+      const bs = Math.round(Math.min(32, 14 + cp * 0.25));
       for (const [c, b] of Object.entries(builds)) {
         const i = +c;
         if (W.owner[i] !== b[1] || !vis(i)) continue;
-        const bd = S.BUILDINGS.find(x => x.id === b[0]), x = SX(G.sx[i]), y = SY(G.sy[i]);
-        if (b[0] === 'pole' && flagsOf[b[1]]) { ctx.fillStyle = flagsOf[b[1]].c; ctx.fillText(flagsOf[b[1]].m, x + 6, y - 8); }
-        if (bd) ctx.fillText(bd.icon, x, y);
+        const col = flagsOf[b[1]] ? flagsOf[b[1]].c : b[1] === mySid() ? '#d97706' : cssColor(b[1]);
+        window.MLEIcons.draw(ctx, b[0] === 'wall' ? 'wall' : b[0] === 'tower' ? 'tower' : 'pole', SX(G.sx[i]), SY(G.sy[i]), bs, col);
       }
     }
     if (treasures.size) { // 🎁 보물 상자: 멀리서도 보이게 통통 튄다
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const sz = Math.round(Math.max(15, Math.min(30, 12 + cp * 0.3))), bob = animate ? Math.sin(now / 260) * 3 : 0;
-      ctx.font = `${sz}px sans-serif`;
-      for (const i of treasures.keys()) if (vis(i)) ctx.fillText('🎁', SX(G.sx[i]), SY(G.sy[i]) - bob);
+      const sz = Math.round(Math.max(20, Math.min(34, 16 + cp * 0.3))), bob = animate ? Math.sin(now / 260) * 3 : 0;
+      for (const i of treasures.keys()) if (vis(i)) { const x = SX(G.sx[i]), y = SY(G.sy[i]) - bob; ctx.beginPath(); ctx.arc(x, y, sz * 0.62, 0, 7); ctx.fillStyle = 'rgba(255,214,10,.35)'; ctx.fill(); window.MLEIcons.draw(ctx, 'gift', x, y, sz, '#db2777', '#fff7d6'); }
     }
     if (cp >= 11 && (calm || !fast)) {
       for (let sid = 0; sid < W.home.length; sid++) {
@@ -1082,12 +1082,14 @@
     ctx.beginPath(); ctx.moveTo(x - r * 0.55, y + r * 0.45); ctx.lineTo(x - r * 0.55, y - r * 0.05); ctx.lineTo(x, y - r * 0.55); ctx.lineTo(x + r * 0.55, y - r * 0.05); ctx.lineTo(x + r * 0.55, y + r * 0.45); ctx.closePath();
     ctx.fillStyle = mine ? '#e8553d' : '#4a5563'; ctx.fill();
     if (!withLabel) return;
-    const text = (mine ? '⭐ ' : '') + flagMark(sid) + short(sid);
-    ctx.font = `${mine ? 15 : 13}px Jua, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    const w = ctx.measureText(text).width + 12, ly = y - r - 4;
-    ctx.fillStyle = mine ? 'rgba(232,85,61,.95)' : 'rgba(255,255,255,.92)';
-    roundRect(x - w / 2, ly - 19, w, 19, 9); ctx.fill();
-    ctx.fillStyle = mine ? '#fff' : '#23303b'; ctx.fillText(text, x, ly - 3);
+    const text = flagMark(sid) + short(sid), star = mine ? 15 : 0; // 우리 학교는 앞에 별 아이콘
+    ctx.font = `800 ${mine ? 15 : 13}px 'Pretendard Variable', Pretendard, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const w = ctx.measureText(text).width + 14 + star, ly = y - r - 4;
+    ctx.fillStyle = mine ? 'rgba(232,85,61,.96)' : 'rgba(255,255,255,.94)';
+    roundRect(x - w / 2, ly - 21, w, 21, 10.5); ctx.fill();
+    if (!mine) { ctx.strokeStyle = 'rgba(15,23,42,.12)'; ctx.lineWidth = 1; ctx.stroke(); }
+    ctx.fillStyle = mine ? '#fff' : '#1e293b'; ctx.fillText(text, x + star / 2, ly - 3.5);
+    if (mine) window.MLEIcons.draw(ctx, 'star', x - w / 2 + 13, ly - 10.5, 17, '#fff', false);
   }
   function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
@@ -1233,9 +1235,9 @@
     if (o >= 0 && hs < 0) tags.push(`<span class="tag">🛡️ 방어 <b>${d}</b></span>`);
     if (shielded(i)) tags.push(`<span class="tag" style="--c:#f5b301">✨ 방패가 지키는 중 · ${Math.ceil((shieldOf.get(i) - Date.now()) / 3600e3)}시간 남음</span>`);
     if (o >= 0 && !mine && hs < 0 && FEAT && !shut) tags.push('<span class="tag" style="--c:#e5484d">⚔️ 1:1 수학 결투로 뺏어요</span>');
+    const bd = builds[i] && W.owner[i] === builds[i][1] ? S.BUILDINGS.find(x => x.id === builds[i][0]) : null, ex = !mine && o >= 0 ? bExtra(i) : 0;
     if (!mine && hs < 0 && !cost.error && !shut) tags.push(`<span class="tag hot">${cost.far ? '🚀 멀리 있는 땅 · ' : cost.escape ? '🚪 탈출길 · ' : '⚔️ '}문제 <b>${cost.cost + ex}개</b> 풀면 뺏어요</span>`);
     if (treasures.has(i)) tags.push(`<span class="tag hot">🎁 보물 상자! 차지하면 <b>${esc(S.rewardText(treasures.get(i)))}</b></span>`);
-    const bd = builds[i] && W.owner[i] === builds[i][1] ? S.BUILDINGS.find(x => x.id === builds[i][0]) : null, ex = !mine && o >= 0 ? bExtra(i) : 0;
     if (bd) tags.push(`<span class="tag" style="--c:#8b5cf6">${bd.icon} ${esc(bd.name)} · ${esc(bd.desc)}</span>`);
     else if (ex) tags.push(`<span class="tag" style="--c:#8b5cf6">🗼 옆에 망루가 있어서 문제 +${ex}</span>`);
     if (G.jpCell && G.jpCell[i]) tags.push(`<span class="tag" style="--c:#c2410c">🗾 일본 땅 · 우리 땅 ${S.JP_MIN}칸 이상 + ⛵ 배로 건너가요${!G.sides[i] ? ' · 🌊 바닷가' : ''}</span>`);
@@ -1872,7 +1874,7 @@
   function chatLine(m) {
     const li = document.createElement('li'), mine = m.sid === mySid();
     li.className = 'chat' + (m.ch === 'school' ? ' school' : '');
-    li.innerHTML = `<span class="t">${new Date(m.at).toTimeString().slice(0, 5)}</span><span class="ch">${m.ch === 'school' ? '🏫' : m.ch === 'union' ? '🛡️' : '🌐'}</span><b style="color:${mine ? '#b45309' : cssColor(m.sid)}">${nameHTML(m.by, m.role, m)}</b><small>${esc(short(m.sid))}</small> ${esc(m.text != null ? m.text : S.CHAT[m.m] || '')}`;
+    li.innerHTML = `<span class="t">${new Date(m.at).toTimeString().slice(0, 5)}</span><span class="ch">${m.ch === 'school' ? '🏫' : m.ch === 'union' ? '🛡️' : '🌐'}</span><b style="color:${mine ? '#b45309' : cssColor(m.sid)}">${nameHTML(m.by, m.role, m)}</b><small>${esc(short(m.sid))}</small> <span class="no-ic">${esc(m.text != null ? m.text : S.CHAT[m.m] || '')}</span>`;
     $('#feed').prepend(li);
     while ($('#feed').children.length > 60) $('#feed').lastChild.remove();
     if ($('#paneFeed').hidden) $('#feedDot').hidden = false;
@@ -2081,7 +2083,7 @@
     $('#hudServer').textContent = `🌐 ${srvName()}`;
     $('#hudOnline').innerHTML = `<i></i>${online}명 접속 중`;
     $('#hudSchool').textContent = short(mySid());
-    $('#hudUser').innerHTML = `${esc((me.looks && me.looks.av) || '😀')} ${nameHTML(me.profile.nickname, me.role, Object.assign({}, me.looks, { av: '' }))} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
+    $('#hudUser').innerHTML = `<span class="av">${esc((me.looks && me.looks.av) || '😀')}</span> ${nameHTML(me.profile.nickname, me.role, Object.assign({}, me.looks, { av: '' }))} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
     $('#cheatBadge').hidden = !(cheat.capture || cheat.defend);
     $('#btnAdmin').hidden = !me.role;
     $('#btnSound').classList.toggle('off', !Sound.on); $('#btnSound').querySelector('span').textContent = Sound.on ? '소리' : '소리 꺼짐';
@@ -2101,7 +2103,7 @@
     for (let i = 0; i < G.n; i++) { const o = W.owner[i]; if (o >= 0) cnt.set(o, (cnt.get(o) || 0) + 1); }
     const arr = [...cnt.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
     const my = mySid(), rank = arr.findIndex(e => e[0] === my) + 1, mine = cnt.get(my) || 0;
-    const medal = k => ['🥇', '🥈', '🥉'][k] || k + 1;
+    const medal = rankBadge;
     $('#board').innerHTML = arr.slice(0, 10).map(([sid, n], k) =>
       `<li class="${sid === my ? 'me' : ''}" data-sid="${sid}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(sid)}"></i><span class="nm">${esc(flagMark(sid) + short(sid))}</span><b>${n}</b></li>`).join('');
     $('#myRank').innerHTML = `⭐ 우리 학교 <b>${rank || '-'}위</b> · 땅 <b>${mine}</b>칸 · 뺏을 수 있는 땅 <b>${frontier.size}</b>칸` + (exits.size ? '<br>🚪 빈 땅이 막혔어요! 초록 점선 <b>탈출길</b>로 빠져나가요.' : '') + (me.grade >= 7 ? `<br>🚀 중학생부터: 멀리 있는 땅도 문제 ${S.FAR_COST_MH}개로 뺏을 수 있어요.` : me.grade >= S.FAR_GRADE ? `<br>🚀 ${S.FAR_GRADE}학년부터: 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏을 수 있어요.` : '');
@@ -2115,7 +2117,7 @@
     rankTab = tab || rankTab;
     $$('.rtab').forEach(b => b.classList.toggle('on', b.dataset.t === rankTab));
     openM('rankModal');
-    const my = mySid(), medal = k => ['🥇', '🥈', '🥉'][k] || k + 1, TOP = 50;
+    const my = mySid(), medal = rankBadge, TOP = 50;
     const where = sid => { const sc = schools[sid]; return sc ? `${SIDO_FULL[sc.sido] || sc.sido} ${sc.sigungu}` : ''; };
     let head = '', rows = [], sum = '';
     if (rankTab === 'player') {
@@ -2152,7 +2154,7 @@
   async function loadPlayers() {
     const d = await api('/api/players');
     if (d.error) return;
-    const medal = k => ['🥇', '🥈', '🥉'][k] || k + 1;
+    const medal = rankBadge;
     $('#players').innerHTML = d.top.length ? d.top.map((p, k) =>
       `<li class="${p.me ? 'me' : ''}"><span class="rk">${medal(k)}</span><i style="background:${cssColor(p.sid)}"></i><span class="nm">${nameHTML(p.nick, p.role, p)} <small>${esc(short(p.sid))}</small></span><b>${p.captures}</b>${p.votes != null && !p.me && !p.role ? `<button type="button" class="vote-btn ${p.voted ? 'on' : ''}" data-vote="${esc(p.acc)}" data-nick="${esc(p.nick)}" data-n="${p.votes}" title="밴 투표 (${S.VOTE_BAN}표면 정지)">🗳️${p.votes ? ' ' + p.votes : ''}</button>` : ''}</li>`).join('') : '<li class="muted">아직 아무도 없어요</li>';
     $('#myPlayer').innerHTML = `😀 나 <b>${d.rank || '-'}위</b> / ${d.total}명 · 뺏은 땅 <b>${me.stats.captures}</b> · 푼 문제 <b>${me.stats.solved}</b>`;
@@ -2412,8 +2414,8 @@
       ctx.setLineDash([10 / view.s, 8 / view.s]); ctx.lineWidth = 3 / view.s; ctx.strokeStyle = 'rgba(255,255,255,.9)';
       ctx.beginPath(); ctx.moveTo(s.x0, s.y0); ctx.lineTo(x, y); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.font = `${30 / view.s}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('⛵', x, y - 6 / view.s);
+      ctx.scale(1 / view.s, 1 / view.s); // 지도 좌표 → 화면 크기로 그린다
+      window.MLEIcons.draw(ctx, 'sail', x * view.s, (y - 6 / view.s) * view.s, 30, '#1d4ed8');
       ctx.restore();
     }
     return true;

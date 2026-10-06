@@ -23,7 +23,7 @@ fs.writeFileSync(path.join(out, 'map.json'), map.clientJSON);
 const b64 = map.clientBin.toString('base64'), PART = 12 * 1024 * 1024, parts = [];
 for (const f of fs.readdirSync(out)) if (/^map\.bin/.test(f)) fs.rmSync(path.join(out, f));
 for (let k = 0; k * PART < b64.length; k++) { const name = `map.bin.${k}.txt`; fs.writeFileSync(path.join(out, name), b64.slice(k * PART, (k + 1) * PART)); parts.push(name); }
-for (const f of ['style.css', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js']) fs.copyFileSync(path.join(root, 'public', f), path.join(out, f));
+for (const f of ['style.css', 'js/icons.js', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/backend.js', 'js/app.js']) fs.copyFileSync(path.join(root, 'public', f), path.join(out, f));
 
 const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const title = html.match(/<title>[\s\S]*?<\/title>/)[0];
@@ -56,7 +56,7 @@ for (const [lv, m] of Object.entries(lvMaps)) {
   mapUrls[lv] = [`${base}.json?v=${mvl}`, `${base}.bin?v=${mvl}`]; // 지도 주소에 판 번호를 붙여 새 지도면 새로 받게
   ver.update(mvl);
 }
-for (const f of ['style.css', 'manifest.webmanifest', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/firebase-config.js', 'js/backend.js', 'js/app.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png']) {
+for (const f of ['style.css', 'manifest.webmanifest', 'js/icons.js', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/firebase-config.js', 'js/backend.js', 'js/app.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png']) {
   fs.copyFileSync(path.join(root, 'public', f), path.join(app, f)); ver.update(fs.readFileSync(path.join(app, f)));
 }
 const v = ver.digest('hex').slice(0, 10);

@@ -4,7 +4,7 @@
 const VERSION = 'dev', MAPS = []; // tools/build-static.js 가 만들 때마다 판 번호와 지도 주소(초·중·고)를 넣는다
 const CACHE = 'mle-' + VERSION, MAP_CACHE = 'mle-maps'; // 지도는 판이 바뀌어도 그대로 두는 저장소에 (같은 지도를 또 받지 않게)
 const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png',
-  'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/firebase-config.js', 'js/backend.js', 'js/app.js'];
+  'js/icons.js', 'js/intro.js', 'js/shared.js', 'js/problems.js', 'js/firebase-config.js', 'js/backend.js', 'js/app.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); // 지도는 처음 열 때 자기 학교급 것만 받아 둔다
