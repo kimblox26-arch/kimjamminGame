@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<style>@font-face{font-family:'Black Han Sans';src:url(fonts/BlackHanSans.ttf)}@font-face{font-family:'Jua';src:url(fonts/Jua.ttf)}</style>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body><canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// 매뜨 땅먹 홍보 영상 (세로 1080×1920 · 128 BPM · 48박 = 22.5초). render(t) 가 t초의 한 장면을 그린다 (늘 같은 그림)
+const W = 1080, H = 1920, BT = 60 / 128, c = document.getElementById('c'), mainCtx = c.getContext('2d');
+let ctx = mainCtx, hookFrame = null; // hookFrame: 첫 장면 (끝에서 다시 이어 붙이기)
+const NAMES = ['map_zoom', 'map_zoom_after', 'map_mid', 'map_far', 'map_full', 'popup', 'quiz', 'hub', 'rank_vs', 'rank_quiz', 'rank_win', 'season', 'event', 'landmark', 'adv', 'boss', 'ranking'];
+const img = {};
+const FONT = "'Black Han Sans', 'Noto Color Emoji', sans-serif", FONT2 = "'Jua', 'Noto Color Emoji', sans-serif";
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const outBack = x => { x = clamp(x); const k = 1.9; return 1 + (k + 1) * Math.pow(x - 1, 3) + k * Math.pow(x - 1, 2); };
+const outCubic = x => 1 - Math.pow(1 - clamp(x), 3);
+const inOut = x => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const rnd = s => { const x = Math.sin(s * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }; // 늘 같은 "무작위"
+let target = [540, 900]; // 새로 차지한 땅 (화면 좌표)
+const TIERS = [['브론즈', '#c07a3e'], ['실버', '#8b9bb4'], ['골드', '#e3a008'], ['플레티넘', '#0fb5a4'], ['다이아', '#3b82f6'], ['에바', '#a855f7'], ['네메시스', '#dc2626'], ['아크블랙 네메시스', '#111827']];
+const GEM = new Path2D('M16 1.5l13 7.5v14l-13 7.5-13-7.5V9z'), GEM_TOP = new Path2D('M16 1.5l13 7.5-13 7.4L3 9z'), STAR = new Path2D('M16 7.5l2.3 5 5.4.6-4 3.7 1.1 5.3L16 19.4l-4.8 2.7 1.1-5.3-4-3.7 5.4-.6z');
+
+function bg(name, s = 1, fx = .5, fy = .5, a = 1, dx = 0, dy = 0) { // 화면 가득 게임 화면 (s: 확대, f: 확대 중심)
+  const im = img[name]; if (!im) return;
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(W * fx + dx, H * fy + dy); ctx.scale(s, s); ctx.translate(-W * fx, -H * fy); ctx.drawImage(im, 0, 0, W, H); ctx.restore();
+}
+function shade(top = .55, bottom = .15) { // 글자가 잘 보이게 위쪽을 어둡게
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, `rgba(10,14,30,${top})`); g.addColorStop(.42, `rgba(10,14,30,${top * .35})`); g.addColorStop(.75, 'rgba(10,14,30,0)'); g.addColorStop(1, `rgba(10,14,30,${bottom})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+// 여러 색 글자 한 줄: parts = [[글자, 색], ...]
+function line(parts, x, y, size, sc = 1, rot = 0, font = FONT) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.font = `${size}px ${font}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const ws = parts.map(p => ctx.measureText(p[0]).width), tw = ws.reduce((a, b) => a + b, 0);
+  if (tw * sc > 960) ctx.scale(960 / (tw * sc), 960 / (tw * sc)); // 화면 밖으로 나가지 않게 줄인다 (튀어나올 때 커지는 것까지)
+  let px = -tw / 2;
+  parts.forEach((p, k) => {
+    ctx.lineWidth = size * .2; ctx.strokeStyle = '#0b1020'; ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = size * .25; ctx.shadowOffsetY = size * .08;
+    ctx.strokeText(p[0], px, 0); ctx.shadowColor = 'transparent';
+    ctx.fillStyle = p[1] || '#fff'; ctx.fillText(p[0], px, 0); px += ws[k];
+  });
+  ctx.restore();
+}
+const pop = (t, t0, d = .32) => (t < t0 ? 0 : outBack((t - t0) / d)); // 튀어나오기 (0 → 1, 살짝 넘쳤다 돌아옴)
+const popIn = (t, t0, d = .22) => (t < t0 ? 1.18 : 1.18 - .18 * outCubic((t - t0) / d)); // 첫 장면처럼 처음부터 보이게 (크게 → 제자리)
+function flash(t, t0, d = .12, a = .65) { if (t >= t0 && t < t0 + d) { ctx.fillStyle = `rgba(255,255,255,${a * (1 - (t - t0) / d)})`; ctx.fillRect(0, 0, W, H); } }
+function shake(t, t0, amp = 22, d = .35) { if (t < t0 || t > t0 + d) return [0, 0]; const k = 1 - (t - t0) / d; return [Math.sin(t * 90) * amp * k, Math.cos(t * 77) * amp * k]; }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function confetti(t, t0, x0, y0, n = 90, spread = 1) {
+  if (t < t0) return; const dt = t - t0; if (dt > 1.8) return;
+  const cols = ['#ffd23f', '#ff4d8d', '#4fb0ea', '#22c55e', '#a855f7', '#ff7a1a', '#ffffff'];
+  for (let i = 0; i < n; i++) {
+    const a = rnd(i) * Math.PI * 2, v = (500 + rnd(i + 99) * 1100) * spread, vx = Math.cos(a) * v, vy = Math.sin(a) * v - 700;
+    const x = x0 + vx * dt, y = y0 + vy * dt + 1400 * dt * dt; if (y > H + 40) continue;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(dt * (6 + rnd(i + 7) * 10)); ctx.globalAlpha = clamp(1.8 - dt);
+    ctx.fillStyle = cols[i % cols.length]; ctx.fillRect(-11, -6, 22, 12); ctx.restore();
+  }
+}
+function coins(t, t0, x0, y0, n = 9) {
+  if (t < t0) return; const dt = t - t0; if (dt > 1.2) return;
+  ctx.font = `86px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + (rnd(i + 40) - .5) * 2.2, v = 900 + rnd(i + 3) * 700, x = x0 + Math.cos(a) * v * dt, y = y0 + Math.sin(a) * v * dt + 1700 * dt * dt; ctx.globalAlpha = clamp(1.2 - dt); ctx.fillText('🪙', x, y); }
+  ctx.globalAlpha = 1;
+}
+function gem(k, x, y, size, glow = 0) { // 랭크 티어 엠블럼 (게임과 같은 모양)
+  const col = TIERS[k][1], ark = k === 7, pips = k < 6 ? 3 : 0;
+  ctx.save(); ctx.translate(x - size / 2, y - size / 2); ctx.scale(size / 32, size / 32);
+  ctx.shadowColor = ark ? 'rgba(239,68,68,.95)' : col; ctx.shadowBlur = 18 + glow * 30;
+  ctx.fillStyle = col; ctx.fill(GEM); ctx.shadowBlur = 0;
+  ctx.lineWidth = 1.4; ctx.strokeStyle = ark ? '#ef4444' : 'rgba(255,255,255,.95)'; ctx.stroke(GEM);
+  ctx.fillStyle = `rgba(255,255,255,${ark ? .08 : .3})`; ctx.fill(GEM_TOP);
+  if (k >= 6) { ctx.fillStyle = ark ? '#ef4444' : '#fff'; ctx.fill(STAR); }
+  for (let i = 0; i < pips; i++) { ctx.beginPath(); ctx.arc(16 + (i - 1) * 6, 24.5, 2.1, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); }
+  ctx.restore();
+}
+function rays(t, x, y, col, a = .22) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(t * .6); ctx.globalAlpha = a;
+  for (let i = 0; i < 16; i++) { ctx.rotate(Math.PI / 8); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(1600, -120); ctx.lineTo(1600, 120); ctx.closePath(); ctx.fillStyle = i % 2 ? col : '#ffffff'; ctx.fill(); }
+  ctx.restore();
+}
+function pill(txt, x, y, size, fill, color = '#fff', sc = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); ctx.font = `${size}px ${FONT2}`; const w = ctx.measureText(txt).width + size * 1.1, h = size * 1.55;
+  ctx.shadowColor = 'rgba(0,0,0,.3)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8; rr(-w / 2, -h / 2, w, h, h / 2); ctx.fillStyle = fill; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, 0, size * .05); ctx.restore();
+}
+// 두 줄 자막 (위쪽 안전 구역)
+function caption(t, t0, a, b, y = 330, both = false) {
+  const s1 = popIn(t, t0), s2 = both ? popIn(t, t0) : pop(t, t0 + .08) || 0;
+  line(a, W / 2, y, 104, s1);
+  if (b) line(b, W / 2, y + 150, 128, Math.max(.001, s2), -0.02);
+}
+
+// ---------------- 장면들 ----------------
+function hook(t, after = false, tb = 0) { // 0~6박: 3초 안에 풀면 이 땅 우리 학교 거! (3 · 2 · 1)
+  const z = 1 + .05 * clamp(t / 2.8);
+  bg('map_zoom', z, target[0] / W, target[1] / H);
+  shade(.6, .1);
+  const r = 90 + 14 * Math.sin(t * 9), [x, y] = target; // 이 땅! 표시
+  ctx.save(); ctx.setLineDash([26, 18]); ctx.lineDashOffset = -t * 120; ctx.lineWidth = 12; ctx.strokeStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(x, y, r * 1.6, 0, 7); ctx.stroke(); ctx.restore();
+  caption(t, 0, [['3초 안에 풀면', '#fff']], [['이 땅 ', '#fff'], ['우리 학교 거!', '#ffd23f']], 330, true);
+  line([['👆 이 땅!', '#ffd23f']], x, y + r * 1.6 + 70, 66, 1 + .06 * Math.sin(t * 10));
+  // 문제 카드
+  const cy = 760, k = Math.floor(clamp(t / (2 * BT), 0, 2.999)), num = 3 - k, beat = (t % (2 * BT)) / (2 * BT);
+  ctx.save(); ctx.translate(W / 2, cy); ctx.rotate(Math.sin(t * 3) * .015); ctx.scale(popIn(t, 0), popIn(t, 0));
+  ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 18; rr(-400, -150, 800, 300, 60); ctx.fillStyle = '#fff'; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 10; ctx.strokeStyle = '#ff7a1a'; ctx.stroke();
+  ctx.font = `170px ${FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const w1 = ctx.measureText('8 × 7 = ').width, w2 = ctx.measureText('?').width, x0 = -(w1 + w2) / 2;
+  ctx.fillStyle = '#1e293b'; ctx.fillText('8 × 7 = ', x0, 12); ctx.fillStyle = '#ff7a1a'; ctx.fillText('?', x0 + w1, 12);
+  ctx.restore();
+  // 초읽기 동그라미
+  const ccx = 900, ccy = 610, sc = .78 * (1 + .25 * Math.max(0, 1 - beat * 4)); // 카드 모서리의 초읽기 배지
+  ctx.save(); ctx.translate(ccx, ccy); ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.arc(0, 0, 120, 0, 7); ctx.fillStyle = '#ef4444'; ctx.shadowColor = 'rgba(239,68,68,.7)'; ctx.shadowBlur = 40; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 16; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 104, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - (t / (6 * BT)))); ctx.stroke();
+  ctx.font = `170px ${FONT}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(num), 0, 10);
+  ctx.restore();
+}
+function reveal(t) { // 6~8박: 정답 56! 땅 획득
+  const lt = t - 6 * BT, [sx, sy] = shake(t, 6 * BT, 18, .3);
+  bg('map_zoom', 1.05, target[0] / W, target[1] / H, 1 - clamp(lt / .12), sx, sy);
+  bg('map_zoom_after', 1.12 - .07 * outCubic(lt / .4), target[0] / W, target[1] / H, clamp(lt / .12), sx, sy);
+  shade(.55, .1);
+  const r = 90 + 160 * outCubic(lt / .6); ctx.save(); ctx.globalAlpha = clamp(1 - lt / .7); ctx.lineWidth = 16; ctx.strokeStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(target[0], target[1], r, 0, 7); ctx.stroke(); ctx.restore();
+  caption(t, 6 * BT, [['정답! ', '#4ade80'], ['8 × 7 = 56', '#fff']], [['땅 획득 ', '#ffd23f'], ['🎉', '#fff']]);
+  ctx.save(); ctx.translate(W / 2, 760); const s = pop(t, 6 * BT, .3); ctx.scale(s, s);
+  rr(-330, -120, 660, 240, 60); ctx.fillStyle = '#22c55e'; ctx.shadowColor = 'rgba(34,197,94,.6)'; ctx.shadowBlur = 50; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.font = `170px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText('56 ⭕', 0, 10); ctx.restore();
+  confetti(t, 6 * BT, target[0], target[1], 110);
+  coins(t, 6 * BT + .1, W / 2, 760);
+  flash(t, 6 * BT, .14, .8);
+}
+function zoomOut(t) { // 8~12박: 전국 초·중·고 1만 2천 곳
+  const b = t / BT, k = clamp(Math.floor(b - 8), 0, 3), lt = t - (8 + k) * BT, names = ['map_zoom_after', 'map_mid', 'map_far', 'map_full'];
+  bg(names[k], 1.35 - .35 * outCubic(lt / .3) + (k === 3 ? -.0 : 0), .5, k === 3 ? .5 : .45);
+  shade(.6, .1); flash(t, (8 + k) * BT, .08, .35);
+  const n = Math.round(11983 * outCubic(clamp((t - 8 * BT) / (3.3 * BT))));
+  line([['진짜 한반도 지도 위', '#fff']], W / 2, 320, 96, popIn(t, 8 * BT));
+  line([['전국 초·중·고', '#fff']], W / 2, 470, 120, pop(t, 8 * BT + .06));
+  line([[n.toLocaleString() + '곳', '#ffd23f']], W / 2, 640, 190, Math.max(.001, pop(t, 8 * BT + .12)) * (1 + .04 * Math.sin(t * 20) * (n < 11983 ? 1 : 0)));
+}
+function cut(t, b0, name, a, b2, opt = {}) { // 게임 화면 한 컷 + 자막
+  const lt = t - b0 * BT, [sx, sy] = shake(t, b0 * BT, opt.shake || 0, .35);
+  bg(name, (opt.s0 || 1.18) - ((opt.s0 || 1.18) - (opt.s1 || 1.02)) * outCubic(lt / .3) + (opt.drift || .03) * lt, opt.fx || .5, opt.fy || .55, 1, sx, sy);
+  shade(opt.dark != null ? opt.dark : .62, .1);
+  if (a) caption(t, b0 * BT, a, b2, opt.y || 330);
+  flash(t, b0 * BT, .09, .45);
+}
+function tiers(t) { // 20~24박: 티어가 반 박마다 하나씩!
+  const lt = t - 20 * BT, k = clamp(Math.floor(lt / (BT / 2)), 0, 7), kt = lt - k * BT / 2, col = TIERS[k][1];
+  const g = ctx.createRadialGradient(W / 2, 900, 50, W / 2, 900, 1300); g.addColorStop(0, k === 7 ? '#3b0d0d' : '#1e1b4b'); g.addColorStop(1, '#05060f'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  rays(t, W / 2, 920, k === 7 ? '#ef4444' : col, .16 + (k === 7 ? .1 : 0));
+  const [sx, sy] = k === 7 ? shake(t, 23.5 * BT, 26, .4) : [0, 0];
+  ctx.save(); ctx.translate(sx, sy);
+  const s = .8 + .25 * outBack(kt / .2);
+  gem(k, W / 2, 920, 470 * s, k === 7 ? 1 : 0);
+  line([[TIERS[k][0], '#fff']], W / 2, 1300, k === 7 ? 104 : 140, outBack(kt / .18));
+  ctx.restore();
+  line([['랭크 티어 ', '#fff'], ['올려 볼까?', '#ffd23f']], W / 2, 330, 100, popIn(t, 20 * BT));
+  for (let i = 0; i < 8; i++) { ctx.globalAlpha = i <= k ? 1 : .25; gem(i, W / 2 + (i - 3.5) * 112, 1480, i === k ? 96 : 74); } ctx.globalAlpha = 1;
+  if (k === 7) { confetti(t, 23.5 * BT, W / 2, 920, 120, 1.2); flash(t, 23.5 * BT, .14, .7); }
+}
+function cta(t) { // 40~48박: 매뜨 땅먹 · 무료 · 댓글 유도
+  const lt = t - 40 * BT;
+  bg('map_full', 1.15 + .04 * lt, .5, .45);
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(37,99,235,.86)'); g.addColorStop(1, 'rgba(15,23,42,.9)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  rays(t, W / 2, 560, '#ffd23f', .1);
+  const [sx, sy] = shake(t, 40 * BT, 24, .4);
+  ctx.save(); ctx.translate(sx, sy);
+  const ic = img.icon, is = 300 * pop(t, 40 * BT, .4), bob = Math.sin(t * 4) * 12;
+  if (ic && is > 1) { ctx.save(); ctx.translate(W / 2, 560 + bob); ctx.rotate(Math.sin(t * 2.5) * .06); ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 40; rr(-is / 2, -is / 2, is, is, is * .22); ctx.clip(); ctx.drawImage(ic, -is / 2, -is / 2, is, is); ctx.restore(); }
+  line([['매뜨 ', '#fff'], ['땅먹', '#ffd23f']], W / 2, 860, 200, Math.max(.001, pop(t, 40 * BT + .1, .4)));
+  line([['수학 풀고 우리 학교 땅 넓히기', '#fff']], W / 2, 1010, 70, Math.max(.001, pop(t, 41 * BT)), 0, FONT2);
+  const chips = [['💸 무료', '#16a34a'], ['🚫 광고 없음', '#dc2626'], ['📱 설치 없이 바로', '#7c3aed']];
+  ctx.font = `42px ${FONT2}`; const cw = chips.map(([txt]) => ctx.measureText(txt).width + 42 * 1.1), gap = 22, tot = cw.reduce((a, b) => a + b, 0) + gap * 2;
+  let cx0 = W / 2 - tot / 2;
+  chips.forEach(([txt, col], i) => { pill(txt, cx0 + cw[i] / 2, 1130, 42, col, '#fff', Math.max(.001, pop(t, 42 * BT + i * .08))); cx0 += cw[i] + gap; });
+  const sb = pop(t, 43 * BT);
+  if (sb > 0) { // 검색창
+    ctx.save(); ctx.translate(W / 2, 1270); ctx.scale(sb, sb); rr(-410, -70, 820, 140, 70); ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.3)'; ctx.shadowBlur = 30; ctx.fill(); ctx.shadowColor = 'transparent';
+    const full = '매뜨 땅먹', shown = full.slice(0, clamp(Math.floor((t - 43 * BT) / .09), 0, full.length));
+    ctx.font = `72px ${FONT2}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = '#1e293b'; ctx.fillText('🔍 ' + shown + (Math.floor(t * 4) % 2 ? '|' : ''), -350, 4); ctx.restore();
+    ctx.font = `44px ${FONT2}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillText('math-land-eater.github.io', W / 2, 1385);
+  }
+  const cb = pop(t, 44 * BT);
+  if (cb > 0) { line([['댓글에 ', '#fff'], ['우리 학교 이름', '#ffd23f'], [' 남겨줘 👇', '#fff']], W / 2, 1500, 74, cb * (1 + .03 * Math.sin(t * 8))); }
+  ctx.restore();
+  flash(t, 40 * BT, .16, .85);
+  // 마지막 두 박: 처음 장면으로 자연스럽게 (다시 보기)
+  if (t > 46 * BT && hookFrame) { ctx.globalAlpha = inOut((t - 46 * BT) / (2 * BT)); ctx.drawImage(hookFrame, 0, 0); ctx.globalAlpha = 1; }
+}
+
+window.render = t => {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const b = t / BT;
+  if (b < 6) hook(t);
+  else if (b < 8) reveal(t);
+  else if (b < 12) zoomOut(t);
+  else if (b < 14) cut(t, 12, 'popup', [['다른 학교 땅도', '#fff']], [['문제 풀어 뺏기 ', '#ffd23f'], ['⚔️', '#fff']], { fy: .6 });
+  else if (b < 16) cut(t, 14, 'quiz', [['모르면 힌트 보고', '#fff']], [['내 학년 문제만 ', '#ffd23f'], ['✏️', '#fff']], { fy: .5 });
+  else if (b < 18) cut(t, 16, 'rank_vs', [['실시간 1:1', '#fff']], [['수학 배틀 ', '#ff4d8d'], ['🔥', '#fff']], { shake: 30, fy: .45, s0: 1.3 });
+  else if (b < 19) cut(t, 18, 'rank_quiz', [['먼저 7문제 푸는 쪽이', '#fff']], [['승리!', '#ffd23f']], { fy: .45 });
+  else if (b < 20) cut(t, 19, 'rank_win', [['이겼다! ', '#4ade80'], ['승급!', '#ffd23f']], null, { fy: .45, shake: 14 });
+  else if (b < 24) tiers(t);
+  else if (b < 26) cut(t, 24, 'landmark', [['주말엔', '#fff']], [['전국 학교 대항전 ', '#ffd23f'], ['🏟️', '#fff']], { fy: .36, s0: 1.35, s1: 1.15 });
+  else if (b < 28) cut(t, 26, 'event', [['남산타워 · 독도 · 한라산', '#fff']], [['랜드마크 쟁탈전!', '#ffd23f']], { fy: .45 });
+  else if (b < 30) cut(t, 28, 'boss', [['보스 잡고 ', '#fff'], ['👾', '#fff']], [['모험 떠나기 ', '#ffd23f'], ['🗺️', '#fff']], { fy: .4, shake: 10 });
+  else if (b < 32) cut(t, 30, 'adv', [['서울부터 독도까지', '#fff']], [['8개 지역 정복', '#ffd23f']], { fy: .45 });
+  else if (b < 34) cut(t, 32, 'season', [['시즌 패스 보상 ', '#fff'], ['🎁', '#fff']], [['한정 캐릭터 · 칭호', '#ffd23f']], { fy: .45 });
+  else if (b < 36) cut(t, 34, 'hub', [['할 게 엄청 많음 ', '#fff'], ['ㅋㅋ', '#ffd23f']], null, { fy: .45 });
+  else if (b < 40) { const lt = t - 36 * BT, [sx, sy] = shake(t, 36 * BT, 6 + lt * 10, 4 * BT); bg('ranking', 1.05 + .08 * lt, .5, .45, 1, sx, sy); shade(.62, .1); caption(t, 36 * BT, [['우리 학교는', '#fff']], [['전국 몇 등? ', '#ffd23f'], ['🏆', '#fff']]); flash(t, 36 * BT, .09, .45); }
+  else cta(t);
+};
+window.ready = (async () => {
+  const ALL = document.querySelector('script').textContent.replace(/[^\uAC00-\uD7A3]/g, '') + ' 0123456789,.:·!?×=|-ㅋabcdefghijklmnopqrstuvwxyz'; // 영상에 나오는 모든 글자 (글꼴 조각을 다 받아 둔다)
+  for (let k = 0; k < 5; k++) { try { await document.fonts.load(`100px 'Black Han Sans'`, ALL); await document.fonts.load(`100px 'Jua'`, ALL); if (document.fonts.check(`100px 'Black Han Sans'`)) break; } catch (e) { /* 다시 */ } await new Promise(r => setTimeout(r, 1500)); }
+  const load = (k, src) => new Promise(res => { const im = new Image(); im.onload = () => { img[k] = im; res(); }; im.onerror = () => res(); im.src = src; });
+  await Promise.all([...NAMES.map(n => load(n, 'shots/' + n + '.png')), load('icon', 'icon.png')]);
+  // 🟨 차지하는 장면: 우리 땅(노랑) 옆 회색 땅 덩어리를 찾아 노랗게 칠한 '차지한 뒤' 그림을 만든다 (칸 테두리는 살린다)
+  try {
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img.map_zoom, 0, 0, W, H); const id = x.getImageData(0, 0, W, H), d = id.data;
+    const isGray = k => { const r = d[k], g = d[k + 1], b2 = d[k + 2], mx = Math.max(r, g, b2), mn = Math.min(r, g, b2), av = (r + g + b2) / 3; return mx - mn < 34 && av > 150; };
+    let seed = -1, best = 1e9;
+    for (let yy = 900; yy < 1250; yy += 3) for (let xx = 480; xx < 820; xx += 3) { const k = (yy * W + xx) * 4; if (!isGray(k)) continue; const dd = (xx - 630) ** 2 + (yy - 1040) ** 2; if (dd < best) { best = dd; seed = yy * W + xx; } }
+    if (seed >= 0) {
+      const sx0 = seed % W, sy0 = Math.floor(seed / W), seen = new Uint8Array(W * H), st = [seed]; let n = 0, mx = 0, my = 0;
+      while (st.length && n < 90000) {
+        const i = st.pop(); if (seen[i]) continue; seen[i] = 1;
+        const px = i % W, py = (i - px) / W; if ((px - sx0) ** 2 + (py - sy0) ** 2 > 230 * 230) continue;
+        const k = i * 4; if (!isGray(k)) continue;
+        const av = (d[k] + d[k + 1] + d[k + 2]) / 3, lift = Math.max(0, Math.min(1, (av - 200) / 40)); // 밝은 테두리는 연한 노랑
+        d[k] = 255; d[k + 1] = Math.round(193 + 50 * lift); d[k + 2] = Math.round(7 + 160 * lift);
+        n++; mx += px; my += py;
+        if (px > 0) st.push(i - 1); if (px < W - 1) st.push(i + 1); if (py > 0) st.push(i - W); if (py < H - 1) st.push(i + W);
+      }
+      if (n > 200) { x.putImageData(id, 0, 0); img.map_zoom_after = cv; target = [mx / n, my / n]; window.diffN = n; }
+    }
+  } catch (e) { window.diffErr = String(e); }
+  hookFrame = document.createElement('canvas'); hookFrame.width = W; hookFrame.height = H; ctx = hookFrame.getContext('2d'); hook(0); ctx = mainCtx;
+  render(0);
+  return { target, n: Object.keys(img).length, diff: window.diffN, err: window.diffErr, font: document.fonts.check(`100px 'Black Han Sans'`) && document.fonts.check(`100px 'Jua'`) };
+})();
+</script></body></html>
