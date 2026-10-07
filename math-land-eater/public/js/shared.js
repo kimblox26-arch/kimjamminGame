@@ -215,10 +215,11 @@
   // ---------- 🧑‍🎨 내 캐릭터 꾸미기: 캐릭터(av) · 칭호(ti) · 이름 테두리(fr). need: [기록, 수] 이 있어야 살 수 있다 ----------
   const LOOKS = {
     av: [{ id: '😀', price: 0 }, { id: '🐯', price: 30 }, { id: '🐶', price: 30 }, { id: '🐱', price: 30 }, { id: '🦊', price: 30 }, { id: '🐼', price: 30 }, { id: '🐸', price: 30 }, { id: '🐧', price: 30 },
-      { id: '🦉', price: 30 }, { id: '🐬', price: 30 }, { id: '🦄', price: 60 }, { id: '🐲', price: 60 }, { id: '🤖', price: 60 }, { id: '👽', price: 60 }, { id: '🦖', price: 60 }, { id: '👑', price: 150 }],
+      { id: '🦉', price: 30 }, { id: '🐬', price: 30 }, { id: '🦄', price: 60 }, { id: '🐲', price: 60 }, { id: '🤖', price: 60 }, { id: '👽', price: 60 }, { id: '🦖', price: 60 }, { id: '👑', price: 150 },
+      ...['🦅', '🐳', '🦁', '🦚', '🐺', '🦋', '🦈', '🐝'].map(id => ({ id, price: 0, pass: true }))],
     ti: [{ id: '', price: 0 }, { id: '수학 새싹', price: 20 }, { id: '계산 달인', price: 40 }, { id: '땅의 왕', price: 60, need: ['captures', 50] }, { id: '보물 사냥꾼', price: 50, need: ['treasures', 3] },
       { id: '레이드 용사', price: 50, need: ['raidWins', 1] }, { id: '수학 천재', price: 100, need: ['solved', 500] }, { id: '전설의 학생', price: 200, need: ['solved', 2000] }],
-    fr: [{ id: '', price: 0, name: '기본' }, { id: 'gold', price: 50, name: '금빛' }, { id: 'fire', price: 60, name: '불꽃' }, { id: 'ice', price: 60, name: '얼음' }, { id: 'star', price: 70, name: '별빛' }, { id: 'rainbow', price: 100, name: '무지개' }],
+    fr: [{ id: '', price: 0, name: '기본' }, { id: 'gold', price: 50, name: '금빛' }, { id: 'fire', price: 60, name: '불꽃' }, { id: 'ice', price: 60, name: '얼음' }, { id: 'star', price: 70, name: '별빛' }, { id: 'rainbow', price: 100, name: '무지개' }, { id: 'season', price: 0, pass: true, name: '시즌' }],
   };
   const NEED_NAME = { captures: '땅 차지', treasures: '보물 상자 열기', raidWins: '보스 쓰러뜨리기', solved: '문제 풀기' };
   const bossOf = week => BOSSES[((week % BOSSES.length) + BOSSES.length) % BOSSES.length];
@@ -257,6 +258,86 @@
     return out;
   }
 
+  // ---------- 🏆 시즌: 4주마다 (한국 시간 월요일 0시). 시즌이 바뀌면 지도는 새로 시작하고 기록은 명예의 전당에 ----------
+  const SEASON0 = Date.UTC(2026, 9, 4, 15), SEASON_LEN = 28 * 864e5; // 시즌 1 = 2026-10-05 (월) 0시부터
+  const seasonOf = t => Math.max(1, Math.floor(((t || Date.now()) - SEASON0) / SEASON_LEN) + 1);
+  const seasonEnds = n => SEASON0 + n * SEASON_LEN;
+  const PASS_MAX = 30, PASS_XP = 120; // 시즌 패스 30단계, 한 단계 120점
+  const XP = { solved: 2, captures: 5, steals: 5, defends: 1, items: 5, mission: 30, missionAll: 50, rankWin: 40, rankLose: 15, stage: 30, boss: 80, landmark: 20, trade: 10, collect: 10 };
+  const SEASON_AVS = ['🦅', '🐳', '🦁', '🦚', '🐺', '🦋', '🦈', '🐝'];
+  function passReward(lv, n) {
+    if (lv === 10) return { look: ['av', SEASON_AVS[(n - 1) % SEASON_AVS.length]] };
+    if (lv === 20) return { look: ['ti', `시즌${n} 용사`] };
+    if (lv === 30) return { look: ['fr', 'season'], coins: 200 };
+    if (lv % 5 === 0) return { item: ['shield', 'bomb', 'scope', 'shield', 'bomb', 'scope'][lv / 5 - 1] };
+    return { coins: 10 + lv * 2 };
+  }
+  const passText = r => [r.coins ? `🪙 ${r.coins}` : '', r.item ? ITEM_NAME[r.item] : '', r.look ? (r.look[0] === 'av' ? `캐릭터 ${r.look[1]}` : r.look[0] === 'ti' ? `칭호 「${r.look[1]}」` : '✨ 시즌 이름 테두리') : ''].filter(Boolean).join(' + ');
+  const SEASON_MISSIONS = [
+    { id: 'sv', icon: '✏️', key: 'solved', n: 500, xp: 300, text: '문제 500개 풀기' },
+    { id: 'cp', icon: '🚩', key: 'captures', n: 40, xp: 300, text: '땅 40칸 차지하기' },
+    { id: 'rw', icon: '⚔️', key: 'rankWins', n: 10, xp: 300, text: '랭크 배틀 10번 이기기' },
+    { id: 'st', icon: '🗺️', key: 'stages', n: 8, xp: 300, text: '모험 스테이지 8개 깨기' },
+    { id: 'lm', icon: '🏟️', key: 'landmarks', n: 1, xp: 200, text: '대항전 랜드마크 1번 차지하기' },
+    { id: 'tr', icon: '🏪', key: 'trades', n: 1, xp: 100, text: '장터에서 1번 사거나 팔기' },
+  ];
+
+  // ---------- ⚔️ 랭크 배틀: 같은 서버 친구와 실시간 1:1 (같은 문제 7개를 먼저 다 푸는 쪽이 승리) ----------
+  const RANK_TIERS = [['bronze', '브론즈', '#c07a3e'], ['silver', '실버', '#8b9bb4'], ['gold', '골드', '#e3a008'], ['plat', '플레티넘', '#0fb5a4'], ['dia', '다이아', '#3b82f6'], ['eva', '에바', '#a855f7'], ['nem', '네메시스', '#dc2626'], ['ark', '아크블랙 네메시스', '#111827']];
+  const RANK_STEP = 100, NEM_RP = 1800, ARK_TOP = 20, RANK_N = 7, RANK_SEC = 180, BOT_WAIT = 15, BOT_CAP = 900;
+  function tierOf(rp, place) { // place: 랭크 순위 (네메시스 중 20위 안이면 아크블랙 네메시스)
+    rp = Math.max(0, Math.floor(rp || 0));
+    if (rp >= NEM_RP) return { t: place && place <= ARK_TOP ? 7 : 6, d: 0 };
+    const k = Math.floor(rp / RANK_STEP);
+    return { t: Math.floor(k / 3), d: (k % 3) + 1 };
+  }
+  const tierName = x => RANK_TIERS[x.t][1] + (x.t < 6 ? ' ' + x.d : '');
+  function rankDelta(rp, win, streak, bot) { // 이기면 +25 (연승이면 더), 지면 -18. 로봇과는 조금만 (플레티넘부터는 안 오른다)
+    if (win == null) return 0;
+    if (bot) return win ? (rp < BOT_CAP ? 10 : 0) : -5;
+    if (win) return (rp >= NEM_RP ? 20 : 25) + Math.min(15, Math.max(0, streak - 1) * 5);
+    return rp >= NEM_RP ? -20 : -18;
+  }
+  const botPace = rp => Math.max(3.2, 9 - Math.min(rp, 1800) / 300); // 로봇이 한 문제를 푸는 시간(초)
+
+  // ---------- 🏟️ 전국 학교 대항전: 토·일요일(한국 시간). 랜드마크를 차지하고 지킨 시간만큼 학교 점수 (모든 학년 서버를 합친 전국 순위) ----------
+  const LANDMARKS = [['tower', '남산서울타워', '서울', '용산구'], ['palace', '경복궁', '서울', '종로구'], ['dokdo', '독도', '경북', '울릉군'], ['halla', '한라산', '제주', '서귀포시'],
+    ['haeundae', '해운대', '부산', '해운대구'], ['seorak', '설악산', '강원', '속초시'], ['cheom', '첨성대', '경북', '경주시'], ['hanok', '전주 한옥마을', '전북', '전주시 완산구'],
+    ['hwaseong', '수원 화성', '경기', '수원시'], ['buyeo', '백제 부여', '충남', '부여군'], ['hahoe', '안동 하회마을', '경북', '안동시'], ['suncheon', '순천만', '전남', '순천시']];
+  const LM_COST = 5, LM_CAP = 20, EVENT_LEN = 2 * 864e5, EVENT_PRIZE = [300, 200, 100];
+  const kstDate = t => new Date(t + 9 * 3600e3).toISOString().slice(0, 10);
+  function eventOf(t) { // 이번(또는 다음) 주말 대항전
+    t = t || Date.now();
+    const k = new Date(t + 9 * 3600e3), day0 = Date.UTC(k.getUTCFullYear(), k.getUTCMonth(), k.getUTCDate()) - 9 * 3600e3;
+    let start = day0 - ((k.getUTCDay() + 1) % 7) * 864e5; // 지난 토요일 0시 (토요일이면 오늘)
+    const on = t < start + EVENT_LEN;
+    if (!on) start += 7 * 864e5;
+    return { on, id: kstDate(start), start, end: start + EVENT_LEN };
+  }
+
+  // ---------- 💰 땅 경제: 땅이 1시간마다 코인을 만들어 곳간에 모인다 (8시간까지) ----------
+  const ECO_CAP_H = 8, ecoBase = land => (land > 0 ? Math.min(20, 2 + Math.floor(land / 15)) : 0);
+  const ECO_BUILDINGS = [
+    { id: 'mine', icon: '⛏️', name: '광산', price: 60, up: [90, 150], eco: true, max: 3, desc: '지은 사람의 곳간에 1시간마다 🪙 4 × 단계' },
+    { id: 'farm', icon: '🌾', name: '농장', price: 50, up: [80, 130], eco: true, max: 3, desc: '지은 사람에게 1시간마다 시즌 점수 6 × 단계' },
+    { id: 'library', icon: '📚', name: '도서관', price: 80, up: [110, 170], eco: true, school: 2, desc: '우리 학교 친구 모두의 곳간에 1시간마다 🪙 1 × 단계 (학교 전체 최대 +10)' },
+  ];
+  const MARKET_MAX = 5, MARKET_FEE = 0.1, MARKET_DAYS = 7; // 장터: 한 사람 5개까지, 팔리면 10%는 수수료
+
+  // ---------- 🗺️ 모험 모드: 지역마다 스테이지 3개 + 보스 ----------
+  const ADV = [
+    { id: 'seoul', name: '서울', boss: ['😼', '숫자 도둑 고양이'], story: '숫자 도둑 고양이가 서울의 숫자를 훔쳐 갔어요! 문제를 풀어 되찾아요.' },
+    { id: 'gyeonggi', name: '경기 · 인천', boss: ['🦝', '계산 너구리'], story: '계산 너구리가 길을 막고 계산 시합을 하자고 해요.' },
+    { id: 'gangwon', name: '강원', boss: ['⛄', '설악산 눈사람'], story: '꽁꽁 언 설악산! 문제를 풀어 눈사람의 얼음을 녹여요.' },
+    { id: 'chung', name: '충청', boss: ['🐻', '느릿느릿 곰대장'], story: '곰대장이 지키는 다리를 건너려면 문제를 풀어야 해요.' },
+    { id: 'jeolla', name: '전라', boss: ['🦚', '뽐내는 공작새'], story: '공작새가 깃털마다 수학 문제를 숨겨 놨어요.' },
+    { id: 'gyeongsang', name: '경상', boss: ['🐗', '돌진 멧돼지'], story: '멧돼지가 첨성대 앞에서 길을 막고 있어요!' },
+    { id: 'jeju', name: '제주', boss: ['🐴', '조랑말 대장'], story: '조랑말 대장과 한라산까지 수학 달리기!' },
+    { id: 'dokdo', name: '독도', boss: ['😈', '수학 마왕'], story: '마지막 결전! 수학 마왕을 물리치고 모든 숫자를 되찾아요.' },
+  ];
+  const ADV_N = 5, ADV_BOSS_N = 8, ADV_HEARTS = 3;
+  const advReward = (s, first, star3) => (first ? (s === 3 ? 40 : 10) : 0) + (star3 ? 10 : 0); // 처음 깨면 10 (보스 40), 처음 별 3개면 +10
+
   const priceOf = item => { const it = SHOP.find(x => x.id === item); return it ? it.price : Infinity; };
   // 1:1 결투: 땅 주인 학교가 문제 하나를 푸는 데 걸리는 시간(초). 학년이 높고 방어가 높을수록 빠르다
   const duelPace = (grade, def) => Math.max(4.5, 8.5 - grade * 0.35 - Math.min(def || 0, 20) * 0.05);
@@ -268,5 +349,9 @@
     BOSSES, RAID_HP, RAID_WIN, RAID_SET, raidWeek, raidEnds, bossOf, LOOKS, NEED_NAME, UNION_PRICE, UNION_MAX, PIC_REPORT,
     BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK, MARK,
     SHOP, SHIELD_HOURS, SCOPE_MIN, BOMB_EXTRA, BOMB_MAX_DEF, FLAG_COLORS, FLAG_MARKS, attendCoins, MISSIONS, MISSION_ALL, dailyMissions,
-    priceOf, duelPace, DUEL_BONUS, cleanChat };
+    priceOf, duelPace, DUEL_BONUS, cleanChat,
+    SEASON0, SEASON_LEN, seasonOf, seasonEnds, PASS_MAX, PASS_XP, XP, SEASON_AVS, passReward, passText, SEASON_MISSIONS,
+    RANK_TIERS, RANK_STEP, NEM_RP, ARK_TOP, RANK_N, RANK_SEC, BOT_WAIT, BOT_CAP, tierOf, tierName, rankDelta, botPace,
+    LANDMARKS, LM_COST, LM_CAP, EVENT_LEN, EVENT_PRIZE, kstDate, eventOf, ECO_CAP_H, ecoBase, ECO_BUILDINGS, MARKET_MAX, MARKET_FEE, MARKET_DAYS,
+    ADV, ADV_N, ADV_BOSS_N, ADV_HEARTS, advReward };
 });

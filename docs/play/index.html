@@ -180,6 +180,7 @@
   </main>
   <nav id="dock" class="dock" aria-label="게임 메뉴">
     <button type="button" id="btnStudy" class="dk" title="공부방 (연습 · 스피드 퀴즈 · 오답 노트)"><svg class="ic" aria-hidden="true"><use href="#i-pencil"/></svg><span>공부</span><i id="wrongCount" class="count" hidden></i></button>
+    <button type="button" id="btnHub" class="dk" title="도전 (시즌 · 랭크 배틀 · 모험 · 대항전 · 곳간 · 장터)"><svg class="ic" aria-hidden="true"><use href="#i-crown"/></svg><span>도전</span><i id="hubDot" class="count dot" hidden></i></button>
     <button type="button" id="btnMission" class="dk" title="오늘의 미션" hidden><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg><span>미션</span><i id="missionDot" class="count dot" hidden></i></button>
     <button type="button" id="btnWar" class="dk" title="전쟁 · 동맹 (중·고등학교)" hidden><svg class="ic" aria-hidden="true"><use href="#i-swords"/></svg><span>전쟁</span><i id="warDot" class="count dot" hidden></i></button>
     <button type="button" id="btnShop" class="dk" title="상점" hidden><svg class="ic" aria-hidden="true"><use href="#i-bag"/></svg><span>상점</span></button>
@@ -395,6 +396,8 @@
       <button type="button" class="btn big primary" id="stSpeed">⏱️ 스피드 퀴즈 <small id="stSpeedBest">1분 동안 많이 맞히기</small></button>
       <button type="button" class="btn big" id="stWrong">📒 오답 노트 <small id="stWrongN"></small></button>
       <button type="button" class="btn big raid" id="stRaid">👾 보스 레이드 <small id="stRaidSub">서버 친구들과 함께 이번 주 보스를 쓰러뜨려요</small></button>
+      <button type="button" class="btn big adv" id="stAdv">🗺️ 모험 모드 <small>지역마다 문제를 풀고 보스를 물리쳐요</small></button>
+      <button type="button" class="btn big skill" id="stSkill">📊 내 실력 지도 <small>단원마다 얼마나 잘하는지 봐요</small></button>
     </div>
   </div>
 </div>
@@ -484,6 +487,80 @@
   </div>
 </div>
 <input type="file" id="pfFile" hidden>
+<div id="hubModal" class="modal" hidden>
+  <div class="card wide hub-card">
+    <div class="row between"><h3>👑 도전</h3><button type="button" class="icon-btn" data-close="hubModal">✕</button></div>
+    <div id="hubSeason" class="hub-season"></div>
+    <div class="hub-grid" id="hubGrid"></div>
+  </div>
+</div>
+<div id="seasonModal" class="modal" hidden>
+  <div class="card wide season-card">
+    <div class="row between"><h3>🏆 시즌 <span id="snNo"></span></h3><button type="button" class="icon-btn" data-close="seasonModal">✕</button></div>
+    <div id="snHead" class="sn-head"></div>
+    <div class="tabs" id="snTabs"><button type="button" class="tab on" data-sn="pass">시즌 패스</button><button type="button" class="tab" data-sn="mis">시즌 미션</button><button type="button" class="tab" data-sn="fame">명예의 전당</button></div>
+    <div id="snBody" class="sn-body"></div>
+  </div>
+</div>
+<div id="rankedModal" class="modal" hidden>
+  <div class="card wide ranked-card">
+    <div class="row between"><h3>⚔️ 랭크 배틀</h3><button type="button" class="icon-btn" data-close="rankedModal">✕</button></div>
+    <div id="rkMe" class="rk-me"></div>
+    <div id="rkSearch" class="rk-search" hidden></div>
+    <div class="tabs" id="rkTabs"><button type="button" class="tab on" data-rk="top">랭킹</button><button type="button" class="tab" data-rk="live">구경하기</button><button type="button" class="tab" data-rk="tiers">티어</button></div>
+    <div id="rkBody" class="rk-body"></div>
+  </div>
+</div>
+<div id="rkResultModal" class="modal" hidden>
+  <div class="card small rk-result" id="rkResult"></div>
+</div>
+<div id="watchModal" class="modal" hidden>
+  <div class="card small watch-card">
+    <div class="row between"><h3>👀 대결 구경</h3><button type="button" class="icon-btn" data-close="watchModal">✕</button></div>
+    <div id="wtBody"></div>
+  </div>
+</div>
+<div id="eventModal" class="modal" hidden>
+  <div class="card wide event-card">
+    <div class="row between"><h3>🏟️ 전국 학교 대항전</h3><button type="button" class="icon-btn" data-close="eventModal">✕</button></div>
+    <div id="evHead" class="ev-head"></div>
+    <div id="evLast"></div>
+    <h4>🏆 학교 점수</h4>
+    <ol id="evBoard" class="ev-board"></ol>
+    <h4>📍 랜드마크</h4>
+    <div id="evMarks" class="ev-marks"></div>
+    <p class="muted small">랜드마크를 차지하면 우리 학교 +20점, 지키는 1분마다 +1점이에요. 모든 학년 서버의 점수를 합쳐 전국 순위를 정해요. 랜드마크는 문제가 5개 더 필요하고 폭탄으로는 못 뺏어요.</p>
+  </div>
+</div>
+<div id="ecoModal" class="modal" hidden>
+  <div class="card small eco-card">
+    <div class="row between"><h3>💰 곳간</h3><button type="button" class="icon-btn" data-close="ecoModal">✕</button></div>
+    <div id="ecoBody"></div>
+  </div>
+</div>
+<div id="marketModal" class="modal" hidden>
+  <div class="card wide market-card">
+    <div class="row between"><h3>🏪 장터</h3><span class="coin-big">🪙 <b id="mkCoins">0</b></span><button type="button" class="icon-btn" data-close="marketModal">✕</button></div>
+    <div class="tabs" id="mkTabs"><button type="button" class="tab on" data-mk="buy">사기</button><button type="button" class="tab" data-mk="sell">팔기</button><button type="button" class="tab" data-mk="mine">내 물건</button></div>
+    <div id="mkBody" class="mk-body"></div>
+    <p class="muted small">친구들이 올린 아이템을 코인으로 사고팔아요. 팔리면 값의 90%를 받아요 (10%는 수수료). 7일 동안 안 팔리면 돌려받아요.</p>
+  </div>
+</div>
+<div id="advModal" class="modal" hidden>
+  <div class="card wide adv-card">
+    <div class="row between"><h3>🗺️ 모험</h3><button type="button" class="icon-btn" data-close="advModal">✕</button></div>
+    <p class="muted" id="advInfo"></p>
+    <div id="advList" class="adv-list"></div>
+  </div>
+</div>
+<div id="skillModal" class="modal" hidden>
+  <div class="card wide skill-card">
+    <div class="row between"><h3>📊 내 실력 지도</h3><button type="button" class="icon-btn" data-close="skillModal">✕</button></div>
+    <div class="tabs" id="skTabs"><button type="button" class="tab on" data-sem="1">1학기</button><button type="button" class="tab" data-sem="2">2학기</button></div>
+    <div id="skBody" class="sk-body"></div>
+    <p class="muted small">단원마다 맞힌 비율이에요. 5문제 이상 풀면 색이 생겨요. 단원을 누르면 그 단원만 연습해요.</p>
+  </div>
+</div>
 <div id="raidModal" class="modal" hidden>
   <div class="card small raid-card">
     <div class="row between"><h3>👾 보스 레이드</h3><button type="button" class="icon-btn" data-close="raidModal">✕</button></div>

@@ -169,8 +169,8 @@
   const connectCloud = () => cloudReady;
 
   // ---------- 지도 ----------
-  let NK_SIDO = new Set(), M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0, LV = 'e'; // WP: 지금 쓰는 땅 기록 자리 (서버 초기화마다 새 자리), LV: 이 지도의 학교급
-  const setWP = () => { WP = MAPWP + (epoch ? 'r' + epoch : ''); };
+  let NK_SIDO = new Set(), M = null, BASE = [], WP = 'w', MAPWP = 'w', epoch = 0, LV = 'e', season = S.seasonOf(); // WP: 지금 쓰는 땅 기록 자리 (서버 초기화마다 새 자리), LV: 이 지도의 학교급
+  const setWP = () => { WP = wpOf(season); };
   async function init(m, g) { // g: 화면 쪽이 계산한 이웃(nb)과 칸 위치(sx, sy)
     M = { n: m.n, nb: g.nbOf, sx: g.sx, sy: g.sy, nk: c => g.nkCell[c] === 1, jp: c => !!(g.jpCell && g.jpCell[c] === 1), coast: c => !g.sides[c] }; // nb: 칸 → 이웃 칸들 (함수), nk: 북한 칸, jp: 일본 칸, coast: 바다에 닿은 칸
     LV = m.level || 'e';
@@ -191,7 +191,12 @@
     };
     await Promise.all([loadMod(), loadFlags(), cloud && loadCustom(), cloud && loadReset()]); // 서버에 한꺼번에 물어봐서 빨리 시작
     indexSchools();
+    season = S.seasonOf();
+    if (!cloud && local.season !== season) { if (local.season) local.worlds = {}; local.season = season; save(); } // 혼자 하기: 시즌이 바뀌면 땅을 새로
     setWP();
+    findLandmarks();
+    clearInterval(init.tick);
+    init.tick = setInterval(seasonTick, 20000);
   }
   // 학년마다 들고 있던 땅을 버리고 새 자리에서 처음부터 (화면에는 다시 불러오라고 알린다)
   function dropWorlds(ev) {
@@ -601,6 +606,288 @@
     if (slot !== 'av') jobs.push(dropDoc('wface/b_' + acc));
     await Promise.all(jobs);
   }
+  // ---------- 🏆 시즌 · 시즌 패스 · 명예의 전당 ----------
+  const wpOf = n => MAPWP + (epoch ? 'r' + epoch : '') + (n > 1 ? 's' + n : ''); // 시즌 2부터는 새 자리에서 땅을 새로 시작
+  function giveOwn(u, kind, id) { const l = (u.looks = u.looks || {}), own = (l.own = l.own || []), k = kind + ':' + id; if (!own.includes(k)) own.push(k); }
+  function giveReward(u, r) { walletOf(u); if (r.coins) earn(u, r.coins); if (r.item) u.items[r.item] = (u.items[r.item] || 0) + 1; if (r.look) giveOwn(u, r.look[0], r.look[1]); }
+  function seasonOfU(u) { // 시즌이 바뀌면 패스는 새로, 랭크 점수는 절반으로 (지난 시즌 티어 보상을 준다)
+    if (!u.season || u.season.n !== season) { if (u.season) u.prevSeason = { n: u.season.n, cap: u.season.st.captures || 0 }; u.season = { n: season, xp: 0, claimed: [], st: {}, sm: [] }; } // 지난 시즌 땅 수는 명예의 전당용으로 남긴다
+    const r = u.rank;
+    if (r && r.s !== season) {
+      const best = S.tierOf(Math.max(r.best || 0, r.rp || 0));
+      if ((r.w || 0) + (r.l || 0) > 0) {
+        const coins = 30 * (best.t + 1);
+        earn(u, coins);
+        if (best.t >= 2) giveOwn(u, 'ti', `S${r.s} ${S.tierName(best)}`);
+        u.rankNote = { s: r.s, name: S.tierName(best), coins, title: best.t >= 2 ? `S${r.s} ${S.tierName(best)}` : '' };
+      }
+      u.rank = { s: season, rp: Math.min(1200, Math.floor((r.rp || 0) / 2)), w: 0, l: 0, streak: 0, best: 0, done: [] };
+    }
+    return u.season;
+  }
+  const rankOf = u => { seasonOfU(u); return (u.rank = u.rank || { s: season, rp: 0, w: 0, l: 0, streak: 0, best: 0, done: [] }); };
+  const sst = (u, key, n = 1) => { const s = seasonOfU(u); s.st[key] = (s.st[key] || 0) + n; };
+  const addXP = (u, n) => { seasonOfU(u).xp += Math.max(0, Math.round(n || 0)); };
+  const passLv = s => Math.min(S.PASS_MAX, Math.floor(s.xp / S.PASS_XP));
+  function seasonView(u) {
+    const s = seasonOfU(u), lv = passLv(s);
+    let ready = S.SEASON_MISSIONS.filter(m => !s.sm.includes(m.id) && (s.st[m.key] || 0) >= m.n).length;
+    for (let x = 1; x <= lv; x++) if (!s.claimed.includes(x)) ready++;
+    return { n: season, ends: S.seasonEnds(season), xp: s.xp, lv, need: S.PASS_XP, claimed: s.claimed, ready };
+  }
+  // 시즌 동안 서버의 학교 순위를 가끔 적어 두고, 시즌이 끝나면 1~3등을 명예의 전당에 옮긴다
+  const topPath = (wp, g) => `${wp}/g${g}/top/main`, topAt = {}, finTried = {};
+  function publishTop(rt) {
+    if (Date.now() - (topAt[rt.g] || 0) < 180e3) return;
+    topAt[rt.g] = Date.now();
+    const cnt = new Map();
+    rt.owner.forEach(o => { if (o >= 0) cnt.set(o, (cnt.get(o) || 0) + 1); });
+    const s = [...cnt].filter(([, n]) => n > 1).sort((x, y) => y[1] - x[1]).slice(0, 5).map(([id, n]) => ({ nm: schoolById(id).name, n })); // 본부 1칸뿐인 학교는 빼고
+    mergeDoc(topPath(WP, rt.g), { s, at: Date.now() }).catch(() => {});
+  }
+  async function finishSeason(prev, g) {
+    if (prev < 1 || finTried[prev + '_' + g]) return;
+    finTried[prev + '_' + g] = 1;
+    const key = `s${prev}_g${g}`, path = 'meta/hof_' + LV, hof = await readDoc(path);
+    if (hof[key]) return;
+    const top = await readDoc(topPath(wpOf(prev), g));
+    const capOf = x => (x.scs === prev ? x.scap : x.ps === prev ? x.pc : 0) || 0;
+    const p = (await playersOf(g)).filter(x => capOf(x) > 0).sort((x, y) => capOf(y) - capOf(x)).slice(0, 3).map(x => ({ nm: x.nick, sc: schoolById(x.sid).name, n: capOf(x) }));
+    const s = (top.s || []).slice(0, 3);
+    if (s.length || p.length) await mergeDoc(path, { [key]: { s, p, at: Date.now() } });
+  }
+  function seasonTick() {
+    const n = S.seasonOf();
+    if (n === season) return;
+    const prev = season, gs = Object.keys(worlds).map(Number);
+    for (const g of gs) { topAt[g] = 0; publishTop(worlds[g]); }
+    season = n;
+    setWP();
+    if (!cloud) { local.worlds = {}; local.season = n; save(); }
+    setTimeout(() => gs.forEach(g => finishSeason(prev, g).catch(() => {})), 3000);
+    dropWorlds({ kind: 'season', n, text: `🏆 새 시즌이 시작됐어요! (시즌 ${n}) 모든 땅이 새로 시작해요. 지난 시즌 1~3등은 명예의 전당에 남았어요.` });
+  }
+
+  // ---------- ⚔️ 랭크 배틀: 큐(wace/q서버) → 방(wace/m_번호) → 끝. 아이디가 작은 쪽이 방을 만든다 ----------
+  let rk = null, rkWatch = null, rkArk = new Set();
+  const rkEmit = (st, extra) => emit(null, Object.assign({ t: 'rank', st }, extra));
+  const sub = (path, fn) => { const un = cloud.db.doc(path).onSnapshot(s => fn(s.exists ? s.data() || {} : {}), () => {}); return typeof un === 'function' ? un : () => {}; };
+  function rkCard(u) { const r = rankOf(u), l = lookOf(u); return { acc: u.acc, nick: u.profile.nickname, rp: r.rp, av: l.av, pv: l.pv, sc: schoolById(profileSchool(u)).name }; }
+  async function rkStop() {
+    const r = rk;
+    if (!r) return;
+    rk = null;
+    (r.unsubs || []).forEach(f => { try { f(); } catch { /* 이미 끊김 */ } });
+    clearInterval(r.timer);
+    if (r.inQueue && cloud) await mergeDoc(`wace/q${r.srv}`, { [r.acc]: null }).catch(() => {});
+  }
+  async function rkScan(d) {
+    const me = rk;
+    if (!me || me.match || me.busy) return;
+    const mine = d[me.acc];
+    if (mine && mine.m) return rkJoin(mine.m);
+    const now = Date.now(), win = 150 + ((now - me.since) / 1000) * 25; // 오래 기다릴수록 점수 차이가 큰 상대도
+    const opp = Object.entries(d).filter(([k, v]) => k !== me.acc && v && v.nick && !v.m && now - (v.at || 0) < 30000 && Math.abs((v.rp || 0) - me.card.rp) <= win)
+      .sort((x, y) => Math.abs((x[1].rp || 0) - me.card.rp) - Math.abs((y[1].rp || 0) - me.card.rp))[0];
+    const stale = Object.entries(d).filter(([, v]) => v && now - (v.at || 0) > 600e3).map(([k]) => k); // 10분 넘게 소식 없는 자리는 치운다
+    if (stale.length) mergeDoc(`wace/q${me.srv}`, Object.fromEntries(stale.map(k => [k, null]))).catch(() => {});
+    if (!opp || me.acc > opp[0]) return;
+    me.busy = true;
+    const id = rand(6), o = opp[1], G = window.MLEProblems, g = Math.min(me.g || 1, o.g || me.g || 1);
+    let probs = me.probs; // 중·고 서버는 학년이 섞여 있으니 낮은 학년 문제로
+    if (G && g !== me.g) { try { probs = Array.from({ length: S.RANK_N }, () => cleanProblem(G.generate(g, Math.min(me.sem || 1, o.sem || 1)))); } catch { probs = me.probs; } }
+    const m = { id, srv: me.srv, a: me.card, b: { acc: opp[0], nick: o.nick, rp: o.rp || 0, av: o.av || '😀', pv: o.pv || 0, sc: o.sc || '' }, probs, sa: 0, sb: 0, win: '', at: now };
+    try {
+      await cloud.db.doc('wace/m_' + id).set(m);
+      if (!(await rkClaim(me.srv, opp[0], id))) { dropDoc('wace/m_' + id).catch(() => {}); me.busy = false; return; }
+      mergeDoc(`wace/l${me.srv}`, { [id]: { a: me.card.nick, b: o.nick, ra: me.card.rp, rb: o.rp || 0, at: now } }).catch(() => {});
+      rkJoin(id);
+    } catch { me.busy = false; }
+  }
+  async function rkClaim(srv, acc, id) { // 상대가 아직 아무와도 짝이 안 됐을 때만 (동시에 두 방이 생기지 않게)
+    if (cloud.rdb) {
+      const r = await cloud.rdb.ref(`wace/q${srv}/${acc}`).transaction(v => (v === null ? null : v.m ? undefined : Object.assign(v, { m: id })));
+      const v = r.snapshot && r.snapshot.val();
+      return !!(r.committed && v && v.m === id);
+    }
+    const d = await readDoc(`wace/q${srv}`);
+    if (!d[acc] || d[acc].m) return false;
+    await mergeDoc(`wace/q${srv}`, { [acc]: Object.assign(d[acc], { m: id }) });
+    return true;
+  }
+  function rkJoin(id) {
+    const me = rk;
+    if (!me || me.match) return;
+    me.match = id; me.inQueue = false;
+    mergeDoc(`wace/q${me.srv}`, { [me.acc]: null }).catch(() => {});
+    (me.unsubs || []).forEach(f => f());
+    me.unsubs = [sub('wace/m_' + id, m => { if (rk === me && m && m.id) rkUpdate(me, m); })];
+    clearInterval(me.timer);
+    me.timer = setInterval(() => rkTick(me), 1000);
+  }
+  const rkSide = (me, m) => (m.a && m.a.acc === me.acc ? 'a' : 'b');
+  function rkUpdate(me, m) {
+    me.m = m;
+    const side = rkSide(me, m), o = side === 'a' ? 'b' : 'a';
+    if (!me.t0) { me.t0 = Date.now() + 3500; rkEmit('start', { id: m.id, probs: m.probs, opp: m[o], me: m[side], bot: !!me.bot, sec: S.RANK_SEC }); }
+    const hb = m['hb_' + o];
+    if (hb !== me.oppHb) { me.oppHb = hb; me.oppSeen = Date.now(); }
+    rkEmit('prog', { id: m.id, mine: m['s' + side] || 0, opp: m['s' + o] || 0 });
+    if (m.win && !me.ended) rkEnd(me, m);
+  }
+  async function rkSetWin(me, v) {
+    const m = me.m;
+    if (!m || m.win) return;
+    if (me.bot) { m.win = v; rkUpdate(me, m); return; }
+    if (cloud.rdb) { await cloud.rdb.ref(`wace/m_${m.id}/win`).transaction(cur => cur || v); return; }
+    const d = await readDoc('wace/m_' + m.id);
+    if (!d.win) await mergeDoc('wace/m_' + m.id, { win: v });
+  }
+  function rkTick(me) {
+    const m = me.m;
+    if (rk !== me || !m || m.win || !me.t0) return;
+    const now = Date.now(), side = rkSide(me, m), o = side === 'a' ? 'b' : 'a';
+    if (me.bot) {
+      const n = me.botAt.filter(x => x <= now).length;
+      if (n !== m.sb) { m.sb = n; if (n >= S.RANK_N) m.win = 'bot'; rkUpdate(me, m); return; }
+    } else if (cloud.rdb) cloud.rdb.ref(`wace/m_${m.id}/hb_${side}`).set(now).catch(() => {}); // 아직 있다는 표시
+    if (now > me.t0 + S.RANK_SEC * 1000) { const a = m['s' + side] || 0, b = m['s' + o] || 0; rkSetWin(me, a > b ? me.acc : b > a ? m[o].acc : 'draw'); }
+    else if (!me.bot && now > me.t0 + 12000 && now - (me.oppSeen || me.t0) > 25000) rkSetWin(me, me.acc); // 상대가 나갔다
+  }
+  function rkEnd(me, m) {
+    me.ended = true;
+    const res = m.win === 'draw' ? null : m.win === me.acc, side = rkSide(me, m);
+    const out = rkApply(me.acc, m.id, res, !!me.bot, m['s' + side] || 0);
+    rkEmit('end', Object.assign({ id: m.id, res: res === null ? 'draw' : res ? 'win' : 'lose', bot: !!me.bot }, out));
+    if (!me.bot && side === 'a') { mergeDoc(`wace/l${me.srv}`, { [m.id]: null }).catch(() => {}); setTimeout(() => dropDoc('wace/m_' + m.id).catch(() => {}), 60000); } // 구경하던 친구도 결과를 본 뒤에 치운다
+    setTimeout(() => { if (rk === me) rkStop(); }, 300);
+  }
+  function rkApply(acc, id, res, bot, solved) {
+    const u = Object.values(local.users).find(x => x.acc === acc);
+    if (!u) return {};
+    const r = rankOf(u), before = S.tierOf(r.rp);
+    if (r.done.includes(id)) return { rp: r.rp, tier: before };
+    r.done = r.done.concat(id).slice(-30);
+    if (res === true) { r.w++; r.streak = (r.streak || 0) + 1; } else if (res === false) { r.l++; r.streak = 0; }
+    const delta = S.rankDelta(r.rp, res, r.streak, bot);
+    r.rp = Math.max(0, r.rp + delta);
+    r.best = Math.max(r.best || 0, r.rp);
+    const coins = Math.ceil((res === true ? 15 : res === false ? 5 : 8) / (bot ? 3 : 1));
+    earn(u, coins);
+    if (res === true && !bot) sst(u, 'rankWins', 1);
+    addXP(u, Math.round((res === true ? S.XP.rankWin : S.XP.rankLose) / (bot ? 2 : 1)));
+    if (solved) { statsOf(u).solved += solved; track(u, 'solved', solved); }
+    save();
+    publishCard(u);
+    const after = S.tierOf(r.rp), lvl = x => x.t * 10 + x.d;
+    return { delta, rp: r.rp, tier: after, up: lvl(after) > lvl(before), down: lvl(after) < lvl(before), coins, w: r.w, l: r.l, streak: r.streak };
+  }
+  function rkWatchStop() { if (rkWatch) { try { rkWatch(); } catch { /* */ } rkWatch = null; } }
+
+  // ---------- 🏟️ 랜드마크 · 전국 학교 대항전 ----------
+  let lmCells = new Map(); // 칸 → [아이디, 이름] (지도마다 모든 기기가 똑같이 계산한다)
+  function findLandmarks() {
+    lmCells = new Map();
+    const homes = new Set(BASE.map(s => s.cell));
+    for (const [id, name, sido, sgg] of S.LANDMARKS) {
+      const d = M.districts.find(x => x.sido.startsWith(sido) && x.sigungu.startsWith(sgg));
+      if (!d) continue;
+      let best = -1, bd = Infinity;
+      for (let i = 0; i < M.n; i++) {
+        if (homes.has(i) || M.nk(i) || M.jp(i) || lmCells.has(i)) continue;
+        const e = (M.sx[i] - d.x) ** 2 + (M.sy[i] - d.y) ** 2;
+        if (e < bd) { bd = e; best = i; }
+      }
+      if (best >= 0) lmCells.set(best, [id, name]);
+    }
+  }
+  const evKey = k => String(k).replace(/[.#$[\]/]/g, '_');
+  const keyOfId = id => evKey(schoolKey(schoolById(id)));
+  const evPath = id => `meta/ev_${id}_${LV}`;
+  const lmPath = g => `${WP}/g${g}/lm/main`;
+  async function flagOnce(path, field) { // 여러 기기 중 한 번만
+    if (cloud && cloud.rdb) { const r = await cloud.rdb.ref(`${path}/${field}`).transaction(v => (v ? undefined : 1)); return !!r.committed; }
+    const d = await readDoc(path);
+    if (d[field]) return false;
+    await mergeDoc(path, { [field]: 1 });
+    return true;
+  }
+  async function lmCaptured(a, rt, cell, prev) { // 랜드마크를 차지하면: 대항전 중이면 우리 학교 +20점, 지키던 학교는 지킨 시간(분)만큼
+    const ev = S.eventOf(), now = Date.now(), cur = (await readDoc(lmPath(rt.g)))['c' + cell], k = keyOfId(rt.owner[cell]);
+    await mergeDoc(lmPath(rt.g), { ['c' + cell]: { k, at: now } });
+    const held = (from, to, pe) => (cur && cur.k && prev >= 0 && cur.k === keyOfId(prev) && cur.at < pe ? Math.floor((Math.min(now, pe) - Math.max(cur.at, from)) / 60000) : 0);
+    if (!ev.on) { // 지난 대항전이 끝난 뒤 아직 정리 전이면 지킨 시간을 지난 대항전에 더한다
+      const ps = ev.start - 7 * 864e5, pid = S.kstDate(ps), mins = held(ps, now, ps + S.EVENT_LEN);
+      if (mins > 0 && !(await readDoc(evPath(pid)))['fin_g' + rt.g]) await bump(evPath(pid), cur.k, mins);
+      return null;
+    }
+    const jobs = [bump(evPath(ev.id), k, S.LM_CAP)], mins = held(ev.start, now, ev.end);
+    if (mins > 0) jobs.push(bump(evPath(ev.id), cur.k, mins));
+    await Promise.all(jobs);
+    sst(a.u, 'landmarks', 1); addXP(a.u, S.XP.landmark); save();
+    return { name: lmCells.get(cell)[1], pts: S.LM_CAP };
+  }
+  async function eventLast(a, rt) { // 지난 주말 대항전 결과 (우리 서버에서 끝까지 지킨 시간은 처음 연 기기가 한 번 더한다)
+    const ev = S.eventOf(), ps = ev.start - 7 * 864e5, id = S.kstDate(ps), pe = ps + S.EVENT_LEN, path = evPath(id);
+    let d = await readDoc(path);
+    if (!d['fin_g' + rt.g] && (await flagOnce(path, 'fin_g' + rt.g))) {
+      const lm = await readDoc(lmPath(rt.g)), jobs = [];
+      for (const [c] of lmCells) {
+        const x = lm['c' + c], o = rt.owner[c];
+        if (!x || o < 0 || x.k !== keyOfId(o) || x.at >= pe) continue;
+        const mins = Math.floor((pe - Math.max(x.at, ps)) / 60000);
+        if (mins > 0) jobs.push(bump(path, x.k, mins));
+      }
+      await Promise.all(jobs);
+      if (jobs.length) d = await readDoc(path);
+    }
+    const all = Object.entries(d).filter(([k]) => k.includes('|')).sort((x, y) => y[1] - x[1]), mine = keyOfId(a.sid);
+    const place = all.findIndex(([k]) => k === mine) + 1;
+    return { id, board: all.slice(0, 3).map(([k, p]) => ({ name: k.split('|')[2] || '?', pts: p })), place, pts: place ? all[place - 1][1] : 0, claimed: !!(a.u.evClaim || {})[id] };
+  }
+
+  // ---------- 💰 곳간 (땅 수입) · 🏪 장터 ----------
+  function ecoOf(a) {
+    const rt = a.rt, u = a.u, sid = a.sid;
+    let land = 0, mine = 0, lib = 0, farm = 0;
+    for (const o of rt.owner) if (o === sid) land++;
+    for (const x of Object.values(buildView(rt))) {
+      if (x[1] !== sid) continue;
+      const lv = x[3] || 1;
+      if (x[0] === 'mine' && x[4] === u.acc) mine += 4 * lv;
+      else if (x[0] === 'farm' && x[4] === u.acc) farm += 6 * lv;
+      else if (x[0] === 'library') lib += lv;
+    }
+    lib = Math.min(10, lib);
+    const base = S.ecoBase(land), rate = base + mine + lib, e = (u.eco = u.eco || {}), now = Date.now();
+    if (!e.at) { e.at = now; save(); }
+    const hours = Math.min(S.ECO_CAP_H, (now - e.at) / 3600e3);
+    return { land, base, mine, lib, farm, rate, hours, stored: Math.floor(hours * rate), storedXp: Math.floor(hours * farm), cap: S.ECO_CAP_H, at: e.at, now };
+  }
+  const mkPath = srv => `wace/mk${srv}`;
+  const mkList = d => Object.values(d || {}).filter(x => x && x.id && x.item);
+  async function mkCollect(u, srv) { // 내 물건이 팔렸으면 코인, 7일 동안 안 팔렸으면 물건을 돌려받는다
+    const d = await readDoc(mkPath(srv)), now = Date.now(), up = {};
+    let got = 0, back = 0, n = 0;
+    for (const x of mkList(d)) {
+      if (x.acc !== u.acc) continue;
+      if (x.buyer) { got += Math.floor(x.price * (1 - S.MARKET_FEE)); n++; up['i_' + x.id] = null; }
+      else if (now - x.at > S.MARKET_DAYS * 864e5) { walletOf(u).items[x.item] = (u.items[x.item] || 0) + 1; back++; up['i_' + x.id] = null; }
+    }
+    if (!Object.keys(up).length) return { got: 0, back: 0 };
+    await mergeDoc(mkPath(srv), up);
+    if (got) earn(u, got);
+    if (n) { sst(u, 'trades', n); addXP(u, S.XP.trade * n); }
+    save();
+    return { got, back };
+  }
+  async function mkTake(srv, id, acc) {
+    if (cloud && cloud.rdb) { const r = await cloud.rdb.ref(`${mkPath(srv)}/i_${id}/buyer`).transaction(v => (v ? undefined : acc)); return !!r.committed; }
+    const d = await readDoc(mkPath(srv)), x = d['i_' + id];
+    if (!x || x.buyer) return false;
+    await mergeDoc(mkPath(srv), { ['i_' + id]: Object.assign(x, { buyer: acc }) });
+    return true;
+  }
   const warView = rt => (rt.wars || []).map(w => Object.assign({}, w, { sc: (rt.warScore || {})[w.id] || {} }));
   // 진행 중인 전쟁의 점수(상대편 땅을 뺏은 칸 수)를 실시간으로
   function watchScores(rt) {
@@ -735,6 +1022,10 @@
   }
   function track(u, key, v) {
     for (const m of missionOf(u).list) { const d = S.MISSIONS.find(x => x.id === m.id); if (d.key === key) m.p = d.max ? Math.max(m.p, v) : m.p + v; }
+    if (!(v > 0)) return;
+    const s = seasonOfU(u); // 🏆 시즌 점수
+    if (S.XP[key]) s.xp += S.XP[key] * v;
+    if (key === 'solved' || key === 'captures') s.st[key] = (s.st[key] || 0) + v;
   }
   function missionView(u) {
     const ms = missionOf(u), x = 1;
@@ -766,18 +1057,18 @@
     if (!u.cls || !u.profile || Date.now() - (clsAt[u.acc] || 0) < 30000) return;
     clsAt[u.acc] = Date.now();
     const st = statsOf(u), top = Object.entries(u.wrongTopics || {}).sort((x, y) => y[1] - x[1]).slice(0, 3);
-    mergeDoc('meta/cls_' + u.cls, { ['s_' + u.acc]: { nick: u.profile.nickname, school: u.profile.school.split('|')[2] || '', grade: gradeOf(u), solved: st.solved, wrongs: st.wrongs || 0, captures: st.captures, days: st.days, top, at: Date.now() } }).catch(() => {});
+    mergeDoc('meta/cls_' + u.cls, { ['s_' + u.acc]: { nick: u.profile.nickname, school: u.profile.school.split('|')[2] || '', grade: gradeOf(u), solved: st.solved, wrongs: st.wrongs || 0, captures: st.captures, days: st.days, top, mast: Object.entries(u.topic || {}).slice(0, 30), at: Date.now() } }).catch(() => {});
   }
   async function publishCard(u) {
     publishClass(u);
     if (!cloud || !u.profile) return;
     const st = statsOf(u);
-    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: srvOf(u), yr: gradeOf(u), av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, pv: lookOf(u).pv, bv: lookOf(u).bv, captures: st.captures, solved: st.solved, role: u.role || null, dev: local.device, at: Date.now() }); } catch { /* 다음에 다시 */ }
+    try { await cloud.db.doc('players/' + u.acc).set({ nick: u.profile.nickname, school: u.profile.school, grade: srvOf(u), yr: gradeOf(u), av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, pv: lookOf(u).pv, bv: lookOf(u).bv, captures: st.captures, solved: st.solved, role: u.role || null, dev: local.device, at: Date.now(), rp: rankOf(u).rp, rs: season, rw: rankOf(u).w, rl: rankOf(u).l, scs: season, scap: seasonOfU(u).st.captures || 0, ps: (u.prevSeason || {}).n || 0, pc: (u.prevSeason || {}).cap || 0 }); } catch { /* 다음에 다시 */ }
   }
   async function playersOf(grade) {
-    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && srvOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, role: u.role || null, av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, pv: lookOf(u).pv, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved }));
+    if (!cloud) return Object.values(local.users).filter(u => profileSchool(u) >= 0 && srvOf(u) === grade).map(u => ({ acc: u.acc, nick: u.profile.nickname, role: u.role || null, av: lookOf(u).av, ti: lookOf(u).ti, fr: lookOf(u).fr, pv: lookOf(u).pv, sid: profileSchool(u), captures: statsOf(u).captures, solved: statsOf(u).solved, rp: rankOf(u).rp, rs: season, rw: rankOf(u).w, rl: rankOf(u).l, scs: season, scap: seasonOfU(u).st.captures || 0, ps: (u.prevSeason || {}).n || 0, pc: (u.prevSeason || {}).cap || 0 }));
     const snap = await cloud.db.collection('players').where('grade', '==', grade).limit(1000).get(); // grade 칸 = 서버 번호
-    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, role: p.role || null, dev: p.dev || '', yr: p.yr || p.grade, av: p.av || '', ti: p.ti || '', fr: p.fr || '', pv: p.pv || 0, sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
+    return snap.docs.map(d => { const p = d.data(); return { acc: d.id, nick: p.nick, role: p.role || null, dev: p.dev || '', yr: p.yr || p.grade, av: p.av || '', ti: p.ti || '', fr: p.fr || '', pv: p.pv || 0, rp: p.rp || 0, rs: p.rs || 0, rw: p.rw || 0, rl: p.rl || 0, scs: p.scs || 0, scap: p.scap || 0, ps: p.ps || 0, pc: p.pc || 0, sid: idByKey.has(p.school) && !(kickTime(p.school) > (p.at || 0)) ? idByKey.get(p.school) : -1, captures: p.captures || 0, solved: p.solved || 0 }; }).filter(p => p.sid >= 0); // 퇴장된 친구는 빼고
   }
   function newSession(key) {
     const token = rand(24);
@@ -943,8 +1234,11 @@
       await syncRole(a.u);
       if (LV !== 'e') warBook(a);
       const res = { grade: a.grade, srv: a.srv, level: LV, wars: warView(rt), unions: rt.unions || [], gone: Object.keys(deleted), treasures: treasureView(rt), builds: buildView(rt), owner: Array.from(rt.owner), def, home, custom: publicCustom(), online: rt.online, chat, offers: liveOffers(rt), attend: attend(a.u), badges: newBadges(a.u), stats: statsOf(a.u), shared: isShared(),
-        user: publicUser(a.u), shields: liveShields(rt), flags: flagView(), mission: missionView(a.u).ready, invite: await inviteOf(a.u) };
+        user: publicUser(a.u), shields: liveShields(rt), flags: flagView(), mission: missionView(a.u).ready, invite: await inviteOf(a.u),
+        season: seasonView(a.u), landmarks: [...lmCells].map(([c, [id, name]]) => [c, id, name]), event: S.eventOf(), rank: S.tierOf(rankOf(a.u).rp, rkArk.has(a.u.acc) ? 1 : 0) };
       publishCard(a.u);
+      publishTop(rt);
+      if (season > 1) finishSeason(season - 1, a.srv).catch(() => {});
       return res;
     },
     'GET /api/school': async (t, q) => {
@@ -977,7 +1271,7 @@
       if (prev === sid) fail('이미 우리 편 학교 땅이에요.');
       const cost = S.captureCost({ owner: rt.owner, def: rt.def, nb: M.nb, sid, cell, grade: a.grade, nk: M.nk, jp: M.jp, ship: shipInfo(rt, sid, cell, a.u), size: () => { let k = 0; for (const o of rt.owner) if (o === sid) k++; return k; } });
       if (cost.error) fail(cost.error);
-      const extra = prev >= 0 ? S.buildExtra(cell, rt.owner, M.nb, rt.builds) : 0; // 🗼 망루 · 🧱 성벽
+      const extra = (prev >= 0 ? S.buildExtra(cell, rt.owner, M.nb, rt.builds) : 0) + (lmCells.has(cell) ? S.LM_COST : 0); // 🗼 망루 · 🧱 성벽 · 🏟️ 랜드마크
       const required = cost.cost + extra;
       const st = statsOf(a.u);
       let got = 0;
@@ -999,12 +1293,14 @@
       setCell(rt, cell, sid, 0);
       warScored(a, rt, wc);
       const treasure = claimTreasure(a, rt, cell); // 🎁
+      const landmark = lmCells.has(cell) ? await lmCaptured(a, rt, cell, prev).catch(() => null) : null; // 🏟️
       if (rt.builds[cell]) { delete rt.builds[cell]; persist(rt, () => mergeDoc(`${WP}/g${rt.g}/b/main`, { ['c' + cell]: null })); } // 건물이 무너진다
       save();
-      const cells = [[cell, sid, 0]], ev = { kind: 'capture', by: a.u.profile.nickname, role: a.u.role || null, sid, prev, cell, far: !!cost.far, escape: !!cost.escape, duel: !!b.duel, ...(cost.ship ? { ship: port } : {}), ...(sid !== a.sid ? { ally: a.sid } : {}), ...(wc.war ? { war: 1 } : {}) };
+      const cells = [[cell, sid, 0]], ev = { kind: 'capture', by: a.u.profile.nickname, role: a.u.role || null, sid, prev, cell, far: !!cost.far, escape: !!cost.escape, duel: !!b.duel, ...(cost.ship ? { ship: port } : {}), ...(sid !== a.sid ? { ally: a.sid } : {}), ...(wc.war ? { war: 1 } : {}), ...(lmCells.has(cell) ? { lm: lmCells.get(cell)[1] } : {}) };
       persist(rt, async () => { await writeCells(rt, cells); await pushFeed(rt, { t: 'ev', ev }); });
       publishCard(a.u);
-      return { ok: true, cells, stats: st, badges: newBadges(a.u), coins: a.u.coins, got, mission: missionView(a.u).ready, items: walletOf(a.u).items, ship: cost.ship ? port : undefined, treasure };
+      publishTop(rt);
+      return { ok: true, landmark, season: seasonView(a.u), cells, stats: st, badges: newBadges(a.u), coins: a.u.coins, got, mission: missionView(a.u).ready, items: walletOf(a.u).items, ship: cost.ship ? port : undefined, treasure };
     },
     'POST /api/defend': async (t, q, b) => {
       const a = await needPlayer(t), rt = a.rt, sid = a.sid, cell = targetCell(b), amount = Number(b.amount);
@@ -1299,8 +1595,9 @@
         m.done = true; got = S.MISSIONS.find(y => y.id === m.id).coin * x;
       }
       earn(u, got);
+      addXP(u, b.id === 'bonus' ? S.XP.missionAll : S.XP.mission);
       save();
-      return Object.assign(missionView(u), { coins: u.coins, got });
+      return Object.assign(missionView(u), { coins: u.coins, got, season: seasonView(u) });
     },
     // 🛒 상점
     'GET /api/shop': async t => { const u = walletOf(needLogin(t).u); return { coins: u.coins, items: u.items, prices: Object.fromEntries(S.SHOP.map(it => [it.id, S.priceOf(it.id)])), scopeUntil: u.scopeUntil || 0 }; },
@@ -1339,8 +1636,9 @@
       if (cost.ship) fail('⛵ 일본에 처음 갈 때는 폭탄 말고 배를 타고 건너가요.');
       const walled = c => { const x = rt.builds[c]; return x && x[0] === 'wall' && x[1] === rt.owner[c]; };
       if (walled(cell)) fail('🧱 성벽이 있는 땅은 폭탄으로 뺏을 수 없어요.');
+      if (lmCells.has(cell)) fail('🏟️ 랜드마크는 폭탄으로 뺏을 수 없어요. 문제를 풀어 차지해요!');
       const nkOk = size() >= S.NK_MIN, jpOk = size() >= S.JP_MIN; // 옆 칸이 북한·일본 땅이면 칸 수 규칙도 지킨다
-      const extra = [...M.nb(cell)].filter(c => ok(c) && warOk(c) && !walled(c) && rt.def[c] <= S.BOMB_MAX_DEF && (nkOk || !M.nk(c)) && (jpOk || !M.jp(c))).sort((x, y) => rt.def[x] - rt.def[y]).slice(0, S.BOMB_EXTRA);
+      const extra = [...M.nb(cell)].filter(c => ok(c) && warOk(c) && !walled(c) && !lmCells.has(c) && rt.def[c] <= S.BOMB_MAX_DEF && (nkOk || !M.nk(c)) && (jpOk || !M.jp(c))).sort((x, y) => rt.def[x] - rt.def[y]).slice(0, S.BOMB_EXTRA);
       const cells = [cell, ...extra].map(c => [c, sid, 0]), st = statsOf(u);
       let steals = 0;
       for (const [c] of cells) { if (rt.owner[c] >= 0) steals++; setCell(rt, c, sid, 0); }
@@ -1618,6 +1916,7 @@
     'POST /api/looks/buy': async (t, q, b) => {
       const a = needLogin(t), u = walletOf(a.u), kind = String(b.kind), it = (S.LOOKS[kind] || []).find(x => x.id === b.id), l = (u.looks = u.looks || {}), own = (l.own = l.own || []);
       if (!it) fail('없는 꾸미기예요.');
+      if (it.pass) fail('🏆 시즌 패스 보상으로 받을 수 있어요.');
       if (it.price && own.includes(kind + ':' + it.id)) fail('이미 가지고 있어요.');
       if (it.need) { const have = it.need[0] === 'treasures' || it.need[0] === 'raidWins' ? u[it.need[0]] || 0 : statsOf(u)[it.need[0]] || 0; if (have < it.need[1]) fail(`${S.NEED_NAME[it.need[0]]} ${it.need[1]}번을 해야 살 수 있어요. (지금 ${have})`); }
       if (u.coins < it.price) fail(`코인이 모자라요. (${it.price}코인 필요)`);
@@ -1629,9 +1928,11 @@
       return { ok: true, looks: lookOf(u), coins: u.coins };
     },
     'POST /api/looks/wear': async (t, q, b) => {
-      const a = needLogin(t), u = a.u, kind = String(b.kind), it = (S.LOOKS[kind] || []).find(x => x.id === b.id), l = (u.looks = u.looks || {});
+      const a = needLogin(t), u = a.u, kind = String(b.kind), l = (u.looks = u.looks || {}), own = l.own || [];
+      let it = (S.LOOKS[kind] || []).find(x => x.id === b.id);
+      if (!it && kind === 'ti' && typeof b.id === 'string' && own.includes('ti:' + b.id)) it = { id: b.id, pass: true }; // 시즌 · 대회에서 받은 칭호
       if (!it) fail('없는 꾸미기예요.');
-      if (it.price && !(l.own || []).includes(kind + ':' + it.id)) fail('먼저 사야 해요.');
+      if ((it.price || it.pass) && !own.includes(kind + ':' + it.id)) fail(it.pass ? '🏆 시즌 패스 · 대회 보상으로 받을 수 있어요.' : '먼저 사야 해요.');
       l[kind] = it.id;
       save();
       if (u.profile) publishCard(u);
@@ -1712,6 +2013,239 @@
       if (n >= S.PIC_REPORT) { await dropMedia(acc, 'all'); await mergeDoc('wface/x_' + acc, { at: now, by: 'report' }); return { ok: true, n, removed: true }; }
       return { ok: true, n };
     },
+    // ---------- 🏆 시즌 패스 ----------
+    'GET /api/season': async t => {
+      const a = needLogin(t), u = a.u, s = seasonOfU(u), srv = srvOf(u);
+      const rewards = Array.from({ length: S.PASS_MAX }, (_, i) => { const r = S.passReward(i + 1, season); return { lv: i + 1, text: S.passText(r), look: r.look || null, got: s.claimed.includes(i + 1) }; });
+      const missions = S.SEASON_MISSIONS.map(m => ({ id: m.id, icon: m.icon, text: m.text, n: m.n, p: Math.min(m.n, s.st[m.key] || 0), xp: m.xp, done: s.sm.includes(m.id) }));
+      if (season > 1) await finishSeason(season - 1, srv).catch(() => {});
+      const hof = await readDoc('meta/hof_' + LV);
+      const fame = Object.entries(hof).filter(([k]) => k.endsWith('_g' + srv)).map(([k, x]) => ({ n: +k.slice(1, k.indexOf('_')), s: x.s || [], p: x.p || [] })).sort((x, y) => y.n - x.n);
+      const note = u.rankNote || null;
+      if (note) { delete u.rankNote; save(); }
+      return Object.assign(seasonView(u), { rewards, missions, fame, note, srvName: S.serverName(srv), coins: walletOf(u).coins });
+    },
+    'POST /api/season/claim': async (t, q, b) => {
+      const u = walletOf(needLogin(t).u), s = seasonOfU(u), lv = passLv(s);
+      const list = b.lv === 'all' ? Array.from({ length: lv }, (_, i) => i + 1).filter(x => !s.claimed.includes(x)) : [Math.floor(Number(b.lv))];
+      if (!list.length) fail('받을 보상이 없어요.');
+      for (const x of list) { if (!(x >= 1 && x <= lv)) fail('아직 그 단계에 오르지 못했어요.'); if (s.claimed.includes(x)) fail('이미 받았어요.'); }
+      const got = [];
+      for (const x of list) { const r = S.passReward(x, season); giveReward(u, r); s.claimed.push(x); got.push(S.passText(r)); }
+      save();
+      if (u.profile) publishCard(u);
+      return Object.assign(seasonView(u), { ok: true, got, coins: u.coins, items: u.items, looks: lookOf(u) });
+    },
+    'POST /api/season/mission': async (t, q, b) => {
+      const u = needLogin(t).u, s = seasonOfU(u), m = S.SEASON_MISSIONS.find(x => x.id === b.id);
+      if (!m || s.sm.includes(m.id)) fail('이미 받았거나 없는 미션이에요.');
+      if ((s.st[m.key] || 0) < m.n) fail('아직 미션을 다 하지 못했어요.');
+      s.sm.push(m.id);
+      s.xp += m.xp;
+      save();
+      return Object.assign(seasonView(u), { ok: true, xp: m.xp });
+    },
+    // ---------- ⚔️ 랭크 배틀 ----------
+    'GET /api/rank': async t => {
+      const a = await needPlayer(t), u = a.u, r = rankOf(u), now = Date.now();
+      const list = (await playersOf(a.srv)).filter(p => p.rs === season && (p.rw || p.rl || p.rp)).map(p => (p.acc === u.acc ? Object.assign(p, { rp: r.rp, rw: r.w }) : p)).sort((x, y) => y.rp - x.rp || y.rw - x.rw);
+      rkArk = new Set(list.slice(0, S.ARK_TOP).filter(p => p.rp >= S.NEM_RP).map(p => p.acc));
+      const place = list.findIndex(p => p.acc === u.acc) + 1;
+      const top = list.slice(0, 50).map((p, i) => ({ acc: p.acc, nick: p.nick, sc: schoolById(p.sid).name, rp: p.rp, w: p.rw || 0, tier: S.tierOf(p.rp, i + 1), me: p.acc === u.acc, av: p.av, pv: p.pv, ti: p.ti, fr: p.fr }));
+      const live = Object.entries(cloud ? await readDoc(`wace/l${a.srv}`) : {}).filter(([, v]) => v && now - v.at < 5 * 60e3).map(([id, v]) => ({ id, a: v.a, b: v.b, ta: S.tierOf(v.ra), tb: S.tierOf(v.rb) }));
+      const note = u.rankNote || null;
+      if (note) { delete u.rankNote; save(); }
+      return { me: { rp: r.rp, w: r.w, l: r.l, streak: r.streak || 0, best: r.best || 0, place, tier: S.tierOf(r.rp, place) }, top, live, total: list.length, online: !!cloud, note, season };
+    },
+    'POST /api/rank/queue': async (t, q, b) => {
+      const a = await needPlayer(t), u = a.u;
+      await rkStop();
+      const probs = (Array.isArray(b.probs) ? b.probs : []).slice(0, S.RANK_N).map(cleanProblem);
+      if (probs.length < S.RANK_N) fail('문제를 만들지 못했어요. 다시 해 주세요.');
+      const card = rkCard(u), now = Date.now(), me = (rk = { acc: u.acc, srv: a.srv, card, probs, since: now, unsubs: [], inQueue: !!cloud, g: a.grade, sem: u.profile.semester || 1 });
+      if (cloud) {
+        await mergeDoc(`wace/q${a.srv}`, { [u.acc]: Object.assign({ at: now, m: '', g: a.grade, sem: me.sem }, card) });
+        me.unsubs.push(sub(`wace/q${a.srv}`, d => { if (rk === me) { me.q = d; rkScan(d); } }));
+        me.timer = setInterval(() => { // 아직 기다리는 중이라는 표시 + 다시 찾아보기
+          if (rk !== me || me.match) return;
+          if (cloud.rdb) cloud.rdb.ref(`wace/q${a.srv}/${u.acc}`).update({ at: Date.now() }).catch(() => {});
+          if (me.q) rkScan(me.q);
+        }, 5000);
+      }
+      rkEmit('wait', { since: now, online: !!cloud });
+      return { ok: true, online: !!cloud };
+    },
+    'POST /api/rank/bot': async t => { // 🤖 기다려도 상대가 없으면 연습 로봇과 (점수는 조금만)
+      const a = await needPlayer(t), me = rk;
+      if (!me || me.acc !== a.u.acc || me.match) fail('먼저 대결 찾기를 눌러 주세요.');
+      (me.unsubs || []).forEach(f => f()); me.unsubs = [];
+      clearInterval(me.timer);
+      if (me.inQueue && cloud) { me.inQueue = false; await mergeDoc(`wace/q${me.srv}`, { [me.acc]: null }).catch(() => {}); }
+      me.bot = true; me.match = 'bot' + rand(4);
+      const m = { id: me.match, a: me.card, b: { acc: 'bot', nick: '연습 로봇', rp: me.card.rp, av: '🤖', pv: 0, sc: '로봇 학교' }, probs: me.probs, sa: 0, sb: 0, win: '' };
+      rkUpdate(me, m);
+      const pace = S.botPace(me.card.rp) * 1000;
+      let at = me.t0;
+      me.botAt = me.probs.map(() => (at += pace * (0.7 + Math.random() * 0.6)));
+      me.timer = setInterval(() => rkTick(me), 300);
+      return { ok: true };
+    },
+    'POST /api/rank/progress': async (t, q, b) => {
+      const a = needLogin(t), me = rk;
+      if (!me || !me.m || me.acc !== a.u.acc || me.ended) return { ok: false };
+      const n = Math.max(0, Math.min(S.RANK_N, Math.floor(Number(b.n) || 0))), side = rkSide(me, me.m);
+      if (me.bot) { me.m['s' + side] = n; if (n >= S.RANK_N) await rkSetWin(me, me.acc); else rkUpdate(me, me.m); return { ok: true }; }
+      await mergeDoc('wace/m_' + me.m.id, { ['s' + side]: n });
+      if (n >= S.RANK_N) await rkSetWin(me, me.acc);
+      return { ok: true };
+    },
+    'POST /api/rank/quit': async t => { // 기다리기 취소, 또는 대결 중이면 기권 (진 것으로)
+      const a = needLogin(t), me = rk;
+      if (!me || me.acc !== a.u.acc) return { ok: true };
+      if (me.m && !me.m.win && !me.ended) { await rkSetWin(me, me.bot ? 'bot' : rkSide(me, me.m) === 'a' ? me.m.b.acc : me.m.a.acc); return { ok: true, quit: true }; }
+      await rkStop();
+      return { ok: true };
+    },
+    'POST /api/rank/watch': async (t, q, b) => { // 👀 다른 친구 대결 구경
+      needLogin(t);
+      if (!cloud) fail('온라인일 때만 구경할 수 있어요.');
+      rkWatchStop();
+      const id = String(b.id || '');
+      if (!/^[0-9a-f]{6,20}$/.test(id)) fail('그 대결을 찾을 수 없어요.');
+      rkWatch = sub('wace/m_' + id, m => { if (m && m.id) emit(null, { t: 'rankwatch', m: { id: m.id, a: m.a, b: m.b, sa: m.sa || 0, sb: m.sb || 0, win: m.win || '' } }); });
+      return { ok: true };
+    },
+    'POST /api/rank/unwatch': async () => { rkWatchStop(); return { ok: true }; },
+    // ---------- 🏟️ 전국 학교 대항전 ----------
+    'GET /api/event': async t => {
+      const a = await needPlayer(t), rt = a.rt, ev = S.eventOf(), now = Date.now(), lm = await readDoc(lmPath(rt.g));
+      const marks = [...lmCells].map(([c, [id, name]]) => {
+        const o = rt.owner[c], x = lm['c' + c], since = o >= 0 && x && x.k === keyOfId(o) ? x.at : null;
+        return { cell: c, id, name, sid: o, school: o >= 0 ? schoolById(o).name : '', since, mine: o === a.sid };
+      });
+      const pts = {};
+      if (ev.on) {
+        const d = await readDoc(evPath(ev.id));
+        for (const [k, v] of Object.entries(d)) if (k.includes('|')) pts[k] = v;
+        for (const m of marks) if (m.sid >= 0 && m.since) { const k = keyOfId(m.sid); pts[k] = (pts[k] || 0) + Math.max(0, Math.floor((now - Math.max(m.since, ev.start)) / 60000)); }
+      }
+      const mine = keyOfId(a.sid), all = Object.entries(pts).sort((x, y) => y[1] - x[1]);
+      const board = all.slice(0, 10).map(([k, p]) => ({ name: k.split('|')[2] || '?', pts: p, me: k === mine }));
+      return { ev, now, marks, board, myPts: pts[mine] || 0, myPlace: all.findIndex(([k]) => k === mine) + 1, last: await eventLast(a, rt) };
+    },
+    'POST /api/event/claim': async t => {
+      const a = await needPlayer(t), last = await eventLast(a, a.rt), u = walletOf(a.u);
+      if (!last.place || last.place > 3) fail('지난 대항전에서 우리 학교가 3등 안에 들지 못했어요.');
+      u.evClaim = u.evClaim || {};
+      if (u.evClaim[last.id]) fail('이미 받았어요.');
+      u.evClaim[last.id] = 1;
+      const got = S.EVENT_PRIZE[last.place - 1];
+      earn(u, got);
+      if (last.place === 1) giveOwn(u, 'ti', '대항전 우승');
+      save();
+      return { ok: true, got, place: last.place, coins: u.coins };
+    },
+    // ---------- 💰 곳간 · 🏗️ 경제 건물 올리기 · 🏪 장터 ----------
+    'GET /api/eco': async t => ecoOf(await needPlayer(t)),
+    'POST /api/eco/collect': async t => {
+      const a = await needPlayer(t), e = ecoOf(a), u = walletOf(a.u);
+      if (e.stored < 1 && e.storedXp < 1) fail('아직 곳간이 비어 있어요. 조금 뒤에 와요!');
+      earn(u, e.stored);
+      addXP(u, e.storedXp + (e.hours >= 1 ? S.XP.collect : 0));
+      u.eco.at = Date.now();
+      save();
+      return Object.assign(ecoOf(a), { ok: true, got: e.stored, gotXp: e.storedXp, coins: u.coins });
+    },
+    'POST /api/build/up': async (t, q, b) => {
+      const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), cell = targetCell(b), x = buildView(rt)[cell], def = x && S.ECO_BUILDINGS.find(d => d.id === x[0]);
+      if (!def || x[1] !== a.sid) fail('우리 학교 경제 건물만 단계를 올릴 수 있어요.');
+      if (def.id !== 'library' && x[4] !== u.acc) fail('내가 지은 건물만 올릴 수 있어요.');
+      const lv = x[3] || 1;
+      if (lv >= 3) fail('이미 가장 높은 3단계예요.');
+      const price = def.up[lv - 1];
+      if (u.coins < price) fail(`코인이 모자라요. (${price}코인 필요)`);
+      u.coins -= price;
+      track(u, 'items', 1);
+      save();
+      rt.builds[cell] = [x[0], x[1], x[2], lv + 1, x[4] || ''];
+      await mergeDoc(`${WP}/g${rt.g}/b/main`, { ['c' + cell]: rt.builds[cell] });
+      emit(rt.g, { t: 'builds', items: buildView(rt) });
+      return { ok: true, builds: buildView(rt), coins: u.coins, items: u.items, lv: lv + 1 };
+    },
+    'GET /api/market': async t => {
+      const a = await needPlayer(t), u = walletOf(a.u), c = await mkCollect(u, a.srv), d = await readDoc(mkPath(a.srv)), now = Date.now();
+      const all = mkList(d), live = all.filter(x => !x.buyer && now - x.at < S.MARKET_DAYS * 864e5);
+      return { list: live.filter(x => x.acc !== u.acc).sort((x, y) => x.price - y.price).slice(0, 60), mine: all.filter(x => x.acc === u.acc), got: c.got, back: c.back, coins: u.coins, items: u.items };
+    },
+    'POST /api/market/sell': async (t, q, b) => {
+      const a = await needPlayer(t), u = walletOf(a.u), item = String(b.item || ''), price = Math.floor(Number(b.price));
+      if (!S.ITEM_NAME[item]) fail('팔 수 없는 물건이에요.');
+      if (!(price >= 1 && price <= 999)) fail('값은 1~999코인으로 정해 주세요.');
+      if ((u.items[item] || 0) < 1) fail('그 물건이 없어요.');
+      const d = await readDoc(mkPath(a.srv));
+      if (mkList(d).filter(x => x.acc === u.acc).length >= S.MARKET_MAX) fail(`장터에는 한 번에 ${S.MARKET_MAX}개까지 올릴 수 있어요.`);
+      u.items[item]--;
+      save();
+      const x = { id: rand(5), acc: u.acc, nick: u.profile.nickname, item, price, at: Date.now(), buyer: '' };
+      await mergeDoc(mkPath(a.srv), { ['i_' + x.id]: x });
+      return { ok: true, items: u.items, coins: u.coins };
+    },
+    'POST /api/market/buy': async (t, q, b) => {
+      const a = await needPlayer(t), u = walletOf(a.u), id = String(b.id || ''), x = (await readDoc(mkPath(a.srv)))['i_' + id];
+      if (!x || x.buyer) fail('이미 팔렸거나 없는 물건이에요.');
+      if (x.acc === u.acc) fail('내 물건은 살 수 없어요.');
+      if (u.coins < x.price) fail(`코인이 모자라요. (${x.price}코인 필요)`);
+      if (!(await mkTake(a.srv, id, u.acc))) fail('방금 다른 친구가 샀어요!');
+      u.coins -= x.price;
+      u.items[x.item] = (u.items[x.item] || 0) + 1;
+      sst(u, 'trades', 1); addXP(u, S.XP.trade);
+      save();
+      return { ok: true, coins: u.coins, items: u.items, item: x.item };
+    },
+    'POST /api/market/cancel': async (t, q, b) => {
+      const a = await needPlayer(t), u = walletOf(a.u), id = String(b.id || ''), x = (await readDoc(mkPath(a.srv)))['i_' + id];
+      if (!x || x.acc !== u.acc) fail('내 물건만 내릴 수 있어요.');
+      if (x.buyer) fail('이미 팔렸어요! 장터를 다시 열면 코인을 받아요.');
+      await mergeDoc(mkPath(a.srv), { ['i_' + id]: null });
+      u.items[x.item] = (u.items[x.item] || 0) + 1;
+      save();
+      return { ok: true, items: u.items, coins: u.coins };
+    },
+    // ---------- 🗺️ 모험 모드 · 📊 실력 지도 ----------
+    'GET /api/adv': async t => ({ prog: needLogin(t).u.adv || {} }),
+    'POST /api/adv/clear': async (t, q, b) => {
+      const a = await needPlayer(t), u = walletOf(a.u), id = String(b.stage || ''), m = id.match(/^(\d)-(\d)$/);
+      if (!m || +m[1] >= S.ADV.length || +m[2] > 3) fail('없는 스테이지예요.');
+      const r = +m[1], s = +m[2], prog = (u.adv = u.adv || {}), before = prog[id] || 0;
+      const prev = s > 0 ? `${r}-${s - 1}` : r > 0 ? `${r - 1}-3` : null;
+      if (prev && !prog[prev]) fail('앞 스테이지를 먼저 깨요.');
+      const stars = Math.max(1, Math.min(3, Math.floor(Number(b.stars) || 1))), first = !before;
+      const solved = Math.max(0, Math.min(s === 3 ? S.ADV_BOSS_N : S.ADV_N, Math.floor(Number(b.solved) || 0)));
+      const got = S.advReward(s, first, stars === 3 && before < 3);
+      prog[id] = Math.max(before, stars);
+      const st = statsOf(u);
+      st.solved += solved; noteStreak(u, b.streak); track(u, 'solved', solved);
+      earn(u, got);
+      if (first) { sst(u, 'stages', 1); addXP(u, s === 3 ? S.XP.boss : S.XP.stage); }
+      save();
+      publishCard(u);
+      return { ok: true, got, first, stars: prog[id], prog, coins: u.coins, stats: st, badges: newBadges(u), mission: missionView(u).ready };
+    },
+    'POST /api/topics': async (t, q, b) => { // 단원마다 맞힌 수 / 푼 수 (실력 지도 · 선생님 화면)
+      const u = needLogin(t).u, tp = (u.topic = u.topic || {});
+      for (const [k, v] of Object.entries(b.s || {}).slice(0, 30)) {
+        if (k.length > 20 || !Array.isArray(v)) continue;
+        const ok = Math.max(0, Math.min(60, Math.floor(v[0]) || 0)), n = Math.max(ok, Math.min(60, Math.floor(v[1]) || 0));
+        if (!n) continue;
+        const cur = tp[k] || [0, 0];
+        tp[k] = [cur[0] + ok, cur[1] + n];
+        if (tp[k][1] > 400) tp[k] = [Math.round(tp[k][0] / 2), Math.round(tp[k][1] / 2)]; // 최근 기록이 더 중요하게
+      }
+      save();
+      publishClass(u);
+      return { ok: true, topic: tp };
+    },
+    'GET /api/skill': async t => ({ topic: needLogin(t).u.topic || {} }),
     // ---------- 👾 보스 레이드 ----------
     'GET /api/raid': async t => {
       const a = await needPlayer(t), week = S.raidWeek(), d = await readDoc(`${WP}/g${a.srv}/raid/w${week}`), hp = S.RAID_HP[LV];
@@ -1744,17 +2278,19 @@
       return { ok: true, got: S.RAID_WIN, item, coins: u.coins, items: u.items };
     },
     'POST /api/build': async (t, q, b) => { // 🏗️ 우리 땅에 건물 짓기
-      const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), cell = targetCell(b), def = S.BUILDINGS.find(x => x.id === b.kind);
+      const a = await needPlayer(t), rt = a.rt, u = walletOf(a.u), cell = targetCell(b), def = S.BUILDINGS.find(x => x.id === b.kind) || S.ECO_BUILDINGS.find(x => x.id === b.kind);
       if (!def) fail('없는 건물이에요.');
       if (rt.owner[cell] !== a.sid || rt.homeCell[cell] >= 0) fail('우리 학교 땅(본부 말고)에만 지을 수 있어요.');
       const view = buildView(rt);
       if (view[cell]) fail('이미 건물이 있어요. 허물고 다시 지어요.');
       if (Object.values(view).filter(x => x[1] === a.sid).length >= S.BUILD_MAX) fail(`한 학교에 건물은 ${S.BUILD_MAX}개까지예요.`);
+      if (def.max && Object.values(view).filter(x => x[0] === def.id && x[1] === a.sid && x[4] === u.acc).length >= def.max) fail(`${def.icon} ${def.name}은 한 사람이 ${def.max}개까지 지을 수 있어요.`);
+      if (def.school && Object.values(view).filter(x => x[0] === def.id && x[1] === a.sid).length >= def.school) fail(`${def.icon} ${def.name}은 한 학교에 ${def.school}개까지예요.`);
       if (u.coins < def.price) fail(`코인이 모자라요. (${def.price}코인 필요)`);
       u.coins -= def.price;
       track(u, 'items', 1);
       save();
-      rt.builds[cell] = [def.id, a.sid, Date.now()];
+      rt.builds[cell] = def.eco ? [def.id, a.sid, Date.now(), 1, u.acc] : [def.id, a.sid, Date.now()]; // 경제 건물: 단계 · 지은 사람
       await mergeDoc(`${WP}/g${rt.g}/b/main`, { ['c' + cell]: rt.builds[cell] });
       emit(rt.g, { t: 'builds', items: buildView(rt) });
       pushFeed(rt, { t: 'ev', ev: { kind: 'build', by: a.u.profile.nickname, role: a.u.role || null, sid: a.sid, b: def.id, cell } });

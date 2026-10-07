@@ -101,16 +101,21 @@
     undo: 'M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3',
     siren: 'M6 18v-6a6 6 0 0 1 12 0v6 M4 21h16 M12 3v1 M4.5 6l.8.8 M19.5 6l-.8.8 M10 12a2 2 0 0 1 2-2',
     font: 'M4 20L10 4h1l6 16 M6.5 14h8 M17 20v-6.5a2.5 2.5 0 0 1 5 0V20 M17 16.5h5',
+    pick: 'M4 9c3-4 9-6 16-5-3 1-6 2.5-8.5 4.5 M14 7.5L4.5 20.5 M12 9.5c2 .5 3.5 1.8 4.5 3.5',
+    store: 'M4 10v10h16V10 M3 6l2-3h14l2 3v1.5a2.5 2.5 0 0 1-4.5 1.5 2.5 2.5 0 0 1-4.5 0 2.5 2.5 0 0 1-4.5 0A2.5 2.5 0 0 1 3 7.5Z M10 20v-5h4v5',
+    up: 'M12 20V5 M6 11l6-6 6 6',
+    next: 'M4 12h15 M13 6l6 6-6 6',
+    eye: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z' + C(12, 12, 3),
     copy: R(8, 8, 12, 12, 2) + 'M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3',
   };
   // 이모티콘 → 아이콘 (변형 선택자 FE0F 가 있든 없든)
   const PAIRS = {
-    shield: '🛡️🛡', square: '⬜⬛◻️', swords: '⚔️🗡️', coin: '🪙', school: '🏫', handshake: '🤝', gift: '🎁', bag: '🛒🎒', tag: '🏷️', door: '🚪', pencil: '✏️', cap: '👩‍🏫🎓', sail: '⛵',
+    shield: '🛡️🛡', square: '⬜⬛◻️', swords: '⚔️🗡️', coin: '🪙💰', school: '🏫', handshake: '🤝', gift: '🎁', bag: '🛒🎒', tag: '🏷️', door: '🚪', pencil: '✏️', cap: '👩‍🏫🎓', sail: '⛵',
     user: '😀🧒👤', flag: '🚩🏁', checkc: '✅', trash: '🗑️', timer: '⏱️', build: '🏗️', tools: '🛠️', fire: '🔥', rocket: '🚀☄️', pin: '📍', boss: '👾', bomb: '💣', scope: '🔭',
-    star: '⭐🌟', globe: '🌐', refresh: '🔄♻️', note: '📒📘', target: '🎯', palette: '🧑‍🎨', ballot: '🗳️', trophy: '🏆', map: '🗺️🗾', chat: '💬', chart: '📊', bolt: '⚡💪', mail: '📨',
+    star: '⭐🌟', globe: '🌐', refresh: '🔄♻️', note: '📒📘', target: '🎯', palette: '🧑‍🎨', ballot: '🗳️', trophy: '🏆🏟️', map: '🗺️🗾', chat: '💬', chart: '📊', bolt: '⚡💪', mail: '📨',
     xc: '❌🙅', party: '🎉', ban: '🚫✋', bug: '🐛', bulb: '💡', music: '🎵', tower: '🗼🏰🏯', sad: '😢😵', books: '📚', calendar: '🗓️📅', medal: '🏅🥇🥈🥉', megaphone: '📢', broom: '🧹',
-    boom: '🧨💥', wall: '🧱', crown: '👑', key: '🔑', lock: '🔐🔒🔓', help: '❓', search: '🔎🔍', compass: '🧭', pole: '🎌', wave: '🌊', hammer: '🔨', leaf: '🕊️🌱', hourglass: '⏳',
-    scroll: '📜', city: '🏙️🏘️', sliders: '⚙️', sparkles: '✨', alert: '😱', cake: '🎂', clipboard: '📋', volume: '🔊', smile: '😊😆', check: '👍', anchor: '⚓', x: '✕', image: '🖼️📷📸🏞️', video: '🎬📹🎥', brush: '🖌️🖍️', idcard: '🪪', eraser: '🧽', bucket: '🪣', undo: '↩️', siren: '🚨', font: '🔤🔠',
+    boom: '🧨💥', wall: '🧱', crown: '👑', key: '🔑', lock: '🔐🔒🔓', help: '❓', search: '🔎🔍', compass: '🧭', pole: '🎌', wave: '🌊', hammer: '🔨', leaf: '🕊️🌱🌾', hourglass: '⏳',
+    scroll: '📜', city: '🏙️🏘️', sliders: '⚙️', sparkles: '✨', alert: '😱', cake: '🎂', clipboard: '📋', volume: '🔊', smile: '😊😆', check: '👍', anchor: '⚓', x: '✕', pick: '⛏️', store: '🏪', up: '⬆️', next: '➡️', eye: '👀', image: '🖼️📷📸🏞️', video: '🎬📹🎥', brush: '🖌️🖍️', idcard: '🪪', eraser: '🧽', bucket: '🪣', undo: '↩️', siren: '🚨', font: '🔤🔠',
   };
   const MAP = {};
   const seg = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('ko', { granularity: 'grapheme' }) : null;

@@ -48,8 +48,9 @@
     return c;
   };
   let treasures = new Map(), builds = {}; // 🎁 오늘의 보물 상자 (칸 → 보상), 🏗️ 건물 (칸 → [종류, 학교])
+  const bdefOf = id => S.BUILDINGS.find(x => x.id === id) || S.ECO_BUILDINGS.find(x => x.id === id), BICON = { wall: 'wall', tower: 'tower', pole: 'pole', mine: 'pick', farm: 'leaf', library: 'books' };
   const bExtra = i => S.buildExtra(i, W.owner, G.nbOf, builds); // 🗼 망루 · 🧱 성벽 때문에 더 풀 문제
-  const needToTake = i => { const c = costOf(i); return (c.error ? Math.max(S.BASE_COST, W.def[i]) : c.cost) + bExtra(i); };
+  const needToTake = i => { const c = costOf(i); return (c.error ? Math.max(S.BASE_COST, W.def[i]) : c.cost) + bExtra(i) + (landmarks.has(i) ? S.LM_COST : 0); }; // 👑 랜드마크는 +5
   // 새 기능(코인·상점·미션·시즌·결투·운영자 초대)은 브라우저 안 게임 서버(backend.js)에서 돌아간다
   const FEAT = !!window.MLEBackend;
   let flagsOf = {}, shieldOf = new Map(), missionReady = 0, weakCells = [], inviteShown = false;
@@ -1070,7 +1071,21 @@
         const i = +c;
         if (W.owner[i] !== b[1] || !vis(i)) continue;
         const col = flagsOf[b[1]] ? flagsOf[b[1]].c : b[1] === mySid() ? '#d97706' : cssColor(b[1]);
-        window.MLEIcons.draw(ctx, b[0] === 'wall' ? 'wall' : b[0] === 'tower' ? 'tower' : 'pole', SX(G.sx[i]), SY(G.sy[i]), bs, col);
+        window.MLEIcons.draw(ctx, BICON[b[0]] || 'pole', SX(G.sx[i]), SY(G.sy[i]), bs, col);
+      }
+    }
+    if (landmarks.size) { // 👑 랜드마크 (대항전 중이면 빨갛게)
+      const ls = Math.round(Math.max(18, Math.min(34, 15 + cp * 0.3))), hot = eventNow && eventNow.on;
+      for (const [i, lm] of landmarks) {
+        if (!vis(i)) continue;
+        const x = SX(G.sx[i]), y = SY(G.sy[i]), o = W.owner[i];
+        ctx.beginPath(); ctx.arc(x, y, ls * 0.8, 0, 7); ctx.fillStyle = hot ? 'rgba(239,68,68,.3)' : 'rgba(250,204,21,.34)'; ctx.fill();
+        window.MLEIcons.draw(ctx, 'crown', x, y, ls, o >= 0 ? (o === mySid() ? '#d97706' : cssColor(o)) : '#b45309', '#fffbea');
+        if (cp >= 9) {
+          ctx.font = `800 ${Math.round(Math.min(14, 10 + cp * 0.05))}px ${UIF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+          ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.strokeText(lm[1], x, y + ls * 0.62);
+          ctx.fillStyle = '#7c2d12'; ctx.fillText(lm[1], x, y + ls * 0.62);
+        }
       }
     }
     if (treasures.size) { // 🎁 보물 상자: 멀리서도 보이게 통통 튄다
@@ -1262,10 +1277,11 @@
     if (o >= 0 && hs < 0) tags.push(`<span class="tag">🛡️ 방어 <b>${d}</b></span>`);
     if (shielded(i)) tags.push(`<span class="tag" style="--c:#f5b301">✨ 방패가 지키는 중 · ${Math.ceil((shieldOf.get(i) - Date.now()) / 3600e3)}시간 남음</span>`);
     if (o >= 0 && !mine && hs < 0 && FEAT && !shut) tags.push('<span class="tag" style="--c:#e5484d">⚔️ 1:1 수학 결투로 뺏어요</span>');
-    const bd = builds[i] && W.owner[i] === builds[i][1] ? S.BUILDINGS.find(x => x.id === builds[i][0]) : null, ex = !mine && o >= 0 ? bExtra(i) : 0;
+    const bd = builds[i] && W.owner[i] === builds[i][1] ? bdefOf(builds[i][0]) : null, ex = !mine && o >= 0 ? bExtra(i) : 0;
     if (!mine && hs < 0 && !cost.error && !shut) tags.push(`<span class="tag hot">${cost.far ? '🚀 멀리 있는 땅 · ' : cost.escape ? '🚪 탈출길 · ' : '⚔️ '}문제 <b>${cost.cost + ex}개</b> 풀면 뺏어요</span>`);
+    if (landmarks.has(i)) tags.push(`<span class="tag hot" style="--c:#b45309">👑 랜드마크 · ${esc(landmarks.get(i)[1])} · 문제 +${S.LM_COST}${eventNow && eventNow.on ? ' · 🏟️ 대항전 점수!' : ''}</span>`);
     if (treasures.has(i)) tags.push(`<span class="tag hot">🎁 보물 상자! 차지하면 <b>${esc(S.rewardText(treasures.get(i)))}</b></span>`);
-    if (bd) tags.push(`<span class="tag" style="--c:#8b5cf6">${bd.icon} ${esc(bd.name)} · ${esc(bd.desc)}</span>`);
+    if (bd) tags.push(`<span class="tag" style="--c:#8b5cf6">${bd.icon} ${esc(bd.name)}${bd.eco ? ` ${builds[i][3] || 1}단계` : ''} · ${esc(bd.desc)}</span>`);
     else if (ex) tags.push(`<span class="tag" style="--c:#8b5cf6">🗼 옆에 망루가 있어서 문제 +${ex}</span>`);
     if (G.jpCell && G.jpCell[i]) tags.push(`<span class="tag" style="--c:#c2410c">🗾 일본 땅 · 우리 땅 ${S.JP_MIN}칸 이상 + ⛵ 배로 건너가요${!G.sides[i] ? ' · 🌊 바닷가' : ''}</span>`);
     if (!mine && hs < 0 && cost.ship) tags.push(`<span class="tag hot">⛵ 배를 타고 건너가요 (배 ${(me.items || {}).ship || 0}척)</span>`);
@@ -1278,6 +1294,7 @@
     const deal = off && off.to === my ? `<button type="button" class="btn buy" id="btnBuy">🛒 땅 사기 (${off.cells.length}칸 · 문제 없이)</button>`
       : off && off.from === my ? `<button type="button" class="link-btn" id="btnUnsell">🏷️ 땅 팔기 취소</button>` : '';
     const sellBtn = mine && hs < 0 ? `<button type="button" class="link-btn" id="btnSell">🏷️ 땅 팔기</button>` + (FEAT ? (bd ? `<button type="button" class="link-btn" id="btnUnbuild">🔨 ${esc(bd.name)} 허물기</button>` : '<button type="button" class="link-btn" id="btnBuild">🏗️ 건물 짓기</button>') : '') : '';
+    const bLv = bd && bd.eco ? builds[i][3] || 1 : 0, bupBtn = mine && bd && bd.eco && bLv < 3 && (bd.id === 'library' || builds[i][4] === me.acc) ? `<button type="button" class="link-btn" id="btnBup">⬆️ ${esc(bd.name)} ${bLv + 1}단계 (🪙 ${bd.up[bLv - 1]})</button>` : '';
     const it = (me.items || {}), items = !FEAT ? '' : mine && hs < 0 && !shielded(i) ? `<button type="button" class="link-btn" id="btnShield">🛡️ 방패 쓰기 (${it.shield || 0}개)</button>`
       : !mine && hs < 0 && !cost.error && !shut ? `<button type="button" class="link-btn" id="btnBomb">💣 폭탄 쓰기 (${it.bomb || 0}개)</button>` : '';
     const admin = me.role ? `<div class="popup-links admin"><b>🛠️</b>${hs < 0 && o >= 0 ? '<button type="button" class="link-btn" data-adm="clearCell">🧹 이 땅 비우기</button>' : ''}${o >= 0 ? '<button type="button" class="link-btn" data-adm="clearSchool">🧹 이 학교 땅 모두 비우기</button>' : ''}${o >= G.schoolCount ? '<button type="button" class="link-btn" data-adm="hideSchool">🗑️ 가짜 학교 지우기</button>' : ''}</div>` : '';
@@ -1291,13 +1308,14 @@
       ${deal ? `<div class="popup-btns">${deal}</div>` : ''}
       ${(mine ? defWhy : atkWhy) && !deal ? `<div class="why">${esc(mine ? defWhy : atkWhy)}</div>` : ''}
       ${items ? `<div class="popup-links">${items}</div>` : ''}
-      ${o >= 0 ? `<div class="popup-links"><button type="button" class="link-btn" id="btnInfo">🏫 ${esc(short(hs >= 0 ? hs : o))} 정보</button>${sellBtn}${homeLink(hs >= 0 ? hs : o)}</div>` : ''}${admin}`;
+      ${o >= 0 ? `<div class="popup-links"><button type="button" class="link-btn" id="btnInfo">🏫 ${esc(short(hs >= 0 ? hs : o))} 정보</button>${sellBtn}${bupBtn}${homeLink(hs >= 0 ? hs : o)}</div>` : ''}${admin}`;
     box.hidden = false;
     if ($('#btnBuy')) $('#btnBuy').onclick = async () => { const r = await api('/api/buy', { id: off.id }); if (r.offers) setOffers(r.offers); afterAction(r, `🛒 ${short(off.from)}의 땅 ${r.cells ? r.cells.length : 0}칸을 샀어요!`, i, 'capture'); };
     if ($('#btnUnsell')) $('#btnUnsell').onclick = async () => { const r = await api('/api/sell/cancel', { id: off.id }); if (r.error) return toast(r.error, 'err'); setOffers(r.offers); toast('땅 팔기를 취소했어요.', 'ok'); };
     if ($('#btnSell')) $('#btnSell').onclick = () => openSell(i);
     if ($('#btnBuild')) $('#btnBuild').onclick = () => openBuild(i);
     if ($('#btnUnbuild')) $('#btnUnbuild').onclick = async () => { if (!confirm('건물을 허물까요? (코인은 돌려받지 못해요)')) return; const r = await api('/api/build/remove', { cell: i }); if (r.error) return toast(r.error, 'err'); builds = r.builds; toast('🔨 건물을 허물었어요.', 'ok'); renderPopup(); requestDraw(); };
+    if ($('#btnBup')) $('#btnBup').onclick = async () => { const r = await api('/api/build/up', { cell: i }); if (r.error) return toast(r.error, 'err'); builds = r.builds; gotWallet(r); Sound.play('defend'); flashes.push({ i, t: performance.now() }); toast(`⬆️ ${bd.icon} ${bd.name} ${r.lv}단계가 됐어요!`, 'ok'); renderPopup(); requestDraw(); };
     if ($('#btnShield')) $('#btnShield').onclick = () => useShield(i);
     if ($('#btnBomb')) $('#btnBomb').onclick = () => useBomb(i);
     $$('#popup [data-adm]').forEach(b => { b.onclick = () => adminAct({ act: b.dataset.adm, cell: i, sid: hs >= 0 ? hs : o }, b); });
@@ -1412,7 +1430,7 @@
   function openBuild(i) { // 🏗️ 건물 고르기
     const n = Object.values(builds).filter(b => b[1] === mySid()).length;
     $('#bdInfo').innerHTML = `🪙 내 코인 <b>${me.infCoins ? '∞' : me.coins || 0}</b> · 우리 학교 건물 <b>${n}</b> / ${S.BUILD_MAX}개`;
-    $('#bdList').innerHTML = S.BUILDINGS.map(b => `<div class="build-item"><div class="bi">${b.icon}</div><div><b>${esc(b.name)}</b><p>${esc(b.desc)}</p></div><button type="button" class="btn primary" data-build="${b.id}" ${(me.coins || 0) >= b.price ? '' : 'disabled'}>🪙 ${b.price}</button></div>`).join('');
+    $('#bdList').innerHTML = [...S.BUILDINGS, ...S.ECO_BUILDINGS].map(b => `<div class="build-item${b.eco ? ' eco' : ''}"><div class="bi">${b.icon}</div><div><b>${esc(b.name)}${b.eco ? ' <small class="eco-tag">💰 경제</small>' : ''}</b><p>${esc(b.desc)}${b.eco ? ` · 3단계까지 올려요` : ''}</p></div><button type="button" class="btn primary" data-build="${b.id}" ${(me.coins || 0) >= b.price ? '' : 'disabled'}>🪙 ${b.price}</button></div>`).join('');
     $('#bdList').onclick = async e => {
       const b = e.target.closest('[data-build]');
       if (!b) return;
@@ -1420,7 +1438,7 @@
       const r = await api('/api/build', { cell: i, kind: b.dataset.build });
       if (r.error) { b.disabled = false; return toast(r.error, 'err'); }
       builds = r.builds; gotWallet(r);
-      const bd = S.BUILDINGS.find(x => x.id === b.dataset.build);
+      const bd = bdefOf(b.dataset.build);
       closeM('buildModal'); Sound.play('defend'); flashes.push({ i, t: performance.now() });
       toast(`🏗️ ${bd.icon} ${bd.name}을 지었어요!`, 'ok'); renderPopup(); requestDraw();
     };
@@ -1450,6 +1468,8 @@
     }
     if (r.items) me.items = r.items;
     if (r.mission != null) setMissionDot(r.mission);
+    if (r.season && r.season.n) { seasonSum = Object.assign(seasonSum || {}, r.season); setHubDot(); }
+    if (r.landmark) setTimeout(() => { toast(`👑 랜드마크 「${r.landmark.name}」를 차지했어요! 🏟️ 대항전 +${r.landmark.pts}점`, 'ok'); Sound.play('unlock'); }, 600);
     hud();
   }
   function setMissionDot(n) { missionReady = n; $('#missionDot').hidden = $('#mmMissionDot').hidden = !n; $('#moreDot').hidden = !n || LVL() === 'e'; } // 중·고는 미션이 더보기 안에
@@ -1688,7 +1708,7 @@
     el.textContent = `🔥 ${streak}연속!`;
   }
   function nextProblem() {
-    const p = quiz.p = quiz.fixed ? quiz.fixed[quiz.solved] : P.generate(me.grade, me.profile.semester, quiz.topic);
+    const p = quiz.p = quiz.fixed ? quiz.fixed[quiz.solved] : P.generate(me.grade, quiz.sem || me.profile.semester, quiz.topic);
     quiz.noted = false;
     quiz.busy = false;
     $('#qzTitle').textContent = quiz.title;
@@ -1718,6 +1738,8 @@
       $('#qzPad').hidden = false;
       if (!coarse) setTimeout(() => { const el = $('#qzInput'); if (el) el.focus(); }, 60);
     }
+    if (quiz.adv) renderAdvBar();
+    if (quiz.rank) renderRankBars();
   }
   // 분수를 쓰는 동안 어떻게 보이는지 미리 보여 준다 (10/3 → 3분의 10)
   function showPreview() {
@@ -1739,6 +1761,9 @@
     if (res === true) {
       quiz.busy = true;
       quiz.solved++;
+      noteTopic(quiz.p, true);
+      if (quiz.rank) { api('/api/rank/progress', { n: quiz.solved }); renderRankBars(); }
+      if (quiz.adv) renderAdvBar();
       streak++;
       best = Math.max(best, streak);
       Sound.play('ok', streak);
@@ -1759,10 +1784,22 @@
         const [a, b] = String(v).replace(/\s+/g, '').split('/');
         return feedback(`🔄 분자와 분모가 바뀌었어요! ${a}분의 ${b}는 ${b}/${a} 처럼 위의 수(분자)를 먼저 써요.`, 'bad');
       }
+      noteTopic(quiz.p, false);
       if (!quiz.fixed && !quiz.noted) { // 틀린 문제는 오답 노트에
         quiz.noted = true;
         const { q, a, hint, unit, frac, simplest, choices, topic } = quiz.p;
         api('/api/wrong', { p: { q, a, hint, unit, frac, simplest, choices, topic }, given: String(v).slice(0, 30) }).then(r => { if (r.count != null) setWrongCount(r.count); });
+      }
+      if (quiz.adv) { // 🗺️ 모험: 틀리면 하트가 하나 줄고 다음 문제로
+        const q = quiz;
+        q.busy = true; q.adv.miss++; q.adv.hearts--;
+        renderAdvBar();
+        $('#qzHintBtn').hidden = true; $('#qzPad').hidden = true;
+        feedback(`❌ 정답은 ${P.answerText(q.p)} · 하트 ${Math.max(0, q.adv.hearts)}개 남았어요`, 'bad');
+        if (q.adv.hearts <= 0) { $('#qzAnswer').innerHTML = ''; setTimeout(() => advFail(q), 1100); return; }
+        $('#qzAnswer').innerHTML = '<button type="button" class="btn primary big" id="qzNew">➡️ 다음 문제</button>';
+        $('#qzNew').onclick = nextProblem;
+        return;
       }
       if (quiz.speed) { // 스피드 퀴즈: 정답만 보여 주고 바로 다음 문제
         const q = quiz;
@@ -1803,6 +1840,8 @@
     quiz = null;
     stopTimers(q);
     closeM('quizModal');
+    flushTopics();
+    if (q && q.rank && !q.rank.done) { q.rank.done = true; api('/api/rank/quit', {}); return; } // 랭크 배틀 중에 그만두면 기권
     if (q && q.speed && !q.speed.done && q.solved > 0) api('/api/speed', { score: q.solved, streak: best }).then(r => { if (!r.error) { me.stats = r.stats; gotWallet(r); } });
     else if (q && q.raid && q.solved > 0) reportRaid(q.solved);
     else if (q && q.practice && q.solved > 0) reportPractice(q.solved, q.lostMsg ? `⚔️ 결투에서 맞힌 문제 ${q.solved}개만큼 코인을 받았어요.` : '');
@@ -1959,6 +1998,9 @@
     flagsOf = d.flags || {};
     shieldOf = new Map(d.shields || []);
     if (d.mission != null) setMissionDot(d.mission);
+    seasonSum = d.season || seasonSum; eventNow = d.event || eventNow; myTier = d.rank || myTier;
+    landmarks = new Map((d.landmarks || []).map(([c, id, name]) => [c, [id, name]]));
+    setHubDot();
     colorCache.clear();
     tiles.clear();
     setOffers(d.offers || [], true);
@@ -2026,6 +2068,8 @@
     if (m.t === 'treasures') { treasures = new Map(m.items); requestDraw(); if (sel >= 0) renderPopup(); return; }
     if (m.t === 'builds') { builds = m.items || {}; requestDraw(); if (sel >= 0) renderPopup(); return; }
     if (m.t === 'flags') return setFlags(m.items);
+    if (m.t === 'rank') return onRank(m);
+    if (m.t === 'rankwatch') return onWatch(m.m);
     if (m.t !== 'upd') return;
     if (m.reload) { loadWorld().then(d => { if (d) { updateBoard(); renderPopup(); renderMini(); requestDraw(); hud(); } }); if (m.ev) feed(m.ev); return; }
     if (m.school) { schools[m.school.id] = m.school; W.home[m.school.id] = m.home; if (m.home >= 0) W.homeCell[m.home] = m.school.id; }
@@ -2082,11 +2126,12 @@
       if (ev.to === my && ev.sid !== my) { cls = 'alert'; toast(`🏷️ ${short(ev.sid)}가 우리 학교에 땅 ${ev.n}칸을 팔았어요! 🏷️ 땅을 눌러 '땅 사기'를 하세요.`, 'ok'); Sound.play('unlock'); }
     } else if (ev.kind === 'buy') txt = `🛒 ${who}님이 ${short(ev.from)}의 땅 ${ev.n}칸을 샀어요`;
     else if (ev.kind === 'notice') { txt = `📢 ${ev.text}`; cls = 'alert'; toast(`📢 ${ev.text}`, 'warn'); }
+    else if (ev.kind === 'season') { txt = ev.text; cls = 'alert'; toast(ev.text, 'ok'); seasonSum = null; setTimeout(() => api('/api/season').then(r => { if (!r.error) { seasonSum = r; setHubDot(); } }), 1500); }
     else if (ev.kind === 'admin') { txt = `🛠️ ${ev.by}: ${ev.text}`; if (ev.chatClear) clearChat(); }
     else if (ev.kind === 'union') txt = ev.w === 'new' ? `🛡️ ${ev.school}가 ${ev.mark} ${ev.name} 연합을 만들었어요!` : ev.w === 'join' ? `🛡️ ${ev.school}가 ${ev.mark} ${ev.name} 연합에 들어갔어요!` : `🚪 ${ev.school}가 ${ev.name} 연합에서 나왔어요.`;
     else if (ev.kind === 'raid') { txt = `💥 ${who}님의 마지막 한 방! ${ev.boss ? ev.boss[0] + ' ' + ev.boss[1] : '보스'}를 쓰러뜨렸어요! 공격한 친구는 ✏️ 공부방 → 보스 레이드에서 보상을 받아요.`; cls = 'alert'; }
     else if (ev.kind === 'treasure') txt = `🎁 ${who}님이 보물 상자를 열었어요! (${S.rewardText(ev.r)})`;
-    else if (ev.kind === 'build') { const bd = S.BUILDINGS.find(x => x.id === ev.b); txt = `🏗️ ${who}님이 ${bd ? bd.icon + ' ' + bd.name : '건물'}을 지었어요`; }
+    else if (ev.kind === 'build') { const bd = bdefOf(ev.b); txt = `🏗️ ${who}님이 ${bd ? bd.icon + ' ' + bd.name : '건물'}을 지었어요`; }
     else if (ev.kind === 'bomb') txt = `💣 ${who}님이 폭탄으로 땅 ${ev.n}칸을 한 번에 차지했어요!`;
     else if (ev.kind === 'shield') txt = `🛡️ ${who}님이 방패를 세웠어요 (${S.SHIELD_HOURS}시간)`;
     else if (ev.kind === 'war') { txt = ev.w === 'ask' ? `⚔️ ${ev.an}가 ${ev.bn}에 전쟁을 신청했어요!` : ev.w === 'on' ? `🔥 ${ev.an} vs ${ev.bn} 전쟁 시작! (${S.WAR_MIN}분)` : ev.w === 'no' ? `🕊️ ${ev.bn}가 전쟁 신청을 거절했어요.` : `🤝 ${ev.an}가 ${ev.bn}의 동맹이 되었어요!`; cls = 'alert'; }
@@ -2095,6 +2140,7 @@
     if (ev.kind === 'capture' && ev.ally != null) txt = `🤝 ${who}님(${short(ev.ally)})이 동맹으로 ${short(ev.sid)}를 도와 ${short(ev.prev)}의 땅을 빼앗았어요!`;
     if (ev.kind === 'capture' && ev.ship != null) { txt = `⛵ ${who}님이 배를 타고 일본으로 건너가 땅을 차지했어요!`; if (ev.sid !== my) sailShip(ev.ship, ev.cell); }
     if (ev.kind === 'bomb' && ev.sid !== my) flashes.push({ i: ev.cell, t: performance.now() });
+    if (ev.kind === 'capture' && ev.lm) txt = `👑 ${who}님이 랜드마크 「${ev.lm}」를 차지했어요!${eventNow && eventNow.on ? ' (+20점)' : ''}`;
     if (ev.kind === 'capture' && (ev.far || ev.escape)) txt = `${ev.far ? '🚀' : '🚪'} ${who}님이 ${ev.far ? '멀리 있는' : '탈출길'} 땅을 차지했어요!`;
     if (ev.kind === 'capture' && ev.prev === my && ev.sid !== my) { cls = 'alert'; toast(`😱 ${short(ev.sid)}에게 우리 땅을 빼앗겼어요!`, 'warn'); Sound.play('lose'); }
     const li = document.createElement('li');
@@ -2488,10 +2534,15 @@
     const allTop = {};
     st.forEach(s => (s.top || []).forEach(([t, n]) => { allTop[t] = (allTop[t] || 0) + n; }));
     const weak = Object.entries(allTop).sort((x, y) => y[1] - x[1]).slice(0, 3), avgs = st.map(acc).filter(x => x != null);
+    const mastAll = {}; // 📊 반 실력 지도: 학생들의 단원별 맞힌 비율을 모은다
+    st.forEach(s => (s.mast || []).forEach(([t, v]) => { if (!Array.isArray(v)) return; const x = mastAll[t] || (mastAll[t] = [0, 0]); x[0] += v[0] || 0; x[1] += v[1] || 0; }));
+    const mastList = Object.keys(mastAll).sort((x, y) => mastAll[x][0] / Math.max(1, mastAll[x][1]) - mastAll[y][0] / Math.max(1, mastAll[y][1]));
+    const mastHTML = mastList.length ? `<h4>📊 반 실력 지도 <small class="muted">(약한 단원부터)</small></h4><div class="sk-body tc-mast">${skillRows(mastList, t => mastAll[t])}</div>` : '';
     const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
     $('#tcBody').innerHTML = `<div class="tc-code">반 코드 <b>${esc(d.cls.code)}</b> <button type="button" class="link-btn" id="tcCopy">복사</button><span class="muted"> · ${esc(d.cls.name)}</span></div>
       <div class="stats four"><div><b>${st.length}</b><span>학생</span></div><div><b>${st.reduce((t, s) => t + (s.solved || 0), 0)}</b><span>푼 문제 합계</span></div><div><b>${avgs.length ? Math.round(avgs.reduce((x, y) => x + y, 0) / avgs.length) + '%' : '-'}</b><span>평균 정답률</span></div><div><b>${weak.length ? esc(weak[0][0]) : '-'}</b><span>가장 많이 틀린 단원</span></div></div>
       ${weak.length ? `<p>📊 반 전체에서 많이 틀린 단원: ${weak.map(([t, n]) => `<span class="tag">${esc(t)} ${n}번</span>`).join(' ')}</p>` : ''}
+      ${mastHTML}
       <div class="tc-table-wrap"><table class="tc-table"><thead><tr><th>닉네임</th><th>학교</th><th>학년</th><th>푼 문제</th><th>정답률</th><th>많이 틀린 단원</th><th>마지막 공부</th></tr></thead><tbody>
       ${st.map(s => `<tr><td>${esc(s.nick)}</td><td>${esc(s.school)}</td><td>${s.grade ? S.gradeName(s.grade) : '-'}</td><td>${s.solved || 0}</td><td>${acc(s) != null ? acc(s) + '%' : '-'}</td><td>${(s.top || []).map(([t, n]) => `${esc(t)}(${n})`).join(', ') || '-'}</td><td>${s.at ? ago(s.at) : '-'}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 들어온 학생이 없어요. 반 코드를 알려 주세요.</td></tr>'}
       </tbody></table></div>
@@ -2718,12 +2769,13 @@
     $('#lkCoins').textContent = me.infCoins ? '∞' : me.coins || 0;
     $('#lkPreview').innerHTML = `${avHTML(Object.assign({ av: '😀' }, l, { acc: me.acc }), 'lp-av')}<div>${nameHTML(me.profile ? me.profile.nickname : me.username, me.role, Object.assign({}, l, { av: '', pv: 0 }))}<div class="muted">${esc(short(mySid()))}</div></div>`;
     $$('#lkTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.lk === lkTab));
-    $('#lkList').innerHTML = S.LOOKS[lkTab].map(it => {
-      const owned = !it.price || (l.own || []).includes(lkTab + ':' + it.id), worn = (l[lkTab] || '') === it.id;
+    const earned = lkTab === 'ti' ? (l.own || []).filter(k => k.startsWith('ti:') && !S.LOOKS.ti.some(x => 'ti:' + x.id === k)).map(k => ({ id: k.slice(3), price: 0, pass: true })) : [];
+    $('#lkList').innerHTML = [...S.LOOKS[lkTab], ...earned].map(it => {
+      const owned = (!it.price && !it.pass) || (l.own || []).includes(lkTab + ':' + it.id), worn = (l[lkTab] || '') === it.id;
       const have = it.need ? (it.need[0] === 'treasures' || it.need[0] === 'raidWins' ? me[it.need[0]] || 0 : st[it.need[0]] || 0) : 0, locked = it.need && !owned && have < it.need[1];
       const face = lkTab === 'av' ? `<span class="lk-av">${esc(it.id)}</span>` : lkTab === 'ti' ? `<span class="ttl big">${esc(it.id || '칭호 없음')}</span>` : `<span class="nmx fr${it.id ? ' fr-' + esc(it.id) : ''}">${esc(it.name)}</span>`;
       const btn = worn ? '<span class="muted">쓰는 중 ✓</span>' : owned ? `<button type="button" class="btn" data-wear="${esc(it.id)}">쓰기</button>`
-        : locked ? `<small class="muted">🔒 ${S.NEED_NAME[it.need[0]]} ${have}/${it.need[1]}</small>` : `<button type="button" class="btn primary" data-lbuy="${esc(it.id)}" ${(me.coins || 0) >= it.price ? '' : 'disabled'}>🪙 ${it.price}</button>`;
+        : it.pass ? '<small class="muted">🏆 시즌 보상</small>' : locked ? `<small class="muted">🔒 ${S.NEED_NAME[it.need[0]]} ${have}/${it.need[1]}</small>` : `<button type="button" class="btn primary" data-lbuy="${esc(it.id)}" ${(me.coins || 0) >= it.price ? '' : 'disabled'}>🪙 ${it.price}</button>`;
       return `<div class="look-item ${worn ? 'on' : ''}">${face}${btn}</div>`;
     }).join('');
   }
@@ -2770,6 +2822,7 @@
   function renderProfile() {
     const r = pfData;
     $('#pfBanner').style.setProperty('--c', r.sid >= 0 ? cssColor(r.sid) : '#94a3b8');
+    $('#pfCard').classList.toggle('pf-season', r.fr === 'season'); // ✨ 시즌 테두리는 프로필 카드(배너)에도
     setMedia($('#pfBanner'), r.b);
     $('#pfAv').textContent = r.a ? '' : r.av || '😀';
     setMedia($('#pfAv'), r.a);
@@ -3062,6 +3115,430 @@
     };
     if (document.fonts) { document.fonts.addEventListener('loadingdone', () => { tiles.clear(); requestDraw(); }); }
   }
+  // ======================== 👑 도전: 시즌 · 랭크 배틀 · 모험 · 대항전 · 곳간 · 장터 ========================
+  let seasonSum = null, landmarks = new Map(), eventNow = null, myTier = null;
+  const daysLeft = t => Math.max(0, Math.ceil((t - Date.now()) / 864e5));
+  function setHubDot() { $('#hubDot').hidden = !((seasonSum && seasonSum.ready) || (eventNow && eventNow.on)); }
+  function tierGem(x, size) { // 티어 엠블럼 (육각 보석 + 단계 점, 네메시스부터는 별)
+    const c = S.RANK_TIERS[x.t][2], ark = x.t === 7, pips = x.t < 6 ? x.d : 0;
+    return `<svg class="gem${ark ? ' ark' : ''}" viewBox="0 0 32 32" width="${size}" height="${size}" aria-hidden="true">
+      <path d="M16 1.5l13 7.5v14l-13 7.5-13-7.5V9z" fill="${c}" stroke="${ark ? '#ef4444' : 'rgba(255,255,255,.95)'}" stroke-width="1.6"/>
+      <path d="M16 1.5l13 7.5-13 7.4L3 9z" fill="rgba(255,255,255,${ark ? '.08' : '.3'})"/><path d="M16 16.4V30.5" stroke="rgba(0,0,0,.12)"/>
+      ${x.t >= 6 ? `<path d="M16 7.5l2.3 5 5.4.6-4 3.7 1.1 5.3L16 19.4l-4.8 2.7 1.1-5.3-4-3.7 5.4-.6z" fill="${ark ? '#ef4444' : '#fff'}"/>` : ''}
+      ${Array.from({ length: pips }, (_, k) => `<circle cx="${16 + (k - (pips - 1) / 2) * 6}" cy="24.5" r="2.1" fill="#fff"/>`).join('')}</svg>`;
+  }
+  const tierChip = (x, size = 20) => `<span class="tier-chip" style="--tc:${S.RANK_TIERS[x.t][2]}">${tierGem(x, size)}<b>${esc(S.tierName(x))}</b></span>`;
+
+  // 👑 도전 모음
+  function renderHub() {
+    const sn = seasonSum, ev = eventNow || S.eventOf();
+    $('#hubSeason').innerHTML = sn ? `<div class="hs-top"><b>🏆 시즌 ${sn.n}</b><span>⏳ ${daysLeft(sn.ends)}일 남음</span></div>
+      <div class="sn-bar"><i style="width:${sn.lv >= S.PASS_MAX ? 100 : Math.round((100 * (sn.xp - sn.lv * S.PASS_XP)) / S.PASS_XP)}%"></i></div>
+      <div class="hs-sub">시즌 패스 <b>${sn.lv}</b> / ${S.PASS_MAX}단계${sn.ready ? ` · 🎁 받을 보상 ${sn.ready}개` : ''}</div>` : '';
+    const cards = [
+      ['season', '🏆', '시즌 패스', sn ? `${sn.lv}단계${sn.ready ? ` · 보상 ${sn.ready}개!` : ''}` : '보상 받기', sn && sn.ready],
+      ['rank', '⚔️', '랭크 배틀', myTier ? S.tierName(myTier) : '실시간 1:1 대결', false],
+      ['adv', '🗺️', '모험', '지역 보스를 물리쳐요', false],
+      ['event', '🏟️', '전국 대항전', ev.on ? '지금 진행 중!' : `${daysLeft(ev.start)}일 뒤 토요일 시작`, ev.on],
+      ['eco', '💰', '곳간', '땅이 코인을 만들어요', false],
+      ['market', '🏪', '장터', '아이템 사고팔기', false],
+    ];
+    $('#hubGrid').innerHTML = cards.map(([id, ic, name, sub, hot]) => `<button type="button" class="hub-item h-${id}${hot ? ' hot' : ''}" data-hub="${id}"><span class="hi">${ic}</span><b>${name}</b><small>${esc(sub)}</small></button>`).join('');
+  }
+  async function openHub() {
+    renderHub();
+    openM('hubModal');
+    const sn = await api('/api/season');
+    if (!sn.error) { seasonSum = sn; renderHub(); setHubDot(); }
+  }
+
+  // 🏆 시즌 패스 · 시즌 미션 · 명예의 전당
+  let snTab = 'pass', snData = null;
+  async function openSeason() {
+    const d = await api('/api/season');
+    if (d.error) return toast(d.error, 'err');
+    snData = seasonSum = d; setHubDot();
+    renderSeason();
+    openM('seasonModal');
+    if (d.note) setTimeout(() => toast(`🏆 지난 시즌 ${d.note.name}! 🪙 ${d.note.coins}${d.note.title ? ` + 칭호 「${d.note.title}」` : ''}`, 'ok'), 400);
+  }
+  function renderSeason() {
+    const d = snData, cur = d.xp - d.lv * d.need, done = d.lv >= S.PASS_MAX;
+    $('#snNo').textContent = d.n;
+    $('#snHead').innerHTML = `<div class="sn-lv"><b>${d.lv}</b><small>단계</small></div><div class="sn-prog"><div class="sn-meta"><span>${done ? '🎉 패스를 모두 채웠어요!' : `다음 단계까지 <b>${d.need - cur}</b>점`}</span><span>⏳ ${daysLeft(d.ends)}일 남음</span></div>
+      <div class="sn-bar"><i style="width:${done ? 100 : Math.round((100 * cur) / d.need)}%"></i></div><small class="muted">문제 풀기 · 땅 차지 · 미션 · 랭크 배틀 · 모험 · 대항전으로 시즌 점수를 모아요</small></div>`;
+    $$('#snTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.sn === snTab));
+    let html = '';
+    if (snTab === 'pass') {
+      const can = d.rewards.filter(r => r.lv <= d.lv && !r.got).length;
+      html = (can ? `<button type="button" class="btn primary wide-btn" id="snAll">🎁 보상 ${can}개 한꺼번에 받기</button>` : '')
+        + `<div class="pass-track">${d.rewards.map(r => { const st = r.got ? 'got' : r.lv <= d.lv ? 'ready' : 'lock'; return `<div class="pass-step ${st}${r.look ? ' special' : ''}"><span class="ps-lv">${r.lv}</span><span class="ps-txt">${esc(r.text)}</span>${st === 'ready' ? `<button type="button" class="btn small primary" data-pass="${r.lv}">받기</button>` : st === 'got' ? '<span class="ps-ok">✓</span>' : '<span class="ps-lock">🔒</span>'}</div>`; }).join('')}</div>`;
+    } else if (snTab === 'mis') {
+      html = d.missions.map(m => `<div class="smi ${m.done ? 'done' : ''}"><span class="smi-ic">${m.icon}</span><div class="smi-t"><b>${esc(m.text)}</b><div class="sn-bar thin"><i style="width:${Math.round((100 * m.p) / m.n)}%"></i></div><small>${m.p} / ${m.n} · 시즌 점수 +${m.xp}</small></div>${m.done ? '<span class="muted">받음 ✓</span>' : m.p >= m.n ? `<button type="button" class="btn small primary" data-smis="${m.id}">받기</button>` : ''}</div>`).join('');
+    } else {
+      html = d.fame.length ? d.fame.map(f => `<div class="fame"><div class="fame-h">🏆 시즌 ${f.n} · ${esc(d.srvName)}</div><div class="fame-cols">
+          <div><h5>🏫 학교</h5>${f.s.map((x, k) => `<p>${rankBadge(k)} ${esc(x.nm)} <small>${x.n}칸</small></p>`).join('') || '<p class="muted">기록 없음</p>'}</div>
+          <div><h5>🧒 학생</h5>${f.p.map((x, k) => `<p>${rankBadge(k)} ${esc(x.nm)} <small>${esc(x.sc)} · ${x.n}칸</small></p>`).join('') || '<p class="muted">기록 없음</p>'}</div></div></div>`).join('')
+        : `<div class="empty-note">🏆 아직 끝난 시즌이 없어요.<br>시즌 ${d.n}이 끝나면 땅을 가장 많이 차지한 학교와 학생 1~3등이 여기에 영원히 남아요!</div>`;
+    }
+    $('#snBody').innerHTML = html;
+  }
+  async function claimPass(lv) {
+    const r = await api('/api/season/claim', { lv });
+    if (r.error) return toast(r.error, 'err');
+    gotWallet(r);
+    if (r.looks) me.looks = r.looks;
+    Object.assign(snData, r);
+    snData.rewards.forEach(x => { x.got = r.claimed.includes(x.lv); });
+    seasonSum = Object.assign(seasonSum || {}, r); setHubDot();
+    Sound.play('badge'); confetti(innerWidth / 2, innerHeight * 0.35);
+    toast(`🎁 시즌 패스 보상! ${r.got.length > 2 ? `${r.got.length}개를 받았어요` : r.got.join(' · ')}`, 'ok');
+    renderSeason();
+  }
+
+  // ⚔️ 랭크 배틀
+  let rkData = null, rkTab = 'top', rkState = null, rkSearchTimer = 0, rkClock = 0, rkLastProbs = null;
+  async function openRanked() {
+    const d = await api('/api/rank');
+    if (d.error) return toast(d.error, 'err');
+    rkData = d; myTier = d.me.tier;
+    renderRanked();
+    openM('rankedModal');
+    if (d.note) setTimeout(() => toast(`🏆 지난 시즌 랭크 ${d.note.name}! 🪙 ${d.note.coins}${d.note.title ? ` + 칭호 「${d.note.title}」` : ''}`, 'ok'), 400);
+  }
+  function renderRanked() {
+    const d = rkData, m = d.me, nem = m.rp >= S.NEM_RP, nx = (Math.floor(m.rp / S.RANK_STEP) + 1) * S.RANK_STEP;
+    $('#rkMe').innerHTML = `<div class="rk-emblem" style="--tc:${S.RANK_TIERS[m.tier.t][2]}">${tierGem(m.tier, 72)}</div>
+      <div class="rk-info"><b class="rk-name" style="--tc:${S.RANK_TIERS[m.tier.t][2]}">${esc(S.tierName(m.tier))}</b><div class="rk-rp"><b>${m.rp}</b> RP${m.place ? ` · ${m.place}위` : ''}</div>
+      <div class="sn-bar"><i style="width:${nem ? 100 : m.rp % S.RANK_STEP}%"></i></div>
+      <small class="muted">${nem ? (m.tier.t === 7 ? '👑 최고 티어! 랭킹 20위 안을 지켜요' : `랭킹 ${S.ARK_TOP}위 안에 들면 아크블랙 네메시스`) : `다음 단계까지 ${nx - m.rp} RP`} · ${m.w}승 ${m.l}패${m.streak > 1 ? ` · 🔥 ${m.streak}연승` : ''}</small></div>
+      <button type="button" class="btn attack rk-go" id="rkGo">⚔️ 대결 찾기</button>`;
+    $('#rkGo').onclick = rankFind;
+    $$('#rkTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.rk === rkTab));
+    let html = '';
+    if (rkTab === 'top') html = d.top.length ? `<ol class="rk-list">${d.top.map((p, k) => `<li class="${p.me ? 'me' : ''}"><span class="rk">${rankBadge(k)}</span>${tierGem(p.tier, 26)}<span class="nm">${nameHTML(p.nick, null, p)}<small>${esc(p.sc)} · ${esc(S.tierName(p.tier))}</small></span><b>${p.rp}</b></li>`).join('')}</ol>`
+      : '<div class="empty-note">⚔️ 이번 시즌 랭크 배틀 기록이 아직 없어요. 첫 번째 도전자가 되어 보세요!</div>';
+    else if (rkTab === 'live') html = !d.online ? '<div class="empty-note">온라인일 때 다른 친구들의 대결을 구경할 수 있어요.</div>'
+      : d.live.length ? d.live.map(x => `<div class="live-item"><span>${tierGem(x.ta, 22)} ${esc(x.a)}</span><em>VS</em><span>${tierGem(x.tb, 22)} ${esc(x.b)}</span><button type="button" class="btn small" data-watch="${esc(x.id)}">👀 구경</button></div>`).join('')
+        : '<div class="empty-note">지금 진행 중인 대결이 없어요.</div>';
+    else html = `<div class="tier-ladder">${S.RANK_TIERS.map((t, k) => `<div class="tl-row" style="--tc:${t[2]}">${tierGem({ t: k, d: k < 6 ? 3 : 0 }, 34)}<b>${esc(t[1])}${k < 6 ? ' 1~3' : ''}</b><small>${k < 6 ? `${k * 300} ~ ${k * 300 + 299} RP` : k === 6 ? `${S.NEM_RP} RP 이상` : `네메시스 중 랭킹 ${S.ARK_TOP}위 안`}</small></div>`).reverse().join('')}</div>
+      <p class="muted small">이기면 +25 RP (연승이면 더), 지면 -18 RP. 같은 문제 ${S.RANK_N}개를 먼저 다 푸는 쪽이 이겨요. ${S.RANK_SEC / 60}분이 지나면 더 많이 푼 쪽이 이겨요. 시즌이 바뀌면 점수가 절반이 되고, 지난 시즌 티어만큼 보상을 받아요.</p>`;
+    $('#rkBody').innerHTML = html;
+    renderSearch();
+  }
+  async function rankFind() {
+    if (rkState) return;
+    const probs = Array.from({ length: S.RANK_N }, () => P.generate(me.grade, me.profile.semester));
+    rkLastProbs = probs;
+    const r = await api('/api/rank/queue', { probs });
+    if (r.error) return toast(r.error, 'err');
+    rkState = { st: 'wait', since: Date.now(), online: r.online };
+    Sound.play('tap');
+    renderSearch();
+    clearInterval(rkSearchTimer);
+    rkSearchTimer = setInterval(renderSearch, 1000);
+  }
+  function renderSearch() {
+    const el = $('#rkSearch');
+    if (!rkState || rkState.st !== 'wait') { el.hidden = true; clearInterval(rkSearchTimer); if ($('#rkGo')) $('#rkGo').disabled = false; return; }
+    if ($('#rkGo')) $('#rkGo').disabled = true;
+    const sec = Math.floor((Date.now() - rkState.since) / 1000), bot = !rkState.online || sec >= S.BOT_WAIT;
+    if (el.hidden || !$('#rkSec')) {
+      el.hidden = false;
+      el.innerHTML = `<div class="rk-radar"><i></i><i></i><span>⚔️</span></div><div class="rk-s-txt"><b>${rkState.online ? '비슷한 실력의 상대를 찾는 중…' : '오프라인이라 연습 로봇과 대결해요'}</b><small class="muted"><span id="rkSec">0</span>초 기다리는 중</small></div>
+        <div class="row center"><button type="button" class="btn" id="rkBot" hidden>🤖 연습 로봇과 대결</button><button type="button" class="btn ghost" id="rkCancel">취소</button></div>`;
+      $('#rkCancel').onclick = rankCancel;
+      $('#rkBot').onclick = async () => { const r = await api('/api/rank/bot', {}); if (r.error) toast(r.error, 'err'); };
+    }
+    $('#rkSec').textContent = sec;
+    $('#rkBot').hidden = !bot;
+  }
+  async function rankCancel() {
+    rkState = null;
+    renderSearch();
+    await api('/api/rank/quit', {});
+  }
+  function onRank(m) {
+    if (m.st === 'start') {
+      rkState = { st: 'play', id: m.id, opp: m.opp, me: m.me, bot: m.bot, oppN: 0, sec: m.sec };
+      clearInterval(rkSearchTimer);
+      $('#rkSearch').hidden = true;
+      ['rankedModal', 'hubModal', 'advModal'].forEach(closeM);
+      if (quiz) closeQuiz();
+      rankVs(m);
+      return;
+    }
+    if (!rkState || rkState.id !== m.id) return;
+    if (m.st === 'prog') { rkState.oppN = m.opp; renderRankBars(); }
+    else if (m.st === 'end') rankEnded(m);
+  }
+  const rkCardHTML = (c, side) => `<div class="vs-card ${side}"><span class="vs-av">${avHTML(Object.assign({ av: c.av || '😀' }, c), 'av') || esc(c.av || '😀')}</span><b>${esc(c.nick)}</b><small>${esc(c.sc || '')}</small>${tierChip(S.tierOf(c.rp), 18)}</div>`;
+  function rankVs(m) { // VS 화면 → 3 · 2 · 1 → 시작
+    const box = $('#rkResult');
+    box.className = 'card small rk-result vs';
+    box.innerHTML = `<div class="vs-wrap">${rkCardHTML(m.me, 'l')}<div class="vs-mid"><em>VS</em><span class="vs-count" id="vsCount">3</span></div>${rkCardHTML(m.opp, 'r')}</div><p class="muted">같은 문제 ${S.RANK_N}개! 먼저 다 푸는 쪽이 이겨요${m.bot ? ' · 🤖 연습 대결' : ''}</p>`;
+    openM('rkResultModal');
+    Sound.play('tap');
+    let n = 3;
+    const tick = setInterval(() => {
+      n--;
+      if (!rkState || rkState.id !== m.id) return clearInterval(tick);
+      if (n > 0) { $('#vsCount').textContent = n; Sound.play('tap'); return; }
+      clearInterval(tick);
+      closeM('rkResultModal');
+      rkState.t0 = Date.now();
+      startQuiz({ title: m.bot ? '🤖 연습 랭크 배틀' : '⚔️ 랭크 배틀', total: S.RANK_N, fixed: m.probs, rank: rkState, onDone: () => new Promise(res => { rkState && (rkState.onEnd = res); }) });
+      renderRankBars();
+      clearInterval(rkClock);
+      rkClock = setInterval(renderRankBars, 1000);
+    }, 1000);
+  }
+  function renderRankBars() {
+    const q = quiz, s = rkState;
+    if (!q || !q.rank || !s) return;
+    const left = Math.max(0, Math.ceil(s.sec - (Date.now() - (s.t0 || Date.now())) / 1000));
+    $('#qzDuel').hidden = false;
+    $('#qzDuel').innerHTML = `<div class="dl"><span>😀 나</span><div class="bar"><i style="width:${(q.solved / q.total) * 100}%"></i></div><em>${q.solved}/${q.total}</em></div>
+      <div class="dl opp"><span>${esc(s.opp.nick)}</span><div class="bar"><i style="width:${(s.oppN / q.total) * 100}%"></i></div><em>${s.oppN}/${q.total}</em></div><div class="rk-timer${left <= 20 ? ' low' : ''}">⏱️ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</div>`;
+  }
+  function rankEnded(m) {
+    const s = rkState;
+    rkState = null;
+    clearInterval(rkClock);
+    if (quiz && quiz.rank) { const q = quiz; q.rank.done = true; quiz = null; stopTimers(q); closeM('quizModal'); }
+    if (s && s.onEnd) s.onEnd();
+    flushTopics();
+    myTier = m.tier || myTier;
+    const win = m.res === 'win', draw = m.res === 'draw', box = $('#rkResult');
+    box.className = `card small rk-result ${m.res}`;
+    box.innerHTML = `<div class="rr-title">${win ? '🏆 승리!' : draw ? '🤝 무승부' : '😢 패배'}</div>
+      <div class="rr-emblem${m.up ? ' up' : m.down ? ' down' : ''}">${m.tier ? tierGem(m.tier, 84) : ''}</div>
+      ${m.tier ? `<div class="rr-tier" style="--tc:${S.RANK_TIERS[m.tier.t][2]}">${esc(S.tierName(m.tier))}${m.up ? ' <span class="rr-tag up">승급!</span>' : m.down ? ' <span class="rr-tag down">강등</span>' : ''}</div>` : ''}
+      <div class="rr-rp"><b class="${m.delta > 0 ? 'plus' : m.delta < 0 ? 'minus' : ''}">${m.delta > 0 ? '+' : ''}${m.delta || 0} RP</b> · ${m.rp != null ? m.rp : '-'} RP</div>
+      <p class="muted">${m.bot ? '🤖 연습 대결 · ' : ''}🪙 +${m.coins || 0}${m.streak > 1 ? ` · 🔥 ${m.streak}연승` : ''}${s && s.opp ? ` · 상대 ${esc(s.opp.nick)}` : ''}</p>
+      <div class="row center"><button type="button" class="btn" id="rrClose">닫기</button><button type="button" class="btn attack" id="rrAgain">⚔️ 다시 대결</button></div>`;
+    openM('rkResultModal');
+    if (win || m.up) { Sound.play('unlock'); confetti(innerWidth / 2, innerHeight * 0.35); } else Sound.play(draw ? 'tap' : 'lose');
+    $('#rrClose').onclick = () => closeM('rkResultModal');
+    $('#rrAgain').onclick = () => { closeM('rkResultModal'); openRanked().then(rankFind); };
+    api('/api/shop').then(r => { if (!r.error) gotWallet(r); });
+  }
+  let watchId = null;
+  async function watchMatch(id) {
+    const r = await api('/api/rank/watch', { id });
+    if (r.error) return toast(r.error, 'err');
+    watchId = id;
+    $('#wtBody').innerHTML = '<p class="muted">불러오는 중…</p>';
+    openM('watchModal');
+  }
+  function onWatch(m) {
+    if (m.id !== watchId || $('#watchModal').hidden) return;
+    const bar = (c, n, won) => `<div class="wt-row${won ? ' won' : ''}">${tierGem(S.tierOf(c.rp), 30)}<div><b>${esc(c.nick)}${won ? ' 🏆' : ''}</b><small>${esc(c.sc || '')}</small><div class="bar"><i style="width:${(n / S.RANK_N) * 100}%"></i></div></div><em>${n}/${S.RANK_N}</em></div>`;
+    $('#wtBody').innerHTML = bar(m.a, m.sa, m.win === m.a.acc) + '<div class="wt-vs">VS</div>' + bar(m.b, m.sb, m.win === m.b.acc) + (m.win ? `<p class="center">${m.win === 'draw' ? '🤝 무승부!' : '대결이 끝났어요!'}</p>` : '<p class="muted center">실시간으로 움직여요 👀</p>');
+  }
+
+  // 🏟️ 전국 학교 대항전
+  let evData = null;
+  async function openEvent() {
+    const d = await api('/api/event');
+    if (d.error) return toast(d.error, 'err');
+    evData = d; eventNow = d.ev; setHubDot();
+    renderEvent();
+    openM('eventModal');
+  }
+  function renderEvent() {
+    const d = evData, ev = d.ev, h = Math.max(0, Math.floor((ev.end - Date.now()) / 3600e3));
+    $('#evHead').innerHTML = ev.on ? `<div class="ev-live"><span class="dot-live"></span><b>대항전 진행 중!</b><span>${Math.floor(h / 24) ? Math.floor(h / 24) + '일 ' : ''}${h % 24}시간 남음</span></div><div class="ev-mine">우리 학교 <b>${d.myPts}</b>점${d.myPlace ? ` · 전국 ${d.myPlace}위` : ''}</div>`
+      : `<div class="ev-next">📅 다음 대항전: <b>${S.kstDate(ev.start).slice(5).replace('-', '월 ')}일 (토) 0시</b> · ${daysLeft(ev.start)}일 뒤<br><small class="muted">토요일 · 일요일 이틀 동안 열려요. 지금 랜드마크를 차지해 두면 시작할 때부터 점수가 쌓여요!</small></div>`;
+    const L = d.last;
+    $('#evLast').innerHTML = L && L.board.length ? `<div class="ev-last"><h4>🥇 지난 대항전 (${L.id.slice(5).replace('-', '/')})</h4><div class="podium">${L.board.map((x, k) => `<div class="pd p${k + 1}"><span>${rankBadge(k)}</span><b>${esc(x.name)}</b><small>${x.pts}점</small></div>`).join('')}</div>
+      ${L.place && L.place <= 3 ? (L.claimed ? '<p class="muted center">보상을 받았어요 ✓</p>' : `<button type="button" class="btn primary wide-btn" id="evClaim">🎁 ${L.place}등 보상 받기 (🪙 ${S.EVENT_PRIZE[L.place - 1]}${L.place === 1 ? ' + 칭호 「대항전 우승」' : ''})</button>`) : ''}</div>` : '';
+    $('#evBoard').innerHTML = d.board.length ? d.board.map((x, k) => `<li class="${x.me ? 'me' : ''}">${rankBadge(k)}<span class="evb-n">${esc(x.name)}</span><b>${x.pts}점</b></li>`).join('') : `<li class="muted">${ev.on ? '아직 점수를 얻은 학교가 없어요. 첫 랜드마크를 차지해요!' : '대항전이 시작되면 점수가 보여요.'}</li>`;
+    $('#evMarks').innerHTML = d.marks.map(x => `<button type="button" class="ev-mark${x.mine ? ' mine' : ''}" data-lm="${x.cell}" style="--c:${x.sid >= 0 ? cssColor(x.sid) : '#94a3b8'}"><span class="em-ic">👑</span><b>${esc(x.name)}</b><small>${x.sid >= 0 ? `${esc(x.school)}${x.since ? ` · ${Math.floor((Date.now() - x.since) / 60000)}분째` : ''}` : '주인 없음'}</small></button>`).join('');
+    if ($('#evClaim')) $('#evClaim').onclick = async () => { const r = await api('/api/event/claim', {}); if (r.error) return toast(r.error, 'err'); gotWallet(r); Sound.play('unlock'); confetti(innerWidth / 2, innerHeight * 0.35); toast(`🏟️ 대항전 ${r.place}등 보상! 🪙 ${r.got}`, 'ok'); evData.last.claimed = true; renderEvent(); };
+  }
+
+  // 💰 곳간
+  async function openEco() {
+    const d = await api('/api/eco');
+    if (d.error) return toast(d.error, 'err');
+    renderEco(d);
+    openM('ecoModal');
+  }
+  function renderEco(d) {
+    const full = d.hours >= d.cap, empty = d.stored < 1 && d.storedXp < 1;
+    $('#ecoBody').innerHTML = `<div class="eco-barn${full ? ' full' : ''}"><span class="eco-ic">💰</span><b>🪙 ${d.stored}</b>${d.storedXp ? `<small>+ 시즌 점수 ${d.storedXp}</small>` : ''}
+        <div class="sn-bar"><i style="width:${Math.min(100, (d.hours / d.cap) * 100)}%"></i></div><small class="muted">${full ? '곳간이 꽉 찼어요! 얼른 비워요' : `${d.cap}시간까지 모여요 · 지금 ${d.hours.toFixed(1)}시간째`}</small></div>
+      <ul class="eco-rates"><li><span>🏫 우리 학교 땅 ${d.land}칸</span><b>+${d.base} / 시간</b></li><li><span>⛏️ 내 광산</span><b>+${d.mine} / 시간</b></li><li><span>📚 학교 도서관</span><b>+${d.lib} / 시간</b></li><li><span>🌾 내 농장</span><b>시즌 점수 +${d.farm} / 시간</b></li></ul>
+      <button type="button" class="btn primary wide-btn" id="ecoGo" ${empty ? 'disabled' : ''}>💰 곳간 비우기</button>
+      <p class="muted small">우리 땅을 눌러 🏗️ 건물 짓기에서 ⛏️ 광산 · 🌾 농장 · 📚 도서관을 지으면 더 많이 모여요. 건물은 3단계까지 올릴 수 있어요.</p>`;
+    $('#ecoGo').onclick = async () => {
+      const r = await api('/api/eco/collect', {});
+      if (r.error) return toast(r.error, 'err');
+      gotWallet(r);
+      Sound.play('badge');
+      toast(`💰 곳간에서 🪙 ${r.got}${r.gotXp ? ` + 시즌 점수 ${r.gotXp}` : ''}을 받았어요!`, 'ok');
+      renderEco(r);
+    };
+  }
+
+  // 🏪 장터
+  let mkTab = 'buy', mkData = null;
+  async function openMarket() {
+    const d = await api('/api/market');
+    if (d.error) return toast(d.error, 'err');
+    mkData = d;
+    gotWallet(d);
+    if (d.got) toast(`🏪 내 물건이 팔려서 🪙 ${d.got}을 받았어요!`, 'ok');
+    if (d.back) toast(`🏪 안 팔린 물건 ${d.back}개를 돌려받았어요.`, 'ok');
+    renderMarket();
+    openM('marketModal');
+  }
+  function renderMarket() {
+    const d = mkData, coins = me.infCoins ? Infinity : me.coins || 0;
+    $('#mkCoins').textContent = me.infCoins ? '∞' : me.coins || 0;
+    $$('#mkTabs .tab').forEach(t => t.classList.toggle('on', t.dataset.mk === mkTab));
+    let html = '';
+    if (mkTab === 'buy') html = d.list.length ? d.list.map(x => `<div class="mk-item"><div class="mk-t"><b>${esc(S.ITEM_NAME[x.item] || x.item)}</b><small>${esc(x.nick)} · 상점 값 ${S.priceOf(x.item)}</small></div><button type="button" class="btn primary" data-mkbuy="${esc(x.id)}" ${coins < x.price ? 'disabled' : ''}>🪙 ${x.price}</button></div>`).join('')
+      : '<div class="empty-note">🏪 아직 장터에 올라온 물건이 없어요. 내 아이템을 먼저 올려 볼까요?</div>';
+    else if (mkTab === 'sell') {
+      const have = Object.entries(me.items || {}).filter(([k, n]) => n > 0 && S.ITEM_NAME[k]);
+      html = have.length ? have.map(([k, n]) => `<div class="mk-item"><div class="mk-t"><b>${esc(S.ITEM_NAME[k])} <small>× ${n}</small></b><small>상점 값 ${S.priceOf(k)}코인</small></div><input type="number" class="mk-price" min="1" max="999" value="${Math.max(1, Math.round(S.priceOf(k) * 0.8))}" data-mkprice="${k}" aria-label="값"><button type="button" class="btn" data-mksell="${k}">올리기</button></div>`).join('')
+        : '<div class="empty-note">팔 아이템이 없어요. 보물 상자 · 레이드 · 시즌 패스에서 아이템을 모아요!</div>';
+    } else html = d.mine.length ? d.mine.map(x => `<div class="mk-item"><div class="mk-t"><b>${esc(S.ITEM_NAME[x.item] || x.item)}</b><small>🪙 ${x.price}${x.buyer ? ' · 팔렸어요! (장터를 다시 열면 코인을 받아요)' : ''}</small></div>${x.buyer ? '<span class="tag hot">팔림</span>' : `<button type="button" class="btn ghost" data-mkcancel="${esc(x.id)}">내리기</button>`}</div>`).join('')
+      : '<div class="empty-note">장터에 올린 물건이 없어요.</div>';
+    $('#mkBody').innerHTML = html;
+  }
+  async function marketAct(path, body, msg) {
+    const r = await api(path, body);
+    if (r.error) { toast(r.error, 'err'); return; }
+    gotWallet(r);
+    toast(msg, 'ok');
+    Sound.play('badge');
+    const d = await api('/api/market');
+    if (!d.error) { mkData = d; gotWallet(d); renderMarket(); }
+  }
+
+  // 🗺️ 모험 모드
+  let advProg = {};
+  const advOpen = (r, s) => (r === 0 && s === 0) || !!advProg[s > 0 ? `${r}-${s - 1}` : `${r - 1}-3`];
+  async function openAdv() {
+    const d = await api('/api/adv');
+    if (d.error) return toast(d.error, 'err');
+    advProg = d.prog || {};
+    renderAdv();
+    openM('advModal');
+  }
+  function renderAdv() {
+    const n = Object.keys(advProg).length, stars = Object.values(advProg).reduce((t, x) => t + x, 0);
+    $('#advInfo').innerHTML = `깬 스테이지 <b>${n}</b> / ${S.ADV.length * 4} · ⭐ <b>${stars}</b> / ${S.ADV.length * 12} · 문제는 내 학년 · 학기 단원에서 나와요`;
+    $('#advList').innerHTML = S.ADV.map((R, r) => {
+      const open = advOpen(r, 0), cleared = !!advProg[`${r}-3`];
+      return `<div class="adv-region${open ? '' : ' locked'}${cleared ? ' cleared' : ''}"><div class="ar-head"><span class="ar-boss no-ic">${open ? R.boss[0] : '🔒'}</span><div><b>${r + 1}. ${esc(R.name)}${cleared ? ' ✓' : ''}</b><small>${open ? esc(R.story) : '앞 지역의 보스를 물리치면 열려요'}</small></div></div>
+        <div class="ar-stages">${[0, 1, 2, 3].map(s => { const id = `${r}-${s}`, st = advProg[id] || 0, can = advOpen(r, s); return `<button type="button" class="adv-st${s === 3 ? ' boss' : ''}${st ? ' clear' : ''}" data-adv="${id}" ${can ? '' : 'disabled'}><span class="no-ic">${s === 3 ? R.boss[0] : s + 1}</span><em>${'★'.repeat(st)}${'☆'.repeat(3 - st)}</em></button>`; }).join('<i class="ar-line"></i>')}</div></div>`;
+    }).join('');
+  }
+  function startStage(id) {
+    const [r, s] = id.split('-').map(Number), R = S.ADV[r], boss = s === 3, units = P.units(me.grade, me.profile.semester) || [];
+    const topic = boss || !units.length ? undefined : units[(r * 3 + s) % units.length];
+    closeM('advModal');
+    startQuiz({ title: boss ? `${R.boss[0]} ${R.boss[1]}` : `🗺️ ${R.name} ${s + 1}${topic ? ' · ' + topic : ''}`, total: boss ? S.ADV_BOSS_N : S.ADV_N, topic, adv: { id, hearts: S.ADV_HEARTS, miss: 0, boss, R }, onDone: () => advDone(quiz) });
+    renderAdvBar();
+  }
+  function renderAdvBar() {
+    const q = quiz;
+    if (!q || !q.adv) return;
+    const a = q.adv, h = Math.max(0, a.hearts);
+    $('#qzDuel').hidden = false;
+    $('#qzDuel').innerHTML = `<div class="adv-bar">${a.boss ? `<span class="ab-boss no-ic">${a.R.boss[0]}</span><div class="hpbar"><i style="width:${100 - (q.solved / q.total) * 100}%"></i><span>HP ${q.total - q.solved} / ${q.total}</span></div>` : '<span class="muted">별 3개: 하나도 안 틀리기</span>'}<span class="hearts no-ic">${'❤️'.repeat(h)}${'🤍'.repeat(S.ADV_HEARTS - h)}</span></div>`;
+  }
+  async function advDone(q) {
+    if (!q || !q.adv) return;
+    const a = q.adv, stars = a.miss === 0 ? 3 : a.miss === 1 ? 2 : 1;
+    const r = await api('/api/adv/clear', { stage: a.id, stars, solved: q.solved, streak: best });
+    if (r.error) { toast(r.error, 'err'); return; }
+    advProg = r.prog;
+    gotWallet(r); gotBadges(r.badges);
+    if (r.stats) me.stats = r.stats;
+    Sound.play('unlock'); confetti(innerWidth / 2, innerHeight * 0.4);
+    toast(`${a.boss ? `💥 ${a.R.boss[1]}를 물리쳤어요!` : '🗺️ 스테이지 클리어!'} ${'⭐'.repeat(stars)}${r.got ? ` · 🪙 +${r.got}` : ''}`, 'ok');
+    setTimeout(openAdv, 800);
+  }
+  function advFail(q) {
+    if (quiz !== q) return;
+    stopTimers(q);
+    const id = q.adv.id;
+    q.busy = true; q.practice = true; q.lostMsg = true; q.adv = null;
+    Sound.play('lose');
+    $('#qzQ').innerHTML = '💔 하트를 모두 잃었어요!';
+    $('#qzPad').hidden = true; $('#qzHintBtn').hidden = true; $('#qzHint').hidden = true; $('#qzDuel').hidden = true;
+    $('#qzAnswer').innerHTML = `<p class="muted">맞힌 문제 ${q.solved}개는 코인으로 받아요. 다시 도전해 볼까요?</p><div class="row end"><button type="button" class="btn" id="advX">닫기</button><button type="button" class="btn primary" id="advAgain">🔄 다시 도전</button></div>`;
+    $('#advX').onclick = closeQuiz;
+    $('#advAgain').onclick = () => { closeQuiz(); startStage(id); };
+  }
+
+  // 📊 실력 지도: 단원마다 맞힌 비율 (선생님 화면에도)
+  let topicLog = {}, myTopic = {}, skSem = 1;
+  function noteTopic(p, ok) { if (!p || !p.topic) return; const x = topicLog[p.topic] || (topicLog[p.topic] = [0, 0]); if (ok) x[0]++; x[1]++; }
+  function flushTopics() { const s = topicLog; if (!Object.keys(s).length) return; topicLog = {}; api('/api/topics', { s }).then(r => { if (r.topic) myTopic = r.topic; }); }
+  async function openSkill() {
+    flushTopics();
+    const d = await api('/api/skill');
+    if (d.error) return toast(d.error, 'err');
+    myTopic = d.topic || {};
+    skSem = (me.profile && me.profile.semester) || 1;
+    renderSkill();
+    openM('skillModal');
+  }
+  const skillRows = (list, get) => list.map(t => {
+    const x = get(t) || [0, 0], pct = x[1] ? Math.round((100 * x[0]) / x[1]) : 0, lvl = x[1] < 5 ? 'none' : pct >= 80 ? 'good' : pct >= 50 ? 'mid' : 'low';
+    return `<button type="button" class="sk-row sk-${lvl}" data-sk="${esc(t)}"><span class="sk-name">${esc(t)}</span><span class="sk-bar"><i style="width:${x[1] ? pct : 0}%"></i></span><b>${x[1] < 5 ? (x[1] ? `${x[1]}문제` : '아직') : pct + '%'}</b><em>${{ good: '잘해요', mid: '보통', low: '연습해요', none: '' }[lvl]}</em></button>`;
+  }).join('');
+  function renderSkill() {
+    $$('#skTabs .tab').forEach(t => t.classList.toggle('on', +t.dataset.sem === skSem));
+    const list = P.units(me.grade, skSem) || [];
+    $('#skBody').innerHTML = list.length ? skillRows(list, t => myTopic[t]) : '<p class="muted">이 학기에는 단원 정보가 없어요.</p>';
+  }
+
+  function initChallenge() {
+    $('#btnHub').onclick = openHub;
+    $('#hubGrid').onclick = e => {
+      const b = e.target.closest('[data-hub]');
+      if (!b) return;
+      closeM('hubModal');
+      ({ season: openSeason, rank: openRanked, adv: openAdv, event: openEvent, eco: openEco, market: openMarket })[b.dataset.hub]();
+    };
+    $('#snTabs').onclick = e => { const t = e.target.closest('[data-sn]'); if (t) { snTab = t.dataset.sn; renderSeason(); } };
+    $('#snBody').onclick = async e => {
+      const p = e.target.closest('[data-pass]'), m = e.target.closest('[data-smis]');
+      if (e.target.closest('#snAll')) return claimPass('all');
+      if (p) return claimPass(+p.dataset.pass);
+      if (m) {
+        const r = await api('/api/season/mission', { id: m.dataset.smis });
+        if (r.error) return toast(r.error, 'err');
+        Sound.play('badge');
+        toast(`🏆 시즌 미션 완료! 시즌 점수 +${r.xp}`, 'ok');
+        openSeason();
+      }
+    };
+    $('#rkTabs').onclick = e => { const t = e.target.closest('[data-rk]'); if (t) { rkTab = t.dataset.rk; renderRanked(); } };
+    $('#rkBody').onclick = e => { const w = e.target.closest('[data-watch]'); if (w) watchMatch(w.dataset.watch); };
+    $('#watchModal [data-close]').addEventListener('click', () => { watchId = null; api('/api/rank/unwatch', {}); });
+    $('#rankedModal [data-close]').addEventListener('click', () => { if (rkState && rkState.st === 'wait') rankCancel(); });
+    $('#evMarks').onclick = e => { const b = e.target.closest('[data-lm]'); if (!b) return; closeM('eventModal'); const i = +b.dataset.lm; flyTo(i, 0.6); setTimeout(() => select(i), 700); };
+    $('#mkTabs').onclick = e => { const t = e.target.closest('[data-mk]'); if (t) { mkTab = t.dataset.mk; renderMarket(); } };
+    $('#mkBody').onclick = e => {
+      const buy = e.target.closest('[data-mkbuy]'), sell = e.target.closest('[data-mksell]'), cancel = e.target.closest('[data-mkcancel]');
+      if (buy) { const x = mkData.list.find(y => y.id === buy.dataset.mkbuy); buy.disabled = true; marketAct('/api/market/buy', { id: buy.dataset.mkbuy }, `🏪 ${x ? S.ITEM_NAME[x.item] : '물건'}을 샀어요!`); }
+      if (sell) { const k = sell.dataset.mksell, price = +($(`[data-mkprice="${k}"]`) || {}).value; sell.disabled = true; marketAct('/api/market/sell', { item: k, price }, `🏪 ${S.ITEM_NAME[k]}을 🪙 ${price}에 올렸어요!`); }
+      if (cancel) { cancel.disabled = true; marketAct('/api/market/cancel', { id: cancel.dataset.mkcancel }, '🏪 물건을 내렸어요.'); }
+    };
+    $('#advList').onclick = e => { const b = e.target.closest('[data-adv]'); if (b && !b.disabled) startStage(b.dataset.adv); };
+    $('#stAdv').onclick = () => { closeM('studyModal'); openAdv(); };
+    $('#stSkill').onclick = () => { closeM('studyModal'); openSkill(); };
+    $('#skTabs').onclick = e => { const t = e.target.closest('[data-sem]'); if (t) { skSem = +t.dataset.sem; renderSkill(); } };
+    $('#skBody').onclick = e => { const b = e.target.closest('[data-sk]'); if (!b) return; closeM('skillModal'); const t = b.dataset.sk; startQuiz({ title: `✏️ ${t}`, total: 10, practice: true, topic: t, sem: skSem, onDone: () => { Sound.play('capture'); confetti(innerWidth / 2, innerHeight * 0.4); } }); };
+  }
   function initShop() {
     $('#btnStudy').onclick = openStudy;
     $('#stPractice').onclick = () => { closeM('studyModal'); startPractice(); };
@@ -3150,7 +3627,7 @@
     try { await loadMap(); } catch (e) { $('#loadMsg').textContent = '😢 ' + (e.message || '지도를 불러오지 못했어요.') + ' 새로고침 해 주세요.'; return; }
     if (window.MLEIntro) { await window.MLEIntro.done(); Sound.play('tap'); Music.start(); } // 인트로: 시작하기를 누르면 들어간다 (배경 음악도 이때)
     else document.addEventListener('pointerdown', () => Music.start(), { once: true });
-    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin(); initShop(); initInvite(); initWar(); initLooks(); initProfile(); initUnion(); initTeacher();
+    initAuth(); initSetup(); initGameUi(); initDefense(); initQuiz(); initSettings(); initAdmin(); initShop(); initInvite(); initWar(); initLooks(); initProfile(); initChallenge(); initUnion(); initTeacher();
     $('#players').addEventListener('click', e => { const b = e.target.closest('[data-vote]'); if (b) votePlayer(b.dataset.vote, b.dataset.nick, +b.dataset.n); });
     if (!token) return show('auth');
     const d = await api('/api/me');
