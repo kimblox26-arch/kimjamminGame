@@ -14,8 +14,8 @@ export class Input {
     addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
       this.keys.add(e.code);
-      if (e.code === 'KeyE') this.actPressed = true;
-      if (e.code === 'Space') { this.jumpPressed = true; if (this.fpMode) e.preventDefault(); }
+      if (this.fpMode && e.code === 'KeyE') this.actPressed = true;
+      if (this.fpMode && e.code === 'Space') { this.jumpPressed = true; e.preventDefault(); }
       if (this.onKey) this.onKey(e);
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -82,6 +82,7 @@ export class MapCamera {
     this.pointers = new Map();
     this.enabled = true;
     this.onTap = null;
+    this.onUserMove = null;   // 사용자가 직접 카메라를 움직이면 호출 (따라가기 해제)
     canvas.addEventListener('pointerdown', (e) => this.down(e));
     canvas.addEventListener('pointermove', (e) => this.move(e));
     canvas.addEventListener('pointerup', (e) => this.up(e));
@@ -107,6 +108,7 @@ export class MapCamera {
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
     if (Math.hypot(e.clientX - p.sx, e.clientY - p.sy) > 8) this.moved = true;
     if (this.pointers.size === 1) {
+      if (this.moved && this.onUserMove) this.onUserMove();
       if (p.btn === 2 || e.shiftKey) {
         this.goal.yaw -= dx * 0.005;
         this.goal.pitch = Math.max(0.12, Math.min(1.5, this.goal.pitch + dy * 0.004));
@@ -122,7 +124,9 @@ export class MapCamera {
       const d0 = Math.hypot(p.x - other.x, p.y - other.y), d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
       if (d0 > 10) this.goal.dist = Math.max(40, Math.min(5200, this.goal.dist * d0 / d1));
       const a0 = Math.atan2(p.y - other.y, p.x - other.x), a1 = Math.atan2(e.clientY - other.y, e.clientX - other.x);
-      this.goal.yaw += (a1 - a0);
+      let da = a1 - a0;
+      if (da > Math.PI) da -= Math.PI * 2; else if (da < -Math.PI) da += Math.PI * 2;
+      this.goal.yaw += da;
       this.goal.pitch = Math.max(0.12, Math.min(1.5, this.goal.pitch + dy * 0.002));
     }
     p.x = e.clientX; p.y = e.clientY;
@@ -147,6 +151,7 @@ export class MapCamera {
     this.goal.tz += (-fx * sn + fz * c) * s;
     if (keys.has('KeyQ')) this.goal.yaw += dt * 1.2;
     if (keys.has('KeyE')) this.goal.yaw -= dt * 1.2;
+    if ((fx || fz) && this.onUserMove) this.onUserMove();
     if (keys.has('KeyR')) this.goal.pitch = Math.min(1.5, this.goal.pitch + dt);
     if (keys.has('KeyF')) this.goal.pitch = Math.max(0.12, this.goal.pitch - dt);
   }

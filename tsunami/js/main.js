@@ -114,6 +114,7 @@ class Game {
     this.input = new Input(canvas);
     this.mapCam = new MapCamera(this.camera, canvas);
     this.mapCam.onTap = (x, y) => this.onMapTap(x, y);
+    this.mapCam.onUserMove = () => { this.follow = false; };
     this.input.onKey = (e) => this.onKey(e);
     this.pmrem = new THREE.PMREMGenerator(r);
     if (this.q.bloom) {
@@ -163,11 +164,14 @@ class Game {
     this.collapseLogT = -10;
     this.pendingCollapses = [];
     this.roar = 0;
+    this.roarTarget = 0;
     this.roarT = 0;
   }
 
   resetWorld() {
     this.sim.reset();
+    this.water.texFlood.needsUpdate = true;
+    this.water.texW.needsUpdate = this.water.texWp.needsUpdate = this.water.texF.needsUpdate = true;
     this.city.resetState();
     this.bodies.reset();
     this.people.spawnAll();
@@ -292,12 +296,26 @@ class Game {
     } else this.mode = m;
     if (this.mode !== 'fp' && document.pointerLockElement) document.exitPointerLock();
     this.input.fpMode = this.mode === 'fp' || this.mode === 'npc';
+    if (this.mode === 'npc') this.follow = false;
     this.mapCam.enabled = this.mode === 'map' || this.mode === 'place';
     this.ui.setMode(this.mode);
   }
 
   startFP(x, z) {
-    // 바다를 등지고(내륙 쪽) 시작해 쓰나미를 돌아볼 수 있게
+    // 물 위라면 가장 가까운 육지로
+    if (this.terrain.groundAt(x, z) < 0.4) {
+      const k = this.nav.cellOf(x, z), M = this.nav.M;
+      let best = null;
+      for (let r = 1; r < 40 && !best; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        const i = (k % M) + di, j = ((k / M) | 0) + dj;
+        if (i < 0 || j < 0 || i >= M || j >= M || !this.nav.walk[j * M + i]) continue;
+        const cx = -HALF + (i + 0.5) * this.nav.S, cz = -HALF + (j + 0.5) * this.nav.S;
+        if (!best || Math.hypot(cx - x, cz - z) < Math.hypot(best[0] - x, best[1] - z)) best = [cx, cz];
+      }
+      if (best) { x = best[0]; z = best[1]; }
+    }
+    this.input.consumeFP();
     this.player.spawn(x, z, 0);
     this.player.yaw = Math.PI;   // 남쪽(바다) 바라보기
     this.mode = 'fp';
@@ -391,7 +409,7 @@ class Game {
   schedule(delay, fn) { this.events.push({ t: this.simTime + delay, fn }); this.warn.scheduled = true; }
 
   issueWarning(kind) {
-    if (this.warn.issued) return;
+    if (this.warn.issued || !this.ui.warnOn) { this.warn.scheduled = false; return; }
     this.warn.issued = true;
     this.sirenOn = true;
     this.alertOn = true;
@@ -506,7 +524,7 @@ class Game {
     if (!this.arrived) {
       for (const k of sim.coastCells) {
         for (const n of [k - 1, k + 1, k - sim.N, k + sim.N]) {
-          if (sim.b0[n] > 0.8 && sim.h[n] > 0.3) {
+          if (sim.b0[n] > 0.8 && sim.h[n] > 0.3 && this.distMap[n] >= 0) {   // 방파제 등 해상 구조물 제외
             this.arrived = true;
             const t = this.simTime - (this.eventT0 || 0);
             const ni = n % sim.N, nj = (n - ni) / sim.N;
@@ -527,7 +545,7 @@ class Game {
     this.shake = Math.max(0, this.shake - dt * 0.6);
     const shakeAmt = quake * 0.6 + this.shake + (fpLike ? this.roar * 0.12 : 0);
     if (this.mode === 'map' || this.mode === 'place') {
-      if (this.follow && this.selected && this.selected.state !== 'missing') this.mapCam.focus(this.selected.x, this.selected.z);
+      if (this.follow && this.selected && this.selected.state !== 'missing') { this.mapCam.goal.tx = this.selected.x; this.mapCam.goal.tz = this.selected.z; }
       this.mapCam.keys(this.input.keys, dt);
       this.mapCam.update(dt, (x, z) => this.terrain.groundAt(x, z));
       const alt = cam.position.y - Math.max(0, this.terrain.groundAt(cam.position.x, cam.position.z));

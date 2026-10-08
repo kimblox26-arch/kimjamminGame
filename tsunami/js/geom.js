@@ -46,6 +46,8 @@ export function gableGeometry() {
     -0.5, 0, 0.5, -0.5, 0, -0.5, -0.5, 1, 0,
     0.5, 0, -0.5, 0.5, 0, 0.5, 0.5, 1, 0,
   ];
+  // 각 삼각형의 2·3번째 정점을 바꿔 바깥에서 반시계(앞면)가 되게
+  for (let t = 0; t < v.length; t += 9) for (let c = 0; c < 3; c++) { const a = v[t + 3 + c]; v[t + 3 + c] = v[t + 6 + c]; v[t + 6 + c] = a; }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
   g.computeVertexNormals();

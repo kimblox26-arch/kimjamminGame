@@ -760,6 +760,7 @@ export class People {
       pos[i * 3] = p.x; pos[i * 3 + 1] = hidden ? 1e7 : p.y + p.height + 2; pos[i * 3 + 2] = p.z;
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
       const d2 = (p.x - camPos.x) ** 2 + (p.z - camPos.z) ** 2;
+      if (i === hideId && p.state !== 'missing') this.animate(p, dt);   // 관찰 시점 대상: 보이지 않아도 자세 상태는 갱신
       if (hidden || (camFar && d2 > 1.2e6) || d2 > 9e6) {
         for (let k = 0; k < PARTS; k++) zero(A, (i * PARTS + k) * 16);
         zero(H, i * 16); zero(HR, i * 16); zero(HT, i * 16);

@@ -175,7 +175,7 @@ export class City {
             const n = W > 80 ? 2 : 1;
             for (let i = 0; i < n; i++) {
               const ww = (W - 10 * n) / n;
-              this.tryBuilding(bx0 + 5 + ww / 2 + i * (ww + 10), bz1 - 13, ww * (0.75 + r() * 0.2), 18 + r() * 6, STYLE.hotel, 26 + r() * 40, { name: '해변 호텔' });
+              this.tryBuilding(bx0 + 5 + ww / 2 + i * (ww + 10), bz1 - 13, ww * (0.75 + r() * 0.2), 18 + r() * 6, STYLE.hotel, 26 + r() * 40, { name: '해변 호텔', check: true });
             }
             this.shopRow(bx0, bz0, bx1, bz0 + Math.max(14, D - 40));
           } else this.shopRow(bx0, bz0, bx1, bz1);
@@ -259,8 +259,8 @@ export class City {
       if (x + w > x1 - 1) break;
       const d = Math.min(D - 4, 12 + r() * 10);
       const tall = r() < 0.18;
-      this.tryBuilding(x + w / 2, z0 + 2 + d / 2, w, d, tall ? STYLE.apt : STYLE.shop, tall ? 13 + r() * 10 : 6.5 + Math.floor(r() * 3) * 3.5, { name: tall ? '상가 건물' : '상점' });
-      if (D > 40) this.tryBuilding(x + w / 2, z1 - 2 - d / 2, w, d, STYLE.shop, 6.5 + Math.floor(r() * 2) * 3.5, { name: '상점' });
+      this.tryBuilding(x + w / 2, z0 + 2 + d / 2, w, d, tall ? STYLE.apt : STYLE.shop, tall ? 13 + r() * 10 : 6.5 + Math.floor(r() * 3) * 3.5, { name: tall ? '상가 건물' : '상점', check: true });
+      if (D > 40) this.tryBuilding(x + w / 2, z1 - 2 - d / 2, w, d, STYLE.shop, 6.5 + Math.floor(r() * 2) * 3.5, { name: '상점', check: true });
       x += w + 2 + r() * 3;
     }
   }
@@ -302,10 +302,30 @@ export class City {
     return this.hash[j * this.HN + i];
   }
 
+  /** 반지름 r 원과 겹칠 수 있는 건물 (버킷 여러 개, 중복 제거) */
+  nearBuildingsR(x, z, r) {
+    if (r < 1) return this.nearBuildings(x, z);
+    const i0 = Math.max(0, Math.floor((x - r + HALF) / this.HC)), i1 = Math.min(this.HN - 1, Math.floor((x + r + HALF) / this.HC));
+    const j0 = Math.max(0, Math.floor((z - r + HALF) / this.HC)), j1 = Math.min(this.HN - 1, Math.floor((z + r + HALF) / this.HC));
+    if (i0 === i1 && j0 === j1) return this.hash[j0 * this.HN + i0] || [];
+    const out = [], stamp = (this._stamp = (this._stamp || 0) + 1);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) for (const b of this.hash[j * this.HN + i]) if (b._s !== stamp) { b._s = stamp; out.push(b); }
+    return out;
+  }
+
+  /** 셀 k 를 함께 점유하는 다른 살아 있는 건물이 있는가 */
+  cellOwners(k, except) {
+    const sim = this.sim, N = sim.N;
+    const i = k % N, j = (k - i) / N;
+    const x = -HALF + (i + 0.5) * sim.dx, z = -HALF + (j + 0.5) * sim.dx;
+    for (const o of this.nearBuildings(x, z)) if (o !== except && o.alive && o.cells && o.cells.includes(k)) return true;
+    return false;
+  }
+
   /** 원(x,z,r)을 건물 밖으로 밀어냄. y가 지붕보다 높으면 무시. 충돌 건물 반환 */
   collide(p, r, y = -1e9) {
     let hit = null;
-    for (const b of this.nearBuildings(p.x, p.z)) {
+    for (const b of this.nearBuildingsR(p.x, p.z, r)) {
       if (!b.alive || y > b.top - 0.3) continue;
       const hx = b.w / 2 + r, hz = b.d / 2 + r;
       const dx = p.x - b.x, dz = p.z - b.z;
@@ -476,7 +496,9 @@ export class City {
         b.collapse = 0;
         const l = Math.hypot(fx, fz) || 1;
         b.fall = [fx / l, fz / l];
-        for (const k of b.cells) sim.clearSolid(k);
+        // 다른 살아 있는 건물이 함께 쓰는 셀은 고체로 유지
+        for (const k of b.cells) if (!this.cellOwners(k, b)) sim.clearSolid(k);
+        if (b.floors >= 5 && !b.gable) this.updateRooftop();
         onCollapse(b);
       }
     }
@@ -546,8 +568,11 @@ export class City {
     this.bMesh.setMatrixAt(b.idx, m);
     this.bMesh.instanceMatrix.needsUpdate = true;
     if (b.gable) {
-      if (b.collapse >= 0) m.compose(p.set(b.x, b.base + hh - 3, b.z), q, s.set(b.w + 0.8, b.roofH * (1 - b.collapse), b.d + 0.8));
-      else m.compose(p.set(b.x, b.top, b.z), q.identity(), s.set(b.w + 0.8, b.roofH, b.d + 0.8));
+      if (b.collapse >= 1) m.makeScale(0, 0, 0);
+      else if (b.collapse >= 0) {
+        const top = new THREE.Vector3(0, hh, 0).applyQuaternion(q);
+        m.compose(p.set(b.x + b.fall[0] * tilt * 4 + top.x, y + top.y, b.z + b.fall[1] * tilt * 4 + top.z), q, s.set(b.w + 0.8, b.roofH * (1 - b.collapse * 0.9), b.d + 0.8));
+      } else m.compose(p.set(b.x, b.top, b.z), q.identity(), s.set(b.w + 0.8, b.roofH, b.d + 0.8));
       this.roofMesh.setMatrixAt(b.roofIdx, m);
       this.roofMesh.instanceMatrix.needsUpdate = true;
     }

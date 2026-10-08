@@ -118,7 +118,7 @@ export class Terrain {
       }
       for (let s = 0; s < R - 1; s++) {
         const a = base + s * 2, b = a + 1, c2 = a + 2, d = a + 3;
-        ci.push(a, b, c2, b, d, c2, a, c2, b, b, c2, d);
+        ci.push(a, b, c2, b, d, c2);
       }
     };
     edge((s) => [-HALF + s * c, -HALF, s]);
@@ -129,7 +129,7 @@ export class Terrain {
     cg.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3));
     cg.setIndex(ci);
     cg.computeVertexNormals();
-    this.curtain = new THREE.Mesh(cg, new THREE.MeshStandardMaterial({ color: 0x4a4436, roughness: 1 }));
+    this.curtain = new THREE.Mesh(cg, new THREE.MeshStandardMaterial({ color: 0x4a4436, roughness: 1, side: THREE.DoubleSide }));
     return [this.mesh, this.skirt, this.curtain];
   }
 }

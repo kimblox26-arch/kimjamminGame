@@ -61,7 +61,7 @@ export class Effects {
     this.meteor.visible = false;
     this.meteor.renderOrder = 6;
     scene.add(this.meteor);
-    this.meteorState = null;
+    this.meteors = [];
     // 충격파 고리
     this.shock = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
     this.shock.visible = false;
@@ -147,8 +147,7 @@ export class Effects {
 
   launchMeteor(x, z, onImpact) {
     const sx = x + 2600, sy = 2400, sz = z - 1400;
-    this.meteorState = { sx, sy, sz, x, z, t: 0, T: 3.2, onImpact };
-    this.meteor.visible = true;
+    this.meteors.push({ sx, sy, sz, x, z, t: 0, T: 3.2, onImpact });
   }
 
   shockwave(x, z, maxR) {
@@ -189,8 +188,9 @@ export class Effects {
     geo.attributes.aAlpha.needsUpdate = true;
     geo.attributes.aMud.needsUpdate = true;
 
-    const m = this.meteorState;
-    if (m) {
+    this.meteor.visible = this.meteors.length > 0;
+    for (let mi = this.meteors.length - 1; mi >= 0; mi--) {
+      const m = this.meteors[mi];
       m.t += dt;
       const k = Math.min(1, m.t / m.T);
       const e = k * k;
@@ -199,8 +199,7 @@ export class Effects {
       this.meteor.scale.setScalar(80 + 140 * k);
       for (let i = 0; i < 6; i++) this.emit(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 20, z + (Math.random() - 0.5) * 20, 0, 0, 0, 1.6, 40 + Math.random() * 40, 0.6, 0);
       if (k >= 1) {
-        this.meteor.visible = false;
-        this.meteorState = null;
+        this.meteors.splice(mi, 1);
         m.onImpact();
       }
     }
@@ -213,5 +212,5 @@ export class Effects {
     }
   }
 
-  clear() { this.n = 0; this.meteorState = null; this.meteor.visible = false; }
+  clear() { this.n = 0; this.meteors = []; this.meteor.visible = false; }
 }

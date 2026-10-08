@@ -50,7 +50,7 @@ export class UI {
     syncTod();
     const q = $('quality');
     for (const [k, v] of Object.entries(QUALITY)) { const o = document.createElement('option'); o.value = k; o.textContent = v.label; if (k === g.qKey) o.selected = true; q.appendChild(o); }
-    q.onchange = () => { try { localStorage.setItem('tsunami.quality', q.value); } catch (e) { /* */ } location.search = ''; location.reload(); };
+    q.onchange = () => { try { localStorage.setItem('tsunami.quality', q.value); } catch (e) { /* */ } const u = new URL(location.href); u.searchParams.set('q', q.value); location.replace(u.href); };
     const vol = $('vol');
     vol.oninput = () => { g.audio.volume = vol.value / 100 * 1.1; g.audio.start(); };
     g.audio.volume = vol.value / 100 * 1.1;
@@ -65,6 +65,14 @@ export class UI {
     $('btn-left').onclick = () => document.body.classList.toggle('show-left');
     $('btn-right').onclick = () => document.body.classList.toggle('show-right');
     $('banner').onclick = () => $('banner').classList.add('hidden');
+    $('phone').onclick = () => $('phone').classList.add('hidden');
+    // 구 목록은 자주 다시 그려지므로 위임 + pointerdown 으로 클릭 유실 방지
+    $('districts').addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.dist');
+      if (!el) return;
+      const c = this.centroids[+el.dataset.i];
+      g.follow = false; g.setMode('map'); g.mapCam.focus(c.x, c.z, 1200);
+    });
     $('t-run').onclick = () => { g.input.runToggle = !g.input.runToggle; $('t-run').classList.toggle('on', g.input.runToggle); };
     $('t-jump').onpointerdown = (e) => { e.stopPropagation(); g.input.jumpPressed = true; };
     $('t-act').onpointerdown = (e) => { e.stopPropagation(); g.input.actPressed = true; };
@@ -156,11 +164,11 @@ export class UI {
     $('card-view').onclick = () => { const q = this.cardP; if (!q || q.state === 'missing') return; g.selected = q; g.npcYaw = undefined; g.npcLook.yaw = 0; g.setMode('npc'); };
     $('card-follow').onclick = () => { const q = this.cardP; if (!q) return; g.follow = true; g.mapCam.focus(q.x, q.z, 220); };
     $('card-play').onclick = () => { const q = this.cardP; if (!q) return; g.startFP(q.x + 1, q.z + 1); };
-    $('card-body').onclick = (e) => { const s = e.target.closest('.fam'); if (s) g.select(g.people.list[+s.dataset.i]); };
+    $('card-body').onpointerdown = (e) => { const s = e.target.closest('.fam'); if (s) g.select(g.people.list[+s.dataset.i]); };
     this.renderCard(true);
   }
 
-  hideCard() { this.cardP = null; $('card').classList.add('hidden'); }
+  hideCard() { this.cardP = null; this.g.follow = false; $('card').classList.add('hidden'); }
 
   renderCard(full) {
     const p = this.cardP, g = this.g;
@@ -361,10 +369,6 @@ export class UI {
         <div class="d-n"><span>👥 ${s.pop}</span><span class="ok">✔ ${s.safe}</span><span class="mid">🏃 ${s.evac}</span><span class="bad">🌊 ${s.swept + s.missing}</span>
         <span>침수 ${(flooded * 100).toFixed(0)}% · 최대 ${f.maxD.toFixed(1)} m</span>${g.collapseByDistrict[i] ? `<span class="bad">🏚 ${g.collapseByDistrict[i]}</span>` : ''}</div></div>`;
     }).join('');
-    for (const el of document.querySelectorAll('#districts .dist')) el.onclick = () => {
-      const c = this.centroids[+el.dataset.i];
-      g.setMode('map'); g.mapCam.focus(c.x, c.z, 1200);
-    };
     $('alive-pct') && ($('alive-pct').textContent = alive);
   }
 
