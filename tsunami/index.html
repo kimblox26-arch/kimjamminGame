@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>해랑시 쓰나미</title>
+<meta name="description" content="지도에서 쓰나미 발생 지점을 터치하고, 천수방정식으로 계산되는 침수와 사람들의 감정·대피를 지도 또는 1인칭으로 지켜보는 재난 시뮬레이터">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
+</script>
+</head>
+<body class="mode-map">
+<canvas id="gl"></canvas>
+<div id="touch-zone"></div>
+<div id="labels"></div>
+<div id="fx-under" class="fx"></div>
+<div id="fx-vig" class="fx"></div>
+<div id="fx-flash" class="fx"></div>
+
+<div id="loading">
+  <div class="ld-wrap">
+    <div class="ld-wave"></div>
+    <h1>TSUNAMI</h1>
+    <p>해랑시 쓰나미 재난 시뮬레이터</p>
+    <div class="bar"><div id="load-bar"></div></div>
+    <div id="load-text">준비 중</div>
+  </div>
+</div>
+
+<header id="top">
+  <button id="btn-left" class="icon" title="설정">☰</button>
+  <div class="brand">🌊 <b>해랑시</b><span> 쓰나미</span></div>
+  <div id="clock" class="clock">평상시</div>
+  <div id="speed" class="speed">
+    <button data-s="0" title="일시정지 (P)">⏸</button><button data-s="0.5">½×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="5">5×</button><button data-s="10">10×</button>
+  </div>
+  <button id="btn-right" class="icon" title="상황판">📊</button>
+</header>
+
+<aside id="left" class="panel">
+  <h3>쓰나미 발생원</h3>
+  <div id="src-types" class="types"></div>
+  <div class="row"><label for="power">규모</label><input type="range" id="power" min="0" max="100" value="62"><span id="power-val" class="val"></span></div>
+  <p class="hint" id="src-desc"></p>
+  <p class="hint strong">🗺 지도에서 <b>바다를 터치</b>하면 그 지점에서 쓰나미가 발생합니다. 여러 번 터치해 겹칠 수도 있습니다.</p>
+  <h3>경보 · 환경</h3>
+  <label class="tog"><input type="checkbox" id="opt-warn" checked> 조기경보 시스템 (사이렌 · 재난문자)</label>
+  <div class="row"><label for="tod">시각</label><input type="range" id="tod" min="5" max="21" step="0.25" value="15.5"><span id="tod-val" class="val"></span></div>
+  <h3>지도 표시</h3>
+  <label class="tog"><input type="checkbox" id="opt-flood" checked> 침수 지도 (최대 침수심)</label>
+  <label class="tog"><input type="checkbox" id="opt-dist"> 구 경계 · 구 이름</label>
+  <label class="tog"><input type="checkbox" id="opt-markers" checked> 사람 감정 점 (멀리서)</label>
+  <label class="tog"><input type="checkbox" id="opt-bubbles" checked> 감정 말풍선 (가까이서)</label>
+  <div class="flood-legend"><span>침수심</span><i style="background:#9eebff"></i>0.3<i style="background:#479ef9"></i>2<i style="background:#1f4dd9"></i>5<i style="background:#611fb8"></i>9 m</div>
+  <h3>그래픽 · 소리</h3>
+  <div class="row"><label for="quality">품질</label><select id="quality"></select></div>
+  <div class="row"><label for="vol">음량</label><input type="range" id="vol" min="0" max="100" value="70"></div>
+  <div class="btns"><button id="btn-reset">↺ 처음부터</button><button id="btn-help">❔ 도움말</button></div>
+</aside>
+
+<aside id="right" class="panel">
+  <h3>상황판</h3>
+  <div id="summary" class="summary"></div>
+  <div class="sub">사람들의 감정 분포</div>
+  <div id="emo-bar" class="emo-bar"></div>
+  <div id="emo-legend" class="emo-legend"></div>
+  <h3>구별 현황 <small>(구를 누르면 이동)</small></h3>
+  <div id="districts"></div>
+</aside>
+
+<div id="log"></div>
+<div id="banner" class="hidden"></div>
+<div id="phone" class="hidden"><div class="ph-head">📱 긴급재난문자 <span>위급재난</span></div><div class="ph-body"></div></div>
+
+<div id="card" class="panel hidden"></div>
+
+<nav id="bottom">
+  <button id="m-map" class="on">🗺 지도 모드</button>
+  <button id="m-fp">🧍 사람 모드 (1인칭)</button>
+</nav>
+<div id="place-hint" class="hint-box">
+  <b>🧍 사람 모드</b> — 지도에서 <b>육지</b>를 터치해 시작 위치를 고르세요
+  <div><button id="place-now">해변에서 바로 시작</button><button id="place-cancel">취소</button></div>
+</div>
+<div id="map-hint" class="hint-box small">바다를 터치 → 쓰나미 발생 · 사람(점)을 터치 → 그 사람의 감정과 시점 · 드래그 이동 · 휠/핀치 확대 · 우클릭/두 손가락 회전</div>
+
+<div id="fp-hud">
+  <div id="fp-status"></div>
+  <div id="fp-vitals"><span id="fp-emo"></span><span id="fp-heart"></span><div class="stam"><div id="fp-stam"></div></div></div>
+  <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="fp-prompt"></div>
+  <div id="fp-hint">WASD 이동 · Shift 달리기 · Space 점프 · E 건물 오르기 · 화면 클릭 후 마우스로 둘러보기 · M 지도</div>
+  <button id="fp-exit">🗺 지도로</button>
+</div>
+<div id="touch-ui">
+  <div id="joy"><div id="joy-knob"></div></div>
+  <button id="t-run" title="달리기">🏃</button>
+  <button id="t-jump" title="점프">⤒</button>
+  <button id="t-act" title="오르기/들어가기">⬆</button>
+</div>
+
+<div id="help" class="overlay">
+  <div class="help-box">
+    <h2>🌊 해랑시 쓰나미</h2>
+    <p>인구 수백 명이 사는 해안 도시 <b>해랑시</b>. 6개의 구(항구구 · 강변구 · 해변구 · 중앙구 · 등대곶구 · 산마루구)마다 건물과 사람이 다릅니다.</p>
+    <ul>
+      <li><b>지도 모드</b> — 왼쪽에서 발생원(해저 지진 · 산사태 · 운석 · 원거리 해일)과 규모를 고르고 <b>바다를 터치</b>하세요. 파도가 퍼져 나가 해안에 부딪히고 육지가 침수됩니다.</li>
+      <li><b>사람 모드</b> — 도시 안의 한 사람이 되어 1인칭으로 쓰나미를 맞이합니다. 물살에 휩쓸리면 헤엄쳐 건물이나 얕은 곳으로 탈출하세요. 고층 건물 앞에서 <b>E</b>를 누르면 옥상으로 대피합니다.</li>
+      <li><b>사람들</b> — 어린이 · 청소년 · 성인 · 노인, 관광객 · 어부 · 회사원 · 학생… 모두 성격(침착성 · 이타심 · 호기심 · 대비성)이 다릅니다. 지진을 느끼고, 사이렌과 재난문자를 듣고, 파도를 보고 <b>감정</b>이 변하며 도망칩니다. 공포는 주변에 전염되고, 가족은 함께 움직이며, 누군가는 노인을 돕습니다. 바닷물이 빠지면 구경하러 가는 사람도 있습니다.</li>
+      <li><b>물리</b> — 비선형 천수방정식(침수/건조, 매닝 마찰, 쇄파 판정), 건물에 작용하는 유체력과 붕괴, 자동차 · 컨테이너 · 선박의 부력과 표류, 사람의 수심×유속 안정성 한계.</li>
+    </ul>
+    <button id="help-start" class="primary">시작하기</button>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
