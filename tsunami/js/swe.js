@@ -36,6 +36,10 @@ export class ShallowWater {
     this.deposit = new Float32Array(C);
     this.arrive = new Float32Array(C).fill(-1);
     this.texW = new Float32Array(C * 4);
+    this.texWPrev = new Float32Array(C * 4);
+    this.minStep = 0.045;
+    this.acc = 0;
+    this.lastStep = 0;
     this.texF = new Uint8Array(C * 4);
     this.texFlood = new Uint8Array(C * 4);
     const CN = Math.ceil(N / 8);
@@ -91,7 +95,10 @@ export class ShallowWater {
     this.steps = 0;
     this.active = false;
     this.coastMax = 0;
+    this.acc = 0;
+    this.lastStep = 0;
     this.prepareTextures(0);
+    this.texWPrev.set(this.texW);
   }
 
   cellOf(x, z) {
@@ -110,8 +117,14 @@ export class ShallowWater {
   clearSolid(k) { this.b[k] = this.b0[k]; }
 
   /** 시뮬레이션 진행: CFL 기반 서브스텝 */
-  advance(dtTotal) {
-    if (dtTotal <= 0) return;
+  /** 시간 누적 후 약 22 Hz 로 적분 (렌더는 두 상태 사이를 보간) */
+  advance(dtFrame) {
+    if (dtFrame <= 0) return false;
+    this.acc += dtFrame;
+    if (this.acc < this.minStep) return false;
+    const dtTotal = this.acc;
+    this.acc = 0;
+    this.lastStep = dtTotal;
     let t = 0, guard = 0;
     while (t < dtTotal - 1e-6 && guard++ < 10) {
       const c = Math.sqrt(G * Math.max(this.hmax, 1)) + this.umax;
@@ -121,7 +134,11 @@ export class ShallowWater {
       t += dt;
     }
     this.postStep(dtTotal);
+    return true;
   }
+
+  /** 렌더 보간 계수 (직전 상태 → 현재 상태) */
+  blend() { return this.lastStep > 0 ? Math.min(1, this.acc / this.lastStep) : 1; }
 
   step(dt) {
     const N = this.N, N1 = N + 1, idx = 1 / this.dx;
@@ -290,12 +307,12 @@ export class ShallowWater {
         const sp2 = cu * cu + cv * cv;
         let f = foam[c];
         const fr2 = sp2 / (G * hc);
-        if (fr2 > 0.3) f += dt * Math.min(3, (Math.sqrt(fr2) - 0.55) * 5);   // 프루드 수 기반 쇄파
+        if (fr2 > 0.3025) f += dt * Math.min(3, (Math.sqrt(fr2) - 0.55) * 5);   // 프루드 수 기반 쇄파 (Fr > 0.55)
         const div = (ur - ul + vb - vt) * idx;
         if (div < -0.04 && sp2 > 0.8) f += dt * Math.min(2, -div * 6);
         if (hc < 1.2 && sp2 > 0.6) f += dt * 0.8;
         f *= decay;
-        foam[c] = f > 1.5 ? 1.5 : f;
+        foam[c] = f < 0 ? 0 : f > 1.5 ? 1.5 : f;
         if (b0[c] > 0.2 && sp2 > 0.15) mud[c] += dt * 0.6 * (1 - mud[c]);
         else if (b0[c] < -3) mud[c] *= 1 - dt * 0.004;
         if (b0[c] > 0) {
@@ -331,6 +348,7 @@ export class ShallowWater {
   }
 
   prepareTextures(dt) {
+    this.texWPrev.set(this.texW);
     const N = this.N, h = this.h, b = this.b, tw = this.texW, tf = this.texF, tl = this.texFlood;
     const foam = this.foam, mud = this.mud, wet = this.wet;
     const dry = 1 - Math.min(1, dt * 0.012);
@@ -349,13 +367,13 @@ export class ShallowWater {
           if (j > 0 && h[c - N] > 0.02) eta = Math.max(eta, h[c - N] + b[c - N]);
           if (j < N - 1 && h[c + N] > 0.02) eta = Math.max(eta, h[c + N] + b[c + N]);
           // 건조 셀: 이웃 수면을 외삽하되 자기 바닥보다 높이 띄우지 않음 (전면이 허공에 뜨지 않게)
-          if (eta < -1e8) eta = b[c] - 12;
+          if (eta < -1e8) eta = this.b0[c] - 12;
           else if (eta > b[c] - 0.02) eta = b[c] - 0.02;
           wet[c] *= dry;
         }
         tw[o] = eta; tw[o + 1] = hc; tw[o + 2] = this.uc[c]; tw[o + 3] = this.vc[c];
         const f = foam[c];
-        tf[o] = f > 1 ? 255 : f * 255; tf[o + 1] = mud[c] * 255; tf[o + 2] = 0; tf[o + 3] = 255;
+        tf[o] = f > 1 ? 255 : f < 0 ? 0 : f * 255; tf[o + 1] = mud[c] * 255; tf[o + 2] = 0; tf[o + 3] = 255;
         tl[o] = wet[c] * 255;
         const m = this.maxH[c] * 25;
         tl[o + 1] = m > 255 ? 255 : m;
@@ -417,7 +435,7 @@ export class ShallowWater {
     let info;
     if (type === 'quake') {
       // 거대지진: 해안과 나란한 긴 단층 (영역 폭에 걸친 긴 파봉 → 방사 감쇠가 작음)
-      const A = 2 + 10 * Math.pow(p, 1.2), R = 150 + 250 * p, L = 900 + 2600 * p;
+      const A = 3.5 + 12.5 * Math.pow(p, 1.2), R = 500 + 600 * p, L = 1300 + 2400 * p;
       fn = (x, z) => {
         const a = (x - x0) * tx + (z - z0) * tz;     // 주향 방향
         const c = (x - x0) * nx + (z - z0) * nz;     // 해안 쪽(+)
@@ -447,7 +465,7 @@ export class ShallowWater {
       };
       info = { A, R: Rc, M: 0 };
     } else {
-      const A = 2 + 14 * p, W = 100 + 120 * p;
+      const A = 2 + 10 * p, W = 220 + 380 * p;
       fn = (x, z) => {
         const c = (x - x0) * nx + (z - z0) * nz;
         return A * Math.exp(-((c / W) ** 2));
@@ -473,7 +491,7 @@ export class ShallowWater {
         const k = j * N + i;
         const hh = 0.5 * (h[k] + h[k - 1]);
         if (hh < 1 || this.b0[k] > -1) continue;
-        const eta = 0.5 * (h[k] + b[k] + h[k - 1] + b[k - 1]);
+        const eta = fn(-HALF + i * dx, -HALF + (j + 0.5) * dx);   // 이번에 더한 변위만
         if (eta < 0.05) continue;
         this.u[j * N1 + i] += eta * Math.sqrt(G / hh) * nx;
       }
@@ -481,7 +499,7 @@ export class ShallowWater {
         const k = j * N + i;
         const hh = 0.5 * (h[k] + h[k - N]);
         if (hh < 1 || this.b0[k] > -1) continue;
-        const eta = 0.5 * (h[k] + b[k] + h[k - N] + b[k - N]);
+        const eta = fn(-HALF + (i + 0.5) * dx, -HALF + j * dx);
         if (eta < 0.05) continue;
         this.v[k] += eta * Math.sqrt(G / hh) * nz;
       }
@@ -491,6 +509,7 @@ export class ShallowWater {
     this.hmax = hm;
     this.active = true;
     this.prepareTextures(0);
+    this.texWPrev.set(this.texW);
     return info;
   }
 }

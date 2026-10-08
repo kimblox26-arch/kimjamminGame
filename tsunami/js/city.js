@@ -469,19 +469,15 @@ export class City {
       }
       b.load = P;
       b.waterDepth = hm;
-      if (P > b.strength) {
-        b.damage += dt * (P / b.strength - 1) * 1.1 + (b.extraHit || 0);
-        b.extraHit = 0;
-        if (b.damage >= 1) {
-          b.alive = false;
-          b.collapse = 0;
-          const l = Math.hypot(fx, fz) || 1;
-          b.fall = [fx / l, fz / l];
-          for (const k of b.cells) sim.clearSolid(k);
-          onCollapse(b);
-        }
-      } else if (b.extraHit) {
-        b.damage += b.extraHit; b.extraHit = 0;
+      if (P > b.strength) b.damage += dt * (P / b.strength - 1) * 1.1;
+      if (b.extraHit) { b.damage += b.extraHit; b.extraHit = 0; }   // 표류물 충돌
+      if (b.damage >= 1) {
+        b.alive = false;
+        b.collapse = 0;
+        const l = Math.hypot(fx, fz) || 1;
+        b.fall = [fx / l, fz / l];
+        for (const k of b.cells) sim.clearSolid(k);
+        onCollapse(b);
       }
     }
   }

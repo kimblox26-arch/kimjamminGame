@@ -15,6 +15,10 @@ import { Input, MapCamera } from './controls.js';
 import { Effects } from './fx.js';
 import { SoundEngine } from './audio.js';
 import { UI } from './ui.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const tick = () => new Promise((r) => requestAnimationFrame(() => r()));
 
@@ -112,6 +116,14 @@ class Game {
     this.mapCam.onTap = (x, y) => this.onMapTap(x, y);
     this.input.onKey = (e) => this.onKey(e);
     this.pmrem = new THREE.PMREMGenerator(r);
+    if (this.q.bloom) {
+      // 높음/울트라: HDR 렌더 → 블룸(태양 반사·거품·야간 창문) → 톤매핑·sRGB
+      this.composer = new EffectComposer(r);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.28, 0.5, 1.15);
+      this.composer.addPass(this.bloom);
+      this.composer.addPass(new OutputPass());
+    }
     this.envDirty = true;
 
     this.mode = 'map';
@@ -193,6 +205,7 @@ class Game {
   resize() {
     const w = innerWidth, h = innerHeight;
     this.renderer.setSize(w, h);
+    if (this.composer) { this.composer.setPixelRatio(this.renderer.getPixelRatio()); this.composer.setSize(w, h); }
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.fx.uniforms.uScale.value = h * this.renderer.getPixelRatio() / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
@@ -398,7 +411,7 @@ class Game {
     this.collapses++;
     if (b.district >= 0) this.collapseByDistrict[b.district]++;
     this.bodies.spawnDebris(b, b.style === 0 ? 8 : 14);
-    this.fx.dust(b.x, b.base + b.h * 0.3, b.z, Math.max(b.w, b.d), b.style === 0 ? 10 : 30);
+    this.fx.dust(b.x, b.base + b.h * 0.3, b.z, Math.max(b.w, b.d), b.style === 0 ? 4 : 14);
     const d = this.camera.position.distanceTo(new THREE.Vector3(b.x, b.base, b.z));
     this.audio.collapse(Math.max(0.05, 1 - d / 900));
     this.pendingCollapses.push(b);
@@ -414,11 +427,11 @@ class Game {
     this.updateCamera(dtReal, quake);
     this.updateEnvironment(dtReal);
     const hideId = this.mode === 'npc' && this.selected ? this.selected.i : -1;
-    const showMarkers = this.ui.markersOn && (this.mode === 'map' || this.mode === 'place') && this.camera.position.y > 160;
+    const showMarkers = this.ui.markersOn && (this.mode === 'map' || this.mode === 'place') && this.camera.position.y > 260;
     this.people.render(dt, this.camera.position, showMarkers, this.mode === 'map' ? this.selected : null, hideId);
     this.updateAudio(dtReal, quake);
     this.ui.update(dtReal);
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer) this.composer.render(dtReal); else this.renderer.render(this.scene, this.camera);
   }
 
   /** 테스트용: 렌더 없이 물리·사람만 진행 */
@@ -446,10 +459,12 @@ class Game {
       this.city.updateVegetation(dt);
       this.bodies.update(dt, (body, bld, E) => { bld.extraHit = (bld.extraHit || 0) + E / (bld.strength * 2.5e4); if (E > 2e5) this.audio.collapse(0.25); });
     }
-    if (this.pendingCollapses.length && this.simTime - this.collapseLogT > 3) {
+    if (this.pendingCollapses.length && this.simTime - this.collapseLogT > 6) {
       const byD = {};
-      for (const b of this.pendingCollapses) { const k = (DISTRICTS[b.district] || { name: '해안' }).name + ' ' + b.name; byD[k] = (byD[k] || 0) + 1; }
-      this.ui.toast('🏚 ' + Object.entries(byD).map(([k, n]) => `${k}${n > 1 ? ' ' + n + '채' : ''}`).join(', ') + ' 붕괴', 'warn');
+      for (const b of this.pendingCollapses) { const k = (DISTRICTS[b.district] || { name: '해안' }).name; byD[k] = (byD[k] || 0) + 1; }
+      const big = this.pendingCollapses.filter((b) => b.floors >= 4).map((b) => b.name);
+      const extra = big.length ? ` — ${[...new Set(big)].slice(0, 2).join('·')} 포함` : '';
+      this.ui.toast(`🏚 건물 붕괴 ${this.pendingCollapses.length}채: ` + Object.entries(byD).map(([k, n]) => `${k} ${n}`).join(' · ') + extra, 'warn');
       this.pendingCollapses = [];
       this.collapseLogT = this.simTime;
     }
@@ -490,13 +505,12 @@ class Game {
     }
     if (!this.arrived) {
       for (const k of sim.coastCells) {
-        const j = (k / sim.N) | 0, i = k % sim.N;
         for (const n of [k - 1, k + 1, k - sim.N, k + sim.N]) {
           if (sim.b0[n] > 0.8 && sim.h[n] > 0.3) {
             this.arrived = true;
             const t = this.simTime - (this.eventT0 || 0);
-            const x = -HALF + (i + 0.5) * sim.dx;
-            const d = districtAt(x, -HALF + (j + 0.5) * sim.dx);
+            const ni = n % sim.N, nj = (n - ni) / sim.N;
+            const d = districtAt(-HALF + (ni + 0.5) * sim.dx, -HALF + (nj + 0.5) * sim.dx);
             this.ui.toast(`🌊 쓰나미 해안 도달 (${DISTRICTS[Math.max(0, d)].name}) — 발생 ${fmtT(t)} 후 · 해안 수위 ${sim.coastNow.toFixed(1)} m`, 'alert');
             this.shake = Math.max(this.shake, 0.4);
             break;
@@ -562,6 +576,7 @@ class Game {
     const sc = L.shadow.camera;
     if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
     L.shadow.normalBias = half > 600 ? 3 : 0.6;
+    sky.material.uniforms.exposure.value *= 0.62;
     sky.hemi.intensity *= 0.55;
     sky.ambient.intensity *= 0.5;
     sky.sunSprite.position.copy(cam.position).addScaledVector(sky.sunDirection, 20000);

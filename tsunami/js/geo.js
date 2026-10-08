@@ -70,7 +70,7 @@ export function heightAt(x, z) {
     depth += 9 * cm * sstep(0, 40, d);
     h = -depth;
   } else {
-    let land = 2.6 * sstep(0, 70, inl) + Math.max(0, inl - 70) * 0.0085;
+    let land = 2.1 * sstep(0, 65, inl) + Math.max(0, inl - 65) * 0.0058;
     land += 1.4 * fbm2(x * 0.0032, z * 0.0032 + 7, 3) * sstep(60, 220, inl);
     const hillT = sstep(900, 1450, inl + 140 * fbm2(x * 0.0014, 5 + z * 0.0014, 3));
     land += hillT * (40 + 85 * ridgeNoise2(x * 0.0011 + 3, z * 0.0011 - 2, 4));

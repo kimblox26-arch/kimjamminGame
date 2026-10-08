@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { makeRng } from '../../src/core/utils.js';
 import { HALF, WORLD, SAFE_ELEV, PERSON_TYPES, EMOTIONS, LINES, SURNAMES, GIVEN } from './config.js';
-import { inlandDist, coastZ, districtAt, SIRENS, PORT_Z } from './geo.js';
+import { inlandDist, coastZ, coastSlope, districtAt, SIRENS, PORT_Z } from './geo.js';
 
 const PARTS = 11;
 const TAU = Math.PI * 2;
@@ -114,8 +114,8 @@ export class People {
       const L = group[0];
       for (const p of group) {
         if (p === L) continue;
-        if (L.activity === 'swim') { p.activity = 'swim'; p.x = L.x + (r() - 0.5) * 4; p.z = L.z + (r() - 0.5) * 4; p.swimBaseZ = L.swimBaseZ; }
-        else { if (p.activity === 'swim') p.z = L.z + (r() - 0.5) * 3; p.activity = L.activity === 'jog' ? 'jog' : L.activity === 'sit' && r() < 0.7 ? 'sit' : L.activity === 'stroll' ? 'stroll' : p.activity === 'swim' ? 'idle' : p.activity; }
+        if (L.activity === 'swim') { p.activity = 'swim'; p.swimmer = true; p.x = L.x + (r() - 0.5) * 4; p.z = L.z + (r() - 0.5) * 4; p.swimBaseZ = L.swimBaseZ; }
+        else { if (p.activity === 'swim') { p.z = L.z + (r() - 0.5) * 3; p.swimmer = false; } p.activity = L.activity === 'jog' ? 'jog' : L.activity === 'sit' && r() < 0.7 ? 'sit' : L.activity === 'stroll' ? 'stroll' : p.activity === 'swim' ? 'idle' : p.activity; }
       }
       this.groups.push(group);
     }
@@ -153,7 +153,7 @@ export class People {
     else if (zone === 'promenade') p.activity = r() < 0.3 ? 'jog' : r() < 0.6 ? 'walk' : 'idle';
     else if (role === 'fisher' && zone === 'port') p.activity = 'idle';
     else p.activity = r() < 0.62 ? 'walk' : 'idle';
-    if (p.activity === 'swim') { p.z += 30 + r() * 25; p.swimBaseZ = p.z; }
+    if (p.activity === 'swim') { p.z += 30 + r() * 25; p.swimBaseZ = p.z; p.swimmer = true; }
     return p;
   }
 
@@ -271,11 +271,24 @@ export class People {
     this.rebuildHash();
     const sub = dt > 0.06 ? Math.ceil(dt / 0.06) : 1;
     const h = dt / sub;
+    // 인지: 프레임당 처리 인원 제한 (고배속에서도 비용 일정), 순환 시작점
+    const n = this.list.length;
+    let budget = Math.ceil(n / 8) + 2;
+    this.pi = this.pi || 0;
+    let c = 0;
+    for (; c < n && budget > 0; c++) {
+      const p = this.list[(this.pi + c) % n];
+      if (p.state === 'missing' || env.simTime < p.nextPerceive) continue;
+      const pdt = Math.min(2, env.simTime - (p.lastPerceive ?? env.simTime - 0.35));
+      p.lastPerceive = env.simTime;
+      p.nextPerceive = env.simTime + 0.3 + Math.random() * 0.15;
+      this.perceive(p, env, pdt);
+      budget--;
+    }
+    this.pi = (this.pi + c) % Math.max(1, n);
     for (const p of this.list) {
       if (p.state === 'missing') continue;
-      p.perceiveT -= dt;
-      if (p.perceiveT <= 0) { p.perceiveT = 0.3 + Math.random() * 0.15; this.perceive(p, env, 0.35); }
-      for (let s = 0; s < sub; s++) this.move(p, h, env);
+      for (let s = 0; s < sub; s++) { this.move(p, h, env); if (p.state === 'missing') break; }
       this.mood(p, dt, env);
     }
   }
@@ -307,6 +320,8 @@ export class People {
       const l = Math.hypot(bx, bz) || 1;
       p.threatDir[0] = bx / l; p.threatDir[1] = bz / l;
       if (!p.sawWave) { p.sawWave = true; p.awareness = 3; this.say(p, LINES.fear); }
+      const react = env.simTime + 0.4 + (1 - p.composure) * 1.2;   // 시각적 반응 지연
+      if (p.decideT < 0 || p.decideT > react) p.decideT = react;
     }
     if (draw > 0.5 && !p.sawDraw) {
       p.sawDraw = true;
@@ -360,6 +375,7 @@ export class People {
   move(p, dt, env) {
     const { terrain, city, nav, sim } = this.ctx;
     const A = p.anim;
+    if (p.state === 'missing') return;
     if (p.state === 'inside') {
       p.inT -= dt;
       const b = p.building;
@@ -384,8 +400,12 @@ export class People {
     // 물살 안정성: 수심 × 유속 (DV) 한계, 부력 한계 수심
     const dv = depth * wsp;
     const floatDepth = p.height * (p.type === 'child' ? 0.62 : 0.78);
-    const swimmer = p.activity === 'swim';
-    if (!swimmer && depth > 0.05 && (dv > p.dvCrit * (1.15 - p.composure * 0.25) || depth > floatDepth)) { this.toSwept(p); return; }
+    // 바다에 있는 수영객: 대피를 시작해도 물이 얕아질 때까지는 헤엄/걸어서 해안으로
+    const swimmer = p.activity === 'swim' || (p.swimmer && depth > 0.35 && p.state === 'evac');
+    // 휩쓸렸다 빠져나온 직후에는 잠시 더 버팀 (상태 진동 방지)
+    if (p.recoverT > 0) p.recoverT -= dt;
+    const tol = p.recoverT > 0 ? 1.7 : 1;
+    if (!swimmer && depth > 0.05 && (dv > p.dvCrit * (1.15 - p.composure * 0.25) * tol || depth > floatDepth * (tol > 1 ? 1.15 : 1))) { this.toSwept(p); return; }
     if (swimmer && (wsp > 0.9 || depth > p.height * 1.8 || depth < 0.3)) {
       if (wsp > 0.9 || depth > p.height * 1.8) { this.toSwept(p); return; }
     }
@@ -415,6 +435,7 @@ export class People {
         if (l > 1.2) { dx /= l; dz /= l; speed = Math.min(p.run, Math.max(lead.anim.spd * 1.1, l * 0.8)); } else { nav.direction(nav[p.field], p.x, p.z, tmpDir); dx = tmpDir.x; dz = tmpDir.z; speed = lead.anim.spd; }
       } else {
         nav.direction(nav[p.field], p.x, p.z, tmpDir);
+        if (swimmer || (tmpDir.x === 0 && tmpDir.z === 0 && terrain.groundAt(p.x, p.z) < 0.4)) landward(p.x, tmpDir);
         dx = tmpDir.x; dz = tmpDir.z;
         const runFear = p.fear > 0.22 || p.sawWave;
         speed = runFear ? p.run * (0.55 + 0.45 * p.stamina) : p.walk * 1.35;
@@ -425,6 +446,7 @@ export class People {
           for (const o of g) if (o !== p && o.state === 'evac' && Math.hypot(o.x - p.x, o.z - p.z) < 40) speed = Math.min(speed, o.run * (0.55 + 0.45 * o.stamina) * 0.95 + 0.2);
         }
         if (p.escort) speed = Math.min(speed, p.escort.anim.spd + 0.3);
+        if (swimmer) speed = Math.min(speed, 0.9 + depth * 0.2);
         // 패닉: 방향 흔들림
         if (p.fear > 0.8 && p.composure < 0.4) {
           const n = Math.sin(env.simTime * 1.7 + p.i) * 0.7 * (p.fear - 0.7);
@@ -435,9 +457,11 @@ export class People {
       }
       // 도착 판정
       const k = nav.cellOf(p.x, p.z);
+      const sid = p.field === 'all' ? nav.all.src[k] : -1;
+      if (sid >= 0 && !city.buildings[sid].alive) { p.field = 'hill'; this.say(p, ['건물이 무너졌어!', '다른 데로 가야 해!']); }
       if (nav.ground[k] >= SAFE_ELEV && terrain.groundAt(p.x, p.z) >= SAFE_ELEV - 0.5) { this.toSafe(p); }
-      else if (p.field === 'all' && nav.all.src[k] >= 0 && nav.all.dist[k] <= 72) {
-        const b = city.buildings[nav.all.src[k]];
+      else if (p.field === 'all' && sid >= 0 && nav.all.dist[k] <= 72) {
+        const b = city.buildings[sid];
         if (b && b.alive) { this.enterBuilding(p, b); return; }
       }
       // 넘어짐 (패닉 질주)
@@ -489,7 +513,7 @@ export class People {
       }
       // 일행 따라가기
       const lead = p.leader;
-      if (lead && lead !== p && p.activity !== 'swim' && p.activity !== 'gawk') {
+      if (lead && lead !== p && lead.state === 'normal' && p.activity !== 'swim' && p.activity !== 'gawk') {
         const ox = lead.x - p.x, oz = lead.z - p.z, ol = Math.hypot(ox, oz);
         if (ol > 2.2) { dx = ox / ol; dz = oz / ol; speed = Math.min(p.run * 0.6, lead.anim.spd + (ol - 2) * 0.5); }
         else if (lead.anim.spd < 0.2) speed = 0;
@@ -514,6 +538,19 @@ export class People {
       const ex = p.x - env.player.x, ez = p.z - env.player.z, d = Math.hypot(ex, ez);
       if (d < 0.8 && d > 1e-3) { sx += ex / d * (0.8 - d) * 4; sz += ez / d * (0.8 - d) * 4; }
     }
+    // 갇힘 감지 → 일정 시간 벽을 따라 우회
+    if (p.state === 'evac') {
+      p.stuckT = (p.stuckT || 0) + dt;
+      if (p.stuckT > 2.5) {
+        if (speed > 0.5 && Math.hypot(p.x - (p.sx0 ?? p.x + 9), p.z - (p.sz0 ?? 0)) < 1.0) { p.detourT = 1.5 + Math.random() * 2.5; p.detourSign = Math.random() < 0.5 ? -1 : 1; }
+        p.stuckT = 0; p.sx0 = p.x; p.sz0 = p.z;
+      }
+      if (p.detourT > 0) {
+        p.detourT -= dt;
+        const a = p.detourSign * 1.35, c = Math.cos(a), s2 = Math.sin(a);
+        const ndx = dx * c - dz * s2; dz = dx * s2 + dz * c; dx = ndx;
+      }
+    }
     const tvx = dx * speed + sx, tvz = dz * speed + sz;
     const acc = (p.state === 'evac' ? 5 : 3) * dt;
     let ddx = tvx - p.vx, ddz = tvz - p.vz;
@@ -526,14 +563,19 @@ export class People {
       p.vx += (wu - p.vx) * k * 0.5; p.vz += (wv - p.vz) * k * 0.5;
     }
     const ox = p.x, oz = p.z;
-    p.x += p.vx * dt; p.z += p.vz * dt;
-    const pos = { x: p.x, z: p.z };
+    let nx = p.x + p.vx * dt, nz = p.z + p.vz * dt;
+    const pos = { x: nx, z: nz };
     city.collide(pos, 0.32, ground);
-    p.x = pos.x; p.z = pos.z;
-    if (!swimmer && !nav.isWalkable(p.x, p.z) && nav.isWalkable(ox, oz)) {
-      p.x = ox; p.z = oz; p.vx *= -0.2; p.vz *= -0.2;
-      if (p.state === 'normal') this.pickWaypoint(p);
+    // 벽 방향 속도 성분 제거 (벽을 따라 미끄러짐)
+    const px = pos.x - nx, pz = pos.z - nz, pl = Math.hypot(px, pz);
+    if (pl > 1e-6) { const vn = (p.vx * px + p.vz * pz) / pl; if (vn < 0) { p.vx -= vn * px / pl; p.vz -= vn * pz / pl; } }
+    nx = pos.x; nz = pos.z;
+    if (!swimmer && !nav.isWalkable(nx, nz) && nav.isWalkable(ox, oz)) {
+      if (nav.isWalkable(nx, oz)) { nz = oz; p.vz = 0; }
+      else if (nav.isWalkable(ox, nz)) { nx = ox; p.vx = 0; }
+      else { nx = ox; nz = oz; p.vx *= -0.2; p.vz *= -0.2; if (p.state === 'normal') this.pickWaypoint(p); }
     }
+    p.x = nx; p.z = nz;
     if (p.x < -HALF + 5 || p.x > HALF - 5 || p.z < -HALF + 5 || p.z > HALF - 5) { p.x = ox; p.z = oz; }
     p.y = swimmer ? Math.max(terrain.groundAt(p.x, p.z), tmpS.eta - p.height * 0.82) : terrain.groundAt(p.x, p.z);
     // 체력
@@ -554,6 +596,7 @@ export class People {
     p.waterT += dt;
     // 흐름에 실려감 + 약한 헤엄
     nav.direction(nav.hill, p.x, p.z, tmpDir);
+    if (tmpDir.x === 0 && tmpDir.z === 0) landward(p.x, tmpDir);
     const swim = 0.45 * p.fitness * (p.type === 'child' ? 0.5 : 1);
     p.vx += (wu + tmpDir.x * swim - p.vx) * Math.min(1, dt * 2.2);
     p.vz += (wv + tmpDir.z * swim - p.vz) * Math.min(1, dt * 2.2);
@@ -574,8 +617,8 @@ export class People {
       if (hit.evac && Math.random() < dt * 0.25) { this.enterBuilding(p, hit, true); return; }
     }
     // 발이 닿고 물살이 약해지면 탈출
-    if ((depth < p.height * 0.35 && wsp < 1.4) || depth < 0.08) {
-      p.state = 'evac'; p.activity = 'evac'; p.field = p.field || 'hill';
+    if ((depth < p.height * 0.35 && depth * wsp < p.dvCrit * 0.7) || depth < 0.08) {
+      p.state = 'evac'; p.activity = 'evac'; p.field = p.field || 'hill'; p.recoverT = 4;
       p.anim.fall = 1; p.fallT = 1.5;
       this.say(p, ['살았다...', '콜록콜록...', '빨리 높은 곳으로...']);
       return;
@@ -595,7 +638,10 @@ export class People {
     this.say(p, LINES.swept);
     // 일행의 슬픔
     const g = this.groups[p.group];
-    if (g) for (const o of g) if (o !== p) o.lostFamily = true;
+    if (g) for (const o of g) if (o !== p) {
+      o.lostFamily = true;
+      if (o.state === 'normal') { o.awareness = Math.max(o.awareness, 1.5); o.decideT = this.env ? this.env.simTime + 0.8 : 0; }
+    }
   }
 
   toSafe(p) {
@@ -914,6 +960,13 @@ export class People {
     }
     return { districts: S, total: tot, emo };
   }
+}
+
+/** 해안선 기준 육지 쪽 단위벡터 */
+function landward(x, out) {
+  const s = coastSlope(x), l = Math.hypot(s, 1);
+  out.x = s / l; out.z = -1 / l;
+  return out;
 }
 
 function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; return d; }

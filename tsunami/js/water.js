@@ -27,11 +27,11 @@ float windWaves(vec2 p, float t, out vec2 grad) {
 
 const VERT = /* glsl */`
 ${COMMON}
-uniform sampler2D tW; uniform sampler2D tF;
+uniform sampler2D tW; uniform sampler2D tWp; uniform sampler2D tF; uniform float uBlend;
 uniform float uN; uniform float uDx; uniform float uHalf;
 varying vec3 vW; varying float vDepth; varying vec2 vVel; varying float vFoam; varying float vMud; varying vec3 vNrm; varying float vSteep;
 #include <fog_pars_vertex>
-vec4 fetchW(ivec2 c) { c = clamp(c, ivec2(0), ivec2(int(uN) - 1)); return texelFetch(tW, c, 0); }
+vec4 fetchW(ivec2 c) { c = clamp(c, ivec2(0), ivec2(int(uN) - 1)); return mix(texelFetch(tWp, c, 0), texelFetch(tW, c, 0), uBlend); }
 vec4 fetchF(ivec2 c) { c = clamp(c, ivec2(0), ivec2(int(uN) - 1)); return texelFetch(tF, c, 0); }
 vec4 sampleW(vec2 xz) {
   vec2 g = (xz + uHalf) / uDx - 0.5; ivec2 i0 = ivec2(floor(g)); vec2 f = g - floor(g);
@@ -150,6 +150,9 @@ export class WaterSurface {
     this.texW = new THREE.DataTexture(sim.texW, N, N, THREE.RGBAFormat, THREE.FloatType);
     this.texW.minFilter = this.texW.magFilter = THREE.NearestFilter;
     this.texW.needsUpdate = true;
+    this.texWp = new THREE.DataTexture(sim.texWPrev, N, N, THREE.RGBAFormat, THREE.FloatType);
+    this.texWp.minFilter = this.texWp.magFilter = THREE.NearestFilter;
+    this.texWp.needsUpdate = true;
     this.texF = new THREE.DataTexture(sim.texF, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
     this.texF.minFilter = this.texF.magFilter = THREE.NearestFilter;
     this.texF.needsUpdate = true;
@@ -158,13 +161,14 @@ export class WaterSurface {
     this.texFlood.needsUpdate = true;
 
     this.uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-      uTime: { value: 0 }, tW: { value: null }, tF: { value: null },
+      uTime: { value: 0 }, tW: { value: null }, tWp: { value: null }, tF: { value: null }, uBlend: { value: 1 },
       uN: { value: N }, uDx: { value: sim.dx }, uHalf: { value: HALF },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color(1, 1, 1) },
       uHorizon: { value: new THREE.Color(0.7, 0.8, 0.9) }, uZenith: { value: new THREE.Color(0.25, 0.45, 0.75) },
       uLight: { value: 1 }, uUnder: { value: 0 },
     }]);
     this.uniforms.tW.value = this.texW;
+    this.uniforms.tWp.value = this.texWp;
     this.uniforms.tF.value = this.texF;
 
     const mk = (defines) => new THREE.ShaderMaterial({
@@ -190,8 +194,10 @@ export class WaterSurface {
   update(time, sky) {
     const u = this.uniforms;
     u.uTime.value = time;
+    u.uBlend.value = this.sim.blend();
     if (this.sim.texDirty) {
       this.texW.needsUpdate = true;
+      this.texWp.needsUpdate = true;
       this.texF.needsUpdate = true;
       this.sim.texDirty = false;
       this.floodTick = (this.floodTick || 0) + 1;

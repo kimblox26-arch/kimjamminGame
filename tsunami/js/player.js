@@ -30,6 +30,7 @@ export class Player {
     this.status = '';
     this.safe = false;
     this.depth = 0;
+    this.recoverT = 0;
   }
 
   spawn(x, z, yaw = Math.PI) {
@@ -109,7 +110,7 @@ export class Player {
         else if (hit.evac) { this.prompt = `E: 창문으로 ${hit.name} 안에 들어가기`; if (inp.act) this.startClimb(hit, 2.5); }
       }
       const d2 = Math.max(0, s.eta - terrain.groundAt(this.x, this.z));
-      if ((d2 < 0.55 && wsp < 1.6) || d2 < 0.1) { this.state = 'walk'; this.status = '간신히 발이 닿았다! 높은 곳으로!'; this.under = 0; this.vy = 0; }
+      if ((d2 < 0.55 && d2 * wsp < 0.42) || d2 < 0.1) { this.state = 'walk'; this.status = '간신히 발이 닿았다! 높은 곳으로!'; this.under = 0; this.vy = 0; this.recoverT = 4; }
       this.mood(dt, depth);
       return;
     }
@@ -156,8 +157,10 @@ export class Player {
       else if (near.top - this.y < 3.2) { this.prompt = `E: ${near.name} 지붕으로 오르기`; if (inp.act) this.toRoof(near); }
     }
     // 휩쓸림 판정 (성인 기준)
-    const dvc = 0.62;
-    if (depth > 0.05 && (depth * wsp > dvc || depth > 1.35)) {
+    if (this.recoverT > 0) this.recoverT -= dt;
+    const tol = this.recoverT > 0 ? 1.7 : 1;
+    const dvc = 0.62 * tol;
+    if (depth > 0.05 && (depth * wsp > dvc || depth > 1.35 * (tol > 1 ? 1.1 : 1))) {
       this.state = 'swept'; this.roof = null; this.waterT = 0;
       this.status = '물살에 휩쓸렸다! 방향키로 헤엄쳐 건물이나 얕은 곳으로!';
     }

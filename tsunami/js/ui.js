@@ -145,8 +145,18 @@ export class UI {
   /* ───────────────────────── 인물 카드 ───────────────────────── */
   showCard(p) {
     if (!p) { this.hideCard(); return; }
+    const g = this.g;
     this.cardP = p;
-    $('card').classList.remove('hidden');
+    const card = $('card');
+    card.classList.remove('hidden');
+    // 버튼은 한 번만 만들고, 본문만 주기적으로 갱신 (클릭 유실 방지)
+    card.innerHTML = `<button class="x" id="card-x">✕</button><div id="card-body"></div>
+      <div class="c-btns"><button id="card-view">👁 이 사람 시점</button><button id="card-follow">📍 따라가기</button><button id="card-play">🎮 여기서 조종</button></div>`;
+    $('card-x').onclick = () => { g.select(null); };
+    $('card-view').onclick = () => { const q = this.cardP; if (!q || q.state === 'missing') return; g.selected = q; g.npcYaw = undefined; g.npcLook.yaw = 0; g.setMode('npc'); };
+    $('card-follow').onclick = () => { const q = this.cardP; if (!q) return; g.follow = true; g.mapCam.focus(q.x, q.z, 220); };
+    $('card-play').onclick = () => { const q = this.cardP; if (!q) return; g.startFP(q.x + 1, q.z + 1); };
+    $('card-body').onclick = (e) => { const s = e.target.closest('.fam'); if (s) g.select(g.people.list[+s.dataset.i]); };
     this.renderCard(true);
   }
 
@@ -163,8 +173,7 @@ export class UI {
       return `<span class="fam" data-i="${o.i}">${oe.emoji} ${o.name}(${o.age})</span>`;
     }).join('') || '<span class="dim">혼자</span>';
     const typeName = PERSON_TYPES[p.type].name;
-    $('card').innerHTML = `
-      <button class="x" id="card-x">✕</button>
+    $('card-body').innerHTML = `
       <div class="c-head"><div class="c-emo" style="background:${e.color}">${e.emoji}</div>
         <div><b>${p.name}</b> <span class="dim">${p.age}세 · ${p.sex === 'M' ? '남' : '여'} · ${typeName}</span><br>
         <span class="dim">${p.roleName} · ${DISTRICTS[p.district].name} · 키 ${p.height.toFixed(2)} m</span></div></div>
@@ -180,13 +189,7 @@ export class UI {
         <span>재난 대비</span>${bar(p.prep, '#c48bff')}
         <span>수심</span><b>${p.depth > 0.02 ? p.depth.toFixed(2) + ' m' : '-'}</b>
       </div>
-      <div class="c-fam">일행: ${fam}</div>
-      <div class="c-btns"><button id="card-view">👁 이 사람 시점</button><button id="card-follow">📍 따라가기</button><button id="card-play">🎮 여기서 조종</button></div>`;
-    $('card-x').onclick = () => { g.select(null); };
-    $('card-view').onclick = () => { g.selected = p; g.npcYaw = undefined; g.npcLook.yaw = 0; g.setMode('npc'); };
-    $('card-follow').onclick = () => { g.follow = true; g.mapCam.focus(p.x, p.z, 220); };
-    $('card-play').onclick = () => { g.startFP(p.x + 1, p.z + 1); };
-    for (const s of document.querySelectorAll('#card .fam')) s.onclick = () => g.select(g.people.list[+s.dataset.i]);
+      <div class="c-fam">일행: ${fam}</div>`;
   }
 
   /* ───────────────────────── 미니맵 ───────────────────────── */

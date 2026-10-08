@@ -115,7 +115,9 @@ export class Bodies {
     const rs = Math.hypot(ru, rv);
     const A = (b.L + b.W) * 0.5 * Math.max(sub, 0.02);
     const kd = 0.5 * RHO * 1.1 * A * rs / b.mass;
-    let ax = ru * kd, az = rv * kd;
+    // 항력 이완을 지수형으로 적분 (가벼운 잔해에서도 발산하지 않음)
+    const relax = 1 - Math.exp(-kd * dt);
+    const ax = ru * relax / dt, az = rv * relax / dt;
     ay -= b.vy * (subFrac > 0 ? 2.2 : 0.05);
     b.vx += ax * dt; b.vz += az * dt; b.vy += ay * dt;
     // 바닥 접지
@@ -179,7 +181,7 @@ export class Bodies {
           const rr = (b.r + o.r) * 0.55;
           const ddx = o.x - b.x, ddz = o.z - b.z, d2 = ddx * ddx + ddz * ddz;
           if (d2 >= rr * rr || d2 < 1e-6) continue;
-          if (Math.abs(o.y - b.y) > Math.max(o.H, b.H)) continue;
+          if (Math.abs(o.y - b.y) >= Math.min(o.H, b.H) * 0.9) continue;
           const d = Math.sqrt(d2), pen = rr - d, nx = ddx / d, nz = ddz / d;
           const wb = o.mass / (b.mass + o.mass), wo = 1 - wb;
           b.x -= nx * pen * wb; b.z -= nz * pen * wb; o.x += nx * pen * wo; o.z += nz * pen * wo;

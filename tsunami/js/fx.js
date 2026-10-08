@@ -141,7 +141,7 @@ export class Effects {
   dust(x, y, z, size, count) {
     for (let i = 0; i < count; i++) {
       this.emit(x + (Math.random() - 0.5) * size, y + Math.random() * size * 0.3, z + (Math.random() - 0.5) * size,
-        (Math.random() - 0.5) * 3, 1 + Math.random() * 3, (Math.random() - 0.5) * 3, 3 + Math.random() * 3, 10 + Math.random() * 18, 0.85, 1.5);
+        (Math.random() - 0.5) * 3, 1 + Math.random() * 3, (Math.random() - 0.5) * 3, 2.5 + Math.random() * 2.5, 5 + Math.random() * 10, 0.85, 1.5);
     }
   }
 

@@ -8,8 +8,8 @@ export const SAFE_ELEV = 18;        // 이 고도(m) 이상의 땅은 안전 지
 export const QUALITY = {
   low:    { label: '낮음',   sim: 192, terrain: 257, people: 240, shadow: 0,    particles: 1800, pr: 1.0, trees: 1400, landuse: 2048 },
   medium: { label: '보통',   sim: 256, terrain: 385, people: 420, shadow: 2048, particles: 3500, pr: 1.5, trees: 2600, landuse: 2048 },
-  high:   { label: '높음',   sim: 320, terrain: 513, people: 600, shadow: 2048, particles: 5000, pr: 2.0, trees: 3600, landuse: 4096 },
-  ultra:  { label: '울트라', sim: 384, terrain: 641, people: 800, shadow: 4096, particles: 7000, pr: 2.0, trees: 4800, landuse: 4096 },
+  high:   { label: '높음',   sim: 320, terrain: 513, people: 600, shadow: 2048, particles: 5000, pr: 2.0, trees: 3600, landuse: 4096, bloom: true },
+  ultra:  { label: '울트라', sim: 384, terrain: 641, people: 800, shadow: 4096, particles: 7000, pr: 2.0, trees: 4800, landuse: 4096, bloom: true },
 };
 
 export const DISTRICTS = [
@@ -63,6 +63,7 @@ export const LINES = {
   sad: ['우리 집이...', '가족이 안 보여...', '어떡해...', '저 사람들...'],
   roof: ['여기요! 사람 있어요!', '구조해 주세요!', '물이 계속 차올라!'],
   frozen: ['...', '움직일 수가 없어', '말도 안 돼...'],
+  anxious: ['괜찮을까...', '불안해...', '빨리 가야 하는데', '가족한테 연락해야 해', '무슨 일이 생긴 거야?'],
 };
 
 export const SOURCE_TYPES = {
