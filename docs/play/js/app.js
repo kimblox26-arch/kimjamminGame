@@ -14,7 +14,7 @@
 
   let G = null;          // 지도 모양
   let UIF = getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim() || 'sans-serif'; // 고른 글씨체 (지도 글자에도)
-  let whereText = '', hudUserHTML = '';    // 지금 보고 있는 곳 글자
+  let whereText = '', hudUserHTML = '', sbUserHTML = '';    // 지금 보고 있는 곳 글자
   let schools = [];      // 학교 목록 (지도의 실제 학교 + 직접 등록한 학교)
   let token = store.get('mle_token'), me = null, W = null, es = null, online = 0, sel = -1, streak = 0, best = 0, chatCh = 'school', wrongN = 0;
   const cheat = { unlocked: false, capture: false, defend: false };
@@ -1495,7 +1495,7 @@
     if (r.landmark) setTimeout(() => { toast(`👑 랜드마크 「${r.landmark.name}」를 차지했어요! 🏟️ 대항전 +${r.landmark.pts}점`, 'ok'); Sound.play('unlock'); }, 600);
     hud();
   }
-  function setMissionDot(n) { missionReady = n; $('#missionDot').hidden = $('#mmMissionDot').hidden = !n; $('#moreDot').hidden = !n || LVL() === 'e'; } // 중·고는 미션이 더보기 안에
+  function setMissionDot(n) { missionReady = n; $('#missionDot').hidden = $('#mmMissionDot').hidden = $('#sbBell').hidden = !n; $('#moreDot').hidden = !n || LVL() === 'e'; } // 중·고는 미션이 더보기 안에
 
   let defCell = -1;
   function openDefense(i) {
@@ -2181,6 +2181,16 @@
     while ($('#feed').children.length > 40) $('#feed').lastChild.remove();
     if ($('#paneFeed').hidden) $('#feedDot').hidden = false;
   }
+  let dockAct = null;
+  function dockTo(btn) {
+    const dock = $('#dock');
+    if (!btn || btn.hidden || !btn.offsetParent) btn = $('#btnHub');
+    if (!btn.offsetParent) return;
+    dock.style.setProperty('--x', btn.offsetLeft + btn.offsetWidth / 2 + 'px');
+    dock.style.setProperty('--bub', getComputedStyle(btn).getPropertyValue('--bc').trim() || '#f59e0b');
+    if (dockAct !== btn) { if (dockAct) dockAct.classList.remove('act'); btn.classList.add('act'); dockAct = btn; }
+    dock.classList.add('ready');
+  }
   function hud() {
     if (!me || !me.profile) return;
     $('#hudServer').textContent = `🌐 ${srvName()}`;
@@ -2188,12 +2198,17 @@
     $('#hudSchool').textContent = short(mySid());
     const hu = `${avHTML(Object.assign({ av: '😀' }, me.looks, { acc: me.acc }))} ${nameHTML(me.profile.nickname, me.role, Object.assign({}, me.looks, { av: '', pv: 0 }))} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
     if (hudUserHTML !== hu) { hudUserHTML = hu; $('#hudUser').innerHTML = hu; }
+    const sbu = avHTML(Object.assign({ av: '😀' }, me.looks, { acc: me.acc }));
+    if (sbUserHTML !== sbu + me.profile.nickname) { sbUserHTML = sbu + me.profile.nickname; $('#sbAv').innerHTML = sbu; $('#sbNick').textContent = me.profile.nickname; }
+    $('#sbSub').textContent = `${short(mySid())} · ${S.gradeName(me.grade)}`;
+    $('#sbBellBtn').hidden = !FEAT;
     $('#cheatBadge').hidden = !(cheat.capture || cheat.defend);
     $('#btnAdmin').hidden = !me.role;
     $('#btnSound').classList.toggle('off', !Sound.on); $('#btnSound').querySelector('span').textContent = Sound.on ? '소리' : '소리 꺼짐';
     $('#btnBgm').classList.toggle('off', !Music.on); $('#btnBgm').querySelector('span').textContent = Music.on ? '음악' : '음악 꺼짐';
     $('#btnMission').hidden = $('#btnShop').hidden = $('#hudCoins').hidden = !FEAT;
     $('#btnWar').hidden = !FEAT || LVL() === 'e'; // 전쟁·동맹은 중·고등학교
+    dockTo(dockAct);
     $('#hudCoinN').textContent = me.infCoins ? '∞' : me.coins || 0;
     const left = (me.scopeUntil || 0) - Date.now(), sc = $('#hudScope');
     sc.hidden = left <= 0;
@@ -2629,9 +2644,47 @@
     $('#btnBoard').onclick = () => { if (innerWidth <= 820) $('#side').classList.toggle('open'); else openRank(); }; // 폰: 순위·소식 창, 넓은 화면: 랭킹표
     // 더보기: 자주 안 쓰는 버튼 모음 (누르면 닫힌다)
     const more = $('#moreMenu'), closeMore = () => { more.hidden = true; $('#btnMore').classList.remove('on'); };
-    $('#btnMore').onclick = e => { e.stopPropagation(); more.hidden = !more.hidden; $('#btnMore').classList.toggle('on', !more.hidden); };
-    more.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; closeMore(); if (b.dataset.act) $('#' + b.dataset.act).click(); });
+    // 옆에서 나오는 메뉴창: 빨간 막대가 손가락(마우스)을 따라 미끄러지고, 아이콘은 선이 그려지듯 나타난다
+    const sbHl = $('#sbHl'), sbItems = () => [...$$('#sbBody .mm')].filter(b => !b.hidden && b.offsetParent);
+    const sbMark = b => { if (!b) { sbHl.style.opacity = 0; return; } sbHl.style.opacity = 1; sbHl.style.transform = `translateY(${b.offsetTop}px)`; sbHl.style.height = b.offsetHeight + 'px'; $$('#sbBody .mm.hl').forEach(x => { if (x !== b) x.classList.remove('hl'); }); b.classList.add('hl'); };
+    const openMore = () => {
+      $('#sbFind').value = ''; $$('#sbBody .mm, #sbBody .sb-sec').forEach(x => x.classList.remove('nope'));
+      more.hidden = false; $('#btnMore').classList.add('on');
+      sbItems().forEach((b, i) => b.style.setProperty('--i', i));
+      sbMark(sbItems()[0]);
+    };
+    $('#btnMore').onclick = e => { e.stopPropagation(); if (more.hidden) openMore(); else closeMore(); };
+    $('#sbBody').addEventListener('pointerover', e => { const b = e.target.closest('.mm'); if (b) sbMark(b); });
+    $('#sbFind').oninput = () => { // 메뉴 찾기: 글자가 들어간 것만 남긴다
+      const q = $('#sbFind').value.trim();
+      let sec = null, any = false;
+      $$('#sbBody > *').forEach(x => {
+        if (x.classList.contains('sb-sec')) { if (sec) sec.classList.toggle('nope', !any); sec = x; any = false; return; }
+        if (!x.classList.contains('mm')) return;
+        const ok = !q || x.textContent.includes(q); x.classList.toggle('nope', !ok); if (ok && !x.hidden) any = true;
+      });
+      if (sec) sec.classList.toggle('nope', !any);
+      sbMark(sbItems()[0]);
+    };
+    $('#sbFind').onkeydown = e => { if (e.key === 'Enter' && sbItems()[0]) sbItems()[0].click(); };
+    more.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; if (b.classList.contains('mm')) sbMark(b); if (b.querySelector('.sw')) return; closeMore(); if (b.dataset.act) $('#' + b.dataset.act).click(); });
     document.addEventListener('pointerdown', e => { if (!more.hidden && !more.contains(e.target) && !$('#btnMore').contains(e.target)) closeMore(); });
+    $('#sbClose').onclick = closeMore;
+    // 🫧 아래 메뉴: 누른 버튼으로 동그라미와 언덕이 미끄러져 가고, 창이 다 닫히면 '도전'으로 돌아온다
+    const dock = $('#dock'), idle = () => ![...$$('.modal')].some(m => !m.hidden) && more.hidden && !(innerWidth <= 820 && $('#side').classList.contains('open'));
+    dock.addEventListener('click', e => { // 동그라미가 먼저 미끄러지는 게 보이도록 창은 조금 뒤에 연다
+      const b = e.target.closest('.dk');
+      if (!b || b.dataset.go) { if (b) delete b.dataset.go; return; }
+      if (b === dockAct || matchMedia('(prefers-reduced-motion: reduce)').matches) return dockTo(b);
+      e.stopImmediatePropagation(); dockTo(b); dockPend = Date.now();
+      setTimeout(() => { b.dataset.go = 1; b.click(); }, 240);
+    }, true);
+    let dockPend = 0;
+    const back = () => { if (idle() && Date.now() - dockPend > 500) dockTo($('#btnHub')); };
+    const mo = new MutationObserver(() => setTimeout(back, 250));
+    [...$$('.modal'), more].forEach(m => mo.observe(m, { attributes: true, attributeFilter: ['hidden'] }));
+    mo.observe($('#side'), { attributes: true, attributeFilter: ['class'] });
+    addEventListener('resize', () => dockTo(dockAct));
     $('#btnRank').onclick = () => openRank();
     $('#btnRankMore').onclick = () => openRank('school');
     $$('.rtab').forEach(b => { b.onclick = () => openRank(b.dataset.t); });

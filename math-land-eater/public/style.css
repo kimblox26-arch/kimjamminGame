@@ -1172,45 +1172,102 @@ body[data-lv="h"] #mapWrap::before { opacity: .1; }
 .minimap { border: 4px solid #fff; border-radius: 18px; box-shadow: 0 4px 0 #b9c6dc, 0 10px 22px rgba(15, 23, 42, .22); }
 .where, .conn { border: 0; box-shadow: 0 3px 0 #b9c6dc, 0 8px 18px rgba(15, 23, 42, .18); }
 
-/* 아래 메뉴: 앱 아이콘처럼 색 타일 + 가운데 큰 '도전' 버튼 */
-.dock { background: #fff; border-top: 0; border-radius: 24px 24px 0 0; padding-top: 6px; box-shadow: 0 -6px 22px rgba(15, 23, 42, .12); align-items: flex-end; }
-.dk { gap: 4px; padding: 4px 2px 5px; }
-.dk .ic { width: 40px; height: 40px; padding: 8.5px; border-radius: 14px; color: #fff; background: var(--dc, linear-gradient(180deg, #94a3b8, #64748b)); box-shadow: 0 3px 0 var(--dce, #475569), inset 0 2px 0 rgba(255, 255, 255, .3); stroke-width: 2.3; transition: transform .12s; }
-.dk span { color: #475569; font-size: 11px; font-weight: 800; }
-.dk:hover, .dk.on { background: none; }
-.dk:hover .ic { transform: translateY(-2px); }
-.dk:active .ic { transform: translateY(2px); box-shadow: 0 1px 0 var(--dce, #475569); }
-.dk.on span { color: #ea580c; }
-#btnStudy { --dc: linear-gradient(180deg, #6aa8ff, #2f6bff); --dce: #1f4fd6; }
-#btnMission { --dc: linear-gradient(180deg, #4ade80, #16a34a); --dce: #0f7a36; }
-#btnWar { --dc: linear-gradient(180deg, #ff7d93, #e11d48); --dce: #a3123a; }
-#btnShop { --dc: linear-gradient(180deg, #c084fc, #9333ea); --dce: #6b21a8; }
-#btnChat { --dc: linear-gradient(180deg, #2dd4bf, #0d9488); --dce: #0b6e65; }
-#btnBoard { --dc: linear-gradient(180deg, #fdba4d, #f59e0b); --dce: #b86e00; }
-#btnMore { --dc: linear-gradient(180deg, #94a3b8, #64748b); --dce: #475569; }
-.dock #btnHub { flex: 1.15; margin-top: -32px; }
-.dock #btnHub .ic { width: 64px; height: 64px; padding: 14px; border-radius: 50%; color: #7a4300; stroke-width: 2.4;
-  background: radial-gradient(circle at 35% 28%, #fff3a8 0%, #ffd23f 42%, #f59e0b 100%); box-shadow: 0 0 0 5px #fff, 0 4px 0 5px #e7c27a, 0 12px 24px rgba(245, 158, 11, .45); animation: hubGlow 2.6s ease-in-out infinite; }
-.dock #btnHub span { color: #b45309; margin-top: 9px; }
-.dock #btnHub .count { top: -2px; left: calc(50% + 20px); }
-@keyframes hubGlow { 50% { box-shadow: 0 0 0 5px #fff, 0 4px 0 5px #e7c27a, 0 12px 30px rgba(245, 158, 11, .7); } }
-.dk .count { top: 0; left: calc(50% + 12px); border: 2px solid #fff; }
-body[data-lv="h"] .dock { border-radius: 24px 24px 0 0; }
-body[data-lv="h"] .dk span { color: #cbd5e1; }
-body[data-lv="h"] .dock #btnHub .ic { box-shadow: 0 0 0 5px #0b1530, 0 4px 0 5px #3a2d0b, 0 12px 26px rgba(245, 158, 11, .45); }
-body[data-lv="h"] .dock #btnHub span { color: #fbbf24; }
-/* 더보기 메뉴도 색 타일 */
-.more-menu { border: 0; border-radius: 24px; box-shadow: 0 6px 0 #d6e0f0, 0 22px 50px rgba(15, 23, 42, .25); }
-.mm .ic { width: 38px; height: 38px; padding: 8px; border-radius: 13px; color: #fff; background: linear-gradient(180deg, #8aa0bd, #5b6f8a); box-shadow: 0 3px 0 #3f4f66; }
-.mm span { color: #334155; }
-#btnProfile .ic { background: linear-gradient(180deg, #f472b6, #db2777); box-shadow: 0 3px 0 #9d174d; }
-#btnLooks .ic { background: linear-gradient(180deg, #fb923c, #ea580c); box-shadow: 0 3px 0 #9a3412; }
-#btnBadges .ic { background: linear-gradient(180deg, #fcd34d, #d97706); box-shadow: 0 3px 0 #92400e; }
-#btnRank .ic { background: linear-gradient(180deg, #60a5fa, #2563eb); box-shadow: 0 3px 0 #1e40af; }
-#btnUnion .ic { background: linear-gradient(180deg, #818cf8, #4f46e5); box-shadow: 0 3px 0 #3730a3; }
-.mm-mission .ic { background: linear-gradient(180deg, #4ade80, #16a34a); box-shadow: 0 3px 0 #0f7a36; }
-#btnAdmin .ic { background: linear-gradient(180deg, #f87171, #dc2626); box-shadow: 0 3px 0 #991b1b; }
-.mm.off .ic { filter: grayscale(1) opacity(.6); }
+/* 아래 메뉴 (모던 내비): 어두운 막대 + 누른 버튼으로 미끄러지는 색 동그라미와 볼록 언덕, 아이콘은 선이 그려지듯 */
+.dock { --dock-bg: #1f2340; --x: 50%; --bub: #f59e0b; position: relative; background: var(--dock-bg); border-top: 0; border-radius: 22px 22px 0 0;
+  padding: 10px 6px calc(6px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 26px rgba(10, 14, 40, .28); align-items: flex-end; }
+body[data-lv="m"] .dock { --dock-bg: #251c45; }
+body[data-lv="h"] .dock { --dock-bg: #0b1530; border-top: 0; }
+.dk-hump, .dk-bub { position: absolute; left: 0; top: 0; pointer-events: none; transform: translateX(var(--x)); }
+.dock.ready .dk-hump, .dock.ready .dk-bub { transition: transform .55s cubic-bezier(.68, -0.35, .27, 1.35), background-color .4s; }
+.dk-hump { width: 0; height: 0; }
+.dk-hump svg { position: absolute; left: -64px; bottom: -1px; width: 128px; height: 30px; fill: var(--dock-bg); display: block; }
+.dk-bub { width: 0; height: 0; }
+.dk-bub::before { content: ""; position: absolute; left: -27px; top: -24px; width: 54px; height: 54px; border-radius: 50%; background: var(--bub);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, .16), inset 0 3px 0 rgba(255, 255, 255, .28), 0 10px 22px rgba(0, 0, 0, .35); transition: background .4s; }
+.dock .dk { z-index: 1; flex: 1; max-width: 88px; gap: 3px; padding: 4px 2px 5px; color: #fff; background: none; }
+.dock .dk .ic { width: 26px; height: 26px; padding: 0; border-radius: 0; background: none; box-shadow: none; color: #fff; stroke-width: 1.9; opacity: .78;
+  transition: transform .5s cubic-bezier(.68, -0.35, .27, 1.35), opacity .3s; animation: none; }
+.dock .dk span { color: rgba(255, 255, 255, .62); font-size: 10.5px; font-weight: 800; margin: 0; transition: color .3s; }
+.dock .dk:hover, .dock .dk.on { background: none; }
+.dock .dk:hover .ic { opacity: 1; transform: translateY(-2px); }
+.dock .dk:active { transform: none; }
+.dock .dk.act .ic { opacity: 1; transform: translateY(-24px); stroke-width: 2.3; animation: icDraw .9s ease-out .12s both; }
+.dock .dk.act span { color: #fff; }
+.dock #btnHub { flex: 1; margin-top: 0; }
+body .dock .dk, body .dock .dk:hover, body .dock .dk.on { background: none; color: #fff; }
+.dock #btnHub .ic { color: #fff; }
+.dock #btnHub.act .ic { color: #5a3200; }
+.dock #btnHub span, body[data-lv="h"] .dock #btnHub span { color: rgba(255, 255, 255, .62); margin-top: 0; }
+.dock #btnHub.act span { color: #fcd34d; }
+.dock .dk .count { top: 0; left: calc(50% + 10px); border: 2px solid var(--dock-bg); }
+.dock .dk.act .count { top: -30px; left: calc(50% + 14px); }
+#btnStudy { --bc: #3b82f6; } #btnMission { --bc: #22c55e; } #btnWar { --bc: #f43f5e; } #btnShop { --bc: #a855f7; }
+#btnHub { --bc: #fbbf24; } #btnChat { --bc: #14b8a6; } #btnBoard { --bc: #f97316; } #btnMore { --bc: #e50914; }
+/* 선이 그려지는 아이콘 (stroke-dasharray) */
+@keyframes icDraw { 0% { stroke-dasharray: 90; stroke-dashoffset: 90; } 99% { stroke-dasharray: 90; stroke-dashoffset: 0; } 100% { stroke-dasharray: none; stroke-dashoffset: 0; } }
+
+/* 더보기 메뉴창 (사이드바): 어두운 유리판 + 빨간 막대 + 섹션 */
+#moreMenu { position: fixed; z-index: 40; top: calc(10px + env(safe-area-inset-top)); bottom: calc(10px + env(safe-area-inset-bottom)); right: 10px; left: auto;
+  width: min(300px, calc(100vw - 104px)); display: flex; flex-direction: column; gap: 0; padding: 18px 0 12px; border-radius: 26px;
+  background: linear-gradient(165deg, rgba(74, 76, 86, .9) 0%, rgba(36, 37, 44, .94) 45%, rgba(20, 21, 26, .96) 100%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, .16); color: #f3f4f6;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 30px 70px rgba(0, 0, 0, .55), 0 0 0 100vmax rgba(8, 10, 24, .5);
+  animation: sbIn .45s cubic-bezier(.2, .9, .3, 1.15); }
+@keyframes sbIn { from { transform: translateX(46px) scale(.97); opacity: 0; } }
+#moreMenu .ic { width: 22px; height: 22px; padding: 0; border-radius: 0; background: none; box-shadow: none; color: inherit; filter: none; }
+.sb-dots { display: flex; gap: 7px; padding: 0 22px 10px; }
+.sb-dots b { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+.sb-dots b:nth-child(2) { background: #febc2e; } .sb-dots b:nth-child(3) { background: #28c840; }
+.sb-head { display: flex; align-items: center; padding: 4px 18px 14px 22px; border-bottom: 1px solid rgba(255, 255, 255, .1); margin: 0 0 6px; }
+.sb-title { font-size: 21px; font-weight: 900; letter-spacing: -.3px; flex: 1; }
+.sb-bell { position: relative; border: 0; background: none; color: #fff; padding: 6px; cursor: pointer; border-radius: 12px; }
+.sb-bell .ic { animation: bellRing 2.4s ease-in-out infinite; transform-origin: 50% 3px; }
+.sb-bell .count { position: absolute; top: 0; right: -2px; left: auto; min-width: 18px; height: 18px; font-size: 11px; line-height: 14px; background: #e50914; border: 2px solid #2b2c33; }
+@keyframes bellRing { 0%, 70%, 100% { transform: rotate(0); } 75% { transform: rotate(14deg); } 82% { transform: rotate(-12deg); } 89% { transform: rotate(8deg); } 95% { transform: rotate(-4deg); } }
+.sb-collapse { position: absolute; right: calc(100% + 10px); top: 52px; display: flex; align-items: center; gap: 7px; border: 0; cursor: pointer;
+  padding: 5px 13px 5px 5px; border-radius: 999px; background: #fff; color: #b91c1c; font-weight: 900; font-size: 13px; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); }
+.sb-collapse i { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #1f2937; color: #fff; }
+#moreMenu .sb-collapse .ic { width: 14px; height: 14px; stroke-width: 3; }
+.sb-me { display: flex; align-items: center; gap: 12px; margin: 4px 12px 8px; padding: 10px; border: 0; border-radius: 18px; background: none; color: inherit; cursor: pointer; text-align: left; transition: background .2s; }
+.sb-me:hover { background: rgba(255, 255, 255, .07); }
+.sb-av { width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: #e5e7eb; box-shadow: 0 0 0 2px rgba(255, 255, 255, .7), 0 4px 10px rgba(0, 0, 0, .35); font-size: 26px; }
+.sb-av > * { transform: scale(1.35); }
+.sb-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sb-who b { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-who small { display: flex; align-items: center; gap: 5px; color: rgba(255, 255, 255, .6); font-size: 12px; }
+#moreMenu .sb-who small .ic { width: 13px; height: 13px; }
+.sb-who em { font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#moreMenu .sb-me > .ic { width: 18px; height: 18px; opacity: .7; }
+.sb-search { display: flex; align-items: center; gap: 12px; margin: 0 18px 6px 26px; }
+#moreMenu .sb-search .ic { width: 18px; height: 18px; opacity: .75; }
+.sb-search input { flex: 1; min-width: 0; height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .22); background: rgba(0, 0, 0, .22);
+  color: #fff; font: inherit; font-size: 13px; letter-spacing: .5px; outline: none; transition: border-color .2s, background .2s; }
+.sb-search input::placeholder { color: rgba(255, 255, 255, .45); }
+.sb-search input:focus { border-color: #e50914; background: rgba(0, 0, 0, .35); }
+.sb-body { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.sb-body::-webkit-scrollbar { display: none; }
+.sb-sec { margin: 12px 26px 4px; font-size: 11px; font-weight: 800; letter-spacing: 1.6px; color: rgba(255, 255, 255, .5); }
+.sb-sec:not(:first-of-type) { padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .09); }
+.sb-hl { position: absolute; left: 0; right: 0; top: 0; height: 50px; background: linear-gradient(90deg, #e50914, #d90812); box-shadow: 0 6px 18px rgba(229, 9, 20, .35);
+  pointer-events: none; transition: transform .38s cubic-bezier(.3, 1.3, .5, 1), height .2s, opacity .2s; }
+#moreMenu .mm { position: relative; z-index: 1; width: 100%; flex-direction: row; justify-content: flex-start; gap: 16px; padding: 0 22px 0 26px; height: 50px;
+  border-radius: 0; background: none; color: #e5e7eb; font-size: 15px; font-weight: 700; transform: none; animation: sbItem .45s cubic-bezier(.2, .9, .3, 1.2) both; animation-delay: calc(var(--i, 0) * 32ms + 80ms); }
+#moreMenu .mm span { color: inherit; }
+#moreMenu .mm .ic { width: 22px; height: 22px; opacity: .9; animation: icDraw .9s ease-out both; animation-delay: calc(var(--i, 0) * 32ms + 160ms); }
+#moreMenu .mm.hl { color: #fff; }
+#moreMenu .mm.hl .ic { opacity: 1; animation: icDraw .7s ease-out both, icPop .45s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes icPop { 40% { transform: scale(1.22) rotate(-6deg); } }
+@keyframes sbItem { from { opacity: 0; transform: translateX(26px); } }
+#moreMenu .mm .count { position: static; margin-left: auto; width: 20px; height: 20px; min-width: 0; padding: 0; border: 0; border-radius: 50%; background: #e50914; box-shadow: 0 0 0 3px rgba(229, 9, 20, .25); }
+#moreMenu .mm.hl .count { background: #fff; }
+#moreMenu .mm .sw { margin-left: auto; width: 38px; height: 22px; border-radius: 999px; background: #22c55e; position: relative; transition: background .25s; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3); }
+#moreMenu .mm .sw::after { content: ""; position: absolute; top: 3px; left: 19px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: left .25s cubic-bezier(.3, 1.5, .5, 1); }
+#moreMenu .mm.off { color: rgba(229, 231, 235, .6); }
+#moreMenu .mm.off .sw { background: rgba(255, 255, 255, .22); }
+#moreMenu .mm.off .sw::after { left: 3px; }
+#moreMenu .mm.nope, #moreMenu .sb-sec.nope { display: none; }
+#moreMenu .mm:active { transform: scale(.98); }
 
 /* 창: 흰 테두리 + 아래 두께가 있는 게임 패널, 위쪽은 하늘색 띠 */
 .modal { background: rgba(10, 20, 50, .5); }
