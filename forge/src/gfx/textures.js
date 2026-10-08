@@ -36,15 +36,15 @@ export function cell(u, v, n, s) {
   return [best, id, second - best];
 }
 
-function makeTex(data, size, srgb) {
+function makeTex(data, size, srgb, aniso = 8) {
   const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.generateMipmaps = true; t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true;
+  t.generateMipmaps = true; t.anisotropy = aniso; if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true;
   return t;
 }
 
 // 생성 함수 f(u,v,out) → out = [r,g,b, rough, metal, height]
-function build(size, f, normalStrength = 2) {
+function build(size, f, normalStrength = 2, aniso = 8) {
   const n = size * size, alb = new Uint8Array(n * 4), rm = new Uint8Array(n * 4), nor = new Uint8Array(n * 4), h = new Float32Array(n);
   const o = [0, 0, 0, 0, 0, 0];
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
@@ -61,7 +61,7 @@ function build(size, f, normalStrength = 2) {
     const l = Math.hypot(dx, dy, 1), k = (y * size + x) * 4;
     nor[k] = (-dx / l * 0.5 + 0.5) * 255; nor[k + 1] = (dy / l * 0.5 + 0.5) * 255; nor[k + 2] = (1 / l * 0.5 + 0.5) * 255; nor[k + 3] = 255;
   }
-  return { map: makeTex(alb, size, true), normalMap: makeTex(nor, size, false), rmMap: makeTex(rm, size, false) };
+  return { map: makeTex(alb, size, true, aniso), normalMap: makeTex(nor, size, false, aniso), rmMap: makeTex(rm, size, false, aniso) };
 }
 
 const mix = (a, b, t) => a + (b - a) * t;
@@ -174,15 +174,17 @@ export const SKIN_DEFS = {
   } },
 };
 
-export function generateSkins(onProgress) {
-  const out = {}, keys = Object.keys(SKIN_DEFS);
+// opts.anisotropy: 렌더러 최대 비등방 필터 값 (renderer.capabilities.getMaxAnisotropy())
+// opts.hires: 울트라 품질 — 512px 스킨을 1024px 로 생성 (생성 시간 약 3배)
+export function generateSkins(onProgress, opts = {}) {
+  const out = {}, keys = Object.keys(SKIN_DEFS), aniso = Math.max(1, opts.anisotropy || 8);
   return new Promise((resolve) => {
     let i = 0;
     const step = () => {
       const t0 = performance.now();
       while (i < keys.length && performance.now() - t0 < 40) {
-        const k = keys[i++], d = SKIN_DEFS[k];
-        const b = build(d.size, d.f, d.ns);
+        const k = keys[i++], d = SKIN_DEFS[k], size = opts.hires && d.size === 512 ? 1024 : d.size;
+        const b = build(size, d.f, d.ns, aniso);
         for (const t of [b.map, b.normalMap, b.rmMap]) t.repeat.set(1 / d.scale, 1 / d.scale); // UV는 미터 단위
         out[k] = { ...b, scale: d.scale };
         onProgress?.(i / keys.length, k);

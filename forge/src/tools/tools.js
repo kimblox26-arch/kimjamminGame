@@ -1,10 +1,11 @@
 // 도구 시스템: 손 · 배치 · 용접기 · 망치 · 임팩트 드릴 · 흙손 · 그라인더 · 페인트
 import * as THREE from 'three';
 import { buildViewmodels } from './viewmodels.js';
+import { HandRig, POSES, GRIP } from './hand.js';
 import { CAT_BY_ID, cuttableAxes } from '../build/catalog.js';
 import { MATS } from '../gfx/materials.js';
 import { GROUP, groups } from '../physics.js';
-import { clamp, rand, toV, toQ, rv, rq, bestAxis, AXES, fmtKg, fmtN } from '../core/util.js';
+import { clamp, rand, damp, toV, toQ, rv, rq, bestAxis, AXES, fmtKg, fmtN } from '../core/util.js';
 
 export const TOOLS = [
   { id: 'hand', name: '손', desc: '잡기 · 운반 · 고정' },
@@ -25,8 +26,8 @@ const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quater
 export class ToolSystem {
   constructor(g) {
     this.g = g; // game context: ph, mgr, fx, sfx, camera, player, vehicles, ui, mats, presets
-    this.vm = buildViewmodels(g.mats);
-    this.vmRoot = new THREE.Group(); this.vmRoot.position.set(0.2, -0.165, -0.4); g.camera.add(this.vmRoot);
+    this.vm = buildViewmodels(g.mats, g.renderer?.qkey || 'high');
+    this.vmRoot = new THREE.Group(); this.vmRoot.position.set(0.19, -0.135, -0.38); g.camera.add(this.vmRoot);
     for (const k in this.vm) this.vmRoot.add(this.vm[k]);
     this.idx = 0; this.prevIdx = 1; this.aimHit = null; this.info = null; this.hint = '';
     this.sel = CAT_BY_ID.plate5; this.dims = this.sel.dims.slice();
@@ -174,7 +175,7 @@ export class ToolSystem {
       if (input.btnHit[2]) { // 던지기
         const b = st.grab.S.body, m = b.mass(), v = Math.min(11, 380 / m);
         const d = g.camera.getWorldDirection(new THREE.Vector3());
-        b.applyImpulse(rv(d.multiplyScalar(v * m)), true); g.sfx.play('swoosh', { pos: g.camera.position }); this.release(); return;
+        b.applyImpulse(rv(d.multiplyScalar(v * m)), true); g.sfx.play('swoosh', { pos: g.camera.position }); this.release(); this.throwT = 0.35; return;
       }
       if (!input.btn[0]) { this.release(); return; }
       st.grab.age += dt;
@@ -637,5 +638,39 @@ export class ToolSystem {
     } else if (this.tool === 'trowel' && input.btn[0]) {
       m.rotation.set(-0.3 + Math.sin(performance.now() * 0.012) * 0.15, 0, 0.2);
     }
+    this.animateHands(dt, input, m);
+  }
+  // 손가락 관절 목표 자세 (스프링이 부드럽게 따라감): 방아쇠 · 쥐기 · 가리키기 · 잡기/던지기
+  animateHands(dt, input, m) {
+    const rigs = m.userData.rigs; if (!rigs) return;
+    const st = this.st, R = rigs[0];
+    for (const r of rigs) if (r.basePose) r.target.set(r.basePose);
+    const squeeze = (r, k) => { if (!r) return; for (let f = 0; f < 4; f++) { r.target[f * 4] += 0.05 * k; r.target[f * 4 + 1] += 0.09 * k; r.target[f * 4 + 2] += 0.05 * k; } r.target[19] += 0.1 * k; r.target[20] += 0.1 * k; };
+    const trigger = (r, k) => { r.target[0] += 0.1 * k; r.target[1] += 0.52 * k; r.target[2] += 0.32 * k; };
+    switch (this.tool) {
+      case 'hand': {
+        const grab = !!st.grab, aim = !!this.aimHit?.part, thr = (this.throwT = Math.max(0, (this.throwT || 0) - dt)) > 0;
+        const grip = this._grabPose || (this._grabPose = HandRig.gripPose(GRIP.center(0.03), GRIP.axis, 0.03));
+        rigs.forEach((r, i) => { r.target.set(thr ? POSES.open : grab ? grip : aim ? POSES.reach : POSES.relaxed); r.tension = grab ? 1 : 0; });
+        this.reachT = damp(this.reachT || 0, grab ? 1 : aim ? 0.35 : 0, 7, dt);
+        m.position.z -= this.reachT * 0.07; m.position.y += this.reachT * 0.025;
+        break;
+      }
+      case 'place': {
+        if (input.btnHit[0] || input.btnHit[2]) this.tapT = 1;
+        const tp = (this.tapT = Math.max(0, (this.tapT || 0) - dt * 5));
+        R.target[0] += tp * 0.55; R.target[1] += tp * 0.35; R.target[2] += tp * 0.2;
+        break;
+      }
+      case 'weld': trigger(R, st.arc ? 1 : 0); break;
+      case 'drill': trigger(R, input.btn[0] || input.btn[2] ? 1 : 0); squeeze(R, st.prog > 0 ? 0.5 : 0); break;
+      case 'paint': trigger(R, input.btn[0] ? 1 : 0); break;
+      case 'grinder': squeeze(R, input.btn[0] ? 1 : 0); squeeze(rigs[1], (st.spin || 0) > 0.3 ? 0.8 : 0); break;
+      case 'hammer': squeeze(R, (st.swing || 0) > 0 ? 1 : 0); break;
+      case 'trowel': squeeze(R, input.btn[0] ? 0.6 : 0); break;
+    }
+    // 시점 회전 · 걷기 흔들림에 따른 손가락 관성
+    const kx = clamp(-input.mx * 0.0012, -0.6, 0.6), ky = clamp(input.my * 0.0012 + (this.g.player.grounded ? 0 : -this.g.player.vy * 0.01), -0.6, 0.6);
+    for (const r of rigs) { if (kx || ky) r.kick(kx, ky); r.update(dt); }
   }
 }

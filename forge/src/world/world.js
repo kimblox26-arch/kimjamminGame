@@ -4,6 +4,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { blockGeo } from '../gfx/geometry.js';
+import { installInteriorAmbient, LightShafts, DustMotes } from '../gfx/atmos.js';
+import { Grass } from './grass.js';
 import { mulberry, clamp, smooth } from '../core/util.js';
 
 const SIZE = 1400, CELLS = 280;
@@ -23,10 +25,54 @@ export class World {
   constructor({ scene, renderer, physics, mats, quality }) {
     this.scene = scene; this.renderer = renderer; this.ph = physics; this.mats = mats; this.q = quality;
     this.tops = []; // 스파크/파편이 튀는 정적 윗면 [x0,x1,z0,z1,y]
-    this.R = mulberry(1234);
+    this.R = mulberry(1234); this.time = 0; this.fx = {};
+    installInteriorAmbient(0.3); // 재질 컴파일 전에 셰이더 청크 패치
   }
   build() {
     this.sky(); this.terrain(); this.yard(); this.workshop(); this.outdoor();
+    this.setQuality(this.q);
+  }
+  // 품질별 대기 효과 (빛줄기 · 먼지 · 풀) 와 그림자 설정 — 설정 변경 시에도 호출
+  setQuality(q) {
+    this.q = q;
+    const s = this.sun.shadow, texel = 76 / q.shadow;
+    s.bias = -0.00015; s.normalBias = texel * 0.75; s.radius = q.soft ? 1 : 1.6;
+    const fx = this.fx, key = (o) => JSON.stringify(o);
+    const want = {
+      shafts: q.shafts ? { steps: q.shafts, shadow: q.shaftShadow } : null,
+      dust: q.dust ? { count: q.dust, shadow: q.shaftShadow } : null,
+      grass: q.grass ? { count: q.grass, radius: q.grassR } : null,
+    };
+    const make = {
+      shafts: (o) => new LightShafts(this.scene, this.sun, this.sunDir, o),
+      dust: (o) => new DustMotes(this.scene, this.sun, this.sunDir, o),
+      grass: (o) => new Grass(this.scene, o, (x, z) => this.grassDensity(x, z)),
+    };
+    for (const k in want) {
+      if (fx[k] && fx[k]._key === key(want[k])) continue;
+      fx[k]?.dispose(); fx[k] = null;
+      if (want[k]) { fx[k] = make[k](want[k]); fx[k]._key = key(want[k]); }
+    }
+  }
+  update(dt, camera, renderer) {
+    this.time += dt; const t = this.time, p = camera.position;
+    this.fx.shafts?.update(t, p); this.fx.dust?.update(t, p, camera, renderer); this.fx.grass?.update(t, camera);
+  }
+  // 풀 밀도 (0..1): 평지 구역의 잔디밭만, 콘크리트·아스팔트·건물·경사로·흙 제외
+  grassDensity(x, z) {
+    const d = Math.hypot(x * 0.9, z - 55); if (d > 172) return 0;
+    let k = smooth(clamp((172 - d) / 10, 0, 1));
+    const out = (x0, x1, z0, z1, m = 0.5) => clamp(Math.hypot(Math.max(x0 - x, x - x1, 0), Math.max(z0 - z, z - z1, 0)) / m, 0, 1);
+    k *= out(-17, 17, -24.5, 0.5) * out(-23.1, 23.1, -0.2, 26.1, 0.6) * out(-6.1, 6.1, 24.8, 37.1, 0.6); // 건물 · 앞마당 · 연결 도로
+    k *= out(-33, -27, 75, 84) * out(27.5, 32.5, 71, 85) * out(0, 6, 116, 124) * out(-50.8, -33.6, 101.3, 108.7); // 경사로 · 둔덕
+    // 초타원 주행로 ((x/95)^4 + ((z-92)/58)^4 = 1, 폭 13 m): 1차 근사 거리
+    const ux = x / 95, uz = (z - 92) / 58, F = ux ** 4 + uz ** 4;
+    if (F > 1e-6) {
+      const G = Math.pow(F, 0.25), gx = (ux ** 3 / 95) / Math.pow(F, 0.75), gz = (uz ** 3 / 58) / Math.pow(F, 0.75);
+      k *= clamp((Math.abs(G - 1) / Math.hypot(gx, gz) - 6.8) / 0.9, 0, 1);
+    }
+    const v2 = perlin.noise(x * 0.11, 9, z * 0.11) * 0.5 + 0.5, dirt = clamp(-0.1 + (v2 - 0.5) * 0.6, 0, 0.85);
+    return k * clamp(1 - dirt * 4, 0, 1);
   }
   surfaceY(x, z, y) {
     let g = Math.abs(x) < 170 && Math.abs(z - 55) < 170 ? 0 : groundH(x, z);
@@ -188,7 +234,7 @@ export class World {
       const x = (i % 3 - 1) * 9, z = -6 - Math.floor(i / 3) * 11;
       const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.35, 24, 1, true), this.mats.get('paint', 0x2a2d30)); lamp.position.set(x, 7.2, z); lamp.material.side = THREE.DoubleSide; this.scene.add(lamp);
       const lens = new THREE.Mesh(new THREE.CircleGeometry(0.38, 24).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3.8, 3.4), toneMapped: false })); lens.position.set(x, 7.03, z); this.scene.add(lens);
-      const L = new THREE.PointLight(0xfff2e2, 110, 34, 1.5); L.position.set(x, 6.8, z); this.scene.add(L);
+      const L = new THREE.PointLight(0xfff2e2, 62, 45, 2); L.position.set(x, 6.8, z); this.scene.add(L); // 물리적 감쇠(거리²): 손·공구가 램프 아래에서 하얗게 타지 않게
     }
     this.furniture();
   }

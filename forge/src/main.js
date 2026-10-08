@@ -43,7 +43,7 @@ class Game {
     scene.add(camera);
     ui.loading(0.06, '물리 엔진 (Rapier) 초기화');
     this.ph = new Physics(); await this.ph.init();
-    const skins = await generateSkins((f, k) => ui.loading(0.08 + f * 0.6, '재질 텍스처 생성 · ' + k));
+    const skins = await generateSkins((f, k) => ui.loading(0.08 + f * 0.6, '재질 텍스처 생성 · ' + k), { anisotropy: this.renderer.maxAniso, hires: this.renderer.q.hires });
     this.mats = new MaterialLib(skins);
     ui.loading(0.7, '작업장 · 지형 구축');
     await new Promise((r) => setTimeout(r, 0));
@@ -54,6 +54,7 @@ class Game {
     this.vehicles = new VehicleSystem({ ph: this.ph, mgr: this.mgr, sfx: this.sfx, fx: this.fx, scene });
     this.player = new Player({ ph: this.ph, camera, sfx: this.sfx });
     this.presets = new Presets(this);
+    ui.loading(0.76, '손 모델 조각 · 스키닝'); await new Promise((r) => setTimeout(r, 0));
     this.tools = new ToolSystem(this); this.tools.setVisible(false);
     this.ph.onContactForce = (e) => this.contactQ.push([e.collider1(), e.collider2(), e.totalForceMagnitude()]);
     ui.loading(0.8, '후처리 · 셰이더 컴파일');
@@ -101,7 +102,7 @@ class Game {
     try { localStorage.setItem('forge.settings', JSON.stringify(s)); } catch (e) {}
     this.camera.fov = s.fov; this.camera.updateProjectionMatrix();
     this.player.sens = 0.0022 * s.sens; this.sfx.setVolume(s.vol);
-    if (qualityChanged) { this.renderer.setQuality(s.quality); this.world.sun.shadow.mapSize.setScalar(this.renderer.q.shadow); this.world.sun.shadow.map?.dispose(); this.world.sun.shadow.map = null; }
+    if (qualityChanged) { this.renderer.setQuality(s.quality); this.world.sun.shadow.mapSize.setScalar(this.renderer.q.shadow); this.world.sun.shadow.map?.dispose(); this.world.sun.shadow.map = null; this.world.setQuality(this.renderer.q); }
   }
   // ── 상태 전환 ──
   start(cont) {
@@ -247,7 +248,7 @@ class Game {
       cam.position.set(Math.sin(a) * 15, 3.2 + Math.sin(this.t * 0.2) * 0.4, 6 + Math.cos(a) * 9); cam.lookAt(0, 1.4, -6);
       this.mgr?.sync(1);
     }
-    if (this.world) { this.world.followSun(this.camera.position); this.fx.update(st === 'play' || st === 'drive' ? dt : 0); this.sfx.setListener(this.camera); }
+    if (this.world) { this.world.followSun(this.camera.position); this.world.update(dt, this.camera, this.renderer.r); this.fx.update(st === 'play' || st === 'drive' ? dt : 0); this.sfx.setListener(this.camera); }
     if (this.renderer.composer) this.renderer.render();
     input.endFrame();
     this.fpsAcc = (this.fpsAcc || 0) + 1; this.fpsT = (this.fpsT || 0) + dt;
