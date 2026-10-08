@@ -8,7 +8,8 @@ float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx
 float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.-2.*f);
   return mix(mix(hash12(i), hash12(i+vec2(1,0)), u.x), mix(hash12(i+vec2(0,1)), hash12(i+vec2(1,1)), u.x), u.y); }
 // 바람 파랑(분산 관계 ω=√(gk)) — 높이와 기울기
-float windWaves(vec2 p, float t, out vec2 grad) {
+// spacing: 정점 간격 — 격자가 표현할 수 없는 짧은 파는 감쇠 (에일리어싱 방지)
+float windWaves(vec2 p, float t, float spacing, out vec2 grad) {
   float hsum = 0.0; grad = vec2(0.0);
   const int NW = 6;
   vec3 W[NW];
@@ -18,8 +19,9 @@ float windWaves(vec2 p, float t, out vec2 grad) {
   for (int i = 0; i < NW; i++) {
     vec2 d = normalize(W[i].xy); float k = W[i].z; float w = sqrt(9.81 * k);
     float ph = dot(d, p) * k - w * t + float(i) * 1.7;
-    hsum += A[i] * sin(ph);
-    grad += A[i] * k * cos(ph) * d;
+    float a = A[i] * (1.0 - smoothstep(0.25, 0.5, k * spacing / 3.14159));
+    hsum += a * sin(ph);
+    grad += a * k * cos(ph) * d;
   }
   return hsum;
 }
@@ -58,9 +60,16 @@ void main() {
 #endif
   vec2 wg;
   float calm = clamp(depth / 4.0, 0.0, 1.0) * (1.0 - 0.75 * mud) * (1.0 - clamp(length(vel) / 6.0, 0.0, 0.85));
-  float ww = windWaves(xz, uTime, wg) * calm;
-  // 고속 흐름의 난류 요철
-  float turb = (vnoise(xz * 0.07 - vel * uTime * 0.07) - 0.5) * clamp(length(vel) * 0.18, 0.0, 1.0) * clamp(depth, 0.0, 1.5) * 0.9;
+  // 영역 경계에서는 원경 바다(평면)와 높이가 맞도록 파랑을 0으로
+  calm *= 1.0 - smoothstep(uHalf - 3.0 * uDx, uHalf - uDx, max(abs(xz.x), abs(xz.y)));
+#ifdef FAR
+  calm = 0.0;
+#endif
+  float ww = windWaves(xz, uTime, uDx, wg) * calm;
+  // 고속 흐름의 난류 요철 (유한한 2위상 이류: 시간이 지나도 위상차가 커지지 않음)
+  float tp0 = fract(uTime * 0.12), tp1 = fract(uTime * 0.12 + 0.5), tw = abs(1.0 - 2.0 * tp0);
+  float tn = mix(vnoise(xz * 0.07 - vel * tp1 * 0.5 + 7.3), vnoise(xz * 0.07 - vel * tp0 * 0.5), tw);
+  float turb = (tn - 0.5) * clamp(length(vel) * 0.18, 0.0, 1.0) * clamp(depth, 0.0, 1.5) * 0.9;
   float y = eta + ww + turb;
   vec3 wpos = vec3(xz.x, y, xz.y);
   vW = wpos; vDepth = depth; vVel = vel; vFoam = foam; vMud = mud;
@@ -122,7 +131,9 @@ void main() {
   lit += vec3(0.05, 0.32, 0.28) * sss * (1.0 - vMud) * uLight;
   vec3 col = mix(lit, sky * uLight, F * (1.0 - vMud * 0.5)) + spec * (1.0 - clamp(vFoam, 0.0, 1.0));
   // 거품: 쇄파·고속 흐름·해안선
-  float fn = vnoise(vW.xz * 0.45 - vel * uTime * 0.45) * 0.6 + vnoise(vW.xz * 1.7 + uTime * 0.3) * 0.4;
+  float fq0 = fract(uTime * 0.25), fq1 = fract(uTime * 0.25 + 0.5), fqw = abs(1.0 - 2.0 * fq0);
+  float fadv = mix(vnoise(vW.xz * 0.45 - vel * fq1 * 1.6 + 3.1), vnoise(vW.xz * 0.45 - vel * fq0 * 1.6), fqw);
+  float fn = fadv * 0.6 + vnoise(vW.xz * 1.7 + uTime * 0.3) * 0.4;
   float foamAmt = clamp(vFoam, 0.0, 1.2);
   // 평상시 파도 거품 띠 (수심 등고선을 따라 해안 쪽으로 이동)
   float surf = pow(0.5 + 0.5 * sin(depth * 4.5 + uTime * 1.6 + vnoise(vW.xz * 0.05) * 6.0), 6.0) * (1.0 - smoothstep(0.2, 2.2, depth)) * step(0.05, depth);
@@ -196,8 +207,12 @@ export class WaterSurface {
     u.uTime.value = time;
     u.uBlend.value = this.sim.blend();
     if (this.sim.texDirty) {
-      this.texW.needsUpdate = true;
-      this.texWp.needsUpdate = true;
+      // 두 텍스처를 번갈아 사용: 새 상태만 업로드 (직전 상태는 이미 GPU에 있음)
+      const cur = this.sim.texW === this.texW.image.data ? this.texW : this.texWp;
+      const prev = cur === this.texW ? this.texWp : this.texW;
+      u.tW.value = cur; u.tWp.value = prev;
+      cur.needsUpdate = true;
+      if (this.sim.prevDirty) { prev.needsUpdate = true; this.sim.prevDirty = false; }
       this.texF.needsUpdate = true;
       this.sim.texDirty = false;
       this.floodTick = (this.floodTick || 0) + 1;

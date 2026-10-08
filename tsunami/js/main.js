@@ -48,7 +48,7 @@ class Game {
     r.setPixelRatio(Math.min(devicePixelRatio || 1, this.q.pr));
     r.setSize(innerWidth, innerHeight);
     r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 0.95;
+    r.toneMappingExposure = 0.86;
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.shadowMap.enabled = this.q.shadow > 0;
     r.shadowMap.type = THREE.PCFSoftShadowMap;

@@ -99,6 +99,7 @@ export class ShallowWater {
     this.lastStep = 0;
     this.prepareTextures(0);
     this.texWPrev.set(this.texW);
+    this.prevDirty = true;
   }
 
   cellOf(x, z) {
@@ -348,7 +349,7 @@ export class ShallowWater {
   }
 
   prepareTextures(dt) {
-    this.texWPrev.set(this.texW);
+    const sw = this.texWPrev; this.texWPrev = this.texW; this.texW = sw;   // 버퍼 교대
     const N = this.N, h = this.h, b = this.b, tw = this.texW, tf = this.texF, tl = this.texFlood;
     const foam = this.foam, mud = this.mud, wet = this.wet;
     const dry = 1 - Math.min(1, dt * 0.012);
@@ -510,6 +511,7 @@ export class ShallowWater {
     this.active = true;
     this.prepareTextures(0);
     this.texWPrev.set(this.texW);
+    this.prevDirty = true;
     return info;
   }
 }

@@ -137,7 +137,9 @@ export class SoundEngine {
     const g = ctx.createGain();
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f); f.connect(g); g.connect(this.master);
-    s.start(t, Math.random() * 2); s.stop(t + dur + 0.05);
+    const off = Math.max(0, Math.min(Math.random() * 2, buf.duration - dur - 0.05));
+    if (dur > buf.duration - 0.1) s.loop = true;
+    s.start(t, off); s.stop(t + dur + 0.05);
   }
 
   collapse(v = 1) { this.burst(this.brown, 'lowpass', 900, 2.6, 1.2 * v, 80); this.burst(this.white, 'bandpass', 2400, 0.9, 0.25 * v, 600); }

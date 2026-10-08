@@ -197,7 +197,8 @@ export class Effects {
       const x = m.sx + (m.x - m.sx) * e, y = m.sy * (1 - e), z = m.sz + (m.z - m.sz) * e;
       this.meteor.position.set(x, y, z);
       this.meteor.scale.setScalar(80 + 140 * k);
-      for (let i = 0; i < 6; i++) this.emit(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 20, z + (Math.random() - 0.5) * 20, 0, 0, 0, 1.6, 40 + Math.random() * 40, 0.6, 0);
+      m.acc = (m.acc || 0) + dt * 220;   // 시간 기반 꼬리 (일시정지 중에는 생성 안 함)
+      for (; m.acc >= 1; m.acc--) this.emit(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 20, z + (Math.random() - 0.5) * 20, 0, 0, 0, 1.6, 40 + Math.random() * 40, 0.6, 0);
       if (k >= 1) {
         this.meteors.splice(mi, 1);
         m.onImpact();

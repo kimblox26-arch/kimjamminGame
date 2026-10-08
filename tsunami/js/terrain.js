@@ -158,7 +158,7 @@ vec3 floodRamp(float d){
 vec3 wp = vTW; vec3 nn = normalize(vTN);
 float slope = 1.0 - nn.y;
 float nA = vnoise(wp.xz * 0.012), nB = vnoise(wp.xz * 0.11), nC = vnoise(wp.xz * 0.9), nD = vnoise(wp.xz * 3.7);
-vec3 sand = vec3(0.80, 0.72, 0.54) * (0.88 + 0.12 * nB + 0.06 * nD);
+vec3 sand = vec3(0.70, 0.61, 0.45) * (0.86 + 0.14 * nB + 0.08 * nD);
 vec3 wetSand = vec3(0.52, 0.45, 0.33) * (0.9 + 0.1 * nC);
 vec3 grass = mix(vec3(0.24, 0.35, 0.13), vec3(0.38, 0.43, 0.19), nA) * (0.8 + 0.25 * nB + 0.1 * nD);
 vec3 forest = mix(vec3(0.13, 0.22, 0.09), vec3(0.2, 0.27, 0.12), nB);
