@@ -144,6 +144,11 @@ export class SoundEngine {
 
   collapse(v = 1) { this.burst(this.brown, 'lowpass', 900, 2.6, 1.2 * v, 80); this.burst(this.white, 'bandpass', 2400, 0.9, 0.25 * v, 600); }
   splash(v = 1) { this.burst(this.white, 'bandpass', 1800, 1.2, 0.5 * v, 400); }
+  setVolume(v) {
+    this.volume = v;
+    if (this.master) this.master.gain.value = v;
+  }
+
   boom() { this.burst(this.brown, 'lowpass', 400, 6, 2.2, 30); this.burst(this.white, 'lowpass', 6000, 1.5, 0.8, 200); }
   whoosh() { this.burst(this.white, 'bandpass', 300, 3.2, 0.5, 3000); }
   click() { if (!this.ctx) return; this.burst(this.white, 'highpass', 3000, 0.04, 0.15); }

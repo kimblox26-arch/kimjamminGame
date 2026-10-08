@@ -18,6 +18,8 @@ export class ShallowWater {
     this.b = new Float32Array(C);    // 유효 바닥고 (건물 포함)
     this.h = new Float32Array(C);
     this.u = new Float32Array((N + 1) * N);
+    this.forcing = null;
+    this.forceDir = [0, -1];
     this.v = new Float32Array(N * (N + 1));
     this.un = new Float32Array((N + 1) * N);
     this.vn = new Float32Array(N * (N + 1));
@@ -273,17 +275,20 @@ export class ShallowWater {
       }
     }
     // ── 스펀지 (개방 경계 흡수)
+    // 외해 강제(전 지구 모델 둥지): 경계 수위 η_B(t) 와 육지 쪽 진행파 유속 η_B·√(g/h) 로 이완
     const sc = this.spongeCells, sw = this.spongeW, b0 = this.b0;
     const kk = Math.min(1, dt * 1.2);
+    const eB = this.forcing ? this.forcing(this.time) : 0, fd = this.forceDir;
     for (let n = 0; n < sc.length; n++) {
       const c = sc[n];
       if (b0[c] >= 0) continue;
       const w = sw[n] * kk;
       const eta = h[c] + b[c];
-      h[c] = Math.max(0, h[c] - eta * w);
+      h[c] = Math.max(0, h[c] - (eta - eB) * w);
       const i = c % N, j = (c - i) / N;
-      U[j * N1 + i] *= 1 - w; U[j * N1 + i + 1] *= 1 - w;
-      V[j * N + i] *= 1 - w; V[(j + 1) * N + i] *= 1 - w;
+      const vB = eB !== 0 && h[c] > 1 ? eB * Math.sqrt(G / h[c]) : 0;
+      U[j * N1 + i] += (vB * fd[0] - U[j * N1 + i]) * w; U[j * N1 + i + 1] += (vB * fd[0] - U[j * N1 + i + 1]) * w;
+      V[j * N + i] += (vB * fd[1] - V[j * N + i]) * w; V[(j + 1) * N + i] += (vB * fd[1] - V[(j + 1) * N + i]) * w;
     }
     this.hmax = hmax;
     this.umax = umax;
@@ -426,17 +431,30 @@ export class ShallowWater {
   }
 
   /** 쓰나미 발생원 추가 — 초기 수면 변위 (+필요 시 진행파 유속) */
-  addSource(type, x0, z0, power, landDir) {
+  /** 외해 경계 강제: fn(simTime) → 경계 수위(m), dir = 육지 쪽 단위벡터. null 이면 해제 */
+  setBoundaryForcing(fn, dir = [0, -1]) {
+    this.forcing = fn;
+    this.forceDir = dir;
+  }
+
+  addSource(type, x0, z0, power, landDir, opt = {}) {
     const N = this.N, dx = this.dx, h = this.h, b = this.b;
     const p = Math.max(0, Math.min(1, power));
-    // 해안 방향 단위벡터 (육지 쪽) 와 해안선 방향
-    const nx = landDir[0], nz = landDir[1];
-    const tx = -nz, tz = nx;
+    // 해안 방향 단위벡터 (육지 쪽) 와 해안선 방향. opt.strike(도, 북=0 시계방향)로 단층 방향 지정 가능
+    let nx = landDir[0], nz = landDir[1];
+    let tx = -nz, tz = nx;
+    if (opt.strike !== undefined) {
+      const s = opt.strike * Math.PI / 180;
+      tx = Math.sin(s); tz = -Math.cos(s);
+      let px = -tz, pz = tx;
+      if (px * landDir[0] + pz * landDir[1] < 0) { px = -px; pz = -pz; }
+      nx = px; nz = pz;
+    }
     let fn;
     let info;
     if (type === 'quake') {
       // 거대지진: 해안과 나란한 긴 단층 (영역 폭에 걸친 긴 파봉 → 방사 감쇠가 작음)
-      const A = 3.5 + 12.5 * Math.pow(p, 1.2), R = 500 + 600 * p, L = 1300 + 2400 * p;
+      const A = opt.A ?? 3.5 + 12.5 * Math.pow(p, 1.2), R = opt.R ?? 500 + 600 * p, L = opt.L ?? 1300 + 2400 * p;
       fn = (x, z) => {
         const a = (x - x0) * tx + (z - z0) * tz;     // 주향 방향
         const c = (x - x0) * nx + (z - z0) * nz;     // 해안 쪽(+)
@@ -445,9 +463,9 @@ export class ShallowWater {
         const dn = Math.exp(-(((c - 0.55 * R) / (0.5 * R)) ** 2));
         return along * (A * up - 0.5 * A * dn);
       };
-      info = { A, R, L: L * 2, M: 7.0 + 2.5 * p };
+      info = { A, R, L: L * 2, M: (2 / 3) * (Math.log10(3e10 * 2 * L * 1.4 * R * A / 0.35) - 9.1) };
     } else if (type === 'landslide') {
-      const A = 4 + 26 * p, R = 80 + 150 * p;
+      const A = opt.A ?? 4 + 26 * p, R = opt.R ?? 80 + 150 * p;
       fn = (x, z) => {
         const c = (x - x0) * nx + (z - z0) * nz;
         const a = (x - x0) * tx + (z - z0) * tz;
@@ -456,7 +474,7 @@ export class ShallowWater {
       };
       info = { A, R, M: 5.5 + 1.5 * p };
     } else if (type === 'impact') {
-      const Rc = 60 + 200 * p, A = 30 + 110 * p;
+      const Rc = opt.R ?? 60 + 200 * p, A = opt.A ?? 30 + 110 * p;
       fn = (x, z) => {
         const r = Math.hypot(x - x0, z - z0);
         let e = 0;

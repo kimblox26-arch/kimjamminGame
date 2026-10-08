@@ -4,7 +4,7 @@ import { makeRng } from '../../src/core/utils.js';
 import { WORLD, HALF, G } from './config.js';
 import { coastZ, inlandDist, riverX, districtAt, PORT_Z, BREAKWATER, KNOLLS, sstep } from './geo.js';
 import { GLSL_NOISE } from './terrain.js';
-import { box, cyl, merge, gableGeometry } from './geom.js';
+import { box, cyl, part, merge, gableGeometry } from './geom.js';
 
 export const STYLE = { house: 0, apt: 1, office: 2, hotel: 3, shop: 4, warehouse: 5, school: 6, shelter: 7, rubble: 9 };
 const STYLE_NAME = ['단독주택', '아파트', '오피스 빌딩', '호텔', '상가', '창고', '학교', '대피소', '', '잔해'];
@@ -423,13 +423,31 @@ export class City {
       this.boats.push({ x, z: coastZ(x) + 220 + r() * 300, yaw: r() * 6.28, len: 10 + r() * 10, color: boatCols[Math.floor(r() * boatCols.length)] });
     }
     this.boats.push({ x: -1500, z: PORT_Z + 20, yaw: 0, len: 72, color: 0x2c3e50, ship: true });
-    // 파라솔
-    for (let i = 0; i < 90; i++) {
-      const x = -150 + r() * 1000;
-      const inl = 14 + r() * 42;
-      const z = coastZ(x) - inl;
-      if (this.t.terrainAt(x, z) < 0.6 || this.riverDist(x, z) < 50) continue;
-      this.umbrellas.push({ x, z, y: this.t.terrainAt(x, z), color: [0xe84a4a, 0x3a8ae8, 0xf2c94a, 0x4ac28a, 0xf28a3a, 0xffffff][i % 6], alive: true });
+    // 해수욕장: 배구장 2면 + 파라솔 자리(수건·선베드·모래성)
+    const umbCols = [0xe84a4a, 0x2f7fd8, 0xf2c94a, 0x3fb383, 0xf28a3a, 0xf4f1ea, 0x7a5ad8, 0x18a0b8];
+    const towelCols = [0xf4f1ea, 0xe8604a, 0x3a8ae8, 0xf2c94a, 0x5ac0a0, 0xd85a9a, 0x2a3a6a, 0xf0a060];
+    this.courts = [];
+    for (const cx of [250, 560]) {
+      const z = coastZ(cx) - 34;
+      if (this.t.terrainAt(cx, z) > 0.5 && this.riverDist(cx, z) > 60) this.courts.push({ x: cx, z, y: this.t.terrainAt(cx, z) });
+    }
+    this.beachSpots = [];
+    for (let x = -160; x < 860; x += 12 + r() * 7) {
+      const inl = 22 + r() * 28;
+      const z = coastZ(x) - inl, y = this.t.terrainAt(x, z);
+      if (y < 0.6 || this.riverDist(x, z) < 50) continue;
+      if (this.courts.some((c) => Math.abs(c.x - x) < 16 && Math.abs(c.z - z) < 10)) continue;
+      const yaw = (r() - 0.5) * 0.6;
+      const spot = { x, z, y, yaw, color: umbCols[Math.floor(r() * umbCols.length)], tilt: (r() - 0.5) * 0.18, towels: [], castle: null, used: 0 };
+      const nT = 1 + Math.floor(r() * 2.6);
+      for (let k = 0; k < nT; k++) {
+        const side = k === 0 ? -1 : 1, lounger = r() < 0.3;
+        const tx = x + side * (1.3 + r() * 0.7) * Math.cos(yaw), tz = z + side * (1.3 + r() * 0.7) * Math.sin(yaw) + 0.6;
+        spot.towels.push({ x: tx, z: tz, y: this.t.terrainAt(tx, tz), yaw: yaw + Math.PI / 2 + (r() - 0.5) * 0.3, color: towelCols[Math.floor(r() * towelCols.length)], lounger });
+      }
+      if (r() < 0.3) { const sx = x + (r() - 0.5) * 4, sz = z + 4 + r() * 3; spot.castle = { x: sx, z: sz, y: this.t.terrainAt(sx, sz), s: 0.7 + r() * 0.5 }; }
+      this.beachSpots.push(spot);
+      this.umbrellas.push({ x, z, y, yaw, tilt: spot.tilt, color: spot.color, alive: true, spot });
     }
   }
 
@@ -713,23 +731,86 @@ export class City {
     this.beacon.position.set(lh.x, lh.y + 24, lh.z);
     scene.add(this.beacon);
 
-    // 파라솔
-    const umb = merge([cyl(0.04, 0.04, 2.4, 5, 0, 1.2, 0, 0xeeeeee), cyl(0.05, 1.5, 0.5, 10, 0, 2.45, 0, 0xffffff)]);
-    this.umbMesh = new THREE.InstancedMesh(umb, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), this.umbrellas.length);
-    this.umbMesh.castShadow = true;
+    // 파라솔: 8폭 줄무늬 캐노피(흰 폭과 색 폭 교대) + 기둥
+    // 색 폭(인스턴스 색)과 흰 폭+기둥을 두 인스턴스 메시로 나눔
+    const cone = new THREE.ConeGeometry(1.55, 0.55, 16, 1, true).toNonIndexed();
+    cone.deleteAttribute('uv');
+    const cp = cone.attributes.position, cnr = cone.attributes.normal;
+    const panels = [[], []];
+    for (let i = 0; i < cp.count; i += 3) {
+      const ax = cp.getX(i) + cp.getX(i + 1) + cp.getX(i + 2), az = cp.getZ(i) + cp.getZ(i + 1) + cp.getZ(i + 2);
+      const pi = Math.floor(((Math.atan2(az, ax) + Math.PI) / (Math.PI * 2)) * 8) % 2;
+      for (let k = 0; k < 3; k++) panels[pi].push(cp.getX(i + k), cp.getY(i + k) + 2.42, cp.getZ(i + k), cnr.getX(i + k), cnr.getY(i + k), cnr.getZ(i + k));
+    }
+    const panelGeo = (arr, color) => {
+      const g = new THREE.BufferGeometry(), n = arr.length / 6, pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { pos.set(arr.slice(i * 6, i * 6 + 3), i * 3); nrm.set(arr.slice(i * 6 + 3, i * 6 + 6), i * 3); }
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+      return part(g, 0, 0, 0, color);
+    };
+    const nU = Math.max(1, this.umbrellas.length);
+    this.umbMesh = new THREE.InstancedMesh(panelGeo(panels[0], 0xffffff), new THREE.MeshStandardMaterial({ roughness: 0.7, side: THREE.DoubleSide }), nU);
+    this.umbMesh2 = new THREE.InstancedMesh(merge([panelGeo(panels[1], 0xf6f3ec), cyl(0.025, 0.03, 2.5, 6, 0, 1.25, 0, 0x6a5a48), cyl(0.06, 0.06, 0.12, 6, 0, 2.72, 0, 0xffffff)]),
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, side: THREE.DoubleSide }), nU);
     const col = new THREE.Color();
+    for (const mm of [this.umbMesh, this.umbMesh2]) { mm.count = this.umbrellas.length; mm.castShadow = true; scene.add(mm); }
     this.umbrellas.forEach((u, i) => this.umbMesh.setColorAt(i, col.set(u.color)));
     this.refreshUmbrellas();
-    scene.add(this.umbMesh);
+
+    // 수건 · 선베드 · 모래성 · 배구장
+    const towels = [], loungers = [];
+    for (const s of this.beachSpots || []) for (const t of s.towels) (t.lounger ? loungers : towels).push(t);
+    const tm = new THREE.Matrix4(), tq = new THREE.Quaternion(), ts = new THREE.Vector3(1, 1, 1), tp = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    const towelMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.85, 0.015, 1.8), new THREE.MeshStandardMaterial({ roughness: 0.95 }), Math.max(1, towels.length));
+    towelMesh.count = towels.length;
+    towels.forEach((t, i) => { tm.compose(tp.set(t.x, t.y + 0.01, t.z), tq.setFromAxisAngle(up, t.yaw), ts); towelMesh.setMatrixAt(i, tm); towelMesh.setColorAt(i, col.set(t.color)); });
+    towelMesh.receiveShadow = true;
+    scene.add(towelMesh);
+    const lg = merge([
+      box(0.62, 0.05, 1.3, 0, 0.32, 0.25, 0xffffff), box(0.62, 0.05, 0.75, 0, 0.6, -0.68, 0xffffff, -1.0),
+      ...[[-0.28, 0.75], [0.28, 0.75], [-0.28, -0.3], [0.28, -0.3]].map(([x, z]) => cyl(0.02, 0.02, 0.32, 5, x, 0.16, z, 0xb8b8b8)),
+    ]);
+    const loungeMesh = new THREE.InstancedMesh(lg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), Math.max(1, loungers.length));
+    loungeMesh.count = loungers.length;
+    loungers.forEach((t, i) => { tm.compose(tp.set(t.x, t.y, t.z), tq.setFromAxisAngle(up, t.yaw), ts); loungeMesh.setMatrixAt(i, tm); loungeMesh.setColorAt(i, col.set(t.color).lerp(new THREE.Color(1, 1, 1), 0.35)); });
+    loungeMesh.castShadow = loungeMesh.receiveShadow = true;
+    scene.add(loungeMesh);
+    const beach = [];
+    const sand = 0xd8c08a, wet = 0xb8a070;
+    for (const s of this.beachSpots || []) {
+      if (!s.castle) continue;
+      const { x, y, z, s: k } = s.castle;
+      beach.push(cyl(0.42 * k, 0.55 * k, 0.28 * k, 10, x, y + 0.14 * k, z, wet));
+      for (const [ox, oz] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) beach.push(cyl(0.1 * k, 0.13 * k, 0.42 * k, 8, x + ox * k, y + 0.35 * k, z + oz * k, sand));
+      beach.push(cyl(0.0, 0.2 * k, 0.4 * k, 8, x, y + 0.55 * k, z, sand));
+      beach.push(cyl(0.9 * k, 1.0 * k, 0.05, 14, x, y + 0.01, z, wet));
+    }
+    for (const c of this.courts) {
+      const { x, y, z } = c;
+      for (const [w, d, ox, oz] of [[16, 0.06, 0, -4], [16, 0.06, 0, 4], [0.06, 8, -8, 0], [0.06, 8, 8, 0]]) beach.push(box(w, 0.02, d, x + ox, y + 0.01, z + oz, 0x2a5aa8));
+      for (const oz of [-4.6, 4.6]) beach.push(cyl(0.05, 0.05, 2.55, 6, x, y + 1.27, z + oz, 0xdddddd));
+      beach.push(box(0.03, 0.06, 9.2, x, y + 2.43, z, 0xffffff), box(0.03, 0.06, 9.2, x, y + 1.6, z, 0xffffff));
+      for (let k = -4.4; k <= 4.4; k += 0.4) beach.push(box(0.012, 0.8, 0.012, x, y + 2.0, z + k, 0x222222));
+      for (let k = 1.68; k < 2.42; k += 0.12) beach.push(box(0.012, 0.012, 9.2, x, y + k, z, 0x222222));
+    }
+    if (beach.length) {
+      const bm = new THREE.Mesh(merge(beach), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
+      bm.castShadow = bm.receiveShadow = true;
+      scene.add(bm);
+    }
   }
 
   refreshUmbrellas() {
-    const m = new THREE.Matrix4();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
     this.umbrellas.forEach((u, i) => {
-      if (u.alive) m.makeTranslation(u.x, u.y, u.z); else m.makeScale(0, 0, 0);
+      if (u.alive) m.compose(p.set(u.x, u.y - 0.25, u.z), q.setFromEuler(e.set(u.tilt || 0, u.yaw || 0, (u.tilt || 0) * 0.6)), s);
+      else m.makeScale(0, 0, 0);
       this.umbMesh.setMatrixAt(i, m);
+      this.umbMesh2.setMatrixAt(i, m);
     });
     this.umbMesh.instanceMatrix.needsUpdate = true;
+    this.umbMesh2.instanceMatrix.needsUpdate = true;
   }
 
   resetState() {

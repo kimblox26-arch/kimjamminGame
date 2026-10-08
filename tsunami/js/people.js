@@ -5,22 +5,27 @@ import * as THREE from 'three';
 import { makeRng } from '../../src/core/utils.js';
 import { HALF, WORLD, SAFE_ELEV, PERSON_TYPES, EMOTIONS, LINES, SURNAMES, GIVEN } from './config.js';
 import { inlandDist, coastZ, coastSlope, districtAt, SIRENS, PORT_Z } from './geo.js';
+import { HumanCrowd } from './humans/crowd.js';
 
-const PARTS = 11;
 const TAU = Math.PI * 2;
 const ROLE = {
   tourist: '관광객', resident: '주민', office: '회사원', student: '학생', worker: '항만 노동자',
   fisher: '어부', merchant: '상인', retiree: '은퇴자', surfer: '서퍼', kid: '어린이',
 };
 
+const LEISURE = new Set(['volley', 'catch', 'sunbathe', 'sitTowel', 'sitShade', 'lounger', 'dig', 'selfie', 'wade']);
+const RESTING = new Set(['sunbathe', 'sitTowel', 'sitShade', 'lounger', 'dig', 'sit']);
+const ACT_DUR = { volley: 0.9, throw: 0.75, catch: 0.6 };
+const EXPR = { calm: 'neutral', curious: 'neutral', confused: 'neutral', anxious: 'fear', fear: 'fear', panic: 'panic', determined: 'neutral', frozen: 'fear', struggle: 'panic', relief: 'happy', sad: 'sad', shocked: 'pain' };
 const _v = new THREE.Vector3();
 const tmpS = {};
 const tmpDir = { x: 0, z: 0 };
 
 export class People {
-  constructor(scene, ctx, count) {
+  constructor(scene, ctx, count, quality = 'medium') {
     this.ctx = ctx;                    // { terrain, city, nav, sim }
     this.scene = scene;
+    this.quality = quality;
     this.max = count;
     this.list = [];
     this.groups = [];
@@ -35,8 +40,10 @@ export class People {
     this.groups = [];
     this.rng = makeRng(77123);
     const r = this.rng;
+    this.games = [];
+    this.spawnBeachLeisure();
     const zones = [
-      ['beach', 0.22], ['promenade', 0.09], ['port', 0.1], ['riverside', 0.18],
+      ['beach', 0.1], ['promenade', 0.09], ['port', 0.1], ['riverside', 0.18],
       ['beachTown', 0.12], ['central', 0.16], ['cape', 0.07], ['hills', 0.06],
     ];
     let guard = 0;
@@ -51,9 +58,210 @@ export class People {
     this.list.forEach((p, i) => { p.i = i; });
     this.groups = this.groups.map((g) => g.filter((p) => p.i !== undefined && this.list[p.i] === p)).filter((g) => g.length);
     this.groups.forEach((g, gi) => g.forEach((p) => { p.group = gi; p.leader = g[0]; }));
+    for (const g of this.games) g.players = g.players.filter((p) => p.i !== undefined && this.list[p.i] === p);
+    this.games = this.games.filter((g) => g.players.length >= 2);
+    this.games.forEach((g, i) => { g.idx = i; g.ball = null; g.free = null; g.hold = 1 + i * 0.7; });
+    this.ensureBalls();
     this.applyColors();
-    this.mesh.count = this.list.length * PARTS;
-    this.heads.count = this.hair.count = this.hats.count = this.list.length;
+  }
+
+  /** 해수욕장의 평범한 오후: 배구 · 공 던지기 · 일광욕 · 그늘 · 모래성 · 물놀이 · 셀카 */
+  spawnBeachLeisure() {
+    const r = this.rng, city = this.ctx.city;
+    const budget = Math.floor(this.max * 0.17), start = this.list.length;
+    const full = () => this.list.length - start >= budget || this.list.length >= this.max - 4;
+    const add = (type, role, x, z, act, surname) => {
+      const p = this.makePerson(type, role, x, z, 'beach', surname);
+      if (p.swimmer) { p.z = z; p.swimmer = false; }
+      p.activity = act; p.ax = x; p.az = z; p.anchorYaw = p.yaw;
+      this.list.push(p);
+      return p;
+    };
+    const adult = () => (r() < 0.5 ? 'man' : 'woman');
+    // 배구 (2대2)
+    for (const c of city.courts || []) {
+      if (full()) break;
+      const g = { type: 'volley', x: c.x, z: c.z, y: c.y, players: [] }, grp = [];
+      for (let k = 0; k < 4; k++) {
+        const side = k < 2 ? -1 : 1, hx = c.x + side * (2.8 + (k % 2) * 2.6), hz = c.z + (k % 2 ? 1.8 : -1.8);
+        const p = add(r() < 0.55 ? 'teen' : adult(), 'tourist', hx, hz, 'volley');
+        p.game = g; p.side = side; p.anchorYaw = side < 0 ? Math.PI / 2 : -Math.PI / 2; p.yaw = p.anchorYaw;
+        g.players.push(p); grp.push(p);
+      }
+      this.groups.push(grp); this.games.push(g);
+    }
+    // 파라솔 자리
+    const spots = (city.beachSpots || []).slice();
+    for (let i = spots.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [spots[i], spots[j]] = [spots[j], spots[i]]; }
+    for (const s of spots) {
+      if (full()) break;
+      if (r() < 0.22) continue;
+      s.used = 1;
+      const roll = r(), grp = [], sur = SURNAMES[Math.floor(r() * SURNAMES.length)];
+      const towel = (k) => s.towels[k % s.towels.length];
+      const lieOn = (p, t) => {
+        p.ax = p.x = t.x; p.az = p.z = t.z; p.anchorYaw = p.yaw = t.yaw + (r() < 0.5 ? Math.PI : 0);
+        p.activity = t.lounger ? 'lounger' : r() < 0.6 ? 'sunbathe' : 'sitTowel';
+        if (t.lounger) p.seatY = 0.36;
+      };
+      const shade = (p) => { const a = r() * TAU; p.ax = p.x = s.x + Math.sin(a) * 0.7; p.az = p.z = s.z + Math.cos(a) * 0.7; p.activity = 'sitShade'; p.anchorYaw = p.yaw = 0.1 + (r() - 0.5) * 0.8; };
+      if (roll < 0.42) {                                        // 가족
+        const a = add('man', 'tourist', s.x, s.z, 'sitShade', null), b = add('woman', 'tourist', s.x, s.z, 'sunbathe', sur);
+        if (r() < 0.5) { lieOn(a, towel(0)); shade(b); } else { shade(a); lieOn(b, towel(0)); }
+        grp.push(a, b);
+        const nk = 1 + (r() < 0.45 ? 1 : 0);
+        for (let k = 0; k < nk && !full(); k++) {
+          const kid = add('child', 'kid', s.x, s.z + 3, 'dig', sur);
+          if (s.castle && k === 0) { const a2 = r() * TAU; kid.ax = kid.x = s.castle.x + Math.sin(a2) * 0.65; kid.az = kid.z = s.castle.z + Math.cos(a2) * 0.65; kid.anchorYaw = kid.yaw = a2 + Math.PI; }
+          else this.toWade(kid, s.x + (r() - 0.5) * 8);
+          grp.push(kid);
+        }
+      } else if (roll < 0.72) {                                 // 연인 · 부부
+        const a = add('man', 'tourist', s.x, s.z, 'sunbathe', null), b = add('woman', 'tourist', s.x, s.z, 'sunbathe', null);
+        lieOn(a, towel(0)); if (s.towels.length > 1) lieOn(b, towel(1)); else shade(b);
+        if (r() < 0.3) { b.activity = 'selfie'; b.ax = b.x = s.x + 2; b.az = b.z = s.z + 9; b.anchorYaw = b.yaw = Math.PI; }
+        grp.push(a, b);
+      } else {                                                  // 친구들: 그늘 + 공 던지기
+        const a = add('teen', 'tourist', s.x, s.z, 'sitShade', null); shade(a);
+        grp.push(a);
+        if (!full()) {
+          const bx = s.x + (r() - 0.5) * 6, bz = coastZ(bx) - 9 - r() * 6, d = 7 + r() * 5;
+          const b = add('teen', 'tourist', bx - d / 2, bz, 'catch', null), c = add(r() < 0.5 ? 'teen' : adult(), 'tourist', bx + d / 2, bz, 'catch', null);
+          const g = { type: 'catch', players: [b, c] };
+          b.game = c.game = g; b.anchorYaw = b.yaw = Math.PI / 2; c.anchorYaw = c.yaw = -Math.PI / 2;
+          this.games.push(g); grp.push(b, c);
+        }
+      }
+      this.groups.push(grp);
+    }
+    // 노인 산책 · 물놀이 · 셀카 (단독)
+    for (let k = 0; k < 14 && !full(); k++) {
+      const x = -120 + r() * 950;
+      const p = add(r() < 0.3 ? 'child' : r() < 0.5 ? 'teen' : adult(), 'tourist', x, coastZ(x) - 6, 'wade', null);
+      if (r() < 0.35 && p.type !== 'child') { p.activity = 'selfie'; p.anchorYaw = p.yaw = Math.PI; p.ax = p.x; p.az = p.z = coastZ(x) - 5; }
+      else this.toWade(p, x);
+      this.groups.push([p]);
+    }
+  }
+
+  toWade(p, x) {
+    const cz = coastZ(x);
+    p.activity = 'wade';
+    p.ax = p.x = x; p.az = p.z = cz + 2 + this.rng() * 5;
+    p.anchorYaw = p.yaw = (this.rng() - 0.5) * 2;
+  }
+
+  ensureBalls() {
+    const n = Math.max(1, this.games.length);
+    if (this.balls && this.balls.instanceMatrix.count >= n) { this.balls.count = this.games.length; return; }
+    if (this.balls) { this.scene.remove(this.balls); this.balls.geometry.dispose(); }
+    // 배구공(흰·노랑) / 비치볼(줄무늬 대신 밝은 단색)
+    this.balls = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshStandardMaterial({ roughness: 0.45 }), n + 4);
+    this.balls.castShadow = true;
+    this.balls.frustumCulled = false;
+    this.balls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.balls.count = this.games.length;
+    this.scene.add(this.balls);
+  }
+
+  /* ───────────────────────── 공놀이 (포물선 → 대피 시 자유낙하·부유 물리) ───────────────────────── */
+  updateGames(dt, env) {
+    const { terrain, sim } = this.ctx;
+    const g0 = 9.81;
+    for (const g of this.games) {
+      const R = g.type === 'volley' ? 0.105 : 0.2;
+      const active = g.players.filter((p) => p.state === 'normal' && p.activity === g.type && p.fallT <= 0);
+      const quake = env.quake > 0.25;
+      // 자유 공: 중력 · 항력 · 바닥 반발 · 물에 뜨고 흐름에 떠내려감
+      if (g.free) {
+        const b = g.free;
+        sim.sample(b.x, b.z, tmpS);
+        const gr = terrain.groundAt(b.x, b.z), water = tmpS.eta > gr + 0.02 ? tmpS.eta : -1e9;
+        const sub = b.y - R < water ? Math.min(1, (water - (b.y - R)) / (2 * R)) : 0;
+        const m = g.type === 'volley' ? 0.27 : 0.12, vol = 4.19 * R * R * R;
+        const buoy = sub * vol * 1000 * g0 / m;          // 아르키메데스
+        b.vy += (buoy - g0) * dt;
+        const cd = sub > 0 ? 3.5 : 0.08;
+        b.vx += ((sub > 0 ? tmpS.u : 0) - b.vx) * Math.min(1, cd * dt);
+        b.vz += ((sub > 0 ? tmpS.v : 0) - b.vz) * Math.min(1, cd * dt);
+        if (sub > 0) b.vy *= Math.max(0, 1 - 4 * dt);
+        b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+        if (b.y - R < gr) { b.y = gr + R; if (b.vy < 0) b.vy *= -0.55; b.vx *= 0.9; b.vz *= 0.9; }
+        b.x = Math.max(-HALF + 5, Math.min(HALF - 5, b.x)); b.z = Math.max(-HALF + 5, Math.min(HALF - 5, b.z));
+        if (!quake && active.length >= 2 && Math.hypot(b.vx, b.vz) < 0.3 && sub === 0) {
+          // 가장 가까운 사람이 주우러 감
+          let best = null, bd = 1e9;
+          for (const p of active) { const d = Math.hypot(p.x - b.x, p.z - b.z); if (d < bd) { bd = d; best = p; } }
+          best.fetch = b;
+          for (const p of g.players) if (p !== best) p.fetch = null;
+          if (bd < 0.9) { best.fetch = null; g.free = null; g.hold = 0.6; g.holder = best; best.actT = 0; best.act = 'catch'; }
+        }
+        continue;
+      }
+      if (active.length < 2 || quake) {
+        if (g.ball) { const b = g.ball; g.free = { x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz }; g.ball = null; }
+        else if (g.holder) { const p = g.holder; g.free = { x: p.x, y: p.y + 1.2, z: p.z, vx: 0, vy: 0, vz: 0 }; g.holder = null; }
+        else if (!g.free && g.players.length) { const p = g.players[0]; g.free = { x: p.x + 0.4, y: terrain.groundAt(p.x, p.z) + R, z: p.z, vx: 0, vy: 0, vz: 0 }; }
+        continue;
+      }
+      if (!g.ball) {
+        g.hold -= dt;
+        const from = g.holder && active.includes(g.holder) ? g.holder : active[Math.floor(Math.random() * active.length)];
+        g.holder = from;
+        if (g.hold > 0) continue;
+        // 패스 대상: 배구는 같은 편 1회 패스 후 넘김, 공 던지기는 상대
+        let cands = active.filter((p) => p !== from);
+        if (g.type === 'volley') {
+          const same = cands.filter((p) => p.side === from.side), other = cands.filter((p) => p.side !== from.side);
+          cands = (g.touch || 0) === 0 && same.length && Math.random() < 0.7 ? same : other.length ? other : same;
+          g.touch = cands[0] && cands[0].side === from.side ? 1 : 0;
+        }
+        const to = cands[Math.floor(Math.random() * cands.length)];
+        const over = g.type === 'volley' && to.side !== from.side;
+        const dur = g.type === 'volley' ? (over ? 1.5 + Math.random() * 0.4 : 1.05 + Math.random() * 0.3) : 1.0 + Math.random() * 0.5;
+        const hy = g.type === 'volley' ? 2.1 : 1.35;
+        const miss = Math.random() < (g.type === 'volley' ? 0.1 : 0.08);
+        const ex = to.x + (miss ? (Math.random() - 0.5) * 5 : 0), ez = to.z + (miss ? (Math.random() - 0.5) * 5 : 0);
+        g.ball = { sx: from.x, sy: from.y + hy, sz: from.z, ex, ez, ey: terrain.groundAt(ex, ez) + (miss ? R : hy * 0.85), t: 0, dur, to, miss, x: from.x, y: from.y + hy, z: from.z, vx: 0, vy: 0, vz: 0 };
+        from.act = g.type === 'volley' ? 'volley' : 'throw'; from.actT = 0;
+        to.watchBall = g.ball;
+        g.holder = null;
+        continue;
+      }
+      const b = g.ball;
+      b.t += dt;
+      const s = Math.min(1, b.t / b.dur);
+      // 수평 등속 + 연직 등가속 (g)
+      const vy0 = (b.ey - b.sy) / b.dur + 0.5 * g0 * b.dur;
+      const nx = b.sx + (b.ex - b.sx) * s, nz = b.sz + (b.ez - b.sz) * s, ny = b.sy + vy0 * b.t - 0.5 * g0 * b.t * b.t;
+      b.vx = (b.ex - b.sx) / b.dur; b.vz = (b.ez - b.sz) / b.dur; b.vy = vy0 - g0 * b.t;
+      b.x = nx; b.y = ny; b.z = nz;
+      if (b.to && b.to.state === 'normal') { b.to.tx = b.ex; b.to.tz = b.ez; }
+      if (s >= 1) {
+        const to = b.to;
+        to.watchBall = null;
+        if (b.miss || !active.includes(to)) { g.free = { x: b.x, y: b.y, z: b.z, vx: b.vx * 0.5, vy: b.vy, vz: b.vz * 0.5 }; g.ball = null; g.touch = 0; if (active.includes(to)) this.say(to, ['아 놓쳤다!', '앗!', '하하 미안!']); continue; }
+        g.ball = null; g.holder = to;
+        to.act = g.type === 'volley' ? 'volley' : 'catch'; to.actT = 0;
+        g.hold = g.type === 'volley' ? 0.05 : 0.6 + Math.random() * 0.8;
+      }
+    }
+    // 공 렌더
+    if (!this.balls) return;
+    const m = new THREE.Matrix4(), c = new THREE.Color();
+    this.games.forEach((g, i) => {
+      const R = g.type === 'volley' ? 0.105 : 0.2;
+      let x, y, z;
+      if (g.ball) ({ x, y, z } = g.ball);
+      else if (g.free) ({ x, y, z } = g.free);
+      else if (g.holder) { x = g.holder.x + Math.sin(g.holder.yaw) * 0.3; y = g.holder.y + (g.type === 'volley' ? 1.1 : 1.15); z = g.holder.z + Math.cos(g.holder.yaw) * 0.3; }
+      else { m.makeScale(0, 0, 0); this.balls.setMatrixAt(i, m); return; }
+      m.makeScale(R, R, R).setPosition(x, y, z);
+      this.balls.setMatrixAt(i, m);
+      this.balls.setColorAt(i, c.set(g.type === 'volley' ? 0xf4e7a0 : [0xff5a4a, 0x3aa0ff, 0xffd23a][i % 3]));
+    });
+    this.balls.instanceMatrix.needsUpdate = true;
+    if (this.balls.instanceColor) this.balls.instanceColor.needsUpdate = true;
   }
 
   findSpot(zone) {
@@ -182,16 +390,7 @@ export class People {
 
   /* ───────────────────────── 렌더 메시 ───────────────────────── */
   buildMeshes(count) {
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.0, envMapIntensity: 0.5 });
-    this.mesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.5, 1, 3, 8), mat, count * PARTS);
-    this.heads = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 9), mat, count);
-    this.hair = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshStandardMaterial({ roughness: 0.6 }), count);
-    this.hats = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 12), new THREE.MeshStandardMaterial({ roughness: 0.6 }), count);
-    for (const m of [this.mesh, this.heads, this.hair, this.hats]) {
-      m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false;
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      this.scene.add(m);
-    }
+    this.crowd = new HumanCrowd(this.scene, { max: count + 8, quality: this.quality || 'medium', castShadow: true });
     // 지도용 감정 표시점
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
@@ -215,22 +414,11 @@ export class People {
     for (const [k, e] of Object.entries(EMOTIONS)) this.emoColors[k] = new THREE.Color(e.color);
   }
 
+  /** 사람마다 체형·옷·머리 모양을 군중 렌더러에 등록 */
   applyColors() {
-    const c = new THREE.Color();
-    for (const p of this.list) {
-      const a = p.ap, b = p.i * PARTS;
-      const set = (k, col) => this.mesh.setColorAt(b + k, c.set(col));
-      set(0, a.top); set(1, a.bottom);
-      set(2, a.top); set(3, a.sleeves ? a.top : a.skin);
-      set(4, a.top); set(5, a.sleeves ? a.top : a.skin);
-      set(6, a.bottom); set(7, a.shorts ? a.skin : a.bottom);
-      set(8, a.bottom); set(9, a.shorts ? a.skin : a.bottom);
-      set(10, 0x5a3e28);
-      this.heads.setColorAt(p.i, c.set(a.skin));
-      this.hair.setColorAt(p.i, c.set(a.hair));
-      this.hats.setColorAt(p.i, c.set(a.hatColor));
-    }
-    for (const m of [this.mesh, this.heads, this.hair, this.hats]) if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    const C = this.crowd;
+    C.clear();
+    for (const p of this.list) p.cid = C.add(crowdDesc(p));
   }
 
   /* ───────────────────────── 갱신 ───────────────────────── */
@@ -288,9 +476,19 @@ export class People {
     this.pi = (this.pi + c) % Math.max(1, n);
     for (const p of this.list) {
       if (p.state === 'missing') continue;
+      if (p.act) { p.actT += dt / ACT_DUR[p.act]; if (p.actT >= 1) p.act = null; }
       for (let s = 0; s < sub; s++) { this.move(p, h, env); if (p.state === 'missing') break; }
       this.mood(p, dt, env);
     }
+    this.updateGames(dt, env);
+  }
+
+  /** 누워/앉아 있던 사람은 일어나는 데 시간이 걸림 */
+  standUp(p) {
+    if (!RESTING.has(p.activity) || p.getUpT > 0) return;
+    p.prevAct = p.activity;
+    p.getUpT = (p.activity === 'sunbathe' || p.activity === 'lounger' ? 1.4 : 0.8) + Math.random() * 0.9 + (p.type === 'elder' ? 1.2 : 0);
+    p.seatY = 0;
   }
 
   perceive(p, env, dt) {
@@ -327,6 +525,7 @@ export class People {
       p.sawDraw = true;
       p.awareness += p.prep * 1.4;
       if (p.state === 'normal' && p.prep < 0.55 && p.curiosity > 0.45 && p.type !== 'child') {
+        this.standUp(p);
         p.activity = 'gawk';
         const cz = coastZ(p.x);
         p.tx = p.x + (Math.random() - 0.5) * 20; p.tz = cz + 40;
@@ -363,8 +562,10 @@ export class People {
 
   startEvac(p) {
     if (p.state !== 'normal') return;
+    this.standUp(p);
     p.state = 'evac';
     p.activity = 'evac';
+    p.fetch = p.watchBall = null; p.act = null;
     p.field = p.local ? 'all' : 'hill';
     if (!p.sawWave) this.say(p, p.type === 'child' ? LINES.child : LINES.warned);
     // 일행 전체 대피
@@ -396,6 +597,23 @@ export class People {
     const wu = tmpS.u, wv = tmpS.v, wsp = Math.hypot(wu, wv);
 
     if (p.state === 'swept') { this.moveSwept(p, dt, depth, wu, wv, wsp, tmpS.eta, ground); return; }
+    // 감전: 끊어진 전선이 닿은 물 · 지면
+    if (p.state === 'shocked') {
+      p.shockT += dt; p.vx = p.vz = 0; A.spd = 0;
+      if (p.shockT > 2.4) {
+        p.injured = true; p.run *= 0.55; p.walk *= 0.7; p.fitness *= 0.5; p.composure *= 0.5;
+        if (depth > 0.3) this.toSwept(p);
+        else { p.state = 'evac'; p.activity = 'evac'; p.field = p.field || 'hill'; p.fallT = 3 + Math.random() * 3; }
+      }
+      return;
+    }
+    if (this.power && p.state !== 'roof' && (depth > 0.03 || p.state === 'normal') && this.power.electrified(p.x, p.z)) {
+      this.standUp(p);
+      p.state = 'shocked'; p.shockT = 0; p.getUpT = 0; p.fear = 1;
+      this.say(p, ['으악!', '찌릿...!', '아아악!']);
+      if (this.onShock) this.onShock(p);
+      return;
+    }
 
     // 물살 안정성: 수심 × 유속 (DV) 한계, 부력 한계 수심
     const dv = depth * wsp;
@@ -423,7 +641,9 @@ export class People {
 
     // 목표 속도
     let dx = 0, dz = 0, speed = 0;
-    if (p.frozenT > 0) { p.frozenT -= dt; }
+    let anchored = false;
+    if (p.getUpT > 0) { p.getUpT -= dt; }
+    else if (p.frozenT > 0) { p.frozenT -= dt; }
     else if (p.fallT > 0) { p.fallT -= dt; }
     else if (p.state === 'evac') {
       const lead = p.leader;
@@ -505,6 +725,39 @@ export class People {
         if (p.timer <= 0) { p.timer = 5 + Math.random() * 8; p.tx = p.x + (Math.random() - 0.5) * 30; p.tz = (p.swimBaseZ || p.z) + (Math.random() - 0.5) * 16; }
         const l = Math.hypot(p.tx - p.x, p.tz - p.z);
         if (l > 1) { dx = (p.tx - p.x) / l; dz = (p.tz - p.z) / l; speed = 0.6; }
+      } else if (act === 'volley' || act === 'catch') {
+        // 공을 쫓거나(낙하점 예측) 제자리로
+        let tx = p.ax, tz = p.az;
+        if (p.fetch) { tx = p.fetch.x; tz = p.fetch.z; } else if (p.watchBall) { tx = p.tx; tz = p.tz; }
+        const l = Math.hypot(tx - p.x, tz - p.z);
+        if (l > 0.3) { dx = (tx - p.x) / l; dz = (tz - p.z) / l; speed = Math.min(p.run * 0.75, 0.6 + l * 1.8); }
+        const b = p.watchBall || p.fetch;
+        if (b) p.faceYaw = Math.atan2((b.sx ?? b.x) - p.x, (b.sz ?? b.z) - p.z);
+        else if (p.game.type === 'catch') { const o = p.game.players.find((q) => q !== p); if (o) p.faceYaw = Math.atan2(o.x - p.x, o.z - p.z); }
+        else p.faceYaw = p.anchorYaw;
+      } else if (act === 'wade') {
+        if (p.timer <= 0 || Math.hypot(p.tx - p.x, p.tz - p.z) < 0.6) {
+          p.timer = 5 + Math.random() * 9;
+          if (Math.random() < 0.4) { p.tx = p.x; p.tz = p.z; }
+          else { p.tx = p.ax + (Math.random() - 0.5) * 12; p.tz = coastZ(p.tx) + 1 + Math.random() * 5; }
+        }
+        const l = Math.hypot(p.tx - p.x, p.tz - p.z);
+        if (l > 0.4) { dx = (p.tx - p.x) / l; dz = (p.tz - p.z) / l; speed = p.walk * 0.45; }
+        else p.faceYaw = Math.atan2(0, 1) + Math.sin(env.simTime * 0.1 + p.i) * 1.2;
+      } else if (LEISURE.has(act)) {
+        // 수건 · 선베드 · 그늘 · 모래성 · 셀카: 제자리
+        const l = Math.hypot(p.ax - p.x, p.az - p.z);
+        if (l > 0.35) { dx = (p.ax - p.x) / l; dz = (p.az - p.z) / l; speed = p.walk * 0.8; }
+        else {
+          anchored = true; p.faceYaw = p.anchorYaw;
+          if (p.timer <= 0) {
+            p.timer = 25 + Math.random() * 50;
+            if (act === 'sunbathe' && Math.random() < 0.4) p.activity = 'sitTowel';
+            else if (act === 'sitTowel' && Math.random() < 0.5) p.activity = 'sunbathe';
+            else if (act === 'selfie') p.anchorYaw += Math.PI;
+            else if (act === 'dig' && Math.random() < 0.3) this.toWade(p, p.x);
+          }
+        }
       } else if (act === 'idle' || act === 'sit') {
         if (p.timer <= 0) { p.timer = 6 + Math.random() * 14; if (act === 'idle' && Math.random() < 0.35 && p.leader === p) { p.activity = 'walk'; this.pickWaypoint(p); } }
         // 일행끼리 마주보기
@@ -513,7 +766,7 @@ export class People {
       }
       // 일행 따라가기
       const lead = p.leader;
-      if (lead && lead !== p && lead.state === 'normal' && p.activity !== 'swim' && p.activity !== 'gawk') {
+      if (lead && lead !== p && lead.state === 'normal' && p.activity !== 'swim' && p.activity !== 'gawk' && !LEISURE.has(p.activity) && !LEISURE.has(lead.activity)) {
         const ox = lead.x - p.x, oz = lead.z - p.z, ol = Math.hypot(ox, oz);
         if (ol > 2.2) { dx = ox / ol; dz = oz / ol; speed = Math.min(p.run * 0.6, lead.anim.spd + (ol - 2) * 0.5); }
         else if (lead.anim.spd < 0.2) speed = 0;
@@ -523,6 +776,12 @@ export class People {
       if (env.quake > 0.25 && p.composure < 0.75 && p.activity !== 'swim') speed = 0;
     }
 
+    if (anchored && speed === 0) {
+      p.vx = p.vz = 0; A.spd = 0; p.x = p.ax; p.z = p.az;
+      p.y = terrain.groundAt(p.x, p.z) + (p.seatY || 0);
+      p.yaw += angDiff(p.yaw, p.faceYaw) * Math.min(1, dt * 3);
+      return;
+    }
     // 수심에 따른 감속 · 경사
     if (depth > 0.05 && !swimmer) speed *= Math.max(0.12, 1 - depth / (0.7 * p.height));
     // 분리 (서로 밀기)
@@ -748,37 +1007,83 @@ export class People {
     p.heart += (hr - p.heart) * Math.min(1, dt * 0.8);
   }
 
+  /** 상태·활동 → HumanCrowd 동작 이름 */
+  motionOf(p) {
+    const st = p.state, act = p.activity, spd = p.anim.spd;
+    if (st === 'shocked') return 'shock';
+    if (st === 'swept') return 'struggle';
+    if (p.fallT > 0) return 'fall';
+    if (p.getUpT > 0) {
+      const pa = p.prevAct;
+      return p.getUpT > 0.45 ? (pa === 'sunbathe' ? (p.i & 1 ? 'lie' : 'lieBack') : pa === 'lounger' ? 'lieBack' : pa === 'dig' ? 'dig' : 'sitGround') : 'crouch';
+    }
+    if (p.frozenT > 0) return p.type === 'child' ? 'cover' : 'idle';
+    if (st === 'normal' && this.env && this.env.quake > 0.25 && p.composure < 0.75 && act !== 'swim') return 'cover';
+    if (st === 'roof') return p.anim.wave > 0.5 ? 'wave' : p.emotion === 'sad' && p.composure < 0.6 ? 'cry' : 'idle';
+    if (st === 'safe') {
+      if (p.emotion === 'sad' && p.composure < 0.6) return 'cry';
+      if (spd > 0.3) return 'walk';
+      if (p.lostFamily && p.safeT > 20 && p.altruism > 0.6) return 'hug';
+      return p.curiosity > 0.75 && p.safeT > 15 ? 'phone' : 'idle';
+    }
+    if (st === 'evac') {
+      if (p.swimmer && p.depth > 0.6) return 'swim';
+      if (spd > 2.1) return p.fear > 0.8 && p.composure < 0.4 ? 'panic' : 'run';
+      return spd > 0.25 ? 'walk' : 'idle';
+    }
+    if (p.act) return p.act;
+    if (act === 'swim') return spd > 0.3 ? 'swim' : 'tread';
+    if (spd > 0.3) return spd > 2.2 ? 'run' : 'walk';
+    switch (act) {
+      case 'sunbathe': return p.i & 1 ? 'lie' : 'lieBack';
+      case 'lounger': return 'lieBack';
+      case 'sitTowel': case 'sitShade': case 'sit': return 'sitGround';
+      case 'dig': return 'dig';
+      case 'selfie': return 'phone';
+      case 'gawk': return p.fear < 0.45 ? 'phone' : 'idle';
+      case 'volley': case 'catch': return 'idle';
+      case 'wade': return 'idle';
+      default: return 'idle';
+    }
+  }
+
+  expressionOf(p) {
+    if (p.state === 'shocked') return 'pain';
+    if (p.emotion === 'calm' && p.state === 'normal' && (LEISURE.has(p.activity) || p.activity === 'swim') && (p.i % 3)) return 'happy';
+    return EXPR[p.emotion] || 'neutral';
+  }
+
   /* ───────────────────────── 애니메이션 · 렌더 ───────────────────────── */
-  render(dt, camPos, showMarkers, selected, hideId = -1) {
-    const A = this.mesh.instanceMatrix.array, H = this.heads.instanceMatrix.array, HR = this.hair.instanceMatrix.array, HT = this.hats.instanceMatrix.array;
+  render(dt, camera, showMarkers, selected, hideId = -1) {
+    const camPos = camera.position;
     const pos = this.markers.geometry.attributes.position.array, col = this.markers.geometry.attributes.color.array;
-    const camFar = camPos.y > 500;
+    const C = this.crowd, sim = this.ctx.sim;
     for (const p of this.list) {
       const i = p.i;
       const c = this.emoColors[p.emotion] || this.emoColors.calm;
-      const hidden = p.state === 'missing' || p.state === 'inside' || i === hideId;
+      const hidden = p.state === 'missing' || p.state === 'inside';
       pos[i * 3] = p.x; pos[i * 3 + 1] = hidden ? 1e7 : p.y + p.height + 2; pos[i * 3 + 2] = p.z;
       col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-      const d2 = (p.x - camPos.x) ** 2 + (p.z - camPos.z) ** 2;
-      if (i === hideId && p.state !== 'missing') this.animate(p, dt);   // 관찰 시점 대상: 보이지 않아도 자세 상태는 갱신
-      if (hidden || (camFar && d2 > 1.2e6) || d2 > 9e6) {
-        for (let k = 0; k < PARTS; k++) zero(A, (i * PARTS + k) * 16);
-        zero(H, i * 16); zero(HR, i * 16); zero(HT, i * 16);
-        continue;
-      }
+      if (hidden) { C.set(p.cid, { visible: false }); continue; }
       this.animate(p, dt);
-      this.pose(p, A, H, HR, HT);
+      const motion = this.motionOf(p);
+      let y = p.y + (p.seatY && p.state === 'normal' && p.getUpT <= 0 ? 0 : 0);
+      if (motion === 'swim' || motion === 'tread' || motion === 'struggle') { sim.sample(p.x, p.z, tmpS); y = Math.max(this.ctx.terrain.groundAt(p.x, p.z) - 0.3, tmpS.eta - p.height * 0.82); }
+      const act = p.act === motion ? p.actT : motion === 'fall' ? 1 - Math.min(1, p.fallT / 2.6) : null;
+      C.set(p.cid, {
+        x: p.x, y, z: p.z, yaw: p.yaw, motion, speed: p.anim.spd, turnRate: p.turnRate || 0, action: act,
+        look: p.anim.head || 0, expression: this.expressionOf(p), visible: i !== hideId,
+      });
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this.heads.instanceMatrix.needsUpdate = this.hair.instanceMatrix.needsUpdate = this.hats.instanceMatrix.needsUpdate = true;
+    C.update(this.paused ? 0 : dt, camera);
     this.markers.geometry.attributes.position.needsUpdate = true;
     this.markers.geometry.attributes.color.needsUpdate = true;
     this.markers.visible = showMarkers;
     if (selected && selected.state !== 'missing') {
       this.ring.visible = true;
       this.ring.position.set(selected.x, selected.y + 0.08, selected.z);
-      const s = showMarkers ? Math.max(1, camPos.distanceTo(this.ring.position) / 60) : 1;
-      this.ring.scale.setScalar(s);
+      const sc = showMarkers ? Math.max(1, camPos.distanceTo(this.ring.position) / 60) : 1;
+      this.ring.scale.setScalar(sc);
     } else this.ring.visible = false;
   }
 
@@ -808,127 +1113,9 @@ export class People {
     if (swept || A.swim > 0.5) p.phase += dt * 4;
   }
 
-  pose(p, A, H, HR, HT) {
-    const an = p.anim, Hh = p.height, ap = p.ap;
-    const child = p.type === 'child';
-    const thigh = 0.245 * Hh, shin = 0.235 * Hh, torso = 0.29 * Hh;
-    const headR = (child ? 0.078 : 0.063) * Hh;
-    const shW = ap.shoulders * Hh, hipW = 0.05 * Hh;
-    const uArm = 0.165 * Hh, fArm = 0.16 * Hh;
-    const run = clamp01((an.spd - 1.8) / 2), walk = clamp01(an.spd / 1.2);
-    const ph = p.phase;
-    // 몸통 기울기 · 자세
-    let lean = 0.05 + run * 0.22 + (p.type === 'elder' ? 0.28 : 0) - an.sit * 0.05;
-    let tilt = lean + an.fall * (Math.PI / 2 - lean);
-    let roll = 0;
-    if (an.swim > 0.01) {
-      const sw = p.state === 'swept' ? 1.25 + Math.sin(an.tumble * 0.7 + p.i) * 0.35 : 1.35;
-      tilt = tilt * (1 - an.swim) + sw * an.swim;
-      if (p.state === 'swept') roll = Math.sin(an.tumble * 0.45 + p.i * 1.3) * 1.6 * an.swim;
-    }
-    const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
-    const f0x = sy, f0z = cy, r0x = -cy, r0z = sy;
-    const ct = Math.cos(tilt), st = Math.sin(tilt);
-    const Ux = f0x * st, Uy = ct, Uz = f0z * st;
-    let Fx = f0x * ct, Fy = -st, Fz = f0z * ct;
-    const cr = Math.cos(roll), sr = Math.sin(roll);
-    Fx = Fx * cr + r0x * sr; Fy = Fy * cr; Fz = Fz * cr + r0z * sr;
-    // R = F × U
-    const Rx = Fy * Uz - Fz * Uy, Ry = Fz * Ux - Fx * Uz, Rz = Fx * Uy - Fy * Ux;
-    // 다리 각도
-    const amp = 0.42 * walk + run * 0.38;
-    let hipL = amp * Math.sin(ph), hipR = amp * Math.sin(ph + Math.PI);
-    let kneeL = 0.08 + (0.35 * walk + run * 1.1) * Math.max(0, Math.sin(ph + 1.9)), kneeR = 0.08 + (0.35 * walk + run * 1.1) * Math.max(0, Math.sin(ph + Math.PI + 1.9));
-    // 웅크림 / 앉기
-    const cr2 = Math.max(an.crouch, an.sit);
-    hipL = hipL * (1 - cr2) + (an.sit > an.crouch ? 1.5 : 1.25) * cr2; hipR = hipR * (1 - cr2) + (an.sit > an.crouch ? 1.45 : 1.25) * cr2;
-    kneeL = kneeL * (1 - cr2) + (an.sit > an.crouch ? 0.25 : 2.1) * cr2; kneeR = kneeR * (1 - cr2) + (an.sit > an.crouch ? 0.35 : 2.1) * cr2;
-    if (an.swim > 0.01) {
-      const kick = Math.sin(ph * 1.6) * 0.45;
-      hipL = hipL * (1 - an.swim) + kick * an.swim; hipR = hipR * (1 - an.swim) - kick * an.swim;
-      kneeL = kneeL * (1 - an.swim) + 0.3 * an.swim; kneeR = kneeR * (1 - an.swim) + 0.3 * an.swim;
-    }
-    const legDir = (a) => [-Ux * Math.cos(a) + Fx * Math.sin(a), -Uy * Math.cos(a) + Fy * Math.sin(a), -Uz * Math.cos(a) + Fz * Math.sin(a)];
-    const tL = legDir(hipL), sL = legDir(hipL - kneeL), tR = legDir(hipR), sR = legDir(hipR - kneeR);
-    // 골반 위치: 낮은 발이 지면에 닿도록
-    let px = p.x, pz = p.z, py;
-    const extL = -(tL[1] * thigh + sL[1] * shin), extR = -(tR[1] * thigh + sR[1] * shin);
-    const standY = p.y + Math.max(extL, extR, 0.15 * Hh) + 0.02 * Hh;
-    const lieY = p.y + 0.11 * Hh;
-    py = standY * (1 - an.fall) + lieY * an.fall;
-    if (an.sit > 0.01) py = py * (1 - an.sit) + (p.y + 0.12 * Hh) * an.sit;
-    if (an.swim > 0.01) py = py * (1 - an.swim) + (p.y + 0.06 * Hh) * an.swim;
-    if (an.fall > 0.01) { px -= Fx * 0 + Ux * 0.45 * Hh * an.fall * 0; }
-    const pel = [px, py, pz];
-    const hipLp = [px - Rx * hipW, py - Ry * hipW, pz - Rz * hipW], hipRp = [px + Rx * hipW, py + Ry * hipW, pz + Rz * hipW];
-    const kL = add(hipLp, tL, thigh), fL = add(kL, sL, shin), kR = add(hipRp, tR, thigh), fR = add(kR, sR, shin);
-    const chest = [px + Ux * torso, py + Uy * torso, pz + Uz * torso];
-    const b = p.i * PARTS;
-    const W = ap.girth;
-    setPart(A, b + 0, [px + Ux * 0.04 * Hh, py + Uy * 0.04 * Hh, pz + Uz * 0.04 * Hh], chest, shW * 0.78 * W, shW * 0.5 * W, Fx, Fy, Fz);
-    setPart(A, b + 1, [px - Ux * 0.04 * Hh, py - Uy * 0.04 * Hh, pz - Uz * 0.04 * Hh], [px + Ux * 0.07 * Hh, py + Uy * 0.07 * Hh, pz + Uz * 0.07 * Hh], hipW * (ap.shorts === 2 ? 2.3 : 1.75) * W, hipW * 1.2 * W, Fx, Fy, Fz);
-    setPart(A, b + 6, hipLp, kL, 0.058 * Hh * W, 0.058 * Hh * W, Fx, Fy, Fz);
-    setPart(A, b + 7, kL, fL, 0.044 * Hh, 0.044 * Hh, Fx, Fy, Fz);
-    setPart(A, b + 8, hipRp, kR, 0.058 * Hh * W, 0.058 * Hh * W, Fx, Fy, Fz);
-    setPart(A, b + 9, kR, fR, 0.044 * Hh, 0.044 * Hh, Fx, Fy, Fz);
-    // 팔
-    const t = this.env ? this.env.simTime : 0;
-    const armSwing = (0.5 * walk + run * 0.5) * 0.9;
-    let sL2 = -armSwing * Math.sin(ph) * 0.9, sR2 = -armSwing * Math.sin(ph + Math.PI) * 0.9;
-    let eL = 0.15 + run * 1.3, eR = eL, abL = 0.08, abR = 0.08;
-    const blend = (cur, target, w) => cur * (1 - w) + target * w;
-    if (an.chat > 0.01) { const g = Math.sin(t * 2.3 + p.i) > 0.3 ? 1 : 0; sR2 = blend(sR2, 0.5 + 0.3 * Math.sin(t * 3 + p.i) * g, an.chat); eR = blend(eR, 1.3, an.chat * g); }
-    if (an.phone > 0.01) { sR2 = blend(sR2, 1.35, an.phone); eR = blend(eR, 0.55, an.phone); abR = blend(abR, -0.25, an.phone); }
-    if (an.arms > 0.01) {
-      const fl = Math.sin(t * 9 + p.i) * 0.5;
-      sL2 = blend(sL2, 2.7 + fl, an.arms); sR2 = blend(sR2, 2.7 - fl, an.arms);
-      eL = blend(eL, 0.4, an.arms); eR = blend(eR, 0.4, an.arms); abL = blend(abL, 0.35, an.arms); abR = blend(abR, 0.35, an.arms);
-    }
-    if (an.crouch > 0.01) { sL2 = blend(sL2, 2.4, an.crouch); sR2 = blend(sR2, 2.4, an.crouch); eL = blend(eL, 2.2, an.crouch); eR = blend(eR, 2.2, an.crouch); abL = blend(abL, 0.6, an.crouch); abR = blend(abR, 0.6, an.crouch); }
-    if (p.frozenT > 0) { sL2 = 2.0; sR2 = 2.0; eL = eR = 2.4; abL = abR = 0.7; }
-    if (an.wave > 0.01) { sR2 = blend(sR2, 2.9, an.wave); eR = blend(eR, 0.3, an.wave); abR = blend(abR, 0.25 + 0.35 * Math.sin(t * 7 + p.i), an.wave); }
-    if (an.cry > 0.01) { sL2 = blend(sL2, 1.2, an.cry); sR2 = blend(sR2, 1.2, an.cry); eL = blend(eL, 2.5, an.cry); eR = blend(eR, 2.5, an.cry); abL = blend(abL, -0.2, an.cry); abR = blend(abR, -0.2, an.cry); }
-    if (an.swim > 0.01 && p.state !== 'swept') { const st2 = t * 2.4 + p.i; sL2 = blend(sL2, 1.6 + Math.sin(st2) * 1.4, an.swim); sR2 = blend(sR2, 1.6 + Math.sin(st2 + Math.PI) * 1.4, an.swim); }
-    if (p.escort) { const e = p.escort; const ex = e.x - p.x, ez = e.z - p.z; const side = ex * Rx + ez * Rz; if (side > 0) { sR2 = 0.55; eR = 0.2; abR = 0.5; } else { sL2 = 0.55; eL = 0.2; abL = 0.5; } }
-    const shY = -0.025 * Hh;
-    const shL = [chest[0] - Rx * shW + Ux * shY, chest[1] - Ry * shW + Uy * shY, chest[2] - Rz * shW + Uz * shY];
-    const shR = [chest[0] + Rx * shW + Ux * shY, chest[1] + Ry * shW + Uy * shY, chest[2] + Rz * shW + Uz * shY];
-    const armDir = (s, ab, side) => {
-      const ca = Math.cos(s), sa = Math.sin(s), cb = Math.cos(ab), sb = Math.sin(ab);
-      const dx = (-Ux * ca + Fx * sa) * cb + Rx * side * sb, dy = (-Uy * ca + Fy * sa) * cb + Ry * side * sb, dz = (-Uz * ca + Fz * sa) * cb + Rz * side * sb;
-      return [dx, dy, dz];
-    };
-    const uL = armDir(sL2, abL, -1), lL = armDir(sL2 + eL, abL * 0.5, -1), uR = armDir(sR2, abR, 1), lR = armDir(sR2 + eR, abR * 0.5, 1);
-    const elL = add(shL, uL, uArm), haL = add(elL, lL, fArm), elR = add(shR, uR, uArm), haR = add(elR, lR, fArm);
-    setPart(A, b + 2, shL, elL, 0.037 * Hh * W, 0.037 * Hh * W, Fx, Fy, Fz);
-    setPart(A, b + 3, elL, haL, 0.031 * Hh, 0.031 * Hh, Fx, Fy, Fz);
-    setPart(A, b + 4, shR, elR, 0.037 * Hh * W, 0.037 * Hh * W, Fx, Fy, Fz);
-    setPart(A, b + 5, elR, haR, 0.031 * Hh, 0.031 * Hh, Fx, Fy, Fz);
-    // 지팡이 (노인, 서 있을 때)
-    if (p.type === 'elder' && an.fall < 0.5 && an.swim < 0.5 && an.arms < 0.5 && p.i % 2 === 0) {
-      setPart(A, b + 10, haR, [haR[0] + Fx * 0.08, p.y, haR[2] + Fz * 0.08], 0.012 * Hh, 0.012 * Hh, Fx, Fy, Fz);
-    } else zero(A, (b + 10) * 16);
-    // 머리
-    const neck = 0.04 * Hh;
-    const cry = an.cry * 0.5;
-    const hu = [Ux * Math.cos(cry) + Fx * Math.sin(cry), Uy * Math.cos(cry) + Fy * Math.sin(cry), Uz * Math.cos(cry) + Fz * Math.sin(cry)];
-    const hc = [chest[0] + Ux * neck + hu[0] * headR * 1.05, chest[1] + Uy * neck + hu[1] * headR * 1.05, chest[2] + Uz * neck + hu[2] * headR * 1.05];
-    writeMat(H, p.i * 16, hc[0], hc[1], hc[2], headR * 0.92, headR * 1.05, headR);
-    // 고개 방향 (머리카락 오프셋이 시선을 보여줌)
-    const hy = p.yaw + an.head;
-    const fhx = Math.sin(hy), fhz = Math.cos(hy);
-    if (ap.hairStyle === 2) zero(HR, p.i * 16);
-    else if (ap.hairStyle === 1) writeMat(HR, p.i * 16, hc[0] - fhx * headR * 0.22, hc[1] - headR * 0.18, hc[2] - fhz * headR * 0.22, headR * 1.02, headR * 1.3, headR * 1.02);
-    else if (ap.hairStyle === 3) writeMat(HR, p.i * 16, hc[0] - fhx * headR * 0.3, hc[1] + headR * 0.15, hc[2] - fhz * headR * 0.3, headR * 0.98, headR * 0.98, headR * 0.98);
-    else writeMat(HR, p.i * 16, hc[0] - fhx * headR * 0.16, hc[1] + headR * 0.16, hc[2] - fhz * headR * 0.16, headR * 0.98, headR * 0.86, headR * 0.98);
-    if (ap.hat && an.swim < 0.5) {
-      const hs = ap.hat === 2 ? 1.9 : ap.hat === 3 ? 1.08 : 1.02;
-      const hh = ap.hat === 2 ? 0.25 : ap.hat === 3 ? 0.6 : 0.5;
-      writeMat(HT, p.i * 16, hc[0] + Ux * headR * 0.7, hc[1] + Uy * headR * 0.7, hc[2] + Uz * headR * 0.7, headR * hs, headR * hh, headR * hs);
-    } else zero(HT, p.i * 16);
-  }
-
   headPos(p, out) {
+    const P = this.crowd.people[p.cid];
+    if (P && P.head[1] !== 0 && Math.abs(P.head[0] - p.x) < 3) return out.set(P.head[0], P.head[1], P.head[2]);
     if (p.state === 'swept') return out.set(p.x, p.y + p.height * 0.12, p.z);
     const base = p.anim.sit > 0.5 ? 0.55 : p.anim.crouch > 0.5 ? 0.55 : p.anim.fall > 0.5 ? 0.15 : 0.93;
     return out.set(p.x, p.y + p.height * base, p.z);
@@ -964,6 +1151,32 @@ export class People {
 }
 
 /** 해안선 기준 육지 쪽 단위벡터 */
+/** 사람 → 군중 렌더러 외형 (체형 변형 · 옷 길이 · 수영복 · 머리 모양 · 모자) */
+function crowdDesc(p) {
+  const a = p.ap, beach = p.homeZone === 'beach' && (p.role === 'tourist' || p.role === 'kid' || p.role === 'surfer');
+  const variant = p.type === 'child' ? 'child' : p.type === 'elder' ? (p.sex === 'M' ? 'elderM' : 'elderF') : p.sex === 'M' ? 'man' : 'woman';
+  // 부속 비트: 1 짧은머리 2 긴머리 3 포니테일 4 올림머리 5 모자 6 챙모자 7 안전모 8 치마
+  let parts = 0;
+  if (a.hairStyle === 0) parts |= 1 << 1;
+  else if (a.hairStyle === 1) parts |= (1 << 2) | (1 << 1);
+  else if (a.hairStyle === 3) parts |= (p.i % 2 ? 1 << 3 : 1 << 4) | (1 << 1);
+  if (a.hat === 1) parts |= 1 << 5; else if (a.hat === 2) parts |= 1 << 6; else if (a.hat === 3) parts |= 1 << 7;
+  let sleeve = a.sleeves ? 1.05 : 0.38, pants = a.shorts === 1 ? 0.42 : a.shorts === 2 ? -1 : 1.05, topKind = 0;
+  let top = a.top, bottom = a.bottom, shoes = 0x2a2a2e;
+  if (a.shorts === 2) parts |= 1 << 8;
+  if (p.role === 'office') shoes = 0x111111; else if (p.role === 'worker') shoes = 0x4a3a2a; else if (p.type === 'child') shoes = 0xe8e8e8;
+  if (beach) {
+    shoes = a.skin; parts &= ~(1 << 8);
+    if (p.role === 'surfer') { sleeve = 1.05; pants = 0.9; topKind = 3; top = bottom = 0x15181c; }
+    else if (p.sex === 'M') { sleeve = -1; pants = 0.3; topKind = 2; }
+    else if (p.type === 'child') { sleeve = -1; pants = 0.22; topKind = 3; top = bottom = a.top; }
+    else if (p.i % 3 === 0) { sleeve = -1; pants = 0.18; topKind = 3; bottom = top; }
+    else { sleeve = -1; pants = 0.18; topKind = 1; bottom = top; }
+  }
+  const kind = p.type === 'child' ? 'child' : p.type === 'elder' ? 'elder' : 'adult';
+  return { variant, height: p.height, seed: p.i * 7 + 3, kind, skin: a.skin, hair: a.hair, top, bottom, shoes, hat: a.hatColor, sleeve, pants, topKind, parts };
+}
+
 function landward(x, out) {
   const s = coastSlope(x), l = Math.hypot(s, 1);
   out.x = s / l; out.z = -1 / l;
@@ -972,29 +1185,4 @@ function landward(x, out) {
 
 function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= TAU; while (d < -Math.PI) d += TAU; return d; }
 function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
-function add(a, d, l) { return [a[0] + d[0] * l, a[1] + d[1] * l, a[2] + d[2] * l]; }
-function zero(arr, o) { for (let i = 0; i < 16; i++) arr[o + i] = 0; }
-function writeMat(arr, o, x, y, z, sx, sy, sz) {
-  arr[o] = sx; arr[o + 1] = 0; arr[o + 2] = 0; arr[o + 3] = 0;
-  arr[o + 4] = 0; arr[o + 5] = sy; arr[o + 6] = 0; arr[o + 7] = 0;
-  arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = sz; arr[o + 11] = 0;
-  arr[o + 12] = x; arr[o + 13] = y; arr[o + 14] = z; arr[o + 15] = 1;
-}
 /** 캡슐 부위: A→B 축, 반지름 rx(좌우)·rz(앞뒤), 앞방향 F 기준 */
-function setPart(arr, idx, a, b, rx, rz, fx, fy, fz) {
-  let ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-  const len = Math.hypot(ux, uy, uz) || 1e-4;
-  ux /= len; uy /= len; uz /= len;
-  let d = fx * ux + fy * uy + fz * uz;
-  let Fx = fx - ux * d, Fy = fy - uy * d, Fz = fz - uz * d;
-  let fl = Math.hypot(Fx, Fy, Fz);
-  if (fl < 1e-3) { Fx = 0; Fy = 0; Fz = 1; d = uz; Fx -= ux * d; Fy -= uy * d; Fz -= uz * d; fl = Math.hypot(Fx, Fy, Fz) || 1; }
-  Fx /= fl; Fy /= fl; Fz /= fl;
-  const Rx = uy * Fz - uz * Fy, Ry = uz * Fx - ux * Fz, Rz = ux * Fy - uy * Fx;
-  const sx = rx * 2, sy = len / 2, sz = rz * 2;
-  const o = idx * 16;
-  arr[o] = Rx * sx; arr[o + 1] = Ry * sx; arr[o + 2] = Rz * sx; arr[o + 3] = 0;
-  arr[o + 4] = ux * sy; arr[o + 5] = uy * sy; arr[o + 6] = uz * sy; arr[o + 7] = 0;
-  arr[o + 8] = Fx * sz; arr[o + 9] = Fy * sz; arr[o + 10] = Fz * sz; arr[o + 11] = 0;
-  arr[o + 12] = (a[0] + b[0]) / 2; arr[o + 13] = (a[1] + b[1]) / 2; arr[o + 14] = (a[2] + b[2]) / 2; arr[o + 15] = 1;
-}
