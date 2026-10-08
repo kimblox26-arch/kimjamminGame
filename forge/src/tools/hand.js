@@ -285,7 +285,9 @@ function nailGeo(c) {
     const free = s > c.S[3] - 0.0005 ? 1 : 0, lunula = Math.max(0, 1 - v / 0.2) * (1 - u * u * 0.6);
     const pink = [0.55, 0.32, 0.28], white = [0.8, 0.72, 0.64];
     const t = Math.max(free * 0.85, lunula * 0.3);
-    col.push(pink[0] + (white[0] - pink[0]) * t, pink[1] + (white[1] - pink[1]) * t, pink[2] + (white[2] - pink[2]) * t);
+    const dirt = Math.exp(-(((s - (c.S[3] - 0.0003)) / 0.0005) ** 2)) * 0.55 + Math.max(0, Math.abs(u) - 0.8) * 1.2; // 손톱 밑 때 · 측면 그늘
+    const cc = [0, 1, 2].map((i) => pink[i] + (white[i] - pink[i]) * t);
+    col.push(...cc.map((x, i) => x + ([0.2, 0.16, 0.13][i] - x) * Math.min(0.7, dirt)));
   }
   for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) { const a = j * (NU + 1) + i; idx.push(a, a + NU + 1, a + 1, a + 1, a + NU + 1, a + NU + 2); }
   // 자유연 두께 (앞쪽 띠)
@@ -335,6 +337,7 @@ float vn(vec3 x) {
 }
 float lineG(float d, float w) { return exp(-d * d / (w * w)); }
 float lines(float a, float sp, float w) { float u = a / sp; float d = (u - floor(u + 0.5)) * sp; return exp(-d * d / (w * w)); }
+uniform vec4 uFlex[5];
 float bez(vec2 p, vec2 a, vec2 b, vec2 c) { // 2차 베지어까지 거리 (표본)
   float m = 1.0; vec2 q0 = a;
   for (int i = 1; i <= 12; i++) { float t = float(i) / 12.0; vec2 q1 = mix(mix(a, b, t), mix(b, c, t), t); vec2 e = q1 - q0; float h = clamp(dot(p - q0, e) / dot(e, e), 0.0, 1.0); m = min(m, length(p - q0 - e * h)); q0 = q1; }
@@ -343,9 +346,15 @@ float bez(vec2 p, vec2 a, vec2 b, vec2 c) { // 2차 베지어까지 거리 (표�
 // 높이장 (m). aj: 가까운 관절까지 축방향 거리, lat: 측면 좌표, nl: 손톱 뿌리 기준 거리
 float skinH(vec3 p, float aj, float lat, float nl, inout vec4 info) {
   float jt = floor(vH1.y + 0.5), dors = vH2.x, reg = vH2.z;
+  // 관절 굽힘량 (0 펴짐 ~ 1 완전 굽힘): 손등 주름은 펴지고 손바닥 주름은 깊어짐
+  float chn = vH2.w;
+  vec4 fv = chn < 0.5 ? uFlex[0] : chn < 1.5 ? uFlex[1] : chn < 2.5 ? uFlex[2] : chn < 3.5 ? uFlex[3] : uFlex[4];
+  float fl = jt < 0.5 ? fv.x : jt < 1.5 ? fv.y : jt < 2.5 ? fv.z : 0.0;
   float wF = clamp(1.5 - reg, 0.0, 1.0), wP = 1.0 - clamp(abs(reg - 2.0), 0.0, 1.0), wA = clamp(reg - 2.0, 0.0, 1.0);
   float dm = smoothstep(0.05, 0.55, dors), pm = smoothstep(0.0, 0.5, -dors);
   float h = 0.0, cr = 0.0, vein = 0.0, red = 0.0;
+  // 굽힌 관절 위 손등 피부가 당겨져 하얗게 됨
+  float taut = fl * dm * lineG(aj + (jt < 0.5 ? 0.0 : 0.0012), jt < 0.5 ? 0.0065 : 0.0045) * (1.0 - smoothstep(0.003, 0.0075, abs(lat))) * (jt < 2.5 ? 1.0 : 0.0);
   float wob = (vn(p * 900.0) - 0.5) * 0.00045;
   float a = aj + 22.0 * lat * lat + wob;
   bool thumb = vH2.w > 3.5;
@@ -360,8 +369,9 @@ float skinH(vec3 p, float aj, float lat, float nl, inout vec4 info) {
     float brk = smoothstep(0.25, 0.6, vn(vec3(lat * 1500.0 + li * 7.0, li, 1.7)));
     float fine = lines(aw, sp, 0.00016 + lr * 0.00008) * brk * (0.45 + lr * 0.75);
     float fold = jt > 0.5 && jt < 1.5 ? lines(a + 0.0005, 0.0034, 0.0008) * lineG(a, 0.003) : 0.0;
-    h -= env * (fine * (jt > 0.5 && jt < 1.5 ? 0.00013 : 0.00009) + fold * 0.00016);
-    cr += env * fine * 0.55; red += env * 0.22;
+    float slack = 1.0 - 0.75 * fl;
+    h -= env * (fine * (jt > 0.5 && jt < 1.5 ? 0.00013 : 0.00009) + fold * 0.00016) * slack;
+    cr += env * fine * 0.55 * slack; red += env * 0.22 * (1.0 - 0.6 * fl);
   }
   // ── 손바닥 쪽 굽힘 주름
   float latF = 1.0 - smoothstep(0.004, 0.0085, abs(lat));
@@ -371,7 +381,7 @@ float skinH(vec3 p, float aj, float lat, float nl, inout vec4 info) {
     else if (jt > 0.5 && jt < 1.5) c = lineG(aj + 0.0012, 0.0003) + lineG(aj - 0.0005, 0.00028) * 0.8;
     else if (jt < 0.5) c = thumb ? 0.0 : lineG(aj - 0.0168 + wob, 0.0004) + lineG(aj - 0.0145 + wob, 0.0003) * 0.5;
     if (thumb && jt > 0.5 && jt < 1.5) c = lineG(aj + 0.0006, 0.00035) + lineG(aj - 0.001, 0.0003) * 0.7;
-    c *= pm * latF * (wF + wP * 0.8);
+    c *= pm * latF * (wF + wP * 0.8) * (0.55 + 0.9 * fl);
     h -= c * 0.00032; cr += c;
   }
   // ── 손금 (손바닥)
@@ -424,7 +434,7 @@ float skinH(vec3 p, float aj, float lat, float nl, inout vec4 info) {
   h -= pore * 0.000014 * (1.0 - wP * pm * 0.6);
   h += (vn(p * 700.0) - 0.5) * 0.00002;
 #endif
-  info = vec4(cr, vein, red, wF);
+  info = vec4(cr, vein, red, taut);
   return h;
 }
 `;
@@ -436,7 +446,9 @@ function skinMaterial(detail) {
   });
   m.defines = { HAND_DETAIL: detail };
   m.customProgramCacheKey = () => 'forge-skin-' + detail;
+  m.userData.uFlex = { value: Array.from({ length: 5 }, () => new THREE.Vector4()) };
   m.onBeforeCompile = (sh) => {
+    sh.uniforms.uFlex = m.userData.uFlex;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec4 aH1; attribute vec4 aH2; attribute vec3 aFD; attribute vec3 aFS; attribute float aAO; varying float vAO;
@@ -485,6 +497,8 @@ varying vec3 vRest; varying vec3 vRN; varying vec4 vH1; varying vec4 vH2; varyin
   base = mix(base, vec3(0.42, 0.39, 0.5) * 0.6, clamp(skInfo.y, 0.0, 1.0) * 0.16);
   base *= 1.0 - clamp(skInfo.x, 0.0, 1.0) * 0.28;
   base = mix(base, base * vec3(1.02, 0.95, 0.9), clamp(vH2.z - 2.0, 0.0, 1.0));
+  base = mix(base, base * vec3(1.1, 1.17, 1.22), clamp(skInfo.w, 0.0, 1.0) * 0.55); // 당겨진 피부 창백
+  base = mix(base, vec3(0.12, 0.1, 0.085), clamp(skInfo.x, 0.0, 1.0) * 0.12 * (0.6 + palmar * 0.6)); // 주름에 낀 쇳가루 때
   diffuseColor.rgb = base;`);
     f = f.replace('#include <aomap_fragment>', `
   float ambientOcclusion = mix(1.0, vAO, 0.92);
@@ -496,7 +510,7 @@ varying vec3 vRest; varying vec3 vRN; varying vec4 vH1; varying vec4 vH2; varyin
     reflectedLight.indirectSpecular *= computeSpecularOcclusion( saturate( dot( geometryNormal, geometryViewDir ) ), ambientOcclusion, material.roughness );
   #endif`);
     f = f.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-  roughnessFactor = 0.47 + palmar * 0.08 + clamp(skInfo.x, 0.0, 1.0) * 0.15 - tipRed * 0.06;`);
+  roughnessFactor = 0.47 + palmar * 0.08 + clamp(skInfo.x, 0.0, 1.0) * 0.15 - tipRed * 0.06 - clamp(skInfo.w, 0.0, 1.0) * 0.1;`);
     f = f.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   normal = normalize(mat3(vS0, vS1, vS2) * skN);`);
     sh.fragmentShader = f;
@@ -519,7 +533,8 @@ export class HandModel {
     g.setIndex(P.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1));
     g.computeBoundingSphere();
     this.geo = g; this.tris = idx.length / 3; this.ms = performance.now() - t0;
-    this.skin = skinMaterial(quality === 'low' ? 0 : quality === 'medium' ? 1 : 2);
+    this.detail = quality === 'low' ? 0 : quality === 'medium' ? 1 : 2;
+    this.skin = skinMaterial(this.detail);
     this.nails = CH.map((c) => nailGeo(c));
     this.nailMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.32, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.2, specularIntensity: 0.6, envMapIntensity: 0.5, sheen: 0.2, sheenColor: new THREE.Color(1, 0.8, 0.75) });
     this.sleeve = sleeveGeo();
@@ -556,7 +571,8 @@ export class HandRig {
     for (let i = 0; i < 4; i++) { const c = CH[i]; let p = wrist; for (let k = 0; k < 3; k++) p = mk(c.J[k], p); }
     { const c = CH[4]; let p = wrist; for (let k = 0; k < 3; k++) p = mk(c.J[k], p); }
     this.bones = bones;
-    const mesh = (this.mesh = new THREE.SkinnedMesh(model.geo, model.skin));
+    this.skinMat = skinMaterial(model.detail); // 손마다 관절 굽힘 유니폼이 달라 재질 분리 (셰이더 프로그램은 공유)
+    const mesh = (this.mesh = new THREE.SkinnedMesh(model.geo, this.skinMat));
     mesh.add(root); mesh.frustumCulled = false; mesh.castShadow = false; mesh.receiveShadow = true;
     mesh.bind(new THREE.Skeleton(bones));
     this.inner.add(mesh);
@@ -615,6 +631,9 @@ export class HandRig {
     B[BONE.thumb(1)].quaternion.setFromAxisAngle(t.flex, x[19]);
     B[BONE.thumb(2)].quaternion.setFromAxisAngle(t.flex, x[20]);
     B[BONE.wrist].quaternion.setFromAxisAngle(AX, x[21]).multiply(_q.setFromAxisAngle(UPY, x[22]));
+    const U = this.skinMat.userData.uFlex.value, k = (v, m) => Math.max(0, Math.min(1, v / m));
+    for (let f = 0; f < 4; f++) U[f].set(k(x[f * 4], 1.4), k(x[f * 4 + 1], 1.6), k(x[f * 4 + 2], 1.0), 0);
+    U[4].set(k(x[16], 0.7), k(x[19], 0.6), k(x[20], 0.6), 0);
   }
   // 손목 기준(바인드) 좌표에서 관절 위치 계산 (FK, IK용)
   static fk(ci, ang, out) {
