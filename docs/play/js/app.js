@@ -603,21 +603,35 @@
   }
 
   // ---------- 로그인 / 회원가입 ----------
+  let suPick = null, setupPick = null; // 📚 중·고등학생이 고른 학년
+  function renderGradePick(sel, lv, cur) {
+    $(sel).innerHTML = S.gradesOf(lv).map(g => `<button type="button" class="gp${g === cur ? ' on' : ''}" data-g="${g}">${S.gradeName(g)}</button>`).join('');
+  }
   function initAuth() {
-    $$('.tab').forEach(t => { t.onclick = () => {
-      $$('.tab').forEach(x => x.classList.toggle('on', x === t));
-      $('#loginForm').hidden = t.dataset.tab !== 'login';
-      $('#signupForm').hidden = t.dataset.tab !== 'signup';
+    const authTabs = $$('#auth .tab');
+    authTabs.forEach(t => { t.onclick = () => { // 로그인 · 회원가입 · 👩‍🏫 선생님 가입
+      const tab = t.dataset.tab, tc = tab === 'teacher';
+      authTabs.forEach(x => x.classList.toggle('on', x === t));
+      $('#loginForm').hidden = tab !== 'login';
+      $('#signupForm').hidden = tab === 'login';
+      $('#tcIntro').hidden = !tc;
+      $('#suTeacher').checked = tc; $('#suTeacher').onchange();
+      $('#suGo').textContent = tc ? '👩‍🏫 선생님 계정 만들기' : '회원가입';
+      setErr('#suErr'); setErr('#liErr');
     }; });
     const sy = S.schoolYear(), birth = $('#suBirth');
     birth.innerHTML = '<option value="">출생연도를 골라요</option>' +
       Array.from({ length: 17 }, (_, k) => sy - 4 - k).map(y => `<option value="${y}">${y}년생</option>`).join('');
-    $('#suTeacher').onchange = () => { const t = $('#suTeacher').checked; $('#suBirthRow').hidden = t; $('#suBirth').required = !t; $('#suGrade').textContent = t ? '👩‍🏫 선생님 계정은 게임 대신 반 학생들의 공부 기록을 봐요.' : ''; $('#suGrade').className = 'note'; };
+    $('#suTeacher').onchange = () => { const t = $('#suTeacher').checked; $('#suBirthRow').hidden = t; $('#suBirth').required = !t; if (t) { $('#suGrade').textContent = ''; $('#suGradePick').hidden = true; } else birth.onchange(); };
+    $('#suGradePick').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; suPick = +b.dataset.g; renderGradePick('#suGradePick', S.levelOf(suPick), suPick); };
     birth.onchange = () => {
       const y = +birth.value, g = S.gradeFromBirthYear(y), ok = g >= 1 && g <= S.MAX_GRADE, lv = S.levelOf(g), there = lv === LVL() || !!(window.MLE_MAPS && window.MLE_MAPS[lv]);
       $('#suGrade').textContent = !y ? '' : !ok ? `❌ 초등학생부터 고등학생까지(${sy - 18}~${sy - 7}년생)만 가입할 수 있어요.`
         : !there ? `❌ ${S.LEVEL_NAME[lv]} 서버는 게임 사이트(math-land-eater.github.io/play)에서 열려요.` : `✅ ${y}년생 → ${S.gradeName(g)} (${S.serverName(S.serverOf(g))}에서 놀아요)`;
       $('#suGrade').className = 'note ' + (y && !ok ? 'bad' : '');
+      suPick = ok && lv !== 'e' ? g : null; // 📚 중·고등학생은 학년을 직접 고를 수 있다
+      $('#suGradePick').hidden = !suPick;
+      if (suPick) { $('#suGrade').textContent += ' · 학년이 다르면 아래에서 골라요'; renderGradePick('#suGradePick', lv, suPick); }
     };
     $('#loginForm').onsubmit = async e => {
       e.preventDefault();
@@ -629,7 +643,7 @@
     $('#signupForm').onsubmit = async e => {
       e.preventDefault();
       if ($('#suPw').value !== $('#suPw2').value) return setErr('#suErr', '비밀번호가 서로 달라요.');
-      const d = await api('/api/signup', { username: $('#suId').value.trim(), password: $('#suPw').value, birthYear: +$('#suBirth').value, teacher: $('#suTeacher').checked });
+      const d = await api('/api/signup', { username: $('#suId').value.trim(), password: $('#suPw').value, birthYear: +$('#suBirth').value, teacher: $('#suTeacher').checked, ...(suPick && !$('#suTeacher').checked ? { gradePick: suPick } : {}) });
       if (d.error) return setErr('#suErr', d.error);
       setErr('#suErr');
       toast('🎉 회원가입 완료! 환영해요.', 'ok');
@@ -705,7 +719,7 @@
     $('#stBack').onclick = () => startGame();
     $('#setupForm').onsubmit = async e => {
       e.preventDefault();
-      const body = { semester, nickname: $('#stNick').value.trim() };
+      const body = { semester, nickname: $('#stNick').value.trim(), ...(setupPick ? { grade: setupPick } : {}) };
       const cname = $('#stCName').value.trim();
       if (!$('#stCustom').hidden && cname) {
         const { sido, sigungu } = area(), di = G.districts.findIndex(d => d.sido === sido && d.sigungu === sigungu);
@@ -789,7 +803,10 @@
     markGone(d.gone);
     const p = me.profile || {}, m = new Date().getMonth(), cur = p.schoolId != null ? schools[p.schoolId] : null;
     $('#stGrade').innerHTML = me.role ? `<b>${srvName()}</b> <span class="muted">(${S.ROLE_NICK[me.role]} 계정 · 🛠️ 관리 창에서 서버를 바꿀 수 있어요)</span>`
+      : me.birthGrade && S.levelOf(me.birthGrade) !== 'e' ? `<div class="grade-pick" id="stGradePick"></div><span class="muted">${me.birthYear}년생 · 학년이 다르면 골라요 (같은 학교급 안에서)</span>`
       : `<b>${S.gradeName(me.grade)}</b> <span class="muted">(${me.birthYear}년생 · 나이 인증으로 정해졌어요 · ${srvName()})</span>`;
+    setupPick = null;
+    if ($('#stGradePick')) { renderGradePick('#stGradePick', LVL(), me.grade); $('#stGradePick').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; setupPick = +b.dataset.g; renderGradePick('#stGradePick', LVL(), setupPick); }; }
     setSemester(p.semester || (m >= 1 && m <= 6 ? 1 : 2));
     $('#stNick').value = me.role ? S.ROLE_NICK[me.role] : p.nickname || '';
     $('#stNick').readOnly = !!me.role;
@@ -811,7 +828,7 @@
   const tiles = new Map();
   let vw = 0, vh = 0, dpr = 1, queued = false, ambient = 0, tick = 0, flashes = [], frontier = new Set(), defended = new Set(), owned = new Set();
   let exits = new Set(), exitLines = [], offerOf = new Map(), myLand = 0; // 탈출길, 팔려고 내놓은 땅, 우리 학교 땅 칸 수
-  const NEUTRAL = [196, 201, 208], NEUTRAL_JP = [214, 196, 188], MINE = [255, 193, 7]; // 일본 빈 땅은 살짝 붉은 회색
+  const NEUTRAL = [207, 226, 190], NEUTRAL_JP = [234, 219, 190], MINE = [255, 196, 18]; // 빈 땅은 연한 풀밭, 일본 빈 땅은 모래빛
   const colorCache = new Map();
   const baseS = () => TILE / Math.max(G.W, G.H);
   const cellPx = () => SPACING * view.s;
@@ -861,7 +878,7 @@
       else {
         let h = (o * 137.508) % 360;
         if (h > 32 && h < 70) h += 48; // 우리 학교 노란색과 헷갈리지 않게
-        c = hsl(h, 0.62, 0.56);
+        c = hsl(h, 0.7, 0.57); // 조금 더 선명하게
       }
       colorCache.set(o, c);
     }
@@ -876,7 +893,7 @@
     return (W.def[i] > 0 ? 'd' : 'o') + o;
   }
   function groupStyle(key) {
-    if (key[0] === 'n' || key[0] === 'j') return { fill: shade(key[0] === 'j' ? NEUTRAL_JP : NEUTRAL, [1, 0.97, 1.03][+key[1]]), line: 'rgba(255,255,255,.8)' };
+    if (key[0] === 'n' || key[0] === 'j') return { fill: shade(key[0] === 'j' ? NEUTRAL_JP : NEUTRAL, [1, 0.975, 1.025][+key[1]]), line: 'rgba(255,255,255,.72)' };
     const c = rgbOf(+key.slice(1)), f = key[0] === 'd' ? 0.8 : 1;
     return { fill: shade(c, f), line: shade(c, 0.6 * f) };
   }
@@ -888,9 +905,11 @@
       if (!p) groups.set(k, p = new Path2D());
       p.addPath(pathOf(i));
     }
-    for (const [k, p] of groups) {
-      const st = groupStyle(k);
-      g.fillStyle = st.fill; g.fill(p);
+    const list = [...groups].sort((a, b) => ((b[0][0] === 'n' || b[0][0] === 'j') - (a[0][0] === 'n' || a[0][0] === 'j'))); // 빈 땅을 먼저, 학교 땅은 위에
+    for (const [k, p] of list) {
+      const st = groupStyle(k), land = k[0] !== 'n' && k[0] !== 'j';
+      if (land && lines) { g.save(); g.shadowColor = 'rgba(16,28,64,.38)'; g.shadowOffsetY = 1.6; g.shadowBlur = 2.5; g.fillStyle = st.fill; g.fill(p); g.restore(); } // 학교 땅은 살짝 솟아오른 판처럼
+      else { g.fillStyle = st.fill; g.fill(p); }
       g.strokeStyle = lines ? st.line : st.fill; g.lineWidth = lines ? Math.min(2.2, 0.6 + (SPACING * (1 / px)) / 70) * px : px; g.stroke(p);
     }
   }
@@ -1117,21 +1136,25 @@
     ctx.moveTo(x, y - r); ctx.lineTo(x + r, y - r * 0.6); ctx.lineTo(x + r * 0.8, y + r * 0.5); ctx.lineTo(x, y + r * 1.05); ctx.lineTo(x - r * 0.8, y + r * 0.5); ctx.lineTo(x - r, y - r * 0.6); ctx.closePath();
     ctx.fillStyle = '#2f6fd6'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
   }
-  function schoolMark(x, y, r, sid, withLabel) {
-    const mine = sid === mySid();
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 7);
-    ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = Math.max(2, r * 0.28); ctx.strokeStyle = mine ? '#e8553d' : cssColor(sid); ctx.stroke();
+  function schoolMark(x, y, r, sid, withLabel) { // 🏫 학교 본부: 그림자 + 동그란 배지 + 지붕
+    const mine = sid === mySid(), col = mine ? '#ff5a3c' : cssColor(sid);
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.95, r * 0.95, r * 0.34, 0, 0, 7); ctx.fillStyle = 'rgba(15,23,42,.22)'; ctx.fill();
+    const gr = ctx.createRadialGradient(x - r * 0.35, y - r * 0.45, r * 0.1, x, y, r * 1.15);
+    gr.addColorStop(0, '#fff'); gr.addColorStop(1, mine ? '#ffe2d4' : '#e8eef8');
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = gr; ctx.fill();
+    ctx.lineWidth = Math.max(2, r * 0.3); ctx.strokeStyle = col; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(x - r * 0.55, y + r * 0.45); ctx.lineTo(x - r * 0.55, y - r * 0.05); ctx.lineTo(x, y - r * 0.55); ctx.lineTo(x + r * 0.55, y - r * 0.05); ctx.lineTo(x + r * 0.55, y + r * 0.45); ctx.closePath();
-    ctx.fillStyle = mine ? '#e8553d' : '#4a5563'; ctx.fill();
+    ctx.fillStyle = mine ? '#ff5a3c' : '#334155'; ctx.fill();
     if (!withLabel) return;
-    const text = flagMark(sid) + short(sid), star = mine ? 15 : 0; // 우리 학교는 앞에 별 아이콘
+    const text = flagMark(sid) + short(sid), lead = mine ? 16 : 12; // 우리 학교는 별, 다른 학교는 학교 색 점
     ctx.font = `800 ${mine ? 15 : 13}px ${UIF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    const w = ctx.measureText(text).width + 14 + star, ly = y - r - 4;
-    ctx.fillStyle = mine ? 'rgba(232,85,61,.96)' : 'rgba(255,255,255,.94)';
-    roundRect(x - w / 2, ly - 21, w, 21, 10.5); ctx.fill();
-    if (!mine) { ctx.strokeStyle = 'rgba(15,23,42,.12)'; ctx.lineWidth = 1; ctx.stroke(); }
-    ctx.fillStyle = mine ? '#fff' : '#1e293b'; ctx.fillText(text, x + star / 2, ly - 3.5);
-    if (mine) window.MLEIcons.draw(ctx, 'star', x - w / 2 + 13, ly - 10.5, 17, '#fff', false);
+    const w = ctx.measureText(text).width + 16 + lead, ly = y - r - 6, h = mine ? 24 : 22;
+    ctx.fillStyle = mine ? '#c2410c' : 'rgba(148,163,184,.9)'; roundRect(x - w / 2, ly - h + 3, w, h, h / 2); ctx.fill(); // 아래 두께 (입체)
+    if (mine) { const lg = ctx.createLinearGradient(0, ly - h, 0, ly); lg.addColorStop(0, '#ff8a4c'); lg.addColorStop(1, '#ff5a3c'); ctx.fillStyle = lg; } else ctx.fillStyle = '#fff';
+    roundRect(x - w / 2, ly - h, w, h, h / 2); ctx.fill();
+    ctx.fillStyle = mine ? '#fff' : '#1e293b'; ctx.fillText(text, x + lead / 2, ly - (mine ? 4.5 : 4));
+    if (mine) window.MLEIcons.draw(ctx, 'star', x - w / 2 + 14, ly - h / 2, 17, '#fff', false);
+    else { ctx.beginPath(); ctx.arc(x - w / 2 + 11, ly - h / 2, 4.5, 0, 7); ctx.fillStyle = col; ctx.fill(); }
   }
   function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 
@@ -1147,7 +1170,7 @@
     const g = c.getContext('2d'), k = (miniW * d) / mb.w;
     g.setTransform(k, 0, 0, k, -mb.x0 * k, -mb.y0 * k);
     g.lineWidth = 1 / k;
-    g.fillStyle = '#c4c9d0';
+    g.fillStyle = '#cfe2be';
     for (const p of G.landPaths) g.fill(p);
     for (const i of owned) { g.fillStyle = g.strokeStyle = cssColor(W.owner[i]); g.fill(pathOf(i)); g.stroke(pathOf(i)); }
     miniImg = c;
@@ -2013,7 +2036,14 @@
     for (const o of W.offers) for (const c of o.cells) if (W.owner[c] === o.from) offerOf.set(c, o);
     if (!quiet) { requestDraw(); if (sel >= 0) renderPopup(); }
   }
+  // 🚪 사람이 꽉 차면 (100명) 들어가지 않고 안내를 보여 준다
+  function showFull(cap) {
+    show('full');
+    $('#fullText').textContent = cap.msg || S.FULL_MSG;
+    $('#fullCount').textContent = cap.online != null ? `지금 ${cap.online}명이 게임을 하고 있어요 (최대 ${cap.max}명)` : '';
+  }
   async function startGame() {
+    if (!me.role) { const cap = await api('/api/capacity'); if (cap.full) return showFull(cap); }
     show('game');
     sel = -1;
     renderPopup();
@@ -2506,6 +2536,9 @@
       <div>🏫 학교: <b>${esc(s ? s.name : '')}</b> <span class="muted">${esc(s ? s.sido + ' ' + s.sigungu : '')}</span></div>`;
     $('#setStats').innerHTML = `<div><b>${st.solved || 0}</b><span>푼 문제</span></div><div><b>${st.captures || 0}</b><span>뺏은 땅</span></div><div><b>${st.defends || 0}</b><span>올린 방어</span></div>`;
     $$('.sem2').forEach(b => b.classList.toggle('on', +b.dataset.sem === me.profile.semester));
+    const canPick = !me.role && me.birthGrade && S.levelOf(me.birthGrade) !== 'e';
+    $('#setGradeRow').hidden = !canPick;
+    if (canPick) renderGradePick('#setGrade', LVL(), me.grade);
     $('#setNick').value = me.profile.nickname;
     renderClassBox();
     $('#secretBug').hidden = !(cheat.unlocked || me.role === 'dev');
@@ -2581,6 +2614,7 @@
   function wiggle(el) { el.classList.remove('tap'); void el.offsetWidth; el.classList.add('tap'); }
   function initSettings() {
     $('#btnSettings').onclick = openSettings;
+    $('#setGrade').onclick = async e => { const b = e.target.closest('[data-g]'); if (!b || +b.dataset.g === me.grade) return; if (await saveProfile({ grade: +b.dataset.g })) { renderGradePick('#setGrade', LVL(), me.grade); toast(`📚 이제 ${S.gradeName(me.grade)} 문제가 나와요!`, 'ok'); openSettings(); } };
     $$('.fast-toggle').forEach(b => { b.onclick = () => setFast(!fast); b.textContent = `⚡ 빠르게 모드: ${fast ? '켜짐 ✅' : '꺼짐'}`; b.classList.toggle('on', fast); });
     $('#btnHelp').onclick = () => openM('helpModal');
     $('#setHelp').onclick = () => { closeM('settingsModal'); openM('helpModal'); };
@@ -2611,6 +2645,8 @@
     $('#setSchool').onclick = () => { closeM('settingsModal'); if (es) { es.close(); es = null; } W = null; openSetup(); };
     $('#setLogout').onclick = async () => { await api('/api/logout', {}); logoutLocal(); };
     $('#banLogout').onclick = async () => { await api('/api/logout', {}); logoutLocal(); };
+    $('#fullLogout').onclick = async () => { await api('/api/logout', {}); logoutLocal(); };
+    $('#fullRetry').onclick = () => startGame();
     $('#secretSchool').onclick = e => {
       wiggle(e.currentTarget);
       if (cheat.unlocked) return;

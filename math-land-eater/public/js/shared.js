@@ -192,6 +192,8 @@
     return null;
   }
   const VOTE_BAN = 20, VOTE_BAN_HOURS = 24, VOTE_DAYS = 7;
+  const MAX_PLAYERS = 100, FULL_MSG = '100명 이상이 들어 올 수는 없습니다. 게임은 다음에 이용해 주시길 바랍니다.'; // 🚪 게임에 함께 들어올 수 있는 사람 수
+  const gradesOf = lv => (lv === 'm' ? [7, 8, 9] : lv === 'h' ? [10, 11, 12] : [1, 2, 3, 4, 5, 6]); // 학교급의 학년들
   const PIC_REPORT = 3; // 🚨 서로 다른 기기 3곳에서 신고하면 프로필 사진·배너를 지운다
   const UNION_PRICE = 50, UNION_MAX = 5; // 🛡️ 연합 만들기 50코인, 학교 5곳까지
 
@@ -346,7 +348,7 @@
     MAX_GRADE, levelOf, serverOf, gradeName, serverName, LEVEL_NAME, SERVERS, FAR_COST_MH, JP_MIN, farCost,
     WAR_MIN, WAR_ASK_SEC, WAR_WIN, warLive, warSide, warRule, VOTE_BAN, VOTE_BAN_HOURS, VOTE_DAYS, shopFor,
     TREASURE_N, TREASURE_REWARDS, ITEM_NAME, rewardText, BUILDINGS, BUILD_MAX, buildExtra,
-    BOSSES, RAID_HP, RAID_WIN, RAID_SET, raidWeek, raidEnds, bossOf, LOOKS, NEED_NAME, UNION_PRICE, UNION_MAX, PIC_REPORT,
+    BOSSES, RAID_HP, RAID_WIN, RAID_SET, raidWeek, raidEnds, bossOf, LOOKS, NEED_NAME, UNION_PRICE, UNION_MAX, PIC_REPORT, MAX_PLAYERS, FULL_MSG, gradesOf,
     BASE_COST, FAR_GRADE, FAR_COST, NK_MIN, escapeCells, captureCost, saleCells, touches, RESERVED_NICK, ROLE_NICK, MARK,
     SHOP, SHIELD_HOURS, SCOPE_MIN, BOMB_EXTRA, BOMB_MAX_DEF, FLAG_COLORS, FLAG_MARKS, attendCoins, MISSIONS, MISSION_ALL, dailyMissions,
     priceOf, duelPace, DUEL_BONUS, cleanChat,

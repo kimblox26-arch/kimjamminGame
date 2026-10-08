@@ -994,7 +994,10 @@
   class HttpError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
   const fail = (msg, code = 400) => { throw new HttpError(code, msg); };
   const userKey = name => 'u_' + String(name).toLowerCase();
-  const gradeOf = u => (u.role ? u.viewGrade || 3 : S.gradeFromBirthYear(u.birthYear)); // 운영자·개발자는 고른 학년 서버를 본다 (중학교 7, 고등학교 10)
+  const birthGrade = u => S.gradeFromBirthYear(u.birthYear);
+  // 중·고등학생은 같은 학교급 안에서 학년을 직접 고를 수 있다 (빠른년생 · 유예 등). 초등학생은 출생연도 그대로 (학년마다 서버가 달라서)
+  const pickOk = (u, g) => { const b = birthGrade(u), lv = S.levelOf(b); return lv !== 'e' && Number.isInteger(g) && S.levelOf(g) === lv; };
+  const gradeOf = u => (u.role ? u.viewGrade || 3 : pickOk(u, u.gradePick) ? u.gradePick : birthGrade(u)); // 운영자·개발자는 고른 학년 서버를 본다 (중학교 7, 고등학교 10)
   const srvOf = u => S.serverOf(gradeOf(u)); // 놀고 있는 서버: 초등은 학년마다, 중·고는 하나씩
   const STAT0 = { solved: 0, captures: 0, defends: 0, steals: 0, bestStreak: 0, days: 0, dayStreak: 0, lastDay: '' };
   const statsOf = u => { const st = (u.stats = u.stats || {}); for (const k in STAT0) if (st[k] == null) st[k] = STAT0[k]; return st; };
@@ -1043,7 +1046,7 @@
   function publicUser(u) {
     const sid = profileSchool(u);
     return {
-      username: u.username, acc: u.acc, birthYear: u.birthYear, grade: gradeOf(u), stats: statsOf(u), badges: u.badges || [], role: u.role || null, builtin: isBuiltin(u),
+      username: u.username, acc: u.acc, birthYear: u.birthYear, grade: gradeOf(u), birthGrade: u.role || u.teacher ? null : birthGrade(u), stats: statsOf(u), badges: u.badges || [], role: u.role || null, builtin: isBuiltin(u),
       coins: walletOf(u).coins, infCoins: !!u.infCoins, items: u.items, scopeUntil: u.scopeUntil || 0, trophies: u.trophies || [],
       profile: sid >= 0 ? { schoolId: sid, semester: u.profile.semester, nickname: u.profile.nickname } : null,
       deleted: !u.role && u.profile && deleted[u.profile.school] ? deleted[u.profile.school] : undefined, // 우리 학교가 삭제됐을 때 개발자의 글
@@ -1168,6 +1171,7 @@
       }
       const salt = rand(16);
       local.users[key] = { username, acc: rand(8), salt, hash: await hashPw(password, salt), birthYear: teacher ? null : birthYear, profile: null, stats: Object.assign({}, STAT0), at: Date.now(), ...(teacher ? { teacher: true, classes: [] } : {}) };
+      if (!teacher && b.gradePick != null && pickOk(local.users[key], Number(b.gradePick))) local.users[key].gradePick = Number(b.gradePick); // 중·고: 고른 학년
       return newSession(key);
     },
     'POST /api/login': async (t, q, b) => {
@@ -1220,6 +1224,7 @@
         if (schoolId < BASE.length && BASE[schoolId].nk) fail('북한 학교는 고를 수 없어요.');
         if (deleted[schoolKey(schoolById(schoolId))]) fail('🗑️ 삭제된 학교예요. 다른 학교를 골라 주세요.');
       }
+      if (b.grade != null && !a.u.role) { const g = Number(b.grade); if (!pickOk(a.u, g)) fail('학년은 같은 학교급 안에서만 고를 수 있어요.'); a.u.gradePick = g; } // 📚 중·고 학년 고르기
       a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname, at: Date.now() };
       save();
       publishCard(a.u);
@@ -2012,6 +2017,14 @@
       const n = Object.values(Object.assign(cur, { [local.device]: now })).filter(x => x > since).length;
       if (n >= S.PIC_REPORT) { await dropMedia(acc, 'all'); await mergeDoc('wface/x_' + acc, { at: now, by: 'report' }); return { ok: true, n, removed: true }; }
       return { ok: true, n };
+    },
+    'GET /api/capacity': async t => { // 🚪 게임에 들어와 있는 사람 수 (100명이 넘으면 못 들어온다. 운영자 · 개발자는 늘 들어온다)
+      const a = needLogin(t);
+      if (!cloud || !cloud.rdb) return { full: false, online: null, max: S.MAX_PLAYERS };
+      const snap = await cloud.rdb.ref('presence').once('value'), now = Date.now();
+      let n = 0;
+      snap.forEach(c => { const v = c.val() || {}; if (c.key !== local.device && now - (v.at || 0) < 45 * 60e3) n++; });
+      return { full: !a.u.role && n >= S.MAX_PLAYERS, online: n, max: S.MAX_PLAYERS, msg: S.FULL_MSG };
     },
     // ---------- 🏆 시즌 패스 ----------
     'GET /api/season': async t => {
