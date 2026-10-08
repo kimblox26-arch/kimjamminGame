@@ -903,14 +903,14 @@ function makeFacadeMaterial(U) {
     sh.uniforms.uNight = U.uNight;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-attribute float aStyle; attribute float aSeed;
-varying vec3 vFac; varying vec3 vFacN; varying float vStyle; varying float vSeed;`)
+attribute float aStyle; attribute float aSeed; attribute vec4 aBreak;
+varying vec3 vFac; varying vec3 vFacN; varying float vStyle; varying float vSeed; varying vec4 vBreak;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 vec3 bsc = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
-vFac = position * bsc; vFacN = normal; vStyle = aStyle; vSeed = aSeed;`);
+vFac = position * bsc; vFacN = normal; vStyle = aStyle; vSeed = aSeed; vBreak = aBreak;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-varying vec3 vFac; varying vec3 vFacN; varying float vStyle; varying float vSeed; uniform float uNight;
+varying vec3 vFac; varying vec3 vFacN; varying float vStyle; varying float vSeed; varying vec4 vBreak; uniform float uNight;
 ${GLSL_NOISE}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 float fRough = 0.86; float fMetal = 0.0; vec3 fEmit = vec3(0.0);
@@ -946,11 +946,31 @@ float fRough = 0.86; float fMetal = 0.0; vec3 fEmit = vec3(0.0);
   if (st == 5) wall *= 0.84 + 0.16 * step(0.5, fract(u * 1.3));
   if (st == 9) wall = mix(vec3(0.38, 0.33, 0.27), vec3(0.2, 0.18, 0.16), vnoise(vFac.xz * 0.9 + vFac.y * 2.0));
   if (isTop > 0.5) { wall = mix(vec3(0.4, 0.4, 0.39), vec3(0.54, 0.53, 0.5), vnoise(vFac.xz * 0.3)); if (st == 9) wall = vec3(0.32, 0.28, 0.23); if (st == 7) wall = vec3(0.2, 0.55, 0.3); }
+  // 침수 흔적: 최고 수위 아래 벽은 흙탕물 얼룩, 수위선에 띠
+  float mark = vBreak.z;
+  if (mark > 0.05 && isSide > 0.5) {
+    float below = 1.0 - smoothstep(mark - 0.15, mark + 0.05, vFac.y);
+    wall = mix(wall, wall * vec3(0.62, 0.55, 0.45), below * 0.75);
+    wall *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.1, abs(vFac.y - mark)));
+  }
+  // 깨진 유리창: 창틀 가장자리에 날카로운 파편만 남고 안은 어두운 구멍
+  float rb = hash12(vec2(ci * 1.7 + face * 5.3, fi * 3.1 + vSeed * 17.0));
+  float broken = win * max(step(vFac.y, vBreak.x) * step(rb, 0.93), step(rb, vBreak.w));
+  float hole = 0.0;
+  if (broken > 0.5) {
+    vec2 wp = vec2((fu - 0.5) / max(ww * 0.5, 0.01), (fv - wy) / max(wh * 0.5, 0.01));
+    float edge = 1.0 - max(abs(wp.x), abs(wp.y));
+    float ang = atan(wp.y, wp.x);
+    float jag = 0.1 + 0.32 * fract(sin(floor(ang * 2.6 + rb * 40.0) * 91.7) * 4375.5) + 0.1 * vnoise(wp * 6.0 + rb * 9.0);
+    hole = step(jag, edge);
+    vec3 interior = vec3(0.025, 0.022, 0.02) * (1.0 + 2.0 * uNight * vBreak.y * step(0.6, rb));
+    glass = mix(glass * 1.25 + 0.04, interior, hole);
+  }
   diffuseColor.rgb = mix(wall, glass, win);
-  fRough = mix(0.88, 0.07, win);
-  fMetal = mix(0.0, 0.5, win);
+  fRough = mix(0.88, mix(0.07, 0.95, hole), win);
+  fMetal = mix(0.0, 0.5 * (1.0 - hole), win);
   float lit = step(0.56, hash12(vec2(ci * 3.1 + face, fi * 7.3 + vSeed * 13.0)));
-  fEmit = vec3(1.0, 0.8, 0.5) * lit * win * uNight * 1.5;
+  fEmit = vec3(1.0, 0.8, 0.5) * lit * win * uNight * 1.5 * vBreak.y * (1.0 - step(vFac.y, mark));
 }`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = fRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = fMetal;')

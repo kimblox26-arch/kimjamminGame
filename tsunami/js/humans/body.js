@@ -178,7 +178,7 @@ function buildSDF(P, opt) {
     const b = sideB(s), S = J[b.ua];
     const u = V.norm(V.sub(J[b.fa], S)), v = [u[1] * -s * -1 * 0 + Math.cos(P.alpha) * s, Math.sin(P.alpha), 0];
     const axes = [v, u, [0, 0, 1]];
-    if (mu > 0.05) ell(0, CHE, [s * 0.042 * H, P.shY - 0.05 * H, P.chestD * 0.6], [0.05 * H, 0.036 * H, 0.028 * H * mu + 0.004 * H], 0.6);
+    if (mu > 0.05) ell(0, CHE, [s * 0.044 * H, P.shY - 0.052 * H, P.chestD * 0.66], [0.058 * H, 0.034 * H, 0.016 * H * mu + 0.004 * H], 0.8);
     if (br > 0.05) ell(0, CHE, [s * 0.046 * H, P.shY - 0.09 * H - 0.012 * H * o, P.chestD * 0.62], [0.044 * H, 0.042 * H * (1 + 0.15 * o), 0.04 * H * br], 0.9);
     ell(0, CHE, [s * 0.046 * H, P.shY - 0.045 * H, -P.chestD * 0.6], [0.05 * H, 0.072 * H, 0.03 * H], 0.5);
     cone(0, CHE, [s * 0.02 * H, P.neckY + 0.002 * H, -0.024 * H + P.fz * 0.3], [s * (P.shX - 0.012 * H), P.shY + 0.018 * H, -0.012 * H], 0.028 * H, 0.019 * H, 0.5, { bone2: b.clav, w2: 0.5 });

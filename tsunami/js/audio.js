@@ -144,6 +144,29 @@ export class SoundEngine {
 
   collapse(v = 1) { this.burst(this.brown, 'lowpass', 900, 2.6, 1.2 * v, 80); this.burst(this.white, 'bandpass', 2400, 0.9, 0.25 * v, 600); }
   splash(v = 1) { this.burst(this.white, 'bandpass', 1800, 1.2, 0.5 * v, 400); }
+  /** 유리 깨짐: 고역 잡음 + 짧은 금속성 울림 여러 개 */
+  glass(v = 1) {
+    if (!this.ctx || v < 0.03) return;
+    this.burst(this.white, 'highpass', 3500, 0.35, 0.6 * v, 7000);
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    for (let i = 0; i < 7; i++) {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = t0 + 0.03 + Math.random() * 0.5;
+      o.type = 'sine'; o.frequency.value = 2800 + Math.random() * 4200;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06 * v, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12 + Math.random() * 0.2);
+      o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.4);
+    }
+  }
+
+  /** 전기 아크: 지직거리는 잡음 + 낮은 웅웅거림 */
+  zap(v = 1) {
+    if (!this.ctx) return;
+    this.burst(this.white, 'bandpass', 2600, 0.25 + Math.random() * 0.2, 0.45 * v, 900);
+    const ctx = this.ctx, t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.value = 120;
+    g.gain.setValueAtTime(0.12 * v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.4);
+  }
+
   setVolume(v) {
     this.volume = v;
     if (this.master) this.master.gain.value = v;

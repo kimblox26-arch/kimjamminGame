@@ -110,13 +110,28 @@ vec3 skCol() {
   if (part > 9.5) return skin;
   float arm = vZone.x, tArm = vZone.y, leg = vZone.z, tLeg = vZone.w;
   float topK = floor(a3.a + 0.5);
+  float sty = a5.a;
+  float fDenim = mod(floor(sty), 2.0), fPocket = mod(floor(sty / 2.0), 2.0), fSneak = mod(floor(sty / 4.0), 2.0), fWatch = mod(floor(sty / 8.0), 2.0), fBeard = mod(floor(sty / 16.0), 2.0);
   float cloth = 0.0; vec3 cc = skin;
   float crotch = uLand1.x, waist = uLand1.y, neck = uLand1.w, ankle = uLand2.z, bust = uLand2.w, hip = uLand3.w;
+  float isPants = 0.0;
   if (arm > 0.5) {
-    if (tArm < a1.a) { cloth = 1.0; cc = a2.rgb; }
+    if (tArm < a1.a) { cloth = 1.0; cc = a2.rgb * (1.0 - 0.18 * smoothstep(a1.a - 0.03, a1.a, tArm)); }
+    // 손목시계 (왼쪽)
+    if (fWatch > 0.5 && vBind.x > 0.0 && tArm > 0.935 && tArm < 0.975) { skRough = 0.25; return mix(vec3(0.62, 0.63, 0.65), vec3(0.08), step(0.0, vBind.z) * 0.7); }
   } else if (leg > 0.5) {
-    if (tLeg < a2.a) { cloth = 1.0; cc = a3.rgb; }
-    if (tLeg > 0.96) { cloth = 1.0; cc = a4.rgb; skRough = 0.6; }
+    if (tLeg < a2.a) { cloth = 1.0; cc = a3.rgb; isPants = 1.0; }
+    if (tLeg > 0.96) {
+      cloth = 1.0; cc = a4.rgb; skRough = 0.6;
+      if (fSneak > 0.5) {
+        float sole = 1.0 - smoothstep(0.012 * H, 0.018 * H, y);
+        // 옆면 사선 줄 3개 (발 바깥쪽 중앙부)
+        float sz = vBind.z - 0.04 * H / 1.75, sy2 = y - 0.03 * H;
+        float band = step(abs(sz + sy2 * 0.8), 0.035 * H / 1.75) * step(0.5, fract((sz + sy2 * 0.8) * 140.0 / (H / 1.75))) * step(abs(sy2), 0.012 * H);
+        cc = mix(cc, vec3(0.92), max(sole, band * 0.85));
+      }
+      return cc * (0.9 + 0.1 * vnoise3(vBind * 300.0));
+    }
   } else if (y < neck + 0.02 * H) {
     float neckline = neck - 0.006 * H - max(0.0, 0.032 * H - abs(vBind.x)) * 1.1 * step(0.0, vBind.z);
     if (topK < 0.5) {                       // 셔츠 + 하의
@@ -134,6 +149,24 @@ vec3 skCol() {
   if (cloth > 0.5) {
     skRough = max(skRough, 0.88);
     float weave = vnoise3(vBind * 260.0) * 0.06 + vnoise3(vBind * 18.0) * 0.08;
+    // 주름: 팔꿈치 · 무릎 · 사타구니 접힘 그늘
+    float fold = 0.0;
+    if (leg > 0.5) fold = (1.0 - smoothstep(0.0, 0.06, abs(tLeg - 0.5))) * (0.5 + 0.5 * vnoise3(vBind * vec3(30.0, 90.0, 30.0)));
+    if (arm > 0.5) fold = (1.0 - smoothstep(0.0, 0.05, abs(tArm - 0.48))) * (0.5 + 0.5 * vnoise3(vBind * 70.0));
+    cc *= 1.0 - 0.18 * fold;
+    if (isPants > 0.5 && fDenim > 0.5) {
+      // 데님: 능직 사선 + 허벅지 앞 · 무릎 탈색 + 수염(whisker) 주름
+      float tw = 0.5 + 0.5 * sin((vBind.y * 1.0 + vBind.x * 0.6 + vBind.z * 0.6) * 1400.0);
+      float fade = smoothstep(0.0, 0.05, vBind.z) * (exp(-pow((tLeg - 0.28) / 0.16, 2.0)) * 0.9 + exp(-pow((tLeg - 0.52) / 0.06, 2.0)) * 0.7);
+      float whisk = (1.0 - smoothstep(0.0, 0.004, abs(fract(vBind.y * 28.0 + abs(vBind.x) * 14.0) - 0.5) - 0.46)) * step(tLeg, 0.15) * step(0.0, vBind.z);
+      cc = cc * (0.88 + 0.12 * tw) + vec3(0.1, 0.12, 0.15) * fade * (0.6 + 0.4 * vnoise3(vBind * 40.0)) + whisk * 0.02;
+    }
+    if (fPocket > 0.5 && arm < 0.5 && leg < 0.5 && vBind.z > 0.0) {
+      float px = vBind.x - 0.075 * H / 1.75, py = y - (uLand2.w + 0.02 * H);
+      float edge = step(abs(px), 0.042 * H / 1.75) * step(abs(py), 0.045 * H / 1.75);
+      float inner = step(abs(px), 0.038 * H / 1.75) * step(abs(py), 0.041 * H / 1.75);
+      cc *= 1.0 - 0.12 * (edge - inner) - 0.03 * inner;
+    }
     return cc * (0.92 + weave);
   }
   // 얼굴: 눈 · 눈썹 · 입 (표정)
@@ -165,6 +198,13 @@ vec3 skCol() {
     col = mix(col, vec3(0.16, 0.05, 0.05), cav * 0.85);
     float cheek = (1.0 - smoothstep(0.0, 0.12 * hh, length(vec2(abs(q.x) - 0.2 * hh, q.y - ey + 0.2 * hh)))) * front;
     col *= mix(vec3(1.0), vec3(1.04, 0.95, 0.94), cheek * 0.6);
+    if (fBeard > 0.5) {
+      // 짧은 수염: 턱선 · 윗입술 · 볼 아래, 모공 단위 잡음
+      float jaw = smoothstep(ey - 0.18 * hh, ey - 0.3 * hh, q.y) * smoothstep(0.05 * hh, 0.2 * hh, q.z + 0.15 * hh);
+      float lipZone = (1.0 - smoothstep(0.0, 0.03 * hh, abs(q.y - (my + 0.05 * hh)))) * step(abs(mx), 0.9);
+      float stub = max(jaw, lipZone * 0.8) * (0.55 + 0.45 * vnoise3(vBind * 1500.0));
+      col = mix(col, a1.rgb * 0.7 + col * 0.25, stub * 0.55);
+    }
   }
   col *= 0.96 + vnoise3(vBind * 120.0) * 0.06;
   return col;
@@ -257,7 +297,7 @@ export class HumanCrowd {
     const o = (id * ROWW + NB * 3) * 4, a = this.data, c = new THREE.Color();
     const put = (k, col, w) => { c.set(col); a[o + k * 4] = c.r; a[o + k * 4 + 1] = c.g; a[o + k * 4 + 2] = c.b; a[o + k * 4 + 3] = w; };
     put(0, d.skin, P.parts); put(1, d.hair, d.sleeve ?? 0.4); put(2, d.top, d.pants ?? 1.05);
-    put(3, d.bottom, d.topKind || 0); put(4, d.shoes ?? d.skin, 0); put(5, d.hat ?? 0xffffff, 0);
+    put(3, d.bottom, d.topKind || 0); put(4, d.shoes ?? d.skin, 0); put(5, d.hat ?? 0xffffff, d.style || 0);
     this.tex.needsUpdate = true;
     return id;
   }

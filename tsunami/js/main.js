@@ -15,6 +15,7 @@ import { Input, MapCamera } from './controls.js';
 import { Effects } from './fx.js';
 import { SoundEngine } from './audio.js';
 import { UI } from './ui.js';
+import { Hazards } from './hazards.js';
 import { CityMap2D } from './city2d.js';
 import { loadWorldData } from './world/worlddata.js';
 import { WorldMap } from './world/worldmap.js';
@@ -142,6 +143,9 @@ class Game {
     await step(94, '효과 · 사운드 · 인터페이스');
     this.fx = new Effects(this.scene, this.q.particles);
     this.audio = new SoundEngine();
+    this.hazards = new Hazards(this.scene, { ...this.ctx, bodies: this.bodies }, this.qKey, this.audio);
+    this.people.power = this.hazards;
+    this.hazards.onEvent = (type, x, y, z, d) => this.onHazard(type, x, y, z, d);
     this.input = new Input(canvas);
     this.mapCam = new MapCamera(this.camera, canvas);
     this.mapCam.onTap = (x, y) => this.on3DTap(x, y);
@@ -214,6 +218,7 @@ class Game {
     this.water.texW.needsUpdate = this.water.texWp.needsUpdate = this.water.texF.needsUpdate = true;
     this.city.resetState();
     this.bodies.reset();
+    this.hazards.reset();
     this.people.spawnAll();
     this.fx.clear();
     this.global.reset();
@@ -370,6 +375,8 @@ class Game {
     const d = haversine(lon, lat, CITY_LL.lon, CITY_LL.lat);
     const ll = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
     this.ui.openEditor({ kind: 'world', lon, lat, where: `${ll} · 수심 ${(-e).toLocaleString()} m · 해랑시까지 ${Math.round(d).toLocaleString()} km` }, sx, sy);
+    // 휴대폰: 하단 시트에 가리지 않도록 터치 지점을 화면 위쪽으로
+    if (innerWidth <= 640) this.worldMap.flyTo(lon, lat - innerHeight * 0.2 / this.worldMap.ppd, this.worldMap.view.zoom, 0.6);
   }
 
   onCityTap(x, z, sx, sy) {
@@ -392,6 +399,7 @@ class Game {
     const b0 = this.sim.b0[this.sim.cellOf(x, z)];
     if (b0 > -1.5) { this.ui.closeEditor(); this.ui.showPlace(x, z, sx, sy); return; }
     this.ui.openEditor({ kind: 'city', x, z, where: this.locationText(x, z) }, sx, sy);
+    if (innerWidth <= 640 && this.mode === 'city') this.city2d.flyTo(x, z + innerHeight * 0.2 / this.city2d.view.zoom);
   }
 
   on3DTap(sx, sy) {
@@ -605,6 +613,21 @@ class Game {
     this.pendingCollapses.push(b);
   }
 
+  onHazard(type, x, y, z, d) {
+    if (type === 'arc' && !this.arcNoticed) { this.arcNoticed = true; this.ui.notice('전신주가 쓰러져 전선이 끊어졌습니다 — 전선 근처 물은 감전 위험', 'warn', 6); }
+    if (type === 'outage') this.ui.notice(`${(DISTRICTS[d] || { name: '일부 지역' }).name} 정전 — 보호 계전기가 끊어진 선로를 차단했습니다`, 'warn', 5);
+    if (type === 'glass' && !this.glassNoticed && this.mode !== 'world') { this.glassNoticed = true; }
+  }
+
+  /** 소리·파편 생성 기준 위치 */
+  listener() {
+    const m = this.mode, v = this._lp || (this._lp = new THREE.Vector3());
+    if (m === 'city') return v.set(this.city2d.view.cx, 0, this.city2d.view.cz);
+    if (m === 'city3d') return v.copy(this.mapCam.target);
+    if (m === 'world') return v.set(0, 0, 0);
+    return v.copy(this.camera.position);
+  }
+
   onGlobalFrame(gs) {
     this.worldMap.setWave(gs.eta, gs.W, gs.H);
     if (gs.max) { this.worldMap.setMax(gs.max, gs.W, gs.H); this.worldMap.setArrival(gs.arr, gs.W, gs.H); }
@@ -689,6 +712,7 @@ class Game {
       this.city.updateVegetation(dt);
       this.bodies.update(dt, (body, bld, E) => { bld.extraHit = (bld.extraHit || 0) + E / (bld.strength * 2.5e4); if (E > 2e5) this.audio.collapse(0.25); });
     }
+    if (dt > 0) this.hazards.update(dt, quake, this.listener());
     if (this.pendingCollapses.length && this.simTime - this.collapseLogT > 8) {
       const big = this.pendingCollapses.filter((b) => b.floors >= 4).map((b) => b.name);
       this.ui.notice(`건물 ${this.pendingCollapses.length}채 붕괴${big.length ? ' — ' + [...new Set(big)].slice(0, 2).join('·') : ''}`, 'warn', 5);
@@ -704,7 +728,16 @@ class Game {
     this.people.update(dt, env);
     if (this.mode === 'fp') {
       const inp = this.input.consumeFP();
-      if (dt > 0) this.player.update(dt, inp, env);
+      if (dt > 0) {
+        this.player.update(dt, inp, env);
+        // 감전: 끊어진 활선이 닿은 물/땅
+        if (this.player.state !== 'swept' && this.hazards.electrified(this.player.x, this.player.z, this.player.depth || 0)) {
+          if (this.shockFx < 0.2) { this.audio.zap(1); this.ui.notice('감전! 전선이 끊어진 물에서 즉시 벗어나세요', 'warn', 3); }
+          this.shockFx = 1; this.shake = Math.max(this.shake, 0.6);
+          this.player.fear = 1; this.player.stamina = Math.max(0, (this.player.stamina ?? 1) - dt * 0.5);
+          if (this.player.vx !== undefined) { this.player.vx *= 0.2; this.player.vz *= 0.2; }
+        }
+      }
       else { this.player.yaw -= inp.lookX; this.player.pitch = Math.max(-1.45, Math.min(1.45, this.player.pitch - inp.lookY)); }
     } else if (this.mode === 'npc') {
       const inp = this.input.consumeFP();

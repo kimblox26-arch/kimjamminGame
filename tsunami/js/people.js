@@ -607,7 +607,7 @@ export class People {
       }
       return;
     }
-    if (this.power && p.state !== 'roof' && (depth > 0.03 || p.state === 'normal') && this.power.electrified(p.x, p.z)) {
+    if (this.power && p.state !== 'roof' && this.power.electrified(p.x, p.z, depth)) {
       this.standUp(p);
       p.state = 'shocked'; p.shockT = 0; p.getUpT = 0; p.fear = 1;
       this.say(p, ['으악!', '찌릿...!', '아아악!']);
@@ -1067,7 +1067,7 @@ export class People {
       if (hidden) { C.set(p.cid, { visible: false }); continue; }
       this.animate(p, dt);
       const motion = this.motionOf(p);
-      let y = p.y + (p.seatY && p.state === 'normal' && p.getUpT <= 0 ? 0 : 0);
+      let y = p.y;
       if (motion === 'swim' || motion === 'tread' || motion === 'struggle') { sim.sample(p.x, p.z, tmpS); y = Math.max(this.ctx.terrain.groundAt(p.x, p.z) - 0.3, tmpS.eta - p.height * 0.82); }
       const act = p.act === motion ? p.actT : motion === 'fall' ? 1 - Math.min(1, p.fallT / 2.6) : null;
       C.set(p.cid, {
@@ -1173,8 +1173,17 @@ function crowdDesc(p) {
     else if (p.i % 3 === 0) { sleeve = -1; pants = 0.18; topKind = 3; bottom = top; }
     else { sleeve = -1; pants = 0.18; topKind = 1; bottom = top; }
   }
+  // 세부 스타일 비트: 1 데님 2 가슴주머니 티 4 줄무늬 운동화 8 손목시계 16 짧은 수염
+  const h = (k) => { const x = Math.sin((p.i + 1) * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+  let style = 0;
+  const casual = !beach && (p.role === 'tourist' || p.role === 'resident' || p.role === 'student' || p.role === 'merchant');
+  if (casual && pants > 1 && h(1) < 0.55) { style |= 1; bottom = [0x2c3e5c, 0x34496a, 0x23324a, 0x41587a][Math.floor(h(2) * 4)]; }
+  if (casual && sleeve < 0.5 && sleeve > 0 && h(3) < 0.4) style |= 2;
+  if (!beach && p.role !== 'office' && p.role !== 'worker' && h(4) < 0.5) { style |= 4; shoes = h(5) < 0.5 ? 0x1c1c20 : 0x3a3f4a; }
+  if (p.type !== 'child' && !beach && h(6) < 0.4) style |= 8;
+  if (p.sex === 'M' && (p.type === 'man' || p.type === 'elder') && h(7) < 0.4) style |= 16;
   const kind = p.type === 'child' ? 'child' : p.type === 'elder' ? 'elder' : 'adult';
-  return { variant, height: p.height, seed: p.i * 7 + 3, kind, skin: a.skin, hair: a.hair, top, bottom, shoes, hat: a.hatColor, sleeve, pants, topKind, parts };
+  return { variant, height: p.height, seed: p.i * 7 + 3, kind, skin: a.skin, hair: a.hair, top, bottom, shoes, hat: a.hatColor, sleeve, pants, topKind, parts, style };
 }
 
 function landward(x, out) {

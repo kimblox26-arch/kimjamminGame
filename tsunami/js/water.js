@@ -7,6 +7,30 @@ uniform float uTime;
 float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f*f*(3.-2.*f);
   return mix(mix(hash12(i), hash12(i+vec2(1,0)), u.x), mix(hash12(i+vec2(0,1)), hash12(i+vec2(1,1)), u.x), u.y); }
+// 셀룰러(워리) 잡음: 가장 가까운 두 점 거리 차 → 거품 레이스 무늬
+float worley(vec2 p) {
+  vec2 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 o = vec2(float(x), float(y)); vec2 r = o + vec2(hash12(i + o), hash12(i + o + 17.3)) - f;
+    float d = dot(r, r); if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+  }
+  return sqrt(d2) - sqrt(d1);
+}
+// 너울: 주기 9 s, 수심 등고선을 따라 해안으로 진행 (얕은물 분산 k = ω/√(gh), 해저 경사 약 3%)
+// 위상 θ = ωt − 2ω√h/(m√g) + 연안 방향 변화. 반환: x 위상, y 수심 한계 쇄파 지수 H/(0.78h)
+const float SW_OM = 0.698, SW_H0 = 0.55;
+vec2 swellPhase(float h, vec2 xz, float t) {
+  float th = SW_OM * t - 14.9 * sqrt(max(h, 0.0)) + vnoise(xz * 0.0035) * 5.0 + xz.x * 0.0015;
+  float H = SW_H0 * pow(8.0 / max(h, 0.3), 0.25);
+  return vec2(th, H / (0.78 * max(h, 0.05)));
+}
+// 파형: 얕아질수록 파봉이 뾰족해지고(골은 평평), 부서지면 앞면이 급한 톱니(보어)
+float swellShape(float th, float beta) {
+  float s = fract(th / 6.2831853);
+  float peaked = pow(0.5 + 0.5 * cos(th), 1.0 + 2.5 * clamp(beta, 0.0, 1.0)) - 0.35;
+  float bore = (s < 0.85 ? s / 0.85 : (1.0 - s) / 0.15); bore = bore * bore - 0.4;
+  return mix(peaked, bore, smoothstep(0.85, 1.15, beta));
+}
 // 바람 파랑(분산 관계 ω=√(gk)) — 높이와 기울기
 // spacing: 정점 간격 — 격자가 표현할 수 없는 짧은 파는 감쇠 (에일리어싱 방지)
 float windWaves(vec2 p, float t, float spacing, out vec2 grad) {
@@ -32,6 +56,7 @@ ${COMMON}
 uniform sampler2D tW; uniform sampler2D tWp; uniform sampler2D tF; uniform float uBlend;
 uniform float uN; uniform float uDx; uniform float uHalf;
 varying vec3 vW; varying float vDepth; varying vec2 vVel; varying float vFoam; varying float vMud; varying vec3 vNrm; varying float vSteep;
+varying float vSurf; varying float vSwash;
 #include <fog_pars_vertex>
 vec4 fetchW(ivec2 c) { c = clamp(c, ivec2(0), ivec2(int(uN) - 1)); return mix(texelFetch(tWp, c, 0), texelFetch(tW, c, 0), uBlend); }
 vec4 fetchF(ivec2 c) { c = clamp(c, ivec2(0), ivec2(int(uN) - 1)); return texelFetch(tF, c, 0); }
@@ -53,9 +78,11 @@ void main() {
   float eta = s.x; float depth = s.y; vec2 vel = s.zw;
   vec4 fm = sampleF(xz); float foam = fm.r; float mud = fm.g;
   float e = uDx * 0.9;
-  float ex1 = sampleW(xz + vec2(e, 0.0)).x, ex0 = sampleW(xz - vec2(e, 0.0)).x;
-  float ez1 = sampleW(xz + vec2(0.0, e)).x, ez0 = sampleW(xz - vec2(0.0, e)).x;
+  vec4 sx1 = sampleW(xz + vec2(e, 0.0)), sx0 = sampleW(xz - vec2(e, 0.0));
+  vec4 sz1 = sampleW(xz + vec2(0.0, e)), sz0 = sampleW(xz - vec2(0.0, e));
+  float ex1 = sx1.x, ex0 = sx0.x, ez1 = sz1.x, ez0 = sz0.x;
   vec2 sg = vec2(ex1 - ex0, ez1 - ez0) / (2.0 * e);
+  vec2 dgr = vec2(sx1.y - sx0.y, sz1.y - sz0.y) / (2.0 * e);   // 수심 기울기 (해안 쪽 = 감소 방향)
   sg = clamp(sg, vec2(-3.0), vec2(3.0));
 #endif
   vec2 wg;
@@ -72,8 +99,39 @@ void main() {
   float turb = (tn - 0.5) * clamp(length(vel) * 0.18, 0.0, 1.0) * clamp(depth, 0.0, 1.5) * 0.9;
   float y = eta + ww + turb;
   vec3 wpos = vec3(xz.x, y, xz.y);
-  vW = wpos; vDepth = depth; vVel = vel; vFoam = foam; vMud = mud;
-  vec2 tg = sg + wg * calm;
+  float surfFoam = 0.0, swash = 0.0;
+  vec2 swg = vec2(0.0);
+#ifndef FAR
+  // 해안 너울: 천수(쇼알링) → 쇄파 → 백파(보어). 쓰나미 흐름·흙탕물에서는 약해짐
+  float quiet = (1.0 - clamp(length(vel) / 2.5, 0.0, 1.0)) * (1.0 - mud);
+  if (depth > 0.04 && depth < 9.0 && quiet > 0.01) {
+    vec2 sp = swellPhase(depth, xz, uTime);
+    float beta = sp.y;
+    float H = min(SW_H0 * pow(8.0 / max(depth, 0.3), 0.25), 0.78 * depth) * (1.0 - smoothstep(6.0, 9.0, depth)) * quiet;
+    if (beta > 1.0) H *= mix(1.0, 0.65, smoothstep(1.0, 1.6, beta));         // 부서진 뒤 에너지 소산
+    float sh = swellShape(sp.x, beta);
+    float sh2 = swellShape(sp.x + 0.12, beta);
+    y += H * sh;
+    // 진행 방향(수심 감소 방향)으로 파봉 앞쏠림 (트로코이드)
+    vec2 dir = -dgr / max(length(dgr), 1e-4);
+    wpos.xz += dir * H * 0.35 * sin(sp.x);
+    swg = dir * H * (sh2 - sh) / 0.12 * 0.8;
+    float s = fract(sp.x / 6.2831853);
+    surfFoam = smoothstep(0.85, 1.05, beta) * (smoothstep(0.7, 0.95, s) * (1.0 - smoothstep(0.97, 1.0, s)) + 0.55 * exp(-s * 5.0)) + smoothstep(1.05, 1.5, beta) * 0.35;
+  }
+  // 스워시: 부서진 파도가 모래 위로 얇게 밀려 올라왔다 빠짐 (마른 첫 셀 = 지면 높이 ≈ η + 0.02)
+  if (depth < 0.06 && eta > -3.0) {
+    float gnd = eta + 0.02;
+    float th0 = SW_OM * uTime + vnoise(xz * 0.0035) * 5.0 + xz.x * 0.0015;
+    float s0 = fract(th0 / 6.2831853 + 0.08);
+    float run = 0.55 * (s0 < 0.3 ? smoothstep(0.0, 0.3, s0) : 1.0 - smoothstep(0.3, 1.0, s0)) * (1.0 - mud);
+    swash = run - max(gnd, 0.0);
+    if (swash > 0.0) y = max(y, gnd + min(swash, 0.05));
+  }
+#endif
+  wpos.y = y;
+  vW = wpos; vDepth = depth; vVel = vel; vFoam = foam; vMud = mud; vSurf = surfFoam; vSwash = swash;
+  vec2 tg = sg + wg * calm + swg;
   vNrm = normalize(vec3(-tg.x, 1.0, -tg.y));
   vSteep = length(sg);
   vec4 mvPosition = viewMatrix * vec4(wpos, 1.0);
@@ -85,6 +143,7 @@ const FRAG = /* glsl */`
 ${COMMON}
 uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uHorizon; uniform vec3 uZenith; uniform float uLight; uniform float uUnder;
 varying vec3 vW; varying float vDepth; varying vec2 vVel; varying float vFoam; varying float vMud; varying vec3 vNrm; varying float vSteep;
+varying float vSurf; varying float vSwash;
 #include <fog_pars_fragment>
 vec2 detailGrad(vec2 p, float t) {
   vec2 g = vec2(0.0);
@@ -126,6 +185,12 @@ void main() {
   body = mix(body, muddy, clamp(vMud * 1.15, 0.0, 1.0));
   float sunUp = clamp(uSunDir.y * 2.5, 0.0, 1.0);
   vec3 lit = body * (0.3 + 0.7 * sunUp) * uLight;
+  // 얕은 물 바닥 빛무늬(코스틱)
+  if (depth < 4.0) {
+    float c1 = worley(vW.xz * 0.9 + vec2(uTime * 0.35, uTime * 0.2)), c2 = worley(vW.xz * 1.3 - vec2(uTime * 0.25, -uTime * 0.31));
+    float caust = pow(1.0 - clamp(min(c1, c2) * 3.0, 0.0, 1.0), 4.0);
+    lit += vec3(0.25, 0.3, 0.26) * caust * (1.0 - smoothstep(0.3, 4.0, depth)) * (1.0 - vMud) * sunUp * uLight;
+  }
   // 파봉 투과광 (서브서피스)
   float sss = pow(clamp(dot(V, -uSunDir) * 0.5 + 0.5, 0.0, 1.0), 3.0) * clamp(vSteep * 1.5 + max(vW.y, 0.0) * 0.05, 0.0, 1.0);
   lit += vec3(0.05, 0.32, 0.28) * sss * (1.0 - vMud) * uLight;
@@ -135,14 +200,22 @@ void main() {
   float fadv = mix(vnoise(vW.xz * 0.45 - vel * fq1 * 1.6 + 3.1), vnoise(vW.xz * 0.45 - vel * fq0 * 1.6), fqw);
   float fn = fadv * 0.6 + vnoise(vW.xz * 1.7 + uTime * 0.3) * 0.4;
   float foamAmt = clamp(vFoam, 0.0, 1.2);
-  // 평상시 파도 거품 띠 (수심 등고선을 따라 해안 쪽으로 이동)
-  float surf = pow(0.5 + 0.5 * sin(depth * 4.5 + uTime * 1.6 + vnoise(vW.xz * 0.05) * 6.0), 6.0) * (1.0 - smoothstep(0.2, 2.2, depth)) * step(0.05, depth);
-  foamAmt = max(foamAmt, surf * 0.8);
+  // 쇄파 백파 · 잔류 거품 (셀룰러 레이스)
+  float lace = clamp(worley(vW.xz * 0.55 - vel * fq0 * 0.6 + uTime * 0.05) * 2.2, 0.0, 1.0);
+  float lace2 = clamp(worley(vW.xz * 1.9 + uTime * 0.12) * 2.5, 0.0, 1.0);
+  foamAmt = max(foamAmt, clamp(vSurf, 0.0, 1.0) * (0.55 + 0.45 * lace));
   float fm = smoothstep(0.35, 0.75, fn * foamAmt + foamAmt * 0.35);
+  fm = max(fm, smoothstep(0.25, 0.6, vSurf * (0.4 + 0.6 * lace) + lace2 * vSurf * 0.3));
   vec3 foamCol = mix(vec3(0.93, 0.95, 0.96), vec3(0.62, 0.55, 0.45), vMud * 0.7) * (0.35 + 0.65 * sunUp) * uLight;
   col = mix(col, foamCol, fm);
   float alpha = clamp(1.0 - exp(-depth * 1.6 - vMud * depth * 5.0), 0.0, 1.0);
   alpha = max(alpha, fm * clamp(depth * 4.0, 0.0, 1.0));
+  if (vSwash > 0.0 && depth < 0.06) {
+    // 얇은 물막: 모래가 비치는 반사막 + 가장자리 거품 레이스
+    float edgeF = (1.0 - smoothstep(0.0, 0.05, vSwash)) * clamp(worley(vW.xz * 2.4 + uTime * 0.2) * 3.0, 0.0, 1.0);
+    col = mix(sky * uLight * 0.9 + spec, foamCol, edgeF);
+    alpha = max(alpha, clamp(vSwash * 12.0, 0.0, 0.55) * 0.6 + edgeF * 0.8);
+  }
   if (under) { col = mix(vec3(0.05, 0.12, 0.12), vec3(0.16, 0.13, 0.08), vMud) * uLight + sky * 0.15 * F; alpha = 0.92; }
 #ifdef FAR
   alpha = 1.0;
