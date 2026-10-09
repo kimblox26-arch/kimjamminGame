@@ -893,10 +893,15 @@
     return (W.def[i] > 0 ? 'd' : 'o') + o;
   }
   function groupStyle(key) {
-    if (key[0] === 'n' || key[0] === 'j') return { fill: shade(key[0] === 'j' ? NEUTRAL_JP : NEUTRAL, [1, 0.975, 1.025][+key[1]]), line: 'rgba(255,255,255,.72)' };
+    if (key[0] === 'n' || key[0] === 'j') {
+      const c = key[0] === 'j' ? NEUTRAL_JP : NEUTRAL;
+      return { fill: shade(c, [1, 0.975, 1.025][+key[1]]), line: 'rgba(255,255,255,.72)', side: shade(c, 0.74), hi: 'rgba(255,255,255,.55)', lo: 'rgba(60,80,40,.16)' };
+    }
     const c = rgbOf(+key.slice(1)), f = key[0] === 'd' ? 0.8 : 1;
-    return { fill: shade(c, f), line: shade(c, 0.6 * f) };
+    return { fill: shade(c, f), line: shade(c, 0.6 * f), side: shade(c, 0.58 * f), hi: 'rgba(255,255,255,.5)', lo: 'rgba(0,0,0,.2)' };
   }
+  // 🧊 입체 땅: 칸마다 아래로 두께(옆면)를 깔고, 윗면 안쪽은 왼쪽 위를 밝게 · 오른쪽 아래를 어둡게 해서 볼록한 블록처럼.
+  // 학교 땅은 빈 땅보다 두껍게 솟아오른다. (같은 색 칸을 한 묶음으로 모아 한 번에 칠한다 — 칸마다 칠하는 것보다 훨씬 빠르다)
   function drawGroups(g, ids, px, lines) {
     const groups = new Map();
     for (const i of ids) {
@@ -905,13 +910,28 @@
       if (!p) groups.set(k, p = new Path2D());
       p.addPath(pathOf(i));
     }
-    const list = [...groups].sort((a, b) => ((b[0][0] === 'n' || b[0][0] === 'j') - (a[0][0] === 'n' || a[0][0] === 'j'))); // 빈 땅을 먼저, 학교 땅은 위에
-    for (const [k, p] of list) {
-      const st = groupStyle(k), land = k[0] !== 'n' && k[0] !== 'j';
-      if (land && lines) { g.save(); g.shadowColor = 'rgba(16,28,64,.38)'; g.shadowOffsetY = 1.6; g.shadowBlur = 2.5; g.fillStyle = st.fill; g.fill(p); g.restore(); } // 학교 땅은 살짝 솟아오른 판처럼
-      else { g.fillStyle = st.fill; g.fill(p); }
-      g.strokeStyle = lines ? st.line : st.fill; g.lineWidth = lines ? Math.min(2.2, 0.6 + (SPACING * (1 / px)) / 70) * px : px; g.stroke(p);
-    }
+    const isLand = k => k[0] !== 'n' && k[0] !== 'j';
+    const list = [...groups].sort((a, b) => isLand(a[0]) - isLand(b[0])); // 빈 땅을 먼저, 학교 땅은 위에
+    const hN = lines ? 2.2 * px : 0, hL = (lines ? 6 : 2.8) * px, bw = 1.2 * px;
+    const pass = landPass => {
+      for (const [k, p] of list) {
+        if (isLand(k) !== landPass) continue;
+        const st = groupStyle(k), h = landPass ? hL : hN;
+        if (h) { // 옆면 (두께) + 바닥에 깔린 옅은 그림자
+          g.save(); g.translate(0, h + 1.4 * px); g.fillStyle = landPass ? 'rgba(20,30,70,.16)' : 'rgba(40,70,30,.1)'; g.fill(p);
+          g.translate(0, -1.4 * px); g.fillStyle = st.side; g.fill(p); g.restore();
+        }
+        g.fillStyle = st.fill; g.fill(p); // 윗면
+        if (lines) { // 윗면 안쪽 빛과 그늘 (칸 가장자리만, 칸 밖으로는 안 나간다)
+          g.save(); g.clip(p); g.lineWidth = bw * 2.2;
+          g.translate(bw, bw); g.strokeStyle = st.hi; g.stroke(p);
+          g.translate(-2 * bw, -2 * bw); g.strokeStyle = st.lo; g.stroke(p);
+          g.restore();
+        }
+        g.strokeStyle = lines ? st.line : st.fill; g.lineWidth = lines ? Math.min(2.2, 0.6 + (SPACING * (1 / px)) / 70) * px : px; g.stroke(p);
+      }
+    };
+    pass(false); pass(true);
   }
 
   function renderTile(z, tx, ty) {
@@ -933,7 +953,7 @@
       const ids = [];
       for (const i of owned) { const b = i * 4; if (G.box[b] <= x0 + tw && G.box[b + 2] >= x0 && G.box[b + 1] <= y0 + tw && G.box[b + 3] >= y0) ids.push(i); }
       drawGroups(g, ids, px, false);
-    } else drawGroups(g, cellsIn(x0 - 1, y0 - 1, x0 + tw + 1, y0 + tw + 1), px, cp > 9);
+    } else { const m = Math.max(1, 8 * px); drawGroups(g, cellsIn(x0 - m, y0 - m, x0 + tw + m, y0 + tw + m), px, cp > 9); } // 위 칸의 두께가 이 조각까지 내려온다
     if (G.peaks) drawRelief(g, x0, y0, tw, lands);
     if (G.seg) drawBorders(g, x0, y0, tw, px, cp);
     if (cp >= 3) { g.strokeStyle = 'rgba(242,224,172,.95)'; g.lineWidth = Math.min(5, 1.5 + cp / 25) * px; for (const k of lands) g.stroke(G.landPaths[k]); } // 모래사장
