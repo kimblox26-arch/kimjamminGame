@@ -741,21 +741,36 @@ export class Builder {
     } else if (act === 'exit') {
       if (this.opts.onExit) this.opts.onExit();
     } else if (act === 'save') {
-      const name = prompt('설계 이름', this.bp.name || '내 기체');
-      if (!name) return;
-      this.bp.name = name;
-      saveDesign(this.bp);
-      this._modal('저장 완료', `<p><b>${escapeHtml(name)}</b> 설계를 저장했습니다. 격납고에서 다시 불러올 수 있습니다.</p>`);
-      this.render();
+      // 브라우저 기본 대화상자 대신 화면 안 입력창 (임베드 환경에서도 동작)
+      this._modal('설계 저장', `
+        <p class="hint">격납고에 보관할 이름을 입력하세요.</p>
+        <input type="text" id="save-name" class="save-name" maxlength="40" value="${escapeHtml(this.bp.name || '내 기체')}">
+        <button class="btn btn-primary" id="save-apply" data-icon="save">저장</button>`);
+      const input = this.modal.querySelector('#save-name');
+      const apply = () => {
+        const name = input.value.trim();
+        if (!name) { input.focus(); return; }
+        this.bp.name = name;
+        saveDesign(this.bp);
+        this._modal('저장 완료', `<p><b>${escapeHtml(name)}</b> 설계를 저장했습니다. 격납고에서 다시 불러올 수 있습니다.</p>`);
+        this.render();
+      };
+      this.modal.querySelector('#save-apply').onclick = apply;
+      input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') apply(); };
+      input.focus(); input.select();
     } else if (act === 'load' || act === 'presets') {
       this._openHangar();
     } else if (act === 'json') {
       this._openJson();
     } else if (act === 'clear') {
-      if (confirm('현재 설계를 모두 지우고 새로 시작할까요?')) {
+      this._modal('새 설계', `
+        <p>현재 설계를 모두 지우고 새로 시작할까요? 저장하지 않은 변경은 사라집니다.</p>
+        <button class="btn btn-primary" id="clear-apply" data-icon="trash">지우고 새로 시작</button>`);
+      this.modal.querySelector('#clear-apply').onclick = () => {
         this.setBlueprint(starterBlueprint());
         this._renderInspector();
-      }
+        this.modal.hidden = true;
+      };
     } else if (act === 'modal-close') {
       this.modal.hidden = true;
     }
@@ -808,6 +823,7 @@ export class Builder {
     this._modal('설계 JSON — 복사 / 붙여넣기', `
       <p class="hint">텍스트를 복사해 보관하거나, 다른 설계를 붙여넣고 [적용]을 누르세요.</p>
       <textarea class="json-area" spellcheck="false">${escapeHtml(json)}</textarea>
+      <p class="json-err" hidden></p>
       <button class="btn btn-primary" id="json-apply">적용</button>`);
     const ta = this.modal.querySelector('.json-area');
     this.modal.querySelector('#json-apply').onclick = () => {
@@ -819,7 +835,9 @@ export class Builder {
         this.modal.hidden = true;
         this.click('confirm');
       } catch (err) {
-        alert('JSON 오류: ' + err.message);
+        const errEl = this.modal.querySelector('.json-err');
+        errEl.textContent = 'JSON 오류: ' + err.message + ' — 형식을 확인한 뒤 다시 적용하세요.';
+        errEl.hidden = false;
         if (this.audio) this.audio.ui('error');
       }
     };

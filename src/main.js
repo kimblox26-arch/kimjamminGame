@@ -505,7 +505,8 @@ class Game {
       if (Audio.ready) Audio.ui('confirm');
       if (record) {
         const key = 'freefreely.best.' + ms.id;
-        const prev = localStorage.getItem(key);
+        let prev = null;
+        try { prev = localStorage.getItem(key); } catch (e) { /* 저장소 사용 불가 */ }
         if (!prev || record.localeCompare(prev) < 0) {
           try { localStorage.setItem(key, record); } catch (e) { /* 무시 */ }
         }

@@ -464,3 +464,13 @@ kbd {
   .throttle-wrap { right: 12px; bottom: 190px; }
   .flight-top { font-size: 10.5px; gap: 10px; }
 }
+
+/* 설계 저장 이름 입력 · JSON 오류 */
+.save-name {
+  width: 100%; margin: 6px 0 14px; padding: 10px 12px;
+  background: rgba(4, 14, 24, 0.85); color: #e9f6ff;
+  border: 1px solid rgba(98, 230, 255, 0.45); border-radius: 4px;
+  font: 600 15px "Rajdhani", system-ui, sans-serif;
+}
+.save-name:focus-visible { outline: 2px solid #62e6ff; outline-offset: 1px; }
+.json-err { color: #ff6b5e; font-weight: 600; margin: 8px 0; }

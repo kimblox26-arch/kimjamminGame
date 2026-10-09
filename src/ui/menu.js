@@ -259,7 +259,8 @@ export class UIManager {
       const card = document.createElement('div');
       card.className = 'mission-card ico-host';
       card.tabIndex = -1;
-      const best = localStorage.getItem('freefreely.best.' + m.id);
+      let best = null;
+      try { best = localStorage.getItem('freefreely.best.' + m.id); } catch (e) { /* 저장소 사용 불가 */ }
       card.innerHTML = `
         <div class="mc-icon">${icon(m.icon, { size: 40, cls: 'ico-live-hover' })}</div>
         <div class="mc-name">${m.name}</div>
