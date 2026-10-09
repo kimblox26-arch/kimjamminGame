@@ -13,7 +13,7 @@ export const PART = { body: 0, hairCap: 1, hairLong: 2, ponytail: 3, bun: 4, cap
 export const LODS = [
   { h: 0.0150, hHead: 0.0066, hands: 2, seg: 1.0, inflate: 0 },
   { h: 0.0255, hHead: 0.0105, hands: 1, seg: 0.55, inflate: 0.0015 },
-  { h: 0.042, hHead: 0, hands: 0, seg: 0.32, inflate: 0.005 },
+  { h: 0.042, hHead: 0.017, hands: 0, seg: 0.32, inflate: 0.005 },
   { h: 0.07, hHead: 0, hands: 0, seg: 0.2, inflate: 0.012 },
 ];
 
@@ -65,11 +65,11 @@ function variantParams(name) {
   P.footLen = m3(0.152, 0.146, 0.16);
   P.chestW = m3(0.091, 0.083, 0.088) * (1 - 0.03 * o);
   P.chestD = m3(0.063, 0.057, 0.066);
-  P.waistW = m3(0.079, 0.068, 0.085) * (1 + 0.08 * o);
-  P.waistD = m3(0.055, 0.05, 0.066) * (1 + 0.14 * o);
-  P.hipW = m3(0.095, 0.107, 0.088);
-  P.hipD = m3(0.06, 0.066, 0.064);
-  P.thighR = m3(0.05, 0.055, 0.05) * (1 - 0.06 * o);
+  P.waistW = m3(0.079, 0.075, 0.085) * (1 + 0.05 * o);
+  P.waistD = m3(0.055, 0.05, 0.062) * (1 + 0.04 * o);
+  P.hipW = m3(0.095, 0.1, 0.088);
+  P.hipD = m3(0.056, 0.059, 0.06);
+  P.thighR = m3(0.05, 0.051, 0.05) * (1 - 0.06 * o);
   P.kneeR = m3(0.031, 0.031, 0.032);
   P.calfR = m3(0.035, 0.034, 0.034) * (1 - 0.08 * o);
   P.ankleR = m3(0.0185, 0.0175, 0.02);
@@ -113,6 +113,7 @@ class Prim {
     this.type = type;
     this.grp = o.grp; this.bone = o.bone; this.bone2 = o.bone2 ?? -1; this.w2 = o.w2 ?? 0;
     this.fat = o.fat ?? 0.5; this.op = o.op ?? 0;   // 0 합집합, 1 빼기, 2 사후 합집합
+    this.k = o.k ?? 0;                               // 개별 블렌드 반경 (0 = 그룹 값)
     if (type === 0) {
       const a = o.a, b = o.b;
       this.ax = a[0]; this.ay = a[1]; this.az = a[2];
@@ -169,8 +170,8 @@ function buildSDF(P, opt) {
   const mu = P.muscle, br = P.breast, o = P.o, kid = P.k, fem = P.f;
   // ── 몸통(0)
   ell(0, PEL, [0, P.hipY + 0.014 * H, -0.006 * H], [P.hipW, 0.072 * H, P.hipD], 0.8);
-  for (const s of [1, -1]) ell(0, PEL, [s * 0.044 * H, P.hipY - 0.006 * H, -0.03 * H - 0.004 * H * fem], [0.05 * H * (1 + 0.1 * fem), 0.06 * H, 0.042 * H * (1 + 0.12 * fem)], 1.0, { bone2: sideB(s).th, w2: 0.3 });
-  ell(0, PEL, [0, P.hipY + 0.075 * H, 0.01 * H], [P.waistW * 0.96, 0.06 * H, P.waistD + 0.01 * H * o], 1.0, { bone2: SPI, w2: 0.5 });
+  for (const s of [1, -1]) ell(0, PEL, [s * 0.044 * H, P.hipY - 0.004 * H, -0.025 * H - 0.003 * H * fem], [0.05 * H * (1 + 0.05 * fem), 0.054 * H, 0.034 * H * (1 + 0.07 * fem)], 1.0, { bone2: sideB(s).th, w2: 0.3 });
+  ell(0, PEL, [0, P.hipY + 0.075 * H, 0.002 * H], [P.waistW * 0.96, 0.065 * H, P.waistD * 0.96], 1.0, { bone2: SPI, w2: 0.5 });
   ell(0, SPI, [0, P.waistY + 0.01 * H, -0.004 * H], [P.waistW, 0.07 * H, P.waistD], 1.0);
   ell(0, CHE, [0, P.chestY + 0.04 * H, -0.002 * H], [P.chestW, 0.105 * H, P.chestD], 0.5);
   ell(0, CHE, [0, P.shY - 0.004 * H, 0.002 * H], [P.chestW * 0.9, 0.04 * H, P.chestD * 0.8], 0.4);
@@ -178,15 +179,16 @@ function buildSDF(P, opt) {
     const b = sideB(s), S = J[b.ua];
     const u = V.norm(V.sub(J[b.fa], S)), v = [u[1] * -s * -1 * 0 + Math.cos(P.alpha) * s, Math.sin(P.alpha), 0];
     const axes = [v, u, [0, 0, 1]];
-    if (mu > 0.05) ell(0, CHE, [s * 0.044 * H, P.shY - 0.052 * H, P.chestD * 0.66], [0.058 * H, 0.034 * H, 0.016 * H * mu + 0.004 * H], 0.8);
-    if (br > 0.05) ell(0, CHE, [s * 0.046 * H, P.shY - 0.09 * H - 0.012 * H * o, P.chestD * 0.62], [0.044 * H, 0.042 * H * (1 + 0.15 * o), 0.04 * H * br], 0.9);
+    // 가슴: 남성은 좌우 볼록 없이 넓고 평평한 가슴판 하나(아래), 여성은 절제된 크기로 넓게 블렌드
+    if (br > 0.05) ell(0, CHE, [s * 0.043 * H, P.shY - 0.088 * H - 0.008 * H * o, P.chestD * 0.5], [0.037 * H, 0.03 * H, 0.019 * H * br * (1 - 0.25 * o)], 0.9, { k: 0.03 * H });
     ell(0, CHE, [s * 0.046 * H, P.shY - 0.045 * H, -P.chestD * 0.6], [0.05 * H, 0.072 * H, 0.03 * H], 0.5);
     cone(0, CHE, [s * 0.02 * H, P.neckY + 0.002 * H, -0.024 * H + P.fz * 0.3], [s * (P.shX - 0.012 * H), P.shY + 0.018 * H, -0.012 * H], 0.028 * H, 0.019 * H, 0.5, { bone2: b.clav, w2: 0.5 });
-    ell(0, b.ua, V.add(V.mad(S, u, 0.02 * H), V.mul(v, 0.007 * H)), [0.03 * H * (1 - 0.1 * fem), 0.05 * H, 0.034 * H * (1 - 0.1 * fem)], 0.5, { axes, bone2: b.clav, w2: 0.25 });
+    ell(0, b.ua, V.add(V.mad(S, u, 0.02 * H), V.mul(v, 0.005 * H)), [0.028 * H * (1 - 0.1 * fem), 0.05 * H, 0.032 * H * (1 - 0.1 * fem)], 0.5, { axes, bone2: b.clav, w2: 0.25 });
   }
+  if (mu > 0.05) ell(0, CHE, [0, P.shY - 0.055 * H, P.chestD * 0.5], [0.075 * H, 0.04 * H, 0.012 * H + 0.012 * H * mu], 0.6, { k: 0.025 * H });
   const neckMid = [0, lerp(P.neckY, P.chinY, 0.45), -0.014 * H + P.fz * 0.7];
   cone(0, NEC, [0, P.neckY - 0.03 * H, -0.016 * H + P.fz * 0.3], neckMid, P.neckR * 1.12, P.neckR * 1.02, 0.5, { bone2: CHE, w2: 0.35 });
-  cone(0, NEC, neckMid, [0, P.chinY + 0.014 * H, -0.012 * H + P.fz], P.neckR * 1.02, P.neckR, 0.4, { bone2: HEA, w2: 0.3 });
+  cone(0, NEC, neckMid, [0, P.chinY + 0.014 * H, -0.017 * H + P.fz], P.neckR * 1.02, P.neckR * 0.97, 0.4, { bone2: HEA, w2: 0.3 });
   if (o > 0) ell(0, CHE, [0, P.shY - 0.025 * H, -P.chestD * 0.8 + P.fz * 0.2], [0.07 * H, 0.06 * H, 0.035 * H], 0.3);
   // ── 팔(1·2)
   for (const s of [1, -1]) {
@@ -225,33 +227,34 @@ function buildSDF(P, opt) {
     ell(g, b.ft, [fx + s * 0.004 * H, 0.016 * H, 0.09 * H], [0.029 * H, 0.017 * H, 0.036 * H], 0.05);
   }
   // ── 머리(5) — 머리 단위 hh, 기준점 hc
-  const jw = lerp(0.255, 0.235, fem) * (1 - 0.06 * kid);
-  const fs = kid ? 0.9 : 1;                      // 아이: 얼굴이 작음
+  // 양식화: 미세 이목구비(입술·콧볼·광대·눈구멍·안구)를 없애고 큰 블렌드 반경의 덩어리 몇 개로 매끈한 얼굴면을 만든다.
+  // 눈·눈썹·입은 셰이더가 그린다 (crowd.js). 남은 기복: 부드러운 이마·작은 코·둥근 턱선.
+  const fs = kid ? 0.92 : 1;                     // 아이: 얼굴이 작음
   const ey = P.eyeY;
   const hr = (r) => r.map((v) => v * hh);
-  ell(5, HEA, h(0, 0.08, -0.07), hr([0.335 + 0.015 * kid, 0.42, 0.43]), 0.1);
-  ell(5, HEA, h(0, 0.17, 0.12), hr([0.29, 0.22, 0.26]), 0.1);
-  ell(5, HEA, h(0, -0.08 * fs + ey * 0.5, 0.1), hr([0.275 * fs, 0.3 * fs, 0.28]), 0.25);
-  for (const s of [1, -1]) {
-    cone(5, HEA, h(s * jw, -0.12 * fs, -0.06), h(s * 0.06, -0.43 * fs + ey * 0.3, 0.27 * fs), (0.07) * hh, (0.075) * hh, 0.2);
-    ell(5, HEA, h(s * 0.2 * fs, ey, 0.22), hr([0.1, 0.075, 0.1]), 0.1);
-    ell(5, HEA, h(s * 0.16 * fs, -0.17 * fs + ey, 0.25), hr([0.095 + 0.02 * kid, 0.1, 0.085 + 0.015 * kid]), 0.4);
-    ell(5, HEA, h(s * 0.345, -0.02 + ey * 0.5, -0.04), hr([0.045, 0.14 * (1 + 0.08 * o), 0.09]), 0.0, { axes: [[1, 0, 0], [0, Math.cos(0.25), -Math.sin(0.25)], [0, Math.sin(0.25), Math.cos(0.25)]] });
-    ell(5, HEA, h(s * 0.055 * fs, -0.15 * fs + ey, 0.405 * fs), hr([0.045 * fs, 0.035 * fs, 0.04 * fs]), 0.0);
-  }
-  ell(5, HEA, h(0, -0.42 * fs + ey * 0.3, 0.29 * fs), hr([0.1 * fs, 0.085, 0.08]), 0.2);
-  ell(5, HEA, h(0, 0.1 + ey * 0.3, 0.3), hr([0.27, 0.06, 0.085 - 0.02 * fem - 0.02 * kid]), 0.0);
-  const nTip = lerp(0.47, 0.455, fem) * fs + 0.012 * o;
-  cone(5, HEA, h(0, 0.06 + ey, 0.37 * fs), h(0, -0.13 * fs + ey, nTip), (0.035 * fs) * hh, lerp(0.05, 0.043, fem) * fs * hh, 0.0);
-  ell(5, HEA, h(0, -0.235 * fs + ey * 0.6, 0.35 * fs), hr([0.1 * fs, 0.04, 0.04 + 0.006 * fem]), 0.1);
-  ell(5, HEA, h(0, -0.29 * fs + ey * 0.5, 0.335 * fs), hr([0.088 * fs, 0.036 + 0.006 * fem, 0.036 + 0.006 * fem]), 0.1);
-  for (const s of [1, -1]) {
-    ell(5, HEA, h(s * 0.14 * fs, ey + 0.02, 0.4 * fs), hr([0.085 * fs, 0.075, 0.085]), 0, { op: 1 });       // 눈구멍
-    ell(5, HEA, h(s * 0.14 * fs, ey, 0.27 * fs), hr([0.075 * fs, 0.075 * fs, 0.075 * fs]), 0, { op: 2 });  // 안구
-  }
+  const K = (v) => ({ k: v * hh });
+  const ly = ey * 0.4;                           // 아래 얼굴 이동 (아이: 눈이 낮음)
+  // 두개(뒤통수·정수리) + 이마
+  ell(5, HEA, h(0, 0.08, -0.07), hr([0.33 - 0.01 * fem + 0.015 * kid, 0.42, 0.43 + 0.01 * kid]), 0.1, K(0.12));
+  ell(5, HEA, h(0, 0.14, 0.08), hr([0.28, 0.25, 0.27]), 0.1, K(0.1));
+  // 얼굴: 아래로 갈수록 좁아지는 달걀형 타원 하나 (광대~턱), 크게 블렌드
+  ell(5, HEA, h(0, -0.12 * fs + ly, 0.1), hr([lerp(0.245, 0.235, fem) * fs, 0.34 * fs, 0.26]), 0.25, K(0.16));
+  // 턱끝 · (남성) 턱각을 아주 넓게 블렌드
+  ell(5, HEA, h(0, -0.41 * fs + ly, 0.2 * fs), hr([0.095 * fs, 0.085, 0.095]), 0.2, K(0.14));
+  // 입 주변을 아주 살짝 채움 (윗입술이 턱보다 약간 앞 — 옆모습이 오목해 보이지 않게)
+  ell(5, HEA, h(0, -0.25 * fs + ly, 0.21 * fs), hr([0.11 * fs, 0.09, 0.135]), 0.2, K(0.15));
+  if (fem < 0.5 && !kid) for (const s of [1, -1]) ell(5, HEA, h(s * 0.165, -0.3 + ly, 0.0), hr([0.075, 0.1, 0.13]), 0.2, K(0.2));
+  // 눈두덩: 넓게 살짝 파서 눈에 부드러운 그늘 (따로 눈썹뼈를 붙이지 않음 — 관자놀이에 주름·혹이 생김)
+  for (const s of [1, -1]) ell(5, HEA, h(s * 0.135, ey + 0.01, 0.395), hr([0.078, 0.056, 0.05]), 0.0, { op: 1, k: 0.09 * hh });
+  // 작은 코: 콧등 + 둥근 코끝 + 콧볼 폭
+  const nTip = lerp(0.415, 0.4, fem) * fs - 0.012 * kid;
+  cone(5, HEA, h(0, 0.06 + ey, 0.335 * fs), h(0, -0.12 * fs + ey, nTip), 0.03 * fs * hh, lerp(0.042, 0.037, fem) * fs * hh, 0.0, K(0.06));
+  ell(5, HEA, h(0, -0.135 * fs + ey, 0.35 * fs), hr([lerp(0.055, 0.045, fem) * fs, 0.032, 0.04]), 0.0, K(0.06));
+  // 귀
+  for (const s of [1, -1]) ell(5, HEA, h(s * 0.33, -0.03 + ey * 0.5, -0.04), hr([0.04, 0.13 * (1 + 0.06 * o), 0.085]), 0.0, { axes: [[1, 0, 0], [0, Math.cos(0.25), -Math.sin(0.25)], [0, Math.sin(0.25), Math.cos(0.25)]], k: 0.05 * hh });
   // 그룹 구성
   const groups = [];
-  const gk = [0.012 * H, 0.006 * H, 0.006 * H, 0.008 * H, 0.008 * H, 0.065 * hh];
+  const gk = [0.017 * H, 0.0095 * H, 0.0095 * H, 0.011 * H, 0.011 * H, 0.065 * hh];
   for (let g = 0; g < 6; g++) {
     const prims = L.filter((p) => p.grp === g);
     const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
@@ -263,8 +266,8 @@ function buildSDF(P, opt) {
   const cut = opt.cut || null;   // { below: y } → y<below 만, { above: y } → y>above 만
   const groupD = (G, x, y, z) => {
     let d = 1e9;
-    for (const p of G.uni) d = smin(d, p.d(x, y, z), G.k);
-    for (const p of G.sub) d = smax(d, -p.d(x, y, z), G.k * 1.6);
+    for (const p of G.uni) d = smin(d, p.d(x, y, z), p.k || G.k);
+    for (const p of G.sub) d = smax(d, -p.d(x, y, z), p.k || G.k * 1.6);
     for (const p of G.post) d = smin(d, p.d(x, y, z), G.k * 0.35);
     if (G.clipY) d = Math.max(d, -y);
     return d;
@@ -534,7 +537,10 @@ function addSurface(buf, S, P, mesh, part) {
     const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2], nx = N[i * 3], ny = N[i * 3 + 1], nz = N[i * 3 + 2];
     const { bones, fat } = vertexAttribs(S, P, x, y, z, nx, ny, nz);
     const zn = zoneOf(P, bones, x, y, z);
-    const ao = aoAt(S.sdf, P.H, x, y, z, nx, ny, nz);
+    let ao = aoAt(S.sdf, P.H, x, y, z, nx, ny, nz);
+    // 얼굴·목 위쪽: 턱 밑 차폐가 수염 같은 얼룩으로 보이지 않게 약하게
+    const hw = smooth(P.chinY - 0.05 * P.H, P.chinY + 0.02 * P.H, y);
+    ao = lerp(ao, 1 - (1 - ao) * 0.4, hw);
     buf.vert([x, y, z], [nx, ny, nz], bones, zn, [fat, part, ao, 0]);
   }
   for (const i of idx) buf.idx.push(base + i);
@@ -594,6 +600,7 @@ function buildHand(buf, P, s, detail) {
     misc: (p, ca, sa, tip) => [0.05, PART.hand, 1, nail ? nail(p, ca, sa, tip) : 0],
   });
   const v0 = buf.nv, i0 = buf.idx.length;
+  if (detail === 1) { buildMitten(buf, P, s, b, W, hl, u, pal, fwd, attrs); buf.normals(v0, i0); return; }
   // 손바닥: 초타원 단면 스윕
   const palmLen = 0.53, segs = detail === 2 ? 14 : 10;
   const pRows = detail === 2 ? 7 : 5;
@@ -660,6 +667,71 @@ function buildHand(buf, P, s, detail) {
   const tipT = p;
   tube(buf, pts, rads, V.mul(pal, -1), detail === 2 ? 8 : 6, attrs((q) => (V.len(V.sub(q, tipT)) / hl < 0.07 && -V.dot(V.sub(q, tipT), pal) > 0 ? 1 : 0)), true, false);
   buf.normals(v0, i0);
+}
+
+/**
+ * 편안하게 쥔 손 (중간 LOD): 손바닥~손가락을 하나의 초타원 단면 스윕으로 만들고 손가락 부분을 손바닥 쪽으로
+ * 부드럽게 말아 넣음. 엄지는 검지 옆에 붙여 안쪽으로 굽힘 → 멀리서 갈퀴처럼 벌어진 손으로 보이지 않음
+ */
+function buildMitten(buf, P, s, b, W, hl, u, pal, fwd, attrs) {
+  const A = attrs(null);
+  const segs = 10, rows = 9;
+  const a0 = -0.1, aK = 0.5, aEnd = 0.95;          // 손목 · 손가락 시작 · 끝 (손 길이 단위, 호 길이)
+  const curl = 1.05;                               // 손가락 전체 굽힘(rad)
+  const frame = (a) => {                           // 중심선 위치 · 접선 · 손바닥 법선
+    if (a <= aK) return { c: V.mad(W, u, a * hl), t: u, n: pal };
+    const L = aK, k = curl / (aEnd - aK), th = (a - aK) * k;
+    const c = V.add(V.mad(W, u, (L + Math.sin(th) / k) * hl), V.mul(pal, (1 - Math.cos(th)) / k * hl));
+    return { c, t: V.norm(V.add(V.mul(u, Math.cos(th)), V.mul(pal, Math.sin(th)))), n: V.norm(V.sub(V.mul(pal, Math.cos(th)), V.mul(u, Math.sin(th)))) };
+  };
+  const base = buf.nv;
+  for (let r = 0; r <= rows; r++) {
+    const t = r / rows, a = lerp(a0, aEnd, t);
+    const wdt = lerp(0.3, 0.4, smooth(0, 0.45, t)) * (1 - 0.28 * smooth(0.7, 1, t));
+    const thk = lerp(0.15, 0.1, smooth(0.2, 0.8, t)) * (1 - 0.2 * smooth(0.85, 1, t));
+    const F = frame(a), off = 0.01 * hl * (1 - t);
+    for (let k = 0; k < segs; k++) {
+      const ang = (k / segs) * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang);
+      const e = 2.6, cx = Math.sign(ca) * Math.abs(ca) ** (2 / e), sx = Math.sign(sa) * Math.abs(sa) ** (2 / e);
+      const p = V.add(V.add(F.c, V.mul(F.n, cx * thk / 2 * hl + off)), V.mul(fwd, sx * wdt / 2 * hl));
+      buf.vert(p, [0, 1, 0], A.bones(p), A.zone(p), A.misc(p, ca, sa));
+    }
+  }
+  for (let r = 0; r < rows; r++) for (let k = 0; k < segs; k++) {
+    const a = base + r * segs + k, bq = base + r * segs + (k + 1) % segs, c = a + segs, d = bq + segs;
+    if (s > 0) { buf.tri(a, c, bq); buf.tri(bq, c, d); } else { buf.tri(a, bq, c); buf.tri(bq, d, c); }
+  }
+  // 손가락 끝 둥근 마개
+  const Fe = frame(aEnd), last = base + rows * segs;
+  const ring2 = buf.nv;
+  for (let k = 0; k < segs; k++) {
+    const ang = (k / segs) * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang);
+    const e = 2.6, cx = Math.sign(ca) * Math.abs(ca) ** (2 / e), sx = Math.sign(sa) * Math.abs(sa) ** (2 / e);
+    const p = V.add(V.add(V.mad(Fe.c, Fe.t, 0.035 * hl), V.mul(Fe.n, cx * 0.065 * hl * 0.5 * 0.8)), V.mul(fwd, sx * 0.29 * 0.5 * 0.75 * hl));
+    buf.vert(p, [0, 1, 0], A.bones(p), A.zone(p), A.misc(p, ca, sa));
+  }
+  for (let k = 0; k < segs; k++) {
+    const a = last + k, bq = last + (k + 1) % segs, c = ring2 + k, d = ring2 + (k + 1) % segs;
+    if (s > 0) { buf.tri(a, c, bq); buf.tri(bq, c, d); } else { buf.tri(a, bq, c); buf.tri(bq, d, c); }
+  }
+  const tipC = V.mad(Fe.c, Fe.t, 0.055 * hl);
+  const ec = buf.vert(tipC, [0, 1, 0], A.bones(tipC), A.zone(tipC), A.misc(tipC, 0, 0));
+  for (let k = 0; k < segs; k++) { const a = ring2 + k, bq = ring2 + (k + 1) % segs; if (s > 0) buf.tri(a, ec, bq); else buf.tri(a, bq, ec); }
+  // 손목 쪽 마개 (팔 안에 묻힘)
+  const wc = V.mad(W, u, (a0 - 0.02) * hl);
+  const wi = buf.vert(wc, [0, 1, 0], A.bones(wc), A.zone(wc), A.misc(wc, 0, 0));
+  for (let k = 0; k < segs; k++) { const a = base + k, bq = base + (k + 1) % segs; if (s > 0) buf.tri(a, bq, wi); else buf.tri(a, wi, bq); }
+  // 엄지: 검지 옆에 붙어 손바닥 쪽으로 굽음
+  let p = V.add(V.add(V.mad(W, u, 0.12 * hl), V.mul(pal, 0.04 * hl)), V.mul(fwd, 0.12 * hl));
+  let dir = V.norm(V.add(V.add(V.mul(u, 0.8), V.mul(fwd, 0.28)), V.mul(pal, 0.5)));
+  const pts = [p], rads = [[0.08 * hl, 0.07 * hl]];
+  const segL = [0.17, 0.15, 0.13], cu = [0.15, 0.3, 0.3];
+  for (let j = 0; j < 3; j++) {
+    dir = V.norm(V.add(V.add(V.mul(dir, Math.cos(cu[j])), V.mul(pal, Math.sin(cu[j]) * 0.7)), V.mul(fwd, -Math.sin(cu[j]) * 0.5)));
+    p = V.mad(p, dir, segL[j] * hl); pts.push(p);
+    const rr = lerp(0.075, 0.056, (j + 1) / 3) * hl; rads.push([rr, rr * 0.9]);
+  }
+  tube(buf, pts, rads, V.mul(pal, -1), 7, attrs(() => 0), true, false);
 }
 
 /* ───────────────────────── 머리카락 · 모자 (머리 SDF 레이캐스트) ───────────────────────── */
@@ -761,7 +833,8 @@ function buildHair(buf, S, P, lod) {
   const hh = P.hh, sg = LODS[lod].seg, kid = P.k;
   const T = 0.055 * hh;
   // 1) 짧은 머리 캡
-  const capEdge = edgeFn([[0, 0.95], [0.6, 1.2], [1.25, 1.62], [1.6, 1.52], [2.0, 1.95], [Math.PI, 2.2]]);
+  // 이마 선은 둥글고 평평하게, 관자놀이에서 내려와 귀 앞 구레나룻 → 귀 위 → 목덜미
+  const capEdge = edgeFn([[0, 1.0], [0.45, 1.04], [0.95, 1.4], [1.3, 1.62], [1.6, 1.5], [2.0, 1.95], [Math.PI, 2.2]]);
   scalpShell(buf, S, P, {
     part: PART.hairCap, nph: 44 * sg, nth: 14 * sg, edge: capEdge,
     thick: (s, ph, th) => T * (1 + 0.5 * Math.cos(th) - 0.2 * kid) * (1 - smooth(0.68, 1, s)) + 0.003 * hh,
@@ -771,28 +844,40 @@ function buildHair(buf, S, P, lod) {
   {
     const v0 = buf.nv, i0 = buf.idx.length;
     const ax = [0, 0, P.hc[2] - 0.08 * hh];
-    const yTop = P.hc[1] + 0.25 * hh, yEnd = P.shY - lerp(0.02, 0.06, P.f) * P.H;
-    const nph = Math.round(30 * sg) + 4, nv = Math.round(16 * sg) + 4;
-    const ph0 = 0.95, ph1 = Math.PI * 2 - 0.95;
-    const outer = [], innerR = [];
+    const yTop = P.hc[1] + 0.34 * hh, yEnd = P.shY - lerp(0.02, 0.06, P.f) * P.H;
+    const nph = Math.round(30 * sg) + 4, nv = Math.round(18 * sg) + 4;
+    // 앞쪽 가장자리: 얼굴 옆은 감싸고(0.95rad), 턱 아래부터는 어깨 뒤로 넘어가게(→1.8rad) — 어깨·팔과 겹치지 않음
+    const tChin = (yTop - P.chinY) / (yTop - yEnd);
+    const phEdge = (t) => 0.95 + 0.85 * smooth(tChin - 0.12, tChin + 0.22, t);
+    // 두피 캡 두께(캡과 같은 식) — 긴 머리 윗부분의 바깥면을 캡 바깥면에 맞춰 이음매가 생기지 않게
+    const cc = V.add(P.hc, [0, 0.06 * hh, -0.05 * hh]);
+    const capT = (p) => { const dd = V.norm(V.sub(p, cc)); return (0.055 * (1 + 0.5 * dd[1] - 0.2 * kid) + 0.006) * hh; };
+    const outer = [];
     for (let j = 0; j < nph; j++) {
-      const ph = lerp(ph0, ph1, j / (nph - 1));
-      const d = [Math.sin(ph), 0, Math.cos(ph)];
+      const u = j / (nph - 1), side = Math.sin(Math.PI * u);
       let rPrev = 0;
       const ring = [];
       for (let i = 0; i < nv; i++) {
-        const t = i / (nv - 1);
+        const t = i / (nv - 1), pe = phEdge(t);
+        const ph = lerp(pe, Math.PI * 2 - pe, u);
+        const d = [Math.sin(ph), 0, Math.cos(ph)];
         const y = lerp(yTop, yEnd + (Math.sin(ph * 7) * 0.02 - Math.abs(Math.cos(ph)) * 0.04) * P.H * 0.6, t);
         const o = [ax[0], y, ax[2]];
-        // 바깥에서 안으로 들어오며 몸 표면 찾기
-        let r = 0.45 * P.H * 0.5, st = 0.004 * P.H;
-        while (r > 0.0 && S.trunkSdf(o[0] + d[0] * r, y, o[2] + d[2] * r) > 0) r -= st;
+        // 바깥에서 안으로 들어오며 몸 표면 찾기 (이분법으로 정밀화 → 가장자리 톱니 없음)
+        let r = 0.45 * P.H * 0.5;
+        const st = 0.004 * P.H, f = (rr) => S.trunkSdf(o[0] + d[0] * rr, y, o[2] + d[2] * rr);
+        while (r > 0.0 && f(r) > 0) r -= st;
+        if (r > 0) { let a = r, b = r + st; for (let k = 0; k < 10; k++) { const m = (a + b) / 2; if (f(m) > 0) b = m; else a = m; } r = (a + b) / 2; }
         const bodyR = Math.max(r, 0.02);
-        let hr = Math.max(bodyR + 0.012 * hh, rPrev - (yTop - y > 0.2 * hh ? 0.004 : 0.02) * hh);
-        if (i === 0) hr = bodyR + 0.03 * hh;
+        // 캡 바깥면까지의 수평 거리 (경사면에서는 법선 거리보다 김)
+        const hp = V.mad(o, d, bodyR), n = gradN(S.trunkSdf, hp, hh * 0.02);
+        const capR = bodyR + (y > P.chinY ? capT(hp) / Math.max(0.35, Math.hypot(n[0], n[2])) : 0);
+        let hr = Math.max(capR, rPrev - (yTop - y > 0.25 * hh ? 0.004 : 0.03) * hh);
         rPrev = hr;
-        const thick = lerp(0.07, 0.025, t) * hh;
-        ring.push([V.mad(o, d, hr + thick), V.mad(o, d, hr), y]);
+        hr = lerp(capR + 0.003 * hh, hr, smooth(0.0, 0.4, side));   // 좌우 가장자리는 캡·얼굴옆·등에 붙임
+        // 두께(바깥으로 덧붙는 양): 맨 위는 0 → 캡 바깥면에서 자연스럽게 이어지고, 아래·좌우 가장자리로 얇아짐
+        const thick = (0.004 + 0.03 * smooth(0, 0.3, t) * (1 - 0.4 * t)) * hh * (0.12 + 0.88 * Math.sqrt(side));
+        ring.push([V.mad(o, d, hr + thick), V.mad(o, d, Math.max(bodyR + 0.004 * hh, hr - 0.04 * hh)), y]);
       }
       outer.push(ring);
     }
@@ -1030,13 +1115,20 @@ export function buildGeometry(name, lod) {
   if (L.hHead) {
     // 몸(목 위 절단) + 정밀 머리(목 아래 절단) — 겹치는 목 구간에서 같은 SDF 표면을 공유
     const yb = P.chinY - 0.012 * H, ya = P.chinY - 0.032 * H;
-    const Sb = buildSDF(P, { sdfHands: false, inflate: 0, cut: { below: yb } });
+    const inf = L.hands === 0 ? L.inflate * P.sc : 0;   // 중간 LOD(손 SDF)만 팽창
+    const Sb = buildSDF(P, { sdfHands: L.hands === 0, inflate: inf, cut: { below: yb } });
     const body = polygonize(Sb, Sb.sdf, S.bmin, [S.bmax[0], yb + 2 * h, S.bmax[2]], h);
     addSurface(buf, S, P, body, PART.body);
     const hw = 0.62 * P.hh;
     const box = [-hw, ya - 0.01, P.hc[2] - 0.75 * P.hh, hw, H + 0.01, P.hc[2] + 0.75 * P.hh];
-    const Sh = buildSDF(P, { sdfHands: false, inflate: 0, cut: { above: ya, box } });
+    const Sh = buildSDF(P, { sdfHands: false, inflate: inf, cut: { above: ya, box } });
     const head = polygonize(Sh, Sh.sdf, [box[0], ya - 0.004, box[2]], [box[3], box[4], box[5]], L.hHead * P.sc);
+    // 머리 메시 아래 가장자리를 (성긴) 몸 메시보다 살짝 안쪽으로 넣어 목에 이음매 선이 보이지 않게
+    const dip = 1.4 * h * h / (8 * P.neckR);
+    for (let i = 0; i < head.P.length / 3; i++) {
+      const w = 1 - smooth(ya, yb, head.P[i * 3 + 1]);
+      if (w > 0) for (let k = 0; k < 3; k++) head.P[i * 3 + k] -= head.N[i * 3 + k] * dip * w;
+    }
     addSurface(buf, S, P, head, PART.body);
   } else {
     addSurface(buf, S, P, polygonize(S, S.sdf, S.bmin, S.bmax, h), PART.body);

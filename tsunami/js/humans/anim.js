@@ -260,22 +260,39 @@ function idle(o, st, t) {
   armsIdle(o, S.idleArms, br);
 }
 
+// 서 있을 때 팔 (손이 몸 앞에서 갈고리처럼 떠 있지 않도록 모두 몸에 닿거나 늘어뜨린 자세)
+// Y(위팔 비틂): 왼팔 음수·오른팔 양수 = 안쪽 회전 → 굽힌 아래팔이 몸 중앙을 향함
 function armsIdle(o, kind, br) {
-  if (kind === 1) {          // 뒷짐
-    o[UAL * 3] = 18 * D; o[UAR * 3] = 18 * D; o[UAL * 3 + 2] = -6 * D; o[UAR * 3 + 2] = 6 * D;
-    o[UAL * 3 + 1] = 30 * D; o[UAR * 3 + 1] = -30 * D; o[FAL * 3] = -55 * D; o[FAR * 3] = -55 * D;
-  } else if (kind === 2) {   // 팔짱
-    o[UAL * 3] = -22 * D; o[UAR * 3] = -24 * D; o[UAL * 3 + 2] = -10 * D; o[UAR * 3 + 2] = 10 * D;
-    o[UAL * 3 + 1] = -40 * D; o[UAR * 3 + 1] = 40 * D; o[FAL * 3] = -105 * D; o[FAR * 3] = -100 * D;
-    o[FAL * 3 + 1] = -60 * D; o[FAR * 3 + 1] = 60 * D;
-  } else if (kind === 3) {   // 허리에 손
-    o[UAL * 3 + 2] = 28 * D; o[UAR * 3 + 2] = -28 * D; o[UAL * 3] = 8 * D; o[UAR * 3] = 8 * D;
-    o[UAL * 3 + 1] = -35 * D; o[UAR * 3 + 1] = 35 * D; o[FAL * 3] = -95 * D; o[FAR * 3] = -95 * D;
-  } else {
-    o[UAL * 3 + 2] = -7 * D + br * 0.5 * D; o[UAR * 3 + 2] = 7 * D - br * 0.5 * D;
+  const b = br * 0.5 * D;
+  if (kind === 1) {          // 뒷짐: 위팔을 뒤로 빼고 안쪽으로 비틀어 아래팔을 등 뒤에서 겹침 (오른손이 바깥)
+    o[UAL * 3] = 44 * D; o[UAR * 3] = 47 * D; o[UAL * 3 + 1] = -86 * D; o[UAR * 3 + 1] = 86 * D;
+    o[UAL * 3 + 2] = 15 * D + b; o[UAR * 3 + 2] = -15 * D - b;
+    o[FAL * 3] = -93 * D; o[FAR * 3] = -90 * D; o[FAL * 3 + 1] = 48 * D; o[FAR * 3 + 1] = -48 * D;
+    o[HAL * 3] = 7 * D; o[HAR * 3] = 7 * D;
+  } else if (kind === 2) {   // 두 손을 배 아래에서 가볍게 모음
+    o[UAL * 3] = -10 * D; o[UAR * 3] = -12 * D; o[UAL * 3 + 2] = -11 * D + b; o[UAR * 3 + 2] = 11 * D - b;
+    o[UAL * 3 + 1] = -42 * D; o[UAR * 3 + 1] = 46 * D; o[FAL * 3] = -62 * D; o[FAR * 3] = -66 * D;
+    o[HAL * 3] = 10 * D; o[HAR * 3] = 10 * D;
+  } else if (kind === 3) {   // 두 손을 바지 앞주머니에
+    o[UAL * 3] = 6 * D; o[UAR * 3] = 6 * D; o[UAL * 3 + 2] = -2 * D + b; o[UAR * 3 + 2] = 2 * D - b;
+    o[UAL * 3 + 1] = -32 * D; o[UAR * 3 + 1] = 32 * D; o[FAL * 3] = -42 * D; o[FAR * 3] = -42 * D;
+    o[HAL * 3] = 38 * D; o[HAR * 3] = 38 * D;
+  } else {                   // 늘어뜨림
+    o[UAL * 3 + 2] = -7 * D + b; o[UAR * 3 + 2] = 7 * D - b;
     o[UAL * 3] = -3 * D; o[UAR * 3] = -3 * D; o[FAL * 3] = -12 * D; o[FAR * 3] = -12 * D;
     o[UAL * 3 + 1] = 8 * D; o[UAR * 3 + 1] = -8 * D;
   }
+}
+
+// 서 있기 팔 자세(armsIdle) 위에 다른 팔 동작을 덮어쓸 때: 위팔·아래팔 비틂과 손목을 0으로
+function armsNeutral(o) {
+  for (const b of [UAL, UAR, FAL, FAR, HAL, HAR]) o[b * 3 + 1] = 0;
+  o[HAL * 3] = o[HAR * 3] = o[HAL * 3 + 2] = o[HAR * 3 + 2] = 0;
+}
+// 왼팔만 늘어뜨림 (오른팔이 동작할 때 남은 팔이 뒷짐·주머니 자세로 어색하게 남지 않도록)
+function armRelaxL(o) {
+  o[UAL * 3] = -3 * D; o[UAL * 3 + 1] = 8 * D; o[UAL * 3 + 2] = -7 * D;
+  o[FAL * 3] = -14 * D; o[FAL * 3 + 1] = 0; o[HAL * 3] = 0; o[HAL * 3 + 2] = 0;
 }
 
 /* ───────────────────────── 앉기 · 눕기 ───────────────────────── */
@@ -414,6 +431,7 @@ function throwPose(o, st, a) {
   // 오른손 던지기: 준비(뒤로) → 0.55 놓기 → 따라가기, 왼발 내딛기
   const wind = smooth(0, 0.4, a) * (1 - smooth(0.4, 0.62, a)), rel = smooth(0.42, 0.62, a), fol = smooth(0.6, 1, a);
   idle(o, st, st.clock);
+  armsNeutral(o);
   o[UAR * 3] = (60 * wind - 120 * rel + 50 * fol) * D;
   o[UAR * 3 + 2] = -(70 * wind + 20 * rel) * (1 - fol) * D;
   o[FAR * 3] = -(90 * wind + 20 * (1 - rel)) * D;
@@ -426,6 +444,7 @@ function throwPose(o, st, a) {
 
 function catchPose(o, st, a, t) {
   idle(o, st, t);
+  armsNeutral(o);
   const r = 1 - smooth(0.6, 1, a);
   o[UAL * 3] = -75 * D * r; o[UAR * 3] = -75 * D * r; o[UAL * 3 + 2] = -5 * D; o[UAR * 3 + 2] = 5 * D;
   o[FAL * 3] = -(35 + 40 * smooth(0.2, 0.5, a)) * D * r; o[FAR * 3] = -(35 + 40 * smooth(0.2, 0.5, a)) * D * r;
@@ -460,6 +479,7 @@ function volley(o, st, a) {
 }
 
 function wave(o, st, t) {
+  armRelaxL(o); o[UAR * 3 + 1] = 0; o[HAR * 3] = 0; o[HAR * 3 + 2] = 0;
   o[UAR * 3 + 2] = -150 * D; o[UAR * 3] = -10 * D;
   o[FAR * 3] = -(25 + 30 * (0.5 + 0.5 * Math.sin(t * 9))) * D; o[FAR * 3 + 1] = 40 * D;
   o[CLR * 3 + 2] = -12 * D;
@@ -467,14 +487,17 @@ function wave(o, st, t) {
 }
 
 function phone(o, st, t) {
+  armRelaxL(o);
+  o[HAR * 3] = 0; o[HAR * 3 + 2] = 0; o[FAR * 3 + 1] = 0;
   if (st.seed % 4 === 0) {
     // 셀카: 팔을 앞으로 길게, 고개 살짝 기울임
-    o[UAR * 3] = -105 * D; o[UAR * 3 + 2] = -18 * D; o[FAR * 3] = -15 * D; o[HAR * 3] = -20 * D;
+    o[UAR * 3] = -105 * D; o[UAR * 3 + 1] = 0; o[UAR * 3 + 2] = -14 * D; o[FAR * 3] = -15 * D; o[HAR * 3] = -20 * D;
     o[HEA * 3 + 2] = 10 * D; o[NEC * 3] = -8 * D;
   } else {
-    o[UAR * 3] = -38 * D; o[UAR * 3 + 2] = 4 * D; o[UAR * 3 + 1] = -25 * D; o[FAR * 3] = -112 * D; o[FAR * 3 + 1] = -30 * D;
-    o[NEC * 3] = 16 * D; o[HEA * 3] = 10 * D; o[NEC * 3 + 1] = -5 * D; o[HEA * 3 + 1] = 0;
-    o[UAL * 3] = -5 * D;
+    // 가슴 앞에서 화면 보기: 위팔은 몸 옆, 아래팔을 안쪽 위로, 고개 숙임
+    o[UAR * 3] = 5 * D; o[UAR * 3 + 1] = 52 * D; o[UAR * 3 + 2] = 8 * D; o[FAR * 3] = -110 * D; o[FAR * 3 + 1] = 13 * D;
+    o[HAR * 3] = -16 * D; o[HAR * 3 + 2] = -7 * D;
+    o[NEC * 3] = 18 * D; o[HEA * 3] = 12 * D; o[NEC * 3 + 1] = -5 * D; o[HEA * 3 + 1] = 0;
   }
 }
 

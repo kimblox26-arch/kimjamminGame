@@ -93,6 +93,7 @@ float vnoise3(vec3 p) {
              mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x), mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
 float skRough;
+float sq(float x) { return x * x; }   // 제곱: pow(x, 2.0)는 x<0에서 정의되지 않음 (GPU에 따라 NaN)
 vec3 skCol() {
   vec4 a0 = apTex(0), a1 = apTex(1), a2 = apTex(2), a3 = apTex(3), a4 = apTex(4), a5 = apTex(5);
   vec3 skin = a0.rgb;
@@ -120,7 +121,8 @@ vec3 skCol() {
     // 손목시계 (왼쪽)
     if (fWatch > 0.5 && vBind.x > 0.0 && tArm > 0.935 && tArm < 0.975) { skRough = 0.25; return mix(vec3(0.62, 0.63, 0.65), vec3(0.08), step(0.0, vBind.z) * 0.7); }
   } else if (leg > 0.5) {
-    if (tLeg < a2.a) { cloth = 1.0; cc = a3.rgb; isPants = 1.0; }
+    // 수영복 하의는 몸통과 같은 허리선에서 끊음 (옆구리만 높이 올라가는 V자 방지)
+    if (tLeg < a2.a && (topK < 0.5 || topK > 2.5 || y < uLand3.w + (topK < 1.5 ? -0.01 : 0.01) * H)) { cloth = 1.0; cc = a3.rgb; isPants = 1.0; }
     if (tLeg > 0.96) {
       cloth = 1.0; cc = a4.rgb; skRough = 0.6;
       if (fSneak > 0.5) {
@@ -157,7 +159,7 @@ vec3 skCol() {
     if (isPants > 0.5 && fDenim > 0.5) {
       // 데님: 능직 사선 + 허벅지 앞 · 무릎 탈색 + 수염(whisker) 주름
       float tw = 0.5 + 0.5 * sin((vBind.y * 1.0 + vBind.x * 0.6 + vBind.z * 0.6) * 1400.0);
-      float fade = smoothstep(0.0, 0.05, vBind.z) * (exp(-pow((tLeg - 0.28) / 0.16, 2.0)) * 0.9 + exp(-pow((tLeg - 0.52) / 0.06, 2.0)) * 0.7);
+      float fade = smoothstep(0.0, 0.05, vBind.z) * (exp(-sq((tLeg - 0.28) / 0.16)) * 0.9 + exp(-sq((tLeg - 0.52) / 0.06)) * 0.7);
       float whisk = (1.0 - smoothstep(0.0, 0.004, abs(fract(vBind.y * 28.0 + abs(vBind.x) * 14.0) - 0.5) - 0.46)) * step(tLeg, 0.15) * step(0.0, vBind.z);
       cc = cc * (0.88 + 0.12 * tw) + vec3(0.1, 0.12, 0.15) * fade * (0.6 + 0.4 * vnoise3(vBind * 40.0)) + whisk * 0.02;
     }
@@ -169,42 +171,75 @@ vec3 skCol() {
     }
     return cc * (0.92 + weave);
   }
-  // 얼굴: 눈 · 눈썹 · 입 (표정)
+  // 얼굴 (양식화): 흰자 없는 작고 어두운 타원 눈 + 윗눈꺼풀 그늘, 가는 눈썹, 부드러운 입선.
+  // 표정은 눈썹 각도 · 눈 뜬 정도 · 입꼬리 곡선으로만 표현 (0 무표정 1 기쁨 2 겁 3 공황 4 슬픔 5 고통)
   vec3 col = skin;
   if (y > uLand2.x - 0.01 * H) {
     vec3 q = vBind - uHead.xyz;
-    float hh = uHead.w, ex = 0.14 * hh, ey = uEyeY - uHead.y;
-    float front = smoothstep(0.18 * hh, 0.34 * hh, q.z);
+    float hh = uHead.w, ey = uEyeY - uHead.y, ax = abs(q.x), sex = uLand3.y;
+    float front = smoothstep(0.2 * hh, 0.32 * hh, q.z);
     float ez = floor(a4.a + 0.5);
-    float open = ez == 2.0 || ez == 3.0 ? 1.35 : ez == 1.0 ? 0.6 : ez == 5.0 ? 0.25 : 1.0;
-    vec2 e = vec2(abs(q.x) - ex, (q.y - ey) / open);
-    float de = length(e * vec2(1.0, 1.8));
-    float eyeM = (1.0 - smoothstep(0.042 * hh, 0.05 * hh, de)) * front;
-    float iris = 1.0 - smoothstep(0.022 * hh, 0.028 * hh, length(vec2(e.x * 1.0, e.y * 1.2)));
-    col = mix(col, mix(vec3(0.8, 0.77, 0.72), vec3(0.09, 0.06, 0.04), iris), eyeM * 0.85);
-    float lift = ez == 2.0 || ez == 3.0 || ez == 4.0 ? 0.35 : ez == 5.0 ? -0.25 : 0.0;
-    float by = ey + 0.105 * hh + (0.26 * hh - abs(q.x)) * lift * 0.4 + (ez == 3.0 ? 0.02 * hh : 0.0);
-    float brow = (1.0 - smoothstep(0.012 * hh, 0.02 * hh, abs(q.y - by))) * step(0.05 * hh, abs(q.x)) * step(abs(q.x), 0.27 * hh) * front;
-    col = mix(col, a1.rgb * 0.9 + skin * 0.1, brow * 0.6);
-    float my = ey - 0.262 * hh, mx = q.x / (0.12 * hh);
-    float curve = ez == 1.0 ? 0.035 : ez == 4.0 ? -0.03 : ez == 5.0 ? -0.02 : 0.0;
-    float mouthY = my + curve * hh * (mx * mx);
-    float openM = ez == 3.0 ? 0.05 : ez == 2.0 ? 0.022 : ez == 5.0 ? 0.015 : 0.0;
-    float lipD = abs(q.y - mouthY);
-    float inMouth = step(abs(mx), 1.0) * front;
-    float lips = (1.0 - smoothstep(0.012 * hh, 0.02 * hh, lipD - openM * hh)) * inMouth;
-    float cav = (1.0 - smoothstep(0.0, 0.006 * hh, lipD - openM * hh * 0.8)) * step(0.001, openM) * inMouth;
-    col = mix(col, skin * vec3(0.86, 0.62, 0.6), lips * 0.55);
-    col = mix(col, vec3(0.16, 0.05, 0.05), cav * 0.85);
-    float cheek = (1.0 - smoothstep(0.0, 0.12 * hh, length(vec2(abs(q.x) - 0.2 * hh, q.y - ey + 0.2 * hh)))) * front;
-    col *= mix(vec3(1.0), vec3(1.04, 0.95, 0.94), cheek * 0.6);
-    if (fBeard > 0.5) {
-      // 짧은 수염: 턱선 · 윗입술 · 볼 아래, 모공 단위 잡음
-      float jaw = smoothstep(ey - 0.18 * hh, ey - 0.3 * hh, q.y) * smoothstep(0.05 * hh, 0.2 * hh, q.z + 0.15 * hh);
-      float lipZone = (1.0 - smoothstep(0.0, 0.03 * hh, abs(q.y - (my + 0.05 * hh)))) * step(abs(mx), 0.9);
-      float stub = max(jaw, lipZone * 0.8) * (0.55 + 0.45 * vnoise3(vBind * 1500.0));
-      col = mix(col, a1.rgb * 0.7 + col * 0.25, stub * 0.55);
+    float eOpen = 1.0, bLift = 0.0, bTilt = 0.0, mCurve = 0.15, mOpen = 0.0, mWide = 1.0, lowLid = 0.0;
+    if (ez == 1.0) { eOpen = 0.85; lowLid = 1.0; bLift = 0.008; mCurve = 1.0; mWide = 1.12; }
+    else if (ez == 2.0) { eOpen = 1.2; bLift = 0.02; bTilt = 0.8; mCurve = -0.35; mOpen = 0.32; mWide = 0.72; }
+    else if (ez == 3.0) { eOpen = 1.28; bLift = 0.026; bTilt = 1.0; mCurve = -0.2; mOpen = 0.85; mWide = 0.78; }
+    else if (ez == 4.0) { eOpen = 0.82; bTilt = 1.0; mCurve = -0.85; mWide = 0.9; }
+    else if (ez == 5.0) { eOpen = 0.32; bLift = -0.01; bTilt = -0.9; mCurve = -0.6; mOpen = 0.22; mWide = 1.05; }
+    float px = fwidth(q.y) + 1e-5;                      // 화면 픽셀 크기(머리 좌표) → 경계 안티앨리어싱
+    // 윗눈꺼풀 · 눈두덩 그늘 (넓고 은은하게)
+    float ex = 0.135 * hh;
+    float lid = exp(-sq((ax - ex) / (0.065 * hh)) - sq((q.y - ey - 0.038 * hh) / (0.026 * hh))) * front;
+    col *= mix(vec3(1.0), vec3(0.9, 0.84, 0.84), lid);
+    // 눈: 어두운 타원 (가로 반경 0.031, 세로 0.041 머리높이) + 작은 반사광, 흰자 없음
+    vec2 ep = vec2(ax - ex, q.y - ey);
+    float kidE = 1.0 + 0.16 * uLand3.z;                 // 아이: 눈이 조금 큼
+    vec2 er2 = vec2(0.031 * hh, 0.041 * hh * eOpen) * kidE;
+    float er = length(ep / er2);
+    float eAA = px / er2.x * 1.3;
+    float eyeM = 1.0 - smoothstep(1.0 - eAA, 1.0 + eAA, er);
+    eyeM *= mix(1.0, smoothstep(-0.55 - eAA * 4.0, -0.4 + eAA * 4.0, ep.y / er2.y - 0.55 * (ep.x / er2.x) * (ep.x / er2.x)), lowLid);
+    eyeM *= front;
+    vec3 eyeC = mix(vec3(0.17, 0.105, 0.065), vec3(0.035, 0.026, 0.024), smoothstep(0.85, 0.25, length(ep / er2 - vec2(0.0, -0.08))));
+    float hl = 1.0 - smoothstep(0.0, 0.0085 * hh + px, length(vec2(q.x - sign(q.x) * ex + 0.009 * hh, q.y - ey - 0.013 * hh * eOpen)));
+    eyeC = mix(eyeC, vec3(0.92), hl * 0.85);
+    col = mix(col, eyeC, eyeM);
+    // 윗눈꺼풀 선 (눈 위쪽 가장자리를 바깥으로 살짝 길게)
+    float lash = exp(-sq((er - 1.0) / (0.2 + 0.1 * sex))) * smoothstep(-0.1, 0.4, ep.y / er2.y + 0.25 * sex * ep.x / er2.x) * front;
+    col = mix(col, vec3(0.05, 0.035, 0.03), lash * (0.45 + 0.35 * sex) * (1.0 - eyeM));
+    // 눈썹: 가늘고 부드러운 호, 안쪽이 약간 두껍고 바깥으로 가늘어짐
+    float bx = (ax - 0.045 * hh) / (0.17 * hh);
+    float arch = 0.016 * hh * (1.0 - sq(1.9 * bx - 0.85));
+    float byc = ey + (0.1 + bLift) * hh + arch + bTilt * 0.03 * hh * (1.0 - bx) - 0.012 * hh * bx;
+    float bth = mix(0.012, 0.0055, clamp(bx, 0.0, 1.0)) * hh * (1.0 - 0.3 * sex);
+    float brow = (1.0 - smoothstep(bth - px, bth + px * 1.5, abs(q.y - byc))) * smoothstep(-0.04, 0.1, bx) * (1.0 - smoothstep(0.82, 1.0, bx)) * front;
+    vec3 browC = mix(skin * 0.5, a1.rgb, 0.55);
+    col = mix(col, browC, brow * 0.82);
+    // 입: 얇은 선 + 은은한 입술색, 벌림은 어두운 타원
+    float my = ey - (0.272 - 0.035 * uLand3.z) * hh, mw = 0.07 * hh * mWide * (1.0 - 0.12 * uLand3.z), mx = q.x / mw;
+    float mcy = my + mCurve * 0.017 * hh * (mx * mx - 0.35);
+    float md = q.y - mcy, mfade = 1.0 - smoothstep(0.7, 1.0, abs(mx));
+    float lth = 0.0042 * hh;
+    float mline = (1.0 - smoothstep(lth - px, lth + px * 1.5, abs(md))) * mfade * front;
+    float lip = exp(-sq((md + 0.012 * hh) / (0.016 * hh))) * (1.0 - smoothstep(0.45, 1.0, abs(mx))) * front;
+    col = mix(col, col * vec3(0.94, 0.78, 0.77), lip * (0.3 + 0.35 * sex));
+    col = mix(col, col * vec3(0.52, 0.36, 0.34), mline * 0.75);
+    if (mOpen > 0.0) {
+      float oh = mOpen * 0.04 * hh;
+      float ov = length(vec2(mx / 0.82, (md + oh * 0.35) / oh));
+      float cav = (1.0 - smoothstep(1.0 - px / oh, 1.0 + px / oh, ov)) * front;
+      col = mix(col, vec3(0.2, 0.07, 0.07), cav * 0.92);
     }
+    // 볼 홍조 (여성 · 아이)
+    float cheek = exp(-sq(length(vec2(ax - 0.17 * hh, q.y - ey + 0.15 * hh)) / (0.075 * hh))) * front;
+    col *= mix(vec3(1.0), vec3(1.03, 0.94, 0.93), cheek * (0.25 + 0.5 * max(sex, uLand3.z)));
+    if (fBeard > 0.5) {
+      // 짧은 수염: 턱 · 윗입술 · 볼 아래 (부드러운 경계)
+      float jaw = smoothstep(ey - 0.2 * hh, ey - 0.32 * hh, q.y) * smoothstep(0.0, 0.2 * hh, q.z + 0.12 * hh) * smoothstep(-0.56 * hh, -0.47 * hh, q.y);
+      float lipZone = (1.0 - smoothstep(0.0, 0.03 * hh, abs(q.y - (my + 0.045 * hh)))) * (1.0 - smoothstep(0.8, 1.1, abs(q.x / (0.09 * hh))));
+      float stub = max(jaw, lipZone * 0.8) * (1.0 - mline) * (0.6 + 0.4 * vnoise3(vBind * 900.0));
+      col = mix(col, a1.rgb * 0.5 + col * 0.45, stub * 0.35);
+    }
+    skRough = mix(skRough, 0.22, eyeM);
   }
   col *= 0.96 + vnoise3(vBind * 120.0) * 0.06;
   return col;
