@@ -489,7 +489,7 @@ export function decorateButton(b) {
     b.insertAdjacentHTML('afterbegin', icon(name, { size: b.classList.contains('nav-btn') ? 26 : 18 }));
   }
   if (!b.querySelector(':scope > .sb-glow')) {
-    b.insertAdjacentHTML('afterbegin', '<span class="sb-glow" aria-hidden="true"></span><span class="sb-focus" aria-hidden="true"></span><span class="sb-flow" aria-hidden="true"><i></i></span>');
+    b.insertAdjacentHTML('afterbegin', '<span class="sb-glow" aria-hidden="true"></span><span class="sb-clip" aria-hidden="true"></span><span class="sb-focus" aria-hidden="true"></span><span class="sb-flow" aria-hidden="true"><i></i></span>');
   }
 }
 
@@ -519,7 +519,7 @@ function bindRipple(root) {
     s.style.width = s.style.height = d + 'px';
     s.style.left = (e.clientX - r.left - d / 2) + 'px';
     s.style.top = (e.clientY - r.top - d / 2) + 'px';
-    b.appendChild(s);
+    (b.querySelector(':scope > .sb-clip') || b).appendChild(s);
     setTimeout(() => s.remove(), 650);
     if (e.pointerType === 'touch') {
       b.classList.remove('tap-anim');
