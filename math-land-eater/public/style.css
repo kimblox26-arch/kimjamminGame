@@ -59,30 +59,104 @@ input:focus, select:focus { border-color: var(--blue); }
     radial-gradient(circle at 82% 78%, #d9f5e3 0, transparent 40%),
     linear-gradient(160deg, #a9dcff, #eaf6ff);
 }
-/* 인트로 + 로딩 */
-#loading.intro { background: radial-gradient(ellipse 120% 80% at 50% 0%, #8fd8ff 0%, #4fb0ea 45%, #2a7fc6 100%) !important; color: #fff; }
-.intro-box { width: 100%; max-width: 420px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.intro-logo { margin: 0; font-family: var(--font-title); font-size: clamp(44px, 12vw, 64px); letter-spacing: 2px; color: #fff; text-shadow: 0 4px 0 #1e5f99, 0 8px 18px rgba(0, 0, 0, .25); }
-.intro-logo b { color: #ffd23f; font-weight: inherit; }
-.intro-logo span { display: inline-block; animation: introPop .55s cubic-bezier(.2, 1.6, .4, 1) backwards; }
-.intro-logo span:nth-child(1) { animation-delay: .05s; } .intro-logo span:nth-child(2) { animation-delay: .17s; }
-.intro-logo b span:nth-child(1) { animation-delay: .32s; } .intro-logo b span:nth-child(2) { animation-delay: .44s; }
-@keyframes introPop { from { transform: translateY(-40px) scale(.3); opacity: 0; } }
-.intro-sub { margin: 0; font-size: 15px; opacity: .92; animation: fade .8s .6s backwards; }
-.intro-map { width: min(78vw, 300px); height: min(42vh, 380px); margin: 4px 0; filter: drop-shadow(0 10px 18px rgba(0, 40, 90, .35)); }
-.intro-line { min-height: 26px; margin: 0; font-family: var(--font-title); font-size: 21px; text-shadow: 0 2px 0 rgba(0, 0, 0, .15); }
-.intro-line.show, .intro-tip.show { animation: introUp .45s ease-out; }
-@keyframes introUp { from { transform: translateY(12px); opacity: 0; } }
-.intro-progress { display: flex; align-items: center; gap: 10px; width: min(80vw, 300px); margin: 6px auto 0; }
-.intro-bar { flex: 1; height: 14px; border-radius: 99px; background: rgba(255, 255, 255, .35); overflow: hidden; box-shadow: inset 0 2px 3px rgba(0, 0, 0, .15); }
-.intro-bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #ffd23f, #ff9f1c); transition: width .35s ease; }
-.intro-progress b { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
-.intro-msg { margin: 4px 0 0; font-size: 13.5px; opacity: .9; }
-.intro-tip { min-height: 40px; margin: 6px 12px 0; padding: 8px 12px; border-radius: 12px; background: rgba(255, 255, 255, .18); font-size: 14px; line-height: 1.45; }
+/* ---------- 🎬 인트로 (애니메이션 · 말랑 점토) ---------- */
+#loading.intro { position: relative; overflow: hidden auto; padding: 18px 16px; color: #1e1c3a; background: #eeedf9 !important; }
+.ib-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.ib-blob { position: absolute; width: 62vmax; height: 62vmax; border-radius: 50%; filter: blur(60px); opacity: .55; animation: ibBlob 14s ease-in-out infinite alternate; }
+.ib-blob.b1 { background: #b9adff; left: -24vmax; top: -26vmax; }
+.ib-blob.b2 { background: #ffc6b0; right: -28vmax; top: 16vh; animation-duration: 17s; }
+.ib-blob.b3 { background: #b3ecdb; left: -12vmax; bottom: -34vmax; animation-duration: 20s; }
+@keyframes ibBlob { to { transform: translate(9vmax, 7vmax) scale(1.15); } }
+.ib-syms span { position: absolute; display: grid; place-items: center; width: var(--s); height: var(--s); border-radius: 32%; color: var(--c);
+  font: 900 calc(var(--s) * .52)/1 'Pretendard Variable', 'Pretendard', sans-serif; background: linear-gradient(145deg, #fdfdff, #e9e7f8); opacity: 0;
+  box-shadow: 6px 8px 16px rgba(98, 92, 170, .2), -4px -4px 10px rgba(255, 255, 255, .8), inset 2px 2px 4px #fff, inset -3px -4px 6px rgba(98, 92, 170, .13);
+  animation: ibSymIn .8s var(--d) cubic-bezier(.2, 1.5, .4, 1) forwards, ibSymFloat var(--f) var(--d) ease-in-out infinite alternate; }
+@keyframes ibSymIn { from { opacity: 0; scale: .2; } to { opacity: .92; scale: 1; } }
+@keyframes ibSymFloat { from { translate: 0 0; rotate: var(--r0); } to { translate: 0 -22px; rotate: var(--r1); } }
+.intro-box { position: relative; z-index: 1; width: 100%; max-width: 440px; margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+/* 로고: 글자가 떨어져 찌그러졌다 튀고, 왕관이 내려앉으며 반짝 */
+.ib-logo { position: relative; padding-top: 36px; }
+.ib-crown { position: absolute; left: 50%; top: 0; width: 66px; margin-left: -33px; fill: #ffc23d; transform-origin: 50% 100%;
+  filter: drop-shadow(0 4px 0 #d98a00) drop-shadow(0 10px 12px rgba(200, 120, 0, .35)); animation: ibCrown .95s 1.05s cubic-bezier(.2, 1.5, .4, 1) both, ibCrownIdle 2.6s 2.2s ease-in-out infinite; }
+@keyframes ibCrown { 0% { opacity: 0; transform: translateY(-90px) rotate(-30deg) scale(.5); } 60% { opacity: 1; transform: translateY(6px) rotate(6deg) scale(1.12, .84); } 80% { transform: translateY(-4px) rotate(-3deg); } }
+@keyframes ibCrownIdle { 50% { transform: translateY(-5px) rotate(4deg); } }
+.ib-spark { position: absolute; left: 50%; top: 18px; width: 10px; height: 10px; margin: -5px; border-radius: 50%; background: #ffd54a; opacity: 0;
+  box-shadow: 0 0 10px #ffd54a; animation: ibSpark .8s 1.55s ease-out both; }
+.ib-spark:nth-of-type(2n) { background: #a397ff; box-shadow: 0 0 10px #a397ff; }
+.ib-spark:nth-of-type(3n) { background: #ff8a5c; box-shadow: 0 0 10px #ff8a5c; width: 7px; height: 7px; }
+@keyframes ibSpark { 0% { opacity: 1; transform: translate(0, 0) scale(.3); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.2); } }
+.intro-logo { margin: 0; font-family: 'Jua', 'Apple SD Gothic Neo', sans-serif; font-weight: normal; font-size: clamp(54px, 15vw, 78px); line-height: 1; letter-spacing: 1px;
+  color: #7b6cff; text-shadow: 0 2px 0 #a99fff, 0 5px 0 #5546e0, 0 7px 0 #4a3cc9, 0 16px 22px rgba(80, 60, 200, .35); animation: ibIdle 3.2s 2s ease-in-out infinite; }
+.intro-logo b { font-weight: inherit; color: #ffb020; text-shadow: 0 2px 0 #ffd27a, 0 5px 0 #e08a00, 0 7px 0 #c97800, 0 16px 22px rgba(220, 140, 0, .35); }
+.intro-logo span { display: inline-block; transform-origin: 50% 100%; animation: ibDrop .85s cubic-bezier(.3, 1.4, .5, 1) both; }
+.intro-logo > span:nth-child(1) { animation-delay: .1s; } .intro-logo > span:nth-child(2) { animation-delay: .24s; }
+.intro-logo b span:nth-child(1) { animation-delay: .46s; } .intro-logo b span:nth-child(2) { animation-delay: .6s; }
+@keyframes ibDrop { 0% { opacity: 0; transform: translateY(-150px) scale(.7, 1.4); } 55% { opacity: 1; transform: translateY(0) scale(1.3, .68); } 72% { transform: translateY(-12px) scale(.9, 1.12); } 86% { transform: translateY(0) scale(1.05, .95); } 100% { transform: none; } }
+@keyframes ibIdle { 50% { transform: translateY(-4px); } }
+.intro-sub { min-height: 22px; margin: 2px 0 0; font-size: 16px; font-weight: 800; color: #6e6c8f; }
+.intro-sub.typing::after { content: ''; display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: #6d5dfc; animation: ibCaret .7s steps(1) infinite; }
+@keyframes ibCaret { 50% { opacity: 0; } }
+/* 무대: 바다 웅덩이 위 점토 섬 */
+.ib-stage { position: relative; width: min(88vw, 350px); height: min(44vh, 390px); margin-top: 6px; border-radius: 36px; overflow: hidden;
+  background: radial-gradient(ellipse 90% 70% at 40% 30%, #e6f1ff, #c0d9ff);
+  box-shadow: 14px 16px 34px -8px rgba(98, 92, 170, .35), -10px -10px 22px rgba(255, 255, 255, .9), inset 4px 4px 10px rgba(255, 255, 255, .75), inset -6px -8px 16px rgba(60, 100, 200, .18);
+  animation: ibStage .9s .55s cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes ibStage { from { opacity: 0; transform: translateY(46px) scale(.84) rotate(-4deg); } }
+.intro-map { display: block; width: 100%; height: 100%; margin: 0; filter: none; }
+.ib-live { position: absolute; top: 12px; left: 14px; display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; border-radius: 999px; background: rgba(255, 255, 255, .92);
+  font: 900 11px/1 'Pretendard', sans-serif; letter-spacing: 1.5px; color: #f0506e; box-shadow: 3px 4px 10px rgba(60, 70, 170, .2), inset 2px 2px 3px #fff; }
+.ib-live::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #f0506e; animation: ibLive 1.2s ease-in-out infinite; }
+@keyframes ibLive { 50% { opacity: .25; } }
+/* 문제 풀기 › 땅 차지 › 학교 1등 */
+.ib-steps { display: flex; align-items: center; gap: 4px; margin: 6px 0 0; padding: 0; list-style: none; }
+.ib-steps li { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 6px; border-radius: 999px; font-size: 13.5px; font-weight: 800; color: #1e1c3a; white-space: nowrap;
+  background: linear-gradient(145deg, #fdfdff, #edecf9); box-shadow: 4px 5px 12px rgba(98, 92, 170, .18), -3px -3px 8px rgba(255, 255, 255, .85), inset 2px 2px 4px #fff, inset -3px -4px 6px rgba(98, 92, 170, .12);
+  opacity: 0; animation: ibStep .6s cubic-bezier(.2, 1.5, .4, 1) forwards; transition: transform .35s cubic-bezier(.2, 1.4, .4, 1), box-shadow .3s; }
+.ib-steps li:nth-child(1) { animation-delay: 1.5s; } .ib-steps li:nth-child(2) { animation-delay: 1.65s; } .ib-steps li:nth-child(3) { animation-delay: 1.8s; }
+.ib-steps li:nth-child(4) { animation-delay: 1.95s; } .ib-steps li:nth-child(5) { animation-delay: 2.1s; }
+@keyframes ibStep { from { opacity: 0; translate: 0 16px; scale: .7; } to { opacity: 1; translate: 0 0; scale: 1; } }
+.ib-steps li i { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #fff; background: linear-gradient(145deg, #a397ff, #6d5dfc);
+  box-shadow: inset 2px 2px 3px rgba(255, 255, 255, .4), inset -2px -3px 4px rgba(0, 0, 0, .15); }
+.ib-steps li:nth-child(3) i { background: linear-gradient(145deg, #5ee0b8, #14b386); }
+.ib-steps li:nth-child(5) i { background: linear-gradient(145deg, #ffd56b, #f2a100); }
+.ib-steps li .ic { width: 15px; height: 15px; stroke-width: 2.4; }
+.ib-steps li.ar { padding: 0 1px; background: none; box-shadow: none; color: #a09ec0; font-size: 20px; }
+.ib-steps li.on { transform: translateY(-5px) scale(1.07); box-shadow: 6px 12px 20px -6px rgba(109, 93, 252, .45), -3px -3px 8px rgba(255, 255, 255, .85), inset 2px 2px 4px #fff, inset -3px -4px 6px rgba(98, 92, 170, .12); }
+/* 진행률: 쏙 들어간 홈 + 줄무늬 보라 막대 + 왕관이 타고 간다 */
+#introProgress { animation: ibUp .6s 1.2s ease-out both; }
+@keyframes ibUp { from { opacity: 0; transform: translateY(14px); } }
+.intro-progress { display: flex; align-items: center; gap: 12px; width: min(84vw, 320px); margin: 10px auto 0; }
+.ib-track { position: relative; flex: 1; }
+.intro-bar { height: 20px; padding: 4px; border-radius: 999px; background: #e4e2f3; overflow: hidden; box-shadow: inset 4px 4px 8px rgba(98, 92, 170, .22), inset -4px -4px 8px #fff; }
+.intro-bar i { display: block; width: 0; height: 100%; border-radius: 999px; transition: width .45s cubic-bezier(.3, 1.2, .5, 1);
+  background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, .25) 0 7px, transparent 7px 14px), linear-gradient(90deg, #a397ff, #6d5dfc); background-size: 28px 100%, 100% 100%;
+  box-shadow: inset 2px 2px 3px rgba(255, 255, 255, .45); animation: ibStripe .7s linear infinite; }
+@keyframes ibStripe { to { background-position: 28px 0, 0 0; } }
+.ib-rider { position: absolute; top: -22px; left: 0; width: 26px; translate: -50% 0; fill: #ffc23d; filter: drop-shadow(0 2px 0 #d98a00); transition: left .45s cubic-bezier(.3, 1.2, .5, 1); animation: ibRide .45s ease-in-out infinite alternate; }
+@keyframes ibRide { to { transform: translateY(-4px) rotate(8deg); } }
+.intro-progress b { min-width: 46px; text-align: right; font-size: 16px; font-weight: 900; color: #6d5dfc; font-variant-numeric: tabular-nums; }
+.intro-msg { margin: 6px 0 0; font-size: 13.5px; color: #6e6c8f; }
+/* 시작 버튼: 튀어나와서 두근두근 */
+.intro-start { width: auto !important; min-width: 240px; margin-top: 8px; padding: 16px 44px; font-size: 22px; border-radius: 26px;
+  animation: ibStartPop .75s cubic-bezier(.2, 1.6, .4, 1) both, ibStartPulse 1.8s .75s ease-out infinite; }
+.intro-start:focus { outline: none; }
+.intro-start:focus-visible { outline: 3px solid rgba(109, 93, 252, .35); outline-offset: 5px; }
+@keyframes ibStartPop { 0% { opacity: 0; transform: scale(.2) rotate(-8deg); } 60% { opacity: 1; transform: scale(1.12) rotate(2deg); } }
+@keyframes ibStartPulse { 0% { box-shadow: var(--cl-fill), 0 0 0 0 rgba(109, 93, 252, .5); } 100% { box-shadow: var(--cl-fill), 0 0 0 20px rgba(109, 93, 252, 0); } }
+.intro-tip { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; margin: 10px 6px 0; padding: 10px 16px; border-radius: 20px;
+  font-size: 13.5px; font-weight: 600; line-height: 1.45; color: #4a4870; background: linear-gradient(145deg, #fdfdff, #edecf9);
+  box-shadow: 5px 6px 14px rgba(98, 92, 170, .16), -4px -4px 10px rgba(255, 255, 255, .8), inset 2px 2px 4px #fff, inset -3px -4px 6px rgba(98, 92, 170, .1); }
+.intro-tip.show { animation: ibTip .55s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes ibTip { from { opacity: 0; transform: translateY(12px) scale(.94); } }
 .intro-tip:empty { visibility: hidden; }
-.intro-start { width: auto !important; min-width: 220px; margin-top: 8px; padding: 14px 40px; font-size: 22px; animation: introPulse 1.4s ease-in-out infinite; box-shadow: 0 6px 0 #c2410c, 0 10px 24px rgba(0, 0, 0, .25); }
-@keyframes introPulse { 50% { transform: scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .intro-logo span, .intro-sub, .intro-line.show, .intro-tip.show, .intro-start { animation: none; } }
+/* 시작을 누르면: 화면이 커지며 흐려지고 사라진다 */
+#loading.leaving .intro-box { animation: ibOut .5s cubic-bezier(.6, 0, .8, .4) forwards; }
+#loading.leaving .ib-syms span { animation: ibSymOut .45s ease-in forwards; }
+@keyframes ibOut { to { opacity: 0; transform: scale(1.14); filter: blur(8px); } }
+@keyframes ibSymOut { to { opacity: 0; scale: 1.6; } }
+@media (max-height: 680px) { .ib-stage { height: 34vh; } .intro-logo { font-size: 50px; } .ib-logo { padding-top: 28px; } .ib-crown { width: 52px; margin-left: -26px; } }
+@media (prefers-reduced-motion: reduce) { .ib-blob, .ib-syms span, .ib-crown, .ib-spark, .intro-logo, .intro-logo span, .ib-stage, .ib-steps li, #introProgress, .intro-bar i, .ib-rider, .intro-start, .intro-tip.show { animation: none !important; opacity: 1; }
+  .ib-spark { display: none; } }
 
 .auth-card { width: 100%; max-width: 400px; margin: auto; }
 .logo { margin: 0; text-align: center; font-size: 48px; color: var(--primary); text-shadow: 3px 3px 0 #ffe1b8; }

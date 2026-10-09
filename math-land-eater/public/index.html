@@ -18,13 +18,22 @@
 
 <!-- 불러오는 중 -->
 <section id="loading" class="screen intro">
+  <div class="ib-bg" aria-hidden="true"><i class="ib-blob b1"></i><i class="ib-blob b2"></i><i class="ib-blob b3"></i><div id="ibSyms" class="ib-syms"></div></div>
   <div class="intro-box">
-    <h1 class="intro-logo" aria-label="매뜨 땅먹"><span>매</span><span>뜨</span> <b><span>땅</span><span>먹</span></b></h1>
-    <p class="intro-sub">수학으로 넓히는 우리 학교 땅</p>
-    <canvas id="introMap" class="intro-map" aria-hidden="true"></canvas>
-    <p id="introLine" class="intro-line"></p>
+    <div class="ib-logo">
+      <svg class="ib-crown" viewBox="0 0 64 44" aria-hidden="true"><path d="M6 16l13 11 13-19 13 19 13-11-5 25H11z"/><circle cx="6" cy="14" r="5"/><circle cx="32" cy="6" r="5"/><circle cx="58" cy="14" r="5"/></svg>
+      <i class="ib-spark" style="--dx:-70px;--dy:-30px"></i><i class="ib-spark" style="--dx:70px;--dy:-34px"></i><i class="ib-spark" style="--dx:-46px;--dy:-62px"></i><i class="ib-spark" style="--dx:48px;--dy:-60px"></i><i class="ib-spark" style="--dx:0px;--dy:-78px"></i><i class="ib-spark" style="--dx:-92px;--dy:6px"></i><i class="ib-spark" style="--dx:92px;--dy:4px"></i>
+      <h1 class="intro-logo" aria-label="매뜨 땅먹"><span>매</span><span>뜨</span> <b><span>땅</span><span>먹</span></b></h1>
+    </div>
+    <p id="ibSub" class="intro-sub"></p>
+    <div class="ib-stage"><canvas id="introMap" class="intro-map" aria-hidden="true"></canvas><span class="ib-live">LIVE</span></div>
+    <ol class="ib-steps" id="ibSteps">
+      <li><i><svg class="ic" aria-hidden="true"><use href="#i-pencil"/></svg></i>문제 풀기</li><li class="ar" aria-hidden="true">›</li>
+      <li><i><svg class="ic" aria-hidden="true"><use href="#i-map"/></svg></i>땅 차지</li><li class="ar" aria-hidden="true">›</li>
+      <li><i><svg class="ic" aria-hidden="true"><use href="#i-trophy"/></svg></i>학교 1등</li>
+    </ol>
     <div id="introProgress">
-      <div class="intro-progress"><div class="intro-bar"><i id="loadBar"></i></div><b id="loadPct">0%</b></div>
+      <div class="intro-progress"><div class="ib-track"><div class="intro-bar"><i id="loadBar"></i></div><svg class="ib-rider" id="ibRider" viewBox="0 0 64 44" aria-hidden="true"><path d="M6 16l13 11 13-19 13 19 13-11-5 25H11z"/><circle cx="6" cy="14" r="5"/><circle cx="32" cy="6" r="5"/><circle cx="58" cy="14" r="5"/></svg></div><b id="loadPct">0%</b></div>
       <p id="loadMsg" class="intro-msg">지도를 받는 중…</p>
     </div>
     <button type="button" id="introStart" class="btn primary big intro-start" hidden>▶ 시작하기</button>
