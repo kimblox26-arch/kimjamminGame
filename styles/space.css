@@ -258,3 +258,6 @@ body.touch-ui .sp-stick, body.touch-ui .sp-throttle { display: block; }
 button.deco.pl-del { font-size: 11px; color: var(--red); gap: 4px; padding: 2px 8px; }
 .warn { display: flex; align-items: flex-start; gap: 2px; }
 .warn .ico { flex: none; margin-top: 1px; }
+
+/* 비행 중 버튼은 배경 흐림을 쓰지 않는다 (매 프레임 합성 비용 절감) */
+#space-ui button.deco, #space-ui .sbtn, #flight-ui button.deco { -webkit-backdrop-filter: none; backdrop-filter: none; }

@@ -234,7 +234,22 @@ export class AtmospherePass extends Pass {
   setQuality(q) { this.quality = q; this._build(this.body); }
 
   /** 주 행성 지정 (바뀔 때만 유니폼 재구성) */
-  setBody(body) { if (body !== this.body) this._build(body); }
+  /** 주 행성 지정 — 셰이더를 다시 컴파일하지 않고 유니폼 값만 교체 (전환 시 끊김 방지) */
+  setBody(body) {
+    if (body === this.body) return;
+    this.body = body;
+    const fresh = { ...makeAtmoUniforms(body), ...makeCloudUniforms(body, this.cloudTex) };
+    for (const k in fresh) {
+      const dst = this.uniforms[k];
+      if (!dst) continue;
+      const v = fresh[k].value;
+      if (v && typeof v === 'object' && dst.value && dst.value.copy && !v.isTexture) dst.value.copy(v);
+      else dst.value = v;
+    }
+    this.uniforms.uR.value = body.radius;
+    const o2 = body.atmo && body.atmo.comp && body.atmo.comp.O2 > 5;
+    this.uniforms.uAirglow.value.set(o2 ? 0.0006 : 0, o2 ? 0.0026 : 0, o2 ? 0.0009 : 0);
+  }
 
   render(renderer, writeBuffer) {
     this.uniforms.tColor.value = this.sceneRT.texture;

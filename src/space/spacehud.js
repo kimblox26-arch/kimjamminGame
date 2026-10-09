@@ -83,12 +83,12 @@ export class SpaceHUD {
     ctx.restore();
   }
 
-  _text(ctx, t, x, y, size, color = WH, align = 'left', weight = 600) {
+  _text(ctx, t, x, y, size, color = WH, align = 'left', weight = 600, maxW = 0) {
     ctx.font = FONT(size, weight);
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(t, x, y);
+    if (maxW > 0) ctx.fillText(t, x, y, maxW); else ctx.fillText(t, x, y);
   }
 
   _bar(ctx, x, y, w, h, v, color, back = 'rgba(255,255,255,0.1)') {
@@ -133,7 +133,7 @@ export class SpaceHUD {
     this._panel(ctx, x, y, w, h);
     drawIcon(ctx, 'speed', x + 22, y + 24, 22, { color: WH, accent: OR, glow: 0.6 });
     this._text(ctx, s.speedLabel || '속도', x + 40, y + 29, 12, DIM);
-    this._text(ctx, formatSpeed(s.speed), x + 16, y + 66, 32, WH, 'left', 700);
+    this._text(ctx, formatSpeed(s.speed), x + 16, y + 66, 32, WH, 'left', 700, w - 30);
     const c = formatC(s.speed);
     if (c) this._text(ctx, c, x + 16, y + 86, 14, '#bff6ff', 'left', 700);
     else if (s.mach > 0.3) this._text(ctx, `마하 ${s.mach.toFixed(2)}`, x + 16, y + 86, 14, s.mach > 1 ? OR : CY, 'left', 700);
@@ -165,17 +165,19 @@ export class SpaceHUD {
     if (s.nearest) {
       drawIcon(ctx, bodyIcon(s.nearest.body), x + 22, yy - 4, 24, { color: WH, accent: OR, cyan: CY, animate: this.anim, t: this.time * 0.5, glow: 0.5 });
       this._text(ctx, '가장 가까운 천체', x + 40, yy - 8, 11, DIM);
-      this._text(ctx, s.nearest.body.name, x + 40, yy + 8, 15, WH, 'left', 700);
       this._text(ctx, formatDistance(s.nearest.dist), x + w - 14, yy + 8, 13, CY, 'right', 700);
-      drawIcon(ctx, 'distance', x + w - 14 - ctx.measureText(formatDistance(s.nearest.dist)).width - 14, yy + 3, 14, { color: DIM, accent: CY });
+      const dw = ctx.measureText(formatDistance(s.nearest.dist)).width;
+      drawIcon(ctx, 'distance', x + w - 14 - dw - 14, yy + 3, 14, { color: DIM, accent: CY });
+      this._text(ctx, s.nearest.body.name, x + 40, yy + 8, 15, WH, 'left', 700, w - 54 - dw - 30);
       yy += 38;
     }
     if (s.target) {
       ctx.strokeStyle = 'rgba(98,230,255,0.2)'; ctx.beginPath(); ctx.moveTo(x + 12, yy - 14); ctx.lineTo(x + w - 12, yy - 14); ctx.stroke();
       drawIcon(ctx, 'target', x + 22, yy + 4, 20, { color: OR, accent: OR, animate: this.anim, t: this.time });
       this._text(ctx, '목표', x + 40, yy, 11, DIM);
-      this._text(ctx, s.target.body.name, x + 40, yy + 16, 15, OR, 'left', 700);
       this._text(ctx, formatDistance(s.target.dist), x + w - 14, yy + 16, 13, WH, 'right', 700);
+      const tw = ctx.measureText(formatDistance(s.target.dist)).width;
+      this._text(ctx, s.target.body.name, x + 40, yy + 16, 15, OR, 'left', 700, w - 54 - tw - 10);
       drawIcon(ctx, 'eta', x + 22, yy + 36, 16, { color: DIM, accent: CY });
       this._text(ctx, '도착 예상 ' + formatDuration(s.target.eta), x + 40, yy + 40, 12, CY);
     }
@@ -229,14 +231,14 @@ export class SpaceHUD {
     this._bar(ctx, x + 16, y + 68, w - 32, 5, s.integrity / 100, icol);
     // 시스템 토글
     const sys = [
-      ['gear', '착륙장치', s.gear], ['assist', '관성 보조', s.fa], ['rcs', 'RCS', s.rcs > 0.05],
+      ['gear', '기어', s.gear], ['assist', '관성', s.fa], ['rcs', 'RCS', s.rcs > 0.05],
       [s.warp ? 'warp' : 'warpExit', '워프', s.warp], ['orbit', '궤도선', s.orbitOn], [s.view === 'cockpit' ? 'cockpit' : 'chase', '시점', true],
     ];
     const cw = (w - 16) / 6;
     sys.forEach(([ic, label, on], i) => {
       const cx = x + 8 + cw * (i + 0.5);
       drawIcon(ctx, ic, cx, y + 98, 22, { color: on ? WH : DIM, accent: on ? OR : DIM, cyan: on ? CY : DIM, glow: on ? 0.8 : 0, alpha: on ? 1 : 0.6, animate: on && this.anim && (ic === 'warp' || ic === 'rcs'), t: this.time * 1.5 });
-      this._text(ctx, label, cx, y + 128, 10.5, on ? WH : DIM, 'center');
+      this._text(ctx, label, cx, y + 128, 10.5, on ? WH : DIM, 'center', 600, cw - 4);
     });
   }
 

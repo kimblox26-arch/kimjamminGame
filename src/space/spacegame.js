@@ -177,10 +177,22 @@ export class SpaceGame {
     // 지형 그림자 (2단 캐스케이드)
     this._initShadows(Q.shadows);
 
-    progress(0.94, '후처리 구성');
+    progress(0.92, '셰이더 컴파일');
+    await tick();
+    this._precompile();
+    progress(0.95, '후처리 구성');
     await tick();
     this.post = createSpaceComposer(this.renderer, this.cloudTex, this.quality);
     this.post.bloom.strength = Q.bloom;
+    // 후처리 셰이더도 로딩 중에 한 번 실행해 컴파일해 둔다
+    try {
+      this.post.atmo.uniforms.uActive.value = 1;
+      this.renderer.setRenderTarget(this.post.sceneRT);
+      this.renderer.clear();
+      this.renderer.setRenderTarget(null);
+      this.post.composer.render(0.016);
+      this.post.atmo.uniforms.uActive.value = 0;
+    } catch (e) { console.warn(e); }
     this.hud = new SpaceHUD(document.getElementById('hud'));
     this.map = new NavMap(this);
     this.previews = new PreviewCache(this.renderer, this.cloudTex);
@@ -191,6 +203,34 @@ export class SpaceGame {
     this.onResize();
     this.ready = true;
     progress(1, '준비 완료');
+  }
+
+  /** 첫 접근 시 끊김을 막기 위해 모든 고유 셰이더를 로딩 중에 미리 컴파일 */
+  _precompile() {
+    const tmp = new THREE.Group();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1], 2));
+    geo.setAttribute('morph', new THREE.Float32BufferAttribute(new Array(9).fill(0), 3));
+    geo.setAttribute('aux', new THREE.Float32BufferAttribute(new Array(9).fill(0), 3));
+    const seen = new Set();
+    const add = (mat) => {
+      if (!mat || seen.has(mat)) return;
+      seen.add(mat);
+      const m = new THREE.Mesh(geo, mat);
+      m.frustumCulled = false;
+      tmp.add(m);
+    };
+    for (const p of this.planets) {
+      if (p.terrain) { add(p.terrain.material); add(p.terrain.oceanMaterial); }
+      add(p.gasMat); add(p.ringMat); if (p.shell) add(p.shell.material);
+    }
+    // 실제 장면(같은 조명 구성)에 잠시 넣어 컴파일해야 프로그램 캐시가 일치한다
+    this.scene.add(tmp);
+    try { this.renderer.compile(this.scene, this.camera); } catch (e) { console.warn('셰이더 사전 컴파일 실패', e); }
+    this.scene.remove(tmp);
+    geo.dispose();
   }
 
   _applyPixelRatio() {
@@ -900,7 +940,8 @@ export class SpaceGame {
     const frame = { pixelScale, sunDir, sunCol, time: this.time, dpr, skyAmb, skyZenith, skyHorizon, waveAmp: 0.9, starExposure: 1 - dayK * 0.85 };
     for (const p of this.planets) p.update(frame);
     for (const s of this.stars) s.update(frame, dt);
-    for (const g of this.galaxies) g.update(frame);
+    const camGalaxy = this._galaxyOf(f.frame);
+    for (const g of this.galaxies) g.update(frame, g.body === camGalaxy);
     for (const m of this.misc) m.update(frame);
     const gal = this._galaxyOf(f.frame);
     if (gal) {
@@ -969,6 +1010,7 @@ export class SpaceGame {
     r.setRenderTarget(post.sceneRT);
     r.clear();
     r.render(this.scene, this.camera);
+    this.renderStats = { calls: r.info.render.calls, triangles: r.info.render.triangles, points: r.info.render.points };
     post.composer.render(dt);
     // HUD
     this.hud.insetBottom = document.body.classList.contains('touch-ui') ? 60 : 0;
@@ -1057,7 +1099,7 @@ export class SpaceGame {
     // 환경 맵 (0.5초마다)
     this._envT -= dt;
     if (this._envT <= 0) {
-      this._envT = 0.5;
+      this._envT = 1.0;
       const u = this.envMat.uniforms;
       const upL = up2local(this._up);
       void upL;

@@ -159,7 +159,7 @@ export function spaceControlsHTML() {
     <div class="key-group"><h4>${icon('modeSpace', { size: 18 })} 우주 탐사 — 비행</h4>
       ${['pitchDown', 'pitchUp', 'rollLeft', 'rollRight', 'yawLeft', 'yawRight', 'throttleUp', 'throttleDown', 'throttleZero', 'liftUp', 'liftDown', 'brake'].map(row).join('')}
       <div class="key-row"><kbd>마우스 휠</kbd><span>스로틀 미세 조절</span></div>
-      <div class="key-row"><kbd>마우스 우클릭 드래그</kbd><span>시점 둘러보기</span></div>
+      <div class="key-row"><kbd>우클릭 드래그</kbd><span>시점 둘러보기</span></div>
     </div>
     <div class="key-group"><h4>${icon('tier5', { size: 18 })} 우주 탐사 — 속도 · 항법</h4>
       ${['tier1', 'tier2', 'tier3', 'tier4', 'tier5', 'tierNext', 'map', 'target', 'align', 'orbit'].map(row).join('')}

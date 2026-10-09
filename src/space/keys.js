@@ -21,7 +21,7 @@ export function keyName(code) {
   if (!code) return '-';
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
-  const map = { ShiftLeft: 'Shift', ShiftRight: 'Shift(R)', ControlLeft: 'Ctrl', ControlRight: 'Ctrl(R)', ArrowUp: '위쪽 화살표키', ArrowDown: '아래쪽 화살표키', ArrowLeft: '왼쪽 화살표키', ArrowRight: '오른쪽 화살표키', Space: 'Space', Tab: 'Tab', Escape: 'ESC', Backquote: '`' };
+  const map = { ShiftLeft: 'Shift', ShiftRight: 'Shift(R)', ControlLeft: 'Ctrl', ControlRight: 'Ctrl(R)', ArrowUp: '위 방향키', ArrowDown: '아래 방향키', ArrowLeft: '왼 방향키', ArrowRight: '오른 방향키', Space: 'Space', Tab: 'Tab', Escape: 'ESC', Backquote: '`' };
   return map[code] || code;
 }
 

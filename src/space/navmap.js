@@ -271,6 +271,7 @@ export class NavMap {
     }
     // 천체 아이콘
     this._hits = [];
+    const labels = [];
     for (const b of kids) {
       if (b.kind === 'belt') continue;
       const s = proj(b.localPos);
@@ -279,11 +280,21 @@ export class NavMap {
       const size = b.kind === 'star' ? 30 : b.kind === 'galaxy' ? 28 : 24;
       drawIcon(ctx, bodyIcon(b), s.x, s.y, size * (sel ? 1.15 : 1), { color: sel ? '#fff' : '#e9f6ff', accent: '#ffa94d', cyan: '#62e6ff', glow: sel ? 1 : 0.4, animate: sel, t: this.t });
       if (isTarget) drawIcon(ctx, 'target', s.x, s.y, size + 18, { color: '#ffa94d', accent: '#ffa94d', animate: true, t: this.t });
-      ctx.font = '600 12px Rajdhani, sans-serif';
-      ctx.fillStyle = sel ? '#ffa94d' : 'rgba(233,246,255,0.8)';
-      ctx.textAlign = 'center';
-      ctx.fillText(b.name, s.x, s.y + size * 0.5 + 14);
+      labels.push({ b, x: s.x, y: s.y + size * 0.5 + 14, pri: sel ? 2 : isTarget ? 1 : 0 });
       this._hits.push({ b, x: s.x, y: s.y, r: size * 0.7 });
+    }
+    // 이름표: 선택·목표 우선, 겹치는 이름은 생략
+    ctx.font = '600 12px Rajdhani, sans-serif';
+    ctx.textAlign = 'center';
+    const placed = [];
+    labels.sort((a, b) => b.pri - a.pri);
+    for (const l of labels) {
+      const w = ctx.measureText(l.b.name).width + 6;
+      const r = { x0: l.x - w / 2, x1: l.x + w / 2, y0: l.y - 12, y1: l.y + 3 };
+      if (l.pri === 0 && placed.some(p => r.x0 < p.x1 && r.x1 > p.x0 && r.y0 < p.y1 && r.y1 > p.y0)) continue;
+      placed.push(r);
+      ctx.fillStyle = l.pri === 2 ? '#ffa94d' : 'rgba(233,246,255,0.8)';
+      ctx.fillText(l.b.name, l.x, l.y);
     }
     // 내 위치
     const sp = this.game.shipPosIn(level);

@@ -26,11 +26,11 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float d = length(mv.xyz * 1e-15) * 1e15;   // 1e21 m 의 제곱은 float32 범위를 넘으므로 축소 후 계산
   float px = size * uPixelScale / d;
-  float ps = clamp(px, 1.0, 40.0);
+  float ps = clamp(px, 1.0, 8.0);
   float e = (px * px) / (ps * ps);
   float near = smoothstep(uNearFade * 0.25, uNearFade, d);
   // 화면에서 크게 보이는 가까운 입자(성단 덩어리)는 사라지고 국소 별 배경이 대신한다
-  float big = 1.0 - smoothstep(5.0, 22.0, px);
+  float big = 1.0 - smoothstep(3.0, 7.0, px);
   vA = min(1.5, e) * near * big * uBright;
   vCol = color;
   gl_PointSize = ps * 2.0 * uDpr;
@@ -57,9 +57,11 @@ export class GalaxyView {
     const r = rng(body.seed || 1);
     const pos = new Float32Array(count * 3), col = new Float32Array(count * 3), size = new Float32Array(count);
     const C = body.colors;
+    // 입자 크기: 우리은하는 내부에서 보이므로 더 잘게 (가까운 성단은 국소 별 배경이 대신함)
+    const sizeDiv = body.id === 'milkyway' ? 420 : 160;
     const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
     for (let i = 0; i < count; i++) {
-      let x, y, z, c, s = R / 160;
+      let x, y, z, c, s = R / sizeDiv;
       if (body.gtype === 'spiral') {
         const isBulge = r() < (body.bulge || 0.15);
         if (isBulge) {
@@ -114,16 +116,19 @@ export class GalaxyView {
     g.setAttribute('size', new THREE.BufferAttribute(size, 1));
     this.mat = new THREE.ShaderMaterial({
       vertexShader: GAL_VS, fragmentShader: GAL_FS, ...ADD,
-      uniforms: { uPixelScale: { value: 800 }, uBright: { value: 0.9 * 120000 / count }, uNearFade: { value: R * 0.03 }, uDpr: { value: 1 } },
+      uniforms: { uPixelScale: { value: 800 }, uBright: { value: (0.3 * Math.PI * sizeDiv * sizeDiv) / (0.8 * count) }, uNearFade: { value: R * 0.03 }, uDpr: { value: 1 } },
     });
     this.points = new THREE.Points(g, this.mat);
     this.points.frustumCulled = false;
     this.points.matrixAutoUpdate = false;
     this.points.renderOrder = -10;
     ctx.scene.add(this.points);
+    this.baseBright = this.mat.uniforms.uBright.value;
   }
 
-  update(f) {
+  /** inside: 카메라가 이 은하 안에 있으면 원반을 옆에서 관통해 보므로 먼지 소광을 근사해 어둡게 */
+  update(f, inside = false) {
+    this.mat.uniforms.uBright.value = this.baseBright * (inside ? 0.07 : 1);
     const b = this.body;
     const m = this.points.matrix;
     m.makeRotationFromQuaternion(b.rotation);

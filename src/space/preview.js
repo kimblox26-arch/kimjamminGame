@@ -232,7 +232,14 @@ export class PreviewCache {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    this.galaxy = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.035, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    if (!this._dotTex) {
+      const c = document.createElement('canvas'); c.width = c.height = 32;
+      const x = c.getContext('2d'), gr = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = gr; x.fillRect(0, 0, 32, 32);
+      this._dotTex = new THREE.CanvasTexture(c);
+    }
+    this.galaxy = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.06, map: this._dotTex, vertexColors: true, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.scene.add(this.galaxy);
     if (body.kind === 'blackhole') this.sphere.visible = false;
   }

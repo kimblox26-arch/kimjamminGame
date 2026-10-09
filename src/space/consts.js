@@ -32,11 +32,19 @@ export function formatDistance(m) {
   return nf(m / (1e6 * LY), 2) + ' 백만 광년';
 }
 
+const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+// 큰 수: 1.44×10¹⁷
+export function sci(v, d = 2) {
+  const [m, e] = v.toExponential(d).split('e');
+  return m + '×10' + String(parseInt(e, 10)).replace(/\d/g, c => SUP[c]).replace('-', '⁻');
+}
+
 export function formatSpeed(v) {
   const a = Math.abs(v);
   if (a < 1000) return nf(v, 0) + ' m/s';
   if (a < 0.01 * C_LIGHT) return nf(v / 1000, a < 1e5 ? 2 : 0) + ' km/s';
-  return nf(v / 1000, 0) + ' km/s';
+  if (a < 1e12) return nf(v / 1000, 0) + ' km/s';
+  return sci(v / 1000) + ' km/s';
 }
 
 export function formatC(v) {
@@ -44,7 +52,7 @@ export function formatC(v) {
   if (k < 0.001) return '';
   if (k < 10) return '광속 ×' + k.toFixed(k < 1 ? 3 : 2);
   if (k < 1e6) return '광속 ×' + nf(k, 0);
-  return '광속 ×' + k.toExponential(2).replace('e+', '×10^');
+  return '광속 ×' + sci(k);
 }
 
 export function formatDuration(s) {

@@ -522,9 +522,9 @@ export class HUD {
     ctx.font = '600 10px "Rajdhani", monospace';
     ctx.fillStyle = 'rgba(200,240,255,0.7)';
     ctx.textAlign = 'left';
-    ctx.fillText('X ' + Math.round(tele.position.x) + '  Z ' + Math.round(tele.position.z), x + 8, y - 8);
+    ctx.fillText('X ' + Math.round(tele.position.x) + ' Z ' + Math.round(tele.position.z), x + 8, y - 8);
     ctx.textAlign = 'right';
-    const zl = zoom.toFixed(1) + ' 배율 (Z키)';
+    const zl = zoom.toFixed(1) + '배 (Z)';
     ctx.fillText(zl, x + size - 8, y - 8);
     drawIcon(ctx, 'zoom', x + size - 16 - ctx.measureText(zl).width, y - 12, 13, { color: 'rgba(200,240,255,0.8)', accent: HUD_AMBER });
     ctx.restore();
