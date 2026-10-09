@@ -513,10 +513,10 @@ export function velInFrame(body, frame, out = new THREE.Vector3()) {
 
 /** 시스템 내 시작 위치 정의 */
 export const START_POINTS = {
-  sol: { body: 'earth', alt: 420e3, lat: 18, lon: -40, title: '지구 저궤도' },
-  proxima: { body: 'proxima-c', alt: 260e3, lat: 10, lon: 30, title: '프록시마 c 궤도' },
-  trappist: { body: 'trappist-e', alt: 300e3, lat: 5, lon: 10, title: '트라피스트-1e 궤도' },
-  rigel: { body: 'rigel-c', alt: 320e3, lat: -8, lon: 60, title: '리겔 c 궤도' },
+  sol: { body: 'earth', alt: 420e3, lat: 18, lon: -40, sun: 50, title: '지구 저궤도' },
+  proxima: { body: 'proxima-c', alt: 260e3, lat: 10, lon: 30, sun: 50, title: '프록시마 c 궤도' },
+  trappist: { body: 'trappist-e', alt: 300e3, lat: 5, lon: 10, sun: 50, title: '트라피스트-1e 궤도' },
+  rigel: { body: 'rigel-c', alt: 320e3, lat: -8, lon: 60, sun: 50, title: '리겔 c 궤도' },
 };
 
 void YEAR; void _v;

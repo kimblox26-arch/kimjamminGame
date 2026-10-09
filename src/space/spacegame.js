@@ -502,12 +502,27 @@ export class SpaceGame {
     this.onResize();
   }
 
+  /** 태양 방향에서 sunDeg 도 떨어진 지표 방향 (행성 로컬, 북쪽으로 lat 만큼 기울임) */
+  _sunRelDir(b, sunDeg, lat) {
+    const sys = this._systemOf(b);
+    const star = sys && sys.children.find((c) => c.kind === 'star');
+    if (!star) return null;
+    const sunL = posInFrame(star, b, new THREE.Vector3()).normalize().applyQuaternion(_q.copy(b.rotation).invert());
+    const pole = new THREE.Vector3(0, 1, 0);
+    const perp = pole.clone().addScaledVector(sunL, -pole.dot(sunL)).normalize();
+    const side = sunL.clone().cross(perp);
+    const a = sunDeg * Math.PI / 180;
+    return sunL.clone().multiplyScalar(Math.cos(a)).addScaledVector(side, Math.sin(a)).addScaledVector(perp, lat / 90).normalize();
+  }
+
   _spawn(systemId) {
     const sp = START_POINTS[systemId] || START_POINTS.sol;
     const b = this.uni.byId[sp.body];
     updateBodies(this.uni.bodies, this.time);
     const lat = sp.lat * Math.PI / 180, lon = sp.lon * Math.PI / 180;
-    const dirL = new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon));
+    let dirL = new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon));
+    // 시작 지점은 항상 낮 쪽 (태양에서 sp.sun 도, 지평선 너머로 명암 경계가 보이게)
+    if (sp.sun !== undefined) dirL = this._sunRelDir(b, sp.sun, sp.lat) || dirL;
     const r = b.radius + sp.alt;
     const pos = dirL.clone().applyQuaternion(b.rotation).multiplyScalar(r);
     // 원궤도 속도 (자전 방향)
@@ -543,19 +558,7 @@ export class SpaceGame {
     // 대상 천체까지 프레임 경로를 따라 함선 프레임을 바꾼다
     const lat = (o.lat ?? 20) * Math.PI / 180, lon = (o.lon ?? 30) * Math.PI / 180;
     let dirL = new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon));
-    if (o.sun !== undefined) {
-      // 태양 고도각 지정: 태양 방향에서 o.sun 도 떨어진 지점 (북쪽으로 기울임 o.lat)
-      const sys = this._systemOf(b);
-      const star = sys && sys.children.find((c) => c.kind === 'star');
-      if (star) {
-        const sunL = posInFrame(star, b, new THREE.Vector3()).normalize().applyQuaternion(_q.copy(b.rotation).invert());
-        const pole = new THREE.Vector3(0, 1, 0);
-        const perp = pole.clone().addScaledVector(sunL, -pole.dot(sunL)).normalize();
-        const side = sunL.clone().cross(perp);
-        const a = o.sun * Math.PI / 180;
-        dirL = sunL.clone().multiplyScalar(Math.cos(a)).addScaledVector(side, Math.sin(a)).addScaledVector(perp, (o.lat ?? 0) / 90).normalize();
-      }
-    }
+    if (o.sun !== undefined) dirL = this._sunRelDir(b, o.sun, o.lat ?? 0) || dirL;
     const view = this.views.get(b);
     const h = view && view.terrain ? Math.max(view.heightAt(dirL, 2), view.terrain.terrain.hasOcean ? 0 : -1e9) : 0;
     const r = b.radius + h + (o.alt ?? 1000);
