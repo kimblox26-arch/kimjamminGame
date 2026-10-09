@@ -79,6 +79,7 @@
     chevl: 'M15 5l-7 7 7 7',
     chevr: 'M9 5l7 7-7 7',
     swap: 'M4 8h14l-3-3 M20 16H6l3 3',
+    mini: 'M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z M13 12h5v4h-5Z',
     key: C(8, 15, 4) + 'M11 12l9-9 M17 6l3 3 M15 8l2 2',
     lock: R(5, 11, 14, 10, 2) + 'M8 11V7a4 4 0 0 1 8 0v4 M12 15v2',
     search: C(11, 11, 7) + 'M16 16l5 5',
@@ -115,7 +116,7 @@
   // 이모티콘 → 아이콘 (변형 선택자 FE0F 가 있든 없든)
   const PAIRS = {
     shield: '🛡️🛡', square: '⬜⬛◻️', swords: '⚔️🗡️', coin: '🪙💰', school: '🏫', handshake: '🤝', gift: '🎁', bag: '🛒🎒', tag: '🏷️', door: '🚪', pencil: '✏️', cap: '👩‍🏫🎓', sail: '⛵',
-    user: '😀🧒👤', flag: '🚩🏁', checkc: '✅', trash: '🗑️', timer: '⏱️', build: '🏗️', tools: '🛠️', fire: '🔥', rocket: '🚀☄️', pin: '📍', boss: '👾', bomb: '💣', scope: '🔭',
+    user: '😀🧒👤', users: '👥', flag: '🚩🏁', checkc: '✅', trash: '🗑️', timer: '⏱️', build: '🏗️', tools: '🛠️', fire: '🔥', rocket: '🚀☄️', pin: '📍', boss: '👾', bomb: '💣', scope: '🔭',
     star: '⭐🌟', globe: '🌐', refresh: '🔄♻️', note: '📒📘', target: '🎯', palette: '🧑‍🎨', ballot: '🗳️', trophy: '🏆🏟️', map: '🗺️🗾', chat: '💬', chart: '📊', bolt: '⚡💪', mail: '📨',
     xc: '❌🙅', party: '🎉', ban: '🚫✋', bug: '🐛', bulb: '💡', music: '🎵', tower: '🗼🏰🏯', sad: '😢😵', books: '📚', calendar: '🗓️📅', medal: '🏅🥇🥈🥉', megaphone: '📢', broom: '🧹',
     boom: '🧨💥', wall: '🧱', crown: '👑', key: '🔑', lock: '🔐🔒🔓', help: '❓', search: '🔎🔍', compass: '🧭', pole: '🎌', wave: '🌊', hammer: '🔨', leaf: '🕊️🌱🌾', hourglass: '⏳',

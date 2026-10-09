@@ -133,15 +133,13 @@
   <header class="topbar">
     <div class="brand">매뜨<b>땅먹</b></div>
     <div class="hud">
-      <span id="hudServer" class="pill server"></span>
-      <button type="button" id="hudCoins" class="pill coins" hidden>🪙 <b id="hudCoinN">0</b></button>
+      <button type="button" id="hudUser" class="hud-me" title="내 프로필"></button>
+      <span class="hud-school"><i class="hs-star">⭐</i><span class="hs-txt"><b id="hudSchool"></b><small>땅 <b id="hudLand">0</b>칸 · <b id="hudRank">-</b>위</small></span></span>
       <span id="hudScope" class="pill scope" hidden></span>
-      <span id="hudOnline" class="pill online"></span>
-      <span class="pill school">⭐ <b id="hudSchool"></b> · 땅 <b id="hudLand">0</b>칸 · <b id="hudRank">-</b>위</span>
-      <span id="hudUser" class="pill"></span>
       <span id="cheatBadge" class="pill bug" hidden>🐛 버그 모드</span>
+      <button type="button" id="hudCoins" class="pill coins" hidden>🪙 <b id="hudCoinN">0</b></button>
     </div>
-</header>
+  </header>
   <main class="game-main">
     <div id="mapWrap">
       <canvas id="map"></canvas>
@@ -149,11 +147,12 @@
         <button type="button" id="zIn" title="크게"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
         <button type="button" id="zOut" title="작게"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
         <button type="button" id="zHome" title="우리 학교로"><svg class="ic" aria-hidden="true"><use href="#i-home"/></svg></button>
+        <button type="button" id="zMini" class="on" title="작은 지도 켜기 · 끄기"><svg class="ic" aria-hidden="true"><use href="#i-mini"/></svg></button>
         <button type="button" id="zFit" title="전체 지도"><svg class="ic" aria-hidden="true"><use href="#i-map"/></svg></button>
       </div>
       <div class="minimap"><canvas id="mini"></canvas></div>
       <div id="warBar" class="war-bar" hidden></div>
-      <div id="conn" class="conn" title="서버 연결 상태"><i></i><span>연결됨</span></div>
+      <div class="map-status"><div id="conn" class="conn" title="서버 연결 상태"><i></i><span>연결됨</span></div><span id="hudServer" class="ms-srv"></span><span id="hudOnline" class="ms-on"></span></div>
       <div id="where" class="where" hidden></div>
       <div id="tip" class="tip"></div>
       <div id="popup" class="popup" hidden></div>
@@ -204,28 +203,38 @@
     <button type="button" id="btnMore" class="dk" title="더보기"><svg class="ic" aria-hidden="true"><use href="#i-grid"/></svg><span>더보기</span><i id="moreDot" class="count dot" hidden></i></button>
   </nav>
   <div id="moreMenu" class="more-menu" hidden>
-    <button type="button" class="sb-collapse" id="sbClose" title="닫기"><i><svg class="ic" aria-hidden="true"><use href="#i-chevr"/></svg></i>닫기</button>
-    <div class="sb-dots" aria-hidden="true"><b></b><b></b><b></b></div>
-    <div class="sb-head"><b class="sb-title">매뜨 땅먹</b><button type="button" class="sb-bell" id="sbBellBtn" data-act="btnMission" title="오늘의 미션"><svg class="ic" aria-hidden="true"><use href="#i-bell"/></svg><i id="sbBell" class="count" hidden>!</i></button></div>
-    <button type="button" class="sb-me" data-act="btnProfile" title="내 프로필"><span id="sbAv" class="sb-av"></span><span class="sb-who"><b id="sbNick">나</b><small><svg class="ic" aria-hidden="true"><use href="#i-swap"/></svg><em id="sbSub"></em></small></span><svg class="ic" aria-hidden="true"><use href="#i-chevr"/></svg></button>
-    <label class="sb-search"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><input id="sbFind" type="search" placeholder="메뉴 찾기…" autocomplete="off" enterkeyhint="search"></label>
+    <div class="sb-head">
+      <button type="button" class="sb-x" id="sbClose" title="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+      <button type="button" class="sb-me" data-act="btnProfile" title="내 프로필"><span id="sbAv" class="sb-av"></span><span class="sb-who"><b id="sbNick">나</b><small id="sbSub"></small></span></button>
+      <div class="sb-stats">
+        <span class="sb-stat"><svg class="ic" aria-hidden="true"><use href="#i-coin"/></svg><b id="sbCoins">0</b><small>코인</small></span>
+        <span class="sb-stat"><svg class="ic" aria-hidden="true"><use href="#i-trophy"/></svg><b id="sbRank">-</b><small>학교 순위</small></span>
+        <button type="button" class="sb-stat" id="sbBellBtn" data-act="btnMission"><svg class="ic" aria-hidden="true"><use href="#i-bell"/></svg><b>미션</b><small>오늘</small><i id="sbBell" class="count dot" hidden></i></button>
+      </div>
+    </div>
     <div class="sb-body" id="sbBody">
-      <i class="sb-hl" id="sbHl" aria-hidden="true"></i>
-      <p class="sb-sec">메뉴</p>
-      <button type="button" class="mm mm-mission" data-act="btnMission"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg><span>미션</span><i id="mmMissionDot" class="count dot" hidden></i></button>
-      <button type="button" class="mm mm-union" id="btnUnion"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span>연합</span></button>
-      <button type="button" class="mm" id="btnProfile"><svg class="ic" aria-hidden="true"><use href="#i-idcard"/></svg><span>프로필</span></button>
-      <button type="button" class="mm" id="btnLooks"><svg class="ic" aria-hidden="true"><use href="#i-smile"/></svg><span>꾸미기</span></button>
-      <button type="button" class="mm" id="btnBadges"><svg class="ic" aria-hidden="true"><use href="#i-medal"/></svg><span>배지</span></button>
-      <button type="button" class="mm" id="btnRank"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg><span>랭킹표</span></button>
-      <p class="sb-sec">소리</p>
-      <button type="button" class="mm" id="btnBgm"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg><span>음악</span><b class="sw" aria-hidden="true"></b></button>
-      <button type="button" class="mm" id="btnSound"><svg class="ic" aria-hidden="true"><use href="#i-volume"/></svg><span>소리</span><b class="sw" aria-hidden="true"></b></button>
-      <p class="sb-sec">일반</p>
-      <button type="button" class="mm" id="btnHelp"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg><span>도움말</span></button>
-      <button type="button" class="mm" id="btnSettings"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg><span>설정</span></button>
-      <button type="button" class="mm" id="btnAdmin" hidden><svg class="ic" aria-hidden="true"><use href="#i-shieldok"/></svg><span>관리</span></button>
-      <button type="button" class="mm" data-act="setLogout"><svg class="ic" aria-hidden="true"><use href="#i-logout"/></svg><span>로그아웃</span></button>
+      <p class="sb-sec">바로가기</p>
+      <div class="sb-grid">
+      <button type="button" class="mm tile mm-mission" data-act="btnMission"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-target"/></svg></i><span>미션</span><i id="mmMissionDot" class="count dot" hidden></i></button>
+      <button type="button" class="mm tile mm-union" id="btnUnion"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg></i><span>연합</span></button>
+      <button type="button" class="mm tile" id="btnProfile"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-idcard"/></svg></i><span>프로필</span></button>
+      <button type="button" class="mm tile" id="btnLooks"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-smile"/></svg></i><span>꾸미기</span></button>
+      <button type="button" class="mm tile" id="btnBadges"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-medal"/></svg></i><span>배지</span></button>
+      <button type="button" class="mm tile" id="btnRank"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg></i><span>랭킹표</span></button>
+      </div>
+      <p class="sb-sec">환경</p>
+      <div class="sb-list">
+      <button type="button" class="mm row" id="btnBgm"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-music"/></svg></i><span>음악</span><b class="sw" aria-hidden="true"></b></button>
+      <button type="button" class="mm row" id="btnSound"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-volume"/></svg></i><span>소리</span><b class="sw" aria-hidden="true"></b></button>
+      <button type="button" class="mm row" id="btnMini"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-mini"/></svg></i><span>작은 지도</span><b class="sw" aria-hidden="true"></b></button>
+      </div>
+      <p class="sb-sec">기타</p>
+      <div class="sb-list">
+      <button type="button" class="mm row" id="btnHelp"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg></i><span>도움말</span></button>
+      <button type="button" class="mm row" id="btnSettings"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></i><span>설정</span></button>
+      <button type="button" class="mm row" id="btnAdmin" hidden><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-shieldok"/></svg></i><span>관리</span></button>
+      <button type="button" class="mm row out" data-act="setLogout"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-logout"/></svg></i><span>로그아웃</span></button>
+      </div>
     </div>
   </div>
 </section>

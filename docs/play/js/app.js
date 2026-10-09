@@ -2194,7 +2194,7 @@
   function hud() {
     if (!me || !me.profile) return;
     $('#hudServer').textContent = `🌐 ${srvName()}`;
-    $('#hudOnline').innerHTML = `<i></i>${online}명 접속 중`;
+    $('#hudOnline').innerHTML = `👥 ${online}명`; $('#hudOnline').title = `${online}명 접속 중`;
     $('#hudSchool').textContent = short(mySid());
     const hu = `${avHTML(Object.assign({ av: '😀' }, me.looks, { acc: me.acc }))} ${nameHTML(me.profile.nickname, me.role, Object.assign({}, me.looks, { av: '', pv: 0 }))} · ${me.grade <= 6 ? me.grade : S.gradeName(me.grade)}-${me.profile.semester}`;
     if (hudUserHTML !== hu) { hudUserHTML = hu; $('#hudUser').innerHTML = hu; }
@@ -2210,6 +2210,7 @@
     $('#btnWar').hidden = !FEAT || LVL() === 'e'; // 전쟁·동맹은 중·고등학교
     dockTo(dockAct);
     $('#hudCoinN').textContent = me.infCoins ? '∞' : me.coins || 0;
+    $('#sbCoins').textContent = $('#hudCoinN').textContent;
     const left = (me.scopeUntil || 0) - Date.now(), sc = $('#hudScope');
     sc.hidden = left <= 0;
     if (left > 0) { sc.textContent = `🔭 ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, '0')}`; if (!scopeTimer) scopeTimer = setInterval(() => { hud(); if (!scopeOn()) { clearInterval(scopeTimer); scopeTimer = 0; if (W) { computeFrontier(); requestDraw(); } } }, 1000); }
@@ -2228,6 +2229,7 @@
     $('#myRank').innerHTML = `⭐ 우리 학교 <b>${rank || '-'}위</b> · 땅 <b>${mine}</b>칸 · 뺏을 수 있는 땅 <b>${frontier.size}</b>칸` + (exits.size ? '<br>🚪 빈 땅이 막혔어요! 초록 점선 <b>탈출길</b>로 빠져나가요.' : '') + (me.grade >= 7 ? `<br>🚀 중학생부터: 멀리 있는 땅도 문제 ${S.FAR_COST_MH}개로 뺏을 수 있어요.` : me.grade >= S.FAR_GRADE ? `<br>🚀 ${S.FAR_GRADE}학년부터: 멀리 있는 땅도 문제 ${S.FAR_COST}개로 뺏을 수 있어요.` : '');
     $('#hudLand').textContent = mine;
     $('#hudRank').textContent = rank || '-';
+    $('#sbRank').textContent = rank ? rank + '위' : '-';
   }
   // ---------- 📊 랭킹표: 학교(땅) · 학생(뺏은 땅) · 시도 대항전 ----------
   let rankTab = 'school';
@@ -2644,30 +2646,23 @@
     $('#btnBoard').onclick = () => { if (innerWidth <= 820) $('#side').classList.toggle('open'); else openRank(); }; // 폰: 순위·소식 창, 넓은 화면: 랭킹표
     // 더보기: 자주 안 쓰는 버튼 모음 (누르면 닫힌다)
     const more = $('#moreMenu'), closeMore = () => { more.hidden = true; $('#btnMore').classList.remove('on'); };
-    // 옆에서 나오는 메뉴창: 빨간 막대가 손가락(마우스)을 따라 미끄러지고, 아이콘은 선이 그려지듯 나타난다
-    const sbHl = $('#sbHl'), sbItems = () => [...$$('#sbBody .mm')].filter(b => !b.hidden && b.offsetParent);
-    const sbMark = b => { if (!b) { sbHl.style.opacity = 0; return; } sbHl.style.opacity = 1; sbHl.style.transform = `translateY(${b.offsetTop}px)`; sbHl.style.height = b.offsetHeight + 'px'; $$('#sbBody .mm.hl').forEach(x => { if (x !== b) x.classList.remove('hl'); }); b.classList.add('hl'); };
+    // 옆에서 나오는 메뉴창: 위는 내 정보 카드, 가운데 바로가기 타일, 아래 환경 · 기타 줄 (하나씩 톡톡 나타난다)
     const openMore = () => {
-      $('#sbFind').value = ''; $$('#sbBody .mm, #sbBody .sb-sec').forEach(x => x.classList.remove('nope'));
       more.hidden = false; $('#btnMore').classList.add('on');
-      sbItems().forEach((b, i) => b.style.setProperty('--i', i));
-      sbMark(sbItems()[0]);
+      [...$$('#sbBody .mm')].filter(b => !b.hidden && b.offsetParent).forEach((b, i) => b.style.setProperty('--i', i));
     };
     $('#btnMore').onclick = e => { e.stopPropagation(); if (more.hidden) openMore(); else closeMore(); };
-    $('#sbBody').addEventListener('pointerover', e => { const b = e.target.closest('.mm'); if (b) sbMark(b); });
-    $('#sbFind').oninput = () => { // 메뉴 찾기: 글자가 들어간 것만 남긴다
-      const q = $('#sbFind').value.trim();
-      let sec = null, any = false;
-      $$('#sbBody > *').forEach(x => {
-        if (x.classList.contains('sb-sec')) { if (sec) sec.classList.toggle('nope', !any); sec = x; any = false; return; }
-        if (!x.classList.contains('mm')) return;
-        const ok = !q || x.textContent.includes(q); x.classList.toggle('nope', !ok); if (ok && !x.hidden) any = true;
-      });
-      if (sec) sec.classList.toggle('nope', !any);
-      sbMark(sbItems()[0]);
+    more.addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.querySelector('.sw')) return; closeMore(); if (b.dataset.act) $('#' + b.dataset.act).click(); });
+    // 🗺️ 작은 지도 켜기 · 끄기 (지도 버튼과 메뉴 스위치, 다음에 와도 그대로)
+    const setMini = on => { $('.minimap').hidden = !on; $('#zMini').classList.toggle('on', on); $('#btnMini').classList.toggle('off', !on); $('#btnMini span').textContent = on ? '작은 지도' : '작은 지도 꺼짐'; };
+    let miniOn = true;
+    try { miniOn = localStorage.getItem('mle_mini') !== 'off'; } catch {}
+    setMini(miniOn);
+    $('#zMini').onclick = $('#btnMini').onclick = () => {
+      miniOn = !miniOn; setMini(miniOn);
+      try { localStorage.setItem('mle_mini', miniOn ? 'on' : 'off'); } catch {}
+      toast(miniOn ? '🗺️ 작은 지도를 켰어요.' : '🗺️ 작은 지도를 껐어요.', 'ok');
     };
-    $('#sbFind').onkeydown = e => { if (e.key === 'Enter' && sbItems()[0]) sbItems()[0].click(); };
-    more.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; if (b.classList.contains('mm')) sbMark(b); if (b.querySelector('.sw')) return; closeMore(); if (b.dataset.act) $('#' + b.dataset.act).click(); });
     document.addEventListener('pointerdown', e => { if (!more.hidden && !more.contains(e.target) && !$('#btnMore').contains(e.target)) closeMore(); });
     $('#sbClose').onclick = closeMore;
     // 🫧 아래 메뉴: 누른 버튼으로 동그라미와 언덕이 미끄러져 가고, 창이 다 닫히면 '도전'으로 돌아온다
@@ -2685,6 +2680,16 @@
     [...$$('.modal'), more].forEach(m => mo.observe(m, { attributes: true, attributeFilter: ['hidden'] }));
     mo.observe($('#side'), { attributes: true, attributeFilter: ['class'] });
     addEventListener('resize', () => dockTo(dockAct));
+    // 💧 누르면 손가락 자리에서 물결이 퍼진다 (버튼 · 타일 · 탭)
+    const RPL = '.btn, .mm, .hub-item, .chip, .tab, .stab, .choice, .keypad button, .gp, .sb-stat, .seg button, .link-btn, .hud-me';
+    document.addEventListener('pointerdown', e => {
+      const b = e.target.closest(RPL);
+      if (!b || b.disabled || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (getComputedStyle(b).position === 'static') b.style.position = 'relative';
+      const r = b.getBoundingClientRect(), w = document.createElement('x-rpl'), i = document.createElement('i');
+      i.style.left = e.clientX - r.left + 'px'; i.style.top = e.clientY - r.top + 'px'; i.style.setProperty('--rs', Math.ceil(Math.hypot(r.width, r.height) / 12));
+      w.appendChild(i); b.appendChild(w); setTimeout(() => w.remove(), 700);
+    }, { passive: true });
     $('#btnRank').onclick = () => openRank();
     $('#btnRankMore').onclick = () => openRank('school');
     $$('.rtab').forEach(b => { b.onclick = () => openRank(b.dataset.t); });
