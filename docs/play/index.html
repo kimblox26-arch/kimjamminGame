@@ -204,13 +204,12 @@
   </nav>
   <div id="moreMenu" class="more-menu" hidden>
     <div class="sb-head">
-      <button type="button" class="sb-x" id="sbClose" title="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
-      <button type="button" class="sb-me" data-act="btnProfile" title="내 프로필"><span id="sbAv" class="sb-av"></span><span class="sb-who"><b id="sbNick">나</b><small id="sbSub"></small></span></button>
-      <div class="sb-stats">
-        <span class="sb-stat"><svg class="ic" aria-hidden="true"><use href="#i-coin"/></svg><b id="sbCoins">0</b><small>코인</small></span>
-        <span class="sb-stat"><svg class="ic" aria-hidden="true"><use href="#i-trophy"/></svg><b id="sbRank">-</b><small>학교 순위</small></span>
-        <button type="button" class="sb-stat" id="sbBellBtn" data-act="btnMission"><svg class="ic" aria-hidden="true"><use href="#i-bell"/></svg><b>미션</b><small>오늘</small><i id="sbBell" class="count dot" hidden></i></button>
-      </div>
+      <div class="sb-top"><button type="button" class="sb-x" id="sbClose" title="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button><button type="button" class="sb-me" data-act="btnProfile" title="내 프로필"><span id="sbAv" class="sb-av"></span></button></div>
+      <p class="sb-hi">안녕하세요,</p>
+      <b id="sbNick" class="sb-nick">나</b>
+      <small id="sbSub" class="sb-sub"></small>
+      <div class="sb-stats"><span class="sb-stat"><svg class="ic" aria-hidden="true"><use href="#i-coin"/></svg><b id="sbCoins">0</b></span><span class="sb-stat"><svg class="ic" aria-hidden="true"><use href="#i-trophy"/></svg><b id="sbRank">-</b></span></div>
+      <button type="button" class="sb-today" id="sbBellBtn" data-act="btnMission"><i class="st-ic"><svg class="ic" aria-hidden="true"><use href="#i-calendar"/></svg></i><span class="st-txt"><b>오늘의 미션</b><small>미션을 깨고 코인 받기</small></span><svg class="ic" aria-hidden="true"><use href="#i-chevr"/></svg><i id="sbBell" class="count dot" hidden></i></button>
     </div>
     <div class="sb-body" id="sbBody">
       <p class="sb-sec">바로가기</p>
