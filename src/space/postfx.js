@@ -36,6 +36,7 @@ uniform vec3 uWaterCol;
 uniform vec3 uSkyAmbient;
 uniform float uTime;
 uniform float uCloudSteps;
+uniform vec3 uAirglow;
 varying vec2 vUv;
 
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -176,6 +177,16 @@ void main() {
     if (tc >= 0.0 && tc <= t0) result = cloudCol + cloudT * (insA + trA * result);
     else result = insA + trA * (cloudCol + cloudT * result);
   }
+  // 대기광 (밤 쪽 상층 대기의 희미한 녹색 발광 띠)
+  if (uAirglow.g > 0.0) {
+    float r0 = 1.0 + uAtHR * 10.0, r1 = r0 + uAtHR * 2.0;
+    vec2 o = rsph(ro, rd, r1), ii = rsph(ro, rd, r0);
+    float segEnd = min(o.y, tEnd);
+    float len = max(0.0, segEnd - max(0.0, o.x));
+    if (ii.x < ii.y) len -= max(0.0, min(ii.y, segEnd) - max(max(0.0, o.x), ii.x));
+    float darkness = 1.0 - smoothstep(-0.2, 0.1, dot(normalize(ro + rd * max(0.0, o.x)), L));
+    result += uAirglow * pow(max(0.0, len) / (uAtHR * 2.0), 1.4) * darkness;
+  }
   if (any(isnan(result)) || any(isinf(result))) result = col.rgb;
   gl_FragColor = vec4(max(result, vec3(0.0)), 1.0);
 }`;
@@ -207,6 +218,7 @@ export class AtmospherePass extends Pass {
       uSunW: { value: new THREE.Vector3(1, 0, 0) }, uActive: { value: 0 }, uUnder: { value: 0 },
       uWaterCol: { value: new THREE.Color('#06374a').convertSRGBToLinear() }, uSkyAmbient: { value: new THREE.Vector3() },
       uTime: { value: 0 }, uCloudSteps: { value: this.cloudSteps() },
+      uAirglow: { value: new THREE.Vector3(b.atmo && b.atmo.comp && b.atmo.comp.O2 > 5 ? 0.0006 : 0, b.atmo && b.atmo.comp && b.atmo.comp.O2 > 5 ? 0.0026 : 0, b.atmo && b.atmo.comp && b.atmo.comp.O2 > 5 ? 0.0009 : 0) },
       ...makeAtmoUniforms(b), ...makeCloudUniforms(b, this.cloudTex),
     };
     if (this.material) this.material.dispose();
@@ -247,6 +259,9 @@ uniform float uHeat;        // 열 왜곡
 uniform vec4 uSun;          // uv.xy, 가시도, 크기
 uniform vec3 uSunCol;
 uniform vec4 uBH;           // uv.xy, 아인슈타인 반지름(화면 높이 비), 그림자 반지름
+uniform float uBHDepth;     // 블랙홀까지 시선 깊이 (m)
+uniform sampler2D tDepth;
+uniform float uLogFar;
 uniform float uVignette;
 uniform float uFlash;
 uniform float uFlareOn;
@@ -261,7 +276,8 @@ void main() {
   vec2 c = vec2(0.5);
   // 블랙홀 중력 렌즈 (점질량 근사: 편향 = θE² / r)
   float bhShadow = 0.0;
-  if (uBH.z > 0.0) {
+  float sceneW = exp2(texture2D(tDepth, vUv).r * uLogFar) - 1.0;
+  if (uBH.z > 0.0 && sceneW > uBHDepth * 0.98) {
     vec2 d = (uv - uBH.xy) * vec2(aspect, 1.0);
     float r = length(d);
     float defl = uBH.z * uBH.z / max(r, 1e-4);
@@ -358,11 +374,12 @@ export function createSpaceComposer(renderer, cloudTex, quality) {
     uniforms: {
       tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(size.x, size.y) }, uTime: { value: 0 }, uWarp: { value: 0 }, uBlur: { value: 0 },
       uChroma: { value: 0.3 }, uHeat: { value: 0 }, uSun: { value: new THREE.Vector4() }, uSunCol: { value: new THREE.Vector3(1, 1, 1) },
-      uBH: { value: new THREE.Vector4(0, 0, 0, 0) }, uVignette: { value: 0 }, uFlash: { value: 0 }, uFlareOn: { value: 1 }, uTint: { value: new THREE.Vector3(1, 1, 1) },
+      uBH: { value: new THREE.Vector4(0, 0, 0, 0) }, uBHDepth: { value: 1e30 }, tDepth: { value: sceneRT.depthTexture }, uLogFar: { value: Math.log2(1e27 + 1) }, uVignette: { value: 0 }, uFlash: { value: 0 }, uFlareOn: { value: 1 }, uTint: { value: new THREE.Vector3(1, 1, 1) },
     },
     vertexShader: QUAD_VS.replace('gl_Position = vec4(position.xy, 0.0, 1.0);', 'gl_Position = vec4(position.xy, 0.0, 1.0);'),
     fragmentShader: FX_FS,
   });
+  fx.uniforms.tDepth.value = sceneRT.depthTexture;   // ShaderPass 가 유니폼을 복제하므로 원본 참조로 교체
   composer.addPass(fx);
   const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.55, 0.6, 0.85);
   composer.addPass(bloom);
@@ -378,6 +395,7 @@ export function createSpaceComposer(renderer, cloudTex, quality) {
       sceneRT.depthTexture.format = THREE.DepthFormat;
       sceneRT.setSize(s.x, s.y);
       atmo.uniforms.tDepth.value = sceneRT.depthTexture;
+      fx.uniforms.tDepth.value = sceneRT.depthTexture;
     }
     composer.setSize(w, h);
     fx.uniforms.uRes.value.set(s.x, s.y);

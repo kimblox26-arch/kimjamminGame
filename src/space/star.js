@@ -168,8 +168,8 @@ export class StarView {
       this.mat.uniforms.uTime.value = f.time;
       this.coronaMat.uniforms.uTime.value = f.time;
       // 노출: 가까울수록 표면 휘도를 일정하게 (자동 노출 근사)
-      this.mat.uniforms.uIntensity.value = 14 + 10 * Math.min(1, pixR / 400);
-      this.coronaMat.uniforms.uIntensity.value = 2.2;
+      this.mat.uniforms.uIntensity.value = 7 + 5 * Math.min(1, pixR / 400);
+      this.coronaMat.uniforms.uIntensity.value = 1.2;
     }
     // 플레어 이벤트
     this.flare.next -= dt * (b.flare || 0.6);

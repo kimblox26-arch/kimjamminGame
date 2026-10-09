@@ -24,7 +24,7 @@ varying vec3 vCol;
 varying float vA;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  float d = length(mv.xyz);
+  float d = length(mv.xyz * 1e-15) * 1e15;   // 1e21 m 의 제곱은 float32 범위를 넘으므로 축소 후 계산
   float px = size * uPixelScale / d;
   float ps = clamp(px, 1.0, 40.0);
   float e = (px * px) / (ps * ps);
@@ -45,7 +45,7 @@ varying vec3 vCol;
 varying float vA;
 void main() {
   vec2 c = gl_PointCoord * 2.0 - 1.0;
-  float a = exp(-dot(c, c) * 4.0);
+  float a = exp(-dot(c, c) * 3.0);
   gl_FragColor = vec4(vCol * a * vA, 0.0);
   ${LOGDEPTH_FS}
 }`;
@@ -114,7 +114,7 @@ export class GalaxyView {
     g.setAttribute('size', new THREE.BufferAttribute(size, 1));
     this.mat = new THREE.ShaderMaterial({
       vertexShader: GAL_VS, fragmentShader: GAL_FS, ...ADD,
-      uniforms: { uPixelScale: { value: 800 }, uBright: { value: 0.35 * 120000 / count }, uNearFade: { value: R * 0.03 }, uDpr: { value: 1 } },
+      uniforms: { uPixelScale: { value: 800 }, uBright: { value: 0.9 * 120000 / count }, uNearFade: { value: R * 0.03 }, uDpr: { value: 1 } },
     });
     this.points = new THREE.Points(g, this.mat);
     this.points.frustumCulled = false;
@@ -253,7 +253,7 @@ varying vec3 vCol;
 varying float vA;
 void main() {
   vec4 mv = modelViewMatrix * vec4(iCenter, 1.0);
-  float d = length(mv.xyz);
+  float d = length(mv.xyz * 1e-15) * 1e15;
   float s = iColor.a;
   float c = cos(iRot), si = sin(iRot);
   vec2 q = vec2(position.x * c - position.y * si, position.x * si + position.y * c);

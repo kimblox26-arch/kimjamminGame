@@ -236,7 +236,7 @@ export function buildShipModel() {
 
   // 조종석 내부 (1인칭 전용)
   const cockpit = buildCockpit(dark);
-  cockpit.position.set(0, 0.55, -5.0);
+  cockpit.position.set(0, 1.05, -5.4);
   root.add(cockpit);
 
   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.layers.enable(1); } });
@@ -257,14 +257,22 @@ function scaleUV(g, su, sv) {
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
 }
 
-/** 조종석 내부: 계기판 · 화면 · 캐노피 프레임 */
+/** 조종석 내부: 계기판 · 화면 · 캐노피 프레임 (그룹 원점 = 조종사 눈 위치) */
 function buildCockpit(dark) {
   const g = new THREE.Group();
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x1a2028, metalness: 0.5, roughness: 0.6 });
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.5, 0.6), panelMat);
-  dash.position.set(0, 0.05, -1.25);
-  dash.rotation.x = -0.35;
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x20262e, metalness: 0.4, roughness: 0.55 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x3a434e, metalness: 0.7, roughness: 0.35 });
+  // 계기판 (시야 아래쪽, 앞으로 기울어진 면)
+  const dashShape = new THREE.Shape();
+  dashShape.moveTo(-0.62, 0); dashShape.lineTo(0.62, 0); dashShape.lineTo(0.5, 0.42); dashShape.lineTo(-0.5, 0.42); dashShape.closePath();
+  const dashGeo = new THREE.ExtrudeGeometry(dashShape, { depth: 0.05, bevelEnabled: false });
+  const dash = new THREE.Mesh(dashGeo, panelMat);
+  dash.rotation.x = -1.05;
+  dash.position.set(0, -0.5, -0.62);
   g.add(dash);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.03, 0.08), trimMat);
+  lip.position.set(0, -0.3, -0.82);
+  g.add(lip);
   const screens = [];
   const scrColors = [new THREE.Color(0.1, 0.9, 1.2), new THREE.Color(1.2, 0.6, 0.15), new THREE.Color(0.2, 1.1, 0.5)];
   for (let i = 0; i < 3; i++) {
@@ -273,29 +281,35 @@ function buildCockpit(dark) {
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.MeshBasicMaterial({ map: tex, color: scrColors[i] });
-    const s = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.31), m);
-    s.position.set((i - 1) * 0.6, 0.27, -1.1);
-    s.rotation.x = -0.55;
-    g.add(s);
-    screens.push({ canvas: c, tex, mesh: s });
+    const sc = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.19), m);
+    sc.position.set((i - 1) * 0.34, -0.4, -0.7);
+    sc.rotation.x = -0.52;
+    sc.rotation.y = -(i - 1) * 0.18;
+    g.add(sc);
+    screens.push({ canvas: c, tex, mesh: sc });
   }
-  // 프레임 기둥
+  // 캐노피 앞 아치 · 중앙 기둥 (가는 프레임)
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.018, 6, 40, Math.PI), trimMat);
+  arch.position.set(0, -0.32, -0.95);
+  g.add(arch);
+  const arch2 = new THREE.Mesh(new THREE.TorusGeometry(0.86, 0.02, 6, 40, Math.PI), trimMat);
+  arch2.position.set(0, -0.36, 0.35);
+  g.add(arch2);
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 1.3), trimMat);
+  spine.position.set(0, 0.5, -0.3);
+  g.add(spine);
+  // 측면 콘솔
   for (const s of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 2.4), dark);
-    post.position.set(s * 0.82, 0.55, -0.6);
-    post.rotation.set(0.35, 0, s * 0.42);
-    g.add(post);
+    const con = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.8), panelMat);
+    con.position.set(s * 0.62, -0.62, -0.2);
+    g.add(con);
   }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 2.6), dark);
-  top.position.set(0, 0.86, -0.2);
-  top.rotation.x = 0.1;
-  g.add(top);
   // 조종간 · 스로틀
-  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.45, 8), dark);
-  stick.position.set(0, -0.35, -0.75);
+  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.32, 8), dark);
+  stick.position.set(0, -0.78, -0.38);
   g.add(stick);
-  const thr = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.18, 0.06), dark);
-  thr.position.set(-0.45, -0.25, -0.7);
+  const thr = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), dark);
+  thr.position.set(-0.6, -0.5, -0.3);
   g.add(thr);
   g.userData.screens = screens;
   g.userData.stick = stick;

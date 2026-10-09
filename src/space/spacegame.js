@@ -211,11 +211,21 @@ export class SpaceGame {
     this.onResize();
   }
 
+  /** 무한 원평면 투영: 아주 먼 천체(은하)가 원평면 경계에서 잘리지 않도록 (깊이는 로그 깊이로 기록) */
+  _updateProjection() {
+    const cam = this.camera;
+    cam.updateProjectionMatrix();
+    const e = cam.projectionMatrix.elements;
+    e[10] = -1 + 1e-6;
+    e[14] = -2 * cam.near;
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+  }
+
   onResize() {
     if (!this.renderer) return;
     const w = window.innerWidth, h = window.innerHeight;
     this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this._updateProjection();
     this.renderer.setSize(w, h, false);
     if (this.post) { this.post.composer.setPixelRatio(this.renderer.getPixelRatio()); this.post.setSize(w, h); }
     if (this.hud) this.hud.resize();
@@ -822,7 +832,7 @@ export class SpaceGame {
     this.fov += (target - this.fov) * Math.min(1, dt * 3);
     this.camera.fov = this.fov;
     this.camera.near = cockpit ? 0.05 : 0.3;
-    this.camera.updateProjectionMatrix();
+    this._updateProjection();
     this.camera.updateMatrixWorld(true);
     this.model.cockpit.visible = cockpit;
     this.model.canopy.visible = !cockpit;
@@ -1303,6 +1313,7 @@ export class SpaceGame {
       if (e < 0.002) continue;
       const p = rel.clone().project(this.camera);
       u.uBH.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5, Math.min(0.5, e), Math.min(0.6, (2.6 * m.body.radius / D) / fovY));
+      u.uBHDepth.value = -camZ;
     }
     this.flash = Math.max(0, this.flash - dt * 1.8);
     u.uFlash.value = this.flash * 0.9;

@@ -167,11 +167,16 @@ void main() {
   #ifdef PT_TERRAN
   // 도시 불빛 (밤 쪽 저지대 대륙)
   float night = smoothstep(0.08, -0.12, dot(up, L));
-  if (night > 0.0 && h > 2.0 && h < 1800.0 && slope < 0.2) {
-    float cities = texture(uDetailTex, up.xz * 9.0 + up.y * 3.0).r * texture(uDetailTex, up.zy * 31.0).r;
-    cities = smoothstep(0.42, 0.62, cities) * smoothstep(0.25, 0.6, moist) * (1.0 - snowline);
-    float sparkle = texture(uDetailTex, up.xy * 160.0).a;
-    emis += vec3(1.0, 0.72, 0.4) * cities * (0.5 + sparkle) * night * 0.9;
+  if (night > 0.0 && h > 1.0 && h < 2200.0) {
+    // 도시 불빛: 저지대·온화한 기후에 군집 (원거리에서는 은은한 빛 번짐, 근거리에서는 반짝이는 점)
+    float c1 = texture(uDetailTex, up.xz * 7.0 + up.y * 2.3).r;
+    float c2 = texture(uDetailTex, up.zy * 23.0 + 0.37).r;
+    float region = smoothstep(0.48, 0.66, c1) * smoothstep(0.2, 0.5, moist) * (1.0 - snowline) * (1.0 - smoothstep(0.25, 0.45, slope));
+    float town = smoothstep(0.45, 0.7, c2 + region * 0.3);
+    float sparkle = texture(uDetailTex, up.xy * 180.0).a * texture(uDetailTex, up.zx * 410.0).r;
+    float far = smoothstep(20000.0, 400000.0, vDist);
+    float lights = region * mix(town * (0.4 + sparkle * 1.6), town * 0.8 + 0.2, far);
+    emis += vec3(1.0, 0.68, 0.32) * lights * night * 1.4;
   }
   #endif
 #elif defined(PT_MARS)
