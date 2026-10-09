@@ -1224,7 +1224,11 @@
         if (schoolId < BASE.length && BASE[schoolId].nk) fail('북한 학교는 고를 수 없어요.');
         if (deleted[schoolKey(schoolById(schoolId))]) fail('🗑️ 삭제된 학교예요. 다른 학교를 골라 주세요.');
       }
-      if (b.grade != null && !a.u.role) { const g = Number(b.grade); if (!pickOk(a.u, g)) fail('학년은 같은 학교급 안에서만 고를 수 있어요.'); a.u.gradePick = g; } // 📚 중·고 학년 고르기
+      if (b.grade != null) { // 📚 중·고 학년 고르기 (운영자 · 개발자도 지금 보고 있는 학교급 안에서 고를 수 있다)
+        const g = Number(b.grade);
+        if (a.u.role) { const cur = gradeOf(a.u); if (!Number.isInteger(g) || S.levelOf(cur) === 'e' || S.levelOf(g) !== S.levelOf(cur)) fail('학년은 같은 학교급 안에서만 고를 수 있어요.'); a.u.viewGrade = g; }
+        else { if (!pickOk(a.u, g)) fail('학년은 같은 학교급 안에서만 고를 수 있어요.'); a.u.gradePick = g; }
+      }
       a.u.profile = { school: schoolKey(schoolById(schoolId)), semester, nickname, at: Date.now() };
       save();
       publishCard(a.u);

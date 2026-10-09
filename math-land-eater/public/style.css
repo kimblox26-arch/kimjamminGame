@@ -1292,9 +1292,23 @@ body[data-lv="h"] .brand::after { background: var(--c-gold); color: var(--c-navy
 #game .hud .pill.bug { background: #d9fbe8; color: #166534; }
 
 /* 바다: 그냥 파란색 */
-#mapWrap, body[data-lv] #mapWrap { background: var(--sea); background-image: none; }
+/* 🌊 바다: 깊이에 따라 짙어지는 파랑 + 천천히 일렁이는 물빛(코스틱) 두 겹 + 반짝이는 햇빛 윤슬 */
+:root { --sea: #2f96dd; }
+#mapWrap, body[data-lv] #mapWrap { background: radial-gradient(ellipse 140% 110% at 45% 35%, #58c0f2 0%, #2f96dd 42%, #1f74c2 78%, #185ca3 100%); background-image: radial-gradient(ellipse 140% 110% at 45% 35%, #58c0f2 0%, #2f96dd 42%, #1f74c2 78%, #185ca3 100%); }
 #mapWrap::before, body[data-lv] #mapWrap::before { content: none; display: none; animation: none; }
-.minimap canvas, body[data-lv] .minimap canvas { background: var(--sea); }
+.sea-fx { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.sea-fx i { position: absolute; inset: -520px; will-change: transform; }
+.sea-fx .sea-c1 { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='520'%3E%3Cfilter id='c' x='0' y='0' width='100%' height='100%' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.011538' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1 0 0 0 0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='table' tableValues='0 0 0 0.12 0.95 0.12 0 0 0'/%3E%3C/feComponentTransfer%3E%3CfeGaussianBlur stdDeviation='0.9'/%3E%3C/filter%3E%3Crect width='520' height='520' filter='url(%23c)'/%3E%3C/svg%3E") 0 0 / 520px 520px; opacity: .3; animation: seaC1 38s linear infinite; }
+.sea-fx .sea-c2 { inset: -400px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='c' x='0' y='0' width='100%' height='100%' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.01' numOctaves='2' seed='23' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1 0 0 0 0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='table' tableValues='0 0 0 0.08 0.7 0.08 0 0 0'/%3E%3C/feComponentTransfer%3E%3CfeGaussianBlur stdDeviation='0.9'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23c)'/%3E%3C/svg%3E") 0 0 / 400px 400px; opacity: .22; animation: seaC2 29s linear infinite; }
+.sea-fx .sea-g { inset: -120px; opacity: .55; animation: seaGlint 3.6s ease-in-out infinite alternate, seaGlintMove 22s linear infinite;
+  background: radial-gradient(circle, #fff 0 1px, transparent 1.7px) 0 0 / 37px 43px, radial-gradient(circle, rgba(255,255,255,.8) 0 .8px, transparent 1.5px) 11px 23px / 59px 51px, radial-gradient(circle, rgba(220,250,255,.9) 0 1.1px, transparent 1.9px) 29px 7px / 83px 71px; }
+.sea-fx .sea-shade { inset: 0; background: radial-gradient(ellipse 120% 100% at 50% 30%, transparent 55%, rgba(10, 40, 100, .28) 100%); }
+@keyframes seaC1 { to { transform: translate3d(520px, 260px, 0); } }
+@keyframes seaC2 { to { transform: translate3d(-400px, 400px, 0); } }
+@keyframes seaGlint { 0% { opacity: .15; } 50% { opacity: .6; } 100% { opacity: .25; } }
+@keyframes seaGlintMove { to { transform: translate3d(-120px, 60px, 0); } }
+@media (prefers-reduced-motion: reduce) { .sea-fx i { animation: none !important; } }
+.minimap canvas, body[data-lv] .minimap canvas { background: radial-gradient(ellipse at 45% 35%, #58c0f2, #2f96dd 55%, #1f74c2); }
 
 /* 지도 위: 상태 칩 · 작은 지도 · 지도 버튼 */
 .map-status { position: absolute; left: 12px; top: 12px; z-index: 3; display: flex; align-items: center; padding: 3px 4px 3px 3px; border-radius: 999px; background: rgba(27, 35, 71, .86);
@@ -1692,3 +1706,21 @@ body[data-lv] .dock #btnHub.act span { color: #c98a00; }
 .auth-card .logo { font-family: 'Jua', 'Apple SD Gothic Neo', sans-serif; font-weight: normal; }
 .auth-card .logo b { font-weight: inherit; color: #ffb020; text-shadow: 0 3px 0 #ffe2a6; }
 @media (prefers-reduced-motion: reduce) { .logo-ic { animation: none; } }
+/* 👩‍🏫 선생님 계정 만들기 큰 버튼 (로그인 화면) · 📚 학년 타일 (중·고) */
+.tc-cta { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 16px; padding: 12px 14px; border: 0; border-radius: 22px; font: inherit; color: var(--cl-ink); text-align: left; cursor: pointer;
+  background: linear-gradient(145deg, #eefaf5, #d6f3e8); box-shadow: 8px 10px 22px -8px rgba(20, 160, 120, .35), -6px -6px 14px rgba(255, 255, 255, .85), inset 3px 3px 6px rgba(255, 255, 255, .8), inset -4px -5px 10px rgba(20, 160, 120, .14);
+  transition: transform .25s var(--spring); }
+.tc-cta:hover { transform: translateY(-2px); }
+.tc-cta:active { transform: scale(.97); }
+.tc-cta > span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tc-cta b { font-size: 16px; font-weight: 900; }
+.tc-cta small { font-size: 12.5px; color: var(--cl-sub); line-height: 1.35; }
+.tc-cta > .ic { width: 20px; height: 20px; color: #14946f; }
+.tc-ic { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 15px; color: #fff; font-style: normal;
+  background: linear-gradient(145deg, #5ee0b8, #14a37a); box-shadow: 4px 6px 12px -4px rgba(20, 160, 120, .6), inset 2px 2px 4px rgba(255, 255, 255, .4), inset -3px -3px 5px rgba(0, 0, 0, .12); }
+.tc-ic .ic { width: 24px; height: 24px; stroke-width: 2.2; }
+.mm-grade { display: none; }
+body[data-lv="m"] .mm-grade, body[data-lv="h"] .mm-grade { display: flex; }
+#setGradeRow.flash { animation: gradeFlash 1.4s ease-out; border-radius: 16px; }
+@keyframes gradeFlash { 0%, 40% { box-shadow: 0 0 0 4px rgba(109, 93, 252, .45); background: var(--cl-acs); } 100% { box-shadow: 0 0 0 0 rgba(109, 93, 252, 0); } }
+#moreMenu #btnTeacherNew { --rc: #14b386; }

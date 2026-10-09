@@ -120,6 +120,7 @@
       <p id="suErr" class="err"></p>
       <button class="btn primary big" id="suGo">회원가입</button>
     </form>
+    <button type="button" id="goTeacher" class="tc-cta"><i class="tc-ic"><svg class="ic" aria-hidden="true"><use href="#i-cap"/></svg></i><span><b>선생님이신가요?</b><small>선생님 계정을 만들어 반 학생들의 실력을 한눈에 봐요</small></span><svg class="ic" aria-hidden="true"><use href="#i-chevr"/></svg></button>
   </div>
 </section>
 
@@ -202,6 +203,7 @@
   </header>
   <main class="game-main">
     <div id="mapWrap">
+      <div class="sea-fx" aria-hidden="true"><i class="sea-c1"></i><i class="sea-c2"></i><i class="sea-g"></i><i class="sea-shade"></i></div>
       <canvas id="map"></canvas>
       <div class="map-ctrl">
         <button type="button" id="zIn" title="크게"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
@@ -280,6 +282,7 @@
       <button type="button" class="mm tile" id="btnProfile"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-idcard"/></svg></i><span>프로필</span></button>
       <button type="button" class="mm tile" id="btnLooks"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-smile"/></svg></i><span>꾸미기</span></button>
       <button type="button" class="mm tile" id="btnBadges"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-medal"/></svg></i><span>배지</span></button>
+      <button type="button" class="mm tile mm-grade" id="btnGrade"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-books"/></svg></i><span>학년</span></button>
       <button type="button" class="mm tile" id="btnRank"><i class="tl"><svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg></i><span>랭킹표</span></button>
       </div>
       <p class="sb-sec">환경</p>
@@ -293,6 +296,7 @@
       <button type="button" class="mm row" id="btnHelp"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg></i><span>도움말</span></button>
       <button type="button" class="mm row" id="btnSettings"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></i><span>설정</span></button>
       <button type="button" class="mm row" id="btnAdmin" hidden><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-shieldok"/></svg></i><span>관리</span></button>
+      <button type="button" class="mm row" id="btnTeacherNew"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-cap"/></svg></i><span>선생님 계정 만들기</span></button>
       <button type="button" class="mm row out" data-act="setLogout"><i class="rw"><svg class="ic" aria-hidden="true"><use href="#i-logout"/></svg></i><span>로그아웃</span></button>
       </div>
     </div>

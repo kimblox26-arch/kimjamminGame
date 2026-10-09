@@ -614,7 +614,7 @@
       authTabs.forEach(x => x.classList.toggle('on', x === t));
       $('#loginForm').hidden = tab !== 'login';
       $('#signupForm').hidden = tab === 'login';
-      $('#tcIntro').hidden = !tc;
+      $('#tcIntro').hidden = !tc; $('#goTeacher').hidden = tc;
       $('#suTeacher').checked = tc; $('#suTeacher').onchange();
       $('#suGo').textContent = tc ? '👩‍🏫 선생님 계정 만들기' : '회원가입';
       setErr('#suErr'); setErr('#liErr');
@@ -622,6 +622,7 @@
     const sy = S.schoolYear(), birth = $('#suBirth');
     birth.innerHTML = '<option value="">출생연도를 골라요</option>' +
       Array.from({ length: 17 }, (_, k) => sy - 4 - k).map(y => `<option value="${y}">${y}년생</option>`).join('');
+    $('#goTeacher').onclick = () => $('#auth .tab[data-tab="teacher"]').click(); // 👩‍🏫 선생님 계정 만들기로 바로
     $('#suTeacher').onchange = () => { const t = $('#suTeacher').checked; $('#suBirthRow').hidden = t; $('#suBirth').required = !t; if (t) { $('#suGrade').textContent = ''; $('#suGradePick').hidden = true; } else birth.onchange(); };
     $('#suGradePick').onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; suPick = +b.dataset.g; renderGradePick('#suGradePick', S.levelOf(suPick), suPick); };
     birth.onchange = () => {
@@ -2573,7 +2574,7 @@
       <div>🏫 학교: <b>${esc(s ? s.name : '')}</b> <span class="muted">${esc(s ? s.sido + ' ' + s.sigungu : '')}</span></div>`;
     $('#setStats').innerHTML = `<div><b>${st.solved || 0}</b><span>푼 문제</span></div><div><b>${st.captures || 0}</b><span>뺏은 땅</span></div><div><b>${st.defends || 0}</b><span>올린 방어</span></div>`;
     $$('.sem2').forEach(b => b.classList.toggle('on', +b.dataset.sem === me.profile.semester));
-    const canPick = !me.role && me.birthGrade && S.levelOf(me.birthGrade) !== 'e';
+    const canPick = LVL() !== 'e' && (me.role || (me.birthGrade && S.levelOf(me.birthGrade) !== 'e')); // 중·고: 학생도, 운영자 · 개발자도
     $('#setGradeRow').hidden = !canPick;
     if (canPick) renderGradePick('#setGrade', LVL(), me.grade);
     $('#setNick').value = me.profile.nickname;
@@ -2664,6 +2665,16 @@
       toast('🔑 비밀번호를 바꿨어요.', 'ok');
     };
     $('#sideClose').onclick = () => $('#side').classList.remove('open'); // 💬 채팅 · 순위 창 닫기 (폰)
+    $('#btnGrade').onclick = () => { // 📚 학년 바꾸기: 설정 창의 학년 칸으로 바로
+      openSettings();
+      const row = $('#setGradeRow'); if (row.hidden) return;
+      setTimeout(() => { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash'); }, 350);
+    };
+    $('#btnTeacherNew').onclick = async () => { // 👩‍🏫 로그아웃하고 선생님 계정 만들기 화면으로
+      if (!confirm('👩‍🏫 선생님 계정을 새로 만들까요?\n지금 계정에서 로그아웃하고 선생님 가입 화면으로 가요.')) return;
+      await api('/api/logout', {}); logoutLocal();
+      $('#auth .tab[data-tab="teacher"]').click();
+    };
     $('#btnBoard').onclick = () => { if (innerWidth <= 820) $('#side').classList.toggle('open'); else openRank(); }; // 폰: 순위·소식 창, 넓은 화면: 랭킹표
     // 더보기: 자주 안 쓰는 버튼 모음 (누르면 닫힌다)
     const more = $('#moreMenu'), closeMore = () => { more.hidden = true; $('#btnMore').classList.remove('on'); };
