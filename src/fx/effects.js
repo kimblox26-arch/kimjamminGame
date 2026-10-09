@@ -32,6 +32,8 @@ function softTexture(size = 128, power = 2.2, noise = 0.55) {
 
 const PARTICLE_VERT = /* glsl */`
 precision highp float;
+#include <common>
+#include <logdepthbuf_pars_vertex>
 attribute float aSize;
 attribute float aOpacity;
 attribute vec3 aColor;
@@ -48,10 +50,13 @@ void main() {
   float fog = 1.0 - exp(-pow(dist * uFogDensity, 2.0));
   vColor = mix(aColor, uFogColor, clamp(fog, 0.0, 0.85));
   vOpacity = aOpacity * (1.0 - clamp(fog * 0.6, 0.0, 0.8));
+  #include <logdepthbuf_vertex>
 }`;
 
 const PARTICLE_FRAG = /* glsl */`
 precision highp float;
+#include <common>
+#include <logdepthbuf_pars_fragment>
 uniform sampler2D uTex;
 varying float vOpacity;
 varying vec3 vColor;
@@ -60,6 +65,7 @@ void main() {
   float a = t.a * vOpacity;
   if (a < 0.005) discard;
   gl_FragColor = vec4(vColor, a);
+  #include <logdepthbuf_fragment>
 }`;
 
 class ParticleSystem {

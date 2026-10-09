@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>FREE FREELY — 비행 시뮬레이터</title>
-<meta name="description" content="비행기·전투기·우주선·열기구를 직접 설계하고 실제 물리로 비행하는 웹 비행 시뮬레이터">
+<title>FREE FREELY — 우주 탐사 · 비행 시뮬레이터</title>
+<meta name="description" content="항성·행성·은하 사이를 로딩 없이 날아다니는 우주 탐사 게임과, 기체를 직접 설계해 실제 물리로 나는 대기권 비행 시뮬레이터">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Orbitron:wght@600;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./styles/ui.css">
+<link rel="stylesheet" href="./styles/space.css">
 <script type="importmap">
 {
   "imports": {
@@ -21,6 +22,7 @@
 <body data-screen="screen-loading">
 
 <canvas id="gl"></canvas>
+<canvas id="gl-space"></canvas>
 <canvas id="hud"></canvas>
 
 <!-- 화면 효과 오버레이 -->
@@ -33,52 +35,86 @@
 <!-- ───────────────── 로딩 ───────────────── -->
 <section id="screen-loading" class="screen active">
   <div class="load-wrap">
+    <div class="load-planet" id="load-planet"></div>
     <h1 class="brand">FREE<span>FREELY</span></h1>
-    <p class="brand-sub">FLIGHT · BUILD · EXPLORE — 물리 기반 비행 시뮬레이터</p>
+    <p class="brand-sub">EXPLORE · FLY · BUILD — 우주 탐사 · 물리 기반 비행</p>
     <div class="load-bar"><div id="loading-bar"></div></div>
     <div id="loading-label" class="load-label">엔진 초기화</div>
     <div id="loading-tip" class="load-tip"></div>
   </div>
 </section>
 
-<!-- ───────────────── 메인 메뉴 ───────────────── -->
+<!-- ───────────────── 메인 메뉴: 모드 선택 ───────────────── -->
 <section id="screen-menu" class="screen">
+  <div class="mode-head">
+    <div class="load-planet" id="menu-logo"></div>
+    <h1 class="brand big">FREE<span>FREELY</span></h1>
+    <p class="brand-sub">모드를 선택하세요</p>
+  </div>
+  <div class="mode-grid">
+    <button class="mode-card primary xl" data-nav="space" data-icon="modeSpace">
+      <b>우주 탐사</b>
+      <span class="mode-desc">항성·행성·위성·은하 사이를 로딩 없이 자유 비행. 대기권에 진입해 산맥 사이와 바다 위를 저공 비행하고, 광속과 은하간 워프로 안드로메다까지.</span>
+    </button>
+    <button class="mode-card xl" data-nav="flightmenu" data-icon="modeAtmo">
+      <b>대기권 비행</b>
+      <span class="mode-desc">직접 설계한 비행기·전투기·열기구로 실제 공기역학을 체험. 격납고·설계실·도전 과제 8종.</span>
+    </button>
+  </div>
+  <div class="mode-foot">
+    <button class="btn btn-ghost" data-nav="settings" data-icon="settings">설정</button>
+    <button class="btn btn-ghost" data-nav="controls" data-icon="controls">조작법</button>
+    <button class="btn btn-ghost" data-nav="fullscreen" data-icon="fullscreen">전체화면</button>
+    <button class="btn btn-ghost" data-nav="mute" data-icon="sound">소리 끄기</button>
+  </div>
+  <p class="menu-foot" style="text-align:center">v2.0 · WebGL2 · 로그 깊이 버퍼 · 부동 원점 · 실시간 합성 사운드</p>
+</section>
+
+<!-- ───────────────── 대기권 비행 메뉴 ───────────────── -->
+<section id="screen-flightmenu" class="screen">
   <div class="menu-grid">
     <div class="menu-left">
       <h1 class="brand big">FREE<span>FREELY</span></h1>
-      <p class="brand-sub">당신이 설계한 기체로, 원하는 하늘을</p>
+      <p class="brand-sub">대기권 비행 — 당신이 설계한 기체로, 원하는 하늘을</p>
       <nav class="menu-nav">
-        <button class="nav-btn primary" data-nav="fly">
+        <button class="nav-btn primary" data-nav="fly" data-icon="missionFree">
           <b>자유 비행</b><span>선택한 기체로 즉시 이륙</span></button>
-        <button class="nav-btn" data-nav="builder">
+        <button class="nav-btn" data-nav="builder" data-icon="build">
           <b>기체 제작</b><span>설계도에서 나만의 기체를 만든다</span></button>
-        <button class="nav-btn" data-nav="hangar">
+        <button class="nav-btn" data-nav="hangar" data-icon="hangar">
           <b>격납고</b><span>기본 기체 8종 · 내 설계 목록</span></button>
-        <button class="nav-btn" data-nav="missions">
+        <button class="nav-btn" data-nav="missions" data-icon="trophy">
           <b>도전 과제</b><span>링 코스 · 착함 · 우주 도달 등 8종</span></button>
-        <button class="nav-btn" data-nav="settings">
+        <button class="nav-btn" data-nav="settings" data-icon="settings">
           <b>설정</b><span>그래픽 · 사운드 · 날씨 · 조작</span></button>
-        <button class="nav-btn" data-nav="controls">
+        <button class="nav-btn" data-nav="controls" data-icon="controls">
           <b>조작법</b><span>키보드 · 게임패드 · 화면 버튼</span></button>
+        <button class="nav-btn" data-nav="menu" data-icon="back">
+          <b>모드 선택</b><span>우주 탐사 또는 대기권 비행</span></button>
       </nav>
-      <p class="menu-foot">v1.0 · WebGL2 · 절차적 지형 20 km² · 실시간 합성 사운드</p>
+      <p class="menu-foot">절차적 지형 20 km² · 실시간 합성 사운드</p>
     </div>
     <aside class="menu-right">
       <div id="menu-craft-info" class="craft-info"></div>
-      <div class="menu-hint">
-        <b>처음이라면?</b><br>
-        ① 격납고에서 <em>CIRRUS-1 경비행기</em> 선택 → ② 스로틀(Shift)을 100%까지 올리고<br>
-        ③ 속도 120 km/h 에서 W 키로 기수를 살짝 들면 이륙합니다.
-      </div>
+      <div class="menu-hint" id="menu-hint"></div>
     </aside>
   </div>
+</section>
+
+<!-- ───────────────── 항성계 선택 ───────────────── -->
+<section id="screen-systems" class="screen">
+  <header class="screen-head">
+    <h2>항성계 선택</h2>
+    <button class="btn btn-ghost" data-nav="menu" data-icon="back">메뉴</button>
+  </header>
+  <div id="systems-grid" class="sys-grid"></div>
 </section>
 
 <!-- ───────────────── 격납고 ───────────────── -->
 <section id="screen-hangar" class="screen">
   <header class="screen-head">
     <h2>격납고</h2>
-    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+    <button class="btn btn-ghost" data-nav="flightmenu" data-icon="back">메뉴</button>
   </header>
   <div id="hangar-grid" class="hangar-grid-main"></div>
 </section>
@@ -87,7 +123,7 @@
 <section id="screen-missions" class="screen">
   <header class="screen-head">
     <h2>도전 과제</h2>
-    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+    <button class="btn btn-ghost" data-nav="flightmenu" data-icon="back">메뉴</button>
   </header>
   <div id="mission-grid" class="mission-grid"></div>
 </section>
@@ -96,7 +132,7 @@
 <section id="screen-settings" class="screen">
   <header class="screen-head">
     <h2>설정</h2>
-    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+    <button class="btn btn-ghost" data-nav="back" data-icon="back">뒤로</button>
   </header>
   <div id="settings-body" class="settings-body"></div>
 </section>
@@ -105,7 +141,7 @@
 <section id="screen-controls" class="screen">
   <header class="screen-head">
     <h2>조작법</h2>
-    <button class="btn btn-ghost" data-nav="menu">← 메뉴</button>
+    <button class="btn btn-ghost" data-nav="back" data-icon="back">뒤로</button>
   </header>
   <div id="controls-body" class="controls-body"></div>
 </section>
@@ -134,16 +170,20 @@
   <div id="flight-buttons" class="flight-buttons"></div>
 </div>
 
+<!-- ───────────────── 우주 탐사 UI ───────────────── -->
+<div id="space-ui" hidden></div>
+<div id="space-map" hidden></div>
+
 <!-- ───────────────── 일시정지 ───────────────── -->
 <div id="screen-pause" class="overlay-panel" hidden>
   <div class="panel">
     <h3>일시정지</h3>
     <div class="panel-btns">
-      <button class="btn btn-primary" data-pause-act="resume">계속 비행</button>
-      <button class="btn btn-ghost" data-pause-act="respawn">기체 리스폰</button>
-      <button class="btn btn-ghost" data-pause-act="builder">설계실 열기</button>
-      <button class="btn btn-ghost" data-pause-act="settings">설정</button>
-      <button class="btn btn-ghost" data-pause-act="menu">메인 메뉴</button>
+      <button class="btn btn-primary" data-pause-act="resume" data-icon="resume">계속 비행</button>
+      <button class="btn btn-ghost" data-pause-act="respawn" data-icon="respawn">기체 리스폰</button>
+      <button class="btn btn-ghost flight-only" data-pause-act="builder" data-icon="blueprint">설계실 열기</button>
+      <button class="btn btn-ghost" data-pause-act="settings" data-icon="settings">설정</button>
+      <button class="btn btn-ghost" data-pause-act="menu" data-icon="home">메인 메뉴</button>
     </div>
     <p class="hint">ESC 로 계속 비행할 수 있습니다.</p>
   </div>
@@ -155,8 +195,8 @@
     <h3 class="crash-title">기체 상실</h3>
     <div id="crash-body"></div>
     <div class="panel-btns">
-      <button class="btn btn-primary" data-crash-act="respawn">다시 비행 (O)</button>
-      <button class="btn btn-ghost" data-crash-act="menu">메인 메뉴</button>
+      <button class="btn btn-primary" data-crash-act="respawn" data-icon="respawn">다시 비행</button>
+      <button class="btn btn-ghost" data-crash-act="menu" data-icon="home">메인 메뉴</button>
     </div>
   </div>
 </div>

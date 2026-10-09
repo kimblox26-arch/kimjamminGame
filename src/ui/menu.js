@@ -4,49 +4,52 @@ import { PRESETS, loadDesigns } from '../craft/presets.js';
 import { analyzeBlueprint } from '../craft/assembler.js';
 import { CAMERA_MODES } from '../core/camera.js';
 import { clamp } from '../core/utils.js';
+import { icon, numberBadge } from './icons.js';
 
 export const MISSIONS = [
   {
-    id: 'free', name: '자유 비행', icon: '🛫', craft: null,
+    id: 'free', name: '자유 비행', icon: 'missionFree', craft: null,
     desc: '제한 없이 하늘을 누빈다. 기체를 골라 이륙하자.',
     detail: '목표 없음 · 활주로에서 시작 · 날씨와 시간 설정 자유',
   },
   {
-    id: 'rings', name: '링 코스 타임어택', icon: '⏱️', craft: 'fighter',
+    id: 'rings', name: '링 코스 타임어택', icon: 'missionRings', craft: 'fighter',
     desc: '8개의 홀로그램 링을 순서대로 통과해 최단 기록을 세운다.',
     detail: '추천 기체: 전투기 · 저공 고속 비행 주의',
   },
   {
-    id: 'carrier', name: '항공모함 착함', icon: '🚢', craft: 'fighter', airborne: true,
+    id: 'carrier', name: '항공모함 착함', icon: 'missionCarrier', craft: 'fighter', airborne: true,
     desc: '흔들리는 갑판에 정확히 내려앉는다. 강하율이 생명.',
     detail: '공중 시작 · 갑판 위 접지 + 정지 성공 시 클리어',
   },
   {
-    id: 'balloon', name: '열기구 유람', icon: '🎈', craft: 'balloon',
+    id: 'balloon', name: '열기구 유람', icon: 'missionBalloon', craft: 'balloon',
     desc: '버너와 배기 밸브만으로 고도 1,500 m 를 유지하며 바람을 읽는다.',
     detail: '목표: 3분간 1,200~1,800 m 유지',
   },
   {
-    id: 'space', name: '우주 도달', icon: '🚀', craft: 'spaceship',
+    id: 'space', name: '우주 도달', icon: 'missionSpace', craft: 'spaceship',
     desc: '로켓을 점화해 고도 100 km 우주 경계선을 넘는다.',
     detail: '대기권 돌파 후 무중력 · RCS 자세 제어 필요',
   },
   {
-    id: 'storm', name: '폭풍 돌파', icon: '⛈️', craft: 'airliner', weather: 'storm', airborne: true,
+    id: 'storm', name: '폭풍 돌파', icon: 'missionStorm', craft: 'airliner', weather: 'storm', airborne: true,
     desc: '난기류와 번개 속에서 여객기를 안정적으로 조종해 활주로로 귀환한다.',
     detail: '공중 시작 · 강풍/난류 최대 · 활주로 착륙 시 클리어',
   },
   {
-    id: 'water', name: '수상 착륙', icon: '🌊', craft: 'floatplane',
+    id: 'water', name: '수상 착륙', icon: 'missionWater', craft: 'floatplane',
     desc: '바다에 부드럽게 내려앉아 물보라를 즐긴다.',
     detail: '해상 착수 후 30 km/h 이하로 감속 성공 시 클리어',
   },
   {
-    id: 'glide', name: '활공 챌린지', icon: '🪂', craft: 'glider', airborne: true, altitude: 2200,
+    id: 'glide', name: '활공 챌린지', icon: 'missionGlide', craft: 'glider', airborne: true, altitude: 2200,
     desc: '엔진 없이 열상승풍을 타고 최대한 멀리, 오래 떠 있는다.',
     detail: '공중 시작 · 5분 이상 비행 시 클리어',
   },
 ];
+
+const SCREENS = ['screen-loading', 'screen-menu', 'screen-flightmenu', 'screen-systems', 'screen-hangar', 'screen-missions', 'screen-settings', 'screen-controls'];
 
 const KEY_GUIDE = [
   ['비행 조종', [
@@ -63,7 +66,7 @@ const KEY_GUIDE = [
     ['F / V', '플랩 내림 / 올림'],
     ['B', '휠 브레이크'],
     ['X', '에어브레이크'],
-    ['H', '자동조종 순환 (수평→고도→방위)'],
+    ['H', '자동조종 순환: 수평, 고도, 방위 순서'],
     ['R / T', '트림 조정'],
     ['L', '착륙등 / 항법등'],
     ['I', '엔진 시동 / 정지'],
@@ -72,7 +75,7 @@ const KEY_GUIDE = [
   ['무장 / 기타', [
     ['J', '기관총 · 기관포 발사'],
     ['K', '플레어 살포'],
-    ['N', '시점 변경 (1인칭 ↔ 3인칭 ↔ 궤도 ↔ 시네마틱 ↔ 관제탑)'],
+    ['N', '시점 변경: 1인칭, 3인칭, 궤도, 시네마틱, 관제탑 순서'],
     ['M', '뒤돌아보기'],
     ['Z', '미니맵 확대'],
     ['U', '시간 빠르게 (낮/밤)'],
@@ -86,7 +89,7 @@ export class UIManager {
   constructor(game) {
     this.game = game;
     this.el = {};
-    const ids = ['screen-loading', 'screen-menu', 'screen-hangar', 'screen-missions', 'screen-settings',
+    const ids = ['screen-loading', 'screen-menu', 'screen-flightmenu', 'screen-systems', 'screen-hangar', 'screen-missions', 'screen-settings',
       'screen-controls', 'screen-pause', 'screen-crash', 'flight-ui', 'builder-root', 'toast',
       'loading-bar', 'loading-label', 'loading-tip', 'hangar-grid', 'mission-grid', 'settings-body',
       'controls-body', 'crash-body', 'flight-top', 'flight-buttons', 'throttle-slider', 'stick-pad',
@@ -104,7 +107,8 @@ export class UIManager {
 
   /* ------------------------------ 화면 전환 ------------------------------ */
   show(id) {
-    for (const key of ['screen-loading', 'screen-menu', 'screen-hangar', 'screen-missions', 'screen-settings', 'screen-controls']) {
+    if (id !== this.screen && this.screen && this.screen !== 'none') this.prevScreen = this.screen;
+    for (const key of SCREENS) {
       if (this.el[key]) this.el[key].classList.toggle('active', key === id);
     }
     this.screen = id;
@@ -112,7 +116,7 @@ export class UIManager {
   }
 
   hideAllScreens() {
-    for (const key of ['screen-loading', 'screen-menu', 'screen-hangar', 'screen-missions', 'screen-settings', 'screen-controls']) {
+    for (const key of SCREENS) {
       if (this.el[key]) this.el[key].classList.remove('active');
     }
     this.screen = 'none';
@@ -129,7 +133,8 @@ export class UIManager {
     if (!t) return;
     const d = document.createElement('div');
     d.className = 'toast-item ' + kind;
-    d.textContent = msg;
+    d.innerHTML = icon(kind === 'good' ? 'done' : kind === 'bad' ? 'danger' : kind === 'warn' ? 'warning' : 'info', { size: 16, cls: kind === 'good' ? 'ico-done' : '' });
+    d.appendChild(document.createTextNode(msg));
     t.appendChild(d);
     setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 400); }, ms);
   }
@@ -143,7 +148,14 @@ export class UIManager {
         if (nav === 'fly') this.game.startFlight(this.selectedCraft, this.selectedMission);
         else if (nav === 'builder') this.game.openBuilder();
         else if (nav === 'menu') this.show('screen-menu');
-        else this.show('screen-' + nav);
+        else if (nav === 'space') this.game.openSpace();
+        else if (nav === 'back') this.show(this.backTo || 'screen-menu');
+        else if (nav === 'fullscreen') this.game.toggleFullscreen();
+        else if (nav === 'mute') this.game.toggleMute(b);
+        else {
+          if (nav === 'settings' || nav === 'controls') this.backTo = this.screen.startsWith('screen-') ? this.screen : 'screen-menu';
+          this.show('screen-' + nav);
+        }
       });
       b.addEventListener('pointerenter', () => this.game.audio.ui('hover'));
     });
@@ -152,7 +164,7 @@ export class UIManager {
         this.game.audio.ui('click');
         const a = b.dataset.pauseAct;
         if (a === 'resume') this.game.setPaused(false);
-        else if (a === 'settings') { this.game.setPaused(false); this.game.quitToMenu(); this.show('screen-settings'); }
+        else if (a === 'settings') { this.game.setPaused(false); this.game.quitToMenu(); this.backTo = 'screen-menu'; this.show('screen-settings'); }
         else if (a === 'builder') { this.game.setPaused(false); this.game.openBuilder(); }
         else if (a === 'menu') { this.game.setPaused(false); this.game.quitToMenu(); }
         else if (a === 'respawn') { this.game.setPaused(false); this.game.respawn(); }
@@ -197,8 +209,8 @@ export class UIManager {
         </div>
         <div class="cc-tags">${(bp.tags || []).map((t) => `<span>${t}</span>`).join('')}</div>
         <div class="cc-btns">
-          <button class="btn btn-primary" data-pick>이 기체로 비행</button>
-          <button class="btn btn-ghost" data-edit>설계 열기</button>
+          <button class="btn btn-primary" data-pick data-icon="launch">이 기체로 비행</button>
+          <button class="btn btn-ghost" data-edit data-icon="blueprint">설계 열기</button>
         </div>`;
       card.querySelector('[data-pick]').onclick = () => {
         this.selectedCraft = bp;
@@ -235,7 +247,7 @@ export class UIManager {
         <div><span>최고속도</span><b>${Math.round(s.topSpeed * 3.6)} km/h</b></div>
       </div>
       <div class="mci-label">선택된 임무</div>
-      <div class="mci-mission">${this.selectedMission.icon} ${this.selectedMission.name}</div>`;
+      <div class="mci-mission">${icon(this.selectedMission.icon, { size: 20 })} ${this.selectedMission.name}</div>`;
   }
 
   /* ------------------------------ 임무 ------------------------------ */
@@ -245,15 +257,16 @@ export class UIManager {
     grid.innerHTML = '';
     for (const m of MISSIONS) {
       const card = document.createElement('div');
-      card.className = 'mission-card';
+      card.className = 'mission-card ico-host';
+      card.tabIndex = -1;
       const best = localStorage.getItem('freefreely.best.' + m.id);
       card.innerHTML = `
-        <div class="mc-icon">${m.icon}</div>
+        <div class="mc-icon">${icon(m.icon, { size: 40, cls: 'ico-live-hover' })}</div>
         <div class="mc-name">${m.name}</div>
         <div class="mc-desc">${m.desc}</div>
         <div class="mc-detail">${m.detail}</div>
         ${best ? `<div class="mc-best">최고 기록: ${best}</div>` : ''}
-        <button class="btn btn-primary" data-start>임무 시작</button>`;
+        <button class="btn btn-primary" data-start data-icon="launch">임무 시작</button>`;
       card.querySelector('[data-start]').onclick = () => {
         this.selectedMission = m;
         const craft = m.craft ? PRESETS.find((p) => p.id === m.craft) : this.selectedCraft;
@@ -272,7 +285,7 @@ export class UIManager {
     if (!body) return;
     const groups = [
       {
-        title: '그래픽', items: [
+        title: '그래픽', icon: 'graphics', items: [
           { k: 'quality', label: '품질 프리셋', type: 'select', options: [['low', '낮음'], ['medium', '보통'], ['high', '높음'], ['ultra', '울트라']] },
           { k: 'renderScale', label: '렌더 배율', type: 'range', min: 0.5, max: 1.5, step: 0.05 },
           { k: 'shadows', label: '그림자', type: 'toggle' },
@@ -283,7 +296,7 @@ export class UIManager {
         ],
       },
       {
-        title: '사운드', items: [
+        title: '사운드', icon: 'sound', items: [
           { k: 'masterVolume', label: '전체 볼륨', type: 'range', min: 0, max: 1, step: 0.05 },
           { k: 'engineVolume', label: '엔진음', type: 'range', min: 0, max: 1, step: 0.05 },
           { k: 'windVolume', label: '바람소리', type: 'range', min: 0, max: 1, step: 0.05 },
@@ -292,7 +305,7 @@ export class UIManager {
         ],
       },
       {
-        title: '조작', items: [
+        title: '조작', icon: 'controls', items: [
           { k: 'sensitivity', label: '조작 감도', type: 'range', min: 0.4, max: 2, step: 0.05 },
           { k: 'assistLevel', label: '비행 보조', type: 'select', options: [['normal', '보통 (권장)'], ['high', '강함 — 초보자'], ['off', '끔 — 완전 수동']] },
           { k: 'invertPitch', label: '피치 반전', type: 'toggle' },
@@ -302,7 +315,7 @@ export class UIManager {
         ],
       },
       {
-        title: '월드 / 날씨', items: [
+        title: '월드 / 날씨 (대기권 비행)', icon: 'weather', items: [
           { k: 'timeOfDay', label: '시각 (시)', type: 'range', min: 0, max: 24, step: 0.25 },
           { k: 'dayNightRunning', label: '밤낮 순환', type: 'toggle' },
           { k: 'dayLengthMinutes', label: '하루 길이 (분)', type: 'range', min: 2, max: 60, step: 1 },
@@ -315,12 +328,12 @@ export class UIManager {
     ];
     body.innerHTML = groups.map((g) => `
       <div class="set-group">
-        <h4>${g.title}</h4>
+        <h4>${icon(g.icon || 'settings', { size: 18 })} ${g.title}</h4>
         ${g.items.map((it) => this._settingRow(it)).join('')}
       </div>`).join('') + `
       <div class="set-group">
         <h4>초기화</h4>
-        <button class="btn btn-ghost" id="set-reset">모든 설정 기본값으로</button>
+        <button class="btn btn-ghost" id="set-reset" data-icon="reset">모든 설정 기본값으로</button>
       </div>`;
 
     body.querySelectorAll('[data-set]').forEach((input) => {
@@ -402,7 +415,7 @@ export class UIManager {
     if (!el) return;
     el.innerHTML = `
       <div class="ft-item"><span>기체</span><b>${info.craft}</b></div>
-      <div class="ft-item"><span>임무</span><b>${info.mission}</b></div>
+      <div class="ft-item"><span>임무</span><b>${info.mission}${info.missionDone ? ' ' + icon('done', { size: 14, cls: 'ico-done' }) : ''}</b></div>
       <div class="ft-item"><span>시각</span><b>${info.clock}</b></div>
       <div class="ft-item"><span>날씨</span><b>${info.weather}</b></div>
       <div class="ft-item"><span>풍향/풍속</span><b>${info.wind}</b></div>

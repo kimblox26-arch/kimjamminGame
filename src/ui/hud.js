@@ -2,6 +2,9 @@
 import { clamp, lerp, fmt, pad, headingName, msToKnots, msToKmh, mToFt, formatTime, damp } from '../core/utils.js';
 import { Settings } from '../core/settings.js';
 import { MAP_HALF } from '../world/terrain.js';
+import { drawIcon } from './icons.js';
+
+const REDUCED = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
 const HUD_GREEN = '#7dffb0';
 const HUD_CYAN = '#7fe9ff';
@@ -521,21 +524,29 @@ export class HUD {
     ctx.textAlign = 'left';
     ctx.fillText('X ' + Math.round(tele.position.x) + '  Z ' + Math.round(tele.position.z), x + 8, y - 8);
     ctx.textAlign = 'right';
-    ctx.fillText('×' + zoom.toFixed(1) + ' (Z키)', x + size - 8, y - 8);
+    const zl = zoom.toFixed(1) + ' 배율 (Z키)';
+    ctx.fillText(zl, x + size - 8, y - 8);
+    drawIcon(ctx, 'zoom', x + size - 16 - ctx.measureText(zl).width, y - 12, 13, { color: 'rgba(200,240,255,0.8)', accent: HUD_AMBER });
     ctx.restore();
   }
 
   /* ------------------------------- 경고 ------------------------------- */
   _drawWarnings(ctx, cx, tele) {
     if (!tele.warnings || !tele.warnings.length) return;
-    const blink = (performance.now() % 700) < 380;
+    // 위험 경고: 초당 2회 깜박임 (광과민성 안전 — 3회/초 미만). 동작 줄이기 시 정지 발광 + 굵은 테두리
+    const reduced = REDUCED.matches;
+    const blink = reduced || (performance.now() % 500) < 300;
     ctx.save();
     ctx.textAlign = 'center';
     tele.warnings.slice(0, 4).forEach((w, i) => {
       const y = this.h / 2 + 120 + i * 30;
       ctx.font = '700 20px "Rajdhani", monospace';
+      const text = w.code + '  ' + w.text;
+      const tw = ctx.measureText(text).width;
       ctx.fillStyle = blink ? HUD_RED : 'rgba(255,107,94,0.45)';
-      ctx.fillText(w.code + '  ' + w.text, cx, y);
+      ctx.fillText(text, cx + 12, y);
+      drawIcon(ctx, 'danger', cx - tw / 2 - 6, y - 7, 20, { color: HUD_RED, warn: HUD_RED, alpha: blink ? 1 : 0.45, glow: 1 });
+      if (reduced) { ctx.strokeStyle = HUD_RED; ctx.lineWidth = 3; ctx.strokeRect(cx - tw / 2 - 22, y - 22, tw + 46, 30); }
     });
     ctx.restore();
   }
@@ -552,8 +563,11 @@ export class HUD {
       if (age > 6) continue;
       const a = clamp(1 - (age - 4.5) / 1.5, 0, 1);
       ctx.globalAlpha = a;
-      ctx.fillStyle = e.kind === 'bad' ? HUD_RED : e.kind === 'good' ? HUD_GREEN : e.kind === 'warn' ? HUD_AMBER : '#dceaf4';
-      ctx.fillText('▸ ' + e.text, 30, this.h - 214 - this.controlsInset - i * 19);
+      const col = e.kind === 'bad' ? HUD_RED : e.kind === 'good' ? HUD_GREEN : e.kind === 'warn' ? HUD_AMBER : '#dceaf4';
+      const ly = this.h - 214 - this.controlsInset - i * 19;
+      drawIcon(ctx, e.kind === 'bad' ? 'danger' : e.kind === 'good' ? 'done' : e.kind === 'warn' ? 'warning' : 'log', 36, ly - 4, 13, { color: col, accent: col, warn: col, cyan: HUD_CYAN, good: col });
+      ctx.fillStyle = col;
+      ctx.fillText(e.text, 48, ly);
       i++;
     }
     ctx.restore();
@@ -564,10 +578,13 @@ export class HUD {
     ctx.textAlign = 'center';
     ctx.font = '700 15px "Rajdhani", monospace';
     ctx.fillStyle = HUD_CYAN;
-    ctx.fillText(m.title, cx, 86);
+    ctx.fillText(m.title, cx + 12, 86);
+    const tw = ctx.measureText(m.title).width;
+    if (m.icon) drawIcon(ctx, m.icon, cx - tw / 2 - 4, 81, 20, { color: '#e9f6ff', accent: HUD_AMBER, cyan: HUD_CYAN, glow: 0.6 });
     ctx.font = '600 13px "Rajdhani", monospace';
-    ctx.fillStyle = '#dceaf4';
-    ctx.fillText(m.subtitle, cx, 106);
+    ctx.fillStyle = m.done ? HUD_GREEN : '#dceaf4';
+    ctx.fillText(m.subtitle, cx + (m.done ? 10 : 0), 106);
+    if (m.done) drawIcon(ctx, 'done', cx - ctx.measureText(m.subtitle).width / 2 - 6, 101, 16, { color: HUD_GREEN, good: HUD_GREEN });
     if (m.time !== undefined) {
       ctx.font = '700 22px "Rajdhani", monospace';
       ctx.fillStyle = HUD_AMBER;

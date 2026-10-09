@@ -107,6 +107,11 @@ export class ShipFlight {
       alt = r - near.body.radius;
     }
     atmosphereAt(near ? near.body : null, alt, _atm);
+    if (near && alt < 0 && (near.body.kind === 'star' || near.body.kind === 'blackhole')) {
+      this.integrity = 0;
+      this.destroy(near.body.kind === 'star' ? `${near.body.name} 광구에 돌입 — 기화` : '사건의 지평선 통과 — 스파게티화');
+      return;
+    }
     const rho = _atm.density;
     // 대기 바람 = 행성 자전에 따라 회전하는 공기 (+ 함선 기준 상대 속도)
     _air.copy(this.vel).sub(near ? near.vel : _v3.set(0, 0, 0)).sub(surfVel);
@@ -236,7 +241,7 @@ export class ShipFlight {
     this.vel.addScaledVector(acc, dt);
     const stepLen = this.vel.length() * dt;
     // 고속 터널링 방지: 경로를 나눠 지면 교차 검사
-    if (near && near.view && stepLen > 30 && alt < near.body.radius * 0.2) {
+    if (near && near.view && near.view.terrain && stepLen > 30 && alt < near.body.radius * 0.2) {
       const n = Math.min(40, Math.ceil(stepLen / 30));
       for (let i = 1; i <= n; i++) {
         _v.copy(this.pos).addScaledVector(this.vel, (dt * i) / n);
@@ -253,7 +258,7 @@ export class ShipFlight {
 
     // 지면 · 수면 접촉
     let onGround = false, inWater = false;
-    if (near && near.view && alt < 25000) {
+    if (near && near.view && near.view.terrain && alt < 25000) {
       const res = this._contacts(dt, near, surfVel);
       onGround = res.onGround; inWater = res.inWater;
     }
@@ -299,7 +304,7 @@ export class ShipFlight {
     if (near && rel) {
       const up = _v2.copy(rel).normalize();
       tl.vs = _v.copy(this.vel).sub(near.vel).sub(surfVel).dot(up);
-      tl.agl = this._groundAlt(near, this.pos);
+      tl.agl = near.view && near.view.terrain ? this._groundAlt(near, this.pos) : alt;
       const gAcc = accel.clone().addScaledVector(up, (near.body.mu || 0) / Math.max(1, rel.lengthSq()));
       tl.g = this.warp ? 1 : gAcc.length() / G0;
     } else { tl.vs = 0; tl.agl = Infinity; tl.g = 0; }

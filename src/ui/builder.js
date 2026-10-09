@@ -5,10 +5,11 @@ import { PARTS, CATEGORIES } from '../craft/parts.js';
 import { analyzeBlueprint } from '../craft/assembler.js';
 import { PRESETS, starterBlueprint, cloneBlueprint, loadDesigns, saveDesign, deleteDesign } from '../craft/presets.js';
 import { clamp, lerp } from '../core/utils.js';
+import { icon } from './icons.js';
 
 const VIEWS = [
-  { id: 'side', name: '측면도 (SIDE)', hx: 'bx', hy: 'by', hLabel: '기수 ←→ 후방', vLabel: '높이' },
-  { id: 'top', name: '평면도 (TOP)', hx: 'bx', hy: 'bz', hLabel: '기수 ←→ 후방', vLabel: '좌우' },
+  { id: 'side', name: '측면도 (SIDE)', hx: 'bx', hy: 'by', hLabel: '기수 {LR} 후방', vLabel: '높이' },
+  { id: 'top', name: '평면도 (TOP)', hx: 'bx', hy: 'bz', hLabel: '기수 {LR} 후방', vLabel: '좌우' },
   { id: 'front', name: '정면도 (FRONT)', hx: 'bz', hy: 'by', hLabel: '좌우', vLabel: '높이' },
 ];
 
@@ -51,7 +52,7 @@ export class Builder {
           <button class="btn btn-ghost" data-act="json">JSON</button>
           <button class="btn btn-ghost" data-act="clear">초기화</button>
           <button class="btn btn-ghost" data-act="exit">메뉴</button>
-          <button class="btn btn-primary" data-act="fly">▶ 비행 시작</button>
+          <button class="btn btn-primary" data-act="fly" data-icon="launch">비행 시작</button>
         </div>
       </div>
       <div class="builder-body">
@@ -60,7 +61,7 @@ export class Builder {
           <div class="palette-list"></div>
           <div class="palette-help">
             <b>조작</b><br>
-            부품 선택 → 도면 클릭으로 배치<br>
+            부품 선택 ${icon('arrowRight', { size: 14 })} 도면 클릭으로 배치<br>
             드래그: 이동 · 휠: 확대 · 우클릭 드래그: 화면 이동<br>
             Del: 삭제 · [ ]: 크기 · , .: 각도 · D: 복제
           </div>
@@ -286,8 +287,9 @@ export class Builder {
     this._drawTitleBlock(ctx, W, H);
 
     const v = this.axes;
-    this.viewHint.textContent = `${v.name} — 가로: ${v.hLabel} / 세로: ${v.vLabel} · 1칸 = 1 m`
-      + (this.palettePart ? `  ⟶ 배치 대기: ${PARTS[this.palettePart].name} (도면 클릭)` : '');
+    const hint = `${v.name} — 가로: ${v.hLabel.replace('{LR}', icon('arrowLR', { size: 14 }))} / 세로: ${v.vLabel} · 1칸 = 1 m`
+      + (this.palettePart ? ` <span class="inline-ico">${icon('pending', { size: 14, anim: true })} 배치 대기: ${PARTS[this.palettePart].name} (도면 클릭)</span>` : '');
+    if (hint !== this._lastHint) { this._lastHint = hint; this.viewHint.innerHTML = hint; }
   }
 
   _drawGrid(ctx, W, H) {
@@ -635,8 +637,8 @@ export class Builder {
       ${row('부력 (열기구)', s.balloonLift > 0 ? (s.balloonLift / 1000).toFixed(1) + ' kN' : '—')}
       ${row('전장 / 전폭', s.length.toFixed(1) + ' / ' + s.span.toFixed(1) + ' m')}`;
     const warns = s.warnings.map((w) =>
-      `<div class="warn ${w.level}">${w.level === 'error' ? '✖' : w.level === 'warn' ? '▲' : 'ℹ'} ${w.text}</div>`).join('');
-    this.inspWarn.innerHTML = `<h4>설계 검증</h4>${warns || '<div class="warn ok">✔ 문제 없음 — 비행 가능</div>'}`;
+      `<div class="warn ${w.level}">${icon(w.level === 'error' ? 'error' : w.level === 'warn' ? 'warning' : 'info', { size: 14 })}${w.text}</div>`).join('');
+    this.inspWarn.innerHTML = `<h4>설계 검증</h4>${warns || `<div class="warn ok">${icon('done', { size: 14, cls: 'ico-done' })}문제 없음 — 비행 가능</div>`}`;
     this._renderList();
   }
 
@@ -648,11 +650,11 @@ export class Builder {
       return `<div class="pl-row ${this.selected === i ? 'sel' : ''}" data-i="${i}">
         <span>${def.name}</span>
         <span class="pl-pos">${(p.bx || 0).toFixed(1)}, ${(p.by || 0).toFixed(1)}, ${(p.bz || 0).toFixed(1)}</span>
-        <button class="pl-del" data-del="${i}">✕</button></div>`;
+        <button class="pl-del" data-del="${i}" data-icon="trash" title="부품 삭제">삭제</button></div>`;
     }).join('');
     this.inspList.querySelectorAll('.pl-row').forEach((r) => {
       r.onclick = (e) => {
-        if (e.target.dataset.del !== undefined) return;
+        if (e.target.closest && e.target.closest('[data-del]')) return;
         this.selected = +r.dataset.i;
         this.render(); this._renderInspector(); this._renderList();
       };
@@ -693,7 +695,7 @@ export class Builder {
         <label class="fld"><span>크기 ×</span><input type="number" step="0.1" min="0.3" max="3" id="f-scale" value="${p.scale || 1}"></label>
         <label class="fld"><span>취부각 °</span><input type="number" step="0.5" min="-20" max="20" id="f-rot" value="${p.rot || 0}"></label>
       </div>
-      ${def.mirror ? '<p class="hint">좌우 대칭 부품 — bz ≠ 0 이면 반대쪽에도 자동 생성됩니다.</p>' : ''}
+      ${def.mirror ? '<p class="hint">좌우 대칭 부품 — bz 가 0 이 아니면 반대쪽에도 자동 생성됩니다.</p>' : ''}
       <div class="insp-btns">
         <button class="btn btn-ghost" id="f-dup">복제 (D)</button>
         <button class="btn btn-ghost" id="f-del">삭제 (Del)</button>
@@ -731,7 +733,7 @@ export class Builder {
       const fatal = s.warnings.filter((w) => w.level === 'error');
       if (fatal.length) {
         this._modal('비행 불가', `<p>다음 문제를 해결해야 이륙할 수 있습니다.</p>` +
-          fatal.map((w) => `<div class="warn error">✖ ${w.text}</div>`).join(''));
+          fatal.map((w) => `<div class="warn error">${icon('error', { size: 14 })}${w.text}</div>`).join(''));
         if (this.audio) this.audio.ui('error');
         return;
       }

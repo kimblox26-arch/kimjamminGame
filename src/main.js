@@ -19,8 +19,15 @@ import { UIManager, MISSIONS } from './ui/menu.js';
 import { Builder } from './ui/builder.js';
 import { PRESETS } from './craft/presets.js';
 import { RUNWAY } from './world/terrain.js';
+import * as SpaceUI from './space/spaceui.js';
+import { injectIconDefs, injectFrameStyles, autoDecorate, GamepadFocus, icon, numberBadge } from './ui/icons.js';
 
 const FIXED_DT = 1 / 120;
+const ACT_ICONS = {
+  gear: 'gear', flapsDown: 'flapsDown', flapsUp: 'flapsUp', brake: 'brake', airbrake: 'airbrake', afterburner: 'afterburner',
+  burner: 'burner', vent: 'vent', lights: 'lights', autopilot: 'autopilot', camera: 'view', lookBack: 'lookBack', fire: 'fire',
+  flare: 'flare', chute: 'chute', engineToggle: 'power', respawn: 'respawn', pause: 'pause',
+};
 const MAX_SUBSTEPS = 6;
 
 class Game {
@@ -63,8 +70,24 @@ class Game {
     this.rig = new CameraRig(this.camera);
 
     this.input = new Input(canvas);
+    injectIconDefs();
+    injectFrameStyles();
     this.hud = new HUD(document.getElementById('hud'));
     this.ui = new UIManager(this);
+    this._decorateStatic();
+    autoDecorate(document.body);
+    this.gpFocus = new GamepadFocus();
+    this.gpFocus.onBack = () => this._uiBack();
+    // 설정: 우주 탐사 키 변경 · 조작법: 우주 탐사 키 안내
+    const sb = document.getElementById('settings-body');
+    if (sb) {
+      const g = document.createElement('div');
+      g.className = 'set-group';
+      g.id = 'space-keys';
+      sb.appendChild(g);
+      SpaceUI.buildKeySettings(g, (k) => { if (this.space) this.space.keys = k; this._buildSpaceControls(); });
+    }
+    this._buildSpaceControls();
 
     window.addEventListener('resize', () => this.onResize());
     document.addEventListener('visibilitychange', () => {
@@ -108,10 +131,106 @@ class Game {
     this._loop();
   }
 
+  /** 정적 화면 요소에 SVG 아이콘 배치 (로딩 행성·로고·안내 배지) */
+  _decorateStatic() {
+    const lp = document.getElementById('load-planet');
+    if (lp) lp.innerHTML = icon('loadingSet', { size: 120, anim: true });
+    const ml = document.getElementById('menu-logo');
+    if (ml) ml.innerHTML = icon('logo', { size: 96, anim: true });
+    const hint = document.getElementById('menu-hint');
+    if (hint) {
+      hint.innerHTML = `<b>${icon('tip', { size: 18 })} 처음이라면?</b><br>
+        ${numberBadge(1)}격납고에서 <em>CIRRUS-1 경비행기</em>를 선택합니다.<br>
+        ${numberBadge(2)}다음으로 스로틀(Shift)을 100%까지 올리고<br>
+        ${numberBadge(3)}속도 120 km/h 에서 S 키로 기수를 살짝 들면 이륙합니다.`;
+    }
+  }
+
+  _uiBack() {
+    if (this.state === 'space' && this.space && this.space.map.open) { this.space.map.toggle(false); return; }
+    if (this.paused) { this.setPaused(false); return; }
+    const sc = this.ui.screen;
+    if (sc === 'screen-hangar' || sc === 'screen-missions') this.ui.show('screen-flightmenu');
+    else if (sc === 'screen-settings' || sc === 'screen-controls') this.ui.show(this.ui.backTo || 'screen-menu');
+    else if (sc !== 'screen-menu' && sc !== 'none') this.ui.show('screen-menu');
+  }
+
+  toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    } catch (e) { /* 미지원 */ }
+  }
+
+  toggleMute(btn) {
+    this.muted = !this.muted;
+    Settings.set('masterVolume', this.muted ? 0 : (this._prevVol || 0.85));
+    if (!this.muted) this._prevVol = undefined; else this._prevVol = this._prevVol || 0.85;
+    if (Audio.ready) Audio.applyVolumes();
+    if (btn) {
+      const old = btn.querySelector('svg.ico');
+      if (old) old.outerHTML = icon(this.muted ? 'mute' : 'sound', { size: 18 });
+      const label = [...btn.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim());
+      if (label) label.textContent = this.muted ? '소리 켜기' : '소리 끄기';
+    }
+  }
+
+  togglePause() {
+    if (this.state === 'flight' || this.state === 'space') this.setPaused(!this.paused);
+  }
+
+  /* ------------------------------ 우주 탐사 모드 ------------------------------ */
+  async openSpace() {
+    if (!this.space) {
+      const mod = await import('./space/spacegame.js');
+      const ui = SpaceUI;
+      this.space = new mod.SpaceGame(this);
+      this.ui.show('screen-loading');
+      try {
+        await this.space.init((p, label) => this.ui.setLoading(p, label));
+      } catch (err) {
+        console.error(err);
+        this.ui.setLoading(1, '우주 모드 초기화 오류: ' + err.message);
+        return;
+      }
+      this.spaceSync = ui.buildSpaceUI(this.space, this);
+    }
+    SpaceUI.buildSystemSelect(this.space, (id) => this.startSpace(id));
+    this.ui.show('screen-systems');
+  }
+
+  startSpace(id) {
+    this.disposeCraft();
+    this.state = 'space';
+    this.paused = false;
+    this.ui.hideAllScreens();
+    this.ui.setFlightUI(false);
+    this.ui.showPause(false);
+    this.ui.showCrash(false);
+    document.getElementById('space-ui').hidden = false;
+    this.hud.visible = false;
+    this.hud.render(null);
+    this.space.enter(id);
+    this.applyOnScreenControls();
+    if (Audio.ready) { Audio.music(false); Audio.resume(); }
+    this.ui.toast('우주 탐사 시작 — 1~5: 속도 단계 · M: 항법 지도', 'info', 4200);
+  }
+
+  _buildSpaceControls() {
+    const body = document.getElementById('controls-body');
+    if (!body) return;
+    let box = document.getElementById('space-controls');
+    if (!box) { box = document.createElement('div'); box.id = 'space-controls'; box.style.display = 'contents'; body.prepend(box); }
+    box.innerHTML = SpaceUI.spaceControlsHTML();
+  }
+
   _rotateTips() {
     const tips = [
+      '우주 탐사: 1~5 키로 속도 단계를 바꾸고, M 키 항법 지도에서 목표를 지정하세요.',
+      '우주 탐사: 관성 보조(Z)를 끄면 궤도 속도로 자연스럽게 공전합니다.',
+      '우주 탐사: 대기권 안에서는 3단계 이상 속도를 쓸 수 없습니다 — 재진입 가열에 주의.',
       '이륙 전 플랩(F)을 내리면 더 짧은 활주로에서 뜰 수 있습니다.',
-      '착륙은 강하율 −2 m/s 이하를 목표로. 기어(G)를 잊지 마세요.',
+      '착륙은 강하율 2 m/s 이하를 목표로. 기어(G)를 잊지 마세요.',
       '열기구는 버너(Space)와 배기 밸브(C)만으로 고도를 조절합니다.',
       '설계실에서 무게중심(CG)이 공력중심(AC)보다 앞에 있어야 안정적입니다.',
       '우주선은 고도 30 km 이상에서 공기 저항이 거의 사라집니다.',
@@ -121,7 +240,7 @@ class Game {
     ];
     let i = 0;
     const el = document.getElementById('loading-tip');
-    const set = () => { if (el) el.textContent = '💡 ' + tips[i++ % tips.length]; };
+    const set = () => { if (el) el.innerHTML = icon('tip', { size: 18, anim: true }) + tips[i++ % tips.length]; };
     set();
     this._tipTimer = setInterval(set, 4200);
   }
@@ -152,6 +271,7 @@ class Game {
     if (thr) thr.style.display = show ? '' : 'none';
     if (this.hud) this.hud.controlsInset = show ? 158 : 0;
     this.onScreenControls = show;
+    document.body.classList.toggle('touch-ui', show);
   }
 
   _applyPixelRatio() {
@@ -182,6 +302,7 @@ class Game {
       if (key === 'seaState') this.world.seaState = Settings.get('seaState');
     }
     if (Audio.ready) Audio.applyVolumes();
+    if (this.space && this.space.ready && (key === 'quality' || key === '*' || key === 'renderScale')) this.space.setQuality(Settings.get('quality'));
     this.onResize();
   }
 
@@ -280,6 +401,7 @@ class Game {
   }
 
   respawn() {
+    if (this.state === 'space' && this.space) { this.ui.showCrash(false); this.space.respawn(); return; }
     if (!this.controller) return;
     this.ui.showCrash(false);
     this.fx.clear();
@@ -289,6 +411,11 @@ class Game {
   }
 
   quitToMenu() {
+    if (this.state === 'space' && this.space) {
+      this.space.exit();
+      document.getElementById('space-ui').hidden = true;
+      this.paused = false;
+    }
     this.disposeCraft();
     this.state = 'menu';
     this.ui.setFlightUI(false);
@@ -329,9 +456,11 @@ class Game {
   }
 
   setPaused(p) {
-    if (this.state !== 'flight') return;
+    if (this.state !== 'flight' && this.state !== 'space') return;
     this.paused = p;
     this.ui.showPause(p);
+    document.querySelectorAll('.flight-only').forEach((el) => { el.hidden = this.state === 'space'; });
+    if (this.state === 'space') { this.space.setPaused(p); if (p && document.pointerLockElement) document.exitPointerLock(); }
     if (Audio.ready) {
       Audio.setMuted(p);
       if (p) Audio.clearWarnings();
@@ -442,15 +571,15 @@ class Game {
     else if (ms.id === 'space') subtitle = `고도 ${(t.alt / 1000).toFixed(1)} / 100 km`;
     else if (ms.id === 'glide') subtitle = `비행 ${formatTime(ms.time)} / 05:00 · 거리 ${(this.controller.score.distance / 1000).toFixed(1)} km`;
     else if (ms.id === 'carrier') subtitle = '갑판에 착함 후 정지';
-    if (ms.complete) subtitle = '✔ ' + ms.message;
-    return { title: this.mission.icon + ' ' + this.mission.name, subtitle, time: ms.id === 'rings' || ms.id === 'glide' ? ms.time : undefined };
+    if (ms.complete) subtitle = ms.message;
+    return { title: this.mission.name, icon: this.mission.icon, done: ms.complete, subtitle, time: ms.id === 'rings' || ms.id === 'glide' ? ms.time : undefined };
   }
 
   /* ---------------------------- 입력 / 버튼 UI ---------------------------- */
   _bindFlightControls() {
     // 화면 버튼 (작동 버튼)
     const buttons = [
-      ['gear', '착륙장치', 'G'], ['flapsDown', '플랩▼', 'F'], ['flapsUp', '플랩▲', 'V'],
+      ['gear', '착륙장치', 'G'], ['flapsDown', '플랩 내림', 'F'], ['flapsUp', '플랩 올림', 'V'],
       ['brake', '브레이크', 'B'], ['airbrake', '에어브레이크', 'X'], ['afterburner', 'A/B', 'Tab'],
       ['burner', '버너/로켓', 'Space'], ['vent', '배기', 'C'], ['lights', '조명', 'L'],
       ['autopilot', '자동조종', 'H'], ['camera', '시점', 'N'], ['lookBack', '후방', 'M'],
@@ -464,6 +593,7 @@ class Game {
         const b = document.createElement('button');
         b.className = 'act-btn';
         b.dataset.btn = action;
+        b.dataset.icon = ACT_ICONS[action] || 'chevronRight';
         b.innerHTML = `<span class="ab-label">${label}</span><span class="ab-key">${key}</span>`;
         wrap.appendChild(b);
         const toggleLike = ['gear', 'flapsDown', 'flapsUp', 'lights', 'autopilot', 'camera', 'chute',
@@ -509,7 +639,8 @@ class Game {
   _bindGlobalKeys() {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
-        if (this.state === 'flight') this.setPaused(!this.paused);
+        if (this.state === 'space' && this.space && this.space.map.open) this.space.map.toggle(false);
+        else if (this.state === 'flight' || this.state === 'space') this.setPaused(!this.paused);
         else if (this.state === 'builder') { /* 설계실은 자체 UI 사용 */ }
         else if (this.ui.screen !== 'screen-menu') this.ui.show('screen-menu');
       }
@@ -575,6 +706,16 @@ class Game {
 
       this.elapsed += dt;
       this.input.update(dt);
+      // 게임패드로 UI 포커스 이동 (메뉴·일시정지·지도)
+      const gp = this.input.gamepad();
+      if (gp && (this.state === 'menu' || this.paused || (this.space && this.space.map.open) || document.querySelector('.overlay-panel:not([hidden])'))) this.gpFocus.update(dt, gp);
+
+      if (this.state === 'space') {
+        this.space.frame(dt);
+        if (this.spaceSync) this.spaceSync();
+        this.input.endFrame();
+        return;
+      }
 
       if (this.state === 'menu' || this.state === 'loading') {
         this._updateMenuScene(dt);
@@ -653,7 +794,8 @@ class Game {
     const wind = this.world.env.wind;
     this.ui.updateFlightTop({
       craft: this.craft.name,
-      mission: this.mission.name + (this.missionState && this.missionState.complete ? ' ✔' : ''),
+      mission: this.mission.name,
+      missionDone: !!(this.missionState && this.missionState.complete),
       clock: this._clockString(),
       weather: { clear: '맑음', cloudy: '구름', overcast: '흐림', storm: '폭풍' }[this.world.weather] || '맑음',
       wind: `${headingName((Math.atan2(wind.x, -wind.z) / DEG + 360) % 360)} ${wind.length().toFixed(1)} m/s`,

@@ -252,3 +252,9 @@ body.touch-ui .sp-stick, body.touch-ui .sp-throttle { display: block; }
   .sp-pulse { animation: none !important; }
   .toast-item { animation: none !important; }
 }
+
+/* 설계실 부품 목록 삭제 버튼 (아이콘 + 글자) */
+.pl-row { grid-template-columns: 1fr auto auto !important; }
+button.deco.pl-del { font-size: 11px; color: var(--red); gap: 4px; padding: 2px 8px; }
+.warn { display: flex; align-items: flex-start; gap: 2px; }
+.warn .ico { flex: none; margin-top: 1px; }
