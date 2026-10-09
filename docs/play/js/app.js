@@ -2643,6 +2643,7 @@
       $('#pwOld').value = $('#pwNew').value = '';
       toast('🔑 비밀번호를 바꿨어요.', 'ok');
     };
+    $('#sideClose').onclick = () => $('#side').classList.remove('open'); // 💬 채팅 · 순위 창 닫기 (폰)
     $('#btnBoard').onclick = () => { if (innerWidth <= 820) $('#side').classList.toggle('open'); else openRank(); }; // 폰: 순위·소식 창, 넓은 화면: 랭킹표
     // 더보기: 자주 안 쓰는 버튼 모음 (누르면 닫힌다)
     const more = $('#moreMenu'), closeMore = () => { more.hidden = true; $('#btnMore').classList.remove('on'); };
@@ -2890,11 +2891,36 @@
   }
   // 🪪 프로필 카드 (배너 + 프로필 사진) — 내 것은 그리기 · 사진 · 동영상으로 바꿀 수 있다
   let pfData = null;
-  function setMedia(el, m) { // 사진 한 장, 또는 동영상(여러 장을 옆으로 이어 붙인 그림)을 움직이게
+  // 🎬 움짤 재생: 여러 장을 바둑판처럼 붙인 그림을 한 장씩 넘긴다 (예전 것은 옆으로 한 줄)
+  const sprEls = new Set();
+  let sprRaf = 0;
+  function sprTick(t) {
+    sprRaf = 0;
+    for (const el of sprEls) {
+      const m = el._spr;
+      if (!m || !el.isConnected) { sprEls.delete(el); continue; }
+      const i = Math.floor((t * m.fps) / 1000) % m.n;
+      if (el._si === i) continue;
+      el._si = i;
+      const c = i % m.cols, r = Math.floor(i / m.cols);
+      el.style.backgroundPosition = `${m.cols > 1 ? (c / (m.cols - 1)) * 100 : 0}% ${m.rows > 1 ? (r / (m.rows - 1)) * 100 : 0}%`;
+    }
+    if (sprEls.size) sprRaf = requestAnimationFrame(sprTick);
+  }
+  function setMedia(el, m) { // 사진 한 장, 또는 동영상(움짤)을 움직이게
     el.classList.toggle('has', !!m);
     el.style.backgroundImage = m ? `url("${m.d}")` : '';
-    el.style.backgroundSize = m && m.n > 1 ? `${m.n * 100}% 100%` : '';
-    el.style.animation = m && m.n > 1 ? `spr ${(m.n / m.fps).toFixed(2)}s steps(${m.n}, jump-none) infinite` : '';
+    el.style.animation = '';
+    if (m && m.n > 1) {
+      const cols = m.cols || m.n, rows = Math.ceil(m.n / cols);
+      el._spr = { n: m.n, fps: m.fps || 8, cols, rows }; el._si = -1;
+      el.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+      el.style.backgroundPosition = '0% 0%';
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) { sprEls.add(el); if (!sprRaf) sprRaf = requestAnimationFrame(sprTick); }
+    } else {
+      el._spr = null; sprEls.delete(el);
+      el.style.backgroundSize = ''; el.style.backgroundPosition = '';
+    }
   }
   async function openProfile(acc) {
     if (!me) return;
@@ -2930,8 +2956,8 @@
   }
 
   // 🖌️ 그리기 · 📷 사진 · 🎬 동영상 편집 창
-  const MD = { av: { w: 256, h: 256, out: [192, 192], vid: [112, 112], max: 190000 }, bn: { w: 768, h: 256, out: [600, 200], vid: [336, 112], max: 400000 } };
-  const VID_FPS = 8, VID_SEC = 3; // 동영상은 3초 · 1초에 8장 (소리 없는 움짤)
+  const MD = { av: { w: 256, h: 256, out: [192, 192], vid: [112, 112], max: 190000, vmax: 620000 }, bn: { w: 768, h: 256, out: [600, 200], vid: [336, 112], max: 400000, vmax: 1260000 } };
+  const VID_SEC = 30, vidFps = sec => (sec <= 15 ? 8 : 4); // 동영상은 최대 30초 (15초까지는 1초에 8장, 더 길면 4장 · 소리 없는 움짤)
   const PALETTE = ['#111827', '#ffffff', '#9ca3af', '#ef4444', '#f97316', '#facc15', '#84cc16', '#22c55e', '#14b8a6', '#38bdf8', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#f9a8d4', '#92400e'];
   let md = null, mdTool = 'pen', mdColor = '#111827', mdSize = 8, mdUndo = [], mdBusy = false;
   const mdCv = () => $('#mdCanvas'), mdCx = () => $('#mdCanvas').getContext('2d', { willReadFrequently: true });
@@ -2987,6 +3013,7 @@
         Object.assign(md, { src: v, iw: v.videoWidth, ih: v.videoHeight, dur: v.duration || 0 });
         const mx = Math.max(0, Math.floor(((md.dur || 0) - 0.5) * 10) / 10);
         $('#mdStart').max = mx; $('#mdStart').value = 0;
+        mdLenFit(true);
       }
       if (!md.iw || !md.ih) throw new Error('empty');
     } catch {
@@ -2994,8 +3021,8 @@
       return toast(kind === 'vid' ? '🎬 이 동영상은 열 수 없어요. 다른 동영상을 골라 주세요.' : '📷 이 사진은 열 수 없어요.', 'err');
     }
     mdStage(slot, true); mdTitle(slot, kind);
-    $('#mdStartRow').hidden = kind !== 'vid';
-    $('#mdHint').textContent = kind === 'vid' ? `손가락으로 끌어서 위치를 맞추고, ⏱️ 막대로 시작할 곳을 골라요. ${VID_SEC}초 동안 움직이는 사진이 돼요. (소리는 없어요)` : '손가락으로 끌어서 위치를 맞추고, 🔍 막대로 크게 · 작게 해요.';
+    $('#mdStartRow').hidden = $('#mdLenRow').hidden = kind !== 'vid';
+    $('#mdHint').textContent = kind === 'vid' ? `손가락으로 끌어서 위치를 맞추고, ⏱️ 막대로 시작할 곳을 골라요. 🎞️ 막대로 길이(최대 ${VID_SEC}초)를 골라요. 움직이는 사진이 돼요. (소리는 없어요)` : '손가락으로 끌어서 위치를 맞추고, 🔍 막대로 크게 · 작게 해요.';
     cropReset(); cropPaint(); mdStartText();
     openM('mediaModal');
   }
@@ -3005,6 +3032,13 @@
     md = null;
   }
   const mdStartText = () => { $('#mdStartText').textContent = md && md.kind === 'vid' ? `${(+$('#mdStart').value).toFixed(1)}초부터` : ''; };
+  function mdLenFit(first) { // 길이 막대: 남은 길이와 30초 중 짧은 것까지
+    if (!md || md.kind !== 'vid') return;
+    const el = $('#mdLen'), room = Math.max(1, Math.min(VID_SEC, Math.floor((md.dur || 0) - md.start) || 1));
+    el.max = room;
+    if (first || +el.value > room) el.value = room;
+    $('#mdLenText').textContent = `${el.value}초 동안`;
+  }
   function cropReset() {
     const W = MD[md.slot].w, H = MD[md.slot].h;
     md.s0 = Math.max(W / md.iw, H / md.ih); md.z = 1;
@@ -3063,17 +3097,19 @@
       let first;
       if (md.kind === 'vid') {
         const [fw, fh] = cfg.vid, v = md.src, left = Math.max(0, (md.dur || 0) - md.start);
-        const n = Math.max(2, Math.min(VID_FPS * VID_SEC, Math.floor(left * VID_FPS) || 2));
-        const strip = newCanvas(fw * n, fh), sx = strip.getContext('2d'), k = fw / cfg.w;
+        const sec = Math.max(0.25, Math.min(VID_SEC, +$('#mdLen').value || VID_SEC, left)), fps = vidFps(sec);
+        const n = Math.max(2, Math.min(fps * VID_SEC, Math.floor(sec * fps) || 2));
+        const cols = Math.min(n, Math.ceil(Math.sqrt((n * fh) / fw))), rows = Math.ceil(n / cols); // 바둑판처럼 (그림이 너무 길어지지 않게)
+        const strip = newCanvas(fw * cols, fh * rows), sx = strip.getContext('2d'), k = fw / cfg.w;
         for (let i = 0; i < n; i++) {
           msg(`🎬 만드는 중… ${Math.round(i / n * 100)}%`);
-          await seekTo(v, md.start + i / VID_FPS);
-          sx.save(); sx.translate(i * fw, 0); sx.beginPath(); sx.rect(0, 0, fw, fh); sx.clip(); cropPaint(sx, k); sx.restore();
+          await seekTo(v, md.start + i / fps);
+          sx.save(); sx.translate((i % cols) * fw, Math.floor(i / cols) * fh); sx.beginPath(); sx.rect(0, 0, fw, fh); sx.clip(); cropPaint(sx, k); sx.restore();
         }
-        let q = 0.62, d = encPic(strip, q);
-        while (d.length > cfg.max && q > 0.25) { q -= 0.09; d = encPic(strip, q); }
-        if (d.length > cfg.max) throw new Error('big');
-        Object.assign(body, { d, n, fps: VID_FPS });
+        let q = 0.6, d = encPic(strip, q);
+        while (d.length > cfg.vmax && q > 0.2) { q -= 0.08; d = encPic(strip, q); }
+        if (d.length > cfg.vmax) throw new Error('big');
+        Object.assign(body, { d, n, fps, cols });
         first = newCanvas(fw, fh); first.getContext('2d').drawImage(strip, 0, 0, fw, fh, 0, 0, fw, fh);
       } else {
         const [tw, th] = cfg.out, out = newCanvas(tw, th), ox = out.getContext('2d');
@@ -3176,6 +3212,8 @@
       cropClamp(); cropPaint();
     };
     $('#mdStart').oninput = async e => { if (!md || md.kind !== 'vid') return; md.start = +e.target.value; mdStartText(); await seekTo(md.src, md.start); if (md) cropPaint(); };
+    $('#mdStart').onchange = () => mdLenFit(false);
+    $('#mdLen').oninput = () => mdLenFit(false);
     $('#mdSave').onclick = mdSave;
     $('#mdCancel').onclick = () => { closeM('mediaModal'); mdClose(); };
     $('#mediaModal [data-close]').addEventListener('click', mdClose);

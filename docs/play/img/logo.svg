@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <defs>
+    <linearGradient id="lgBadge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9d90ff"/><stop offset=".55" stop-color="#6d5dfc"/><stop offset="1" stop-color="#4a38d8"/></linearGradient>
+    <radialGradient id="lgShine" cx=".3" cy=".22" r=".55"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="lgGold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset=".55" stop-color="#ffc23d"/><stop offset="1" stop-color="#f29a00"/></linearGradient>
+    <linearGradient id="lgRibbon" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb84d"/><stop offset="1" stop-color="#f0780a"/></linearGradient>
+    <path id="lgArc" d="M26 140 Q80 151 134 140"/>
+  </defs>
+  <ellipse cx="80" cy="154" rx="46" ry="4.5" fill="#3b2fb0" opacity=".16"/>
+  <g class="lg-badge">
+    <path d="M80 26 L130 55 L130 113 L80 142 L30 113 L30 55 Z" fill="#3b2bc4" stroke="#3b2bc4" stroke-width="16" stroke-linejoin="round"/>
+    <path d="M80 26 L130 55 L130 113 L80 142 L30 113 L30 55 Z" fill="url(#lgBadge)" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M80 26 L130 55 L130 113 L80 142 L30 113 L30 55 Z" fill="url(#lgShine)"/>
+    <path d="M80 37 L120 60 L120 108 L80 131 L40 108 L40 60 Z" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="2" stroke-dasharray="3 5" stroke-linecap="round"/>
+  </g>
+  <g class="lg-tiles" stroke-linejoin="round">
+    <path class="lg-tile" style="--i:0" d="M80 70 L92 77 L92 91 L80 98 L68 91 L68 77 Z" fill="url(#lgGold)" stroke="url(#lgGold)" stroke-width="3"/>
+    <path class="lg-tile" style="--i:1" d="M67 47.5 L79 54.5 L79 68.5 L67 75.5 L55 68.5 L55 54.5 Z" fill="#ff8a5c" stroke="#ff8a5c" stroke-width="3"/>
+    <path class="lg-tile" style="--i:2" d="M93 47.5 L105 54.5 L105 68.5 L93 75.5 L81 68.5 L81 54.5 Z" fill="#22c39a" stroke="#22c39a" stroke-width="3"/>
+    <path class="lg-tile" style="--i:3" d="M106 70 L118 77 L118 91 L106 98 L94 91 L94 77 Z" fill="#4b8df8" stroke="#4b8df8" stroke-width="3"/>
+    <path class="lg-tile" style="--i:4" d="M93 92.5 L105 99.5 L105 113.5 L93 120.5 L81 113.5 L81 99.5 Z" fill="#f0508a" stroke="#f0508a" stroke-width="3"/>
+    <path class="lg-tile" style="--i:5" d="M67 92.5 L79 99.5 L79 113.5 L67 120.5 L55 113.5 L55 99.5 Z" fill="#14b8c4" stroke="#14b8c4" stroke-width="3"/>
+    <path class="lg-tile" style="--i:6" d="M54 70 L66 77 L66 91 L54 98 L42 91 L42 77 Z" fill="#9bcf2e" stroke="#9bcf2e" stroke-width="3"/>
+  </g>
+  <g class="lg-syms" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round">
+    <path d="M62.5 57 l9 9 M71.5 57 l-9 9"/>
+    <path d="M87 61.5 h12"/><circle cx="93" cy="56.3" r="1.9" fill="#fff" stroke="none"/><circle cx="93" cy="66.7" r="1.9" fill="#fff" stroke="none"/>
+    <path d="M100 84 h12"/>
+    <path d="M98.5 103 L87.5 114" stroke-width="3"/><circle cx="88.5" cy="104.5" r="2.4" stroke-width="2.4"/><circle cx="97.5" cy="112.5" r="2.4" stroke-width="2.4"/>
+    <path d="M61 103.5 h12 M61 109.5 h12"/>
+    <path d="M48 84 h12 M54 78 v12"/>
+    <path d="M76.5 93 V74.5" stroke="#8a4b00" stroke-width="2.6"/><path d="M77.5 74.5 L88 78.5 L77.5 82.5 Z" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+  </g>
+  <g class="lg-crown">
+    <path d="M58 33 L61 13 L71 22 L80 7 L89 22 L99 13 L102 33 Z" fill="url(#lgGold)" stroke="#c97800" stroke-width="3" stroke-linejoin="round"/>
+    <rect x="59" y="27" width="42" height="7" rx="3.5" fill="#ffd66b" stroke="#c97800" stroke-width="2.4"/>
+    <circle cx="61" cy="13" r="3.6" fill="#ffe08a" stroke="#c97800" stroke-width="2"/><circle cx="80" cy="7" r="4" fill="#ff5f8f" stroke="#c4335f" stroke-width="2"/><circle cx="99" cy="13" r="3.6" fill="#ffe08a" stroke="#c97800" stroke-width="2"/>
+    <circle cx="80" cy="30.5" r="2.4" fill="#4b8df8"/><circle cx="69" cy="30.5" r="1.8" fill="#22c39a"/><circle cx="91" cy="30.5" r="1.8" fill="#22c39a"/>
+    <path d="M64 20 l4 3" stroke="#fff" stroke-opacity=".75" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+  <g class="lg-ribbon">
+    <path d="M24 128 L6 131 L13 140 L6 149 L26 149 Z" fill="#c25e00" stroke="#9a4a00" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M136 128 L154 131 L147 140 L154 149 L134 149 Z" fill="#c25e00" stroke="#9a4a00" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M20 124 Q80 136 140 124 L140 147 Q80 159 20 147 Z" fill="url(#lgRibbon)" stroke="#a85100" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="M24 128 Q80 139 136 128" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1.6"/>
+    <text font-family="'Arial Black', 'Pretendard', sans-serif" font-weight="900" font-size="14" letter-spacing="1.5" fill="#fff" stroke="#a85100" stroke-width="3" paint-order="stroke"><textPath href="#lgArc" startOffset="50%" text-anchor="middle">MATH LAND</textPath></text>
+  </g>
+  <g class="lg-stars">
+    <path class="lg-star" d="M20 30 Q21.5 38 28 40 Q21.5 42 20 50 Q18.5 42 12 40 Q18.5 38 20 30 Z" fill="#ffc23d"/>
+    <path class="lg-star" d="M142 26 Q143.2 32 148 33.5 Q143.2 35 142 41 Q140.8 35 136 33.5 Q140.8 32 142 26 Z" fill="#22c39a"/>
+    <path class="lg-star" d="M146 78 Q147 83 151 84 Q147 85 146 90 Q145 85 141 84 Q145 83 146 78 Z" fill="#ff8fb5"/>
+  </g>
+</svg>

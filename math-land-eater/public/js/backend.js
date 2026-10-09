@@ -586,7 +586,7 @@
   }
   // ---------- 🪪 프로필 사진 · 배너 (그림 · 사진 · 동영상) ----------
   // 사진은 학교 땅 기록과 따로 'wface/' 에 둔다 (서버를 초기화해도 남는다). 목록에는 작은 사진(t_)만, 큰 사진(a_)·배너(b_)는 프로필을 열 때만 읽는다.
-  const PIC_MAX = { av: 200000, bn: 420000, th: 16000 };
+  const PIC_MAX = { av: 640000, bn: 1300000, th: 16000 }; // 동영상(최대 30초)은 여러 장을 바둑판처럼 붙인 그림이라 크다
   const picOk = (d, max) => typeof d === 'string' && d.length <= max && /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(d);
   const accOk = acc => typeof acc === 'string' && /^[0-9a-f]{6,40}$/.test(acc);
   async function cardOf(acc) {
@@ -599,7 +599,7 @@
     const p = await readDoc('players/' + acc);
     return p.nick ? p : null;
   }
-  const mediaOf = d => (d && picOk(d.d, PIC_MAX.bn) ? { k: d.k, d: d.d, n: d.n || 1, fps: d.fps || 8, v: d.v || 0 } : null);
+  const mediaOf = d => (d && picOk(d.d, PIC_MAX.bn) ? { k: d.k, d: d.d, n: d.n || 1, fps: d.fps || 8, cols: d.cols || d.n || 1, v: d.v || 0 } : null);
   async function dropMedia(acc, slot) {
     const jobs = [];
     if (slot !== 'bn') jobs.push(dropDoc('wface/a_' + acc), dropDoc('wface/t_' + acc));
@@ -1947,15 +1947,15 @@
       const a = needLogin(t), u = a.u, slot = b.slot === 'bn' ? 'bn' : 'av', kind = ['draw', 'img', 'vid'].includes(b.kind) ? b.kind : 'img';
       if (!u.profile) fail('먼저 학교와 닉네임을 설정해 주세요.', 409);
       if (!picOk(b.d, PIC_MAX[slot])) fail('사진이 너무 크거나 잘못됐어요. 다시 골라 주세요.');
-      const n = kind === 'vid' ? Math.floor(Number(b.n)) : 1, fps = Math.floor(Number(b.fps)) || 8;
-      if (!(n >= 1 && n <= 40) || !(fps >= 1 && fps <= 15)) fail('동영상이 잘못됐어요.');
+      const n = kind === 'vid' ? Math.floor(Number(b.n)) : 1, fps = Math.floor(Number(b.fps)) || 8, cols = Math.floor(Number(b.cols)) || n;
+      if (!(n >= 1 && n <= 240) || !(fps >= 1 && fps <= 15) || !(cols >= 1 && cols <= n) || n / fps > 30.5) fail('동영상이 잘못됐어요. (최대 30초)');
       if (slot === 'av' && !picOk(b.th, PIC_MAX.th)) fail('작은 사진이 잘못됐어요.');
       const v = Date.now(), l = (u.looks = u.looks || {});
       if (slot === 'av') {
-        await Promise.all([mergeDoc('wface/a_' + u.acc, { k: kind, d: b.d, n, fps, v }), mergeDoc('wface/t_' + u.acc, { d: b.th, v })]);
+        await Promise.all([mergeDoc('wface/a_' + u.acc, { k: kind, d: b.d, n, fps, cols, v }), mergeDoc('wface/t_' + u.acc, { d: b.th, v })]);
         l.pv = v;
       } else {
-        await mergeDoc('wface/b_' + u.acc, { k: kind, d: b.d, n, fps, v });
+        await mergeDoc('wface/b_' + u.acc, { k: kind, d: b.d, n, fps, cols, v });
         l.bv = v;
       }
       save();
