@@ -176,7 +176,8 @@ void main() {
     if (tc >= 0.0 && tc <= t0) result = cloudCol + cloudT * (insA + trA * result);
     else result = insA + trA * (cloudCol + cloudT * result);
   }
-  gl_FragColor = vec4(result, 1.0);
+  if (any(isnan(result)) || any(isinf(result))) result = col.rgb;
+  gl_FragColor = vec4(max(result, vec3(0.0)), 1.0);
 }`;
 
 /** 대기 후처리 패스 — 주 행성 1개를 화면 공간에서 처리 */
@@ -196,6 +197,7 @@ export class AtmospherePass extends Pass {
   cloudSteps() { return { low: 14, medium: 22, high: 34, ultra: 52 }[this.quality] || 22; }
 
   _build(body) {
+    this.sceneRT = this.sceneRT;
     const dummy = { radius: 1, atmo: null };
     const b = body || dummy;
     const u = {
@@ -223,6 +225,8 @@ export class AtmospherePass extends Pass {
   setBody(body) { if (body !== this.body) this._build(body); }
 
   render(renderer, writeBuffer) {
+    this.uniforms.tColor.value = this.sceneRT.texture;
+    this.uniforms.tDepth.value = this.sceneRT.depthTexture;
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
     this.fsQuad.render(renderer);
   }
@@ -337,7 +341,9 @@ void main() {
   col *= mix(1.0, vig, 0.55 + uVignette * 0.4);
   col *= uTint;
   col += vec3(1.0, 0.95, 0.9) * uFlash;
-  gl_FragColor = vec4(col, 1.0);
+  // NaN/Inf 방지 (블룸이 퍼뜨리지 않도록) + 하프 플로트 범위 제한
+  if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
+  gl_FragColor = vec4(clamp(col, 0.0, 6.0e4), 1.0);
 }`;
 
 export function createSpaceComposer(renderer, cloudTex, quality) {
@@ -365,7 +371,14 @@ export function createSpaceComposer(renderer, cloudTex, quality) {
   composer.addPass(fxaa);
   const setSize = (w, h) => {
     const s = renderer.getDrawingBufferSize(new THREE.Vector2());
-    sceneRT.setSize(s.x, s.y);
+    if (sceneRT.width !== s.x || sceneRT.height !== s.y) {
+      // r160: setSize 가 깊이 텍스처 크기를 갱신하지 않으므로 새로 만든다 (크기 불일치 시 일부 영역만 그려짐)
+      sceneRT.depthTexture.dispose();
+      sceneRT.depthTexture = new THREE.DepthTexture(s.x, s.y, THREE.FloatType);
+      sceneRT.depthTexture.format = THREE.DepthFormat;
+      sceneRT.setSize(s.x, s.y);
+      atmo.uniforms.tDepth.value = sceneRT.depthTexture;
+    }
     composer.setSize(w, h);
     fx.uniforms.uRes.value.set(s.x, s.y);
     fxaa.uniforms.resolution.value.set(1 / s.x, 1 / s.y);

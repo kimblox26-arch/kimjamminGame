@@ -200,7 +200,7 @@ export function buildUniverse() {
     spin: { period: 88642, tilt: 25.19, phase: 0.4 },
     atmo: atmo({
       comp: { CO2: 95.3, N2: 2.6, Ar: 1.9, O2: 0.17 }, p0: 610, T0: 215, lapse: 0.0025, Tmin: 150, H: 11100, top: 120e3,
-      betaR: [1.2e-7, 2.8e-7, 6.8e-7], HR: 11100, betaM: [6.0e-6, 3.9e-6, 2.1e-6], betaMExt: [6.6e-6, 6.0e-6, 6.2e-6], HM: 11000, mieG: 0.72,
+      betaR: [1.2e-7, 2.8e-7, 6.8e-7], HR: 11100, betaM: [3.0e-5, 1.9e-5, 1.0e-5], betaMExt: [3.3e-5, 3.0e-5, 3.1e-5], HM: 11000, mieG: 0.72,
       mieTint: [0.45, 0.72, 1.55], sunIntensity: 18,
       clouds: { base: 18e3, top: 22e3, coverage: 0.12, density: 0.02, color: [1, 0.92, 0.84], scale: 4e4 },
     }),
@@ -373,7 +373,7 @@ export function buildUniverse() {
     orbit: { a: 22 * AU, e: 0.05, inc: 1, M0: 260 }, spin: { period: 21 * 3600, tilt: 10 },
     atmo: atmo({
       comp: { CO2: 88, N2: 9, Ar: 3 }, p0: 2400, T0: 250, lapse: 0.0022, Tmin: 160, H: 10500, top: 120e3,
-      betaR: [3e-7, 7e-7, 1.6e-6], HR: 10500, betaM: [7e-6, 4.6e-6, 2.6e-6], betaMExt: [7.6e-6, 7e-6, 7e-6], HM: 9000, mieG: 0.72, mieTint: [0.5, 0.75, 1.5], sunIntensity: 24,
+      betaR: [3e-7, 7e-7, 1.6e-6], HR: 10500, betaM: [2.6e-5, 1.7e-5, 0.9e-5], betaMExt: [2.9e-5, 2.6e-5, 2.6e-5], HM: 9000, mieG: 0.72, mieTint: [0.5, 0.75, 1.5], sunIntensity: 24,
     }),
     terrain: { seed: 111, kind: 'mars', mountain: 9000, ocean: false, craters: 0.4, canyon: true, volcano: { dir: [-0.3, 0.2, 0.93], height: 14000, radius: 0.07 } },
     palette: 'desert2', desc: '청색 태양빛 아래 붉은 협곡이 펼쳐진 사막 행성.',

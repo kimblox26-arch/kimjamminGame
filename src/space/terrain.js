@@ -535,6 +535,7 @@ class Node {
 
   _uniforms(mat) {
     const u = mat.uniforms;
+    if (!u || !u.uMorph) return;   // 그림자 패스 (재질 덮어쓰기)
     const parentSplit = this.tree.splitDist(this.level - 1);
     u.uMorph.value.set(parentSplit * 0.55, parentSplit * 0.92);
     u.uTileCenter.value.copy(this.center);

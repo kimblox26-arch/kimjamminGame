@@ -485,6 +485,65 @@ export class SpaceGame {
     this._event('1~5 또는 Tab: 속도 단계 · M: 항법 지도 · T: 목표 지정 · H: 목표 정렬', 'info');
   }
 
+  /** 디버그·테스트용: 천체 지표 근처로 순간 이동 (콘솔: __FREEFREELY__.space.teleport('earth', {alt: 800})) */
+  teleport(bodyId, o = {}) {
+    const b = this.uni.byId[bodyId];
+    if (!b) return;
+    updateBodies(this.uni.bodies, this.time);
+    // 대상 천체까지 프레임 경로를 따라 함선 프레임을 바꾼다
+    const lat = (o.lat ?? 20) * Math.PI / 180, lon = (o.lon ?? 30) * Math.PI / 180;
+    let dirL = new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon));
+    if (o.sun !== undefined) {
+      // 태양 고도각 지정: 태양 방향에서 o.sun 도 떨어진 지점 (북쪽으로 기울임 o.lat)
+      const sys = this._systemOf(b);
+      const star = sys && sys.children.find((c) => c.kind === 'star');
+      if (star) {
+        const sunL = posInFrame(star, b, new THREE.Vector3()).normalize().applyQuaternion(_q.copy(b.rotation).invert());
+        const pole = new THREE.Vector3(0, 1, 0);
+        const perp = pole.clone().addScaledVector(sunL, -pole.dot(sunL)).normalize();
+        const side = sunL.clone().cross(perp);
+        const a = o.sun * Math.PI / 180;
+        dirL = sunL.clone().multiplyScalar(Math.cos(a)).addScaledVector(side, Math.sin(a)).addScaledVector(perp, (o.lat ?? 0) / 90).normalize();
+      }
+    }
+    const view = this.views.get(b);
+    const h = view && view.terrain ? Math.max(view.heightAt(dirL, 2), view.terrain.terrain.hasOcean ? 0 : -1e9) : 0;
+    const r = b.radius + h + (o.alt ?? 1000);
+    const up = dirL.clone().applyQuaternion(b.rotation);
+    const pos = up.clone().multiplyScalar(r);
+    const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(b.rotation);
+    let north = axis.clone().addScaledVector(up, -axis.dot(up)).normalize();
+    const east = north.clone().cross(up).negate();
+    const hd = (o.heading ?? 90) * Math.PI / 180;
+    const fwd = north.clone().multiplyScalar(Math.cos(hd)).addScaledVector(east, Math.sin(hd)).addScaledVector(up, Math.tan((o.pitch ?? 0) * Math.PI / 180)).normalize();
+    const vel = b.surfaceVelocity(pos, new THREE.Vector3()).addScaledVector(fwd, o.speed ?? 0);
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd, up));
+    this.flight.reset(b, pos, vel, q);
+    this.flight.fa = o.fa ?? true;
+    this.flight.throttle = o.throttle ?? 0;
+    this.camQuat.copy(q);
+    this.fxAnchor.frame = null;
+    this.model.root.visible = true;
+    if (o.time !== undefined) this.time = o.time;
+  }
+
+  /** 디버그·테스트용: 임의 천체 프레임의 한 점에 두고 그 천체(또는 lookAt)를 바라보게 */
+  placeIn(bodyId, x, y, z, lookId) {
+    const b = this.uni.byId[bodyId];
+    if (!b) return;
+    updateBodies(this.uni.bodies, this.time);
+    const pos = new THREE.Vector3(x, y, z);
+    const look = lookId ? posInFrame(this.uni.byId[lookId], b, new THREE.Vector3()) : new THREE.Vector3();
+    const fwd = look.sub(pos).normalize();
+    const up = Math.abs(fwd.y) > 0.95 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd, up));
+    this.flight.reset(b, pos, new THREE.Vector3(), q);
+    this.flight.fa = true;
+    this.camQuat.copy(q);
+    this.fxAnchor.frame = null;
+    this._soi();
+  }
+
   respawn() {
     this._spawn(this.systemId || 'sol');
     this.app.ui.toast('함선을 새로 준비했습니다', 'good');
@@ -864,7 +923,7 @@ export class SpaceGame {
     const post = this.post;
     // 대기 패스
     const au = post.atmo;
-    if (primary) {
+    if (primary && !this.debugNoAtmo) {
       const b = primary.body;
       au.setBody(b);
       const u = au.uniforms;
@@ -934,6 +993,7 @@ export class SpaceGame {
       e.mat.uniforms.uTime.value = t;
     }
     m.materials.nozzle.emissiveIntensity = 0.4 + thrust * 3;
+    for (const e of m.engines) e.inner.material.color.setRGB(0.6 + thrust * 3, 0.3 + thrust * 1.4, 0.12 + thrust * 0.5);
     this.engineLight.intensity = thrust * 900;
     this.engineLight.position.copy(shipRel).add(new THREE.Vector3(0, 0, 14).applyQuaternion(f.body.quaternion));
     // 항법등 점멸
@@ -1077,20 +1137,27 @@ export class SpaceGame {
     const Q = h.clone().normalize().cross(P);
     const arr = line.geometry.getAttribute('position');
     const soi = F === center ? (F.soi || 1e13) : 1e13;
-    const nuMax = e < 1 ? Math.PI : Math.acos(Math.max(-1, Math.min(1, -1 / e))) - 0.02;
+    const nuLim = e < 1 ? Math.PI : Math.acos(Math.max(-1, Math.min(1, -1 / e))) - 0.02;
     const base = center.rel;
+    // 현재 진근점 이각에서 앞뒤로 지표(또는 영향권) 경계까지만 그린다
+    const nu0 = Math.atan2(r.dot(Q), r.dot(P));
+    const minR = center.radius + (center.atmo ? center.atmo.top * 0.3 : 0);
+    const ok = (nu) => { if (e >= 1 && Math.abs(nu) > nuLim) return false; const rad = p / (1 + e * Math.cos(nu)); return rad > minR * 0.999 && rad < soi * 1.5 && rad > 0; };
+    const stepN = (Math.PI * 2) / 256;
+    let lo = nu0, hi = nu0;
+    for (let i = 0; i < 128 && ok(hi + stepN); i++) hi += stepN;
+    for (let i = 0; i < 128 && ok(lo - stepN) && hi - lo < Math.PI * 2 - stepN; i++) lo -= stepN;
     let k = 0;
     for (let i = 0; i <= 256; i++) {
-      const nu = -nuMax + (2 * nuMax * i) / 256;
-      let rad = p / (1 + e * Math.cos(nu));
-      if (rad < 0 || rad > soi * 1.5) rad = Math.min(Math.abs(rad), soi * 1.5);
+      const nu = lo + ((hi - lo) * i) / 256;
+      const rad = p / (1 + e * Math.cos(nu));
       const x = base.x + (P.x * Math.cos(nu) + Q.x * Math.sin(nu)) * rad;
       const y = base.y + (P.y * Math.cos(nu) + Q.y * Math.sin(nu)) * rad;
       const z = base.z + (P.z * Math.cos(nu) + Q.z * Math.sin(nu)) * rad;
       arr.setXYZ(k++, x, y, z);
     }
     arr.needsUpdate = true;
-    line.geometry.setDrawRange(0, e < 1 ? 257 : 257);
+    line.geometry.setDrawRange(0, 257);
     line.matrixWorld.identity();
     line.visible = true;
     const a = -mu / (2 * E);
@@ -1300,7 +1367,7 @@ export class SpaceGame {
     }
     // 가까운 천체
     let nearest = null;
-    if (near) nearest = { body: near.body, dist: Math.max(0, env.nearDist) };
+    if (near) nearest = { body: near.body, dist: Math.max(0, near.view && near.view.terrain ? t.agl : env.nearDist) };
     else {
       const sys = this._systemOf(f.frame), gal = this._galaxyOf(f.frame);
       const cand = sys ? [sys] : gal ? gal.children : this.uni.root.children;

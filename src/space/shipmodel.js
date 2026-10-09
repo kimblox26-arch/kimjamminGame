@@ -29,7 +29,7 @@ void main() {
   float core = exp(-t * 3.2) * ring;
   float flick = 0.85 + 0.15 * sin(uTime * 70.0 + vUv.x * 30.0);
   vec3 col = mix(uColB, uColA, exp(-t * 2.0)) * core * flick * uPower;
-  float edge = pow(sin(vUv.x * 3.14159), 0.8);
+  float edge = pow(max(0.0, sin(vUv.x * 3.14159)), 0.8);
   gl_FragColor = vec4(col * edge * 6.0, 0.0);
   #include <logdepthbuf_fragment>
 }`;

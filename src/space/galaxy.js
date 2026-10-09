@@ -29,7 +29,9 @@ void main() {
   float ps = clamp(px, 1.0, 40.0);
   float e = (px * px) / (ps * ps);
   float near = smoothstep(uNearFade * 0.25, uNearFade, d);
-  vA = min(4.0, e) * near * uBright;
+  // 화면에서 크게 보이는 가까운 입자(성단 덩어리)는 사라지고 국소 별 배경이 대신한다
+  float big = 1.0 - smoothstep(5.0, 22.0, px);
+  vA = min(1.5, e) * near * big * uBright;
   vCol = color;
   gl_PointSize = ps * 2.0 * uDpr;
   gl_Position = projectionMatrix * mv;
