@@ -261,3 +261,9 @@ button.deco.pl-del { font-size: 11px; color: var(--red); gap: 4px; padding: 2px 
 
 /* 비행 중 버튼은 배경 흐림을 쓰지 않는다 (매 프레임 합성 비용 절감) */
 #space-ui button.deco, #space-ui .sbtn, #flight-ui button.deco { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* 최적화(성능 모드): 3D 화면 위 배경 흐림은 매 프레임 다시 계산되므로 모두 끈다 */
+body.perf-mode *, body.perf-mode *::before, body.perf-mode *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+
+/* hidden 속성은 버튼의 display 지정보다 우선 (예: 우주 모드 일시정지의 설계실 버튼) */
+[hidden] { display: none !important; }

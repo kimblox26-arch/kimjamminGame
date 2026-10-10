@@ -2,6 +2,7 @@
 import { icon, buttonHTML, bodyIcon } from '../ui/icons.js';
 import { SPACE_KEY_LABELS, SPACE_KEYS_DEFAULT, keyName, loadSpaceKeys, saveSpaceKeys } from './keys.js';
 import { TIERS, formatSpeed } from './consts.js';
+import { Settings } from '../core/settings.js';
 
 const SYSTEMS = [
   { id: 'sol', feature: 'earth', title: '태양계', sub: '지구 저궤도에서 출발' },
@@ -46,6 +47,7 @@ export function buildSpaceUI(space, app) {
       ${buttonHTML('target', '목표', { small: true, attrs: 'data-sp="target"', key: 'T' })}
       ${buttonHTML('autopilot', '정렬', { small: true, attrs: 'data-sp="align"', key: 'H' })}
       ${buttonHTML('orbit', '궤도선', { small: true, attrs: 'data-sp="orbit"', key: 'O' })}
+      ${buttonHTML('optimize', '최적화', { small: true, attrs: 'data-sp="optimize" data-optimize aria-pressed="false"', key: 'F3' })}
       ${buttonHTML('pause', '일시정지', { small: true, attrs: 'data-sp="pause"', key: 'ESC' })}
     </div>
     <div class="sp-stick" aria-label="조종 스틱">
@@ -70,6 +72,7 @@ export function buildSpaceUI(space, app) {
     b.addEventListener('click', () => {
       const a = b.dataset.sp;
       if (a === 'pause') app.togglePause();
+      else if (a === 'optimize') app.toggleOptimize();
       else space._onAction(a);
       b.blur();
     });
@@ -113,6 +116,7 @@ export function buildSpaceUI(space, app) {
     for (let i = 1; i <= 5; i++) set('tier' + i, f.tier === i);
     set('assist', f.fa); set('gear', f.gearDown); set('orbit', space.orbitOn); set('align', space.autoAlign); set('map', space.map.open);
     set('view', space.view === 'cockpit');
+    set('optimize', Settings.get('perfMode'));
   };
 }
 

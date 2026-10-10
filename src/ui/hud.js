@@ -1,5 +1,6 @@
 // FREE FREELY - 비행 계기 HUD (캔버스 2D 오버레이)
 import { clamp, lerp, fmt, pad, headingName, msToKnots, msToKmh, mToFt, formatTime, damp } from '../core/utils.js';
+import { Perf } from '../core/perf.js';
 import { Settings } from '../core/settings.js';
 import { MAP_HALF } from '../world/terrain.js';
 import { drawIcon } from './icons.js';
@@ -46,7 +47,7 @@ export class HUD {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.dpr = Perf.deviceRatio();
     this.w = 0; this.h = 0;
     this.mapThumb = null;
     this.mapZoom = 1;
@@ -62,7 +63,7 @@ export class HUD {
   }
 
   resize() {
-    const dpr = this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = this.dpr = Perf.deviceRatio();
     this.w = window.innerWidth;
     this.h = window.innerHeight;
     this.canvas.width = Math.floor(this.w * dpr);

@@ -21,12 +21,13 @@ import { PRESETS } from './craft/presets.js';
 import { RUNWAY } from './world/terrain.js';
 import * as SpaceUI from './space/spaceui.js';
 import { injectIconDefs, injectFrameStyles, autoDecorate, GamepadFocus, icon, numberBadge } from './ui/icons.js';
+import { Perf } from './core/perf.js';
 
 const FIXED_DT = 1 / 120;
 const ACT_ICONS = {
   gear: 'gear', flapsDown: 'flapsDown', flapsUp: 'flapsUp', brake: 'brake', airbrake: 'airbrake', afterburner: 'afterburner',
   burner: 'burner', vent: 'vent', lights: 'lights', autopilot: 'autopilot', camera: 'view', lookBack: 'lookBack', fire: 'fire',
-  flare: 'flare', chute: 'chute', engineToggle: 'power', respawn: 'respawn', pause: 'pause',
+  flare: 'flare', chute: 'chute', engineToggle: 'power', respawn: 'respawn', pause: 'pause', optimize: 'optimize',
 };
 const MAX_SUBSTEPS = 6;
 
@@ -119,6 +120,9 @@ class Game {
     this._bindFlightControls();
     this._bindGlobalKeys();
     this.applyOnScreenControls();
+    Perf.onChange = () => this._onDynResolution();
+    Perf.onSlow = () => this.ui.toast('프레임이 낮습니다. 최적화 버튼(F3)을 누르면 성능 모드로 바뀝니다', 'warn', 6500);
+    this._syncOptimize();
 
     this.ui.setLoading(1, '준비 완료');
     setTimeout(() => {
@@ -153,6 +157,27 @@ class Game {
     if (sc === 'screen-hangar' || sc === 'screen-missions') this.ui.show('screen-flightmenu');
     else if (sc === 'screen-settings' || sc === 'screen-controls') this.ui.show(this.ui.backTo || 'screen-menu');
     else if (sc !== 'screen-menu' && sc !== 'none') this.ui.show('screen-menu');
+  }
+
+  /** 최적화 버튼: 성능 모드 켜기/끄기 (F3) */
+  toggleOptimize() {
+    const on = Perf.toggle();
+    this.onSettingsChanged('*');
+    this.ui.toast(on ? '최적화 켜짐: 화질 낮음 · 픽셀 배율 1 · 화면 흐림 효과 끔' : '최적화 꺼짐: 이전 화질로 되돌렸습니다', on ? 'good' : 'info', 3200);
+    if (this.ui._syncSettings) this.ui._syncSettings();
+    this._syncOptimize();
+  }
+
+  _syncOptimize() {
+    const on = Perf.enabled;
+    document.body.classList.toggle('perf-mode', on);
+    document.querySelectorAll('[data-optimize]').forEach((b) => { b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  }
+
+  /** 자동 해상도 배율이 바뀌면 지금 쓰는 렌더러에 다시 적용 */
+  _onDynResolution() {
+    if (this.state === 'space' && this.space && this.space.ready) { this.space._applyPixelRatio(); this.space.onResize(); }
+    else { this._applyPixelRatio(); this.onResize(); }
   }
 
   toggleFullscreen() {
@@ -276,7 +301,7 @@ class Game {
 
   _applyPixelRatio() {
     const scale = clamp(Settings.get('renderScale'), 0.5, 1.6);
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1) * scale);
+    this.renderer.setPixelRatio(Perf.pixelRatio(scale));
   }
 
   onResize() {
@@ -291,6 +316,7 @@ class Game {
   }
 
   onSettingsChanged(key) {
+    if (key === 'perfPrevQuality') return;
     this._applyPixelRatio();
     this.applyOnScreenControls();
     this.renderer.shadowMap.enabled = Settings.get('shadows');
@@ -302,7 +328,8 @@ class Game {
       if (key === 'seaState') this.world.seaState = Settings.get('seaState');
     }
     if (Audio.ready) Audio.applyVolumes();
-    if (this.space && this.space.ready && (key === 'quality' || key === '*' || key === 'renderScale')) this.space.setQuality(Settings.get('quality'));
+    if (this.space && this.space.ready && (key === 'quality' || key === '*' || key === 'renderScale' || key === 'perfMode')) this.space.setQuality(Settings.get('quality'));
+    if (key === 'perfMode' || key === '*') this._syncOptimize();
     this.onResize();
   }
 
@@ -585,7 +612,7 @@ class Game {
       ['burner', '버너/로켓', 'Space'], ['vent', '배기', 'C'], ['lights', '조명', 'L'],
       ['autopilot', '자동조종', 'H'], ['camera', '시점', 'N'], ['lookBack', '후방', 'M'],
       ['fire', '발사', 'J'], ['flare', '플레어', 'K'], ['chute', '낙하산', 'P'],
-      ['engineToggle', '엔진', 'I'], ['respawn', '리스폰', 'O'], ['pause', '메뉴', 'ESC'],
+      ['engineToggle', '엔진', 'I'], ['respawn', '리스폰', 'O'], ['optimize', '최적화', 'F3'], ['pause', '메뉴', 'ESC'],
     ];
     const wrap = document.getElementById('flight-buttons');
     if (wrap) {
@@ -597,6 +624,11 @@ class Game {
         b.dataset.icon = ACT_ICONS[action] || 'chevronRight';
         b.innerHTML = `<span class="ab-label">${label}</span><span class="ab-key">${key}</span>`;
         wrap.appendChild(b);
+        if (action === 'optimize') {
+          b.dataset.optimize = '';
+          b.addEventListener('click', () => { this.toggleOptimize(); b.blur(); });
+          continue;
+        }
         const toggleLike = ['gear', 'flapsDown', 'flapsUp', 'lights', 'autopilot', 'camera', 'chute',
           'engineToggle', 'respawn', 'pause', 'flare'].includes(action);
         this.input.attachButton(b, action, { toggle: toggleLike });
@@ -639,6 +671,7 @@ class Game {
 
   _bindGlobalKeys() {
     window.addEventListener('keydown', (e) => {
+      if (e.code === 'F3' && this.state !== 'builder') { e.preventDefault(); if (!e.repeat) this.toggleOptimize(); return; }
       if (e.code === 'Escape') {
         if (this.state === 'space' && this.space && this.space.map.open) this.space.map.toggle(false);
         else if (this.state === 'flight' || this.state === 'space') this.setPaused(!this.paused);
@@ -697,6 +730,7 @@ class Game {
       const now = performance.now();
       let dt = (now - this._lastNow) / 1000;
       this._lastNow = now;
+      if ((this.state === 'flight' || this.state === 'space') && !this.paused) Perf.update(dt);
       dt = Math.min(dt, 0.1);
       this.frameTime = dt;
       this._fpsSamples.push(1 / Math.max(0.0005, dt));

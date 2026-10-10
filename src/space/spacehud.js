@@ -1,5 +1,6 @@
 // FREE FREELY 우주 탐사 - 캔버스 HUD (모든 아이콘은 src/ui/icons.js 의 SVG 경로를 Path2D 로 그림)
 import { drawIcon, bodyIcon, ICON_COLORS } from '../ui/icons.js';
+import { Perf } from '../core/perf.js';
 import { formatDistance, formatSpeed, formatC, formatDuration, formatPressure, formatTemp, TIERS } from './consts.js';
 import { GAS_LABEL } from './universe.js';
 
@@ -21,7 +22,7 @@ export class SpaceHUD {
   }
 
   resize() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Perf.deviceRatio();
     this.dpr = dpr;
     this.w = window.innerWidth; this.h = window.innerHeight;
     this.canvas.width = Math.round(this.w * dpr);

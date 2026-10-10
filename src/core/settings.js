@@ -14,6 +14,9 @@ export const DEFAULTS = {
   motionBlurAmount: 0.35,
   fov: 72,
   antialias: true,
+  perfMode: false,            // 최적화 버튼: 성능 모드 (낮음 프리셋 + 픽셀 배율 1)
+  perfPrevQuality: null,      // 성능 모드를 켜기 직전 프리셋 (끌 때 복원)
+  autoResolution: true,       // 프레임이 떨어지면 렌더 해상도를 자동으로 낮춤
   // 사운드
   masterVolume: 0.85,
   engineVolume: 0.9,

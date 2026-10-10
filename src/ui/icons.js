@@ -246,6 +246,7 @@ export const ICONS = {
   cockpit: { parts: [{ d: 'M3 17c1.5-6 5-10 9-10s7.5 4 9 10Z', f: 0.12 }, { d: 'M12 7v10M5.5 12.5l4 4.5M18.5 12.5l-4 4.5', c: 'dim' }, { d: 'M9 19.5h6', c: 'cyan', a: 'pulse' }] },
   chase: { parts: [{ d: 'M12 6c1.6 1.6 2.3 4 2.3 6.8l1.7 1.7v1.7l-2.4-.9-.6 1h-2l-.6-1-2.4.9v-1.7l1.7-1.7c0-2.8.7-5.2 2.3-6.8Z', f: 0.25, a: 'bob' }, { d: 'M4 20.5l3-3M20 20.5l-3-3', c: 'dim' }] },
   zoom: { parts: [{ d: circ(10.5, 10.5, 6), f: 0.12 }, { d: 'M15 15l5 5', w: 2.4 }, { d: 'M8 10.5h5M10.5 8v5', c: 'accent', a: 'pulse' }] },
+  optimize: { parts: [{ d: 'M4.2 17a8.5 8.5 0 1 1 15.6 0', c: 'dim' }, { d: 'M6.6 17h10.8', c: 'dim' }, { d: 'M13 6.5l-3.5 6h3l-1.5 5 4.5-6.5h-3Z', f: 0.6, c: 'accent', a: 'pulse' }] },
   fps: { parts: [{ d: 'M3.5 18.5l4.5-5 3.5 3 5-7 4 4', c: 'cyan', a: 'draw' }, { d: 'M3.5 4.5v14h17', c: 'dim' }] },
   clock: { parts: [{ d: circ(12, 12, 8.5), f: 0.12 }, { d: 'M12 12V7M12 12l3.5 2', c: 'accent', a: 'spin' }] },
   wind: { parts: [{ d: 'M3 9h11a2.5 2.5 0 1 0-2.5-2.5M3 13h15a2.5 2.5 0 1 1-2.5 2.5M3 17h7', a: 'sway' }] },

@@ -204,8 +204,8 @@ export class AtmospherePass extends Pass {
     this._build(null);
   }
 
-  _steps() { return { low: 8, medium: 12, high: 16, ultra: 22 }[this.quality] || 12; }
-  cloudSteps() { return { low: 14, medium: 22, high: 34, ultra: 52 }[this.quality] || 22; }
+  _steps() { return this.perf ? 6 : ({ low: 8, medium: 12, high: 16, ultra: 22 }[this.quality] || 12); }
+  cloudSteps() { return this.perf ? 10 : ({ low: 14, medium: 22, high: 34, ultra: 52 }[this.quality] || 22); }
 
   _build(body) {
     this.sceneRT = this.sceneRT;
@@ -231,7 +231,7 @@ export class AtmospherePass extends Pass {
     this.body = body;
   }
 
-  setQuality(q) { this.quality = q; this._build(this.body); }
+  setQuality(q, perf = false) { this.quality = q; this.perf = perf; this._build(this.body); }
 
   /** 주 행성 지정 (바뀔 때만 유니폼 재구성) */
   /** 주 행성 지정 — 셰이더를 다시 컴파일하지 않고 유니폼 값만 교체 (전환 시 끊김 방지) */

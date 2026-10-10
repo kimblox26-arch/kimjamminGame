@@ -3,6 +3,7 @@
 // 카메라 기준으로 다시 계산한다 (정밀도 떨림 없음). 로그 깊이 버퍼로 수 m ~ 수십억 광년을 한 번에 그린다.
 import * as THREE from 'three';
 import { Settings } from '../core/settings.js';
+import { Perf } from '../core/perf.js';
 import { Audio } from '../core/audio.js';
 import { Effects } from '../fx/effects.js';
 import { buildUniverse, updateBodies, computeRelative, posInFrame, velInFrame, START_POINTS } from './universe.js';
@@ -236,7 +237,7 @@ export class SpaceGame {
   _applyPixelRatio() {
     const Q = QUALITY[this.quality] || QUALITY.medium;
     const s = Math.max(0.5, Math.min(1.6, (Settings.get('renderScale') || 1) * Q.scale));
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1) * s);
+    this.renderer.setPixelRatio(Perf.pixelRatio(s));
   }
 
   setQuality(q) {
@@ -245,7 +246,10 @@ export class SpaceGame {
     this._applyPixelRatio();
     for (const p of this.planets) p.setQuality(this.quality);
     this.scatter.setQuality(this.quality);
-    if (this.post) { this.post.atmo.setQuality(this.quality); this.post.bloom.strength = Q.bloom; }
+    const perf = !!Settings.get('perfMode');
+    if (this.post) { this.post.atmo.setQuality(this.quality, perf); this.post.bloom.strength = Q.bloom; this.post.bloom.enabled = !perf; }
+    // 함선 반사용 환경 맵(PMREM)은 비싸므로 성능 모드에서는 드물게 갱신
+    this._envEvery = perf ? 6 : 2;
     this.shadowSize = Q.shadows;
     this._initShadows(Q.shadows);
     this.onResize();
@@ -1099,10 +1103,10 @@ export class SpaceGame {
     this.hemi.color.setRGB(skyAmb.x, skyAmb.y, skyAmb.z).multiplyScalar(1 / Math.max(0.001, Math.max(skyAmb.x, skyAmb.y, skyAmb.z, 0.001)));
     this.hemi.intensity = Math.max(skyAmb.x, skyAmb.y, skyAmb.z) * Math.PI * 1.4 + 0.03;
     this.hemi.groundColor.setRGB(0.25, 0.2, 0.16);
-    // 환경 맵 (0.5초마다)
+    // 환경 맵 (2초마다, 성능 모드 6초)
     this._envT -= dt;
     if (this._envT <= 0) {
-      this._envT = 1.0;
+      this._envT = this._envEvery || 2;
       const u = this.envMat.uniforms;
       const upL = up2local(this._up);
       void upL;

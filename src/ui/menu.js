@@ -152,6 +152,7 @@ export class UIManager {
         else if (nav === 'back') this.show(this.backTo || 'screen-menu');
         else if (nav === 'fullscreen') this.game.toggleFullscreen();
         else if (nav === 'mute') this.game.toggleMute(b);
+        else if (nav === 'optimize') this.game.toggleOptimize();
         else {
           if (nav === 'settings' || nav === 'controls') this.backTo = this.screen.startsWith('screen-') ? this.screen : 'screen-menu';
           this.show('screen-' + nav);
@@ -168,6 +169,7 @@ export class UIManager {
         else if (a === 'builder') { this.game.setPaused(false); this.game.openBuilder(); }
         else if (a === 'menu') { this.game.setPaused(false); this.game.quitToMenu(); }
         else if (a === 'respawn') { this.game.setPaused(false); this.game.respawn(); }
+        else if (a === 'optimize') this.game.toggleOptimize();
       });
     });
     document.querySelectorAll('[data-crash-act]').forEach((b) => {
@@ -287,6 +289,8 @@ export class UIManager {
     const groups = [
       {
         title: '그래픽', icon: 'graphics', items: [
+          { k: 'perfMode', label: '최적화 (성능 모드, F3)', type: 'toggle' },
+          { k: 'autoResolution', label: '자동 해상도 (프레임 저하 시 해상도 낮춤)', type: 'toggle' },
           { k: 'quality', label: '품질 프리셋', type: 'select', options: [['low', '낮음'], ['medium', '보통'], ['high', '높음'], ['ultra', '울트라']] },
           { k: 'renderScale', label: '렌더 배율', type: 'range', min: 0.5, max: 1.5, step: 0.05 },
           { k: 'shadows', label: '그림자', type: 'toggle' },
@@ -344,6 +348,8 @@ export class UIManager {
         if (input.type === 'checkbox') v = input.checked;
         else if (input.type === 'range') v = parseFloat(input.value);
         else v = input.value;
+        // 최적화는 프리셋 저장·복원이 함께 일어나므로 버튼과 같은 경로로 처리
+        if (key === 'perfMode') { if (v !== !!Settings.get('perfMode')) this.game.toggleOptimize(); return; }
         Settings.set(key, v);
         const out = body.querySelector(`[data-out="${key}"]`);
         if (out) out.textContent = formatSetting(key, v);

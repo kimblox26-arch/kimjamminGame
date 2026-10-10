@@ -293,7 +293,7 @@ kbd {
 
 .flight-buttons {
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-  display: grid; grid-template-columns: repeat(9, minmax(56px, 84px)); gap: 6px;
+  display: grid; grid-template-columns: repeat(10, minmax(62px, 80px)); gap: 6px;
   padding: 8px; border-radius: 14px;
   background: rgba(6, 16, 26, 0.55); border: 1px solid var(--line);
   backdrop-filter: blur(8px); max-width: 96vw;
@@ -449,7 +449,7 @@ kbd {
 /* ───────────── 반응형 ───────────── */
 @media (max-width: 1180px) {
   .builder-body { grid-template-columns: 220px 1fr 260px; }
-  .flight-buttons { grid-template-columns: repeat(6, minmax(52px, 76px)); }
+  .flight-buttons { grid-template-columns: repeat(7, minmax(48px, 72px)); }
 }
 @media (max-width: 860px) {
   .menu-grid { grid-template-columns: 1fr; }
