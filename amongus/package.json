@@ -1,0 +1,9 @@
+{
+  "name": "among-us-fan-clone",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AMONG US 비공식 팬 제작 웹 게임 (의존성 없음)",
+  "scripts": { "start": "node server/index.js" },
+  "engines": { "node": ">=18" }
+}
