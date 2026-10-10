@@ -46,6 +46,7 @@ fs.copyFileSync(path.join(root, 'store/feature-graphic.png'), path.join(web, 'im
 fs.copyFileSync(path.join(root, 'store/privacy.html'), path.join(web, 'privacy.html'));
 fs.mkdirSync(path.join(app, 'js'), { recursive: true }); fs.mkdirSync(path.join(app, 'icons'), { recursive: true }); fs.mkdirSync(path.join(app, 'img'), { recursive: true });
 fs.copyFileSync(path.join(root, 'public/img/logo.svg'), path.join(web, 'img/logo.svg'));
+fs.mkdirSync(path.join(web, 'app'), { recursive: true }); fs.copyFileSync(path.join(root, 'android/math-land-eater.apk'), path.join(web, 'app/math-land-eater.apk')); // 📦 안드로이드 앱
 // 학교급마다 지도: 초등(map.*), 중학교(map-m.*), 고등학교(map-h.*, 일본까지). 폰은 자기 학교급 지도 하나만 받는다
 const lvMaps = { e: map };
 lvMaps.m = buildMap({ landFile: path.join(root, 'mapdata/korea-land.json'), schoolsFile: path.join(root, 'mapdata/schools-m.txt'), cacheDir: path.join(root, 'data'), level: 'm' });
@@ -63,7 +64,7 @@ for (const f of ['style.css', 'manifest.webmanifest', 'js/icons.js', 'js/intro.j
 }
 const v = ver.digest('hex').slice(0, 10);
 fs.writeFileSync(path.join(app, 'sw.js'), fs.readFileSync(path.join(root, 'public/sw.js'), 'utf8').replace("const VERSION = 'dev', MAPS = [];", `const VERSION = '${v}', MAPS = ${JSON.stringify(Object.values(mapUrls).flat())};`));
-const head = `<link rel="manifest" href="manifest.webmanifest">\n<link rel="icon" type="image/png" href="icons/icon-192.png">\n<link rel="apple-touch-icon" href="icons/icon-192.png">\n<meta name="mobile-web-app-capable" content="yes">\n${title}\n${links}\n`;
+const head = `<link rel="manifest" href="manifest.webmanifest">\n<link rel="icon" type="image/png" href="icons/icon-192.png?v=2">\n<link rel="apple-touch-icon" href="icons/icon-192.png?v=2">\n<meta name="mobile-web-app-capable" content="yes">\n${title}\n${links}\n`;
 const webBody = body.replace(/window\.MLE_MAP_URL = [^<]*;/, `window.MLE_MAP_URL = "${mapUrls.e[0]}"; window.MLE_MAP_BIN_URL = "${mapUrls.e[1]}"; window.MLE_MAPS = ${JSON.stringify(mapUrls)};`)
   .replace('<script src="js/backend.js"></script>', '<script src="js/firebase-config.js"></script>\n<script src="js/backend.js"></script>') // 사이트판만: Firebase 온라인 대결 설정
   .replace('<script src="js/app.js"></script>', `<script src="js/app.js"></script>\n<script>if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});</script>`);
