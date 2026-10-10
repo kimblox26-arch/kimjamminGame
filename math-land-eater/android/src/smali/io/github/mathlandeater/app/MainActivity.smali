@@ -3,6 +3,7 @@
 .source "MainActivity.java"
 
 # 매뜨 땅먹 앱: 게임 사이트를 화면 가득 여는 웹뷰 (사진 · 동영상 고르기, 뒤로 가기 지원)
+# 안드로이드 15부터는 화면 끝까지 그려지므로, 상태 표시줄 · 아래 막대만큼 안쪽으로 띄운다 (fitsSystemWindows)
 .field public web:Landroid/webkit/WebView;
 .field public cb:Landroid/webkit/ValueCallback;
 
@@ -42,7 +43,14 @@
     new-instance v3, Lio/github/mathlandeater/app/Chrome;
     invoke-direct {v3, p0}, Lio/github/mathlandeater/app/Chrome;-><init>(Lio/github/mathlandeater/app/MainActivity;)V
     invoke-virtual {v0, v3}, Landroid/webkit/WebView;->setWebChromeClient(Landroid/webkit/WebChromeClient;)V
-    invoke-virtual {p0, v0}, Lio/github/mathlandeater/app/MainActivity;->setContentView(Landroid/view/View;)V
+    new-instance v3, Landroid/widget/FrameLayout;
+    invoke-direct {v3, p0}, Landroid/widget/FrameLayout;-><init>(Landroid/content/Context;)V
+    const/4 v4, 0x1
+    invoke-virtual {v3, v4}, Landroid/widget/FrameLayout;->setFitsSystemWindows(Z)V
+    const v4, -0x111207
+    invoke-virtual {v3, v4}, Landroid/widget/FrameLayout;->setBackgroundColor(I)V
+    invoke-virtual {v3, v0}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;)V
+    invoke-virtual {p0, v3}, Lio/github/mathlandeater/app/MainActivity;->setContentView(Landroid/view/View;)V
     const-string v3, "https://math-land-eater.github.io/play/"
     invoke-virtual {v0, v3}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
