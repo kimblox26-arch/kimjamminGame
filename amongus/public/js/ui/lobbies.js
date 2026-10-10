@@ -1,11 +1,18 @@
 // 게임 찾기 / 게임 만들기 / 코드 입력 / 로컬 주최 / 플레이 방법
 import { $, $$, h, esc, stage, modal, toast, sfx, net, me, device, saveDevice, profile } from '../core.js';
-import { MAPS, REGIONS, TAGS, CHAT_LANGS, KO, defaultSettings, fmtSetting, SETTINGS, VERSION } from '../shared/data.js';
+import { MAPS as DATA_MAPS, REGIONS, TAGS, CHAT_LANGS, KO, defaultSettings, fmtSetting, SETTINGS, VERSION } from '../shared/data.js';
+import { MAP_LIST } from '../shared/maps/index.js';
 import { crewSVG, mapIcon } from './crew.js';
 import { screens, go } from './nav.js';
 import { displayName } from './menu.js';
 
+// 맵 목록: 레지스트리의 5개 맵 전부 (이름은 data.js 우선)
+const MAPS = MAP_LIST.map(m => ({ id: m.id, name: DATA_MAPS.find(d => d.id === m.id)?.name || m.name, ko: m.ko }));
 const mapName = id => MAPS.find(m => m.id === id)?.name || id;
+// mod 인증 상태면 "방 만들 때 쓸 설정"(au_mod_create)을 합친다
+function modCreate() {
+  try { if (!localStorage.getItem('au_modkey')) return null; const o = JSON.parse(localStorage.getItem('au_mod_create') || 'null'); return o && typeof o === 'object' ? o : null; } catch { return null; }
+}
 const regionSel = cur => `<select class="dd region">${REGIONS.map(([k, n]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
 const opt = (on, label, data = '', dis = false) => `<button class="ob ${on ? 'on' : ''}" ${data} ${dis ? 'disabled' : ''}>${label}<i class="chk"></i></button>`;
 const hintBox = text => `<div class="hint"><svg class="q" viewBox="-60 -60 250 190">${crewSVG({ color: 0 }).replace(/^<svg[^>]*>|<\/svg>$/g, '')}<text x="-30" y="-10" font-size="70" fill="#e33" stroke="#fff" stroke-width="4" font-weight="900">?</text></svg>${text}</div>`;
@@ -108,7 +115,7 @@ screens.create = (mode = 'online', gameType = 'classic') => {
     const child = me.status !== 'green';
     o.innerHTML = tab === '일반' ? `
       <div class="orow"><span class="lab">게임 유형</span>${opt(s.gameType === 'classic', '클래식', 'data-gt="classic" style="width:220px"')}${opt(s.gameType === 'hns', '숨바꼭질', 'data-gt="hns" style="width:220px"')}</div>
-      <div class="orow"><span class="lab">맵</span>${MAPS.map(m => `<button class="mapb ${s.map === m.id ? 'on' : ''} ${m.ready ? '' : 'lock'}" data-map="${m.id}" title="${m.name}${m.ready ? '' : ' (준비 중)'}">${mapIcon(m.id)}<i class="chk"></i></button>`).join('')}</div>
+      <div class="orow"><span class="lab">맵</span>${MAPS.map(m => `<button class="mapb ${s.map === m.id ? 'on' : ''}" data-map="${m.id}" title="${m.name}">${mapIcon(m.id)}<i class="chk"></i></button>`).join('')}</div>
       <div class="orow"><span class="lab">용량</span><div class="cap"><button data-cap="-1">-</button><span class="n">${crewSVG({ color: 0 }, { noPet: true })}${s.maxPlayers}</span><button data-cap="1">+</button></div></div>
       <div class="orow"><span class="lab">태그</span>${TAGS.map((t, i) => opt(s.tag === i, t, `data-tag="${i}" style="width:140px"`)).join('')}</div>
       <div class="orow"><span class="lab">${mode === 'online' ? '지역' : '공개 범위'}</span>${mode === 'online' ? regionSel(device.region) : '<span style="font-size:22px;color:#aaa">같은 와이파이에 연결된 사람만 볼 수 있어요</span>'}</div>
@@ -124,7 +131,7 @@ screens.create = (mode = 'online', gameType = 'classic') => {
     sfx('click');
     const d = b.dataset;
     if (d.gt) s.gameType = d.gt;
-    if (d.map) { if (MAPS.find(m => m.id === d.map).ready) s.map = d.map; else toast(`${mapName(d.map)} 맵은 아직 준비 중입니다.`); }
+    if (d.map && MAPS.some(m => m.id === d.map)) s.map = d.map;
     if (d.cap) s.maxPlayers = Math.min(15, Math.max(4, s.maxPlayers + +d.cap));
     if (d.tag) s.tag = +d.tag;
     if (d.roles) s.roles = d.roles === '1';
@@ -140,7 +147,8 @@ screens.create = (mode = 'online', gameType = 'classic') => {
   $('.makebtn', el).onclick = () => {
     sfx('click');
     if (mode === 'online' && s.chatLang === KO && device.region !== 'as') return toast('한국어 로비는 아시아 지역에서만 만들 수 있어요.');
-    net.send({ t: 'create', mode, region: device.region, settings: s });
+    const extra = modCreate();
+    net.send({ t: 'create', mode, region: device.region, settings: extra ? { ...s, ...extra, map: s.map, gameType: s.gameType } : s });
   };
   draw();
 };
