@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>매뜨 땅먹 트레일러</title>
+<style>
+@font-face { font-family: BH; src: url(fonts/BlackHanSans.ttf); }
+@font-face { font-family: JUA; src: url(fonts/Jua.ttf); }
+@font-face { font-family: PT; font-weight: 600; src: url(fonts/Pretendard-SemiBold.otf); }
+@font-face { font-family: PT; font-weight: 700; src: url(fonts/Pretendard-Bold.otf); }
+@font-face { font-family: PT; font-weight: 900; src: url(fonts/Pretendard-Black.otf); }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #05071a; }
+#stage { position: absolute; inset: 0; overflow: hidden; background: #05071a; }
+canvas { position: absolute; left: 0; top: 0; }
+.abs { position: absolute; }
+.word { position: absolute; font-family: BH; color: #fff; white-space: nowrap; transform-origin: 50% 55%; }
+.caption { position: absolute; left: 150px; top: 330px; width: 760px; }
+.tag { display: inline-block; padding: 10px 22px; border-radius: 999px; font: 700 26px PT; letter-spacing: 4px; color: #fff; background: rgba(255,255,255,.1); border: 1.5px solid rgba(255,255,255,.25); }
+.head { margin-top: 26px; font: 110px/1.05 BH; color: #fff; letter-spacing: -1px; }
+.sub { margin-top: 26px; font: 600 38px/1.45 PT; color: #c3bff0; }
+.phones { position: absolute; inset: 0; perspective: 1700px; perspective-origin: 62% 45%; }
+.phone { position: absolute; width: 400px; height: 860px; border-radius: 58px; padding: 16px; background: linear-gradient(145deg, #2b2f4a, #0c0e1c);
+  box-shadow: 0 0 0 2px #464a6a inset, 0 60px 120px rgba(0,0,0,.6), 0 0 120px var(--glow, rgba(109,93,252,.45)); transform-style: preserve-3d; }
+.phone img { width: 100%; height: 100%; border-radius: 44px; display: block; object-fit: cover; }
+.phone::after { content: ''; position: absolute; inset: 16px; border-radius: 44px; background: linear-gradient(115deg, rgba(255,255,255,.18) 0%, transparent 32%, transparent 70%, rgba(255,255,255,.06) 100%); pointer-events: none; }
+.chip { position: absolute; padding: 18px 32px; border-radius: 999px; font: 700 36px PT; color: #fff; white-space: nowrap; background: rgba(20,22,48,.75); border: 2px solid rgba(255,255,255,.18); box-shadow: 0 20px 40px rgba(0,0,0,.4); }
+.tier { position: absolute; padding: 12px 26px; border-radius: 16px; font: 900 30px PT; color: #fff; white-space: nowrap; }
+#count { position: absolute; left: 0; right: 0; top: 380px; text-align: center; font: 210px BH; color: #fff; letter-spacing: 2px; }
+#count small { font: 120px BH; color: #ffc23d; margin-left: 18px; }
+#countSub { position: absolute; left: 0; right: 0; top: 640px; text-align: center; font: 600 46px PT; color: #c9c5f5; letter-spacing: 2px; }
+#whisper { position: absolute; left: 0; right: 0; bottom: 150px; text-align: center; font: 600 44px PT; letter-spacing: 14px; color: #d8d4ff; }
+#logoWrap { position: absolute; left: 0; right: 0; top: 140px; display: flex; flex-direction: column; align-items: center; }
+#logo { width: 440px; height: 440px; }
+#wordmark { margin-top: -10px; font: 168px JUA; line-height: 1; color: #8f80ff; text-shadow: 0 4px 0 #5546e0, 0 9px 0 #3b2fb0, 0 30px 60px rgba(109,93,252,.55); }
+#wordmark b { font-weight: normal; color: #ffbf2e; text-shadow: 0 4px 0 #e08a00, 0 9px 0 #a85d00, 0 30px 60px rgba(255,170,30,.45); }
+#tagline { margin-top: 26px; font: 600 44px PT; color: #d9d6ff; letter-spacing: 6px; }
+#cta { margin-top: 40px; padding: 26px 56px; border-radius: 999px; font: 900 44px PT; color: #fff; background: linear-gradient(135deg, #a397ff, #6d5dfc); box-shadow: 0 20px 50px rgba(109,93,252,.6), inset 0 3px 0 rgba(255,255,255,.35); }
+#cta span { font-weight: 600; opacity: .85; margin-left: 18px; font-size: 34px; }
+.bar { position: absolute; left: 0; right: 0; height: 0; background: #000; z-index: 50; }
+#vign { position: absolute; inset: 0; z-index: 40; pointer-events: none; background: radial-gradient(ellipse 75% 70% at 50% 50%, transparent 55%, rgba(0,0,0,.65) 100%); }
+#flash { position: absolute; inset: 0; z-index: 45; background: #fff; opacity: 0; mix-blend-mode: screen; }
+#grain { z-index: 41; opacity: .07; mix-blend-mode: overlay; }
+</style></head>
+<body>
+<div id="stage">
+  <canvas id="bg" width="1920" height="1080"></canvas>
+  <canvas id="map" width="1920" height="1080"></canvas>
+  <div id="whisper"></div>
+  <div class="word" id="w1">풀고!</div><div class="word" id="w2">뺏고!</div><div class="word" id="w3">지켜라!</div>
+  <div id="count"></div><div id="countSub">실제 우리나라 지도 위, 전국 학교들의 땅따먹기</div>
+  <div class="caption" id="cap"><span class="tag" id="capTag"></span><div class="head" id="capHead"></div><div class="sub" id="capSub"></div></div>
+  <div class="phones" id="phones"></div>
+  <div id="tiers"></div>
+  <div id="chips"></div>
+  <div class="word" id="m1"></div>
+  <div id="logoWrap"><img id="logo" src="logo.svg"><div id="wordmark">매뜨 <b>땅먹</b></div><div id="tagline">수학으로 넓히는 우리 학교 땅</div><div id="cta">지금 무료로 플레이 ▶<span>math-land-eater.github.io</span></div></div>
+  <canvas id="fx" width="1920" height="1080" style="z-index:30"></canvas>
+  <canvas id="grain" width="960" height="540" style="width:1920px;height:1080px"></canvas>
+  <div id="vign"></div><div id="flash"></div>
+  <div class="bar" id="barT" style="top:0"></div><div class="bar" id="barB" style="bottom:0"></div>
+</div>
+<script>
+// ---------- 도구 ----------
+const $ = s => document.querySelector(s), W = 1920, H = 1080, BEAT = 60 / 90;
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lin = (t, a, b) => clamp((t - a) / (b - a));
+const eOut = x => 1 - Math.pow(1 - x, 3), eIn = x => x * x * x, eIO = x => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const eBack = x => { const c = 2.2; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const eExpo = x => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const R = rng(42);
+const COLORS = ['#7b6cff', '#ff8a5c', '#22c39a', '#4b8df8', '#ffb020', '#f0508a', '#14b8c4', '#9bcf2e', '#c06cff', '#ff5e5e'];
+
+// ---------- 별 · 성운 ----------
+const bg = $('#bg').getContext('2d');
+const stars = Array.from({ length: 520 }, () => ({ x: (R() - .5) * 2, y: (R() - .5) * 2, z: R() * .95 + .05, s: R() * 1.4 + .4, c: R() < .15 ? '#ffd27a' : R() < .3 ? '#a9b8ff' : '#fff' }));
+const neb = Array.from({ length: 7 }, (_, k) => ({ x: R() * W, y: R() * H, r: 380 + R() * 520, c: ['rgba(109,93,252,', 'rgba(20,184,196,', 'rgba(240,80,138,', 'rgba(75,141,248,'][k % 4], a: .1 + R() * .12 }));
+function drawBg(t) {
+  bg.fillStyle = '#05071a'; bg.fillRect(0, 0, W, H);
+  const warp = t < 4.2 ? Math.pow(lin(t, 2.4, 4.0), 2) : 0, drift = t * .04 + warp * 1.6 + (t > 4 ? (t - 4) * .02 : 0);
+  for (const n of neb) { const g = bg.createRadialGradient(n.x + Math.sin(t * .2 + n.r) * 40, n.y, 0, n.x, n.y, n.r); g.addColorStop(0, n.c + n.a + ')'); g.addColorStop(1, n.c + '0)'); bg.fillStyle = g; bg.fillRect(0, 0, W, H); }
+  for (const s of stars) {
+    let z = s.z - drift; z = ((z % 1) + 1) % 1 + .02;
+    const k = .55 / z, x = W / 2 + s.x * W * k * .5, y = H / 2 + s.y * H * k * .5;
+    if (x < -50 || x > W + 50 || y < -50 || y > H + 50) continue;
+    const a = clamp((1 - z) * 1.3) * (t > 9.3 && t < 26 ? .55 : 1);
+    bg.globalAlpha = a; bg.strokeStyle = bg.fillStyle = s.c;
+    if (warp > .05) { const k2 = .55 / (z + .06 * warp), x2 = W / 2 + s.x * W * k2 * .5, y2 = H / 2 + s.y * H * k2 * .5; bg.lineWidth = s.s * (1 + warp * 2); bg.beginPath(); bg.moveTo(x2, y2); bg.lineTo(x, y); bg.stroke(); }
+    else { bg.beginPath(); bg.arc(x, y, s.s * (1.4 - z), 0, 7); bg.fill(); }
+  }
+  bg.globalAlpha = 1;
+}
+
+// ---------- 한반도 육각 땅 ----------
+const mc = $('#map'), mg = mc.getContext('2d');
+let rings = [], land = null, hexes = [], hexR = 8, MB = null, totalLen = 0, ringLens = [];
+const MAPW = 760, MAPH = 1000;
+function setupMap(enc) {
+  rings = enc.map(e => { const o = []; let x = 0, y = 0; for (let k = 0; k < e.length; k += 2) { x += e[k]; y += e[k + 1]; o.push(x, y); } return o; });
+  const b = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const r of rings) for (let k = 0; k < r.length; k += 2) { b[0] = Math.min(b[0], r[k]); b[1] = Math.min(b[1], r[k + 1]); b[2] = Math.max(b[2], r[k]); b[3] = Math.max(b[3], r[k + 1]); }
+  const s = Math.min(MAPW / (b[2] - b[0]), MAPH / (b[3] - b[1]));
+  rings = rings.map(r => r.map((v, k) => (k % 2 ? (v - b[1]) * s - MAPH / 2 : (v - b[0]) * s - MAPW / 2)));
+  rings.sort((a, c) => c.length - a.length);
+  land = new Path2D();
+  for (const r of rings) { land.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) land.lineTo(r[k], r[k + 1]); land.closePath(); }
+  ringLens = rings.map(r => { let L = 0; for (let k = 2; k < r.length; k += 2) L += Math.hypot(r[k] - r[k - 2], r[k + 1] - r[k - 1]); return L; });
+  totalLen = ringLens.reduce((a, c) => a + c, 0);
+  // 육각 칸
+  const dx = Math.sqrt(3) * hexR, dy = 1.5 * hexR, at = new Map();
+  for (let row = 0, y = -MAPH / 2; y < MAPH / 2; row++, y += dy) for (let col = 0, x = -MAPW / 2 + (row % 2 ? dx / 2 : 0); x < MAPW / 2; col++, x += dx)
+    if (mg.isPointInPath(land, x, y)) { at.set(row + ',' + col, hexes.length); hexes.push({ x, y, row, col, nb: [], t: 99, o: -1 }); }
+  const odd = [[0, -1], [0, 1], [-1, 0], [-1, 1], [1, 0], [1, 1]], even = [[0, -1], [0, 1], [-1, -1], [-1, 0], [1, -1], [1, 0]];
+  for (const h of hexes) for (const [r, c] of (h.row % 2 ? odd : even)) { const j = at.get((h.row + r) + ',' + (h.col + c)); if (j !== undefined) h.nb.push(j); }
+  // 학교들이 땅을 넓히는 순서를 미리 정한다 (4.2초 → 9.2초, 점점 빨라진다)
+  const seeds = [], fronts = [];
+  for (let tries = 0; seeds.length < 10 && tries < 500; tries++) {
+    const i = Math.floor(R() * hexes.length);
+    if (hexes[i].o >= 0 || seeds.some(j => Math.hypot(hexes[j].x - hexes[i].x, hexes[j].y - hexes[i].y) < 150)) continue;
+    hexes[i].o = seeds.length; seeds.push(i); fronts.push([i]);
+  }
+  const order = [...seeds];
+  for (let guard = 0; guard < 5000; guard++) {
+    let any = false;
+    fronts.forEach((f, s) => {
+      for (let n = 0; n < 1 + (s % 3); n++) for (let tries = 0; tries < 6 && f.length; tries++) {
+        const i = Math.floor(R() * f.length), free = hexes[f[i]].nb.filter(j => hexes[j].o < 0);
+        if (!free.length) { f.splice(i, 1); continue; }
+        const j = free[Math.floor(R() * free.length)]; hexes[j].o = s; f.push(j); order.push(j); any = true; break;
+      }
+    });
+    if (!any) break;
+  }
+  order.forEach((i, k) => { hexes[i].t = 4.25 + 4.9 * Math.pow(k / order.length, .62); });
+  seeds.forEach(i => { hexes[i].t = 4.1; });
+  MB = { seeds };
+}
+function hexPath(c, x, y, r) { c.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; c.lineTo(x + r * Math.cos(a), y + r * Math.sin(a)); } c.closePath(); }
+function drawMap(t) {
+  mg.setTransform(1, 0, 0, 1, 0, 0); mg.clearRect(0, 0, W, H);
+  if (!land || t > 12.6 && t < 25.9) return;
+  // 장면마다 카메라: 처음엔 가운데, 땅따먹기 땐 왼쪽에서 기울어 보이게, 숫자 장면에선 멀어지며 흐려짐, 끝에선 로고 뒤로
+  let cx = W / 2, cy = H / 2 + 20, sc = .95, alpha = 1, rot = 0;
+  if (t < 4) { sc = .9 + .12 * eIO(lin(t, 0, 4)); }
+  else if (t < 9.33) { const k = eIO(lin(t, 4, 5.2)); cx = W / 2 - 330 * k; sc = 1.02 + .08 * lin(t, 4, 9.33); rot = -.05 * k; }
+  else if (t < 12.6) { const k = eIO(lin(t, 9.33, 10.3)); cx = W / 2 - 330 * (1 - k); sc = 1.1 - .25 * k; alpha = 1 - .72 * k - .28 * lin(t, 11.6, 12.4); }
+  else { alpha = .28 * lin(t, 25.9, 27); sc = 1.25; }
+  mg.globalAlpha = alpha;
+  mg.translate(cx, cy); mg.rotate(rot); mg.scale(sc, sc);
+  // 해안선이 빛나며 그려진다
+  const draw = clamp(t / 3.4);
+  if (t < 4.6) {
+    mg.save(); mg.shadowColor = '#5ee0ff'; mg.shadowBlur = 22; mg.strokeStyle = 'rgba(140,230,255,.95)'; mg.lineWidth = 2.6;
+    let left = totalLen * eIO(draw);
+    rings.forEach((r, i) => {
+      if (left <= 0) return; const L = ringLens[i]; mg.setLineDash([Math.min(L, left), L + 1]); mg.beginPath(); mg.moveTo(r[0], r[1]); for (let k = 2; k < r.length; k += 2) mg.lineTo(r[k], r[k + 1]); mg.stroke(); left -= L;
+    });
+    mg.restore(); mg.setLineDash([]);
+  }
+  // 땅이 채워지고 학교들이 넓힌다
+  const fill = lin(t, 3.4, 4.3);
+  if (fill > 0) {
+    mg.save(); mg.shadowColor = 'rgba(109,93,252,.55)'; mg.shadowBlur = 40; mg.fillStyle = `rgba(30,34,70,${.92 * fill})`; mg.fill(land); mg.restore();
+    for (const h of hexes) {
+      const own = t >= h.t, age = t - h.t;
+      const pop = own && age < .35 ? 1 + .55 * Math.sin(age / .35 * Math.PI) : 1;
+      hexPath(mg, h.x, h.y + (own ? -2.2 : 0), hexR * .9 * pop);
+      if (own) { mg.fillStyle = COLORS[h.o]; mg.globalAlpha = alpha; mg.fill(); }
+      else { mg.fillStyle = `rgba(70,76,130,${.55 * fill})`; mg.fill(); }
+      if (own) { mg.lineWidth = 1; mg.strokeStyle = 'rgba(255,255,255,.35)'; mg.stroke(); }
+    }
+    // 학교 본부: 빛나는 기둥
+    if (t > 4.1) MB.seeds.forEach((i, s) => {
+      const h = hexes[i], k = eOut(lin(t, 4.1 + s * .05, 4.6 + s * .05)), p = (t * 1.2 + s * .3) % 1;
+      const gr = mg.createLinearGradient(0, h.y - 90 * k, 0, h.y); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, COLORS[s]);
+      mg.fillStyle = gr; mg.fillRect(h.x - 3, h.y - 90 * k, 6, 90 * k);
+      mg.beginPath(); mg.arc(h.x, h.y, 8 + p * 26, 0, 7); mg.strokeStyle = `rgba(255,255,255,${(1 - p) * .8 * k})`; mg.lineWidth = 2; mg.stroke();
+      mg.beginPath(); mg.arc(h.x, h.y, 7 * k, 0, 7); mg.fillStyle = '#fff'; mg.fill();
+    });
+    // 문제 말풍선 → 정답 → 땅이 퍼진다
+    for (const b of BUB) {
+      const age = t - b.t; if (age < 0 || age > 1.3) continue;
+      const h = hexes[b.i], pop = eBack(clamp(age / .25)), solved = age > .5, a = age > 1.0 ? 1 - (age - 1) / .3 : 1;
+      mg.save(); mg.globalAlpha = a * alpha; mg.translate(h.x, h.y - 40 - age * 16); mg.scale(pop, pop);
+      const txt = solved ? `${b.q}=${b.a} ✓` : `${b.q}=?`; mg.font = '900 22px PT'; const w = mg.measureText(txt).width + 30;
+      mg.shadowColor = solved ? '#22c39a' : 'rgba(0,0,0,.5)'; mg.shadowBlur = solved ? 24 : 12;
+      mg.fillStyle = solved ? '#22c39a' : '#fff'; mg.beginPath(); mg.roundRect(-w / 2, -21, w, 42, 21); mg.fill();
+      mg.shadowBlur = 0; mg.fillStyle = solved ? '#fff' : '#3b2fb0'; mg.textAlign = 'center'; mg.textBaseline = 'middle'; mg.fillText(txt, 0, 1); mg.restore();
+    }
+  }
+  mg.globalAlpha = 1;
+}
+const BUB = [];
+
+// ---------- 휴대폰 장면 ----------
+const FEAT = [
+  { t0: 12.0, img: 'map', tag: 'FEATURE 01', head: '입체 땅 지도', sub: '진짜 한반도 지도 위에서<br>우리 학교 땅을 넓혀요', glow: 'rgba(255,190,46,.5)' },
+  { t0: 14.33, img: 'quiz', tag: 'FEATURE 02', head: '문제 = 땅', sub: '초1부터 고3까지<br>학년에 딱 맞는 수학 문제', glow: 'rgba(34,195,154,.5)' },
+  { t0: 16.67, img: 'rank', tag: 'FEATURE 03', head: '랭크 배틀', sub: '1:1 실시간 수학 대결<br>브론즈부터 아크블랙 네메시스까지', glow: 'rgba(240,80,138,.5)' },
+  { t0: 19.0, img: 'hub', img2: 'more', tag: 'FEATURE 04', head: '도전은<br>끝나지 않는다', sub: '시즌 패스 · 모험 · 대항전 · 장터', glow: 'rgba(109,93,252,.6)' },
+];
+const MONT = ['intro', 'fit', 'popup', 'study', 'auth'];
+const phones = $('#phones'), PH = {};
+function mkPhone(id, img) { const d = document.createElement('div'); d.className = 'phone'; d.innerHTML = `<img src="shots/${img}.png">`; phones.appendChild(d); PH[id] = d; return d; }
+FEAT.forEach((f, k) => { mkPhone('f' + k, f.img); if (f.img2) mkPhone('f' + k + 'b', f.img2); });
+MONT.forEach((m, k) => mkPhone('m' + k, m));
+const TIERS = [['브론즈', '#c8814a'], ['실버', '#9aa6b8'], ['골드', '#e3a008'], ['플레티넘', '#2ec4a0'], ['다이아', '#4b8df8'], ['에바', '#a855f7'], ['네메시스', '#e11d48'], ['아크블랙 네메시스', '#111827']];
+$('#tiers').innerHTML = TIERS.map(([n, c], k) => `<div class="tier" id="tr${k}" style="background:${c};box-shadow:0 10px 30px ${c}88${k === 7 ? ';border:2px solid #ffc23d' : ''}">${n}</div>`).join('');
+const CHIPS = ['실시간 채팅', '선생님 반 관리', '초 · 중 · 고 서버', '안드로이드 앱'];
+$('#chips').innerHTML = CHIPS.map((c, k) => `<div class="chip" id="ch${k}">${c}</div>`).join('');
+
+function setPhone(el, o) { // o: x, y, s, ry, rx, rz, a
+  if (!o || o.a <= 0) { el.style.display = 'none'; return; }
+  el.style.display = 'block'; el.style.opacity = o.a;
+  el.style.left = (o.x - 200) + 'px'; el.style.top = (o.y - 430) + 'px';
+  el.style.transform = `translateZ(${o.z || 0}px) rotateY(${o.ry || 0}deg) rotateX(${o.rx || 0}deg) rotateZ(${o.rz || 0}deg) scale(${o.s || 1})`;
+  if (o.glow) el.style.setProperty('--glow', o.glow);
+}
+function featPhone(t, f, second) {
+  const t0 = f.t0, t1 = t0 + 2.333, kin = eOut(lin(t, t0, t0 + .55)), kout = eIn(lin(t, t1 - .3, t1 + .05)), hold = lin(t, t0, t1);
+  if (t < t0 || t > t1 + .05) return null;
+  const off = second ? 1 : 0;
+  return {
+    x: 1290 + off * 300 + 700 * (1 - kin) - 900 * kout, y: 545 + off * 40, s: (second ? .86 : 1) * (1 + .04 * hold),
+    ry: -22 + 58 * (1 - kin) - 50 * kout + 6 * hold - off * 6, rx: 4, rz: (second ? 4 : -2) * kin, z: -off * 120, a: clamp(kin * 1.4) * (1 - kout), glow: f.glow,
+  };
+}
+// ---------- 장면 그리기 ----------
+const fx = $('#fx').getContext('2d'), grain = $('#grain').getContext('2d');
+const gimg = grain.createImageData(960, 540);
+function drawGrain(t) {
+  const r = rng(Math.floor(t * 30) + 7), d = gimg.data;
+  for (let i = 0; i < d.length; i += 4) { const v = r() * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+  grain.putImageData(gimg, 0, 0);
+}
+const IMPACTS = [4.0, 4.667, 6.0, 7.333, 12.0, 26.0]; // 화면이 번쩍 · 흔들리는 순간
+const PARTS = Array.from({ length: 160 }, () => ({ a: R() * Math.PI * 2, v: 300 + R() * 900, s: 2 + R() * 5, c: COLORS[Math.floor(R() * COLORS.length)] }));
+function render(t) {
+  drawBg(t); drawMap(t); drawGrain(t);
+  // 흔들림
+  let shake = 0; for (const i of IMPACTS) { const a = t - i; if (a >= 0 && a < .35) shake = Math.max(shake, (1 - a / .35) * (i === 26 ? 22 : 14)); }
+  $('#stage').style.transform = shake ? `translate(${Math.sin(t * 97) * shake}px, ${Math.cos(t * 83) * shake}px)` : '';
+  // 번쩍
+  let fl = 0; for (const i of IMPACTS) { const a = t - i; if (a >= 0 && a < .25) fl = Math.max(fl, (1 - a / .25) * (i === 26 || i === 12 ? .9 : .45)); }
+  $('#flash').style.opacity = fl;
+  // 영화 같은 위아래 검은 띠 (처음 → 12초에 열림)
+  const bar = t < 12 ? 120 * eOut(lin(t, 0, 1.2)) : 120 * (1 - eOut(lin(t, 12, 12.6)));
+  $('#barT').style.height = $('#barB').style.height = bar + 'px';
+  // 1) 속삭임
+  const wh = $('#whisper');
+  if (t < 4) { const s = '어느 날, 수학이 땅이 되었다'; wh.textContent = s; wh.style.opacity = lin(t, .6, 1.4) * (1 - lin(t, 3.3, 3.9)); wh.style.letterSpacing = (14 + 10 * lin(t, 0, 4)) + 'px'; wh.style.filter = `blur(${(1 - lin(t, .6, 1.6)) * 8}px)`; }
+  else wh.style.opacity = 0;
+  // 2) 큰 글자 쾅쾅쾅
+  [['#w1', 4.667, 1290, 330, '#fff'], ['#w2', 6.0, 1350, 560, '#ffc23d'], ['#w3', 7.333, 1300, 800, '#ff5e8a']].forEach(([id, t0, x, y, c]) => {
+    const el = $(id), a = t - t0, out = lin(t, 9.0, 9.5);
+    if (a < 0 || out >= 1) { el.style.opacity = 0; return; }
+    const k = eExpo(clamp(a / .28)), s = 2.6 - 1.6 * k;
+    el.style.opacity = clamp(a / .12) * (1 - out); el.style.color = c; el.style.fontSize = '230px';
+    el.style.left = (x - 360) + 'px'; el.style.top = (y - 150) + 'px';
+    el.style.transform = `scale(${s}) rotate(${-4 + 4 * k}deg) translateX(${-200 * out}px)`;
+    el.style.filter = `blur(${(1 - k) * 10}px) drop-shadow(0 0 40px ${c}aa)`;
+  });
+  // 3) 숫자 장면
+  const cnt = $('#count'), cs = $('#countSub');
+  if (t > 9.33 && t < 12.1) {
+    const k = eOut(lin(t, 9.5, 11.1)), n = Math.round(1657648 * k);
+    cnt.innerHTML = n.toLocaleString('ko-KR') + '<small>칸</small>';
+    const a = lin(t, 9.33, 9.6) * (1 - lin(t, 11.7, 12.0));
+    cnt.style.opacity = a; cnt.style.transform = `scale(${1.25 - .25 * eOut(lin(t, 9.33, 10))})`; cnt.style.filter = `drop-shadow(0 0 50px rgba(109,93,252,.8))`;
+    cs.style.opacity = lin(t, 10.3, 10.8) * (1 - lin(t, 11.7, 12.0)); cs.style.transform = `translateY(${20 * (1 - eOut(lin(t, 10.3, 10.9)))}px)`;
+  } else { cnt.style.opacity = 0; cs.style.opacity = 0; }
+  // 4) 기능 소개: 휴대폰 + 설명
+  const cap = $('#cap'); let fNow = null;
+  FEAT.forEach((f, k) => { setPhone(PH['f' + k], featPhone(t, f, false)); if (f.img2) setPhone(PH['f' + k + 'b'], (() => { const o = featPhone(t - .12, f, true); return o; })()); if (t >= f.t0 && t < f.t0 + 2.333) fNow = f; });
+  if (fNow) {
+    const a = t - fNow.t0, kin = eOut(clamp(a / .45)), kout = eIn(lin(a, 2.0, 2.33));
+    $('#capTag').textContent = fNow.tag; $('#capHead').innerHTML = fNow.head; $('#capSub').innerHTML = fNow.sub;
+    cap.style.opacity = kin * (1 - kout); cap.style.transform = `translateX(${-80 * (1 - kin) - 60 * kout}px)`;
+    $('#capHead').style.backgroundImage = 'none';
+  } else cap.style.opacity = 0;
+  // 랭크 티어가 차례로 튀어나온다
+  TIERS.forEach((_, k) => {
+    const el = $('#tr' + k), t0 = 17.0 + k * .12, a = t - t0, out = lin(t, 18.75, 19.0);
+    if (a < 0 || out >= 1) { el.style.opacity = 0; return; }
+    const kk = eBack(clamp(a / .35));
+    el.style.opacity = clamp(a / .1) * (1 - out); el.style.left = (150 + (k % 4) * 190 + (k === 7 ? 0 : 0)) + 'px'; el.style.top = (790 + Math.floor(k / 4) * 84) + 'px';
+    if (k === 7) { el.style.left = '150px'; el.style.top = '958px'; }
+    el.style.transform = `scale(${kk}) translateY(${(1 - kk) * 30}px)`;
+  });
+  // 5) 몽타주: 휴대폰 다섯 대가 빙글 돌아간다 + 큰 글자
+  const m0 = 21.333, m1 = 26.0;
+  MONT.forEach((_, k) => {
+    if (t < m0 || t > m1 + .1) { setPhone(PH['m' + k], null); return; }
+    const a = t - m0, ang = (k / MONT.length) * Math.PI * 2 + a * .55, kin = eOut(lin(t, m0 + k * .08, m0 + .7 + k * .08)), out = eIn(lin(t, 25.6, 26.0));
+    const x = W / 2 + Math.sin(ang) * 640, z = Math.cos(ang) * 420 - 300;
+    setPhone(PH['m' + k], { x, y: 560 + (1 - kin) * 400, s: .72 * (1 - out * .5), ry: -Math.sin(ang) * 40, rx: 6, z, a: kin * (1 - out) * (.35 + .65 * (Math.cos(ang) * .5 + .5)), glow: 'rgba(109,93,252,.35)' });
+    PH['m' + k].style.zIndex = Math.round(Math.cos(ang) * 10 + 10);
+  });
+  const mw = $('#m1'), words = [[21.333, '친구와'], [22.667, '우리 반과'], [24.0, '우리 학교와 함께!']];
+  let cur = null; for (const w of words) if (t >= w[0]) cur = w;
+  if (t >= m0 && t < 25.9 && cur) {
+    const a = t - cur[0], k = eExpo(clamp(a / .25));
+    mw.textContent = cur[1]; mw.style.fontSize = '170px'; mw.style.left = '0'; mw.style.right = '0'; mw.style.width = '1920px'; mw.style.textAlign = 'center'; mw.style.top = '420px';
+    mw.style.opacity = clamp(a / .1) * (1 - lin(t, 25.6, 25.9)); mw.style.transform = `scale(${1.6 - .6 * k})`; mw.style.filter = `blur(${(1 - k) * 8}px) drop-shadow(0 0 40px rgba(109,93,252,.9))`; mw.style.zIndex = 25;
+    mw.style.color = cur[1].includes('학교') ? '#ffc23d' : '#fff';
+  } else mw.style.opacity = 0;
+  CHIPS.forEach((_, k) => {
+    const el = $('#ch' + k), t0 = 22.0 + k * .55, a = t - t0, out = lin(t, 25.4, 25.8);
+    if (a < 0 || out >= 1) { el.style.opacity = 0; return; }
+    const pos = [[180, 200], [1340, 230], [230, 830], [1300, 860]][k], kk = eBack(clamp(a / .4));
+    el.style.left = pos[0] + 'px'; el.style.top = pos[1] + 'px'; el.style.zIndex = 26;
+    el.style.opacity = clamp(a / .15) * (1 - out); el.style.transform = `scale(${kk}) translateY(${Math.sin(t * 2 + k) * 8}px)`;
+  });
+  // 6) 로고 등장
+  const lw = $('#logoWrap');
+  if (t >= 25.95) {
+    const a = t - 26.0, kl = eBack(clamp(a / .7)), ks = eOut(lin(a, .45, 1.05)), kt = eOut(lin(a, .9, 1.4)), kc = eBack(clamp((a - 1.35) / .5));
+    lw.style.opacity = 1 - lin(t, 29.4, 30);
+    $('#logo').style.transform = `scale(${.2 + .8 * kl}) rotate(${(1 - kl) * -40}deg)`; $('#logo').style.opacity = clamp(a / .15);
+    $('#logo').style.filter = `drop-shadow(0 0 ${60 + 30 * Math.sin(t * 3)}px rgba(255,194,61,.55))`;
+    $('#wordmark').style.opacity = ks; $('#wordmark').style.transform = `translateY(${(1 - ks) * 60}px) scale(${.9 + .1 * ks})`; $('#wordmark').style.letterSpacing = (30 * (1 - ks)) + 'px';
+    $('#tagline').style.opacity = kt; $('#tagline').style.transform = `translateY(${(1 - kt) * 30}px)`;
+    $('#cta').style.opacity = clamp((a - 1.35) / .2); $('#cta').style.transform = `scale(${kc * (1 + .03 * Math.sin(t * 6))})`;
+  } else lw.style.opacity = 0;
+  // 반짝이 · 빛줄기 (로고 · 쾅 순간)
+  fx.clearRect(0, 0, W, H);
+  for (const [t0, cx, cy] of [[26.0, W / 2, 360], [12.0, W / 2, H / 2], [4.0, W / 2, H / 2]]) {
+    const a = t - t0; if (a < 0 || a > 1.4) continue;
+    for (const p of PARTS) { const d = p.v * eOut(clamp(a / 1.4)), x = cx + Math.cos(p.a) * d, y = cy + Math.sin(p.a) * d * .7 + a * a * 120;
+      fx.globalAlpha = (1 - a / 1.4) * .9; fx.fillStyle = p.c; fx.beginPath(); fx.arc(x, y, p.s * (1 - a / 2), 0, 7); fx.fill(); }
+  }
+  if (t > 26.3 && t < 28) { // 로고 위를 지나가는 빛
+    const k = lin(t, 26.3, 27.6), x = -400 + k * (W + 800);
+    const g = fx.createLinearGradient(x - 260, 0, x + 260, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,.22)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    fx.globalAlpha = 1; fx.save(); fx.translate(W / 2, H / 2); fx.rotate(-.35); fx.translate(-W / 2, -H / 2); fx.fillStyle = g; fx.fillRect(x - 260, -400, 520, H + 800); fx.restore();
+  }
+  fx.globalAlpha = 1;
+}
+window.ready = (async () => {
+  const d = await (await fetch('land.json')).json();
+  setupMap(d.land);
+  // 문제 말풍선: 박자에 맞춰 땅을 차지하는 칸 위에
+  const qs = [['7×8', 56], ['6+9', 15], ['3/4+1/4', 1], ['12÷3', 4], ['9×9', 81], ['√49', 7], ['15−8', 7], ['2³', 8], ['5×6', 30], ['x+3=10', 'x=7']];
+  for (let k = 0; k < qs.length; k++) { const tb = 4.4 + k * .48, cand = hexes.filter(h => Math.abs(h.t - (tb + .5)) < .08); const h = cand[Math.floor(R() * cand.length)] || hexes[0]; BUB.push({ t: tb, i: hexes.indexOf(h), q: qs[k][0], a: qs[k][1] }); }
+  await document.fonts.ready; await Promise.all([...document.images].map(i => i.decode().catch(() => 0)));
+  return { hexes: hexes.length };
+})();
+</script>
+</body></html>
