@@ -1,6 +1,6 @@
 // 역할 배정 + 역할 능력 (서버 권한). game.js 가 만든 게임 객체 g 의 도우미(g.send, g.bc, g.P ...)를 사용한다.
 import { ROLE_DEFS, ROLE_ORDER, GHOST_ROLES, roleTeam, isImpRole, isGhostRole, roleOpt, INFLUENCER_IMAGES, INFLUENCER } from '../public/js/shared/roles.js';
-import { RULES, shuffle, pick, COLORS } from '../public/js/shared/data.js';
+import { RULES, shuffle, pick } from '../public/js/shared/data.js';
 
 const rnd = n => Math.floor(Math.random() * n);
 const popRandom = a => a.splice(rnd(a.length), 1)[0];
@@ -43,7 +43,7 @@ export function assignRoles(ids, s, { nImp = 1, forced = new Map(), hns = false,
   let fImp = 0, fCrew = 0;
   for (const id of pool) {
     const f = forced.get(id);
-    if (!f || !ROLE_DEFS[f]) continue;
+    if (!f || !Object.prototype.hasOwnProperty.call(ROLE_DEFS, f)) continue;
     if (isGhostRole(f)) { ghostForced.set(id, f); roles.set(id, 'crewmate'); fCrew++; } else { roles.set(id, f); isImpRole(f) ? fImp++ : fCrew++; }
   }
   pool = pool.filter(id => !roles.has(id));
@@ -73,14 +73,14 @@ export function initRole(g, st, start) {
   if (g.hns && st.team === 'crew') cds.vent = 0;
   switch (role) {
     case 'engineer': cds.vent = 0; break;
-    case 'scientist': cds.vitals = 0; st.battery = sec(opt(g, 'scientist', 'battery')); break;
+    case 'scientist': cds.vitals = 0; st.battery = sec(opt(g, 'scientist', 'batteryDuration')); break;
     case 'tracker': cds.track = 0; break;
     case 'detective': cds.interrogate = 0; st.cases ||= []; break;
     case 'judge': st.judgeUsed = false; st.judgeUnlocked = false; break;
     case 'guardian': cds.protect = start ? 0 : 10000; break;
     case 'influencer': cds.message = start ? 0 : 10000; break;
-    case 'shapeshifter': cds.shift = Math.min(10000, sec(opt(g, 'shapeshifter', 'shiftCd'))); break;
-    case 'phantom': cds.vanish = Math.min(10000, sec(opt(g, 'phantom', 'vanishCd'))); break;
+    case 'shapeshifter': cds.shift = Math.min(10000, sec(opt(g, 'shapeshifter', 'shiftCooldown'))); break;
+    case 'phantom': cds.vanish = Math.min(10000, sec(opt(g, 'phantom', 'vanishCooldown'))); break;
   }
 }
 
@@ -113,7 +113,7 @@ export function onDeath(g, st) {
 // mod 계정 해킹: 즉시 역할 변경
 export function changeRole(g, id, role) {
   const st = g.st.get(id);
-  if (!st || !ROLE_DEFS[role]) return false;
+  if (!st || !Object.prototype.hasOwnProperty.call(ROLE_DEFS, role)) return false;
   endAbilities(g, st, 'role');
   const oldTeam = st.team;
   st.role = role; st.team = roleTeam(role);
@@ -146,25 +146,37 @@ export function endAbilities(g, st, why) {
 
 // ---------- 능력 메시지 ----------
 export function ability(g, c, st, m) {
-  const a = String(m.a || '');
+  const a = String(m.a || ''), id = m.id == null ? null : String(m.id);
   switch (a) {
     case 'vent': return g.ventToggle(c, st, m.v);
-    case 'vitals': return st.role === 'scientist' && vitals(g, c, st, m.on === undefined ? !st.vitalsOpen : !!m.on);
-    case 'protect': return st.role === 'guardian' && protect(g, c, st, m.id);
-    case 'shift': return st.role === 'shapeshifter' && (st.shift && !m.id ? unshift(g, st) : shift(g, c, st, m.id));
+    case 'vitals': {
+      const on = m.on === undefined ? !st.vitalsOpen : !!m.on;
+      // src 'ability' = 과학자 휴대용, 그 외(station/console) = 맵의 바이탈 장치
+      if (st.role === 'scientist' && (m.src === undefined || m.src === 'ability')) return vitals(g, c, st, on);
+      return g.vitalsConsole(c, st, on);
+    }
+    case 'protect': return st.role === 'guardian' && protect(g, c, st, id);
+    case 'shift': return st.role === 'shapeshifter' && (st.shift && !id ? unshift(g, st) : shift(g, c, st, id));
     case 'unshift': return st.role === 'shapeshifter' && st.shift && unshift(g, st);
-    case 'vanish': return st.role === 'phantom' && (st.vanish ? appear(g, st) : vanish(g, c, st));
+    case 'vanish':
+      if (st.role !== 'phantom') return;
+      if (m.on === true) return !st.vanish && vanish(g, c, st);
+      if (m.on === false) return st.vanish && appear(g, st);
+      return st.vanish ? appear(g, st) : vanish(g, c, st);
     case 'appear': return st.role === 'phantom' && st.vanish && appear(g, st);
-    case 'track': return st.role === 'tracker' && (st.track && !m.id ? untrack(g, st, true) : track(g, c, st, m.id));
+    case 'track': return st.role === 'tracker' && (st.track && (!id || m.off) ? untrack(g, st, true) : track(g, c, st, id));
     case 'untrack': return st.role === 'tracker' && st.track && untrack(g, st, true);
-    case 'interrogate': return st.role === 'detective' && interrogate(g, c, st, m.id);
+    case 'interrogate': return st.role === 'detective' && interrogate(g, c, st, id, m.case);
     case 'notes': return st.role === 'detective' && notes(g, st, m);
-    case 'overrule': return st.role === 'judge' && overrule(g, c, st, m.id);
-    case 'message': return st.role === 'influencer' && (Array.isArray(m.imgs) && st.wheel ? sendMsg(g, st, m.imgs) : openWheel(g, c, st, m.id));
+    case 'overrule': return st.role === 'judge' && overrule(g, c, st, id);
+    case 'message':
+      if (st.role !== 'influencer') return;
+      if (Array.isArray(m.imgs)) return st.wheel && (!id || id === st.wheel.target) ? sendMsg(g, st, m.imgs) : directMsg(g, c, st, id, m.imgs);
+      return openWheel(g, c, st, id);
     case 'refresh': return st.role === 'influencer' && refreshWheel(g, st);
     case 'send': return st.role === 'influencer' && sendMsg(g, st, m.imgs);
     case 'close': if (st.wheel) st.wheel = null; return;
-    case 'acid': case 'kill': return g.kill(c, st, m.id);
+    case 'acid': case 'kill': return id && g.kill(c, st, id);
   }
 }
 
@@ -173,7 +185,7 @@ function vitals(g, c, st, on) {
   if (!on) return closeVitals(g, st);
   if (!st.alive || !canUse(g, st)) return;
   if (comms(g)) return g.send(st.id, { t: 'vitalsData', list: null, comms: true });
-  if (st.battery <= 0) return g.send(st.id, { t: 'abilityCd', a: 'vitals', ms: Math.round(st.cds.vitals || 0), battery: 0, max: sec(opt(g, 'scientist', 'battery')), empty: true });
+  if (st.battery <= 0) return g.send(st.id, { t: 'abilityCd', a: 'vitals', ms: Math.round(st.cds.vitals || 0), battery: 0, max: sec(opt(g, 'scientist', 'batteryDuration')), empty: true });
   st.vitalsOpen = true; st.vitalsNext = 0;
   g.sendVitals(st);
 }
@@ -181,7 +193,7 @@ function closeVitals(g, st, why) {
   if (!st.vitalsOpen) return;
   st.vitalsOpen = false;
   g.send(st.id, { t: 'vitalsData', list: null, closed: true, why: why || 'close' });
-  g.send(st.id, { t: 'abilityCd', a: 'vitals', ms: Math.round(st.cds.vitals || 0), battery: Math.round(st.battery), max: sec(opt(g, 'scientist', 'battery')) });
+  g.send(st.id, { t: 'abilityCd', a: 'vitals', ms: Math.round(st.cds.vitals || 0), battery: Math.round(st.battery), max: sec(opt(g, 'scientist', 'batteryDuration')) });
 }
 
 // ---- 수호천사: 보호 ----
@@ -192,10 +204,10 @@ function protect(g, c, st, id) {
   if (!ready(g, st, 'protect') || d2(c, tc) > reach(g, st)) return;
   const t = now();
   if (ts.shield && ts.shieldBy !== st.id) g.bc({ t: 'shield', id: tc.id, on: false }, shieldAud(g, ts.shieldBy));
-  ts.shield = t + sec(opt(g, 'guardian', 'protectTime')); ts.shieldBy = st.id;
+  ts.shield = t + sec(opt(g, 'guardian', 'protectDuration')); ts.shieldBy = st.id;
   st.stat.protects = (st.stat.protects || 0) + 1;
   g.bc({ t: 'shield', id: tc.id, on: true, by: st.id, ms: ts.shield - t }, shieldAud(g, st.id));
-  setCd(g, st, 'protect', sec(opt(g, 'guardian', 'protectCd')));
+  setCd(g, st, 'protect', sec(opt(g, 'guardian', 'protectCooldown')));
 }
 // 처치 시도가 보호막에 막힘: 보호막 깨짐 + 처치 쿨다운 절반
 export function shieldBreak(g, killer, ks, victim, vs) {
@@ -216,19 +228,19 @@ function shift(g, c, st, id) {
   if (!tc || tc.id === c.id) return;
   // 대상: 살아있는 플레이어, 또는 시체가 맵에 남아있는 죽은 플레이어
   if (!ts.alive && !g.bodies.some(b => b.id === tc.id && !b.gone)) return;
-  const t = now(), dur = sec(opt(g, 'shapeshifter', 'shiftTime'));
+  const t = now(), dur = sec(opt(g, 'shapeshifter', 'shiftDuration'));
   st.shift = tc.id; st.shiftEnd = dur ? t + dur : 0;
-  const ev = !!opt(g, 'shapeshifter', 'evidence');
+  const ev = !!opt(g, 'shapeshifter', 'leaveEvidence');
   if (ev) g.evidence.push({ id: st.id, x: c.x, y: c.y });
   g.bc({ t: 'shift', id: st.id, as: tc.id, x: Math.round(c.x), y: Math.round(c.y), evidence: ev, ms: dur || 0 });
 }
 function unshift(g, st, { quiet } = {}) {
   if (!st.shift) return;
-  const c = g.P(st.id), ev = !quiet && !st.vent && !!opt(g, 'shapeshifter', 'evidence');
+  const c = g.P(st.id), ev = !quiet && !st.vent && !!opt(g, 'shapeshifter', 'leaveEvidence');
   st.shift = null; st.shiftEnd = 0;
   if (ev && c) g.evidence.push({ id: st.id, x: c.x, y: c.y });
   g.bc({ t: 'shift', id: st.id, as: null, x: Math.round(c?.x || 0), y: Math.round(c?.y || 0), evidence: ev, quiet: !!quiet });
-  if (st.role === 'shapeshifter') setCd(g, st, 'shift', sec(opt(g, 'shapeshifter', 'shiftCd')));
+  if (st.role === 'shapeshifter') setCd(g, st, 'shift', sec(opt(g, 'shapeshifter', 'shiftCooldown')));
 }
 export const unshiftAll = g => { for (const st of g.st.values()) if (st.shift) unshift(g, st); };
 
@@ -237,7 +249,7 @@ function vanish(g, c, st) {
   if (st.vanish || !st.alive || !canUse(g, st)) return;
   if (comms(g)) return commsErr(g, st);
   if (!ready(g, st, 'vanish')) return;
-  const t = now(), dur = sec(opt(g, 'phantom', 'vanishTime'));
+  const t = now(), dur = sec(opt(g, 'phantom', 'vanishDuration'));
   st.vanish = t + (dur || 1000);
   g.bc({ t: 'vanish', id: st.id, on: true, x: Math.round(c.x), y: Math.round(c.y), ms: st.vanish - t });
 }
@@ -246,7 +258,7 @@ function appear(g, st, quiet) {
   st.vanish = 0;
   const c = g.P(st.id);
   g.bc({ t: 'vanish', id: st.id, on: false, x: Math.round(c?.x || 0), y: Math.round(c?.y || 0), quiet: !!quiet });
-  if (st.role === 'phantom') setCd(g, st, 'vanish', sec(opt(g, 'phantom', 'vanishCd')));
+  if (st.role === 'phantom') setCd(g, st, 'vanish', sec(opt(g, 'phantom', 'vanishCooldown')));
 }
 
 // ---- 추적자 ----
@@ -257,7 +269,7 @@ function track(g, c, st, id) {
   const [tc, ts] = target(g, id);
   if (!tc || tc.id === c.id || !ts.alive || d2(c, tc) > reach(g, st)) return;
   const t = now();
-  st.track = { id: tc.id, until: t + sec(opt(g, 'tracker', 'trackTime')), next: 0 };
+  st.track = { id: tc.id, until: t + sec(opt(g, 'tracker', 'trackDuration')), next: 0 };
   sendTrack(g, st, t);
 }
 function sendTrack(g, st, t) {
@@ -271,32 +283,38 @@ function untrack(g, st, manual) {
   if (!st.track) return;
   st.track = null;
   g.send(st.id, { t: 'track', id: null, ms: 0, manual: !!manual });
-  if (st.role === 'tracker') setCd(g, st, 'track', sec(opt(g, 'tracker', 'trackCd')));
+  if (st.role === 'tracker') setCd(g, st, 'track', sec(opt(g, 'tracker', 'trackCooldown')));
 }
 
 // ---- 탐정: 노트 + 심문 ----
 export function sendCases(g, st) {
-  g.send(st.id, { t: 'cases', list: st.cases || [], active: st.activeCase || null, limit: Math.max(0, Math.floor(+opt(g, 'detective', 'suspects') || 0)) });
+  g.send(st.id, { t: 'cases', list: st.cases || [], active: st.activeCase || null, limit: Math.max(0, Math.floor(+opt(g, 'detective', 'suspectLimit') || 0)) });
 }
-function interrogate(g, c, st, id) {
+function interrogate(g, c, st, id, caseId) {
+  const no = msg => g.send(st.id, { t: 'interrogate', ok: false, id, msg });
   if (!st.alive || !canUse(g, st)) return;
-  if (comms(g)) return commsErr(g, st);
+  if (comms(g)) return no('통신 방해 중에는 심문할 수 없습니다.');
+  if (caseId != null && st.cases?.some(x => x.id === String(caseId))) st.activeCase = String(caseId);
   const cs = st.cases?.find(x => x.id === st.activeCase);
-  if (!cs) return g.send(st.id, { t: 'err', msg: '진행 중인 사건이 없습니다. 시체가 신고되어야 심문할 수 있습니다.' });
-  const limit = Math.max(0, Math.floor(+opt(g, 'detective', 'suspects') || 0));
-  if (cs.suspects.length >= limit) return g.send(st.id, { t: 'err', msg: '이 사건의 용의자 수를 모두 채웠습니다.' });
-  if (!ready(g, st, 'interrogate')) return;
+  if (!cs) return no('진행 중인 사건이 없습니다. 시체가 신고되어야 심문할 수 있습니다.');
+  const limit = Math.max(0, Math.floor(+opt(g, 'detective', 'suspectLimit') || 0));
+  if (cs.suspects.length >= limit) return no('이 사건의 용의자 수를 모두 채웠습니다.');
+  if (!ready(g, st, 'interrogate')) return no(`심문 쿨다운: ${Math.ceil(st.cds.interrogate / 1000)}초`);
   const [tc, ts] = target(g, id);
-  if (!tc || tc.id === c.id || !ts.alive || d2(c, tc) > reach(g, st)) return;
+  if (!tc || tc.id === c.id || !ts.alive || d2(c, tc) > reach(g, st)) return no('심문할 수 있는 거리에 아무도 없습니다.');
   const shown = ts.shift || tc.id; // 변신 중이면 변신한 모습으로 기록
-  if (cs.suspects.some(x => x.real === tc.id)) return g.send(st.id, { t: 'err', msg: '이미 이 사건에서 심문한 사람입니다.' });
+  if (cs.suspects.some(x => x.real === tc.id)) return no('이미 이 사건에서 심문한 사람입니다.');
+  // 그 사건의 사망 시각에 대상(실제 인물)이 있던 위치. 다 녹은 시체는 위치를 알 수 없음
   const rec = g.deathRec.get(cs.id), snap = rec?.snap?.get(tc.id);
   const loc = cs.dissolved || !snap ? null : g.locOf(snap.x, snap.y);
   const sp = g.P(shown) || tc;
+  const room = loc ? (loc.near ? `${loc.room} 근처` : loc.room) : null;
   cs.suspects.push({ id: shown, real: tc.id, name: sp.name, color: sp.look?.color ?? 0, room: loc?.room ?? null, near: !!loc?.near });
   st.stat.questioned = (st.stat.questioned || 0) + 1;
   setCd(g, st, 'interrogate', 0);
   g.send(tc.id, { t: 'interrogated', by: st.id });
+  g.send(st.id, { t: 'interrogate', ok: true, id: shown, case: cs.id, room: room || '알 수 없음', near: !!loc?.near, x: snap && !cs.dissolved ? Math.round(snap.x) : undefined,
+    y: snap && !cs.dissolved ? Math.round(snap.y) : undefined, left: limit - cs.suspects.length });
   sendCases(g, st);
 }
 const txt = (v, n) => String(v ?? '').replace(/[<>]/g, '').slice(0, n);
@@ -313,7 +331,7 @@ function notes(g, st, m) {
 // ---- 판사: 기각 ----
 export function checkJudge(g, st, silent) {
   if (st.role !== 'judge' || st.judgeUnlocked) return;
-  const need = Math.max(0, +opt(g, 'judge', 'taskPct') || 0), total = st.tasks.length, done = st.tasks.filter(t => t.step >= t.st.length).length;
+  const need = Math.max(0, +opt(g, 'judge', 'taskPercent') || 0), total = st.tasks.length, done = st.tasks.filter(t => t.step >= t.st.length).length;
   if (!total || (done / total) * 100 >= need - 1e-9) {
     st.judgeUnlocked = true;
     if (!silent) g.send(st.id, { t: 'toast', msg: '기각 능력이 해금되었습니다!' });
@@ -322,7 +340,7 @@ export function checkJudge(g, st, silent) {
 }
 function judgeState(g, st) {
   const total = st.tasks.length, done = st.tasks.filter(t => t.step >= t.st.length).length;
-  g.send(st.id, { t: 'abilityCd', a: 'overrule', ms: 0, locked: !st.judgeUnlocked, used: !!st.judgeUsed, done, total, need: +opt(g, 'judge', 'taskPct') || 0 });
+  g.send(st.id, { t: 'abilityCd', a: 'overrule', ms: 0, locked: !st.judgeUnlocked, used: !!st.judgeUsed, done, total, need: +opt(g, 'judge', 'taskPercent') || 0 });
 }
 function overrule(g, c, st, id) {
   const M = g.meeting;
@@ -330,8 +348,10 @@ function overrule(g, c, st, id) {
   if (M.commsAtStart || comms(g)) return g.send(st.id, { t: 'err', msg: '통신 방해 중에는 기각할 수 없습니다.' });
   const [tc, ts] = target(g, id);
   if (!tc || tc.id === c.id || !ts.alive) return;
-  if (M.overrule) { // 다른 판사가 먼저 — 사용 횟수 돌려받음
-    g.send(st.id, { t: 'overrule', ok: false, beaten: true, msg: '다른 판사가 먼저 판결했습니다.' });
+  if (M.overrule) { // 다른 판사가 먼저 — 기각은 돌려받고 평범한 투표로 처리
+    g.send(st.id, { t: 'overrule', ok: false, beaten: true, msg: '다른 판사가 먼저 판결했습니다. 기각 능력은 다음 회의에 다시 쓸 수 있습니다.' });
+    g.send(st.id, { t: 'toast', msg: '다른 판사가 먼저 판결했습니다. 기각 능력은 다음 회의에 다시 쓸 수 있습니다.' });
+    g.castVote(c, tc.id);
     return;
   }
   M.overrule = { judge: c.id, target: tc.id };
@@ -357,8 +377,21 @@ function wheelMsg(g, st) {
 function refreshWheel(g, st) {
   const W = st.wheel;
   if (!W || W.refreshes <= 0) return;
-  W.refreshes--; W.imgs = rollImgs(); W.sendAt = now() + sec(opt(g, 'influencer', 'msgCd')) / 2;
+  W.refreshes--; W.imgs = rollImgs(); W.sendAt = now() + sec(opt(g, 'influencer', 'messageCooldown')) / 2;
   wheelMsg(g, st);
+}
+// 클라이언트가 그림판을 직접 띄우고 바로 보내는 경우 (대상·거리·쿨다운은 서버가 확인)
+const IMG_SET = new Set(INFLUENCER_IMAGES.map(i => i.id));
+function directMsg(g, c, st, id, imgs) {
+  if (g.phase !== 'play' || st.left || !ready(g, st, 'message')) return;
+  const [tc, ts] = target(g, id);
+  if (!tc || tc.id === c.id || !ts.alive || d2(c, tc) > reach(g, st) + 200) return;
+  const pickd = [...new Set(imgs.map(String))].filter(i => IMG_SET.has(i)).slice(0, INFLUENCER.maxSend);
+  if (!pickd.length) return;
+  st.wheel = null;
+  g.send(tc.id, { t: 'message', imgs: pickd, ms: INFLUENCER.showMs });
+  st.stat.messages = (st.stat.messages || 0) + 1;
+  setCd(g, st, 'message', sec(opt(g, 'influencer', 'messageCooldown')));
 }
 function sendMsg(g, st, imgs) {
   const W = st.wheel;
@@ -371,22 +404,22 @@ function sendMsg(g, st, imgs) {
   g.send(tc.id, { t: 'message', imgs: pickd, ms: INFLUENCER.showMs });
   g.send(st.id, { t: 'msgWheel', close: true, sent: pickd });
   st.stat.messages = (st.stat.messages || 0) + 1;
-  setCd(g, st, 'message', sec(opt(g, 'influencer', 'msgCd')));
+  setCd(g, st, 'message', sec(opt(g, 'influencer', 'messageCooldown')));
 }
 
 // ---------- 처치 연동 ----------
 // 노이즈 메이커 경보 (방출 X, 통신 방해 중 X)
 export function onKilled(g, vs, x, y) {
   if (vs.role === 'noisemaker' && !comms(g)) {
-    const imp = !!opt(g, 'noisemaker', 'impAlert');
-    g.bc({ t: 'noise', id: vs.id, x: Math.round(x), y: Math.round(y), ms: sec(opt(g, 'noisemaker', 'alertTime')) },
+    const imp = !!opt(g, 'noisemaker', 'impostorAlert');
+    g.bc({ t: 'noise', id: vs.id, x: Math.round(x), y: Math.round(y), ms: sec(opt(g, 'noisemaker', 'alertDuration')) },
       (c, s) => !s || !s.alive || s.team !== 'impostor' || imp);
   }
 }
 // 임무 완료 연동: 과학자 배터리 완충, 판사 해금
 export function onTaskDone(g, st) {
   if (st.role === 'scientist') {
-    st.battery = sec(opt(g, 'scientist', 'battery')); st.cds.vitals = 0;
+    st.battery = sec(opt(g, 'scientist', 'batteryDuration')); st.cds.vitals = 0;
     st.stat.charges = (st.stat.charges || 0) + 1;
     g.send(st.id, { t: 'abilityCd', a: 'vitals', ms: 0, battery: st.battery, max: st.battery, charged: true });
   }
@@ -440,18 +473,16 @@ export function tick(g, dt, t) {
         st.battery -= dt;
         if (st.battery <= 0) {
           st.battery = 0;
-          st.cds.vitals = sec(opt(g, 'scientist', 'vitalsCd'));
+          st.cds.vitals = sec(opt(g, 'scientist', 'vitalsCooldown'));
           closeVitals(g, st, 'battery');
         } else if (t >= (st.vitalsNext || 0)) g.sendVitals(st);
       } else if (st.battery <= 0 && st.cds.vitals <= 0 && st.alive) {
         // 모든 임무를 끝냈으면 쿨다운 뒤 자동 충전
         if (st.tasks.every(x => x.step >= x.st.length)) {
-          st.battery = sec(opt(g, 'scientist', 'battery'));
+          st.battery = sec(opt(g, 'scientist', 'batteryDuration'));
           g.send(st.id, { t: 'abilityCd', a: 'vitals', ms: 0, battery: st.battery, max: st.battery, charged: true });
         }
       }
     }
   }
 }
-export const IMG_IDS = INFLUENCER_IMAGES.map(i => i.id);
-export { COLORS };

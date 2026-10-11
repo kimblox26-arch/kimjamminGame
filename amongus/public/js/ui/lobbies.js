@@ -1,6 +1,6 @@
 // 게임 찾기 / 게임 만들기 / 코드 입력 / 로컬 주최 / 플레이 방법
 import { $, $$, h, esc, stage, modal, toast, sfx, net, me, device, saveDevice, profile } from '../core.js';
-import { MAPS as DATA_MAPS, REGIONS, TAGS, CHAT_LANGS, KO, defaultSettings, fmtSetting, SETTINGS, VERSION } from '../shared/data.js';
+import { MAPS as DATA_MAPS, REGIONS, TAGS, CHAT_LANGS, KO, defaultSettings, fmtSetting, settingDef, VERSION } from '../shared/data.js';
 import { MAP_LIST } from '../shared/maps/index.js';
 import { crewSVG, mapIcon } from './crew.js';
 import { screens, go } from './nav.js';
@@ -9,6 +9,7 @@ import { displayName } from './menu.js';
 // 맵 목록: 레지스트리의 5개 맵 전부 (이름은 data.js 우선)
 const MAPS = MAP_LIST.map(m => ({ id: m.id, name: DATA_MAPS.find(d => d.id === m.id)?.name || m.name, ko: m.ko }));
 const mapName = id => MAPS.find(m => m.id === id)?.name || id;
+const fmtSpeed = v => { const d = settingDef('playerSpeed'); return d && v !== undefined ? fmtSetting(d, v) : `${v ?? 1}x`; };
 // mod 인증 상태면 "방 만들 때 쓸 설정"(au_mod_create)을 합친다
 function modCreate() {
   try { if (!localStorage.getItem('au_modkey')) return null; const o = JSON.parse(localStorage.getItem('au_mod_create') || 'null'); return o && typeof o === 'object' ? o : null; } catch { return null; }
@@ -41,7 +42,7 @@ screens.find = () => {
     $('.mc', el).textContent = shown.length;
     $('.bc', el).textContent = total > 200 ? '200+' : total;
     $('.glist', el).innerHTML = shown.map(g => `<div class="grow" data-c="${g.code}"><div class="bgcrew">${crewSVG({ color: 8 })}${crewSVG({ color: 4 })}${crewSVG({ color: 8 })}</div>
-      <div class="mapname">${mapIcon(g.map)}${mapName(g.map)}</div><div class="tags"><span>플레이어 속도 ${fmtSetting(SETTINGS[2], g.speed)}</span><span>역할 ${g.roles ? '켬' : '끔'}</span></div>
+      <div class="mapname">${mapIcon(g.map)}${mapName(g.map)}</div><div class="tags"><span>플레이어 속도 ${fmtSpeed(g.speed)}</span><span>역할 ${g.roles ? '켬' : '끔'}</span></div>
       <div class="cnt">🧑 ${g.n}/${g.max}</div><button class="more" data-more="${g.code}">더 보기...</button></div>`).join('') || `<div class="empty">조건에 맞는 게임이 없습니다.<br>새로 고침하거나 직접 게임을 만들어 보세요!</div>`;
     $$('.grow', el).forEach(r => r.onclick = e => {
       sfx('click');
@@ -94,7 +95,7 @@ function detail(g) {
   const m = modal(`<h2 style="font-size:40px">${esc(g.host)}님의 게임</h2><div style="width:640px;font-size:24px;line-height:1.9">
     <div>맵: ${mapName(g.map)} · ${g.gameType === 'hns' ? '숨바꼭질' : '클래식'}</div><div>인원: ${g.n}/${g.max} · 임포스터 ${g.impostors}명</div>
     <div>채팅: ${g.chatType === 'free' ? '자유 채팅' : '빠른 채팅'} · ${CHAT_LANGS[g.chatLang]}</div><div>태그: ${TAGS[g.tag]} · 역할 ${g.roles ? '켬' : '끔'}</div>
-    <div>플레이어 속도: ${fmtSetting(SETTINGS[2], g.speed)}</div><div class="row-c"><button class="obtn">참가</button></div></div>`);
+    <div>플레이어 속도: ${fmtSpeed(g.speed)}</div><div class="row-c"><button class="obtn">참가</button></div></div>`);
   $('.obtn', m.el).onclick = () => { m.close(); net.send({ t: 'join', code: g.code }); };
 }
 
@@ -200,8 +201,10 @@ const SLIDES = [
   [{ color: 10 }, '<b>크루원</b>은 우주선을 고치는 임무를 모두 끝내거나,<br>회의에서 투표로 임포스터를 찾아 추방하면 승리합니다.'],
   [{ color: 0, hat: 'horns' }, '<b style="color:#f33">임포스터</b>는 크루원을 몰래 처치하고, 벤트로 이동하고,<br>사보타주로 혼란을 일으켜 크루원 수를 임포스터 수만큼 줄이면 승리합니다.'],
   [{ color: 5 }, '시체를 발견하면 <b>신고</b>, 수상하면 식당의 <b>긴급 버튼</b>!<br>회의에서 토론하고 투표하세요. 동점이거나 건너뛰기가 많으면 아무도 추방되지 않아요.'],
-  [{ color: 3, pet: 'mini' }, '<b>조작</b>: 왼쪽 아래 조이스틱 또는 WASD/방향키로 이동<br>E/스페이스 = 사용 · Q = 처치 · R = 신고 · Tab = 지도'],
+  [{ color: 3, pet: 'mini' }, '<b>조작</b>: 왼쪽 아래 조이스틱 또는 WASD/방향키로 이동<br>E/스페이스 = 사용 · Q = 처치 · R = 신고 · V = 환풍구<br>F·G = 역할 능력 · X = 방해 공작 · Tab = 지도'],
   [{ color: 6 }, '<b>사보타주</b>: 원자로·산소는 제한 시간 안에 두 곳을 고쳐야 하고,<br>조명이 꺼지면 크루원의 시야가 좁아집니다. 통신 방해 중엔 임무 목록이 사라져요.'],
+  [{ color: 11, hat: 'halo' }, '<b>역할</b>: 기술자·과학자·추적자·노이즈 메이커·탐정·판사·수호천사·인플루언서<br>그리고 임포스터 역할 형상 변환자·팬텀·바이퍼. 로비의 게임 설정 → 역할에서 켜세요.'],
+  [{ color: 4 }, '<b>맵</b>: 더 스켈드 · 미라 HQ · 폴러스 · 에어십 · 펑글<br>폴러스·에어십의 문은 패널로 열고, 사다리·짚라인은 [사용] 버튼으로 타요.'],
 ];
 screens.howto = () => {
   let i = 0;

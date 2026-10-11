@@ -1,0 +1,8 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>RENDER 테스트: 크루원 확대</title>
+<style>body{background:#1b2230;margin:10px}.row{display:flex;gap:6px;flex-wrap:wrap}.row svg{width:330px;height:238px;background:#2c3646}.h svg{width:176px;height:128px}</style></head>
+<body><div class="row" id="a"></div><div class="row h" id="b"></div>
+<script type="module">
+import { crewSVG } from '../js/ui/crew.js';
+document.getElementById('a').innerHTML = [crewSVG({ color: 2 }, { frame: 2 }), crewSVG({ color: 2 }, { frame: 4 }), crewSVG({ color: 6, skin: 'police', hat: 'police' }, { dead: true }), crewSVG({ color: 7, visor: 'mask', skin: 'doctor', hat: 'chef' })].join('');
+document.getElementById('b').innerHTML = [0, 1, 5, 7].map(c => crewSVG({ color: c, hat: c ? 'cap' : 'none' }, { head: true })).join('');
+</script></body></html>

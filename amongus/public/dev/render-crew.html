@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RENDER 테스트: 크루원</title>
+<style>body{background:#1b2230;color:#fff;font:14px sans-serif;margin:10px}.row{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;align-items:flex-end}.row svg{width:150px;height:108px;background:#2c3646;border-radius:6px}.row.big svg{width:300px;height:216px}.row.sm svg{width:44px;height:32px}h3{margin:6px 0}</style></head>
+<body><div id="out"></div>
+<script type="module">
+import { crewSVG, itemSVG, HATS, VISORS, SKINS, PETS } from '../js/ui/crew.js';
+import { COLORS } from '../js/shared/data.js';
+const out = document.getElementById('out');
+const row = (t, html, cls = '') => out.insertAdjacentHTML('beforeend', `<h3>${t}</h3><div class="row ${cls}">${html}</div>`);
+row('큰 크루원', [crewSVG({ color: 0 }), crewSVG({ color: 1, hat: 'tophat', visor: 'shades', skin: 'suit', pet: 'mini' }), crewSVG({ color: 0 }, { dead: true }), crewSVG({ color: 0, hat: 'crown' }, { ghost: true })].join(''), 'big');
+row('색', COLORS.map((c, i) => crewSVG({ color: i })).join(''));
+row('걷기 0~6', [0, 1, 2, 3, 4, 5, 6].map(f => crewSVG({ color: 4 }, { frame: f })).join(''));
+row('시체', COLORS.slice(0, 9).map((c, i) => crewSVG({ color: i, skin: ['none', 'suit', 'police', 'doctor'][i % 4] }, { dead: true })).join(''));
+row('유령', [0, 1, 2, 3, 4, 5].map(i => crewSVG({ color: i, hat: Object.keys(HATS)[i] }, { ghost: true, wave: i })).join(''));
+row('모자', Object.keys(HATS).map((h, i) => crewSVG({ color: i % 18, hat: h })).join(''));
+row('바이저/스킨', [...Object.keys(VISORS).map(v => crewSVG({ color: 7, visor: v })), ...Object.keys(SKINS).map(s => crewSVG({ color: 2, skin: s }, { frame: 2 }))].join(''));
+row('펫', Object.keys(PETS).map(p => crewSVG({ color: 3, pet: p })).join('') + Object.keys(PETS).map(p => `<span style="display:inline-block;width:80px;height:70px">${itemSVG('pet', p, 5)}</span>`).join(''));
+row('머리(투표칩)', COLORS.map((c, i) => crewSVG({ color: i, hat: i % 3 ? 'cap' : 'none' }, { head: true })).join(''), 'sm');
+row('뒤집기', [crewSVG({ color: 5, hat: 'cap', pet: 'dog' }, { flip: true }), crewSVG({ color: 5, hat: 'cap', pet: 'dog' }, { flip: true, petLeft: true })].join(''));
+</script></body></html>

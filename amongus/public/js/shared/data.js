@@ -193,12 +193,12 @@ export function sanitizeSettings(s = {}, base = defaultSettings(), opts = {}) {
   else if (s.roles !== undefined && !!s.roles !== anyRoleOn(o.roleSet)) o.roleSet = s.roles ? galoreSet() : defaultRoleSet(); // 예전 "역할 켬/끔"
   o.roles = anyRoleOn(o.roleSet);
   if (s.preset === '커스텀') s = { ...s, preset: CUSTOM };
-  if (typeof s.preset === 'string' && (PRESETS[s.preset] || s.preset === CUSTOM)) o.preset = s.preset;
+  if (typeof s.preset === 'string' && (Object.prototype.hasOwnProperty.call(PRESETS, s.preset) || s.preset === CUSTOM)) o.preset = s.preset;
   return o;
 }
 // 프리셋 적용 (방 정보 map/용량/채팅 등은 유지)
 export function applyPreset(name, cur = defaultSettings()) {
-  const P = PRESETS[name];
+  const P = Object.prototype.hasOwnProperty.call(PRESETS, name) ? PRESETS[name] : null;
   if (!P) return cur;
   const keep = { map: cur.map, gameType: PRESET_MODES[name] || cur.gameType, maxPlayers: cur.maxPlayers, tag: cur.tag, chatType: cur.chatType, chatLang: cur.chatLang };
   const o = { ...defaultSettings(), ...keep, preset: name };

@@ -1,10 +1,12 @@
-// 게임 HUD: 행동 버튼(아이콘·쿨다운), 임무 목록/진행 바, 사보타주 경보, 숨바꼭질 HUD, 역할 소개, 알림·효과음
-import { $, $$, h, esc, stage, sfx, settings } from '../core.js';
-import { COLORS } from '../shared/data.js';
+// 게임 HUD: 행동 버튼(아이콘·쿨다운·대상 강조), 임무 목록/진행 바, 사보타주 경보, 숨바꼭질 HUD, 역할 소개, 알림·효과음
+import { $, $$, h, esc, stage, settings } from '../core.js';
+import { COLORS, RULES } from '../shared/data.js';
+import { INFLUENCER_IMAGES } from '../shared/roles.js';
 import { stepLabel, taskById, lineClear } from '../shared/maps/index.js';
 import { crewSVG } from '../ui/crew.js';
 import { scene } from './scene.js';
-import { G, R, act, alive, isImp, commsOn, roleDef, roleName, roleColor, roleOpt, nameOf, lookOf, now, KILL_D, myTasksDone, sabDef, hnsMode, isSeeker } from './play.js';
+import { G, alive, isImp, commsOn, sabType, roleDef, roleName, roleColor, roleAccent, nameOf, lookOf, now, KILL_D, sabDef, hnsMode, isSeeker,
+  cdLeft, fullCd, josa } from './play.js';
 
 // ---------- 아이콘 (SVG, viewBox 0 0 100 100) ----------
 const K = 'stroke="#000" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -55,11 +57,47 @@ export const ICON = {
   o2: `<circle cx="50" cy="50" r="40" fill="#59c2ff" ${K}/><text x="50" y="64" text-anchor="middle" font-size="40" font-weight="900" font-family="Arial,sans-serif" fill="#fff" stroke="#000" stroke-width="3" paint-order="stroke">O₂</text>`,
   seismic: `<circle cx="50" cy="50" r="40" fill="#ff8a2a" ${K}/><path d="M12 54 H28 L36 30 L46 72 L56 22 L64 62 L70 48 H88" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>`,
   crash: `<circle cx="50" cy="50" r="40" fill="#ff5252" ${K}/><path d="M24 64 L64 32 L76 26 L72 38 L40 74 Z" fill="#fff" stroke="#000" stroke-width="4"/><path d="M48 46 L30 40 L26 46 L44 54 M56 58 L60 76 L54 78 L48 62" fill="#fff" stroke="#000" stroke-width="3"/>`,
+  lock: `<rect x="22" y="44" width="56" height="44" rx="8" fill="#ffcf3a" ${K}/><path d="M32 44 V30 C32 8 68 8 68 30 V44" fill="none" stroke="#000" stroke-width="12"/><path d="M32 44 V30 C32 8 68 8 68 30 V44" fill="none" stroke="#c9d3d8" stroke-width="5"/><circle cx="50" cy="62" r="7"/><path d="M50 64 V76" stroke="#000" stroke-width="6"/>`,
+  ghost: `<path d="M22 90 V40 C22 14 40 6 52 6 C70 6 80 18 80 40 V90 L70 80 L60 90 L50 80 L40 90 L30 80 Z" fill="#e8f4ff" ${K} opacity=".95"/><circle cx="42" cy="40" r="6"/><circle cx="62" cy="40" r="6"/>`,
 };
 export const icon = (k, cls = '') => `<svg class="ico ${cls}" viewBox="0 0 100 100">${ICON[k] || ICON.use}</svg>`;
 // 사보타주 종류 → 아이콘
 export const sabIcon = (k, d = {}) => d.type === 'lights' ? 'lights' : d.type === 'comms' ? 'comms' : d.type === 'mixup' ? 'mixup'
   : /o2|oxy/i.test(k) ? 'o2' : /seis|quake/i.test(k) ? 'seismic' : /crash|heli|avert/i.test(k) ? 'crash' : 'reactor';
+
+// ---------- 인플루언서 그림 (서버 id → SVG) ----------
+const arrowImg = (rot, col = '#ffd400') => `<g transform="rotate(${rot} 50 50)"><path d="M50 8 L84 46 H63 V92 H37 V46 H16 Z" fill="${col}" ${K}/><path d="M50 18 L70 40" stroke="#fff6a8" stroke-width="5" opacity=".7"/></g>`;
+const pairImg = (a, b) => `<circle cx="50" cy="50" r="46" fill="#1d2a36"/>${BEAN(33, 58, 0.78, a)}${BEAN(68, 54, 0.78, b)}`;
+const INF_SVG = {
+  up: arrowImg(0), down: arrowImg(180), left: arrowImg(-90), right: arrowImg(90),
+  red: pairImg('#C51111', '#EF7D0D'), blue: pairImg('#132ED1', '#38FEDC'), green: pairImg('#117F2D', '#50EF39'), yellow: pairImg('#F5F557', '#FFFEBE'),
+  purple: pairImg('#6B2FBB', '#ED54BA'), bw: pairImg('#3F474E', '#D6E0F0'), brown: pairImg('#71491E', '#928776'),
+  knife: () => ICON.kill, vent: () => ICON.vent, vitals: () => ICON.vitals, bulb: () => ICON.lights, shield: () => ICON.protect, task: () => ICON.guide, door: () => ICON.door,
+  eye: `<ellipse cx="50" cy="50" rx="44" ry="27" fill="#fff" ${K}/><circle cx="50" cy="50" r="17" fill="#3a7bd5" stroke="#000" stroke-width="4"/><circle cx="50" cy="50" r="8"/><circle cx="44" cy="44" r="4" fill="#fff"/>`,
+  skip: `<circle cx="50" cy="50" r="44" fill="#8fa4b8" ${K}/><path d="M24 30 L48 50 L24 70 Z M48 30 L72 50 L48 70 Z" fill="#fff" stroke="#000" stroke-width="4" stroke-linejoin="round"/><rect x="72" y="30" width="8" height="40" fill="#fff" stroke="#000" stroke-width="4"/>`,
+  vote: `<rect x="16" y="46" width="68" height="44" rx="5" fill="#cfd8dc" ${K}/><rect x="30" y="46" width="40" height="8" fill="#37474f"/><rect x="34" y="10" width="32" height="40" rx="3" fill="#fff" ${K} transform="rotate(8 50 30)"/><path d="M40 28 L48 36 L62 20" fill="none" stroke="#2e7d32" stroke-width="6" stroke-linecap="round"/>`,
+  body: `<g transform="translate(-4 8)"><path d="M18 78 V54 H82 V78 Q82 84 76 84 H24 Q18 84 18 78 Z" fill="#c51111" ${K}/><rect x="4" y="52" width="16" height="22" rx="6" fill="#7a0838" ${K} stroke-width="4"/><path d="M50 54 V34" stroke="#000" stroke-width="13"/><path d="M50 54 V34" stroke="#f0f0e8" stroke-width="7"/><circle cx="44" cy="32" r="7" fill="#f0f0e8" ${K} stroke-width="3"/><circle cx="56" cy="32" r="7" fill="#f0f0e8" ${K} stroke-width="3"/></g>`,
+  clock: `<circle cx="50" cy="52" r="40" fill="#fff" ${K}/><path d="M50 26 V52 L68 62" fill="none" stroke="#000" stroke-width="7" stroke-linecap="round"/><path d="M22 14 L34 22 M78 14 L66 22" stroke="#000" stroke-width="7" stroke-linecap="round"/>`,
+  group: `${BEAN(28, 58, 0.62, '#132ED1')}${BEAN(72, 58, 0.62, '#117F2D')}${BEAN(50, 52, 0.72, '#C51111')}`,
+  alone: `<circle cx="50" cy="50" r="44" fill="#26323c" stroke="#000" stroke-width="4"/>${BEAN(50, 54, 0.85, '#F5F557')}`,
+  question: `<circle cx="50" cy="50" r="42" fill="#ffd400" ${K}/><path d="M36 38 C36 20 66 20 64 38 C63 48 50 48 50 60" fill="none" stroke="#000" stroke-width="9" stroke-linecap="round"/><circle cx="50" cy="76" r="6"/>`,
+  yes: `<circle cx="50" cy="50" r="42" fill="#2fd05a" ${K}/><path d="M28 52 L44 68 L74 34" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>`,
+  no: `<circle cx="50" cy="50" r="42" fill="#e53935" ${K}/><path d="M32 32 L68 68 M68 32 L32 68" stroke="#fff" stroke-width="11" stroke-linecap="round"/>`,
+};
+// 같은 뜻의 다른 id (역할 정의가 바뀌어도 그림이 나오게)
+Object.assign(INF_SVG, {
+  c_red: INF_SVG.red, c_blue: INF_SVG.blue, c_green: INF_SVG.green, c_yellow: INF_SVG.yellow, c_pink: INF_SVG.purple, c_bw: INF_SVG.bw, c_brown: INF_SVG.brown,
+  skull: INF_SVG.body, check: INF_SVG.yes, cross: INF_SVG.no, ladder: () => ICON.ladder, cam: () => ICON.cams, admin: () => ICON.admin,
+  meeting: () => ICON.button, lights: () => ICON.lights, sab: () => ICON.sabotage, report: () => ICON.report,
+});
+export const INF_LABEL = Object.fromEntries(INFLUENCER_IMAGES.map(i => [i.id, i.label]));
+export function infImg(id) {
+  const v = INF_SVG[id];
+  const body = typeof v === 'function' ? v() : v;
+  if (body) return `<svg viewBox="0 0 100 100">${body}</svg>`;
+  const e = INFLUENCER_IMAGES.find(i => i.id === id);
+  return `<svg viewBox="0 0 100 100"><text x="50" y="66" text-anchor="middle" font-size="54">${esc(e?.icon || '?')}</text></svg>`;
+}
 
 // ---------- 효과음 (WebAudio 합성, core.sfx 에 없는 것들) ----------
 let AC = null, noiseBuf = null;
@@ -94,19 +132,19 @@ export const SND = {
   gavel: () => { tone([[90, 0.25, 'square', 0.6], [60, 0.4, 'sine', 0.6, 0.02]]); noise(0.7, 0.45, 2500, 0.05); tone([[3200, 0.3, 'triangle', 0.12, 0.08], [4100, 0.25, 'triangle', 0.1, 0.16]]); },
   poof: () => noise(0.35, 0.2, 800),
   shield: () => tone([[880, 0.15, 'triangle', 0.25], [1320, 0.3, 'triangle', 0.2, 0.1]]),
+  shieldBreak: () => { noise(0.5, 0.35, 3000); tone([[1800, 0.2, 'triangle', 0.15], [1200, 0.25, 'triangle', 0.12, 0.08]]); },
   ping: () => tone([[1200, 0.12, 'sine', 0.2], [1600, 0.18, 'sine', 0.15, 0.12]]),
   door: () => tone([[160, 0.18, 'square', 0.25], [110, 0.22, 'square', 0.25, 0.12]]),
   open: () => tone([[300, 0.1, 'triangle', 0.2], [450, 0.15, 'triangle', 0.2, 0.08]]),
   unlock: () => tone([[660, 0.1, 'triangle', 0.25], [990, 0.2, 'triangle', 0.25, 0.1]]),
   msg: () => tone([[700, 0.1, 'sine', 0.2], [1050, 0.1, 'sine', 0.2, 0.1], [1400, 0.2, 'sine', 0.2, 0.2]]),
+  tick: () => tone([[1000, 0.05, 'square', 0.12]]),
 };
 
 // ---------- 공통 요소 ----------
 export const overlay = html => { const el = h(html); stage().append(el); G.overlays.push(el); return el; };
 export const dropOverlay = el => { el?.remove(); G.overlays = G.overlays.filter(o => o !== el); };
-const crewImg = (look, o = {}, w = 120, hh = 86) => crewSVG(look || {}, { noPet: true, ...o }).replace('<svg', `<svg width="${w}" height="${hh}"`);
-export { crewImg };
-
+export const crewImg = (look, o = {}, w = 120, hh = 86) => crewSVG(look || {}, { noPet: true, ...o }).replace('<svg', `<svg width="${w}" height="${hh}"`);
 export function centerMsg(text, ms = 1600, cls = '') {
   const el = G.hud && $('.center-msg', G.hud);
   if (!el) return;
@@ -118,433 +156,460 @@ export function notice(text, ms = 4000) {
   if (!el) return;
   el.textContent = text; clearTimeout(el._t); el._t = setTimeout(() => (el.textContent = ''), ms);
 }
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const fmtS = ms => `${Math.max(0, Math.ceil(ms / 1000))}`;
+export const fmtTime = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 // ---------- 행동 버튼 ----------
-// 버튼 하나: <button class="act k-{kind}" data-act=...><svg/><i class="cdv"/><b class="cdn"/><span class="lb"/></button>
-const actBtn = (a, ic, label, slot) => `<button class="act" data-act="${a}" data-slot="${slot}"><span class="icw">${icon(ic)}</span><i class="cdv"></i><b class="cdn"></b><em class="sub"></em><span class="lb">${label}</span></button>`;
-// 역할별 버튼 배치 (슬롯: 0=오른쪽 아래, 1=그 왼쪽, 2=0 위, 3=1 위, 4=3 왼쪽, 5=1 왼쪽)
-export function buildActs() {
-  const S = G.S, r = S.role, imp = isImp(), hns = hnsMode(), seek = isSeeker();
-  const list = [['use', 'use', '사용', 0]];
-  if (hns) {
-    if (seek) list.push(['kill', 'kill', '처치', 1]);
-    else list.push(['vent', 'vent', '환풍구', 1]);
-  } else if (imp) {
-    list.push(['kill', r === 'viper' ? 'acid' : 'kill', r === 'viper' ? '산' : '처치', 1], ['report', 'report', '신고', 2], ['sabotage', 'sabotage', '방해 공작', 3], ['vent', 'vent', '환풍구', 4]);
-  } else {
-    list.push(['report', 'report', '신고', 1]);
-    if (r === 'engineer') list.push(['vent', 'vent', '환풍구', 2]);
-  }
-  // 역할 능력 버튼
-  if (!hns) {
-    let slot = imp ? 5 : r === 'engineer' ? 3 : 2;
-    for (const ab of abilitiesOf(r)) {
-      if (['vent', 'acid', 'kill', 'overrule'].includes(ab.id)) continue;
-      list.push([`ab:${ab.id}`, abIcon(ab.id), ab.label || ABL[ab.id] || '능력', slot]);
-      slot = slot === 2 ? 3 : slot === 3 ? 4 : slot + 1;
-    }
-  }
-  return list.map(([a, ic, l, s]) => actBtn(a, ic, l, s)).join('');
-}
-const ABL = { vitals: '바이탈', track: '추적', protect: '보호', shift: '변신', vanish: '사라지기', interrogate: '심문', notes: '노트', message: '메시지', overrule: '기각' };
-const abIcon = id => ({ vitals: 'vitals', track: 'track', protect: 'protect', shift: 'shift', vanish: 'vanish', interrogate: 'interrogate', notes: 'notes', message: 'message', overrule: 'overrule' })[id] || 'use';
-// 역할의 능력 목록 (roles.js 의 ability/abilities + 탐정 노트)
+// 자리(slot): 0=오른쪽 아래, 1=그 왼쪽, 2=0 위, 3=1 위, 4=3 왼쪽, 5=1 왼쪽, 6=4 왼쪽
+const actBtn = (a, ic, label, slot, kind = '') => `<button class="act ${kind}" data-act="${a}" data-slot="${slot}"><span class="icw">${icon(ic)}</span><i class="cdv"></i><b class="cdn"></b><em class="sub"></em><span class="lb">${label}</span></button>`;
+const AB_IC = { vitals: 'vitals', track: 'track', protect: 'protect', shift: 'shift', vanish: 'vanish', interrogate: 'interrogate', notes: 'notes', message: 'message', overrule: 'overrule' };
+// 역할의 버튼 능력 목록 (환풍구·산은 별도 버튼)
 export function abilitiesOf(r) {
   const d = roleDef(r) || {};
-  const list = [...(d.abilities || []), ...(d.ability ? [d.ability] : [])].filter(a => a?.id);
-  if (r === 'detective' && !list.some(a => a.id === 'notes')) list.unshift({ id: 'notes', label: '노트' });
+  const list = [d.ability, d.ability2, ...(d.abilities || [])].filter(a => a?.id && !['vent', 'acid', 'kill'].includes(a.id));
+  if (r === 'detective' && !list.some(a => a.id === 'notes')) list.push({ id: 'notes', label: '노트' });
   const seen = new Set();
   return list.filter(a => !seen.has(a.id) && seen.add(a.id));
 }
-
-// 버튼 상태 갱신 헬퍼 (바뀐 것만 DOM 수정)
-function setBtn(el, { show = true, ok = false, cd = 0, cdMax = 0, label, ic, sub = '' } = {}) {
+export function buildActs() {
+  const S = G.S, r = S.role, imp = isImp(), hns = hnsMode(), live = alive(), ghostRole = !!roleDef(r)?.ghost;
+  const list = [];
+  if (hns) {
+    list.push(['use', 'use', '사용', 0]);
+    if (live) list.push(isSeeker() ? ['kill', 'kill', '처치', 1, 'k-kill'] : ['vent', 'vent', '환풍구', 1]);
+  } else if (imp) {
+    list.push(['use', 'sabotage', '방해 공작', 0, 'k-sab']);
+    if (live) {
+      const viper = r === 'viper';
+      list.push(['kill', viper ? 'acid' : 'kill', viper ? '산' : '처치', 1, 'k-kill'], ['report', 'report', '신고', 2, 'k-report'], ['vent', 'vent', '환풍구', 3]);
+    }
+  } else {
+    list.push(['use', 'use', '사용', 0]);
+    if (live) list.push(['report', 'report', '신고', 2, 'k-report']);
+    if (live && r === 'engineer') list.push(['vent', 'vent', '환풍구', 1]);
+  }
+  if (!hns && (live || ghostRole)) {
+    const slots = imp ? [5, 4, 6] : r === 'engineer' ? [3, 5, 4] : [1, 3, 5];
+    abilitiesOf(r).forEach((ab, i) => list.push([`ab:${ab.id}`, AB_IC[ab.id] || 'use', ab.label || '능력', slots[i] ?? 6, `k-ab ab-${ab.id}`]));
+  }
+  return list.map(([a, ic, l, s, k]) => actBtn(a, ic, l, s, k)).join('');
+}
+// 버튼 상태 갱신 (바뀐 것만 DOM 수정)
+function setBtn(el, { show = true, ok = false, cd = 0, cdMax = 0, label, ic, sub = '', on = false, locked = false } = {}) {
   if (!el) return;
   if (el._show !== show) { el._show = show; el.classList.toggle('hide', !show); }
   if (!show) return;
   if (el._ok !== ok) { el._ok = ok; el.classList.toggle('ok', ok); }
+  if (el._on !== on) { el._on = on; el.classList.toggle('on', on); }
+  if (el._lk !== locked) { el._lk = locked; el.classList.toggle('locked', locked); }
   const n = cd > 0 ? Math.ceil(cd / 1000) : 0;
   if (el._n !== n) { el._n = n; $('.cdn', el).textContent = n || ''; el.classList.toggle('oncd', !!n); }
-  const p = n && cdMax ? Math.max(0, Math.min(1, cd / cdMax)) : 0;
-  const pr = Math.round(p * 100);
+  const pr = n && cdMax ? Math.round(Math.max(0, Math.min(1, cd / cdMax)) * 100) : 0;
   if (el._p !== pr) { el._p = pr; $('.cdv', el).style.height = `${pr}%`; }
   if (label !== undefined && el._lb !== label) { el._lb = label; $('.lb', el).textContent = label; }
   if (ic !== undefined && el._ic !== ic) { el._ic = ic; $('.icw', el).innerHTML = icon(ic); }
   if (el._sub !== sub) { el._sub = sub; $('.sub', el).textContent = sub; }
 }
 
-// ---------- 매 프레임 HUD 갱신 (게임 중) ----------
-const USE_D = 210;
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-function nearest(list, from, max, los) {
-  let best = null, bd = max;
-  for (const it of list) {
-    const d = dist(it, from) - (it.r || 0);
-    if (d < bd && (!los || lineClear(G.map, from.x, from.y, it.x, it.y, scene.doorsClosed))) { bd = d; best = it; }
-  }
-  return best;
+// ---------- 사용 대상 ----------
+// 벽 너머의 장치는 못 씀: 장치 바로 앞(플레이어 쪽 70)까지 시야가 트여 있어야 함
+function reachable(from, it) {
+  const d = dist(from, it);
+  if (d < 90) return true;
+  const k = Math.min(1, 70 / d), px = it.x + (from.x - it.x) * k, py = it.y + (from.y - it.y) * k;
+  return lineClear(G.map, from.x, from.y, px, py, scene.doorsClosed);
 }
-// 사용 가능한 대상 목록
 function useCands(meP, live) {
-  const S = G.S, m = G.map, imp = isImp(), hns = hnsMode(), c = [];
-  const comms = commsOn();
-  // 내 임무 (유령도 클래식에서는 가능)
-  if (!imp && !comms && (live || !hns) && !S.vanished) {
+  const S = G.S, m = G.map, imp = isImp(), hns = hnsMode(), comms = commsOn(), c = [];
+  const st = id => m.stations?.[id];
+  if (!imp && !comms && !S.vanished && (live || !hns)) {
     S.tasks.forEach((t, i) => {
       if (t.step >= t.st.length) return;
-      const st = m.stations[t.st[t.step]];
-      if (st) c.push({ kind: 'task', i, id: t.st[t.step], x: st.x, y: st.y });
+      const s = st(t.st[t.step]);
+      if (s) c.push({ kind: 'task', i, id: t.st[t.step], x: s.x, y: s.y });
     });
   }
   if (!live) return c;
-  // 사보타주 수리
   if (S.sab && !S.vanished) {
     const d = sabDef(S.sab.k);
     for (const [id, part] of Object.entries(d?.fix || {})) {
       if (S.sab.parts.includes(part) && !d.together) continue;
-      const st = m.stations[id];
-      if (st) c.push({ kind: 'fix', id, part, x: st.x, y: st.y });
+      const s = st(id);
+      if (s) c.push({ kind: 'fix', id, part, x: s.x, y: s.y });
     }
   }
-  if (!hns && m.button) c.push({ kind: 'button', id: 'button', x: m.button.x, y: m.button.y, r: 90 });
-  // 장비
-  const eq = [['cams', m.cams?.station], ['admin', m.admin], ['vitals', m.vitals], ['doorlog', m.doorlog]];
-  for (const [kind, id] of eq) { const st = id && m.stations[id]; if (st) c.push({ kind, id, x: st.x, y: st.y }); }
-  // 수동 문
-  if (m.doorMode === 'manual') for (const id of scene.doorsClosed || []) {
-    const d = m.doorById?.[id];
-    if (d) c.push({ kind: 'door', id, x: d.x + d.w / 2, y: d.y + d.h / 2, r: Math.max(d.w, d.h) / 2 + 30 });
+  if (!hns && m.button && !S.vanished) c.push({ kind: 'button', id: 'button', x: m.button.x, y: m.button.y, max: RULES.buttonDist + 40 });
+  if (!hns) {
+    for (const [kind, id] of [['cams', m.cams?.station], ['admin', m.admin], ['vitals', m.vitals], ['doorlog', m.doorlog]]) {
+      const s = id && st(id);
+      if (s) c.push({ kind, id, x: s.x, y: s.y });
+    }
   }
-  // 사다리·짚라인 등
+  if (m.doorMode === 'manual' && !S.vanished) for (const id of scene.doorsClosed || []) {
+    const d = m.doorById?.[id];
+    if (d) c.push({ kind: 'door', id, x: d.x + d.w / 2, y: d.y + d.h / 2, max: Math.max(d.w, d.h) / 2 + 170, los: false });
+  }
   for (const t of m.transports || []) {
-    if (t.a) c.push({ kind: 'transport', id: t.id, tk: t.kind, end: 'a', x: t.a.x, y: t.a.y });
-    if (t.b && !t.oneWay) c.push({ kind: 'transport', id: t.id, tk: t.kind, end: 'b', x: t.b.x, y: t.b.y });
+    if (t.a) c.push({ kind: 'transport', id: t.id, tk: t.kind, end: 'a', x: t.a.x, y: t.a.y, max: RULES.useDist + 40 });
+    if (t.b && !t.oneWay) c.push({ kind: 'transport', id: t.id, tk: t.kind, end: 'b', x: t.b.x, y: t.b.y, max: RULES.useDist + 40 });
   }
   return c;
 }
-const USE_IC = { task: 'use', fix: 'use', button: 'button', cams: 'cams', admin: 'admin', vitals: 'vitals', doorlog: 'doorlog', door: 'door', custom: 'customize' };
-const USE_LB = { cams: '보안', admin: '관리', vitals: '바이탈', doorlog: '문 기록', door: '문 열기', transport: '사용' };
+function pickUse(cands, meP) {
+  let best = null, bs = 1;
+  for (const it of cands) {
+    const d = dist(it, meP), max = it.max || RULES.useDist, sc = d / max;
+    if (sc <= bs && (it.los === false || reachable(meP, it))) { bs = sc; best = it; }
+  }
+  return best;
+}
+// 가장 가까운 대상 (los: 벽·닫힌 문에 막히지 않아야 함)
+function nearest(list, from, max, los) {
+  let best = null, bd = max;
+  for (const it of list) {
+    const d = dist(it, from);
+    if (d < bd && (!los || lineClear(G.map, from.x, from.y, it.x, it.y, scene.doorsClosed))) { bd = d; best = it; }
+  }
+  return best;
+}
+const USE_IC = { task: 'use', fix: 'use', button: 'button', cams: 'cams', admin: 'admin', vitals: 'vitals', doorlog: 'doorlog', door: 'door' };
+const USE_LB = { cams: '보안', admin: '관리', vitals: '바이탈', doorlog: '문 기록', door: '문 열기', button: '사용' };
 const TR_IC = { ladder: 'ladder', zipline: 'zipline', platform: 'platform', stairs: 'stairs', decon: 'decon' };
 
+// ---------- 매 프레임 HUD 갱신 (게임 중) ----------
 export function updateHud() {
   const S = G.S, hud = G.hud;
   if (!S?.game || !hud) return;
   const g = S.game, s = g.settings, meP = scene.players.get(S.you);
   if (!meP) return;
-  const t = now(), live = alive(), imp = isImp(), hns = hnsMode(), seek = isSeeker();
-  const inPlay = S.phase === 'play' && !G.mg && !scene.frozen && !S.busy;
-  const comms = commsOn();
-  // 1) 사용
-  const cands = inPlay ? useCands(meP, live) : [];
-  let use = nearest(cands.filter(c => c.kind !== 'button' && c.kind !== 'door'), meP, USE_D, live)
-    || nearest(cands.filter(c => c.kind === 'door'), meP, 120, false)
-    || nearest(cands.filter(c => c.kind === 'button'), meP, 200, live);
-  if (use?.kind === 'transport' && S.transportUntil > t) use = null;
+  const t = now(), live = alive(), imp = isImp(), hns = hnsMode(), seek = isSeeker(), comms = commsOn();
+  if (S.hns) S.hnsLocked = seek && S.hns.phase === 'hide' && (S.hns.leadEnd || 0) > t;
+  const inPlay = S.phase === 'play' && !G.mg && !S.picking && !(S.transportUntil > t) && !S.possessed && !(G.panel && G.panel.kind !== 'map');
+  // 1) 사용 (임포스터는 쓸 것이 없으면 방해 공작 버튼)
+  let use = inPlay ? pickUse(useCands(meP, live), meP) : null;
   S.use = use;
   scene.hl = use?.id ?? null;
-  setBtn($('[data-act=use]', hud), { ok: !!use, ic: use ? (use.kind === 'transport' ? TR_IC[use.tk] || 'ladder' : USE_IC[use.kind] || 'use') : 'use', label: use ? USE_LB[use.kind] || '사용' : '사용' });
+  const ub = $('[data-act=use]', hud);
+  if (imp && !hns && !use) setBtn(ub, { ok: S.phase === 'play' && !G.mg && !S.picking, ic: 'sabotage', label: '방해 공작' });
+  else setBtn(ub, { ok: !!use, ic: use ? (use.kind === 'transport' ? TR_IC[use.tk] || 'ladder' : USE_IC[use.kind] || 'use') : 'use', label: use ? USE_LB[use.kind] || '사용' : '사용' });
   // 2) 신고
   const rep = $('[data-act=report]', hud);
+  S.report = null; scene.reportId = null;
   if (rep) {
-    const body = live && inPlay && !hns && !S.vanished ? nearest(scene.bodies.filter(b => !b.gone), meP, 330, true) : null;
+    const range = Math.min(RULES.reportDist, (scene.visionR?.() || 560) + 80);
+    const body = live && inPlay && !hns && !S.vanished && !scene.inVent ? nearest(scene.bodies.filter(b => !b.gone), meP, range, true) : null;
     S.report = body; scene.reportId = body?.id ?? null;
-    setBtn(rep, { ok: !!body });
+    setBtn(rep, { show: live, ok: !!body });
   }
   // 3) 처치 (바이퍼는 산)
   const kb = $('[data-act=kill]', hud);
   scene.killId = null; S.kill = null;
   if (kb) {
-    if (scene.inVent && S.killAt > t) S.killAt += G.dt * 1000; // 환풍구 안에서는 쿨다운 멈춤
-    const cd = Math.max(0, S.killAt - t);
-    const range = hns ? KILL_D[0] * 0.8 : KILL_D[s.killDistance ?? 1] ?? 260;
+    const cd = cdLeft('kill');
+    const kd = +s.killDistance;
+    const range = hns ? RULES.hnsKillDist + 40 : kd >= 0 && kd <= 2 ? KILL_D[Math.round(kd)] : KILL_D[1];
     const targets = live && inPlay && !scene.inVent && !S.vanished && !S.hnsLocked
-      ? [...scene.players.values()].filter(p => p.id !== S.you && !S.dead.has(p.id) && !p.vent && !(hns ? false : S.mates.has(p.id)) && !(hns && S.mates.has(p.id))) : [];
+      ? [...scene.players.values()].filter(p => p.id !== S.you && !S.dead.has(p.id) && !S.gone.has(p.id) && !p.vent && !p.moving && !S.mates.has(p.id)) : [];
     const tg = nearest(targets, meP, range, true);
     if (tg && !cd) { S.kill = tg; scene.killId = tg.id; }
-    setBtn(kb, { show: live, ok: !!S.kill, cd: live ? cd : 0, cdMax: (hns ? 5 : s.killCooldown) * 1000 });
+    setBtn(kb, { show: live, ok: !!S.kill, cd: live ? cd : 0, cdMax: S.cdMax.kill || fullCd('kill') });
   }
-  // 4) 사보타주 버튼
-  const sb = $('[data-act=sabotage]', hud);
-  if (sb) setBtn(sb, { ok: S.phase === 'play' && !G.mg, cd: 0 });
-  // 5) 환풍구
+  // 4) 환풍구
   const vb = $('[data-act=vent]', hud);
   S.vent = null;
   if (vb) {
-    const eng = S.role === 'engineer';
-    const cd = eng ? Math.max(0, (S.cd.vent || 0) - t) : 0;
+    const eng = S.role === 'engineer' && !hns;
+    const cd = eng || hns ? cdLeft('vent') : 0;
     const usesLeft = hns ? S.hns?.vents : undefined;
     const blocked = (eng && comms) || (hns && usesLeft !== undefined && usesLeft <= 0 && !scene.inVent);
     let v = null;
     if (live && inPlay && !blocked) {
       if (scene.inVent) v = { id: scene.inVent };
-      else if (!cd) v = nearest(Object.values(G.map.vents || {}), meP, 170, false);
+      else if (!cd) v = nearest(Object.values(G.map.vents || {}), meP, RULES.ventDist, false);
     }
     S.vent = v;
     if (v && !scene.inVent && !use) scene.hl = v.id;
     let sub = '';
-    if (eng && scene.inVent && S.ventOutAt) sub = `${Math.max(0, Math.ceil((S.ventOutAt - t) / 1000))}`;
-    if (hns && usesLeft !== undefined) sub = `${usesLeft}`;
-    setBtn(vb, { show: live, ok: !!v, cd, cdMax: (roleOpt('engineer', /cool/i, 30)) * 1000, label: scene.inVent ? '나가기' : '환풍구', sub });
+    if (scene.inVent && S.ventOutAt) sub = fmtS(S.ventOutAt - t);
+    else if (hns && usesLeft !== undefined) sub = `${usesLeft}`;
+    setBtn(vb, { show: live, ok: !!v, cd, cdMax: S.cdMax.vent || fullCd('vent'), sub, on: !!scene.inVent });
   }
-  // 6) 역할 능력
+  // 5) 역할 능력
+  scene.abilityId = null;
   for (const b of $$('[data-act^="ab:"]', hud)) updateAbility(b, b.dataset.act.slice(3), meP, live, inPlay, comms, t);
-  // 채팅 버튼 (유령이거나 회의 중)
-  const showChat = !!S.meeting || (!live && !g.practice);
+  // 채팅 버튼 (회의 중이거나 유령)
   const cb = $('.chatb', hud);
   if (cb) {
-    cb.classList.toggle('hidden', !showChat);
+    cb.classList.toggle('hidden', !(S.meeting || (!live && !g.practice)));
     const bd = $('.badge', cb); bd.textContent = S.unread; bd.classList.toggle('hidden', !S.unread);
   }
-  // 사보타주/숨바꼭질 타이머
+  // 과학자 배터리: 서버 값 사이를 부드럽게
+  if (S.vitalsOpen === 'ability' && S.battery > 0) S.battery = Math.max(0, S.battery - G.dt * 1000);
   sabTick(t);
   if (hns) hnsTick(t, meP);
-  if (S.sab || S.track || S.hns || S.role === 'judge' || S.role === 'scientist') renderTasksThrottled();
-  // 과학자 배터리
-  batteryTick(t);
+  if (t - lastTasksDraw > 450 && (S.sab || S.track || S.hns || S.shifted || S.vanished || scene.inVent || ['judge', 'scientist', 'detective'].includes(S.role))) renderTasks();
 }
 
 // 역할 능력 버튼 하나
 function updateAbility(b, id, meP, live, inPlay, comms, t) {
-  const S = G.S, s = S.game.settings, cdLeft = Math.max(0, (S.cd[id] || 0) - t);
-  const cdMax = S.cdMax[id] || cdLeft || 1;
-  const near = (alivePlayersOnly, max) => nearest([...scene.players.values()].filter(p => p.id !== S.you && !S.dead.has(p.id) && !p.vent && (!alivePlayersOnly || !p.dead)), meP, max, live);
-  let ok = false, label, ic, sub = '', show = true, target = null;
+  const S = G.S, cd = cdLeft(id), cdMax = S.cdMax[id] || fullCd(id) || 1;
+  const reach = RULES.targetDist + (live ? 0 : 100);
+  const near = () => nearest([...scene.players.values()].filter(p => p.id !== S.you && !S.dead.has(p.id) && !S.gone.has(p.id) && !p.vent && !p.moving), meP, reach, live);
+  const ab = abilitiesOf(S.role).find(a => a.id === id) || {};
+  let ok = false, label = ab.label, ic = AB_IC[id], sub = '', show = true, target = null, on = false, locked = false, cdShow = cd;
   switch (id) {
     case 'vitals': {
-      const bat = S.battery ?? 1;
-      ok = !comms && (bat > 0.05) && !cdLeft && S.phase === 'play' && !G.mg;
-      sub = S.batteryMax ? `${Math.round((bat / S.batteryMax) * 100)}%` : '';
-      if (!live && S.role === 'scientist') show = true;
+      const pct = S.batteryMax ? Math.round((Math.max(0, S.battery) / S.batteryMax) * 100) : 0;
+      on = S.vitalsOpen === 'ability';
+      ok = live && !comms && S.battery > 50 && !cd && S.phase === 'play' && !G.mg && !(G.panel && G.panel.kind !== 'map' && !on);
+      sub = S.batteryMax ? `${pct}%` : '';
+      show = live;
       break;
     }
     case 'track':
-      if (S.track) { ok = !comms; label = '추적 해제'; ic = 'untrack'; sub = `${Math.max(0, Math.ceil((S.track.until - t) / 1000))}`; }
-      else { target = live && inPlay && !comms && !cdLeft ? near(true, KILL_D[1]) : null; ok = !!target; label = '추적'; ic = 'track'; }
       show = live;
+      if (S.track) { on = true; ok = !comms; label = ab.offLabel || '추적 해제'; ic = 'untrack'; sub = fmtS(S.track.until - t); cdShow = 0; }
+      else { target = live && inPlay && !comms && !cd ? near() : null; ok = !!target; }
       break;
     case 'protect':
-      target = !live && inPlay && !comms && !cdLeft ? near(true, 320) : null; ok = !!target; show = !live;
+      show = !live;
+      target = !live && inPlay && !comms && !cd ? near() : null; ok = !!target;
       break;
     case 'message':
-      target = !live && inPlay && !cdLeft ? near(true, 320) : null; ok = !!target; show = !live;
+      show = !live;
+      target = !live && inPlay && !cd ? near() : null; ok = !!target;
       break;
     case 'shift':
-      ok = live && inPlay && (S.shifted ? true : !cdLeft); label = S.shifted ? '변신 해제' : '변신'; ic = S.shifted ? 'unshift' : 'shift'; show = live;
-      if (S.shifted && S.shiftUntil) sub = `${Math.max(0, Math.ceil((S.shiftUntil - t) / 1000))}`;
+      show = live;
+      if (S.shifted) { on = true; ok = inPlay; label = ab.offLabel || '변신 해제'; ic = 'unshift'; cdShow = 0; if (S.shiftUntil) sub = fmtS(S.shiftUntil - t); }
+      else ok = live && inPlay && !cd && !comms && !S.vanished;
       break;
     case 'vanish':
-      ok = live && inPlay && !scene.inVent && (S.vanished ? true : !cdLeft && !comms); label = S.vanished ? '나타나기' : '사라지기'; ic = S.vanished ? 'appear' : 'vanish'; show = live;
-      if (S.vanished && S.vanishUntil) sub = `${Math.max(0, Math.ceil((S.vanishUntil - t) / 1000))}`;
+      show = live;
+      if (S.vanished) { on = true; ok = inPlay || !!scene.inVent; label = ab.offLabel || '나타나기'; ic = 'appear'; cdShow = 0; if (S.vanishUntil) sub = fmtS(S.vanishUntil - t); }
+      else ok = live && inPlay && !scene.inVent && !cd && !comms;
       break;
     case 'interrogate': {
-      const cs = S.cases?.[S.activeCase];
-      const lim = roleOpt('detective', /suspect|limit/i, 3);
-      const can = live && inPlay && !comms && !cdLeft && cs && (cs.suspects.length < lim);
-      target = can ? near(true, KILL_D[1]) : null; ok = !!target; show = live;
-      sub = cs ? `${cs.suspects.length}/${lim}` : '';
+      show = live;
+      const cs = S.cases?.find(c => c.id === S.activeCase);
+      const lim = S.caseLimit || 3;
+      sub = cs ? `${cs.suspects?.length || 0}/${lim}` : '';
+      locked = !cs;
+      const can = live && inPlay && !comms && !cd && cs && (cs.suspects?.length || 0) < lim;
+      target = can ? near() : null; ok = !!target;
       break;
     }
-    case 'notes': ok = !G.mg || S.meeting; show = true; break;
+    case 'notes': ok = true; sub = S.cases?.length ? `${S.cases.length}` : ''; break;
+    case 'overrule': {
+      show = live;
+      const J = S.judge;
+      locked = !J || J.locked || J.used;
+      ok = !!J && !J.locked && !J.used;
+      if (J?.used) sub = '사용함';
+      else if (J?.locked) { const req = Math.ceil(((J.total || 0) * (J.need || 0)) / 100); sub = `${Math.min(J.done || 0, req)}/${req}`; }
+      break;
+    }
     default:
-      target = live && inPlay && !cdLeft ? near(true, KILL_D[1]) : null;
-      ok = roleDef(S.role)?.ability?.target ? !!target : live && inPlay && !cdLeft;
+      target = live && inPlay && !cd ? near() : null;
+      ok = ab.target ? !!target : live && inPlay && !cd;
   }
-  if (target && !scene.killId) { scene.abilityId = target.id; }
+  if (target) { scene.abilityId = target.id; scene.abilityColor = roleAccent(S.role); }
   b._target = target?.id ?? null;
-  setBtn(b, { show, ok, cd: cdLeft, cdMax, label, ic, sub });
+  setBtn(b, { show, ok, cd: cdShow, cdMax, label, ic, sub, on, locked });
 }
 
 // ---------- 임무 목록 / 진행 바 ----------
 let lastTasksDraw = 0;
-function renderTasksThrottled() { const t = now(); if (t - lastTasksDraw > 400) renderTasks(); }
 export function renderTasks() {
   const S = G.S, hud = G.hud;
   if (!S?.game || !hud) return;
   lastTasksDraw = now();
-  const m = G.map, s = S.game.settings, imp = isImp(), hns = hnsMode(), comms = commsOn();
-  // 진행 바
+  const m = G.map, s = S.game.settings, imp = isImp(), hns = hnsMode(), comms = commsOn(), live = alive(), t = now();
+  // 진행 바 (항상 / 회의 때만 / 안 함)
   const bar = $('.taskbar', hud);
   if (bar) {
-    const mode = s.taskBar ?? 0;
+    const mode = +s.taskBar || 0;
     bar.classList.toggle('hidden', mode === 2 || hns);
     bar.classList.toggle('comms', comms);
-    const p = S.bar?.total ? (S.bar.done / S.bar.total) * 100 : 0;
+    const p = S.bar?.total ? Math.min(100, (S.bar.done / S.bar.total) * 100) : 0;
     $('i', bar).style.width = `${comms ? 0 : p}%`;
-    $('b', bar).textContent = comms ? '통신 방해됨' : mode === 1 ? '총 임무 완료 (회의 때 갱신)' : '총 임무 완료';
+    const txt = comms ? '통신 방해됨' : mode === 1 ? '총 임무 완료 (회의 때 갱신)' : '총 임무 완료';
+    if ($('b', bar).textContent !== txt) $('b', bar).textContent = txt;
   }
   const lines = [];
-  const sab = S.sab, sd = sab && sabDef(sab.k);
-  if (sab && sd) {
-    const parts = new Set(Object.values(sd.fix || {})).size || 1;
-    const sec = Math.max(0, Math.ceil((S.sabEnd - now()) / 1000));
-    const txt = sd.type === 'critical' ? `${esc(sd.name)}까지: ${sec}초 (${sab.parts.length}/${parts})`
-      : sd.type === 'lights' ? '조명 수리하기' : sd.type === 'comms' ? '통신실에 방해 공작 발생' : sd.type === 'mixup' ? `${esc(sd.name)} — ${sec ? `${sec}초 뒤 회복` : '수리하기'}` : esc(sd.name);
+  // 사보타주 줄
+  const sab = S.sab, sd = sab && sabDef(sab.k), type = sabType();
+  if (sab) {
+    const need = sab.need?.length || new Set(Object.values(sd?.fix || {})).size || 1;
+    const done = sd?.together ? Object.values(sab.held || {}).filter(Boolean).length : sab.parts.length;
+    const sec = S.sabEnd ? Math.max(0, Math.ceil((S.sabEnd - t) / 1000)) : 0;
+    const name = esc(sab.name || sd?.name || '방해 공작');
+    const room = sd?.room ? m.rooms?.find(r => r.id === sd.room)?.name : '';
+    const txt = type === 'critical' ? `${name}까지: ${sec}초 (${done}/${need})`
+      : type === 'lights' ? `${room ? `${esc(room)}: ` : ''}조명 수리하기` : type === 'comms' ? `통신실에 방해 공작 발생${need > 1 ? ` (${done}/${need})` : ''}`
+        : type === 'mixup' ? `${name}${sec ? ` — ${sec}초 뒤 회복` : ''}` : name;
     lines.push(`<div class="sab">${txt}</div>`);
   }
-  const dead = !alive();
-  if (dead) lines.push(`<div class="ghostl">${hns ? '죽었습니다. 혼란을 즐기세요.' : imp ? '죽었습니다. 방해 공작은 계속 가능합니다.' : '죽었습니다. 승리할 수 있게 임무를 끝내세요.'}</div>`);
+  if (!live) lines.push(`<div class="ghostl">${hns ? '죽었습니다. 혼란을 즐기세요.' : imp ? '죽었습니다. 방해 공작은 계속 가능합니다.' : '죽었습니다. 승리할 수 있게 임무를 끝내세요.'}</div>`);
   if (hns) {
-    lines.push(isSeeker() ? '<div class="fake">제한 시간 내에 크루원을 모두 처치하세요!</div>' : '<div class="role">시간이 다 될 때까지 살아남으세요. 임무를 완료하면 타이머가 줄어듭니다.</div>');
-  } else if (imp) lines.push('<div class="fake">방해 공작을 펼치고 모두를 처치하세요.</div><div class="fake">가짜 임무:</div>');
-  // 역할 안내 줄
-  const rl = roleLine();
+    if (isSeeker()) lines.push('<div class="fake">제한 시간 내에 크루원을 모두 처치하세요!</div>');
+    else if (live) lines.push(`<div class="role">${S.hns?.phase === 'final' ? '마지막 숨기! 끝까지 살아남으세요.' : '시간이 다 될 때까지 살아남으세요. 임무를 완료하면 타이머가 줄어듭니다.'}</div>`);
+  } else if (imp && live) lines.push('<div class="fake">방해 공작을 펼치고 모두를 처치하세요.</div>');
+  const rl = roleLine(t);
   if (rl) lines.push(`<div class="role">${rl}</div>`);
-  if (comms && !imp) lines.push('<div class="sab">통신 방해 — 임무 목록을 볼 수 없습니다</div>');
-  else if (!(hns && isSeeker())) {
+  if (comms) {
+    if (!sab) lines.push('<div class="sab">통신실에 방해 공작 발생</div>');
+  } else if (!(hns && (isSeeker() || !live))) {
+    if (imp && S.tasks.length) lines.push('<div class="fake">가짜 임무:</div>');
     let all = S.tasks.length > 0;
-    for (const t of S.tasks) {
-      const T = taskById(m, t.id) || { name: t.name || t.id };
-      const n = t.st.length, done = t.step >= n, cur = Math.min(t.step, n - 1);
+    for (const tk of S.tasks) {
+      const T = taskById(m, tk.id) || { name: tk.name || tk.id };
+      const n = tk.st.length, done = tk.step >= n, cur = Math.min(tk.step, n - 1);
       if (!done) all = false;
-      const st = m.stations[t.st[cur]], room = st?.room || '복도';
+      const room = m.stations?.[tk.st[cur]]?.room || '복도';
       const lb = stepLabel(T, cur) || T.name;
-      lines.push(`<div class="${done ? 'done' : t.step ? 'part' : ''}">${esc(room)}: ${esc(lb)}${n > 1 ? ` (${t.step}/${n})` : ''}${t.wait ? ` <small>${esc(t.wait)}</small>` : ''}</div>`);
+      lines.push(`<div class="${done ? 'done' : tk.step ? 'part' : ''}">${esc(room)}: ${esc(lb)}${n > 1 ? ` (${tk.step}/${n})` : ''}</div>`);
     }
-    if (all && !imp && S.phase === 'play') lines.push('<div class="done">모든 임무 완료!</div>');
+    if (all && !imp && S.phase !== 'over') lines.push('<div class="done alld">모든 임무 완료!</div>');
   }
-  const box = $('.tasklist .tl', hud);
+  const box = $('.tasklist2 .tl', hud);
   if (box) { const html = lines.join(''); if (box._h !== html) { box._h = html; box.innerHTML = html; } }
-  // 내 임무 위치 강조
-  scene.taskStations = new Set(imp || comms ? [] : S.tasks.filter(t => t.step < t.st.length).map(t => t.st[t.step]));
+  // 내 임무 위치 강조 (임포스터·통신 방해·유령 숨바꼭질 제외)
+  scene.taskStations = new Set(imp || comms ? [] : S.tasks.filter(x => x.step < x.st.length).map(x => x.st[x.step]));
 }
-function roleLine() {
-  const S = G.S, r = S.role, t = now();
-  if (r === 'judge') {
-    if (S.overruled) return '기각: 이미 사용함';
-    const need = roleOpt('judge', /task|pct|percent|unlock/i, 50);
-    const [d, n] = myTasksDone();
-    const req = Math.ceil((n * need) / 100);
-    return d >= req ? '<b style="color:#ffd84a">기각 사용 가능 — 회의 중 투표할 때 판결을 내리세요</b>' : `기각 잠김: 임무 ${req - d}개 더 완료하면 해제`;
+function roleLine(t) {
+  const S = G.S, r = S.role, d = roleDef(r), live = alive();
+  if (!d || r === 'crewmate' || r === 'impostor' || hnsMode()) return '';
+  const head = `<b style="color:${roleAccent(r)}">${esc(roleName(r))}</b>: `;
+  switch (r) {
+    case 'engineer': return head + (scene.inVent && S.ventOutAt ? `환풍구 안 — ${fmtS(S.ventOutAt - t)}초 뒤 나가야 함` : esc(d.blurb));
+    case 'scientist': return head + (S.batteryMax ? `바이탈 배터리 ${Math.round((Math.max(0, S.battery) / S.batteryMax) * 100)}%${S.battery <= 50 ? ' — 임무를 완료하면 충전' : ''}` : esc(d.blurb));
+    case 'tracker': return head + (S.track ? `${esc(nameOf(S.track.id))} 추적 중 (${fmtS(S.track.until - t)}초)${S.track.dead ? ' — 사망' : ''}` : esc(d.blurb));
+    case 'detective': { const cs = S.cases?.find(c => c.id === S.activeCase); return head + (cs ? `사건: ${esc(cs.name)} — 용의자 ${cs.suspects?.length || 0}/${S.caseLimit || 3}` : '시체가 신고되면 사건 파일이 생깁니다'); }
+    case 'judge': {
+      const J = S.judge;
+      if (!J) return head + esc(d.blurb);
+      if (J.used) return head + '기각을 이미 사용했습니다';
+      if (!J.locked) return `${head}<span style="color:#ffd84a">기각 사용 가능 — 회의에서 투표할 때 망치를 누르세요</span>`;
+      const req = Math.ceil(((J.total || 0) * (J.need || 0)) / 100);
+      return head + `기각 잠김: 임무 ${Math.max(0, req - (J.done || 0))}개 더 완료하면 해제`;
+    }
+    case 'shapeshifter': return head + (S.shifted ? `${esc(nameOf(S.shifted))}(으)로 변신 중${S.shiftUntil ? ` (${fmtS(S.shiftUntil - t)}초)` : ''}` : esc(d.blurb));
+    case 'phantom': return head + (S.vanished ? `사라진 상태${S.vanishUntil ? ` (${fmtS(S.vanishUntil - t)}초)` : ''} — 처치할 수 없음` : esc(d.blurb));
+    case 'noisemaker': return live ? head + esc(d.blurb) : '';
+    default: return head + esc(d.blurb || '');
   }
-  if (r === 'scientist' && S.batteryMax) return `바이탈 배터리 ${Math.round(((S.battery ?? 0) / S.batteryMax) * 100)}%${S.batCdEnd > t ? ` · 충전까지 ${Math.ceil((S.batCdEnd - t) / 1000)}초` : ''}`;
-  if (S.track) return `추적 중: ${esc(nameOf(S.track.id))} (${Math.max(0, Math.ceil((S.track.until - t) / 1000))}초)`;
-  if (r === 'noisemaker' && alive()) return '처치당하면 모두에게 경보가 울립니다.';
-  if (r === 'detective') { const cs = S.cases?.[S.activeCase]; return cs ? `사건: ${esc(cs.name)} — 용의자 ${cs.suspects.length}명 조사함` : '시체가 신고되면 사건 파일이 생깁니다.'; }
-  return '';
 }
 
 // ---------- 사보타주 경보 ----------
 let alarmT = 0;
 export function setSabUI() {
   const S = G.S, hud = G.hud;
-  if (!hud) return;
-  const sd = S.sab && sabDef(S.sab.k), crit = sd?.type === 'critical';
-  hud.classList.toggle('crit', !!crit);
-  const box = $('.critbox', hud);
-  if (box) box.classList.toggle('hidden', !crit);
-  if (crit) { $('.critbox .nm', hud).textContent = `${sd.name}까지`; }
+  if (!hud || !S) return;
+  const crit = sabType() === 'critical';
+  hud.classList.toggle('crit', crit);
+  hud.classList.toggle('lightsout', sabType() === 'lights' && !isImp() && alive());
+  $('.critbox', hud)?.classList.toggle('hidden', !crit);
+  if (crit) { const nm = $('.critbox .nm', hud); if (nm) nm.innerHTML = `${icon(sabIcon(S.sab.k, { type: 'critical' }))}<span>${esc(S.sab.name)}까지</span>`; }
 }
 function sabTick(t) {
-  const S = G.S, sd = S.sab && sabDef(S.sab.k);
-  if (sd?.type === 'critical') {
-    const sec = Math.max(0, Math.ceil((S.sabEnd - t) / 1000));
-    const el = $('.critbox .sec', G.hud);
-    if (el && el.textContent !== String(sec)) el.textContent = sec;
-    if (t - alarmT > 1100 && S.phase === 'play') { alarmT = t; SND.alarm(); }
-  }
-  if (sd?.type === 'mixup' && S.sabEnd && t > S.sabEnd + 500 && S.sab) { /* 서버가 해제 메시지를 보냄 */ }
-}
-
-// ---------- 과학자 배터리 ----------
-export function batteryTick(t) {
   const S = G.S;
-  if (S.role !== 'scientist' || !S.batteryMax) return;
-  const dt = (t - (S.batT || t)) / 1000; S.batT = t;
-  if (S.vitalsOpen === 'ability') {
-    S.battery = Math.max(0, S.battery - dt);
-    if (S.battery <= 0) G.closePanel?.();
-  }
-  // 임무를 모두 끝냈으면 쿨다운 뒤 자동 충전
-  const [d, n] = myTasksDone();
-  if (S.battery <= 0.05 && d >= n && !S.vitalsOpen) {
-    if (!S.batCdEnd) S.batCdEnd = t + roleOpt('scientist', /cool/i, 15) * 1000;
-    else if (t > S.batCdEnd) { S.battery = S.batteryMax; S.batCdEnd = 0; }
-  }
+  if (sabType() !== 'critical') return;
+  const sec = S.sabEnd ? Math.max(0, Math.ceil((S.sabEnd - t) / 1000)) : 0;
+  const el = $('.critbox .sec', G.hud);
+  if (el && el.textContent !== String(sec)) el.textContent = sec;
+  if (t - alarmT > 1150 && (S.phase === 'play' || S.phase === 'intro')) { alarmT = t; SND.alarm(); }
 }
 
 // ---------- 숨바꼭질 HUD ----------
-let beatT = 0;
+let beatT = 0, leadShown = -1;
 function hnsTick(t, meP) {
   const S = G.S, H = S.hns, hud = G.hud;
   if (!H) return;
-  const left = Math.max(0, (H.end || t) - t);
+  const fin = H.phase === 'final';
+  const left = Math.max(0, ((fin ? H.finalEnd : H.mainEnd) || t) - t);
   const top = $('.hnsbar', hud);
   if (top) {
-    const fin = H.phase === 'final';
     top.classList.toggle('final', fin);
-    $('.lab', top).textContent = H.phase === 'hide' ? (isSeeker() ? '술래 출발까지:' : '숨으세요!') : fin ? '마지막 숨기:' : '크루원 탈출까지:';
+    const lab = fin ? '마지막 숨기:' : '크루원 탈출까지:';
+    if ($('.lab', top).textContent !== lab) $('.lab', top).textContent = lab;
     $('.tm', top).textContent = fmtTime(left);
-    const tot = H.total || left || 1;
+    const tot = (fin ? H.finalTotal : H.mainTotal) || left || 1;
     $('.fill', top).style.width = `${Math.max(0, Math.min(100, (left / tot) * 100))}%`;
   }
-  // 위험 측정기: 가장 가까운 술래와의 거리 (원작: d² 55→15 단위², 1단위≈172)
+  // 술래 출발 전 카운트다운
+  const lead = H.phase === 'hide' ? Math.ceil(((H.leadEnd || 0) - t) / 1000) : -1;
+  if (lead !== leadShown) {
+    leadShown = lead;
+    if (lead > 0 && S.phase === 'play') { centerMsg(isSeeker() ? `${lead}초 뒤에 출발합니다` : `숨으세요! 술래가 ${lead}초 뒤 출발합니다`, 1100, isSeeker() ? 'warn' : ''); if (lead <= 3) SND.tick(); }
+  }
+  // 위험 측정기: 가장 가까운 술래와의 거리 (원작: d² 55→15 단위², 1단위 ≈ 160)
   const dm = $('.danger', hud);
   if (dm && !isSeeker() && alive()) {
     let best = 1e9;
     for (const id of S.mates) { const p = scene.players.get(id); if (p && !S.dead.has(id)) best = Math.min(best, dist(p, meP)); }
-    const u = best / 172, d2 = u * u;
+    const u = best / 160, d2 = u * u;
     const l1 = Math.max(0, Math.min(1, (55 - d2) / 40)), l2 = Math.max(0, Math.min(1, (15 - d2) / 15));
-    const lv = l1 * 0.6 + l2 * 0.4;
+    const lv = Math.min(1, l1 * 0.65 + l2 * 0.35);
     dm.style.setProperty('--lv', lv.toFixed(3));
     dm.classList.toggle('l1', l1 > 0); dm.classList.toggle('l2', l2 > 0);
     dm.classList.remove('hidden');
-    const gap = l2 > 0 ? 450 : l1 > 0 ? 900 - l1 * 350 : 0;
+    const gap = l2 > 0 ? 430 : l1 > 0 ? 950 - l1 * 380 : 0;
     if (gap && t - beatT > gap && S.phase === 'play') { beatT = t; SND.beat(l2 > 0 ? 1 : l1); }
   } else dm?.classList.add('hidden');
-  // 마지막 숨기: 술래에게 핑
-  if (isSeeker() && H.phase === 'final' && S.game.settings.hnsPings !== false && S.game.settings.hnsFinalPings !== false) {
-    const iv = (S.game.settings.hnsPingInterval ?? S.game.settings.pingInterval ?? 6) * 1000;
-    if (!H.lastPing || t - H.lastPing > iv) {
-      H.lastPing = t;
-      if (!H.serverPings) {
-        const pts = [...scene.players.values()].filter(p => p.id !== S.you && !S.dead.has(p.id) && !S.mates.has(p.id)).map(p => ({ x: p.x, y: p.y }));
-        addPings(pts);
-      }
-    }
-  }
 }
-export function addPings(pts) {
-  const until = now() + 2000;
-  scene.noises = [...(scene.noises || []).filter(n => n.until > now()), ...pts.map(p => ({ x: p.x, y: p.y, until, ping: true }))];
+export function hnsCut(ms) {
+  const el = G.hud && $('.hnsbar .cut', G.hud);
+  if (!el || !ms) return;
+  el.textContent = `-${Math.round(ms / 100) / 10}초`;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
+export function addPings(pts, ms = RULES.hnsPingShow * 1000) {
+  const until = now() + ms;
+  scene.noises = [...(scene.noises || []).filter(n => n.until > now()), ...pts.map(p => ({ x: p.x, y: p.y, until, ping: true, id: p.id }))];
   for (const p of pts) scene.effect?.('noise', { x: p.x, y: p.y, ping: true });
+  G.S.pings = pts.map(p => ({ ...p, until }));
   if (pts.length) SND.ping();
 }
-export const fmtTime = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
-// ---------- 역할 소개 화면 ----------
-export function roleIntro(players, done) {
+// ---------- 역할 소개 화면 (서버의 소개 시간에 맞춤) ----------
+export function roleIntro(players, ms, done) {
   const S = G.S, s = S.game.settings, imp = isImp(), hns = hnsMode(), seek = isSeeker();
-  const teamCol = hns ? (seek ? '#FF1919' : '#8CFFFF') : imp ? '#FF1919' : '#8CFFFF';
-  const meP = players.find(p => p.id === S.you) || { look: lookOf(S.you) };
-  const nImp = Math.max(S.mates.size, imp ? S.mates.size : 0) || s.impostors || 1;
+  const teamCol = imp ? '#FF1919' : '#8CFFFF';
+  const meP = players.find(p => p.id === S.you) || { id: S.you, name: nameOf(S.you), look: lookOf(S.you) };
+  const nImp = Math.max(1, +s.impostors || 1);
   const team = hns ? players : imp ? players.filter(p => S.mates.has(p.id) || p.id === S.you) : players;
   const others = team.filter(p => p.id !== S.you).slice(0, 14);
-  const lineup = [...others.slice(0, Math.ceil(others.length / 2)).reverse(), meP, ...others.slice(Math.ceil(others.length / 2))];
-  const el = overlay(`<div class="intro2"><div class="shh"><div class="shhcrew">${crewImg({ color: 0 }, {}, 380, 274)}<i class="finger"></i></div><h1>쉿!</h1></div></div>`);
+  const half = Math.ceil(others.length / 2);
+  const lineup = [...others.slice(0, half).reverse(), meP, ...others.slice(half)];
+  const hand = `<svg class="hand" viewBox="0 0 100 120"><path d="M38 112 C18 108 14 86 22 72 C28 62 38 62 42 66 L42 14 C42 2 60 2 60 14 L60 66 C70 62 82 68 80 82 C78 100 64 114 38 112 Z" fill="#9b0b1e" stroke="#000" stroke-width="6" stroke-linejoin="round"/><path d="M48 18 V60" stroke="#c9142c" stroke-width="7" stroke-linecap="round"/></svg>`;
+  const el = overlay(`<div class="intro2"><div class="scr"><div class="shh"><div class="shhcrew">${crewImg({ color: 0 }, {}, 380, 274)}${hand}</div><h1>쉿!</h1></div></div></div>`);
   SND.shh();
-  const fast = S.game.practice;
-  const T1 = fast ? 900 : 1500, T2 = fast ? 1900 : 3300, T3 = fast ? 1500 : 2600;
   const showRole = !hns && !['crewmate', 'impostor'].includes(S.role);
+  const total = Math.max(1500, ms);
+  const T1 = Math.round(total * (showRole ? 0.2 : 0.25)), T2 = Math.round(total * (showRole ? 0.46 : 0.75));
   const teamHtml = () => {
-    const sub = hns ? (seek ? '제한 시간 내에 크루원을 모두 처치하세요!' : `술래: <b style="color:#ff3b3b">${esc(nameOf([...S.mates][0]))}</b> — 끝까지 살아남으세요!`)
-      : imp ? (S.mates.size > 1 ? '동료 임포스터와 함께 크루원을 처치하세요' : '크루원을 처치하세요') : `우리 중에 <b style="color:#ff3b3b">임포스터가 ${nImp}명</b> 있습니다`;
-    const title = hns ? (seek ? '술래' : '크루원') : imp ? '임포스터' : '크루원';
-    return `<div class="teamscr" style="--tc:${teamCol}"><h1>${title}</h1><p>${sub}</p><div class="glow"></div>
+    const seekerName = esc(nameOf([...S.mates][0]));
+    const sub = hns ? (seek ? '제한 시간 내에 크루원을 모두 처치하세요!' : `술래: <b style="color:#ff3b3b">${seekerName}</b>`)
+      : imp ? '' : `우리 중에 <b style="color:#ff3b3b">임포스터가 ${nImp}명</b> 있습니다`;
+    return `<div class="teamscr" style="--tc:${teamCol}"><h1>${hns ? (seek ? '임포스터' : '크루원') : imp ? '임포스터' : '크루원'}</h1><p>${sub}</p><div class="glow"></div>
       <div class="lineup">${lineup.map((p, i) => {
         const k = i - lineup.indexOf(meP), a = Math.abs(k);
-        return `<div class="lc" style="--k:${k};--a:${a};z-index:${20 - a}">${crewImg(p.look, {}, 260, 187)}<span style="${S.mates.has(p.id) && (imp || hns) ? 'color:#ff3b3b' : ''}">${esc(p.name)}</span></div>`;
+        const red = (imp || hns) && S.mates.has(p.id);
+        return `<div class="lc ${k < 0 ? 'l' : ''}" style="--k:${k};--a:${a};z-index:${20 - a}">${crewImg(p.look, {}, 260, 187)}<span style="${red ? 'color:#ff3b3b' : ''}">${esc(p.name)}</span></div>`;
       }).join('')}</div>${hns ? hnsCards(seek) : ''}</div>`;
   };
   const roleHtml = () => {
     const d = roleDef(S.role) || {};
-    return `<div class="rolescr" style="--tc:${roleColor(S.role)}"><div class="you">당신의 역할은</div><h1>${esc(roleName(S.role))}</h1><p>${esc(d.desc || '')}</p>
-      <div class="solo">${crewImg(meP.look, {}, 360, 259)}</div></div>`;
+    return `<div class="rolescr" style="--tc:${roleColor(S.role)};--ac:${roleAccent(S.role)}"><div class="you">당신의 역할은</div><h1>${esc(roleName(S.role))}</h1><p>${esc(d.blurb || d.desc || '')}</p>
+      <div class="solo">${crewImg(meP.look, d.ghost ? { ghost: true } : {}, 360, 259)}</div></div>`;
   };
-  const timers = [setTimeout(() => { el.firstElementChild.innerHTML = teamHtml(); }, T1)];
-  if (showRole) timers.push(setTimeout(() => { el.firstElementChild.innerHTML = roleHtml(); }, T1 + T2));
-  timers.push(setTimeout(() => { el.classList.add('out'); }, T1 + T2 + (showRole ? T3 : 0) - 350));
-  timers.push(setTimeout(() => { dropOverlay(el); done?.(); }, T1 + T2 + (showRole ? T3 : 0)));
-  el.onclick = () => { if (fast) { timers.forEach(clearTimeout); dropOverlay(el); done?.(); } };
+  const scr = $('.scr', el);
+  const timers = [setTimeout(() => { scr.innerHTML = teamHtml(); }, T1)];
+  if (showRole) timers.push(setTimeout(() => { scr.innerHTML = roleHtml(); }, T1 + T2));
+  timers.push(setTimeout(() => el.classList.add('out'), total - 300));
+  timers.push(setTimeout(() => { dropOverlay(el); done?.(); }, total));
   return el;
 }
 function hnsCards(seek) {
@@ -555,45 +620,50 @@ function hnsCards(seek) {
 }
 
 // ---------- 처치당함 연출 (피해자 화면) ----------
-export function killSplash(killerLook, victimLook) {
-  const el = overlay(`<div class="killsplash"><div class="ks-bg"></div><div class="ks-row"><div class="ks-k">${crewImg(killerLook, {}, 380, 274)}</div>
-    <div class="ks-knife">${icon('kill')}</div><div class="ks-v">${crewImg(victimLook, { dead: true }, 380, 274)}</div></div></div>`);
-  setTimeout(() => el.classList.add('out'), 1700);
-  setTimeout(() => dropOverlay(el), 2100);
+export function killSplash(killerLook, victimLook, acid) {
+  const el = overlay(`<div class="killsplash ${acid ? 'acid' : ''}"><div class="ks-bg"></div><div class="ks-row"><div class="ks-k">${crewImg(killerLook, {}, 380, 274)}</div>
+    <div class="ks-knife">${icon(acid ? 'acid' : 'kill')}</div><div class="ks-v">${crewImg(victimLook, { dead: true }, 380, 274)}</div></div></div>`);
+  setTimeout(() => el.classList.add('out'), 1800);
+  setTimeout(() => dropOverlay(el), 2200);
 }
 
-// ---------- 화면 가장자리 화살표 (추적자·노이즈 메이커·사보타주 보조) ----------
+// ---------- 화면 가장자리 화살표 (추적자·노이즈 메이커) ----------
 export function drawArrows() {
   const S = G.S, box = G.hud && $('.arrows', G.hud);
   if (!box || !S?.game) return;
   const t = now(), items = [];
-  if (S.track && S.track.until > t && S.trackPos) items.push({ ...S.trackPos, c: S.track.color || '#3cff6a' });
-  for (const n of S.alerts || []) if (n.until > t) items.push({ x: n.x, y: n.y, c: '#ff2a2a', noise: true });
+  if (S.track && S.track.until > t && isFinite(S.track.x) && !S.track.comms && !commsOn()) items.push({ x: S.track.x, y: S.track.y, c: S.track.color || '#3cff6a', k: 'trk' });
   S.alerts = (S.alerts || []).filter(n => n.until > t);
-  const html = items.map(it => {
-    const [sx, sy] = scene.toScreen?.(it.x, it.y) || [0, 0];
-    const cv = document.getElementById('world'), r = cv?.getBoundingClientRect();
-    if (!r?.width) return '';
-    const st = stage().getBoundingClientRect(), k = st.width / 1600;
-    // 월드 → 화면(px) → 스테이지 좌표
-    const px = (sx * r.width) / cv.width + r.left, py = (sy * r.height) / cv.height + r.top;
-    const lx = (px - st.left) / k, ly = (py - st.top) / k;
-    const cx = 800, cy = 360, inside = lx > 40 && lx < 1560 && ly > 40 && ly < 680;
-    if (inside && !it.noise) return '';
-    const a = Math.atan2(ly - cy, lx - cx);
-    const ex = inside ? lx : cx + Math.cos(a) * 560, ey = inside ? ly - 90 : cy + Math.sin(a) * 300;
-    return `<i class="arw ${it.noise ? 'noise' : ''}" style="left:${ex}px;top:${ey}px;--a:${inside ? 90 : (a * 180) / Math.PI}deg;--c:${it.c}"></i>`;
-  }).join('');
+  for (const n of S.alerts) items.push({ x: n.x, y: n.y, c: '#ff2a2a', k: 'noise' });
+  // 역할 능력 대상 강조 (추적·보호·심문·메시지)
+  const ap = scene.abilityId && scene.players.get(scene.abilityId);
+  if (ap) items.push({ x: ap.x, y: ap.y, c: scene.abilityColor || '#8CFFFF', k: 'target' });
+  let html = '';
+  const cv = document.getElementById('world'), r = cv?.getBoundingClientRect(), st = stage().getBoundingClientRect();
+  if (r?.width && st.width && scene.toScreen) {
+    const k = st.width / 1600;
+    for (const it of items) {
+      const [sx, sy] = scene.toScreen(it.x, it.y) || [0, 0];
+      const px = (sx * r.width) / cv.width + r.left, py = (sy * r.height) / cv.height + r.top;
+      const lx = (px - st.left) / k, ly = (py - st.top) / k;
+      const cx = 800, cy = 360, inside = lx > 60 && lx < 1540 && ly > 60 && ly < 660;
+      if (it.k === 'target') { if (inside) html += `<i class="tgt" style="left:${lx}px;top:${ly}px;--c:${it.c}"></i>`; continue; }
+      if (inside) { if (it.k === 'noise') html += `<i class="ring" style="left:${lx}px;top:${ly}px;--c:${it.c}"></i>`; continue; }
+      const a = Math.atan2(ly - cy, lx - cx), c = Math.cos(a), s = Math.sin(a);
+      const f = Math.min(Math.abs(c) > 1e-3 ? 740 / Math.abs(c) : 1e9, Math.abs(s) > 1e-3 ? 320 / Math.abs(s) : 1e9);
+      html += `<i class="arw ${it.k}" style="left:${cx + c * f}px;top:${cy + s * f}px;--a:${(a * 180) / Math.PI}deg;--c:${it.c}"></i>`;
+    }
+  }
   if (box._h !== html) { box._h = html; box.innerHTML = html; }
 }
 
-// ---------- 인플루언서 이미지 표시 (받는 쪽) ----------
-export function showInfluence(imgs, fromLook) {
-  const el = overlay(`<div class="influx"><div class="ifx-ghost">${fromLook ? crewImg(fromLook, { ghost: true }, 160, 115) : ''}</div><div class="ifx-row">${imgs.map((k, i) => `<div class="ifx" style="--i:${i}">${G.influenceSVG?.(k) || ''}</div>`).join('')}</div></div>`);
+// ---------- 인플루언서 메시지 (받는 쪽) ----------
+export function showInfluence(imgs, ms = 4000) {
+  const el = overlay(`<div class="influx"><div class="ifx-ghost">${icon('ghost')}</div><div class="ifx-row">${imgs.map((k, i) => `<div class="ifx" style="--i:${i}">${infImg(k)}<span>${esc(INF_LABEL[k] || '')}</span></div>`).join('')}</div></div>`);
   SND.msg();
-  setTimeout(() => el.classList.add('out'), 4200);
-  setTimeout(() => dropOverlay(el), 4800);
+  setTimeout(() => el.classList.add('out'), Math.max(1000, ms - 600));
+  setTimeout(() => dropOverlay(el), ms);
 }
 
-// ---------- 색 ----------
 export const colorOf = id => COLORS[lookOf(id)?.color ?? 0]?.[1] || '#888';
+export { josa };

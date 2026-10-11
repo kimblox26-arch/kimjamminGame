@@ -1,96 +1,231 @@
 // 크루원/꾸미기 아이템을 SVG로 그림 (이미지 파일 없이 전부 코드로 그림)
+// 몸 좌표계(오른쪽을 봄): 발 중심 (64,120), 몸통 x 28~101, 머리 꼭대기 y 11, 바이저 x 54~108.
+// 같은 경로 문자열을 캔버스(render.js, Path2D)도 그대로 써서 메뉴와 게임 속 모습이 똑같다.
 import { COLORS } from '../shared/data.js';
 
-const K = 'stroke="#000" stroke-linejoin="round"';
-const HATS = {
-  tophat: `<rect x="40" y="-30" width="46" height="38" rx="3" fill="#2b2b2b" ${K} stroke-width="5"/><rect x="40" y="-4" width="46" height="8" fill="#b3202a"/><rect x="28" y="4" width="70" height="10" rx="5" fill="#2b2b2b" ${K} stroke-width="5"/>`,
-  cap: `<path d="M34 16 C34 -8 92 -8 94 16 Z" fill="#d23c3c" ${K} stroke-width="5"/><path d="M86 12 L122 14 C122 22 100 22 86 18 Z" fill="#a62020" ${K} stroke-width="5"/><circle cx="64" cy="-2" r="4" fill="#fff"/>`,
-  flower: `<g ${K} stroke-width="3"><circle cx="54" cy="0" r="9" fill="#ff8fd1"/><circle cx="70" cy="0" r="9" fill="#ff8fd1"/><circle cx="62" cy="-12" r="9" fill="#ff8fd1"/><circle cx="62" cy="10" r="9" fill="#ff8fd1"/><circle cx="62" cy="0" r="7" fill="#ffe14d"/></g>`,
-  beanie: `<path d="M32 18 C30 -14 98 -14 96 18 Z" fill="#3b7dd8" ${K} stroke-width="5"/><path d="M32 14 H96 V22 H32 Z" fill="#2a5ca8" ${K} stroke-width="5"/><circle cx="64" cy="-12" r="8" fill="#fff" ${K} stroke-width="3"/>`,
-  chef: `<path d="M40 14 V-4 C26 -10 30 -34 48 -30 C52 -46 76 -46 80 -30 C98 -34 102 -10 88 -4 V14 Z" fill="#fff" ${K} stroke-width="5"/><path d="M40 6 H88" stroke="#ccc" stroke-width="3"/>`,
-  cowboy: `<path d="M20 14 C40 24 90 24 110 10 C104 4 96 8 92 8 C92 -24 38 -24 38 8 C32 8 24 6 20 14 Z" fill="#9b5b2a" ${K} stroke-width="5"/><path d="M40 2 H90" stroke="#5a3010" stroke-width="5"/>`,
-  police: `<path d="M34 14 C34 -14 94 -14 94 14 Z" fill="#1f2d6b" ${K} stroke-width="5"/><path d="M30 12 H100 V20 H30 Z" fill="#111" ${K} stroke-width="5"/><path d="M60 -8 L68 -8 L70 4 L64 8 L58 4 Z" fill="#ffd34d" stroke="#000" stroke-width="2"/>`,
-  pumpkin: `<ellipse cx="64" cy="-2" rx="34" ry="24" fill="#f28a1d" ${K} stroke-width="5"/><path d="M64 -26 C62 -34 68 -38 72 -36" fill="none" stroke="#3c7a1e" stroke-width="5"/><path d="M50 -6 l6 -8 l6 8 Z M66 -6 l6 -8 l6 8 Z M48 6 Q64 16 80 6 Z" fill="#3a1b00"/>`,
-  mushroom: `<path d="M24 14 C24 -30 104 -30 104 14 Z" fill="#8a5a3a" ${K} stroke-width="5"/><circle cx="48" cy="-4" r="6" fill="#f2e3c6"/><circle cx="74" cy="-12" r="7" fill="#f2e3c6"/><circle cx="88" cy="4" r="5" fill="#f2e3c6"/>`,
-  crown: `<path d="M36 14 L32 -18 L50 -2 L64 -24 L78 -2 L96 -18 L92 14 Z" fill="#ffd23f" ${K} stroke-width="5"/><circle cx="64" cy="4" r="5" fill="#e0245e"/>`,
-  halo: `<ellipse cx="64" cy="-18" rx="30" ry="9" fill="none" stroke="#ffe066" stroke-width="7"/><ellipse cx="64" cy="-18" rx="30" ry="9" fill="none" stroke="#000" stroke-width="1.5"/>`,
-  horns: `<path d="M38 14 C30 -2 30 -16 34 -26 C40 -14 46 -4 52 8 Z M90 14 C98 -2 98 -16 94 -26 C88 -14 82 -4 76 8 Z" fill="#d31f1f" ${K} stroke-width="4"/>`,
-  party: `<path d="M44 14 L66 -44 L88 14 Z" fill="#4ad6ff" ${K} stroke-width="5"/><path d="M52 -6 L80 -6 M58 -24 L74 -24" stroke="#ff4fa3" stroke-width="6"/><circle cx="66" cy="-46" r="7" fill="#ffe14d" ${K} stroke-width="3"/>`,
-  cone: `<path d="M38 14 L58 -42 L74 -42 L94 14 Z" fill="#8e44ff" ${K} stroke-width="5"/><path d="M50 -10 L82 -10 L86 2 L46 2 Z M56 -28 L76 -28 L79 -20 L53 -20 Z" fill="#fff"/><rect x="28" y="10" width="76" height="9" rx="3" fill="#6a28c9" ${K} stroke-width="4"/>`,
+// ---------- 색 ----------
+const hx = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+export const mix = (a, b, k) => { const A = hx(a), B = hx(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * k).toString(16).padStart(2, '0')).join(''); };
+export const colorOf = c => COLORS[c ?? 0] || COLORS[0];
+// 크루원 색 묶음: 몸, 그림자, 테두리 빛
+export const pal = look => {
+  const c = colorOf(look?.color);
+  return { name: c[0], body: c[1], shadow: c[2], rim: mix(c[1], '#ffffff', 0.42), deep: mix(c[2], '#000000', 0.35) };
 };
-const VISORS = {
-  shades: `<rect x="56" y="26" width="52" height="22" rx="8" fill="#111"/><rect x="64" y="30" width="16" height="5" rx="2" fill="#666"/>`,
-  blush: `<ellipse cx="62" cy="60" rx="9" ry="5" fill="#ff7aa8" opacity=".85"/><ellipse cx="98" cy="60" rx="7" ry="5" fill="#ff7aa8" opacity=".85"/>`,
-  monocle: `<circle cx="92" cy="40" r="15" fill="none" stroke="#ffd23f" stroke-width="4"/><path d="M92 55 Q80 80 60 86" fill="none" stroke="#ffd23f" stroke-width="2"/>`,
-  mask: `<path d="M56 18 H106 Q110 44 100 62 H62 Q52 44 56 18 Z" fill="#f2f2f2" ${K} stroke-width="3"/><g fill="#222"><ellipse cx="72" cy="34" rx="6" ry="5"/><ellipse cx="94" cy="34" rx="6" ry="5"/><circle cx="76" cy="50" r="2"/><circle cx="84" cy="52" r="2"/><circle cx="92" cy="50" r="2"/></g>`,
-};
-const SKINS = {
-  suit: `<path d="M30 74 H98 V104 H30 Z" fill="#232838"/><path d="M58 74 L66 92 L74 74 Z" fill="#fff"/><path d="M64 78 L68 78 L67 96 L65 96 Z" fill="#c22"/>`,
-  police: `<path d="M30 74 H98 V104 H30 Z" fill="#2a3f8f"/><path d="M80 80 l5 -3 l5 3 l-1 7 h-8 Z" fill="#ffd34d"/><path d="M30 98 H98" stroke="#111" stroke-width="6"/>`,
-  doctor: `<path d="M30 70 H98 V104 H30 Z" fill="#f4f7fb"/><path d="M60 70 V104" stroke="#b9c4d4" stroke-width="3"/><path d="M82 84 h10 M87 79 v10" stroke="#e33" stroke-width="4"/>`,
-};
-const CAPE = `<path d="M10 40 C2 70 0 100 8 126 L36 118 L36 44 Z" fill="#3a1f5c" ${K} stroke-width="5"/>`;
+export const VISOR = { main: '#95CADC', shade: '#4C7C8F', hi: '#ffffff' };
 
-const EYE = (x, y) => `<circle cx="${x}" cy="${y}" r="4" fill="#000"/>`;
+// ---------- 몸 모양 (경로) ----------
+export const BODY = {
+  torso: 'M28 92V56C28 28 44 11 66 11C88 11 101 27 101 52V92Q101 100 93 100H36Q28 100 28 92Z',
+  main: 'M37 90C34 72 34 52 38 40C44 23 55 16 68 16C87 16 96 30 96 52V89Q72 95 37 90Z',
+  pack: 'M32 42H23Q12 42 12 53V83Q12 94 23 94H32Z',
+  packSh: 'M12 79V83Q12 94 23 94H32V79Z',
+  packHi: 'M17 52Q17 47 22 47',
+  visor: 'M69 25H93A15 15 0 0 1 93 55H69A15 15 0 0 1 69 25Z',
+  visorSh: 'M55 44Q79 53 107 43Q106 55 93 55H69Q57 55 55 44Z',
+  visorHi: 'M74 32H95',
+  rim: 'M37 54C36 34 47 20 62 15',
+};
+// 시체: 허리에서 잘린 아랫몸 + 뼈
+export const DEAD = {
+  torso: 'M28 92V68Q45 61 63 65Q83 69 101 62V92Q101 100 93 100H36Q28 100 28 92Z',
+  main: 'M37 90V71Q50 66 63 69Q81 72 96 68V89Q72 95 37 90Z',
+  pack: 'M32 69H23Q12 69 12 77V83Q12 94 23 94H32Z',
+  packSh: 'M12 82V83Q12 94 23 94H32V82Z',
+  cut: 'M28 68Q45 59 63 63Q83 67 101 62Q99 72 82 73Q63 74 46 73Q30 73 28 68Z',
+  cutIn: 'M40 68Q52 64 64 66Q78 68 90 66Q82 70 64 70Q50 71 40 68Z',
+  bone: 'M58 66V46',
+  knobs: [[53, 42], [64, 41]],
+};
+// 등 모습 (사다리 오르기)
+export const BACK = {
+  torso: 'M26 92V56C26 28 44 11 64 11C84 11 102 28 102 56V92Q102 100 94 100H34Q26 100 26 92Z',
+  main: 'M34 90C31 72 31 50 36 38C42 22 52 16 64 16C82 16 96 30 96 56V89Q66 95 34 90Z',
+  pack: 'M48 36H80Q90 36 90 46V80Q90 90 80 90H48Q38 90 38 80V46Q38 36 48 36Z',
+  packSh: 'M38 76V80Q38 90 48 90H80Q90 90 90 80V76Z',
+};
+const legD = (x0, lift) => {
+  const b = Math.round((120 - lift) * 10) / 10, x = Math.round(x0 * 10) / 10;
+  return `M${x} 86V${b - 9}Q${x} ${b} ${x + 9} ${b}H${x + 19}Q${x + 28} ${b} ${x + 28} ${b - 9}V86Z`;
+};
+// 걷기: phase 0~1 (null = 서 있음). [뒷다리, 앞다리]
+export const legsD = phase => {
+  if (phase == null) return [legD(31, 0), legD(69, 0)];
+  const a = phase * Math.PI * 2, s = Math.sin(a), c = Math.cos(a);
+  return [legD(31 - s * 11, Math.max(0, -c) * 10), legD(69 + s * 11, Math.max(0, c) * 10)];
+};
+export const bobY = phase => (phase == null ? 0 : -Math.abs(Math.cos(phase * Math.PI * 2)) * 5);
+// 유령: 다리 대신 물결 꼬리. w = 물결 위상
+export const ghostD = (w = 0) => {
+  const a = Math.sin(w) * 5, b = Math.cos(w) * 5, r = n => Math.round(n * 10) / 10;
+  return `M28 56C28 28 44 11 66 11C88 11 101 27 101 52V86Q103 ${r(104 + a)} 92 ${r(103 + b)}Q84 ${r(98 - a)} 77 ${r(108 + b)}Q70 ${r(118 + a)} 60 ${r(108 - b)}Q52 ${r(99 + a)} 45 ${r(110 - a)}Q37 ${r(121 + b)} 31 ${r(106 + a)}Q27 98 28 86Z`;
+};
+export const GHOST_MAIN = 'M37 84C34 70 34 52 38 40C44 23 55 16 68 16C87 16 96 30 96 52V84Q66 92 37 84Z';
+
+// ---------- 꾸미기 ----------
+const K = 'stroke="#000" stroke-linejoin="round" stroke-linecap="round"';
+export const HATS = {
+  tophat: `<path d="M45 12V-30Q45-34 49-34H85Q89-34 89-30V12Z" fill="#26262b"/><path d="M45 1H89V10H45Z" fill="#b3202a"/><path d="M45 12V-30Q45-34 49-34H85Q89-34 89-30V12Z" fill="none" ${K} stroke-width="5"/>
+    <path d="M51-27V-4" stroke="#5c5c66" stroke-width="5" stroke-linecap="round"/><path d="M28 14Q66 5 106 12Q112 15 106 20Q66 13 30 22Q22 19 28 14Z" fill="#26262b" ${K} stroke-width="5"/>`,
+  cap: `<path d="M33 24C31-7 99-9 101 22Z" fill="#d63a3a" ${K} stroke-width="5"/><path d="M88 15Q113 11 131 20Q129 29 112 27L89 25Z" fill="#a82525" ${K} stroke-width="5"/>
+    <path d="M44 8Q55-3 71-3" fill="none" stroke="#f08080" stroke-width="5" stroke-linecap="round"/><path d="M66-4V22" stroke="#a82525" stroke-width="2.5"/><circle cx="66" cy="-7" r="4.5" fill="#a82525" ${K} stroke-width="3"/>`,
+  flower: `<path d="M66 14Q63 2 68-8" stroke="#000" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M66 14Q63 2 68-8" stroke="#3c8a2e" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M65 8Q53 1 50 10Q58 15 65 10Z" fill="#4fb33c" stroke="#000" stroke-width="3"/>
+    <g ${K} stroke-width="3.5" fill="#ff8fd1"><circle cx="59" cy="-13" r="8"/><circle cx="77" cy="-13" r="8"/><circle cx="68" cy="-23" r="8"/><circle cx="62" cy="-2" r="8"/><circle cx="74" cy="-2" r="8"/></g>
+    <circle cx="68" cy="-10" r="7" fill="#ffd93b" ${K} stroke-width="3"/><circle cx="66" cy="-12" r="2.4" fill="#fff" opacity=".85"/>`,
+  beanie: `<path d="M31 24C29-17 103-17 101 24Z" fill="#3b7dd8" ${K} stroke-width="5"/><path d="M44 0V16M56-6V16M68-8V16M80-6V16M91 0V16" stroke="#2a5ca8" stroke-width="3"/>
+    <path d="M29 13Q66 5 103 13V26Q66 18 29 26Z" fill="#2a5ca8" ${K} stroke-width="5"/><path d="M40 10Q52-6 66-8" stroke="#79aef0" stroke-width="4" fill="none" stroke-linecap="round"/><circle cx="66" cy="-15" r="9" fill="#fff" ${K} stroke-width="3.5"/>`,
+  chef: `<path d="M42 18V0C26-4 28-32 48-28C52-46 80-46 84-28C104-32 106-4 90 0V18Z" fill="#fff" ${K} stroke-width="5"/><path d="M42 8H90" stroke="#c9ced6" stroke-width="3"/>
+    <path d="M56-20Q58-8 56 2M72-22Q74-8 72 2" stroke="#dde2e8" stroke-width="3" fill="none"/>`,
+  cowboy: `<path d="M14 16C34 31 98 31 120 12C114 4 103 8 96 10C96-26 36-26 36 10C29 8 21 6 14 16Z" fill="#9b5b2a" ${K} stroke-width="5"/><path d="M37 2Q66 10 95 2" stroke="#5a3010" stroke-width="6" fill="none"/>
+    <path d="M47-13Q55-20 66-18" stroke="#c98a52" stroke-width="4" fill="none" stroke-linecap="round"/>`,
+  police: `<path d="M33 14C29-13 103-15 105 8Z" fill="#1f2d6b" ${K} stroke-width="5"/><path d="M37 7H101V19H37Z" fill="#141414" ${K} stroke-width="5"/><path d="M90 16Q116 15 126 24Q108 29 90 25Z" fill="#141414" ${K} stroke-width="5"/>
+    <path d="M62-8L70-8L72 3L66 7L60 3Z" fill="#ffd34d" stroke="#000" stroke-width="2"/><path d="M42 1Q50-7 60-9" stroke="#4459a8" stroke-width="4" fill="none" stroke-linecap="round"/>`,
+  pumpkin: `<ellipse cx="66" cy="-4" rx="37" ry="26" fill="#f28a1d" ${K} stroke-width="5"/><path d="M49-26Q43-4 49 20M83-26Q89-4 83 20M66-30V22" stroke="#c96a0d" stroke-width="3" fill="none"/>
+    <path d="M66-30C64-40 70-45 77-42" stroke="#000" stroke-width="9" fill="none" stroke-linecap="round"/><path d="M66-30C64-40 70-45 77-42" stroke="#3c7a1e" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <path d="M52-10l7-9l7 9ZM70-10l7-9l7 9ZM49 2Q66 15 85 2Q79 7 75 5L73 9L68 5Q62 9 58 5L56 9Z" fill="#3a1b00"/><path d="M40-12Q44-22 52-25" stroke="#ffb35c" stroke-width="4" fill="none" stroke-linecap="round"/>`,
+  mushroom: `<path d="M21 20C19-35 113-35 111 20Q66 31 21 20Z" fill="#b8573a" ${K} stroke-width="5"/><g fill="#f6e7c8"><circle cx="47" cy="-3" r="7"/><circle cx="74" cy="-13" r="8"/><circle cx="93" cy="5" r="6"/><circle cx="62" cy="10" r="4.5"/></g>
+    <path d="M32 2Q38-16 54-22" stroke="#d98a6a" stroke-width="4" fill="none" stroke-linecap="round"/>`,
+  crown: `<path d="M38 18L34-18L52-2L66-27L80-2L98-18L94 18Z" fill="#ffd23f" ${K} stroke-width="5"/><path d="M38 10H94" stroke="#d9a400" stroke-width="4"/>
+    <circle cx="66" cy="4" r="5.5" fill="#e0245e" stroke="#000" stroke-width="2.5"/><circle cx="50" cy="5" r="4" fill="#2ab3ff" stroke="#000" stroke-width="2"/><circle cx="82" cy="5" r="4" fill="#2ab3ff" stroke="#000" stroke-width="2"/>
+    <g fill="#ffd23f" stroke="#000" stroke-width="2.5"><circle cx="34" cy="-19" r="4"/><circle cx="66" cy="-28" r="4"/><circle cx="98" cy="-19" r="4"/></g><path d="M44 12V-6" stroke="#fff4b0" stroke-width="3" stroke-linecap="round"/>`,
+  halo: `<ellipse cx="66" cy="-14" rx="32" ry="10" fill="none" stroke="#000" stroke-width="12"/><ellipse cx="66" cy="-14" rx="32" ry="10" fill="none" stroke="#ffe066" stroke-width="7"/>
+    <path d="M42-20Q58-26 78-24" stroke="#fffbe0" stroke-width="2.5" fill="none" stroke-linecap="round"/>`,
+  horns: `<path d="M40 18C30 2 30-14 36-26C42-12 50-2 56 10ZM92 18C102 2 102-14 96-26C90-12 82-2 76 10Z" fill="#d31f1f" ${K} stroke-width="4.5"/>
+    <path d="M37-6Q37-17 39-21M95-6Q95-17 93-21" stroke="#ff7a7a" stroke-width="3" fill="none" stroke-linecap="round"/>`,
+  party: `<path d="M44 18L68-46L92 18Z" fill="#4ad6ff"/><path d="M52-4H84M60-24H76" stroke="#ff4fa3" stroke-width="7"/><path d="M44 18L68-46L92 18Z" fill="none" ${K} stroke-width="5"/>
+    <circle cx="68" cy="-48" r="8" fill="#ffe14d" ${K} stroke-width="3.5"/>`,
+  cone: `<path d="M40 16L60-42L72-42L92 16Z" fill="#8e44ff"/><path d="M52-8L80-8L84 4L48 4ZM57-26L75-26L78-18L54-18Z" fill="#fff"/><path d="M40 16L60-42L72-42L92 16Z" fill="none" ${K} stroke-width="5"/>
+    <rect x="28" y="12" width="76" height="10" rx="4" fill="#6a28c9" ${K} stroke-width="4"/>`,
+};
+export const VISORS = {
+  shades: `<path d="M54 30H110V38Q110 50 99 50H90Q83 50 82 42L80 39L78 42Q77 50 70 50H63Q54 50 54 40Z" fill="#141414" ${K} stroke-width="3"/><path d="M60 35H72M86 35H101" stroke="#5c6670" stroke-width="3.5" stroke-linecap="round"/>`,
+  blush: `<ellipse cx="62" cy="63" rx="9" ry="5" fill="#ff7aa8" opacity=".85"/><ellipse cx="97" cy="63" rx="7" ry="5" fill="#ff7aa8" opacity=".85"/>`,
+  monocle: `<circle cx="93" cy="40" r="14" fill="#fff" fill-opacity=".15" stroke="#000" stroke-width="7"/><circle cx="93" cy="40" r="14" fill="none" stroke="#ffd23f" stroke-width="4"/><path d="M93 54Q86 76 64 84" fill="none" stroke="#ffd23f" stroke-width="2.5"/>`,
+  mask: `<path d="M54 20H108Q113 46 102 66H62Q49 46 54 20Z" fill="#f2f2f2" ${K} stroke-width="4"/><g fill="#222"><ellipse cx="70" cy="34" rx="7" ry="5.5"/><ellipse cx="94" cy="34" rx="7" ry="5.5"/><circle cx="74" cy="51" r="2.2"/><circle cx="82" cy="54" r="2.2"/><circle cx="90" cy="51" r="2.2"/><circle cx="82" cy="46" r="2.2"/></g><path d="M66 24L72 28M98 24L92 28" stroke="#d01e1e" stroke-width="3"/>`,
+};
+// 스킨: svg = 몸통 위에 덧그림(몸통 모양으로 잘림), leg = 다리 색, back = 몸 뒤
+export const SKINS = {
+  suit: { leg: '#232838', svg: `<path d="M20 58H110V110H20Z" fill="#232838"/><path d="M70 58L81 80L92 58Z" fill="#f4f4f4"/><path d="M79 61H83L84 77L81 83L78 77Z" fill="#c22"/><path d="M70 58L79 92M92 58L83 92" stroke="#0e1018" stroke-width="3" fill="none"/><circle cx="88" cy="86" r="2.2" fill="#555"/><path d="M20 58H110" stroke="#000" stroke-width="3"/>` },
+  police: { leg: '#1f2d6b', svg: `<path d="M20 58H110V110H20Z" fill="#2a3f8f"/><path d="M20 86H110V94H20Z" fill="#141414"/><rect x="74" y="86" width="12" height="8" fill="#d9b02a"/><path d="M84 66l5-4l5 4l-1.5 8h-7Z" fill="#ffd34d" stroke="#000" stroke-width="1.5"/><path d="M20 58H110" stroke="#000" stroke-width="3"/>` },
+  doctor: { leg: null, svg: `<path d="M20 56H110V110H20Z" fill="#f4f7fb"/><path d="M82 56V110" stroke="#b9c4d4" stroke-width="3"/><path d="M72 56L82 70L92 56" fill="none" stroke="#b9c4d4" stroke-width="3"/><path d="M88 77h10M93 72v10" stroke="#e33" stroke-width="4"/><path d="M20 56H110" stroke="#000" stroke-width="3"/>` },
+  cape: { leg: null, svg: `<circle cx="36" cy="58" r="5" fill="#ffd23f" stroke="#000" stroke-width="2"/>`,
+    back: `<path d="M34 38C16 54 4 92 8 122Q24 127 42 114L42 44Z" fill="#3a1f5c" ${K} stroke-width="5"/><path d="M27 60Q18 86 16 112" stroke="#5b3690" stroke-width="4" fill="none" stroke-linecap="round"/>` },
+};
+
+const EYE = (x, y) => `<circle cx="${x}" cy="${y}" r="2.8" fill="#000"/><circle cx="${x + 0.9}" cy="${y - 0.9}" r="1" fill="#fff"/>`;
 export const PETS = {
-  mini: c => `<path d="M10 40 V20 C10 6 20 2 26 2 C36 2 42 8 42 20 V44 H30 V38 H22 V44 H10 Z" fill="${c[1]}" ${K} stroke-width="3"/><rect x="24" y="12" width="20" height="12" rx="6" fill="#95CADC" stroke="#000" stroke-width="3"/>`,
-  dog: () => `<ellipse cx="26" cy="32" rx="20" ry="13" fill="#c98a4b" ${K} stroke-width="3"/><circle cx="40" cy="18" r="11" fill="#c98a4b" ${K} stroke-width="3"/><path d="M34 10 l-4 -8 l8 4 Z" fill="#7a4a1f"/>${EYE(43, 16)}<path d="M8 28 l-6 -6" stroke="#000" stroke-width="3"/>`,
-  hamster: () => `<ellipse cx="26" cy="28" rx="20" ry="16" fill="#f0c27a" ${K} stroke-width="3"/><ellipse cx="30" cy="34" rx="10" ry="8" fill="#fff3dc"/>${EYE(32, 22)}<circle cx="18" cy="14" r="5" fill="#e8a7a0" stroke="#000" stroke-width="2"/>`,
-  ufo: () => `<ellipse cx="26" cy="20" rx="12" ry="10" fill="#9fe7ff" ${K} stroke-width="3"/><ellipse cx="26" cy="28" rx="24" ry="8" fill="#9aa4ae" ${K} stroke-width="3"/><circle cx="14" cy="29" r="2.5" fill="#ffe14d"/><circle cx="26" cy="31" r="2.5" fill="#ffe14d"/><circle cx="38" cy="29" r="2.5" fill="#ffe14d"/>`,
-  ghost: () => `<path d="M8 44 V20 C8 6 18 2 26 2 C36 2 44 8 44 20 V44 L38 38 L32 44 L26 38 L20 44 L14 38 Z" fill="#fff" ${K} stroke-width="3" opacity=".9"/>${EYE(22, 20)}${EYE(34, 20)}`,
+  mini: c => `<path d="M14 18H9Q4 18 4 23V35Q4 40 9 40H14Z" fill="${c[1]}" ${K} stroke-width="3.5"/>
+    <path d="M12 42V22C12 9 20 4 29 4C39 4 46 10 46 21V42Q46 46 42 46H36Q33 46 33 42V40H25V42Q25 46 21 46H16Q12 46 12 42Z" fill="${c[2]}" ${K} stroke-width="3.5"/>
+    <path d="M16 38C15 30 15 20 18 15C21 9 25 7 30 7C38 7 43 13 43 21V37Q30 40 16 38Z" fill="${c[1]}"/>
+    <rect x="26" y="12" width="23" height="13" rx="6.5" fill="#95CADC" ${K} stroke-width="3"/><path d="M31 16H42" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>`,
+  dog: () => `<path d="M9 30Q2 24 6 17" stroke="#000" stroke-width="7" stroke-linecap="round" fill="none"/><path d="M9 30Q2 24 6 17" stroke="#c98a4b" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+    <path d="M14 40V46M22 41V46M30 41V46M36 40V46" stroke="#000" stroke-width="6.5" stroke-linecap="round"/><path d="M14 40V46M22 41V46M30 41V46M36 40V46" stroke="#c98a4b" stroke-width="3.5" stroke-linecap="round"/>
+    <ellipse cx="24" cy="32" rx="17" ry="11" fill="#c98a4b" ${K} stroke-width="3"/><ellipse cx="22" cy="36" rx="10" ry="5" fill="#e0aa70"/>
+    <circle cx="40" cy="20" r="12" fill="#c98a4b" ${K} stroke-width="3"/><ellipse cx="48" cy="24" rx="7" ry="5" fill="#f0d2a8" ${K} stroke-width="2.5"/><circle cx="53" cy="22" r="2.6" fill="#000"/>
+    <path d="M32 12Q28 22 34 28Q38 20 36 12Z" fill="#7a4a1f" ${K} stroke-width="2.5"/>${EYE(43, 16)}`,
+  hamster: () => `<ellipse cx="26" cy="30" rx="21" ry="16" fill="#f0c27a" ${K} stroke-width="3"/><ellipse cx="32" cy="35" rx="11" ry="8" fill="#fff3dc"/>
+    <circle cx="15" cy="16" r="5.5" fill="#e8a7a0" ${K} stroke-width="2.5"/><circle cx="33" cy="15" r="5.5" fill="#e8a7a0" ${K} stroke-width="2.5"/>
+    ${EYE(38, 25)}<ellipse cx="45" cy="30" rx="2.5" ry="2" fill="#e86a8a"/><ellipse cx="39" cy="33" rx="4" ry="2.5" fill="#ff9fb0" opacity=".7"/><path d="M12 22Q16 17 22 16" stroke="#fff3dc" stroke-width="3" fill="none" stroke-linecap="round"/>`,
+  ufo: () => `<path d="M17 36L10 48H42L35 36Z" fill="#fff6a8" opacity=".35"/><ellipse cx="26" cy="20" rx="13" ry="11" fill="#9fe7ff" ${K} stroke-width="3"/><path d="M20 14Q24 11 28 12" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <ellipse cx="26" cy="28" rx="25" ry="8.5" fill="#9aa4ae" ${K} stroke-width="3"/><ellipse cx="26" cy="26" rx="18" ry="3.5" fill="#c3cbd3"/>
+    <circle cx="12" cy="29" r="2.6" fill="#ffe14d"/><circle cx="26" cy="32" r="2.6" fill="#ff5d5d"/><circle cx="40" cy="29" r="2.6" fill="#7dff8a"/>`,
+  ghost: () => `<path d="M8 44V20C8 7 17 2 26 2C36 2 44 8 44 20V44L38 39L32 45L26 39L20 45L14 39Z" fill="#fff" ${K} stroke-width="3" opacity=".92"/><ellipse cx="21" cy="21" rx="3.4" ry="4.4" fill="#000"/><ellipse cx="33" cy="21" rx="3.4" ry="4.4" fill="#000"/><ellipse cx="27" cy="31" rx="3" ry="2.4" fill="#000"/><path d="M13 12Q16 7 22 6" stroke="#dfe8ff" stroke-width="2.5" fill="none" stroke-linecap="round"/>`,
 };
 
-// 크루원 SVG. o: {frame(0~2), dead, ghost, flip, noPet}
+// ---------- 크루원 조립 ----------
+let uid = 0;
+const visorG = () => `<path d="${BODY.visor}" fill="${VISOR.main}"/><path d="${BODY.visorSh}" fill="${VISOR.shade}"/><path d="${BODY.visor}" fill="none" ${K} stroke-width="6.5"/>
+  <path d="${BODY.visorHi}" stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".92"/><circle cx="101" cy="33" r="2.4" fill="#fff" opacity=".75"/>`;
+function aliveG(p, look, phase, id) {
+  const [bl, fl] = legsD(phase), sk = SKINS[look.skin];
+  const lf = sk?.leg || p.body, lb = sk?.leg ? mix(sk.leg, '#000000', 0.3) : p.shadow;
+  const lean = phase == null ? '' : ' rotate(3 64 120)';
+  return `<g transform="translate(0 ${bobY(phase).toFixed(1)})${lean}">${sk?.back || ''}
+    <path d="${BODY.pack}" fill="${p.body}"/><path d="${BODY.packSh}" fill="${p.shadow}"/><path d="${BODY.packHi}" stroke="${p.rim}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".7"/><path d="${BODY.pack}" fill="none" ${K} stroke-width="10"/>
+    <g fill="none" ${K} stroke-width="13"><path d="${BODY.torso}"/><path d="${bl}"/><path d="${fl}"/></g>
+    <path d="${bl}" fill="${lb}"/><path d="${fl}" fill="${lf}"/><path d="${BODY.torso}" fill="${p.shadow}"/><path d="${BODY.main}" fill="${p.body}"/>
+    ${sk ? `<clipPath id="${id}"><path d="${BODY.torso}"/></clipPath><g clip-path="url(#${id})">${sk.svg}</g>` : ''}
+    <path d="${BODY.rim}" fill="none" stroke="${p.rim}" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+    ${visorG()}${VISORS[look.visor] || ''}${HATS[look.hat] || ''}</g>`;
+}
+function deadG(p, look, id) {
+  const [bl, fl] = legsD(null), sk = SKINS[look.skin];
+  const lf = sk?.leg || p.body, lb = sk?.leg ? mix(sk.leg, '#000000', 0.3) : p.shadow;
+  const [k1, k2] = DEAD.knobs;
+  return `<path d="${DEAD.pack}" fill="${p.body}"/><path d="${DEAD.packSh}" fill="${p.shadow}"/><path d="${DEAD.pack}" fill="none" ${K} stroke-width="10"/>
+    <g fill="none" ${K} stroke-width="13"><path d="${DEAD.torso}"/><path d="${bl}"/><path d="${fl}"/></g>
+    <path d="${bl}" fill="${lb}"/><path d="${fl}" fill="${lf}"/><path d="${DEAD.torso}" fill="${p.shadow}"/><path d="${DEAD.main}" fill="${p.body}"/>
+    ${sk ? `<clipPath id="${id}"><path d="${DEAD.torso}"/></clipPath><g clip-path="url(#${id})">${sk.svg}</g>` : ''}
+    <path d="${DEAD.cut}" fill="${p.deep}" ${K} stroke-width="4"/><path d="${DEAD.cutIn}" fill="${mix(p.shadow, '#ff9a9a', 0.25)}" opacity=".75"/>
+    <path d="${DEAD.bone}" stroke="#000" stroke-width="16" stroke-linecap="round"/><circle cx="${k1[0]}" cy="${k1[1]}" r="8.5" fill="#000"/><circle cx="${k2[0]}" cy="${k2[1]}" r="8.5" fill="#000"/>
+    <path d="${DEAD.bone}" stroke="#f1eee2" stroke-width="9" stroke-linecap="round"/><circle cx="${k1[0]}" cy="${k1[1]}" r="5.5" fill="#f1eee2"/><circle cx="${k2[0]}" cy="${k2[1]}" r="5.5" fill="#f1eee2"/>
+    <path d="M56 62V50" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity=".8"/>`;
+}
+function ghostG(p, look, w) {
+  const gd = ghostD(w);
+  return `<path d="M32 46H24Q15 46 15 55V76Q15 84 24 84H32Z" fill="${p.body}" ${K} stroke-width="9"/>
+    <path d="${gd}" fill="${p.shadow}" ${K} stroke-width="6.5"/><path d="${GHOST_MAIN}" fill="${p.body}"/><path d="${gd}" fill="none" ${K} stroke-width="6.5"/>
+    <path d="${BODY.rim}" fill="none" stroke="${p.rim}" stroke-width="5" stroke-linecap="round" opacity=".8"/>${visorG()}${VISORS[look.visor] || ''}${HATS[look.hat] || ''}`;
+}
+
+// 크루원 SVG. o: {frame(0=서 있음, 1~6 걷기), phase, dead, ghost, flip, noPet, head(머리만 크게), petLeft, wave}
 export function crewSVG(look = {}, o = {}) {
-  const c = COLORS[look.color ?? 0] || COLORS[0];
-  const f = o.frame || 0, a = f === 1 ? -9 : 0, b = f === 2 ? -9 : 0;
-  const body = `M30 ${112 + a} V48 C30 22 46 8 64 8 C84 8 98 22 98 48 V${112 + b} Q98 ${120 + b} 90 ${120 + b} H78 Q70 ${120 + b} 70 ${112 + b} V104 H58 V${112 + a} Q58 ${120 + a} 50 ${120 + a} H38 Q30 ${120 + a} 30 ${112 + a} Z`;
-  let inner;
-  if (o.dead) {
-    inner = `<path d="M30 118 V82 H98 V118 Q98 124 90 124 H38 Q30 124 30 118 Z" fill="${c[1]}" ${K} stroke-width="5"/><path d="M30 104 H98 V118 Q98 124 90 124 H38 Q30 124 30 118Z" fill="${c[2]}"/>
-      <rect x="10" y="80" width="22" height="30" rx="8" fill="${c[2]}" ${K} stroke-width="5"/><path d="M56 82 V62" stroke="#f0f0e8" stroke-width="10"/><circle cx="50" cy="60" r="7" fill="#f0f0e8" ${K} stroke-width="3"/><circle cx="62" cy="60" r="7" fill="#f0f0e8" ${K} stroke-width="3"/>
-      <ellipse cx="64" cy="82" rx="30" ry="6" fill="#d33"/>`;
-  } else {
-    const hat = HATS[look.hat] || '', vis = VISORS[look.visor] || '', skin = SKINS[look.skin] || '';
-    inner = `${look.skin === 'cape' ? CAPE : ''}<rect x="10" y="42" width="24" height="52" rx="10" fill="${c[2]}" ${K} stroke-width="5"/>
-      <path d="${body}" fill="${c[2]}"/><path d="M30 86 V48 C30 22 46 8 64 8 C84 8 98 22 98 48 V78 Q62 100 30 86 Z" fill="${c[1]}"/>${skin}
-      <path d="${body}" fill="none" ${K} stroke-width="6"/>
-      <rect x="56" y="24" width="50" height="30" rx="15" fill="#95CADC" ${K} stroke-width="5"/><path d="M60 46 Q84 54 104 44 L104 40 Q104 54 90 54 H72 Q60 54 60 46Z" fill="#4c7c8f"/><rect x="72" y="29" width="24" height="8" rx="4" fill="#fff" opacity=".85"/>
-      ${vis}${hat}`;
-  }
-  const pet = !o.noPet && !o.dead && PETS[look.pet] ? `<g transform="translate(${o.petLeft ? -50 : 108} 76)">${PETS[look.pet](c)}</g>` : '';
+  look = look || {};
+  const p = pal(look), id = 'au' + (++uid).toString(36);
+  const phase = o.phase ?? (o.frame > 0 ? ((o.frame - 1) % 6) / 6 : null);
+  const inner = o.dead ? deadG(p, look, id) : o.ghost ? ghostG(p, look, o.wave ?? 0) : aliveG(p, look, phase, id);
+  const pet = !o.noPet && !o.dead && !o.ghost && !o.head && PETS[look.pet] ? `<g transform="translate(${o.petLeft ? -54 : 112} 76) scale(.9)">${PETS[look.pet](colorOf(look.color))}</g>` : '';
   const flip = o.flip ? ' transform="translate(128 0) scale(-1 1)"' : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -50 250 180" class="crew"><g${o.ghost ? ' opacity=".5"' : ''}><g${flip}>${inner}</g>${pet}</g></svg>`;
+  const vb = o.head ? '-2 -34 128 92' : '-60 -50 250 180';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" class="crew"><g${o.ghost ? ' opacity=".6"' : ''}><g${flip}>${inner}</g>${pet}</g></svg>`;
 }
 // 몸통 중심이 이미지 안에서 차지하는 위치 (캔버스 그리기용): viewBox(-60,-50,250,180)
 export const CREW_BOX = { w: 250, h: 180, cx: 124, foot: 170 };
 
+// 꾸미기 한 겹만 담은 SVG 문서 (캔버스에서 비트맵으로 굽기용). 좌표 = 몸 좌표계
+export const COS_BOX = { x: -40, y: -70, w: 220, h: 210 };
+export function cosmeticSVG(kind, id, look = {}) {
+  let body = '';
+  if (kind === 'hat') body = HATS[id] || '';
+  else if (kind === 'visor') body = VISORS[id] || '';
+  else if (kind === 'skin' || kind === 'skinDead') {
+    const sk = SKINS[id];
+    if (sk) body = `<clipPath id="c"><path d="${kind === 'skin' ? BODY.torso : DEAD.torso}"/></clipPath><g clip-path="url(#c)">${sk.svg}</g>`;
+  } else if (kind === 'skinBack') body = SKINS[id]?.back || '';
+  else if (kind === 'pet') return PETS[id] ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 60 56" width="60" height="56">${PETS[id](colorOf(look.color))}</svg>` : '';
+  if (!body) return '';
+  const b = COS_BOX;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${b.x} ${b.y} ${b.w} ${b.h}" width="${b.w}" height="${b.h}">${body}</svg>`;
+}
+
 const cache = new Map();
-export function crewImg(look, o = {}) {
-  const key = JSON.stringify([look.color, look.hat, look.visor, look.skin, o.frame | 0, !!o.dead, !!o.ghost, !!o.flip]);
+const svgUrl = s => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
+export function crewImg(look = {}, o = {}) {
+  const key = JSON.stringify([look.color, look.hat, look.visor, look.skin, o.frame | 0, !!o.dead, !!o.ghost, !!o.flip, !!o.head]);
   let img = cache.get(key);
   if (!img) {
     img = new Image();
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(crewSVG(look, { ...o, noPet: true }));
+    img.src = svgUrl(crewSVG(look, { ...o, noPet: true }));
     cache.set(key, img);
   }
   return img;
 }
 const petCache = new Map();
-export function petImg(look) {
-  const key = look.pet + look.color;
+export function petImg(look = {}) {
   if (!PETS[look.pet]) return null;
+  const key = look.pet + ':' + look.color;
   let img = petCache.get(key);
   if (!img) {
     img = new Image();
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 60 56">${PETS[look.pet](COLORS[look.color] || COLORS[0])}</svg>`);
+    img.src = svgUrl(cosmeticSVG('pet', look.pet, look));
     petCache.set(key, img);
   }
   return img;
 }
 export const itemSVG = (type, id, color = 0) => {
   const look = { color, hat: 'none', visor: 'none', skin: 'none', pet: 'none', [type]: id };
-  if (type === 'pet') return PETS[id] ? `<svg viewBox="-4 -4 60 56">${PETS[id](COLORS[color])}</svg>` : '';
+  if (type === 'pet') return PETS[id] ? `<svg viewBox="-4 -4 60 56">${PETS[id](colorOf(color))}</svg>` : '';
   if (type === 'plate') return `<div class="plate plate-${id}"></div>`;
   return crewSVG(look);
 };

@@ -1,6 +1,6 @@
 // 게임 진행 엔진 (서버 권한, 모든 맵 공용): 시작·처치·회의·투표·사보타주·문·환풍구·이동 장치·숨바꼭질·승리 판정
-import { getMap, spawnAt, stationsFor, canStand, lineClear, inPoly } from '../public/js/shared/maps/index.js';
-import { RULES, shuffle, pick, clamp, maxImpostors, COLORS } from '../public/js/shared/data.js';
+import { getMap, spawnAt, stationsFor, canStand, walkable, lineClear, inPoly } from '../public/js/shared/maps/index.js';
+import { RULES, shuffle, pick, clamp, maxImpostors, COLORS, anyRoleOn } from '../public/js/shared/data.js';
 import { ROLE_DEFS, roleTeam, roleOpt } from '../public/js/shared/roles.js';
 import * as RL from './roles.js';
 
@@ -11,6 +11,7 @@ const fin = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
 const cnt = v => Math.max(0, Math.floor(fin(v)));
 const ms = v => Math.max(0, Math.round(v));
 const rnd = n => Math.floor(Math.random() * n);
+export const own = (o, k) => o != null && typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k);
 // 받침 있으면 첫 번째 조사 ("을/를")
 const josa = (s, a, b) => { const ch = String(s).charCodeAt(String(s).length - 1) - 0xac00; return ch >= 0 && ch < 11172 && ch % 28 ? a : b; };
 const TOL = 450; // 장치 사용 거리 여유 (지연 보정)
@@ -27,6 +28,7 @@ function helpers(g) {
   g.ventToggle = (c, st, v) => ventToggle(g, c, st, v);
   g.ventOut = (c, st, forced) => ventOut(g, c, st, forced);
   g.sendVitals = st => sendVitals(g, st);
+  g.vitalsConsole = (c, st, on) => vitalsConsole(g, c, st, on);
   g.castVote = (c, target) => castVote(g, c, target);
 }
 // 위치 → 방 이름 ("복도"면 가장 가까운 방 + 근처)
@@ -59,8 +61,12 @@ export function startGame(r, opt = {}) {
   const s = r.settings, t = now(), practice = r.mode === 'practice';
   const ps = [...r.players.values()], ids = ps.map(p => p.id);
   const map = getMap(s.map), hns = s.gameType === 'hns' && !practice;
+  const pRole = own(ROLE_DEFS, opt.role) ? opt.role : 'crewmate';
+  // 소개 화면 길이: "쉿!" → 팀 → (역할이 켜져 있으면) 역할 소개
+  const special = practice ? !['crewmate', 'impostor'].includes(pRole) : !hns && anyRoleOn(s.roleSet);
+  const intro = practice ? 2500 + (special ? 1500 : 0) : RULES.introMs + (special ? 2600 : 0);
   const g = {
-    r, s, map, hns, practice, t0: t, phase: 'intro', phaseEnd: t + (practice ? 2500 : RULES.introMs),
+    r, s, map, hns, practice, t0: t, phase: 'intro', phaseEnd: t + intro,
     st: new Map(), bodies: [], evidence: [], doors: new Map(), doorCd: new Map(), platforms: {}, sab: null, sabCd: RULES.sabStartCd * 1000,
     meeting: null, deaths: [], deathRec: new Map(), emergAt: 0, protectedRecently: false, ghostForced: new Map(),
     doorlog: [], sensorIn: new Map(), hnsT: null, over: false,
@@ -70,7 +76,7 @@ export function startGame(r, opt = {}) {
   if (practice) {
     roles = new Map(ids.map(id => [id, 'crewmate']));
     const me = ps.find(p => !p.bot);
-    if (me) roles.set(me.id, ROLE_DEFS[opt.role] ? opt.role : 'crewmate');
+    if (me) roles.set(me.id, pRole);
   } else {
     const nImp = hns ? 1 : r.unlimited ? clamp(cnt(s.impostors), 1, Math.max(1, ids.length - 1)) : clamp(cnt(s.impostors), 1, maxImpostors(ids.length));
     const a = RL.assignRoles(ids, s, { nImp, forced: r.forced || new Map(), hns, seeker: s.seeker });
@@ -95,8 +101,9 @@ function startMsg(g, st, pubs) {
   return {
     t: 'start', role: st.role, team: st.team, mates: RL.matesOf(g, st), tasks: st.tasks, players: pubs, settings: g.s, bar: taskBar(g),
     map: g.map.id, kill: ms(st.cds.kill || 0), meetings: st.meetingsLeft, practice: g.practice, hns: g.hns ? hnsInfo(g) : null,
-    roleCds: RL.cdsPub(st), spawnPick: g.map.spawnPoints?.length ? g.map.spawnPoints : null, intro: ms(g.phaseEnd - now()),
-    alive: st.alive, emerg: ms(g.emergAt - now()), doors: doorsPub(g), roleOpts: g.s.roleSet?.[st.role] || null,
+    roleCds: RL.cdsPub(st), spawnPick: null, spawnPoints: g.map.spawnPoints?.length ? g.map.spawnPoints : null, intro: ms(g.phaseEnd - now()),
+    alive: st.alive, emerg: ms(g.emergAt - now()), doors: doorsPub(g), roleOpts: g.s.roleSet?.[st.role] || null, sabCd: g.hns ? 0 : ms(g.sabCd),
+    seeker: g.hns ? hnsInfo(g).seeker : undefined,
   };
 }
 // 공통 임무는 모두 같은 장소, 긴/짧은 임무는 사람마다 다름
@@ -121,7 +128,8 @@ export function taskBar(g) {
 const pushBar = g => { if (!g.hns && cnt(g.s.taskBar) === 0) g.bc({ t: 'bar', bar: taskBar(g) }); };
 function placeAll(g, area) {
   const ps = [...g.r.players.values()];
-  ps.forEach((p, i) => { const sp = spawnAt(g.map, area || g.map.spawn || { x: g.map.w / 2, y: g.map.h / 2 }, i, ps.length); p.x = sp.x; p.y = sp.y; p.mv = 0; });
+  const t = now();
+  ps.forEach((p, i) => { const sp = spawnAt(g.map, area || g.map.spawn || { x: g.map.w / 2, y: g.map.h / 2 }, i, ps.length); p.x = sp.x; p.y = sp.y; p.mv = 0; p.mvT = t; });
 }
 function hnsInfo(g) {
   const s = g.s, seeker = [...g.st.values()].find(x => x.team === 'impostor')?.id || null;
@@ -150,7 +158,7 @@ function enterPlay(g) {
 // 에어십: 시작 위치 고르기
 function spawnPhase(g) {
   const t = now(), pts = g.map.spawnPoints;
-  g.phase = 'spawn'; g.phaseEnd = t + RULES.spawnPickMs;
+  g.phase = 'spawn'; g.phaseEnd = t + RULES.spawnPickMs + 2500; // 클라이언트 고르기 창(10초) + 여유
   for (const st of g.st.values()) {
     if (st.left) continue;
     const c = g.P(st.id);
@@ -163,9 +171,9 @@ function placeAtPoint(g, c, i) {
   const pts = g.map.spawnPoints, p = pts[i] || pick(pts);
   for (let k = 0; k < 16; k++) {
     const x = p.x + (k ? (Math.random() - 0.5) * 160 : 0), y = p.y + (k ? (Math.random() - 0.5) * 110 : 0);
-    if (canStand(g.map, x, y)) { c.x = x; c.y = y; c.mv = 0; return; }
+    if (canStand(g.map, x, y)) { c.x = x; c.y = y; c.mv = 0; c.mvT = now(); return; }
   }
-  c.x = p.x; c.y = p.y; c.mv = 0;
+  c.x = p.x; c.y = p.y; c.mv = 0; c.mvT = now();
 }
 function onSpawn(g, c, st, i) {
   if (g.phase !== 'spawn' || !st.picking) return;
@@ -197,7 +205,7 @@ export function onMsg(c, m) {
     case 'report': return report(g, c, st, String(m.id));
     case 'emergency': return emergency(g, c, st);
     case 'vote': if (m.id !== undefined && m.id !== null) castVote(g, c, m.id === 'skip' ? 'skip' : String(m.id)); return;
-    case 'task': return task(g, c, st, m.i);
+    case 'task': return task(g, c, st, m.i, m.step);
     case 'visual': if (!g.hns && g.s.visualTasks && st.alive && g.phase === 'play') g.bc({ t: 'visual', id: c.id, k: String(m.k ?? '').slice(0, 12), on: !!m.on }); return;
     case 'sab': startSab(g, c, st, String(m.k)); return;
     case 'fix': return fix(g, c, st, String(m.k), String(m.p), m.on);
@@ -215,14 +223,14 @@ export function onMsg(c, m) {
 export function canMove(g, c) {
   if (g.over) return true;
   const st = g.st.get(c.id);
-  if (!st || g.phase !== 'play' || st.vent || st.trans || st.picking) return false;
+  if (!st || (g.phase !== 'play' && g.phase !== 'intro') || st.vent || st.trans || st.picking) return false;
   if (g.hns && st.team === 'impostor' && g.hnsT?.phase === 'hide') return false;
   return true;
 }
 export function speedMul(g, c) {
   const st = g.st.get(c.id);
   let m = Math.max(0.1, fin(g.s.playerSpeed, 1));
-  if (st && !st.alive) m *= 1.3;
+  if (st && !st.alive) m *= RULES.ghostSpeed; // 유령은 1.2배 (3.0 / 2.5 u/s)
   if (g.hns && st?.team === 'impostor') m *= RULES.hnsSeekerSpeed * (g.hnsT?.phase === 'final' ? fin(g.s.finalSpeed, 1.2) : 1);
   return m;
 }
@@ -232,6 +240,30 @@ export function flags(g, id) {
   return st ? (st.vent ? 1 : 0) | (st.vanish ? 2 : 0) | (st.shift ? 4 : 0) | (st.trans ? 8 : 0) : 0;
 }
 export const hiddenPos = (g, id) => !!g.st.get(id)?.picking;
+// 서버 이동 검사 (살아있는 플레이어): 도착점이 걸을 수 있는 곳이어야 하고, 닫힌 문을 가로지를 수 없고, 속도상 가능한 거리여야 함.
+// 유령·벽뚫(mod)은 통과. 거리 한도는 마지막으로 받아들인 이동 이후 경과 시간에 비례하므로 지연으로 어긋나도 곧 회복된다.
+const inR = (x, y, d) => x > d.x && x < d.x + d.w && y > d.y && y < d.y + d.h;
+export function moveOk(g, c, x, y) {
+  const st = g.st.get(c.id), t = now();
+  if (!st || !st.alive || c.noclip) { c.mvT = t; return true; }
+  const ds = g.doors.size ? [...g.doors.keys()].map(id => g.map.doorById?.[id]).filter(Boolean) : [];
+  const dist = Math.hypot(x - c.x, y - c.y);
+  const el = Math.min(5000, t - (c.mvT || 0)) / 1000;
+  const lim = RULES.speed * speedMul(g, c) * Math.max(1, +c.speedMul || 1) * 1.5 * el + 150;
+  if (dist > lim) return false;
+  const inDoor = ds.some(d => inR(c.x, c.y, d));
+  if (inDoor) { // 문이 닫히는 순간 문간에 서 있던 경우: 빠져나가는 짧은 움직임은 허용
+    if (dist < 90 && walkable(g.map, x, y)) { c.mvT = t; return true; }
+    return false;
+  }
+  if (!walkable(g.map, x, y, ds.length ? new Set(g.doors.keys()) : null)) return false;
+  if (ds.length && dist > 10) {
+    const n = Math.ceil(dist / 15);
+    for (let i = 1; i < n; i++) { const px = c.x + ((x - c.x) * i) / n, py = c.y + ((y - c.y) * i) / n; if (ds.some(d => inR(px, py, d))) return false; }
+  }
+  c.mvT = t;
+  return true;
+}
 
 // ---------- 처치 ----------
 function kill(g, c, st, vid, o = {}) {
@@ -254,7 +286,7 @@ function kill(g, c, st, vid, o = {}) {
   g.deathRec.set(vid, rec);
   g.deaths.push(rec);
   vs.alive = false; vs.deathPos = { x, y }; vs.deadAt = t;
-  const dur = acid ? Math.max(500, sec(roleOpt(g.s, 'viper', 'dissolve'))) : 0;
+  const dur = acid ? Math.max(500, sec(roleOpt(g.s, 'viper', 'dissolveTime'))) : 0;
   g.bodies.push({ id: vid, x, y, at: t, look: { ...v.look }, acid: acid ? { start: t, dur, stage: 1 } : null });
   if (!o.force && st) {
     c.x = x; c.y = y;
@@ -263,7 +295,7 @@ function kill(g, c, st, vid, o = {}) {
     RL.setCd(g, st, 'kill', killCd(g));
   }
   const left = aliveCount(g).crew;
-  g.bc({ t: 'kill', id: vid, by: c?.id || null, as: st?.shift || null, x: Math.round(x), y: Math.round(y), cd: ms(st?.cds.kill || 0), acid: dur, left, hns: g.hns });
+  g.bc({ t: 'kill', id: vid, by: c?.id || null, as: st?.shift || null, x: Math.round(x), y: Math.round(y), cd: ms(st?.cds.kill || 0), acid: dur, dissolve: dur, left, hns: g.hns });
   RL.onKilled(g, vs, x, y);
   RL.onDeath(g, vs);
   checkWin(g);
@@ -356,7 +388,7 @@ function tally(g) {
     // 판사의 기각: 다른 투표는 모두 무시
     const ok = ts.team === 'impostor';
     ejected = ok ? O.target : O.judge;
-    judge = { id: O.judge, target: O.target, correct: ok };
+    judge = { id: O.judge, judge: O.judge, by: O.judge, target: O.target, correct: ok };
     js.stat[ok ? 'overruleOk' : 'overruleFail'] = 1;
   } else {
     const count = new Map();
@@ -374,8 +406,8 @@ function eject(g) {
   const M = g.meeting, R = M.result, t = now();
   g.meeting = null; g.phase = 'eject'; g.phaseEnd = t + RULES.ejectMs;
   const id = R.ejected, p = id ? g.P(id) : null, st = id ? g.st.get(id) : null;
-  let wasImp = null;
-  if (st && st.alive) { st.alive = false; st.ejected = true; wasImp = st.team === 'impostor'; RL.onDeath(g, st); }
+  const wasImp = st ? st.team === 'impostor' : null;
+  if (st && st.alive) { st.alive = false; st.ejected = true; RL.onDeath(g, st); }
   const ce = !!g.s.confirmEjects;
   const impLeft = aliveCount(g).imp, name = p?.name || st?.name || '';
   const was = `${name} 님은 임포스터${wasImp ? '였습니다' : '가 아니었습니다'}.`;
@@ -396,8 +428,9 @@ function resume(g) {
   const pos = ps.map(q => [q.id, Math.round(q.x), Math.round(q.y)]);
   for (const p of ps) {
     const st = g.st.get(p.id);
-    g.send(p, { t: 'resume', pos, sab: sabPub(g), kill: ms(st?.cds.kill || 0), emerg: ms(g.emergAt - t), cds: st ? RL.cdsPub(st) : {},
-      meetings: st?.meetingsLeft, spawnPick: pts, doors: doorsPub(g), bar: cnt(s.taskBar) === 0 ? taskBar(g) : undefined });
+    const cds = st ? RL.cdsPub(st) : {};
+    g.send(p, { t: 'resume', pos, sab: sabPub(g), kill: ms(st?.cds.kill || 0), emerg: ms(g.emergAt - t), cds, roleCds: cds, sabCd: ms(g.sabCd),
+      meetings: st?.meetingsLeft, spawnPick: null, spawnPoints: pts, doors: doorsPub(g), bar: cnt(s.taskBar) === 0 ? taskBar(g) : undefined });
   }
   if (pts) spawnPhase(g); else enterPlay(g);
 }
@@ -428,9 +461,10 @@ export function end(g, winner, reason, code = '') {
 }
 
 // ---------- 임무 ----------
-function task(g, c, st, i) {
+function task(g, c, st, i, step) {
   const tk = st.tasks[i | 0];
   if (!tk || st.team !== 'crew' || tk.step >= tk.st.length || g.phase !== 'play' || st.vent || st.trans || st.vanish || st.picking) return;
+  if (step !== undefined && step !== null && +step !== tk.step) return g.send(c, { t: 'tasks', tasks: st.tasks }); // 중복/늦은 메시지
   if (g.hns && (!st.alive || g.hnsT?.phase === 'final')) return;
   const sp = g.map.stations?.[tk.st[tk.step]];
   if (sp && d2(c, sp) > TOL && !c.mod) return g.send(c, { t: 'tasks', tasks: st.tasks });
@@ -454,7 +488,7 @@ export function sabPub(g) {
     window: S.winEnd ? ms(S.winEnd - now()) : 0, mix: S.mix || null };
 }
 export function startSab(g, c, st, k, force) {
-  const def = g.map.sabotages?.[k], t = now();
+  const def = own(g.map.sabotages, k) ? g.map.sabotages[k] : null, t = now();
   if (!def || g.over) return false;
   if (!force) {
     if (!st || st.team !== 'impostor' || g.hns || g.phase !== 'play' || st.trans || st.picking) return false;
@@ -494,7 +528,8 @@ function fix(g, c, st, k, p, on) {
   } else {
     if (!on || S.parts[p]) return;
     S.parts[p] = c.id;
-    const win = S.def.window ?? (S.type === 'comms' && parts.length > 1 ? 10 : 0);
+    // 미라 통신(2곳)·에어십 추락(2곳): 한 곳을 고치면 10초 안에 나머지도 고쳐야 함
+    const win = S.def.window ?? (parts.length > 1 && (S.type === 'comms' || S.def.game === 'crash') ? 10 : 0);
     if (win && !S.winEnd) S.winEnd = now() + sec(win);
   }
   let done = parts.every(q => S.parts[q]);
@@ -510,7 +545,8 @@ export function doorsPub(g) {
   return { closed: [...g.doors.keys()], cd, mode: g.map.doorMode };
 }
 const bcDoors = g => g.bc({ t: 'doors', ...doorsPub(g) });
-const doorHold = g => sec(g.map.doorMode === 'manual' ? g.map.doorAutoOpen ?? Math.max(fin(g.map.doorTime, 10), 30) : fin(g.map.doorTime, 10));
+// 자동 문(스켈드): doorTime 초 뒤 열림 / 수동 문(폴러스·에어십·펑글): 패널로 열어야 하고, 아무도 안 열면 오래 뒤 자동으로 열림
+const doorHold = g => sec(g.map.doorMode === 'manual' ? g.map.doorAutoOpen ?? Math.max(fin(g.map.doorTime, 10) * 3, 30) : fin(g.map.doorTime, 10));
 export function closeDoors(g, c, st, room, force) {
   const ds = (g.map.doors || []).filter(d => d.room === room), t = now();
   if (!ds.length || g.over || g.phase !== 'play') return false;
@@ -532,7 +568,7 @@ export function closeAllDoors(g) {
 function openDoor(g, c, st, id) {
   const d = g.map.doorById?.[id];
   if (!d || !g.doors.has(id) || !st.alive || st.vanish || g.phase !== 'play') return;
-  if (g.map.doorMode !== 'manual' && !c.mod) return;
+  if (g.map.doorMode !== 'manual') return; // 자동 문(스켈드)은 손으로 못 엶
   if (d2(c, { x: d.x + d.w / 2, y: d.y + d.h / 2 }) > TOL + 50 && !c.mod) return;
   g.doors.delete(id);
   bcDoors(g);
@@ -547,23 +583,24 @@ function ventMsg(g, c, st, a, vid) {
   const V = g.map.vents || {}, t = now(), eng = st.role === 'engineer' && !g.hns;
   if (g.phase !== 'play' || !st.alive || st.trans || st.picking || !ventAllowed(g, st)) return;
   if (a === 'in') {
-    const v = V[vid];
+    const v = own(V, vid) ? V[vid] : null;
     if (!v || st.vent || (d2(c, v) > RULES.ventDist + 160 && !c.mod)) return;
     if (eng && g.sab?.type === 'comms') return g.send(c, { t: 'err', msg: '통신 방해 중에는 환풍구를 쓸 수 없습니다.' });
     if ((eng || g.hns) && st.cds.vent > 0 && !c.nocd) return;
     if (g.hns && st.ventUses >= cnt(g.s.ventUses)) return g.send(c, { t: 'err', msg: '환풍구를 더 이상 사용할 수 없습니다.' });
     st.vent = vid; c.x = v.x; c.y = v.y; c.mv = 0;
-    if (eng) { const mt = sec(roleOpt(g.s, 'engineer', 'ventTime')); st.ventEnd = mt ? t + mt : 0; st.stat.vents = (st.stat.vents || 0) + 1; }
+    if (eng) { const mt = sec(roleOpt(g.s, 'engineer', 'ventMaxTime')); st.ventEnd = mt ? t + mt : 0; st.stat.vents = (st.stat.vents || 0) + 1; }
     if (g.hns) { st.ventUses++; st.ventEnd = t + Math.max(500, sec(g.s.ventTime)); }
   } else if (a === 'move') {
-    const v = V[vid];
+    const v = own(V, vid) ? V[vid] : null;
     if (!v || !st.vent || !V[st.vent]?.links?.includes(vid)) return;
     st.vent = vid; c.x = v.x; c.y = v.y;
   } else if (a === 'out') {
     if (st.vent) ventOut(g, c, st);
     return;
   } else return;
-  g.bc({ t: 'vent', id: c.id, v: st.vent, a, x: Math.round(c.x), y: Math.round(c.y), ms: st.ventEnd ? ms(st.ventEnd - t) : 0 });
+  g.bc({ t: 'vent', id: c.id, v: st.vent, a, x: Math.round(c.x), y: Math.round(c.y), ms: st.ventEnd ? ms(st.ventEnd - t) : 0,
+    uses: g.hns && st.team === 'crew' ? Math.max(0, cnt(g.s.ventUses) - st.ventUses) : undefined });
 }
 function ventOut(g, c, st, forced) {
   if (!st.vent) return;
@@ -571,14 +608,14 @@ function ventOut(g, c, st, forced) {
   st.vent = null; st.ventEnd = 0;
   if (c && v) { c.x = v.x; c.y = v.y; }
   g.bc({ t: 'vent', id: st.id, v: null, a: 'out', x: Math.round(c?.x || 0), y: Math.round(c?.y || 0), forced: !!forced });
-  if (st.role === 'engineer' && !g.hns) RL.setCd(g, st, 'vent', sec(roleOpt(g.s, 'engineer', 'ventCd')));
+  if (st.role === 'engineer' && !g.hns) RL.setCd(g, st, 'vent', sec(roleOpt(g.s, 'engineer', 'ventCooldown')));
   else if (g.hns && st.team === 'crew') RL.setCd(g, st, 'vent', 1000, { uses: Math.max(0, cnt(g.s.ventUses) - st.ventUses) });
   else if (st.team === 'impostor') g.send(st.id, { t: 'abilityCd', a: 'kill', ms: ms(st.cds.kill || 0) });
 }
 // 능력 버튼(ability{a:'vent'}): 안에 있으면 나가고, 아니면 가장 가까운 환풍구로 들어감
 function ventToggle(g, c, st, v) {
   if (st.vent) return ventOut(g, c, st);
-  let id = v && g.map.vents?.[v] ? v : null;
+  let id = own(g.map.vents, v) ? v : null;
   if (!id) {
     let bd = Infinity;
     for (const [k, x] of Object.entries(g.map.vents || {})) { const dd = d2(c, x); if (dd < bd) { bd = dd; id = k; } }
@@ -693,7 +730,7 @@ function hnsTick(g, dt, t) {
       H.nextPing = t + Math.max(1000, sec(g.s.pingInterval));
       const ping = [...g.st.values()].filter(x => x.alive && !x.left && x.team === 'crew').map(x => { const c = g.P(x.id); return [x.id, Math.round(c?.x || 0), Math.round(c?.y || 0)]; });
       const seeker = [...g.st.values()].find(x => x.team === 'impostor' && x.alive);
-      if (seeker) g.send(seeker.id, { t: 'hns', phase: 'final', left: ms(H.final), ping, pingMs: RULES.hnsPingShow * 1000, seekMap: seekMapOn(g) });
+      if (seeker) g.send(seeker.id, { t: 'hns', phase: 'final', left: ms(H.final), pings: ping, pingMs: RULES.hnsPingShow * 1000, seekMap: seekMapOn(g) });
     }
   }
   if (t >= H.nextSync) { H.nextSync = t + 1000; hnsSend(g); }

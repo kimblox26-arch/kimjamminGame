@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { acceptUpgrade } from './ws.js';
 import * as A from './accounts.js';
 import * as R from './rooms.js';
+import * as MOD from './mod.js';
 import { ageOf, CHILD_AGE, randomName, isRandomName } from '../public/js/shared/data.js';
 
 const PORT = +process.env.PORT || 8080;
@@ -96,9 +97,13 @@ function handle(c, m, req) {
       c.acc = A.byToken(m.token) || null;
       c.birth = String(m.birth || '');
       if (!c.acc && isRandomName(m.guestName)) c.name = m.guestName;
-      c.look = R.cleanLook(m.look); c.lvl = Math.max(1, Math.min(999, m.lvl | 0));
-      welcome(c); friendsOf(c);
+      if (m.look && !c.room) c.look = R.cleanLook(m.look);
+      welcome(c);
+      MOD.helloKey(c, m.modKey); // 저장된 mod key 로 자동 인증
+      if (m.lvl !== undefined) c.lvl = c.mod ? Math.max(0, Math.min(1e9, Math.round(+m.lvl) || 1)) : Math.max(1, Math.min(999, m.lvl | 0));
+      friendsOf(c);
       if (c.acc) notifyFriends(c.acc);
+      R.refresh(c);
       return;
     }
     case 'register':
@@ -137,6 +142,7 @@ function handle(c, m, req) {
     case 'listOnline': return R.listOnline(c, m.region);
     case 'create': return R.create(c, m);
     case 'join': return R.join(c, m);
+    case 'mod': return MOD.onMod(c, m);
     default: return R.onMessage(c, m);
   }
 }

@@ -1,44 +1,52 @@
-// 방(로비) 관리 + 게임 진행 로직 (서버 권한)
-import { stationsFor, tasksOfKind, sanitizeSettings, defaultSettings, buildQuick, maxImpostors, COLORS, SETTINGS, fmtSetting,
-  SABOTAGES, PRESETS, REGIONS, shuffle, clamp } from '../public/js/shared/data.js';
-import { SKELD, LOBBY, ROOM_NAMES } from '../public/js/shared/maps.js';
+// 방(로비) 관리 + 메시지 분배. 게임 규칙은 game.js, 역할 능력은 roles.js, mod 메뉴는 mod.js
+import { sanitizeSettings, defaultSettings, applyPreset, buildQuick, COLORS, SETTINGS, HNS_SETTINGS, fmtSetting, PRESETS, CUSTOM,
+  REGIONS, MAPS, clamp } from '../public/js/shared/data.js';
+import { ROLE_DEFS, ROLE_ORDER } from '../public/js/shared/roles.js';
+import { LOBBY, getMap, spawnAt } from '../public/js/shared/maps/index.js';
+import * as GM from './game.js';
 
 export const rooms = new Map();
-const MIN = Math.max(1, +process.env.MIN_PLAYERS || 4);
-const KILL_D = [200, 260, 350];
+export const MIN = Math.max(1, +process.env.MIN_PLAYERS || 4);
 const now = () => Date.now();
-const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const newCode = () => { let c; do c = Array.from({ length: 6 }, () => L[Math.floor(Math.random() * L.length)]).join(''); while (rooms.has(c)); return c; };
 
-const send = (c, m) => c.ws?.send(JSON.stringify(m));
+export const send = (c, m) => { if (c?.ws) c.ws.send(JSON.stringify(m)); };
 const err = (c, msg) => send(c, { t: 'err', msg });
-function bc(r, m, f) { const s = JSON.stringify(m); for (const c of r.players.values()) if (c.ws && (!f || f(c))) c.ws.send(s); }
+export function bc(r, m, f) { const s = JSON.stringify(m); for (const c of r.players.values()) if (c.ws && (!f || f(c))) c.ws.send(s); }
 const later = (r, f, ms) => r.timers.push(setTimeout(f, ms));
-const pub = c => ({ id: c.id, name: c.name, status: c.status, look: c.look, x: Math.round(c.x), y: Math.round(c.y), bot: !!c.bot, lvl: c.lvl || 1 });
-const info = r => ({ code: r.code, mode: r.mode, host: r.host, settings: r.settings, isPublic: r.isPublic, region: r.region, state: r.state, players: [...r.players.values()].map(pub) });
+export const pub = GM.pub;
+export const info = r => ({ code: r.code, mode: r.mode, host: r.host, settings: r.settings, isPublic: r.isPublic, region: r.region, state: r.state, min: MIN,
+  players: [...r.players.values()].map(pub) });
+export const bcRoom = r => bc(r, { t: 'room', room: info(r) });
 const humans = r => [...r.players.values()].filter(c => !c.bot);
 const shareLan = (a, b) => [...a].some(k => b.has(k));
 const blockedOnline = c => c.status === 'teal' && !c.verified;
-// 받침 있으면 "으로"
-const ro = s => { const ch = s.charCodeAt(s.length - 1) - 0xac00; return ch >= 0 && ch < 11172 && ch % 28 && ch % 28 !== 8 ? '으로' : '로'; };
+// 받침 있으면 "으로" (ㄹ 받침은 "로")
+const ro = s => { s = String(s); const ch = s.charCodeAt(s.length - 1) - 0xac00; return ch >= 0 && ch < 11172 && ch % 28 && ch % 28 !== 8 ? '으로' : '로'; };
 
 const ID_RE = /^[a-z0-9_]{1,16}$/;
 export function cleanLook(l = {}) {
-  const o = { color: clamp(Math.round(+l.color) || 0, 0, COLORS.length - 1) };
-  for (const k of ['hat', 'visor', 'skin', 'pet', 'plate']) o[k] = ID_RE.test(l[k]) ? l[k] : 'none';
+  const o = { color: clamp(Math.round(+l?.color) || 0, 0, COLORS.length - 1) };
+  for (const k of ['hat', 'visor', 'skin', 'pet', 'plate']) o[k] = ID_RE.test(l?.[k]) ? l[k] : 'none';
   return o;
 }
 function freeColor(r, c, want) {
   const used = new Set([...r.players.values()].filter(p => p !== c).map(p => p.look.color));
   if (want != null && COLORS[want] && !used.has(want)) return want;
   if (!used.has(c.look.color)) return c.look.color;
-  return COLORS.findIndex((_, i) => !used.has(i));
+  const i = COLORS.findIndex((_, k) => !used.has(k));
+  return i < 0 ? c.look.color : i;
+}
+function lobbySpot(r, i) {
+  const n = Math.max(10, r.players.size);
+  return spawnAt(LOBBY, LOBBY.spawn, i, n);
 }
 function listing(r) {
   const h = r.players.get(r.host), s = r.settings;
   return { code: r.code, host: h?.name || '', look: h?.look, n: r.players.size, max: s.maxPlayers, map: s.map, gameType: s.gameType,
-    impostors: s.impostors, speed: s.playerSpeed, roles: s.roles, chatType: s.chatType, chatLang: s.chatLang, tag: s.tag };
+    impostors: s.impostors, speed: s.playerSpeed, roles: s.roles, chatType: s.chatType, chatLang: s.chatLang, tag: s.tag,
+    kill: s.killCooldown, voting: s.votingTime, visual: s.visualTasks, anon: s.anonVotes };
 }
 export function listLocal(c) {
   send(c, { t: 'list', kind: 'local', rooms: [...rooms.values()].filter(r => r.mode === 'local' && r.state === 'lobby' && shareLan(r.lan, c.lan)).map(listing) });
@@ -49,14 +57,23 @@ export function listOnline(c, region) {
   send(c, { t: 'list', kind: 'online', rooms: list, total: all.length });
 }
 
-export function create(c, m) {
+// ---------- 방 만들기 / 참가 / 나가기 ----------
+function newRoom(c, mode, region, settings) {
+  const r = { code: newCode(), mode, lan: c.lan, region, isPublic: mode === 'online', host: c.id, settings, state: 'lobby', players: new Map(), game: null,
+    timers: [], forced: new Map(), banned: new Set(), unlimited: false, rainbow: null, countdown: 0, lastLook: 0 };
+  r.hooks = { toLobby: () => toLobby(r) };
+  rooms.set(r.code, r);
+  return r;
+}
+export function create(c, m = {}) {
   const mode = ['local', 'practice'].includes(m.mode) ? m.mode : 'online';
   if (mode === 'online' && blockedOnline(c)) return err(c, '보호자 인증을 완료해야 온라인에서 플레이할 수 있습니다.');
-  const r = { code: newCode(), mode, lan: c.lan, region: REGIONS.some(g => g[0] === m.region) ? m.region : 'as', isPublic: mode === 'online',
-    host: c.id, settings: sanitizeSettings(m.settings || {}), state: 'lobby', players: new Map(), game: null, timers: [] };
-  rooms.set(r.code, r);
+  const region = REGIONS.some(g => g[0] === m.region) ? m.region : 'as';
+  const unl = !!c.mod; // mod 연결: 설정 제한 없음
+  const r = newRoom(c, mode, region, sanitizeSettings(m.settings || {}, defaultSettings(), { unlimited: unl }));
+  r.unlimited = unl;
   enter(c, r);
-  if (mode === 'practice') startPractice(r, c, m.role);
+  if (mode === 'practice') startPractice(r, c, m);
 }
 export function join(c, m) {
   const r = rooms.get(String(m.code || '').trim().toUpperCase());
@@ -64,15 +81,16 @@ export function join(c, m) {
   if (r.mode === 'local' && !shareLan(r.lan, c.lan)) return err(c, '로컬 게임은 같은 와이파이(네트워크)에 연결된 사람만 참가할 수 있습니다.');
   if (r.mode === 'online' && blockedOnline(c)) return err(c, '보호자 인증을 완료해야 온라인에서 플레이할 수 있습니다.');
   if (r.state !== 'lobby') return err(c, '이미 게임이 시작되었습니다.');
-  if (r.players.size >= r.settings.maxPlayers) return err(c, '게임이 가득 찼습니다.');
-  if (r.banned?.has(c.id)) return err(c, '이 게임에서 추방당했습니다.');
+  if (r.players.size >= r.settings.maxPlayers && !c.mod) return err(c, '게임이 가득 찼습니다.');
+  if (r.banned.has(c.acc?.id || c.id)) return err(c, '이 게임에서 추방당했습니다.');
   enter(c, r);
 }
 function enter(c, r) {
   if (c.room) leave(c);
   c.room = r;
   c.look.color = freeColor(r, c);
-  const sp = LOBBY.spawn(r.players.size); c.x = sp.x; c.y = sp.y; c.dir = 1; c.mv = 0;
+  const sp = lobbySpot(r, r.players.size); c.x = sp.x; c.y = sp.y; c.dir = 1; c.mv = 0;
+  c.possess = null; c.possessedBy = null;
   r.players.set(c.id, c);
   send(c, { t: 'joined', room: info(r), you: c.id, min: MIN });
   bc(r, { t: 'room', room: info(r) }, p => p !== c);
@@ -81,86 +99,150 @@ function enter(c, r) {
 export function leave(c) {
   const r = c.room;
   if (!r) return;
+  const g = r.game;
+  releasePossess(r, c);
+  if (c.possessedBy) { const m = r.players.get(c.possessedBy); if (m) releasePossess(r, m); }
+  if (r.rainbow?.by === c.id) stopRainbow(r);
+  if (g) GM.onLeave(g, c);
   c.room = null;
   r.players.delete(c.id);
-  const g = r.game;
-  if (g) { g.alive.delete(c.id); g.left.add(c.id); g.vent.delete(c.id); g.meeting?.votes.delete(c.id); }
+  r.forced.delete(c.id);
   if (!humans(r).length) return close(r);
   if (r.host === c.id) r.host = humans(r)[0].id;
-  bc(r, { t: 'room', room: info(r) });
+  bcRoom(r);
   bc(r, { t: 'gone', id: c.id, name: c.name });
-  if (g) { pushBar(r); if (g.meeting?.stage === 'vote') maybeTally(r); checkWin(r); }
+  bc(r, { t: 'chat', sys: true, text: `${c.name}님이 게임을 나갔습니다.` });
 }
 function close(r) {
   r.timers.forEach(clearTimeout);
-  r.game?.mt?.forEach(clearTimeout);
+  if (r.game) r.game.over = true;
+  r.game = null;
   rooms.delete(r.code);
 }
-export const refresh = c => { if (c.room) bc(c.room, { t: 'room', room: info(c.room) }); };
+export const refresh = c => { if (c.room) bcRoom(c.room); };
+// 강퇴 (방장 또는 mod)
+export function kick(r, t, ban) {
+  if (!t || t.room !== r) return;
+  if (ban) r.banned.add(t.acc?.id || t.id);
+  if (t.bot) {
+    if (r.game) GM.onLeave(r.game, t);
+    r.players.delete(t.id);
+    bcRoom(r);
+    bc(r, { t: 'gone', id: t.id, name: t.name });
+    return;
+  }
+  leave(t);
+  send(t, { t: 'kicked', ban: !!ban });
+}
 
+// ---------- 메시지 ----------
 export function onMessage(c, m) {
   const r = c.room;
   if (!r) return;
   const g = r.game, host = r.host === c.id;
   switch (m.t) {
-    case 'leave': leave(c); send(c, { t: 'leftRoom' }); break;
-    case 'move':
-      if (typeof m.x === 'number' && typeof m.y === 'number' && isFinite(m.x + m.y) && (!g || (g.phase === 'play' && !g.vent.has(c.id)))) {
-        c.x = clamp(m.x, -500, 10000); c.y = clamp(m.y, -500, 6000); c.dir = m.d ? 1 : 0; c.mv = m.m ? 1 : 0;
-      }
-      break;
+    case 'leave': leave(c); send(c, { t: 'leftRoom' }); return;
+    case 'move': return onMove(r, c, m);
     case 'look':
-      if (!g) { const l = cleanLook(m.look); l.color = freeColor(r, c, l.color); c.look = l; bc(r, { t: 'room', room: info(r) }); }
-      break;
-    case 'chat': chat(c, r, m); break;
-    case 'settings': if (host && !g) applySettings(r, m.s); break;
-    case 'privacy': if (host && r.mode === 'online') { r.isPublic = !!m.v; bc(r, { t: 'room', room: info(r) }); } break;
+      if (!g && !r.rainbow) { const l = cleanLook(m.look); l.color = freeColor(r, c, l.color); c.look = l; bcRoom(r); }
+      return;
+    case 'chat': return chat(c, r, m);
+    case 'settings': if (host && !g && !r.countdown) applySettings(r, m.s); return;
+    case 'privacy': if (host && r.mode === 'online') { r.isPublic = !!m.v; bcRoom(r); } return;
     case 'kick': {
       const t = r.players.get(m.id);
-      if (host && !g && t && t !== c && !t.bot) { if (m.ban) (r.banned ||= new Set()).add(t.id); leave(t); send(t, { t: 'kicked', ban: !!m.ban }); }
-      break;
+      if (host && !g && t && t !== c && !t.bot) kick(r, t, !!m.ban);
+      return;
     }
-    case 'start': if (host && !g && !r.countdown) countdown(r, c); break;
-    default: if (g) gameMsg(c, r, g, m);
+    case 'start': if (host && !g && !r.countdown) countdown(r, c); return;
+    default: if (g) GM.onMsg(c, m);
   }
 }
 
+// 이동: mod 조종(possess)이면 대상이 움직이고, 조종당하는 사람의 이동은 무시
+function onMove(r, c, m) {
+  if (typeof m.x !== 'number' || typeof m.y !== 'number' || !isFinite(m.x + m.y)) return;
+  let who = c;
+  if (m.as != null && m.as !== c.id) {
+    if (!c.mod || c.possess !== m.as) return;
+    who = r.players.get(m.as);
+    if (!who) return;
+  } else if (c.possessedBy && r.players.get(c.possessedBy)?.possess === c.id) return;
+  const g = r.game, x = clamp(m.x, -500, 12000), y = clamp(m.y, -500, 9000);
+  if (g) {
+    if (!GM.canMove(g, who)) return;
+    if (!(c.noclip || who.noclip) && !GM.moveOk(g, who, x, y)) return;
+  }
+  who.x = x; who.y = y; who.dir = m.d ? 1 : 0; who.mv = m.m ? 1 : 0;
+}
+
+// 채팅: 자유 채팅은 초록불 + 자유 채팅 로비만, 살아있으면 회의 중에만, 유령 채팅은 유령끼리만
 function chat(c, r, m) {
-  const g = r.game;
-  if (g && g.phase !== 'meeting' && g.alive.has(c.id)) return; // 살아있으면 회의 중에만 채팅
-  if (g && g.practice) return;
+  const g = r.game, st = g?.st.get(c.id);
+  const ghost = !!g && (!st || !st.alive);
+  if (g && !ghost && g.phase !== 'meeting') return;
+  if (g?.practice) return;
   let text;
-  if (m.q) text = buildQuick(m.q, [...r.players.values()].map(p => p.name), ROOM_NAMES);
-  else {
+  if (m.q) {
+    const map = g ? g.map : getMap(r.settings.map);
+    text = buildQuick(m.q, [...r.players.values()].map(p => p.name), map.roomNames || []);
+  } else {
     if (c.status !== 'green') return err(c, c.status === 'teal' ? '만 14세 미만 계정은 빠른 채팅만 쓸 수 있습니다.' : '게스트 계정은 빠른 채팅만 쓸 수 있습니다.');
     if (r.settings.chatType !== 'free') return err(c, '이 로비는 빠른 채팅 전용입니다.');
-    text = String(m.text || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    text = String(m.text || '').replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
   }
   if (!text || now() - (c.lastChat || 0) < 500) return;
   c.lastChat = now();
-  const ghost = !!g && !g.alive.has(c.id);
-  bc(r, { t: 'chat', id: c.id, name: c.name, look: c.look, text, quick: !!m.q, ghost }, p => !ghost || !g.alive.has(p.id));
+  bc(r, { t: 'chat', id: c.id, name: c.name, look: c.look, text, quick: !!m.q, ghost }, p => !ghost || !g.st.get(p.id)?.alive);
 }
 
-function applySettings(r, s = {}) {
-  const old = r.settings;
+// ---------- 설정 ----------
+const roleLabel = r => ROLE_DEFS[r]?.name || r;
+// opts.unlimited: mod 설정 해킹 (범위 제한 없음, 게임 중에도 적용)
+export function applySettings(r, s = {}, opts = {}) {
+  if (!s || typeof s !== 'object') return;
+  const old = r.settings, unl = !!opts.unlimited;
   let next;
-  if (s.preset && PRESETS[s.preset]) {
-    next = sanitizeSettings({ ...PRESETS[s.preset], preset: s.preset },
-      { ...defaultSettings(), map: old.map, gameType: old.gameType, maxPlayers: old.maxPlayers, tag: old.tag, chatType: old.chatType, chatLang: old.chatLang, roles: old.roles });
+  if (GM.own(PRESETS, s.preset) && (s.preset !== old.preset || Object.keys(s).length === 1)) {
+    next = applyPreset(s.preset, old);
   } else {
-    next = sanitizeSettings(s, old);
-    if (SETTINGS.some(d => next[d[0]] !== old[d[0]])) next.preset = '커스텀';
+    next = sanitizeSettings({ ...s, preset: undefined }, old, { unlimited: unl });
+    const rows = [...SETTINGS, ...HNS_SETTINGS];
+    const changed = rows.some(d => next[d[0]] !== old[d[0]]) || JSON.stringify(next.roleSet) !== JSON.stringify(old.roleSet);
+    if (next.gameType !== old.gameType && old.preset !== CUSTOM) next.preset = next.gameType === 'hns' ? (next.flashlight ? '손전등' : '피치 다크') : (next.roles ? '다양한 역할' : '핵심 설정');
+    else if (changed) next.preset = CUSTOM;
+    if (typeof s.preset === 'string' && s.preset === CUSTOM) next.preset = CUSTOM;
   }
-  next.maxPlayers = Math.max(next.maxPlayers, r.players.size);
-  const lines = SETTINGS.filter(d => next[d[0]] !== old[d[0]]).map(d => { const v = fmtSetting(d, next[d[0]], true); return `${d[1]} 항목을 ${v}${ro(v)} 설정함.`; });
-  if (next.maxPlayers !== old.maxPlayers) lines.push(`최대 인원 항목을 ${next.maxPlayers}${ro(String(next.maxPlayers))} 설정함.`);
-  if (next.gameType !== old.gameType) lines.push(`게임 유형을 ${next.gameType === 'hns' ? '숨바꼭질' : '클래식'}(으)로 설정함.`);
+  if (!unl) next.maxPlayers = Math.max(next.maxPlayers, r.players.size);
+  if (unl) r.unlimited = true;
+  // 설정 변경 기록 (원작: "{0} 항목을 {1}로 설정함.")
+  const lines = [], hns = next.gameType === 'hns';
+  for (const d of hns ? HNS_SETTINGS : SETTINGS) {
+    if (next[d[0]] === old[d[0]]) continue;
+    let v = fmtSetting(d, next[d[0]], true);
+    if (d[2] === 'p') v = r.players.get(next[d[0]])?.name || '무작위';
+    lines.push(`${d[1]} 항목을 ${v}${ro(v)} 설정함.`);
+  }
+  if (!hns) {
+    for (const k of ROLE_ORDER) {
+      const a = old.roleSet?.[k] || {}, b = next.roleSet?.[k] || {};
+      if (a.max !== b.max || a.chance !== b.chance) lines.push(`${roleLabel(k)} 항목을 ${b.max}${ro(String(b.max))} 설정함. 확률:${b.chance}%`);
+      for (const d of ROLE_DEFS[k].opts || []) if (a[d[0]] !== b[d[0]]) { const v = fmtSetting(d, b[d[0]], true); lines.push(`${roleLabel(k)}: ${d[1]} 항목을 ${v}${ro(v)} 설정함.`); }
+    }
+  }
+  if (next.maxPlayers !== old.maxPlayers) lines.push(`최대 인원 항목을 ${next.maxPlayers}${ro(next.maxPlayers)} 설정함.`);
+  if (next.gameType !== old.gameType) lines.push(`게임 유형을 ${next.gameType === 'hns' ? '숨바꼭질' : '클래식'}${ro(next.gameType === 'hns' ? '숨바꼭질' : '클래식')} 설정함.`);
+  if (next.map !== old.map) { const n = MAPS.find(x => x.id === next.map)?.ko || next.map; lines.push(`맵 항목을 ${n}${ro(n)} 설정함.`); }
+  if (next.preset !== old.preset && next.preset !== CUSTOM) lines.push(`프리셋을 ${next.preset}${ro(next.preset)} 설정함.`);
+  if (next.chatType !== old.chatType) lines.push(`채팅 유형을 ${next.chatType === 'free' ? '자유 채팅' : '빠른 채팅 전용'}${ro(next.chatType === 'free' ? '자유 채팅' : '빠른 채팅 전용')} 설정함.`);
   r.settings = next;
-  bc(r, { t: 'room', room: info(r) });
-  if (lines.length) bc(r, { t: 'log', lines });
+  bcRoom(r);
+  if (lines.length) bc(r, { t: 'log', lines: lines.slice(0, 40) });
+  if (next.map !== old.map && !r.game) bc(r, { t: 'mapChange', map: next.map });
+  if (r.game) { r.game.s = next; GM.onSettings(r.game); }
 }
 
+// ---------- 시작 ----------
 function countdown(r, c) {
   if (r.players.size < MIN) return err(c, `게임을 시작하려면 최소 ${MIN}명이 필요합니다.`);
   r.countdown = 5;
@@ -174,223 +256,92 @@ function countdown(r, c) {
   };
   later(r, tick, 1000);
 }
-
-function startGame(r, pre) {
-  const s = r.settings, ps = [...r.players.values()], ids = ps.map(p => p.id), hns = s.gameType === 'hns';
-  const nImp = pre ? pre.nImp : hns ? 1 : Math.min(s.impostors, maxImpostors(ids.length));
-  const order = pre ? pre.order : shuffle([...ids]);
-  const roles = new Map(ids.map(id => [id, 'crew']));
-  order.slice(0, nImp).forEach(id => roles.set(id, 'impostor'));
-  if (s.roles && !hns && !pre) {
-    const crew = shuffle(ids.filter(id => roles.get(id) === 'crew'));
-    if (crew[0] && Math.random() < 0.7) roles.set(crew[0], 'engineer');
-    if (crew[1] && Math.random() < 0.7) roles.set(crew[1], 'scientist');
-  }
-  // 일반 임무는 모두 같은 위치, 나머지는 사람마다 다름
-  const common = shuffle(tasksOfKind('common')).slice(0, s.commonTasks).map(id => ({ id, st: stationsFor(id) }));
-  const tasks = new Map(ids.map(id => [id, [...common.map(t => ({ ...t, st: [...t.st], step: 0 })),
-    ...[...shuffle(tasksOfKind('long')).slice(0, s.longTasks), ...shuffle(tasksOfKind('short')).slice(0, s.shortTasks)].map(t => ({ id: t, st: stationsFor(t), step: 0 }))]]));
-  const t0 = now();
-  r.game = { roles, alive: new Set(ids), left: new Set(), tasks, bodies: [], killAt: new Map(ids.map(id => [id, t0 + 10000])),
-    meetings: new Map(ids.map(id => [id, s.emergencyMeetings])), emergAt: t0 + s.emergencyCooldown * 1000, phase: 'play', sab: null,
-    sabAt: t0 + 15000, vent: new Map(), meeting: null, mt: [], hnsEnd: hns ? t0 + (s.hnsTime + 6) * 1000 : 0, practice: r.mode === 'practice' };
-  r.state = 'game';
-  ps.forEach((p, i) => { const sp = SKELD.spawn(i, ps.length); p.x = sp.x; p.y = sp.y; p.mv = 0; });
-  const imps = ids.filter(id => roles.get(id) === 'impostor');
-  for (const p of ps) {
-    const role = roles.get(p.id);
-    send(p, { t: 'start', role, mates: role === 'impostor' || hns ? imps : [], tasks: tasks.get(p.id), players: ps.map(pub), settings: s,
-      bar: taskBar(r.game), hnsLeft: hns ? r.game.hnsEnd - t0 : 0, kill: 10000, meetings: s.emergencyMeetings, practice: !!pre });
-  }
+export function startGame(r, opt) {
+  r.countdown = 0;
+  if (r.mode === 'practice' && !opt) opt = { role: r.practiceRole }; // 연습 방에서 다시 시작: 마지막에 고른 역할
+  for (const p of r.players.values()) { p.mv = 0; }
+  return GM.startGame(r, opt);
 }
-function startPractice(r, c, role) {
-  r.settings = sanitizeSettings({ killCooldown: 10, emergencyMeetings: 9, emergencyCooldown: 0, discussionTime: 0, votingTime: 30, commonTasks: 2, longTasks: 3, shortTasks: 5 });
-  const bots = [];
-  for (let i = 0; i < 5; i++) {
-    const b = { id: `b${r.code}${i}`, bot: true, name: `더미 ${i + 1}`, status: 'pink', look: cleanLook({ color: 0 }), dir: 1, mv: 0, x: 0, y: 0 };
+// 연습 모드: 고른 역할·맵 + 더미 플레이어 (승리 판정 없음)
+const PRACTICE = { killCooldown: 10, emergencyMeetings: 9, emergencyCooldown: 0, discussionTime: 0, votingTime: 30, commonTasks: 2, longTasks: 3, shortTasks: 5, impostors: 1 };
+function startPractice(r, c, m) {
+  const map = MAPS.some(x => x.id === m.map) ? m.map : MAPS.some(x => x.id === m.settings?.map) ? m.settings.map : 'skeld';
+  r.settings = sanitizeSettings({ ...PRACTICE, map }, defaultSettings(), { unlimited: true });
+  r.isPublic = false;
+  for (let i = 0; i < 6; i++) {
+    const b = { id: `b${r.code}${i}`, bot: true, name: `더미 ${i + 1}`, status: 'pink', look: cleanLook({ color: 0 }), dir: 1, mv: 0, x: 0, y: 0, lvl: 1, room: r };
     b.look.color = freeColor(r, b, (c.look.color + 1 + i * 3) % COLORS.length);
-    r.players.set(b.id, b); bots.push(b.id);
+    r.players.set(b.id, b);
   }
-  startGame(r, role === 'impostor' ? { nImp: 1, order: [c.id, ...bots] } : { nImp: 0, order: [] });
+  bcRoom(r);
+  const role = GM.own(ROLE_DEFS, m.role) ? m.role : 'crewmate';
+  r.practiceRole = role;
+  startGame(r, { role });
+}
+// 게임이 끝나면 대기실로
+function toLobby(r) {
+  r.forced = new Map();
+  const ps = [...r.players.values()];
+  ps.forEach((p, i) => { const sp = lobbySpot(r, i); p.x = sp.x; p.y = sp.y; p.mv = 0; });
+  later(r, () => { if (rooms.has(r.code) && !r.game) bcRoom(r); }, 50);
 }
 
-function taskBar(g) {
-  let total = 0, done = 0;
-  for (const [id, list] of g.tasks) {
-    if (g.left.has(id) || g.roles.get(id) === 'impostor' || id.startsWith?.('b')) continue;
-    for (const t of list) { total++; if (t.step >= t.st.length) done++; }
-  }
-  return { total, done };
+// ---------- mod: 조종 / 무지개 ----------
+export function possess(r, c, id) {
+  releasePossess(r, c);
+  const t = id != null && r.players.get(String(id));
+  if (!t || t === c) return send(c, { t: 'possess', by: c.id, target: null });
+  if (t.possessedBy && t.possessedBy !== c.id) { const o = r.players.get(t.possessedBy); if (o) releasePossess(r, o); }
+  c.possess = t.id; t.possessedBy = c.id;
+  const msg = { t: 'possess', by: c.id, target: t.id };
+  send(c, msg); send(t, msg);
 }
-const pushBar = r => { if (r.settings.taskBar === 0) bc(r, { t: 'bar', bar: taskBar(r.game) }); };
-const sabPub = g => g.sab && { k: g.sab.k, left: g.sab.until ? g.sab.until - now() : 0, parts: Object.keys(g.sab.parts).filter(p => g.sab.parts[p]) };
-
-function gameMsg(c, r, g, m) {
-  const alive = g.alive.has(c.id), role = g.roles.get(c.id), imp = role === 'impostor', hns = r.settings.gameType === 'hns';
-  switch (m.t) {
-    case 'kill': {
-      const v = r.players.get(m.id);
-      if (!imp || !alive || g.phase !== 'play' || g.vent.has(c.id) || now() < g.killAt.get(c.id) - 300) return;
-      if (!v || !g.alive.has(v.id) || g.roles.get(v.id) === 'impostor' || g.vent.has(v.id)) return;
-      if (d2(c, v) > KILL_D[r.settings.killDistance] * 1.4 + 80) return;
-      g.alive.delete(v.id);
-      g.bodies.push({ id: v.id, x: v.x, y: v.y });
-      c.x = v.x; c.y = v.y;
-      g.killAt.set(c.id, now() + (hns ? 5 : r.settings.killCooldown) * 1000);
-      bc(r, { t: 'kill', id: v.id, by: c.id, x: v.x, y: v.y, cd: (hns ? 5 : r.settings.killCooldown) * 1000 });
-      checkWin(r);
-      break;
-    }
-    case 'report': {
-      const b = g.bodies.find(b => b.id === m.id);
-      if (alive && g.phase === 'play' && !hns && b && d2(c, b) < 450) meeting(r, c, b.id);
-      break;
-    }
-    case 'emergency': {
-      if (!alive || g.phase !== 'play' || hns || (g.meetings.get(c.id) || 0) <= 0 || now() < g.emergAt) return;
-      if (g.sab && SABOTAGES[g.sab.k].critical) return err(c, '긴급 상황 중에는 회의를 소집할 수 없습니다.');
-      if (d2(c, SKELD.button) > 520) return;
-      g.meetings.set(c.id, g.meetings.get(c.id) - 1);
-      meeting(r, c, null);
-      break;
-    }
-    case 'vote': vote(r, g, c, m.id); break;
-    case 'task': {
-      const list = g.tasks.get(c.id), t = list?.[m.i];
-      if (!t || imp || t.step >= t.st.length || g.phase !== 'play') return;
-      t.step++;
-      send(c, { t: 'tasks', tasks: list });
-      if (t.step >= t.st.length) { pushBar(r); checkWin(r); }
-      break;
-    }
-    case 'visual': if (r.settings.visualTasks && alive) bc(r, { t: 'visual', id: c.id, k: String(m.k).slice(0, 10), on: !!m.on }); break;
-    case 'sab': {
-      const S = SABOTAGES[m.k];
-      if (!S || !imp || g.phase !== 'play' || g.sab || hns) return;
-      if (now() < g.sabAt) return err(c, `사보타주 쿨다운: ${Math.ceil((g.sabAt - now()) / 1000)}초`);
-      g.sab = { k: m.k, until: S.time ? now() + S.time * 1000 : 0, parts: {} };
-      bc(r, { t: 'sab', sab: sabPub(g) });
-      break;
-    }
-    case 'fix': {
-      const sab = g.sab, S = sab && SABOTAGES[sab.k];
-      if (!sab || sab.k !== m.k || !alive || g.phase !== 'play' || !S.parts.includes(m.p)) return;
-      sab.parts[m.p] = S.together ? (m.on ? c.id : null) : c.id;
-      if (S.parts.every(p => sab.parts[p])) { g.sab = null; g.sabAt = now() + 30000; bc(r, { t: 'sab', sab: null, fixed: sab.k }); }
-      else bc(r, { t: 'sab', sab: sabPub(g) });
-      break;
-    }
-    case 'vent': {
-      if (!alive || g.phase !== 'play' || !(imp || role === 'engineer') || hns) return;
-      const cur = g.vent.get(c.id), v = SKELD.vents[m.v];
-      if (m.a === 'in') { if (!v || cur || d2(c, v) > 300) return; g.vent.set(c.id, m.v); c.x = v.x; c.y = v.y; }
-      else if (m.a === 'move') { if (!v || !cur || !SKELD.vents[cur].links.includes(m.v)) return; g.vent.set(c.id, m.v); c.x = v.x; c.y = v.y; }
-      else if (m.a === 'out') { if (!cur) return; g.vent.delete(c.id); }
-      else return;
-      bc(r, { t: 'vent', id: c.id, v: g.vent.get(c.id) || null, a: m.a, x: c.x, y: c.y });
-      break;
-    }
-  }
+export function releasePossess(r, c) {
+  if (!c.possess) return;
+  const t = r.players.get(c.possess);
+  c.possess = null;
+  if (t && t.possessedBy === c.id) { t.possessedBy = null; send(t, { t: 'possess', by: c.id, target: null, prev: t.id }); }
+  send(c, { t: 'possess', by: c.id, target: null, prev: t?.id || null });
+}
+export function setRainbow(r, c, on, target) {
+  if (!on) return stopRainbow(r);
+  stopRainbow(r);
+  r.rainbow = { by: c.id, target: target === 'all' ? 'all' : 'me', orig: new Map([...r.players.values()].map(p => [p.id, p.look.color])), i: 0 };
+}
+function stopRainbow(r) {
+  const R = r.rainbow;
+  if (!R) return;
+  r.rainbow = null;
+  for (const p of r.players.values()) if (R.orig.has(p.id) && (R.target === 'all' || p.id === R.by)) { p.look = { ...p.look, color: R.orig.get(p.id) }; bc(r, { t: 'look', id: p.id, look: p.look }); }
+  if (!r.game) bcRoom(r);
+}
+function rainbowTick(r) {
+  const R = r.rainbow;
+  R.i++;
+  const list = [...r.players.values()].filter(p => R.target === 'all' || p.id === R.by);
+  if (!list.length) { r.rainbow = null; return; }
+  list.forEach((p, k) => { p.look = { ...p.look, color: (R.i + k * 3) % COLORS.length }; bc(r, { t: 'look', id: p.id, look: p.look }); });
 }
 
-function meeting(r, caller, body) {
-  const g = r.game, s = r.settings;
-  g.phase = 'meeting'; g.vent.clear(); g.bodies = [];
-  if (g.sab && SABOTAGES[g.sab.k].critical) { g.sab = null; g.sabAt = now() + 15000; }
-  const intro = 3500, disc = s.discussionTime * 1000, vote = s.votingTime * 1000;
-  g.meeting = { caller: caller.id, body, votes: new Map(), stage: 'discuss' };
-  bc(r, { t: 'meeting', caller: caller.id, body, dead: [...g.roles.keys()].filter(id => !g.alive.has(id)), intro, discuss: disc, vote,
-    bar: s.taskBar !== 2 ? taskBar(g) : null, sab: sabPub(g), meetings: Object.fromEntries(g.meetings) });
-  g.mt.forEach(clearTimeout);
-  g.mt = [
-    setTimeout(() => {
-      if (!g.meeting) return;
-      g.meeting.stage = 'vote';
-      bc(r, { t: 'voting' });
-      for (const p of r.players.values()) if (p.bot && g.alive.has(p.id)) { g.meeting.votes.set(p.id, 'skip'); bc(r, { t: 'voted', id: p.id }); }
-      maybeTally(r);
-    }, intro + disc),
-    setTimeout(() => tally(r), intro + disc + vote),
-  ];
-}
-function vote(r, g, c, target) {
-  const M = g.meeting;
-  if (!M || M.stage !== 'vote' || !g.alive.has(c.id) || M.votes.has(c.id)) return;
-  if (target !== 'skip' && !g.alive.has(target)) return;
-  M.votes.set(c.id, target);
-  bc(r, { t: 'voted', id: c.id });
-  maybeTally(r);
-}
-function maybeTally(r) {
-  const g = r.game, M = g?.meeting;
-  if (M?.stage === 'vote' && [...g.alive].every(id => M.votes.has(id))) tally(r);
-}
-function tally(r) {
-  const g = r.game, M = g?.meeting;
-  if (!M || M.stage === 'done') return;
-  M.stage = 'done';
-  g.mt.forEach(clearTimeout);
-  const votes = [...M.votes].filter(([v, t]) => g.alive.has(v) && (t === 'skip' || g.alive.has(t)));
-  const count = new Map();
-  for (const [, t] of votes) count.set(t, (count.get(t) || 0) + 1);
-  let best = null, max = 0, tie = false;
-  for (const [t, n] of count) { if (n > max) { max = n; best = t; tie = false; } else if (n === max) tie = true; }
-  const ejected = !tie && best && best !== 'skip' ? best : null;
-  bc(r, { t: 'result', votes: r.settings.anonVotes ? votes.map(([, t]) => [null, t]) : votes, ejected, tie });
-  later(r, () => eject(r, ejected, tie), 5000);
-}
-function eject(r, id, tie) {
-  const g = r.game;
-  if (!g) return;
-  g.phase = 'eject'; g.meeting = null;
-  if (id) g.alive.delete(id);
-  const p = r.players.get(id), ce = r.settings.confirmEjects;
-  const impLeft = [...g.alive].filter(i => g.roles.get(i) === 'impostor').length;
-  bc(r, { t: 'eject', id, tie, name: p?.name, look: p?.look, imp: ce && id ? g.roles.get(id) === 'impostor' : null, impLeft: ce ? impLeft : null });
-  later(r, () => { if (!checkWin(r)) resume(r); }, 7000);
-}
-function resume(r) {
-  const g = r.game;
-  if (!g) return;
-  g.phase = 'play';
-  const ps = [...r.players.values()], t = now();
-  ps.forEach((p, i) => { const sp = SKELD.spawn(i, ps.length); p.x = sp.x; p.y = sp.y; p.mv = 0; });
-  for (const id of g.alive) if (g.roles.get(id) === 'impostor') g.killAt.set(id, t + r.settings.killCooldown * 1000);
-  g.emergAt = t + r.settings.emergencyCooldown * 1000;
-  bc(r, { t: 'resume', pos: ps.map(p => [p.id, p.x, p.y]), sab: sabPub(g), kill: r.settings.killCooldown * 1000, emerg: r.settings.emergencyCooldown * 1000 });
-}
-function checkWin(r) {
-  const g = r.game;
-  if (!g || g.practice) return false;
-  const alive = [...g.alive], imps = alive.filter(i => g.roles.get(i) === 'impostor').length, crew = alive.length - imps;
-  const hns = r.settings.gameType === 'hns';
-  let w = null;
-  if (imps === 0) w = ['crew', '임포스터를 모두 찾아냈습니다'];
-  else if (hns ? crew === 0 : imps >= crew) w = ['impostor', '크루원이 모두 처치당했습니다'];
-  else { const b = taskBar(g); if (b.total && b.done >= b.total) w = ['crew', '모든 임무를 완료했습니다']; }
-  if (w) end(r, ...w);
-  return !!w;
-}
-function end(r, winner, reason) {
-  const g = r.game;
-  bc(r, { t: 'over', winner, reason, roles: [...g.roles], players: [...r.players.values()].map(pub) });
-  g.mt.forEach(clearTimeout);
-  r.timers.forEach(clearTimeout); r.timers = [];
-  r.game = null; r.state = 'lobby';
-  [...r.players.values()].forEach((p, i) => { const sp = LOBBY.spawn(i); p.x = sp.x; p.y = sp.y; p.mv = 0; });
-  bc(r, { t: 'room', room: info(r) });
-}
-
-// 위치 동기화 + 시간 제한 처리 (15Hz)
+// ---------- 위치 동기화 + 게임 시간 처리 (15Hz) ----------
+let lastT = now();
 setInterval(() => {
-  const t = now();
-  for (const r of rooms.values()) {
-    const g = r.game;
-    if (g?.phase === 'play' && g.sab?.until && t > g.sab.until) {
-      if (g.practice) { g.sab = null; bc(r, { t: 'sab', sab: null }); }
-      else { end(r, 'impostor', g.sab.k === 'reactor' ? '원자로가 녹아내렸습니다' : '산소가 고갈되었습니다'); continue; }
-    }
-    if (g?.phase === 'play' && g.hnsEnd && t > g.hnsEnd) { end(r, 'crew', '크루원이 끝까지 살아남았습니다'); continue; }
-    if (humans(r).length) bc(r, { t: 'pos', p: [...r.players.values()].map(p => [p.id, Math.round(p.x), Math.round(p.y), p.dir ? 1 : 0, p.mv ? 1 : 0, g?.vent.has(p.id) ? 1 : 0]) });
+  const t = now(), dt = Math.min(250, t - lastT);
+  lastT = t;
+  for (const r of [...rooms.values()]) {
+    try {
+      const g = r.game;
+      if (g) GM.tick(g, dt);
+      if (r.rainbow && t - r.lastLook >= 250) { r.lastLook = t; rainbowTick(r); }
+      if (!humans(r).length) continue;
+      const g2 = r.game;
+      const p = [];
+      for (const q of r.players.values()) {
+        if (g2 && GM.hiddenPos(g2, q.id)) continue;
+        p.push([q.id, Math.round(q.x), Math.round(q.y), q.dir ? 1 : 0, q.mv ? 1 : 0, g2 ? GM.flags(g2, q.id) : 0]);
+      }
+      bc(r, { t: 'pos', p });
+    } catch (e) { console.error('room tick', r.code, e); }
   }
 }, 66);
+
