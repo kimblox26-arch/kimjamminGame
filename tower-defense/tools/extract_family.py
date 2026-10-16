@@ -2,7 +2,7 @@
 
 1) 엄마·아빠: 사람이 없는 장면(clean)을 SIFT 특징점으로 사람이 있는 장면에 정렬한 뒤
    두 장면의 차이로 사람만 찾아낸다. 지붕(빨강)·잔디(초록) 잔여물은 색으로 한 번 더 지운다.
-2) 집: 잔디(강한 초록)를 바깥에서부터 지우고 가장 큰 덩어리만 남긴다.
+2) 집: 잔디(강한 초록)를 바깥에서부터 지우고 가장 큰 덩어리만 남긴다. 지붕 위 꽃가루는 지붕 모양으로 걷어낸다.
 
 사용법: python3 tools/extract_family.py <스크린샷 폴더> [assets 폴더]
 필요: pip install pillow numpy scipy opencv-python-headless
@@ -17,7 +17,7 @@ CLEAN = '5603c844-image.jpg'                       # 집만 있는 장면
 FRAMES = {'back_0': 'e3abcc30-image.jpg',          # 뒷모습 1
           'back_1': '5a2c116e-image.jpg',          # 뒷모습 2
           'turn': 'f7f547c2-image.jpg'}            # 돌아서는 모습
-HOUSE_SRC, HOUSE_BOX = 'a11e8edf-image.jpg', (320, 975, 815, 1400)
+HOUSE_SRC, HOUSE_GABLE = '2e81843d-image.jpg', (540, 247, 82)   # 집 클로즈업, 박공 꼭대기(x, y, 반폭)
 
 
 def align(src, target):
@@ -61,17 +61,26 @@ def people(src_dir, frame, T=70):
 
 
 def house(src_dir):
-    a = np.asarray(Image.open(src_dir + HOUSE_SRC).convert('RGB').crop(HOUSE_BOX))
+    """선명한 집 클로즈업에서 잔디를 지우고, 지붕 위 꽃가루는 박공·굴뚝만 남기고 지운다."""
+    from PIL import ImageDraw
+    a = np.asarray(Image.open(src_dir + HOUSE_SRC).convert('RGB'))
     A = a.astype(int)
-    grass = (A[..., 1] > A[..., 0] + 25) & (A[..., 1] > A[..., 2] + 60)
+    grass = (A[..., 1] > A[..., 0] + 20) & (A[..., 1] > A[..., 2] + 50)
     lab, _ = nd.label(grass)
     border = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
-    fg = nd.binary_opening(~np.isin(lab, list(border)), iterations=1)
+    fg = ~np.isin(lab, list(border))
+    H, W = fg.shape
+    roof_y, (gx, gy, gw) = 305, HOUSE_GABLE
+    zone = Image.new('L', (W, H), 0); ImageDraw.Draw(zone).rectangle((150, 0, 690, roof_y), fill=255)
+    keep = Image.new('L', (W, H), 0)
+    ImageDraw.Draw(keep).polygon([(gx - gw, roof_y + 4), (gx, gy), (gx + gw, roof_y + 4)], fill=255)
+    fg &= ~(np.array(zone) > 0) | (np.array(keep) > 0)
+    fg = nd.binary_opening(fg, iterations=1)
     l2, n2 = nd.label(fg); fg = l2 == (np.argmax(nd.sum(fg, l2, range(1, n2 + 1))) + 1)
     fg = nd.binary_fill_holes(fg)
-    H = fg.shape[0]; yy, xx = np.mgrid[-14:15, -14:15]
-    cl = nd.binary_closing(np.pad(fg, 20), structure=(xx ** 2 + yy ** 2) <= 196)[20:-20, 20:-20]
-    fg[int(H * 0.55):] |= cl[int(H * 0.55):]          # 아래쪽 화분·덤불 복구
+    yy, xx = np.mgrid[-18:19, -18:19]
+    cl = nd.binary_closing(np.pad(fg, 24), structure=(xx ** 2 + yy ** 2) <= 324)[24:-24, 24:-24]
+    fg[700:] |= cl[700:]                               # 아래쪽 덤불 복구
     fg = nd.binary_fill_holes(fg)
     al = np.array(Image.fromarray((fg * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8)))
     im = Image.fromarray(np.dstack([a, al]), 'RGBA')

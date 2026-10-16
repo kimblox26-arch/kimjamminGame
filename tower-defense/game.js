@@ -10,7 +10,6 @@ const STEP = 1 / 60;
 const ENEMY_H = 128;                   // 적 키(맵 픽셀)
 const ENEMY_FRAME_RATE = 2.2;          // 초당 걷기 사진 전환 수
 const FAMILY_H = 118;                  // 전장 가족 키
-const BLEND_TIME = 0.16;               // 사진 전환 시 크로스페이드 시간
 const REWARD = 5;                      // 적 1명당 보상(원)
 const START_MONEY = 10;
 const familyCost = n => 10 + n * 5;    // n = 이미 생성한 가족 수
@@ -20,8 +19,8 @@ const MAX_ENEMIES = 24;
 const PATH_CORNERS = [[566, 1094], [90, 1094], [90, 414], [566, 414]];
 const CORNER_R = 52;
 
-// 전장 가족 배치 자리(발 위치). 안쪽 잔디밭.
-const FAMILY_SLOTS = [[455, 1015], [205, 640], [205, 1015], [455, 640], [330, 830], [330, 1015], [330, 640], [205, 830], [455, 830]];
+// 전장 가족 배치 자리(발 위치). 안쪽 잔디밭 가장자리 — 어느 자리든 사거리 안에 길이 들어온다.
+const FAMILY_SLOTS = [[475, 1020], [185, 560], [185, 1020], [475, 560], [330, 1020], [330, 560], [185, 790], [475, 790]];
 
 const FAMILY_STATS = {
   mom: { dmg: 20, cooldown: 0.85, range: 205, proj: 'slipper' },
@@ -30,8 +29,8 @@ const FAMILY_STATS = {
 
 // 화면에 꼭 보여야 하는 영역(맵 좌표) — 화면비가 달라도 이 영역은 잘리지 않는다.
 const NEED = {
-  battle: { x0: 30, x1: 658, y0: 270, y1: 1480 },
-  tower: { x0: 60, x1: 628, y0: 110, y1: 1480 },
+  battle: { x0: 30, x1: 658, y0: 200, y1: 1480 },
+  tower: { x0: 60, x1: 628, y0: 60, y1: 1480 },
 };
 // 버튼 자리(맵 좌표). 가족 생성 = 사용자가 네모로 그린 곳, 그 아래 이동 버튼.
 const SLOT_SQ = { x0: 215, x1: 470, y0: 1205, y1: 1397 };
@@ -214,16 +213,20 @@ let shake = 0;
 let nextId = 1;
 
 // 사진 전환을 크로스페이드로 처리하는 스프라이트 상태
-function makeSprite(key, flip = false) { return { cur: { key, flip }, prev: null, fade: 1 }; }
-function setSprite(sp, key, flip) {
+// blend = 0 이면 즉시 교체(걷기 프레임), 0보다 크면 그 시간 동안 크로스페이드(방향 전환·숨쉬기)
+function makeSprite(key, flip = false) { return { cur: { key, flip }, prev: null, fade: 1, dur: 1 }; }
+function setSprite(sp, key, flip, blend = 0) {
   if (sp.cur.key === key && sp.cur.flip === flip) return;
-  sp.prev = sp.cur; sp.cur = { key, flip }; sp.fade = 0;
+  const next = { key, flip };
+  if (blend <= 0) { sp.cur = next; return; }          // 진행 중인 페이드는 그대로 둔다
+  if (!(sp.prev && sp.fade < 0.5)) sp.prev = sp.cur;  // 페이드 초반에 또 바뀌면 원래 사진에서 이어서
+  sp.cur = next; sp.fade = 0; sp.dur = blend;
 }
-function tickSprite(sp, dt) { if (sp.fade < 1) sp.fade = Math.min(1, sp.fade + dt / BLEND_TIME); }
+function tickSprite(sp, dt) { if (sp.fade < 1) sp.fade = Math.min(1, sp.fade + dt / sp.dur); }
 function drawSpriteLayers(ctx, sp, h, alpha) {
-  const layers = [];
-  if (sp.prev && sp.fade < 1) layers.push([sp.prev, Math.min(1, 2 * (1 - sp.fade))]);
-  layers.push([sp.cur, sp.prev && sp.fade < 1 ? Math.min(1, 2 * sp.fade) : 1]);
+  // 새 사진을 불투명하게 깔고 이전 사진을 그 위에서 서서히 지운다 → 겹친 부분이 반투명해지지 않음
+  const layers = [[sp.cur, 1]];
+  if (sp.prev && sp.fade < 1) layers.push([sp.prev, 1 - sp.fade]);
   for (const [l, a] of layers) {
     const img = IMG[l.key];
     const w = img.width * (h / img.height);
@@ -242,15 +245,16 @@ function spawnEnemy() {
     id: nextId++, dist: 0, prevDist: 0, hp, maxHp: hp, pending: 0,
     speed: Math.min(52 + wave.n * 1.2, 68),
     age: 0, phase: 0, hitT: 0, dead: false, deathT: 0,
-    sprite: makeSprite('farmer_side_0'),
+    dir: 'side', sprite: makeSprite('farmer_side_0'),
   });
 }
 
 function enemyPose(e) {
   const p = pointAt(e.dist);
   const frame = Math.floor(e.phase) % 2;
-  if (Math.abs(p.dx) >= Math.abs(p.dy)) return { key: `farmer_side_${frame}`, flip: p.dx > 0 };
-  return { key: `farmer_${p.dy < 0 ? 'back' : 'front'}_${frame}`, flip: false };
+  if (Math.abs(p.dx) >= Math.abs(p.dy)) return { dir: 'side', key: `farmer_side_${frame}`, flip: p.dx > 0 };
+  const dir = p.dy < 0 ? 'back' : 'front';
+  return { dir, key: `farmer_${dir}_${frame}`, flip: false };
 }
 
 function updateEnemy(e, dt) {
@@ -265,7 +269,9 @@ function updateEnemy(e, dt) {
     e.phase += dt * ENEMY_FRAME_RATE * ramp;
   }
   const pose = enemyPose(e);
-  setSprite(e.sprite, pose.key, pose.flip);
+  const turned = pose.dir !== e.dir || pose.flip !== e.sprite.cur.flip;
+  e.dir = pose.dir;
+  setSprite(e.sprite, pose.key, pose.flip, turned ? 0.14 : 0);
   tickSprite(e.sprite, dt);
 }
 
@@ -348,7 +354,7 @@ function updateFamily(f, dt) {
   f.age += dt;
   f.idle += dt;
   f.throwT = Math.max(0, f.throwT - dt);
-  setSprite(f.sprite, `${f.type}_back_${Math.floor(f.idle / 1.1) % 2}`, false);
+  setSprite(f.sprite, `${f.type}_back_${Math.floor(f.idle / 1.1) % 2}`, false, 0.35);
   tickSprite(f.sprite, dt);
   f.cd -= dt;
   if (f.cd > 0 || f.age < 0.5) return;
@@ -553,7 +559,7 @@ const residents = {
 const EMERGE_START = 1.25, EMERGE_DUR = 1.7;
 
 function updateTower(dt) {
-  if (!state.houseBuilt) return;
+  if (!state.houseBuilt || state.scene !== 'tower') return;
   const before = state.houseT;
   state.houseT += dt;
   const t = state.houseT;
@@ -573,17 +579,14 @@ function updateTower(dt) {
     }
   }
   if (before < EMERGE_START + EMERGE_DUR && t >= EMERGE_START + EMERGE_DUR) {
-    setSprite(residents.dad.sprite, 'dad_back_0', false);
-    setSprite(residents.mom.sprite, 'mom_back_0', false);
-  }
-  if (before < EMERGE_START + EMERGE_DUR + 0.4 && t >= EMERGE_START + EMERGE_DUR + 0.4) {
-    toast('엄마 아빠가 나왔어요! 전장에서 가족을 생성할 수 있어요', 2.6);
+    setSprite(residents.dad.sprite, 'dad_back_0', false, 0.3);
+    setSprite(residents.mom.sprite, 'mom_back_0', false, 0.3);
   }
   for (const who of ['dad', 'mom']) {
     const r = residents[who];
     if (t > EMERGE_START + EMERGE_DUR + 0.2) {
       r.idle += dt;
-      setSprite(r.sprite, `${who}_back_${Math.floor(r.idle / 1.3) % 2}`, false);
+      setSprite(r.sprite, `${who}_back_${Math.floor(r.idle / 1.3) % 2}`, false, 0.4);
     }
     tickSprite(r.sprite, dt);
   }
@@ -686,7 +689,8 @@ const ctx = canvas.getContext('2d');
 const view = { s: 1, ox: 0, oy: 0, dpr: 1, cw: 0, ch: 0 };   // 화면px = 월드*s + o
 
 function layoutFor(scene, cw, ch) {
-  const need = NEED[scene];
+  const need = { ...NEED[scene] };
+  if (cw > ch) need.y1 = scene === 'battle' ? 1200 : 1160;   // 가로 화면: 버튼은 맵 옆으로 가므로 아래 숲은 덜 보여도 됨
   const cover = Math.max(cw / MAP_W, ch / MAP_H);
   const fit = Math.min(cw / (need.x1 - need.x0), ch / (need.y1 - need.y0));
   const s = Math.min(cover, fit);
@@ -708,32 +712,66 @@ function resize() {
   layoutUI();
 }
 
-// 맵을 화면 전체에 깔기: 남는 가장자리는 맵을 거울처럼 이어 붙여 빈 띠가 생기지 않게.
-function drawBackground(img) {
+// 맵을 화면 전체에 깔기. 화면이 맵보다 넓으면 남는 곳을 숲(전장)·잔디(타워) 무늬로 채우고
+// 맵 가장자리를 부드럽게 녹여서 빈 띠나 가짜 길이 보이지 않게 한다.
+const FILL_CROP = { map: [0, 0, MAP_W, 220], towerMap: [0, 0, MAP_W, 700] };
+const bgCache = {};
+function bgAssets(name) {
+  if (bgCache[name]) return bgCache[name];
+  const img = IMG[name];
+  const [sx, sy, sw, sh] = FILL_CROP[name];
+  const tile = document.createElement('canvas');          // 거울 2x2 → 이음매 없는 무늬
+  tile.width = sw * 2; tile.height = sh * 2;
+  const t = tile.getContext('2d');
+  for (const [fx, fy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    t.save();
+    t.translate(fx ? sw * 2 : 0, fy ? sh * 2 : 0);
+    t.scale(fx ? -1 : 1, fy ? -1 : 1);
+    t.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    t.restore();
+  }
+  const soft = document.createElement('canvas');          // 가장자리를 투명하게 녹인 맵
+  soft.width = MAP_W; soft.height = MAP_H;
+  const c = soft.getContext('2d');
+  c.drawImage(img, 0, 0);
+  c.globalCompositeOperation = 'destination-out';
+  const F = 46;
+  for (const [x0, y0, x1, y1, rx, ry, rw, rh] of [
+    [0, 0, F, 0, 0, 0, F, MAP_H], [MAP_W, 0, MAP_W - F, 0, MAP_W - F, 0, F, MAP_H],
+    [0, 0, 0, F, 0, 0, MAP_W, F], [0, MAP_H, 0, MAP_H - F, 0, MAP_H - F, MAP_W, F]]) {
+    const g = c.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, 'rgba(0,0,0,1)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g;
+    c.fillRect(rx, ry, rw, rh);
+  }
+  return (bgCache[name] = { pattern: ctx.createPattern(tile, 'repeat'), soft });
+}
+
+function drawBackground(name) {
+  const img = IMG[name];
   const W = MAP_W * view.s, H = MAP_H * view.s;
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-  for (let j = -1; j <= 1; j++) {
-    for (let i = -1; i <= 1; i++) {
-      const x = view.ox + i * W, y = view.oy + j * H;
-      if (x > view.cw || y > view.ch || x + W < 0 || y + H < 0) continue;
-      ctx.save();
-      ctx.translate(x + (i ? W : 0), y + (j ? H : 0));
-      ctx.scale(i ? -1 : 1, j ? -1 : 1);
-      ctx.drawImage(img, 0, 0, W, H);
-      ctx.restore();
-    }
-  }
+  const covered = view.ox <= 0.5 && view.oy <= 0.5 && view.ox + W >= view.cw - 0.5 && view.oy + H >= view.ch - 0.5;
+  if (covered) { ctx.drawImage(img, view.ox, view.oy, W, H); return; }
+  const { pattern, soft } = bgAssets(name);
+  pattern.setTransform(new DOMMatrix([view.s * view.dpr, 0, 0, view.s * view.dpr, view.ox * view.dpr, view.oy * view.dpr]));
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = pattern;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  ctx.drawImage(soft, view.ox, view.oy, W, H);
 }
 
 function worldTransform() {
-  const sh = shake > 0 ? Math.sin(state.time * 70) * shake * 14 : 0;
+  const sh = shake > 0 && state.scene === 'tower' ? Math.sin(state.time * 70) * shake * 14 : 0;
   ctx.setTransform(view.s * view.dpr, 0, 0, view.s * view.dpr, (view.ox + sh) * view.dpr, view.oy * view.dpr);
 }
 
 function render(alpha) {
   ctx.imageSmoothingEnabled = true;
   if (state.scene === 'battle') {
-    drawBackground(IMG.map);
+    drawBackground('map');
     worldTransform();
     const list = [];
     for (const e of enemies) list.push({ y: enemyFoot(e, alpha).y, draw: () => drawEnemy(ctx, e, alpha) });
@@ -745,7 +783,7 @@ function render(alpha) {
     drawFloaters(ctx);
     drawWaveBanner(ctx);
   } else {
-    drawBackground(IMG.towerMap);
+    drawBackground('towerMap');
     worldTransform();
     drawTowerScene(ctx);
     drawParticles(ctx, 'tower');
@@ -757,39 +795,70 @@ const $ = id => document.getElementById(id);
 const ui = { money: $('moneyVal'), family: $('familyBtn'), build: $('buildBtn'), go: $('goBtn'), toast: $('toast'), fade: $('fade') };
 document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = pixelSVG(el.dataset.icon); });
 
-function placeBox(el, box, minW, minH, maxW, maxH, bottomLimit) {
-  let w = clamp((box.x1 - box.x0) * view.s, minW, maxW);
-  let h = clamp((box.y1 - box.y0) * view.s, minH, maxH);
-  const cx = ((box.x0 + box.x1) / 2) * view.s + view.ox;
-  let top = box.y0 * view.s + view.oy;
-  top = Math.min(top, bottomLimit - h);
+// 아이폰 홈 바 등 안전 영역
+const safeProbe = document.createElement('div');
+safeProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+document.body.appendChild(safeProbe);
+function safeInsets() {
+  const cs = getComputedStyle(safeProbe);
+  return { right: parseFloat(cs.paddingRight) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+}
+
+function setBox(el, cx, top, w, h) {
   el.style.left = Math.round(cx - w / 2) + 'px';
   el.style.top = Math.round(top) + 'px';
   el.style.width = Math.round(w) + 'px';
   el.style.height = Math.round(h) + 'px';
-  return { top, h };
 }
 
 function layoutUI() {
-  const bottom = view.ch - 14;
-  const wide = placeBox(ui.go, SLOT_WIDE, 170, 42, 300, 60, bottom);
+  const inset = safeInsets();
+  const bottom = view.ch - 14 - inset.bottom;
+  const mapRight = view.ox + MAP_W * view.s;
+  const sideRoom = view.cw - inset.right - mapRight;
+  let wide, sq;
+  if (sideRoom >= 190) {
+    // 가로 화면: 맵 오른쪽 숲에 버튼을 세로로 쌓는다 (길을 가리지 않게)
+    const cx = mapRight + sideRoom / 2;
+    const ww = Math.min(sideRoom - 28, 260);
+    wide = { cx, w: ww, h: 52 };
+    wide.top = bottom - wide.h;
+    const sh = clamp(Math.min(wide.top - 24, ww * 0.8), 104, 176);
+    sq = { cx, w: clamp(sh * 1.3, 128, Math.min(ww, 230)), h: sh, top: wide.top - 12 - sh };
+  } else {
+    // 세로 화면: 사용자가 그린 네모 자리(맵 좌표) 그대로, 화면 밖으로 나가면 위로 당김
+    const s = view.s;
+    wide = { cx: (SLOT_WIDE.x0 + SLOT_WIDE.x1) / 2 * s + view.ox,
+      w: clamp((SLOT_WIDE.x1 - SLOT_WIDE.x0) * s, 170, 300), h: clamp((SLOT_WIDE.y1 - SLOT_WIDE.y0) * s, 42, 60) };
+    wide.top = Math.min(SLOT_WIDE.y0 * s + view.oy, bottom - wide.h);
+    const sh = clamp((SLOT_SQ.y1 - SLOT_SQ.y0) * s, 104, 176);
+    sq = { cx: (SLOT_SQ.x0 + SLOT_SQ.x1) / 2 * s + view.ox,
+      w: clamp((SLOT_SQ.x1 - SLOT_SQ.x0) * s, 128, 220), h: sh };
+    sq.top = Math.min(SLOT_SQ.y0 * s + view.oy, wide.top - 10 - sh);
+  }
+  setBox(ui.go, wide.cx, wide.top, wide.w, wide.h);
   ui.go.style.fontSize = clamp(wide.h * 0.42, 15, 24) + 'px';
-  const sqLimit = wide.top - 10;
   for (const el of [ui.family, ui.build]) {
-    const r = placeBox(el, SLOT_SQ, 128, 104, 220, 176, sqLimit);
-    el.style.fontSize = clamp(r.h * 0.13, 13, 21) + 'px';
+    setBox(el, sq.cx, sq.top, sq.w, sq.h);
+    el.style.fontSize = clamp(sq.h * 0.13, 13, 21) + 'px';
+    // 버튼 크기 기준 여백 (아래는 테두리+입체 띠 두께만큼 확보)
+    el.style.padding = `${Math.round(sq.h * 0.07)}px ${Math.round(sq.w * 0.06)}px ${Math.round(Math.max(13, sq.h * 0.09))}px`;
   }
 }
 
+let goScene = null;
 function updateUI() {
   const battle = state.scene === 'battle';
-  ui.family.classList.toggle('show', battle);
-  ui.build.classList.toggle('show', !battle && !state.houseBuilt);
-  ui.go.classList.add('show');
-  ui.go.classList.toggle('to-tower', battle);
-  ui.go.classList.toggle('to-battle', !battle);
-  ui.go.querySelector('.label').textContent = battle ? '타워로 가기' : '전장으로 가기';
-  ui.go.querySelector('.ico').innerHTML = pixelSVG(battle ? 'house' : 'sword');
+  ui.family.classList.toggle('show', ready && battle);
+  ui.build.classList.toggle('show', ready && !battle && !state.houseBuilt);
+  ui.go.classList.toggle('show', ready);
+  if (goScene !== state.scene) {
+    goScene = state.scene;
+    ui.go.classList.toggle('to-tower', battle);
+    ui.go.classList.toggle('to-battle', !battle);
+    ui.go.querySelector('.label').textContent = battle ? '타워로 가기' : '전장으로 가기';
+    ui.go.querySelector('.ico').innerHTML = pixelSVG(battle ? 'house' : 'sword');
+  }
   const cost = familyCost(state.familyCount);
   const full = family.length >= FAMILY_SLOTS.length;
   ui.family.classList.toggle('locked', !state.houseBuilt);
@@ -822,25 +891,26 @@ function shakeEl(el) {
 }
 
 ui.family.addEventListener('click', () => {
-  if (!state.houseBuilt) {
-    toast('타워에서 집을 먼저 지어주세요');
+  if (!ready) return;
+  if (!state.houseBuilt) {                 // 글 대신 버튼 흔들기 + 타워 버튼 강조
     shakeEl(ui.family);
     ui.go.classList.remove('nudge'); void ui.go.offsetWidth; ui.go.classList.add('nudge');
     return;
   }
-  if (family.length >= FAMILY_SLOTS.length) { toast('가족 자리가 꽉 찼어요'); shakeEl(ui.family); return; }
+  if (family.length >= FAMILY_SLOTS.length) { shakeEl(ui.family); return; }
   const cost = familyCost(state.familyCount);
-  if (state.money < cost) { toast(`돈이 부족해요 (${cost}원 필요)`); shakeEl(ui.family); return; }
+  if (state.money < cost) { shakeEl(ui.family); return; }
   state.money -= cost;
   spawnFamily();
   bumpMoney();
 });
 
-ui.build.addEventListener('click', buildHouse);
+ui.build.addEventListener('click', () => { if (ready) buildHouse(); });
 
 let switching = false;
+let ready = false;
 ui.go.addEventListener('click', () => {
-  if (switching) return;
+  if (switching || !ready) return;
   switching = true;
   ui.fade.classList.add('on');
   setTimeout(() => {
@@ -853,7 +923,7 @@ ui.go.addEventListener('click', () => {
 });
 
 canvas.addEventListener('pointerdown', ev => {
-  if (state.scene !== 'tower' || state.houseBuilt) return;
+  if (!ready || state.scene !== 'tower' || state.houseBuilt) return;
   const wx = (ev.clientX - view.ox) / view.s, wy = (ev.clientY - view.oy) / view.s;
   const r = houseRect();
   if (wx > r.x - 20 && wx < r.x + r.w + 20 && wy > r.y && wy < r.y + r.h + 20) buildHouse();
@@ -890,6 +960,8 @@ updateUI();
 const fontReady = document.fonts ? document.fonts.load(`40px ${FONT}`).catch(() => {}) : Promise.resolve();
 Promise.all([loadAssets(), Promise.race([fontReady, new Promise(r => setTimeout(r, 1500))])])
   .then(() => {
+    ready = true;
+    updateUI();
     last = performance.now() / 1000;
     requestAnimationFrame(frame);
   })
