@@ -1,6 +1,7 @@
 // 임무 미니게임 + 사보타주 수리 화면. 각 함수는 (el, done, ctx) 를 받고 정리 함수를 돌려줌
 import { shuffle } from '../shared/data.js';
 import { sfx } from '../core.js';
+import { GAMES2 } from './tasks2.js';
 
 const S = 620;
 const at = (e, el) => { const r = el.getBoundingClientRect(); return [(e.clientX - r.left) * S / r.width, (e.clientY - r.top) * S / r.height]; };
@@ -263,6 +264,9 @@ export const GAMES = {
     return () => cancelAnimationFrame(raf);
   },
 };
+
+// v1 게임 위에 추가/개선 미니게임 덮어쓰기
+for (const [k, f] of Object.entries(GAMES2)) if (!GAMES[k] || k === 'upload') GAMES[k] = f;
 
 // 미니게임 창 열기
 export function openGame(parent, name, title, ctx, onDone) {
