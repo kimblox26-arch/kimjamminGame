@@ -1,6 +1,6 @@
 // POLUS — 원작 월드 좌표(유니티 단위, y 위가 +)를 K배 확대. 건물 사이 야외(눈밭)는
 // 구역 사각형에서 건물 자리(벽 두께만큼 띄움)를 격자로 빼서 자동으로 만든다.
-import { inPoly } from './geom.js';
+import { carve } from './geom.js';
 
 const K = 165, X0 = -0.5, Y0 = 3.0;
 const X = x => Math.round((x - X0) * K), Y = y => Math.round((Y0 - y) * K);
@@ -55,33 +55,8 @@ const zones = [
   [13.2, -23.4, 17.2, -15.5], [6.7, -23.4, 10.2, -14.2], [6.7, -15.4, 13.2, -14.2], [4.5, -26.5, 19.2, -23.0], [24.0, -12.0, 25.6, -9.0], [6.7, -23.4, 17.2, -19.3],
 ];
 const solid = [...rooms.map(r => r.poly), ...inner];
-const GAP = 0.45, CELL = 0.25;
-function outdoor() {
-  const x0 = 0, x1 = 42, y0 = -27, y1 = 2.5, nx = Math.round((x1 - x0) / CELL), ny = Math.round((y1 - y0) / CELL);
-  const ok = (x, y) => zones.some(([a, b, c, d]) => x > a && x < c && y > b && y < d) &&
-    ![-GAP, 0, GAP].some(dx => [-GAP, 0, GAP].some(dy => solid.some(p => inPoly(X(x + dx), Y(y + dy), p))));
-  const runs = [];
-  for (let j = 0; j < ny; j++) {
-    const y = y0 + (j + 0.5) * CELL, row = [];
-    let s = -1;
-    for (let i = 0; i <= nx; i++) {
-      const on = i < nx && ok(x0 + (i + 0.5) * CELL, y);
-      if (on && s < 0) s = i;
-      if (!on && s >= 0) { row.push([s, i]); s = -1; }
-    }
-    runs.push(row);
-  }
-  // 같은 구간이 위아래로 이어지면 하나의 사각형으로 합침
-  const out = [], open = new Map();
-  for (let j = 0; j <= ny; j++) {
-    const row = runs[j] || [], keys = new Set(row.map(r => r.join(',')));
-    for (const [k, r] of open) if (!keys.has(k)) { out.push(r); open.delete(k); }
-    for (const [a, b] of row) { const k = a + ',' + b; if (open.has(k)) open.get(k).j1 = j; else open.set(k, { a, b, j0: j, j1: j }); }
-  }
-  return out.map(r => ({ poly: B(x0 + r.a * CELL, y0 + r.j0 * CELL, x0 + r.b * CELL, y0 + (r.j1 + 1) * CELL), floor: 'snow' }));
-}
 
-const halls = [...inner.map(poly => ({ poly, floor: 'hall' })), ...doorways.map(poly => ({ poly, floor: 'hall' })), ...bridges.map(poly => ({ poly, floor: 'metal' })), ...outdoor()];
+const halls = [...inner.map(poly => ({ poly, floor: 'hall' })), ...doorways.map(poly => ({ poly, floor: 'hall' })), ...bridges.map(poly => ({ poly, floor: 'metal' })), ...carve(zones, solid, { B, X, Y, floor: 'snow' })];
 
 const st = {
   // 공통
