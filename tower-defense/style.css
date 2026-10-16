@@ -13,6 +13,7 @@
   --leaf: #4f9a2c;
   --leaf-dark: #2f6a17;
   --leaf-light: #8fd35a;
+  --purple: #6a54b8;
   --spring: cubic-bezier(.34, 1.56, .64, 1);
   --smooth: cubic-bezier(.22, 1, .36, 1);
   --font: 'Jua', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
@@ -27,12 +28,20 @@ html, body {
 canvas { position: fixed; inset: 0; display: block; }
 
 #ui { position: fixed; inset: 0; pointer-events: none; font-family: var(--font); }
+#ui svg { width: 100%; height: 100%; display: block; }
+img.coin { display: block; pointer-events: none; }
 
-.ico { display: inline-block; line-height: 0; pointer-events: none; }
-.ico svg { width: 100%; height: 100%; display: block; shape-rendering: crispEdges; }
+/* 사진 아이콘 (픽셀 그림 대신 실제 사진) */
+.photo { background-repeat: no-repeat; background-position: center; background-size: contain; }
+.photo.baby { background-image: url(assets/characters/family/baby.png); }
+.photo.mom2 { background-image: url(assets/characters/family/mom2_front_0.png); background-size: auto 230%; background-position: center 4%; }
+.photo.farmer2 { background-image: url(assets/characters/farmer2/front_0.png); background-size: auto 220%; background-position: center 3%; }
+.pic.house1 { background: url(assets/house.png) center / contain no-repeat; }
+.pic.house2 { background: url(assets/house2.png) center / contain no-repeat; }
+.pic.farmer { background: url(assets/characters/farmer/front_0.png) center 4% / auto 200% no-repeat; border-radius: 50%; }
 
 /* 노란 글씨 + 진한 테두리 + 아래 입체 그림자 (영상 자막 스타일) */
-.yellow, #money b, #money .won {
+#money b, #money .won {
   color: var(--gold);
   text-shadow:
     3px 0 var(--ink-deep), -3px 0 var(--ink-deep), 0 3px var(--ink-deep), 0 -3px var(--ink-deep),
@@ -40,7 +49,7 @@ canvas { position: fixed; inset: 0; display: block; }
     0 6px var(--ink-deep), 3px 5px var(--ink-deep), -3px 5px var(--ink-deep), 0 5px var(--gold-shadow);
 }
 
-/* 돈 표시: 반투명 어두운 판 + 큰 금화 + 노란 숫자 */
+/* 돈 표시: 반투명 어두운 판 + 금화 + 노란 숫자 */
 #money {
   position: absolute; top: max(10px, env(safe-area-inset-top)); left: 50%;
   display: flex; align-items: center; gap: .28em;
@@ -52,10 +61,10 @@ canvas { position: fixed; inset: 0; display: block; }
   transition: opacity .4s var(--smooth), transform .5s var(--spring);
 }
 #money.show { opacity: 1; transform: translate(-50%, 0); }
-#money .ico { width: 1.35em; height: 1.35em; filter: drop-shadow(0 2px 0 rgba(0,0,0,.35)); }
+#money .coin { width: 1.3em; height: 1.3em; filter: drop-shadow(0 2px 0 rgba(0,0,0,.35)); }
 #money b { font-weight: normal; min-width: 1ch; font-variant-numeric: tabular-nums; }
 #money .won { font-size: .8em; margin-left: -.1em; }
-#money.bump .ico { animation: coinspin .45s var(--smooth); }
+#money.bump .coin { animation: coinspin .45s var(--smooth); }
 #money.bump b { animation: pop .35s var(--spring); }
 @keyframes coinspin { 50% { transform: scaleX(.15) translateY(-4px); } }
 @keyframes pop { 40% { transform: scale(1.22); } }
@@ -80,19 +89,26 @@ canvas { position: fixed; inset: 0; display: block; }
 @media (hover: hover) { .btn.show:hover { transform: translateY(-2px) scale(1.03); filter: brightness(1.06); } }
 .shake { animation: shake .4s cubic-bezier(.36,.07,.19,.97); }
 @keyframes shake { 15%,55% { translate: -6px 0; } 35%,75% { translate: 6px 0; } 90% { translate: -2px 0; } }
+.bump { animation: bumpin .45s var(--spring); }
+@keyframes bumpin { 35% { scale: 1.12; } }
 
-/* 정사각형 버튼 (가족 생성) */
+/* 가족 생성 (정사각형) */
 .btn.sq { flex-direction: column; align-items: center; justify-content: space-between; box-sizing: border-box; }
 .btn.sq .frame {
-  flex: 0 0 auto; width: 86%; height: 50%;
+  position: relative; flex: 0 0 auto; width: 86%; height: 50%;
   display: flex; align-items: center; justify-content: center;
   background: var(--cream); border: 3px solid var(--ink); border-radius: 6px;
   box-shadow: inset 0 -4px 0 #e2cf9f;
   transition: filter .3s ease;
 }
-.btn.sq .frame .ico { height: 88%; aspect-ratio: 16 / 10; }
-.btn.sq.show .frame .ico { animation: breathe 2.4s ease-in-out infinite; }
-@keyframes breathe { 50% { transform: translateY(-2px) scale(1.04); } }
+.btn.sq .frame .photo { width: 92%; height: 92%; }
+.btn.sq.show .frame .photo { animation: crawl 1.6s ease-in-out infinite; }
+@keyframes crawl { 25% { transform: rotate(-4deg) translateX(-2px); } 75% { transform: rotate(4deg) translateX(2px); } }
+.btn.sq .count {
+  position: absolute; left: -8px; top: -10px; padding: 1px 7px; border-radius: 9px;
+  background: var(--purple); border: 2px solid var(--ink); font-size: .78em; color: #fff;
+}
+.btn.sq .count:empty { display: none; }
 .btn.sq .name { font-size: 1.25em; margin-top: 5%; white-space: nowrap; }
 .btn.sq .cost {
   display: flex; align-items: center; gap: 4px; margin-top: 3%;
@@ -100,16 +116,17 @@ canvas { position: fixed; inset: 0; display: block; }
   font-size: .82em; color: var(--gold); text-shadow: none; white-space: nowrap;
   transition: color .25s ease;
 }
-.btn.sq .cost .ico { width: 1.1em; height: 1.1em; }
-.btn.sq .lock { position: absolute; top: -12px; right: -10px; width: 26px; height: 32px; opacity: 0; transform: scale(.4) rotate(-20deg); transition: opacity .3s ease, transform .4s var(--spring); }
+.btn.sq .cost .coin { width: 1.15em; height: 1.15em; }
+.lock { position: absolute; top: -12px; right: -10px; width: 26px; height: 31px; opacity: 0; transform: scale(.4) rotate(-20deg); transition: opacity .3s ease, transform .4s var(--spring); pointer-events: none; }
 .btn.sq.locked .lock { opacity: 1; transform: none; }
 .btn.sq.locked .frame, .btn.sq.locked .name { filter: grayscale(.85) brightness(.85); }
 .btn.sq.poor .cost { color: #ff8a7a; }
 
-/* 넓은 이동 버튼 */
+/* 이동 버튼 */
 .btn.wide { align-items: center; justify-content: center; gap: 8px; font-size: 1.15em; }
-.btn.wide .ico { height: 62%; aspect-ratio: 1; transition: transform .3s var(--spring); }
-@media (hover: hover) { .btn.wide.show:hover .ico { transform: rotate(-8deg) scale(1.1); } }
+.btn.wide .pic { height: 72%; aspect-ratio: 1.3; transition: transform .3s var(--spring); filter: drop-shadow(0 2px 0 rgba(0,0,0,.35)); }
+.btn.wide .pic.farmer { aspect-ratio: 1; background-color: rgba(255,255,255,.35); border: 2px solid var(--ink); box-sizing: border-box; }
+@media (hover: hover) { .btn.wide.show:hover .pic { transform: rotate(-8deg) scale(1.1); } }
 .btn.wide.to-tower {
   background: var(--roof);
   box-shadow: inset 0 -6px 0 var(--roof-dark), inset 0 4px 0 var(--roof-light), 0 5px 0 rgba(0,0,0,.35);
@@ -120,6 +137,57 @@ canvas { position: fixed; inset: 0; display: block; }
 }
 .btn.wide.nudge { animation: nudge .7s var(--smooth) 2; }
 @keyframes nudge { 30% { scale: 1.12; } 60% { scale: .97; } }
+
+/* 타워 화면 상점 카드 */
+#shop {
+  position: absolute; display: grid; gap: 8px;
+  opacity: 0; transform: translateY(20px); pointer-events: none; visibility: hidden;
+  transition: opacity .35s var(--smooth), transform .5s var(--spring), visibility 0s .35s;
+}
+#shop.show { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition-delay: 0s; }
+.card {
+  position: relative; display: flex; align-items: center; gap: .35em; min-width: 0; min-height: 0; height: 100%; box-sizing: border-box;
+  padding: 0 .4em 0 .3em; font-family: var(--font); color: #fff; cursor: pointer;
+  border: 3px solid var(--ink); border-radius: 12px;
+  background: rgba(30, 50, 12, .72);
+  box-shadow: inset 0 -4px 0 rgba(0,0,0,.25), inset 0 2px 0 rgba(255,255,255,.18), 0 4px 0 rgba(0,0,0,.3);
+  text-shadow: 2px 0 var(--ink), -2px 0 var(--ink), 0 2px var(--ink), 0 -2px var(--ink);
+  transition: transform .15s var(--spring), filter .25s ease, background .25s ease;
+}
+.card:active { transform: translateY(2px) scale(.95); }
+@media (hover: hover) { .card:hover { transform: translateY(-2px); filter: brightness(1.1); } }
+.card .pic {
+  flex: 0 0 auto; width: calc(var(--ch, 54px) - 14px); height: calc(var(--ch, 54px) - 14px); border-radius: 9px;
+  background-color: rgba(255,255,255,.88); border: 2px solid var(--ink); box-sizing: border-box; overflow: hidden;
+}
+.card .pic.art { padding: 2px; background-color: #e9f6ff; }
+.card .txt { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.12; }
+.card .nm { font-weight: normal; font-size: 1em; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.card .cost { display: flex; align-items: center; gap: 3px; color: var(--gold); font-size: .95em; }
+.card .cost .coin { width: 1.05em; height: 1.05em; }
+.card .lock { top: -9px; right: -7px; width: 22px; height: 26px; }
+.card .check { position: absolute; top: -9px; right: -7px; width: 24px; height: 24px; opacity: 0; transform: scale(.3); transition: opacity .3s ease, transform .45s var(--spring); pointer-events: none; }
+.card.locked .lock { opacity: 1; transform: none; }
+.card.locked { background: rgba(40,40,40,.62); }
+.card.locked .pic, .card.locked .txt { filter: grayscale(.9) brightness(.8); }
+.card.done .check { opacity: 1; transform: none; }
+.card.done { background: rgba(60, 110, 30, .75); }
+.card.done .cost { color: #c9f59a; }
+.card.done .cost .coin { display: none; }
+.card.poor .cost { color: #ff9a8a; }
+.card.busy { filter: brightness(.75); }
+
+/* 잠금 해제 안내 띠 (영상처럼 보라색) */
+#banners { position: absolute; inset: 0; pointer-events: none; }
+.banner {
+  position: absolute; box-sizing: border-box; padding: .45em .6em; text-align: center; white-space: nowrap;
+  background: var(--purple); color: #fff; border-radius: 4px;
+  box-shadow: 0 6px 0 rgba(0,0,0,.25);
+  animation: bannerIn .45s var(--spring) both;
+}
+.banner.from-left { --dx: -60px; }
+.banner.from-right { --dx: 60px; }
+@keyframes bannerIn { from { opacity: 0; translate: var(--dx) 0; scale: .9; } }
 
 /* 오류 알림 (이미지 로딩 실패 때만) */
 #toast {
