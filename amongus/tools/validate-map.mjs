@@ -15,10 +15,12 @@ for (const id of ids) {
   const cell = 25, gw = Math.ceil(m.w / cell), gh = Math.ceil(m.h / cell), seen = new Uint8Array(gw * gh);
   const sp = m.spawn ? spawnAt(m, m.spawn, 0, 1) : null;
   if (!sp || !canStand(m, sp.x, sp.y)) errs.push('spawn 위치에 설 수 없음');
-  // 스폰에서 BFS
-  if (sp) {
-    const q = [[Math.floor(sp.x / cell), Math.floor(sp.y / cell)]];
-    seen[q[0][1] * gw + q[0][0]] = 1;
+  // 스폰에서 BFS (이동수단 끝점에 닿으면 반대쪽 끝점에서 이어서 탐색)
+  const flood = (x, y) => {
+    const i0 = Math.floor(x / cell), j0 = Math.floor(y / cell);
+    if (i0 < 0 || j0 < 0 || i0 >= gw || j0 >= gh || seen[j0 * gw + i0]) return;
+    const q = [[i0, j0]];
+    seen[j0 * gw + i0] = 1;
     while (q.length) {
       const [i, j] = q.pop();
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -26,6 +28,23 @@ for (const id of ids) {
         if (a < 0 || b < 0 || a >= gw || b >= gh || seen[b * gw + a]) continue;
         if (!canStand(m, (a + 0.5) * cell, (b + 0.5) * cell)) continue;
         seen[b * gw + a] = 1; q.push([a, b]);
+      }
+    }
+  };
+  const near = (x, y, d) => {
+    for (let j = Math.max(0, Math.floor((y - d) / cell)); j <= Math.min(gh - 1, Math.floor((y + d) / cell)); j++)
+      for (let i = Math.max(0, Math.floor((x - d) / cell)); i <= Math.min(gw - 1, Math.floor((x + d) / cell)); i++)
+        if (seen[j * gw + i] && Math.hypot((i + 0.5) * cell - x, (j + 0.5) * cell - y) <= d) return true;
+    return false;
+  };
+  if (sp) {
+    flood(sp.x, sp.y);
+    for (let more = true; more;) {
+      more = false;
+      for (const t of m.transports) for (const [u, v] of [[t.a, t.b], [t.b, t.a]]) {
+        if (t.oneWay && u === t.b) continue;
+        const vi = Math.floor(v.x / cell), vj = Math.floor(v.y / cell);
+        if (near(u.x, u.y, 200) && !seen[vj * gw + vi] && canStand(m, v.x, v.y)) { flood(v.x, v.y); more = true; }
       }
     }
   }
@@ -44,6 +63,7 @@ for (const id of ids) {
     r.poly.forEach(([x, y]) => inBounds(x, y, `방 ${r.id}`));
     let ok = false;
     for (let j = 0; j < gh && !ok; j++) for (let i = 0; i < gw && !ok; i++) if (seen[j * gw + i] && inPoly((i + 0.5) * cell, (j + 0.5) * cell, r.poly)) ok = true;
+    if (!ok && m.transports.some(t => inPoly((t.a.x + t.b.x) / 2, (t.a.y + t.b.y) / 2, r.poly))) ok = true; // 소독실처럼 이동수단으로만 지나가는 방
     if (!ok) errs.push(`방 '${r.name}'(${r.id})에 걸어서 갈 수 없음`);
   }
   for (const [k, s] of Object.entries(m.stations)) { inBounds(s.x, s.y, `장소 ${k}`); if (!reach(s.x, s.y, 210)) errs.push(`장소 '${k}' 근처(210)에 갈 수 없음`); }

@@ -2,6 +2,7 @@
 import { $, $$, h, esc, stage, modal, toast, sfx, music, net, me, profile, saveProfile, settings, xpNeed } from '../core.js';
 import { VERSION, NOTICES, COLORS, REDEEM, ITEMS } from '../shared/data.js';
 import { crewSVG } from './crew.js';
+import { MAP_LIST } from '../shared/maps/index.js';
 import { screens, app, go } from './nav.js';
 
 const LOGO = `<svg viewBox="0 0 370 105"><g fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round">
@@ -114,9 +115,12 @@ function needParent() {
   $('.obtn', m.el).onclick = () => { m.close(); go('accountManage'); };
 }
 function practice() {
-  const m = modal(`<h2 style="font-size:44px">연습 모드</h2><p style="text-align:center;font-size:24px">더미들과 함께 스켈드를 자유롭게 둘러보세요.</p>
+  let map = 'skeld';
+  const m = modal(`<h2 style="font-size:44px">연습 모드</h2><p style="text-align:center;font-size:24px">더미들과 함께 맵을 자유롭게 둘러보세요.</p>
+    <div class="row-c" style="flex-wrap:wrap;gap:8px">${MAP_LIST.map(x => `<button class="obtn${x.id === map ? ' on' : ''}" data-m="${x.id}" style="min-width:0;font-size:22px">${x.ko}</button>`).join('')}</div>
     <div class="row-c"><button class="obtn" data-r="crew">크루원으로</button><button class="obtn" data-r="impostor">임포스터로</button></div>`, { cls: 'small' });
-  $$('[data-r]', m.el).forEach(b => b.onclick = () => { m.close(); net.send({ t: 'create', mode: 'practice', role: b.dataset.r }); });
+  $$('[data-m]', m.el).forEach(b => b.onclick = () => { map = b.dataset.m; $$('[data-m]', m.el).forEach(x => x.classList.toggle('on', x === b)); sfx('click'); });
+  $$('[data-r]', m.el).forEach(b => b.onclick = () => { m.close(); net.send({ t: 'create', mode: 'practice', role: b.dataset.r, map, settings: { map } }); });
 }
 
 // ---------- 오른쪽 창 그림 ----------

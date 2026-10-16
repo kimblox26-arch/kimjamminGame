@@ -904,6 +904,41 @@ const PROPS = {
       for (const t of [0.4, 0.65]) { g.fillStyle = shade(col, -0.35); g.fillRect(x + w * t, y + 6, 18, h - 12); }
     },
   },
+  longTable: { // 직사각형 식탁 (MIRA 식당 등)
+    up: () => 40,
+    under(g, p, b) { shadowEll(g, b.cx, b.cy + 20, b.w * 0.62, b.h * 0.56, 0.22); },
+    draw(g, p, b) {
+      const { x, y, w, h } = b, hh = 34, col = p.color || '#d9dde1';
+      for (const sx of [x - 34, x + w + 6]) { rr(g, sx, y + 20, 28, h - 40, 8); fillOL(g, '#7b858c', 4); }
+      g.fillStyle = shade(col, -0.45); g.fillRect(x + w * 0.4, y + h - 10, w * 0.2, 10);
+      rr(g, x, y - hh + 10, w, h, 18); fillOL(g, shade(col, -0.3), 5);
+      rr(g, x + 4, y - hh, w - 8, h - 8, 16); fillOL(g, col, 4);
+      g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(x + 16, y - hh + 10, w - 32, 5);
+    },
+  },
+  gate: { // 소독실 자동문 (노랑·검정 줄무늬 철문)
+    up: () => 70,
+    draw(g, p, b) {
+      const { x, y, w, h } = b, hh = 64;
+      box3(g, x, y, w, h, hh, '#9aa6ad', '#5d686f', 5);
+      g.save(); rr(g, x + 6, y + h - hh * 0.9, w - 12, hh * 0.55, 3); g.clip();
+      for (let i = -2; i < w / 22 + 2; i++) { g.beginPath(); g.moveTo(x + i * 22, y + h); g.lineTo(x + i * 22 + 11, y + h); g.lineTo(x + i * 22 + 40, y + h - hh); g.lineTo(x + i * 22 + 29, y + h - hh); g.closePath(); g.fillStyle = i % 2 ? '#1d1f22' : '#f2c230'; g.fill(); }
+      g.restore();
+      ell(g, x + w / 2, y - hh + h * 0.5, 8, 8); fillOL(g, '#5cff9a', 3);
+    },
+  },
+  vending: { // 음료 자판기
+    up: () => 150,
+    draw(g, p, b) {
+      const { x, y, w, h } = b, hh = 140;
+      box3(g, x, y, w, h, hh, '#d8413a', '#8f201c', 5);
+      rr(g, x + 10, y + h - hh + 12, w * 0.58, hh * 0.62, 5); fillOL(g, '#bfe9ff', 3);
+      const cols = ['#ffd23f', '#4aa3ff', '#2fe38a', '#ff8a80'];
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) { rr(g, x + 16 + c * (w * 0.58 - 12) / 4, y + h - hh + 20 + r * hh * 0.19, (w * 0.58 - 24) / 4, hh * 0.13, 2); g.fillStyle = cols[(r + c) % 4]; g.fill(); }
+      rr(g, x + w * 0.72, y + h - hh + 20, w * 0.18, hh * 0.3, 3); fillOL(g, '#30373c', 2.5);
+      rr(g, x + 14, y + h - 30, w * 0.5, 16, 3); fillOL(g, '#14181c', 2);
+    },
+  },
   _: {
     up: () => 50,
     draw(g, p, b) { box3(g, b.x, b.y, b.w, b.h, Math.min(50, b.h * 0.5), p.color || '#7d868c', shade(p.color || '#7d868c', -0.35), 5); },
