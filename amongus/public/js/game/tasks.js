@@ -187,7 +187,7 @@ export const GAMES = {
     s.querySelector('.go').onclick = () => {
       if (raf) return;
       c.visual('scan', true); t0 = performance.now();
-      const loop = t => { p = (t - t0) / 8000; b.setAttribute('width', 500 * Math.min(1, p)); ln.setAttribute('y', 160 + ((t / 4) % 294)); if (p >= 1) { c.visual('scan', false); return done(); } raf = requestAnimationFrame(loop); };
+      const loop = t => { p = (t - t0) / 8000; b.setAttribute('width', 500 * Math.max(0, Math.min(1, p))); ln.setAttribute('y', 160 + ((t / 4) % 294)); if (p >= 1) { c.visual('scan', false); return done(); } raf = requestAnimationFrame(loop); };
       raf = requestAnimationFrame(loop);
     };
     return () => { cancelAnimationFrame(raf); if (p < 1 && raf) c.visual('scan', false); };
@@ -202,7 +202,7 @@ export const GAMES = {
     s.querySelector('.go').onclick = () => {
       if (raf) return;
       const t0 = performance.now();
-      const loop = t => { const p = Math.min(1, (t - t0) / 6000); s.querySelector('.b').setAttribute('width', 500 * p); s.querySelector('.pt').textContent = `${Math.round(p * 100)}%`; if (p >= 1) return done(); raf = requestAnimationFrame(loop); };
+      const loop = t => { const p = Math.max(0, Math.min(1, (t - t0) / 6000)); s.querySelector('.b').setAttribute('width', 500 * p); s.querySelector('.pt').textContent = `${Math.round(p * 100)}%`; if (p >= 1) return done(); raf = requestAnimationFrame(loop); };
       raf = requestAnimationFrame(loop);
     };
     return () => cancelAnimationFrame(raf);

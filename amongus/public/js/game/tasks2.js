@@ -26,7 +26,7 @@ function progress(el, c, done, { seconds, title, from, to, auto }) {
     if (stop) return;
     const t0 = performance.now();
     stop = animate((dt, t) => {
-      const p = Math.min(1, (t - t0) / (seconds * 1000));
+      const p = Math.max(0, Math.min(1, (t - t0) / (seconds * 1000)));
       bar.setAttribute('width', 472 * p); pt.textContent = `${Math.round(p * 100)}%  · 남은 시간 ${Math.ceil(seconds * (1 - p))}초`;
       const f = ((t - t0) / 900) % 1; file.setAttribute('opacity', p < 1 ? 1 : 0); file.setAttribute('transform', `translate(${125 + f * 330} ${170 - Math.sin(f * Math.PI) * 90})`);
       if (p >= 1) { done(); return false; }
