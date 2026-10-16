@@ -7,6 +7,7 @@ import './ui/settings.js';
 import './ui/lobbies.js';
 import './ui/inventory.js';
 import './game/play.js';
+import './ui/mod.js';
 
 function fit() { stage().style.transform = `translate(-50%,-50%) scale(${Math.min(innerWidth / 1600, innerHeight / 720)})`; }
 addEventListener('resize', fit);

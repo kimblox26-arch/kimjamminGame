@@ -11,6 +11,8 @@ import * as PN from './panels.js';
 
 export const KILL_D = RULES.killDist;
 export const now = () => performance.now();
+// 장면 효과 (렌더러가 모르는 종류여도 게임이 멈추지 않게)
+export const fx = (k, d) => { try { scene.effect?.(k, d); } catch (e) { console.warn('효과 오류', k, e); } };
 // 공유 상태 (hud.js / panels.js 가 함께 씀)
 export const G = { S: null, hud: null, mg: null, panel: null, overlays: [], map: LOBBY, dt: 0.05, closePanel: () => PN.closePanel() };
 let S = null, tick = 0, lastTick = 0;
@@ -162,8 +164,10 @@ const showJoy = () => settings.control === 'joystick' && matchMedia('(pointer:co
 addEventListener('settings', () => { const j = G.hud && $('.joy', G.hud); if (j) { j.classList.toggle('hidden', !showJoy()); j.style.transform = `scale(${settings.joySize || 1})`; } });
 const hb = (cls, ic, title) => `<button class="hb2 ${cls}" title="${title}">${HUD.icon(ic)}<i class="badge hidden"></i></button>`;
 function startScene(map) {
-  if (scene._started && scene.setMap) { if (scene.map !== map) scene.setMap(map); }
-  else scene.start(map);
+  try {
+    if (scene._started && scene.setMap) { if (scene.map !== map) scene.setMap(map); }
+    else scene.start(map);
+  } catch (e) { console.warn('장면 시작 오류', e); } // 렌더러가 실패해도 HUD·회의는 동작
   scene._started = true;
 }
 
@@ -260,7 +264,7 @@ async function editSettings(editable) {
   if (!S) return;
   gs?.close?.();
   if (mod?.openGameSettings) {
-    try { gs = mod.openGameSettings({ settings: S.room.settings, editable: ed, onChange }); return; } catch (e) { console.warn('gamesettings', e); }
+    try { gs = mod.openGameSettings({ settings: S.room.settings, editable: ed, onChange, players: S.room.players }); return; } catch (e) { console.warn('gamesettings', e); }
   }
   gs = PN.settingsFallback(ed, onChange);
 }
@@ -282,7 +286,7 @@ net.on('start', m => {
     chat: [], unread: 0, meeting: null, phase: 'intro', track: null, alerts: [], shifted: null, shiftUntil: 0, vanished: false, vanishUntil: 0,
     cases: [], activeCase: null, caseLimit: optBy('detective', /suspect/i, 3), judge: null, vitals: null, vitalsComms: false, doorlog: null, doorlogComms: false,
     hns: null, hnsCfg: typeof m.hns === 'object' ? m.hns : null, possessed: null, possessing: null, transportUntil: 0, ventOutAt: 0,
-    battery: 0, batteryMax: 0, picking: false, pendingSpawn: null, spawnSeen: false, wheel: null, lastBar: m.bar || null, haunt: null,
+    battery: 0, batteryMax: 0, picking: false, pendingSpawn: null, spawnSeen: false, wheel: null, lastBar: m.bar || null, haunt: null, stepAt: {},
   });
   if (m.sabCd !== undefined) S.sabCd = S.sabCdMax = Math.max(0, m.sabCd);
   if (S.team === 'impostor') setCd('kill', m.kill ?? RULES.killStart * 1000);
@@ -343,7 +347,7 @@ function gameHud() {
     <div class="critov"></div><div class="critbox hidden"><span class="nm"></span><b class="sec"></b></div>
     <div class="hnsbar hidden"><span class="lab"></span><div class="track"><i class="fill"></i></div><b class="tm"></b><em class="cut"></em></div>
     <div class="danger hidden"><div class="dm"><i></i></div><span>위험</span></div>
-    <div class="arrows"></div><div class="hauntlbl hidden"></div><div class="acts2"></div>
+    <div class="arrows"></div><div class="hauntlbl hidden"></div><div class="roomtr"></div><div class="acts2"></div>
     ${practice ? `<button class="pracb">${HUD.icon('players')}<span>역할·맵 바꾸기</span></button>` : ''}`, 'game');
   const hud = G.hud;
   $('.chatb', hud).onclick = openChat;
@@ -506,8 +510,13 @@ function openMinigame(gameId, title, ctx, onDone) {
   if (!openGame) { loadTasks(); toast('미니게임을 불러오는 중입니다…'); return null; }
   let handle = null;
   const c = { map: G.map, params: {}, ...ctx, onClose: () => { if (G.mg === handle) G.mg = null; ctx.onClose?.(); } };
-  try { handle = openGame(stage(), gameId, title, c, onDone); }
-  catch (e) { console.warn('미니게임 오류', gameId, e); $$('.mg-back').forEach(x => x.remove()); G.mg = null; toast('이 미니게임을 열 수 없습니다.'); return null; }
+  // 정의되지 않은 미니게임이면 비슷한 미니게임으로 대신 연다 (동시에 누르는 사보타주는 손바닥 스캐너)
+  const ids = [...new Set([gameId, ...(ctx.sab ? (ctx.together ? ['hand'] : ['hold', 'tap']) : ['tap', 'hold'])])];
+  for (const id of ids) {
+    try { handle = openGame(stage(), id, title, c, onDone); break; }
+    catch (e) { console.warn('미니게임 오류', id, e); $$('.mg-back').forEach(x => x.remove()); handle = null; }
+  }
+  if (!handle) { G.mg = null; toast('이 미니게임을 열 수 없습니다.'); return null; }
   if (handle) { handle.sab = ctx.sab; handle.door = ctx.door?.id; handle.station = ctx.station; G.mg = handle; }
   return handle;
 }
@@ -517,8 +526,11 @@ function openTask(u) {
   const T = taskById(G.map, t.id) || { id: t.id, name: t.name || t.id, game: t.game || 'tap', seq: t.st };
   const step = t.step, gid = stepGame(T, step) || 'tap';
   const params = { ...(T.params || {}), ...(T.stepParams?.[step] || {}), ...(t.params || {}) };
-  openMinigame(gid, stepLabel(T, step), { station: u.id, task: T, step, params, visual: (k, on) => net.send({ t: 'visual', k, on: !!on }) },
-    () => net.send({ t: 'task', i: u.i, step }));
+  // 앞 단계를 끝낸 시각 (샘플 검사처럼 기다려야 하는 임무용)
+  const prevAt = S.stepAt?.[`${u.i}:${step - 1}`] || 0;
+  openMinigame(gid, stepLabel(T, step), { station: u.id, task: T, step, params, prevDoneAt: prevAt, elapsed: prevAt ? now() - prevAt : null,
+    visual: (k, on) => net.send({ t: 'visual', k, on: !!on }) },
+  () => { (S.stepAt ||= {})[`${u.i}:${step}`] = now(); net.send({ t: 'task', i: u.i, step }); });
 }
 function openFix(u) {
   const k = S.sab?.k, d = sabDef(k);
@@ -533,8 +545,11 @@ function openFix(u) {
 }
 function openDoorPanel(id) {
   const m = G.map, door = m.doorById?.[id];
-  const game = m.doorGame || (m.id === 'polus' ? 'door_switch' : 'door_panel');
-  openMinigame(game, '문 열기', { station: id, door, params: m.doorParams || {} }, () => { net.send({ t: 'openDoor', id }); HUD.SND.open(); });
+  // 폴러스: 스위치 / 에어십: 잠금 패널 / 펑글: 문을 막은 곰팡이 6개 부수기
+  const fungi = !m.doorGame && m.id === 'fungle';
+  const game = m.doorGame || (m.id === 'polus' ? 'door_switch' : fungi ? 'tap' : 'door_panel');
+  const params = { ...(fungi ? { count: 6, icon: '🍄', label: '곰팡이를 모두 부수세요' } : {}), ...(m.doorParams || {}) };
+  openMinigame(game, fungi ? '곰팡이 제거하기' : '문 열기', { station: id, door, params }, () => { net.send({ t: 'openDoor', id }); HUD.SND.open(); });
 }
 
 addEventListener('keydown', e => {
@@ -557,7 +572,7 @@ net.on('kill', m => {
   if (v) { v.dead = true; v.shield = false; v.vent = 0; }
   const look = v?.look || lookOf(m.id), t = now();
   scene.bodies = [...scene.bodies.filter(b => b.id !== m.id), { id: m.id, x: m.x, y: m.y, look, t, acid: m.acid ? { t0: t, dur: m.acid, stage: 1 } : null, stage: m.acid ? 1 : 0 }];
-  scene.effect?.('kill', { x: m.x, y: m.y, killer: m.by, victim: m.id, acid: !!m.acid });
+  fx('kill', { x: m.x, y: m.y, killer: m.by, victim: m.id, acid: !!m.acid });
   if (m.by === S.you) {
     scene.teleport(S.you, m.x, m.y);
     setCd('kill', m.cd ?? fullCd('kill'));
@@ -588,9 +603,9 @@ net.on('vent', m => {
   const p = scene.players.get(m.id), prev = p?.ventId;
   if (p) { p.vent = m.v ? 1 : 0; p.ventId = m.v || null; }
   const fx = { id: m.id, vent: m.v || prev, x: m.x, y: m.y };
-  if (m.a === 'in') scene.effect?.('ventIn', fx);
-  else if (m.a === 'out') scene.effect?.('ventOut', fx);
-  else if (m.a === 'move') scene.effect?.('ventMove', fx);
+  if (m.a === 'in') fx('ventIn', fx);
+  else if (m.a === 'out') fx('ventOut', fx);
+  else if (m.a === 'move') fx('ventMove', fx);
   if (m.id === S.you) {
     scene.inVent = m.v || null;
     if (isFinite(m.x)) scene.teleport(S.you, m.x, m.y);
@@ -607,7 +622,7 @@ net.on('visual', m => { if (S?.game) scene.visuals?.set(m.id, { ...(scene.visual
 net.on('bodyGone', m => {
   if (!S?.game) return;
   const b = scene.bodies.find(x => x.id === m.id);
-  if (b) scene.effect?.('poof', { x: b.x, y: b.y, acid: true });
+  if (b) fx('poof', { x: b.x, y: b.y, acid: true });
   scene.bodies = scene.bodies.filter(x => x.id !== m.id);
 });
 net.on('bodyStage', m => {
@@ -670,11 +685,11 @@ function applyDoors(m) {
 const transTimers = new Map();
 net.on('transport', m => {
   if (!S?.game) return;
-  if (!m.pid) { scene.effect?.('platform', { tid: m.id, call: true, from: m.from, to: m.to, ms: m.ms }); HUD.SND.open(); return; }
+  if (!m.pid) { fx('platform', { tid: m.id, call: true, from: m.from, to: m.to, ms: m.ms }); HUD.SND.open(); return; }
   const p = scene.players.get(m.pid);
   const from = m.from || (p ? { x: p.x, y: p.y } : m.to);
   if (p) { p.moving = true; if (from) { p.x = p.tx = from.x; p.y = p.ty = from.y; } }
-  scene.effect?.('transport', { id: m.pid, tid: m.id, kind: m.kind, from, to: m.to, ms: m.ms });
+  fx('transport', { id: m.pid, tid: m.id, kind: m.kind, from, to: m.to, ms: m.ms });
   if (m.pid === S.you) { S.transportUntil = now() + (m.ms || 0) + 1500; try { G.mg?.close(); } catch {} }
   clearTimeout(transTimers.get(m.pid));
   transTimers.set(m.pid, setTimeout(() => finishTransport(m.pid, m.to), (m.ms || 0) + 900));
@@ -757,7 +772,7 @@ net.on('shift', m => {
   const p = scene.players.get(m.id);
   if (!p) return;
   p.disguise = m.as ? { look: { ...lookOf(m.as) }, name: nameOf(m.as) } : null;
-  if (!m.quiet) { scene.effect?.('poof', { x: m.x ?? p.x, y: m.y ?? p.y, id: m.id, color: p.look?.color, shift: true, evidence: !!m.evidence }); HUD.SND.poof(); }
+  if (!m.quiet) { fx('poof', { x: m.x ?? p.x, y: m.y ?? p.y, id: m.id, color: p.look?.color, shift: true, evidence: !!m.evidence }); HUD.SND.poof(); }
   if (m.id === S.you) {
     S.shifted = m.as || null;
     S.shiftUntil = m.as && m.ms ? now() + m.ms : 0;
@@ -769,7 +784,7 @@ net.on('vanish', m => {
   const p = scene.players.get(m.id);
   if (p) {
     p.invisible = !!m.on;
-    if (!m.quiet) scene.effect?.('poof', { x: m.x ?? p.x, y: m.y ?? p.y, id: m.id, color: p.look?.color, follow: !m.on, vanish: true });
+    if (!m.quiet) fx('poof', { x: m.x ?? p.x, y: m.y ?? p.y, id: m.id, color: p.look?.color, follow: !m.on, vanish: true });
   }
   if (!m.quiet) HUD.SND.poof();
   if (m.id === S.you) { S.vanished = !!m.on; S.vanishUntil = m.on && m.ms ? now() + m.ms : 0; }
@@ -782,7 +797,7 @@ net.on('shield', m => {
 });
 net.on('shieldHit', m => {
   if (!S?.game) return;
-  scene.effect?.('shieldHit', { id: m.id, by: m.by });
+  fx('shieldHit', { id: m.id, by: m.by });
   const p = scene.players.get(m.id); if (p) p.shield = false;
   HUD.SND.shieldBreak();
   if (m.by === S.you) HUD.centerMsg('보호막에 막혔습니다!', 1800, 'warn');
@@ -792,7 +807,7 @@ net.on('noise', m => {
   const until = now() + (m.ms || 10000);
   scene.noises = [...(scene.noises || []), { x: m.x, y: m.y, until, id: m.id }];
   S.alerts.push({ x: m.x, y: m.y, until, id: m.id });
-  scene.effect?.('noise', { x: m.x, y: m.y, id: m.id });
+  fx('noise', { x: m.x, y: m.y, id: m.id });
   HUD.SND.squeak();
 });
 net.on('vitalsData', m => {
@@ -891,7 +906,7 @@ net.on('mapChange', m => {
   G.map = getMap(id);
   S.game.settings = { ...S.game.settings, map: G.map.id };
   startScene(G.map);
-  if (m.tasks) S.tasks = normTasks(m.tasks);
+  if (m.tasks) { S.tasks = normTasks(m.tasks); S.stepAt = {}; }
   if (m.bar) S.bar = m.bar;
   for (const [pid, x, y] of m.pos || []) scene.teleport(pid, x, y);
   scene.bodies = []; scene.sabTargets = []; scene.inVent = null; S.sab = null; S.doorCd = {}; S.doorCdMax = {};
@@ -970,6 +985,7 @@ function drawPlates(result) {
   const canVote = M.stage === 'vote' && !M.my && alive();
   const jr = canVote && judgeReady();
   const votes = result ? result.votes.map((v, i) => Object.assign([...v], { i })) : [];
+  box.classList.toggle('res', !!result);
   box.innerHTML = ps.map(p => {
     const dead = S.dead.has(p.id), mine = votes.filter(v => v[1] === p.id);
     const look = p.look || {}, plate = look.plate && look.plate !== 'none' ? `plate-${look.plate}` : '';

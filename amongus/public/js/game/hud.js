@@ -6,7 +6,7 @@ import { stepLabel, taskById, lineClear } from '../shared/maps/index.js';
 import { crewSVG } from '../ui/crew.js';
 import { scene } from './scene.js';
 import { G, alive, isImp, commsOn, sabType, roleDef, roleName, roleColor, roleAccent, nameOf, lookOf, now, KILL_D, sabDef, hnsMode, isSeeker,
-  cdLeft, fullCd, josa } from './play.js';
+  cdLeft, fullCd, josa, fx } from './play.js';
 
 // ---------- 아이콘 (SVG, viewBox 0 0 100 100) ----------
 const K = 'stroke="#000" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"';
@@ -348,10 +348,21 @@ export function updateHud() {
   // 과학자 배터리: 서버 값 사이를 부드럽게
   if (S.vitalsOpen === 'ability' && S.battery > 0) S.battery = Math.max(0, S.battery - G.dt * 1000);
   sabTick(t);
+  roomTrack(scene.players.get(scene.viewId ?? S.you) || meP);
   if (hns) hnsTick(t, meP);
   if (t - lastTasksDraw > 450 && (S.sab || S.track || S.hns || S.shifted || S.vanished || scene.inVent || ['judge', 'scientist', 'detective'].includes(S.role))) renderTasks();
 }
 
+// 지금 있는 방 이름 (원작 RoomTracker: 방에 들어가면 화면 아래에 이름이 나타남, 복도에서는 사라짐)
+function roomTrack(p) {
+  const el = G.hud && $('.roomtr', G.hud);
+  if (!el || !p) return;
+  const r = G.S.phase === 'play' ? G.map.roomAt?.(p.x, p.y) : null, nm = r?.name || '';
+  if (el._nm === nm) return;
+  el._nm = nm;
+  if (nm) { el.textContent = nm; el.classList.remove('show'); void el.offsetWidth; el.classList.add('show'); }
+  else el.classList.remove('show');
+}
 // 숨바꼭질 유령이 따라갈 수 있는 사람 (살아있는 플레이어, 색 순서)
 export const hauntList = () => [...scene.players.values()].filter(p => p.id !== G.S.you && !G.S.dead.has(p.id) && !G.S.gone.has(p.id)).sort((a, b) => (a.look?.color ?? 0) - (b.look?.color ?? 0)).map(p => p.id);
 // 역할 능력 버튼 하나
@@ -575,7 +586,7 @@ export function hnsCut(ms) {
 export function addPings(pts, ms = RULES.hnsPingShow * 1000) {
   const until = now() + ms;
   scene.noises = [...(scene.noises || []).filter(n => n.until > now()), ...pts.map(p => ({ x: p.x, y: p.y, until, ping: true, id: p.id }))];
-  for (const p of pts) scene.effect?.('noise', { x: p.x, y: p.y, ping: true });
+  for (const p of pts) fx('noise', { x: p.x, y: p.y, ping: true });
   G.S.pings = pts.map(p => ({ ...p, until }));
   if (pts.length) SND.ping();
 }
@@ -628,10 +639,14 @@ function hnsCards(seek) {
 
 // ---------- 처치당함 연출 (피해자 화면) ----------
 export function killSplash(killerLook, victimLook, acid) {
-  const el = overlay(`<div class="killsplash ${acid ? 'acid' : ''}"><div class="ks-bg"></div><div class="ks-row"><div class="ks-k">${crewImg(killerLook, {}, 380, 274)}</div>
-    <div class="ks-knife">${icon(acid ? 'acid' : 'kill')}</div><div class="ks-v">${crewImg(victimLook, { dead: true }, 380, 274)}</div></div></div>`);
-  setTimeout(() => el.classList.add('out'), 1800);
-  setTimeout(() => dropOverlay(el), 2200);
+  // 원작처럼 화면 가운데 띠 안에서: 살아있는 나 → 처치 → 시체
+  const el = overlay(`<div class="killsplash ${acid ? 'acid' : ''}"><div class="ks-dim"></div><div class="ks-band"><div class="ks-bg"></div><div class="ks-row">
+    <div class="ks-k">${crewImg(killerLook, {}, 380, 274)}</div><div class="ks-knife">${icon(acid ? 'acid' : 'kill')}</div>
+    <div class="ks-v"><div class="ks-alive">${crewImg(victimLook, {}, 380, 274).replace('<svg', '<svg style="transform:scaleX(-1)"')}</div><div class="ks-dead">${crewImg(victimLook, { dead: true }, 380, 274)}</div></div>
+    </div><div class="ks-flash"></div></div></div>`);
+  setTimeout(() => el.classList.add('hit'), 620);
+  setTimeout(() => el.classList.add('out'), 2000);
+  setTimeout(() => dropOverlay(el), 2400);
 }
 
 // ---------- 화면 가장자리 화살표 (추적자·노이즈 메이커) ----------
@@ -647,11 +662,17 @@ export function drawArrows() {
   if (ap) items.push({ x: ap.x, y: ap.y, c: scene.abilityColor || '#8CFFFF', k: 'target' });
   let html = '';
   const cv = document.getElementById('world'), r = cv?.getBoundingClientRect(), st = stage().getBoundingClientRect();
-  if (r?.width && st.width && scene.toScreen) {
+  if (r?.width && st.width && scene.toScreen && items.length) {
     const k = st.width / 1600;
+    const scr = (x, y) => { const sp = scene.toScreen(x, y) || [0, 0]; return [sp.x ?? sp[0], sp.y ?? sp[1]]; };
+    // toScreen 이 캔버스 픽셀(고해상도)인지 CSS 픽셀인지: 카메라가 따라가는 사람은 화면 가운데에 있음
+    const vp = scene.players.get(scene.viewId ?? S.you);
+    const cx0 = vp ? scr(vp.x, vp.y)[0] : cv.width / 2;
+    const css = cv.width !== r.width && Math.abs(cx0 - r.width / 2) < Math.abs(cx0 - cv.width / 2);
+    const fx = css ? 1 : r.width / cv.width, fy = css ? 1 : r.height / cv.height;
     for (const it of items) {
-      const sp = scene.toScreen(it.x, it.y) || [0, 0], sx = sp.x ?? sp[0], sy = sp.y ?? sp[1];
-      const px = (sx * r.width) / cv.width + r.left, py = (sy * r.height) / cv.height + r.top;
+      const [sx, sy] = scr(it.x, it.y);
+      const px = sx * fx + r.left, py = sy * fy + r.top;
       const lx = (px - st.left) / k, ly = (py - st.top) / k;
       const cx = 800, cy = 360, inside = lx > 60 && lx < 1540 && ly > 60 && ly < 660;
       if (it.k === 'target') { if (inside) html += `<i class="tgt" style="left:${lx}px;top:${ly}px;--c:${it.c}"></i>`; continue; }

@@ -139,17 +139,6 @@
 @keyframes lcin2{from{opacity:0;transform:translateY(30px)}}
 
 /* ---- 처치당함 ---- */
-.killsplash{position:absolute;inset:-100px -400px;z-index:42;display:grid;place-items:center;transition:opacity .4s}
-.killsplash.out{opacity:0}
-.killsplash .ks-bg{position:absolute;inset:0;background:radial-gradient(ellipse at center,#b00000 0%,#5a0000 40%,#000 75%);animation:ksbg .3s ease-out}
-@keyframes ksbg{from{opacity:0}}
-.killsplash .ks-row{position:relative;display:flex;align-items:center;gap:0}
-.killsplash .ks-k{animation:ksk .5s cubic-bezier(.2,1.4,.5,1)}
-.killsplash .ks-knife{width:150px;height:150px;margin:0 -50px;animation:ksn .45s .15s ease-out backwards;z-index:2}
-.killsplash .ks-v{animation:ksv .6s .3s ease-out backwards}
-@keyframes ksk{from{transform:translateX(-300px)}}
-@keyframes ksn{from{transform:rotate(-120deg) scale(.4);opacity:0}}
-@keyframes ksv{from{transform:translateY(-40px) rotate(-20deg);opacity:0}}
 
 /* ---- 인플루언서 메시지 표시 ---- */
 .influx{position:absolute;inset:0;z-index:36;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s}
@@ -395,17 +384,17 @@
 .pl2 .xmark{position:absolute;left:4px;top:-2px;width:86px;height:86px;pointer-events:none}
 .pl2 .xmark::before,.pl2 .xmark::after{content:"";position:absolute;left:38px;top:4px;width:12px;height:80px;background:#d50000;border-radius:6px;transform:rotate(45deg);box-shadow:0 0 0 2px #000}
 .pl2 .xmark::after{transform:rotate(-45deg)}
-.pl2 .ivoted{position:absolute;right:10px;top:6px;padding:3px 10px;border-radius:6px;background:#ffcd29;border:3px solid #000;color:#000;font-size:16px;font-weight:900;transform:rotate(6deg);animation:sticker .3s cubic-bezier(.2,1.6,.5,1)}
+.pl2 .ivoted{position:absolute;left:2px;bottom:3px;z-index:2;padding:2px 8px;border-radius:6px;background:#ffcd29;border:3px solid #000;color:#000;font-size:15px;font-weight:900;transform:rotate(-8deg);box-shadow:0 2px 0 rgba(0,0,0,.35);animation:sticker .3s cubic-bezier(.2,1.6,.5,1);pointer-events:none}
 @keyframes sticker{from{transform:scale(2.2) rotate(-20deg);opacity:0}}
-.pl2 .megaphone{position:absolute;left:66px;top:2px;width:38px;height:38px;transform:scaleX(-1)}
+.pl2 .megaphone{position:absolute;left:58px;top:0;width:32px;height:32px;transform:scaleX(-1) rotate(-10deg);z-index:2;filter:drop-shadow(0 2px 0 rgba(0,0,0,.3))}
 .pl2 .conf{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:flex;gap:8px}
 .pl2 .conf button,.skiparea2 .conf button{width:56px;height:56px;border-radius:50%;font-size:30px;font-weight:900;color:#fff;background:#2e7d32;border:4px solid #000}
 .pl2 .conf .no,.skiparea2 .conf .no{background:#c62828}
 .pl2 .conf .gavel{background:#d9a440;padding:6px}
-.pl2 .votes2,.skiparea2 .svotes{position:absolute;left:96px;bottom:0;display:flex;gap:4px}
+.pl2 .votes2,.skiparea2 .svotes{position:absolute;left:96px;bottom:3px;display:flex;gap:2px}
 .plates2.c3 .pl2 .votes2{left:80px}
-.chip{display:block;width:40px;height:34px;animation:chip .3s ease-out backwards;animation-delay:var(--d)}
-.chip svg{width:64px;height:46px;margin:-8px 0 0 -12px}
+.chip{display:block;width:36px;height:34px;overflow:visible;animation:chip .3s ease-out backwards;animation-delay:var(--d)}
+.chip svg{width:48px;height:34px;margin:0 0 0 -6px}
 .chip svg.anon{filter:grayscale(1) brightness(.8)}
 @keyframes chip{from{transform:scale(0);opacity:0}}
 .mfoot{display:flex;align-items:center;gap:18px;height:84px}
@@ -526,7 +515,6 @@
 .hud.v2.crit .taskbar{animation:none}
 .intro2 .scr{position:relative;display:flex;align-items:center;justify-content:center;width:1600px;height:720px}
 .rolescr p{color:#ddd}
-.killsplash.acid .ks-bg{background:radial-gradient(ellipse at center,#4fa800 0%,#1e5200 40%,#000 75%)}
 .influx .ifx{position:relative}
 .influx .ifx span{position:absolute;left:-30px;right:-30px;bottom:-40px;text-align:center;font-size:20px;font-weight:900;color:#fff;-webkit-text-stroke:5px #000;paint-order:stroke fill}
 .influx .ifx-ghost{width:120px;height:120px;margin-bottom:20px}
@@ -554,3 +542,46 @@
 .notebook .kpick button{min-width:70px}
 .arrows .tgt{position:absolute;width:120px;height:44px;margin:-22px 0 0 -60px;border-radius:50%;border:5px solid var(--c);box-shadow:0 0 14px var(--c),inset 0 0 10px var(--c);opacity:.85;animation:tgtp .9s ease-in-out infinite;pointer-events:none}
 @keyframes tgtp{50%{transform:scale(1.12);opacity:.55}}
+/* 지금 있는 방 이름 (화면 아래 가운데) */
+.hud.v2 .roomtr{position:absolute;left:0;right:0;bottom:34px;text-align:center;font-size:34px;font-weight:900;color:#fff;-webkit-text-stroke:7px #000;paint-order:stroke fill;letter-spacing:1px;opacity:0;pointer-events:none;transition:opacity .4s}
+.hud.v2 .roomtr.show{opacity:1;animation:roomtr .45s ease-out}
+@keyframes roomtr{from{transform:translateY(26px);opacity:0}to{transform:none;opacity:1}}
+/* 명판 (인벤토리에서 고른 회의 이름판) */
+.pl2.plate-space{background:linear-gradient(90deg,#0b1a3a,#3a1b5a)}
+.pl2.plate-mint{background:linear-gradient(90deg,#c9fbef,#4fd9c4)}
+.pl2.plate-night{background:radial-gradient(circle at 20% 40%,#fff 1px,transparent 2px),radial-gradient(circle at 55% 25%,#fff 1px,transparent 2px),radial-gradient(circle at 80% 65%,#fff 1.5px,transparent 2.5px),linear-gradient(90deg,#08102a,#203a6a)}
+.pl2.plate-candy{background:repeating-linear-gradient(45deg,#ffb3d6 0 14px,#fff 14px 28px)}
+.pl2.plate-space .nm,.pl2.plate-night .nm{color:#fff;text-shadow:0 0 4px #000,0 0 4px #000}
+.pl2.dead[class*="plate-"]{filter:grayscale(.75) brightness(.8)}
+
+/* 처치당함 연출: 화면 가운데 붉은 띠 */
+.killsplash{position:absolute;inset:-100px -400px;z-index:42;transition:opacity .4s;pointer-events:none}
+.killsplash.out{opacity:0}
+.killsplash .ks-dim{position:absolute;inset:0;background:rgba(0,0,0,.55);animation:fadein .2s}
+.killsplash .ks-band{position:absolute;left:0;right:0;top:calc(50% - 190px);height:380px;overflow:hidden;border-top:8px solid #000;border-bottom:8px solid #000;animation:ksband .28s cubic-bezier(.2,1.2,.4,1)}
+@keyframes ksband{from{transform:scaleY(0)}}
+.killsplash .ks-bg{position:absolute;inset:0;background:radial-gradient(ellipse 50% 90% at center,#c40000 0%,#7a0000 45%,#2a0000 100%)}
+.killsplash.acid .ks-bg{background:radial-gradient(ellipse 50% 90% at center,#5fc200 0%,#2a6d00 45%,#0b2400 100%)}
+.killsplash .ks-row{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.killsplash .ks-k{animation:ksk .55s cubic-bezier(.2,1.3,.5,1);filter:drop-shadow(0 10px 20px rgba(0,0,0,.5))}
+.killsplash .ks-knife{width:150px;height:150px;margin:0 -40px;z-index:2;opacity:0;transform-origin:20% 80%}
+.killsplash.hit .ks-knife{animation:ksn .35s ease-out forwards}
+.killsplash .ks-v{position:relative;width:380px;height:274px}
+.killsplash .ks-v>div{position:absolute;inset:0}
+.killsplash .ks-alive{animation:ksshake .5s .1s ease-in-out}
+.killsplash .ks-dead{opacity:0}
+.killsplash.hit .ks-alive{opacity:0;transition:opacity .05s}
+.killsplash.hit .ks-dead{opacity:1;animation:ksdead .45s cubic-bezier(.2,1.4,.5,1)}
+.killsplash .ks-flash{position:absolute;inset:0;background:#fff;opacity:0}
+.killsplash.hit .ks-flash{animation:ksflash .3s ease-out}
+@keyframes ksk{from{transform:translateX(-420px)}}
+@keyframes ksn{0%{opacity:0;transform:rotate(-110deg) scale(.6)}40%{opacity:1}100%{opacity:1;transform:rotate(10deg) scale(1.05)}}
+@keyframes ksshake{25%{transform:translateX(-10px)}50%{transform:translateX(8px)}75%{transform:translateX(-6px)}}
+@keyframes ksdead{from{transform:translateY(-50px) scale(1.15)}}
+@keyframes ksflash{0%{opacity:.85}100%{opacity:0}}
+
+/* 투표 결과: 이름은 위로, 투표 칩은 아래 줄에 */
+.plates2.res .pl2 .nm{align-self:flex-start;margin-top:4px}
+.plates2.c3.res .pl2 .nm{margin-top:2px}
+.plates2.c3 .chip{width:28px}.plates2.c3 .chip svg{width:38px;height:27px}
+.skiparea2 .svotes .chip svg{width:48px;height:34px}

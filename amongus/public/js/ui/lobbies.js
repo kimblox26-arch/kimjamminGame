@@ -104,13 +104,15 @@ screens.create = (mode = 'online', gameType = 'classic') => {
   const s = { ...defaultSettings(), gameType };
   let tab = '일반';
   const el = h(`<div class="screen dark"><button class="back2">뒤로</button><div class="titlebar">게임 만들기</div>
-    <div class="ccard"><div class="art">${cardArt()}</div><div class="bn"></div></div>
+    <div class="ccard"><div class="art"></div><div class="bn"></div></div>
     <div class="ttabs" style="left:676px;top:112px"><button data-t="일반" style="width:272px">일반</button><button data-t="채팅" style="width:272px">채팅</button></div>
     <div class="cpanel" style="top:176px">${hintBox('다음 설정값을 지정하여 로비를 맞춤 설정하세요.')}<div class="opts" style="padding-left:96px;inset:90px 0 0 0"></div></div>
     <button class="makebtn" style="left:796px">게임 만들기</button></div>`);
   stage().replaceChildren(el);
   const draw = () => {
     $('.bn', el).textContent = mapName(s.map);
+    const art = $('.art', el);
+    if (art._m !== s.map) { art._m = s.map; art.innerHTML = cardArt(s.map); }
     $$('.ttabs button', el).forEach(b => b.classList.toggle('on', b.dataset.t === tab));
     const o = $('.opts', el);
     const child = me.status !== 'green';
@@ -153,13 +155,33 @@ screens.create = (mode = 'online', gameType = 'classic') => {
   };
   draw();
 };
-function cardArt() {
+// 맵마다 다른 카드 그림 (원작 게임 만들기 화면의 맵 카드)
+const CARD = {
+  skeld: { sky: ['#0b1030', '#25305a'], ground: '#b7b29f', line: '#a29d89', deco: 'space', pond: '#3a6aa8' },
+  mira: { sky: ['#5fb4f0', '#bfe6ff'], ground: '#dfe7ea', line: '#c3cfd4', deco: 'sky', pond: '#3a6aa8' },
+  polus: { sky: ['#1b1440', '#4a2f6e'], ground: '#eef3f7', line: '#cfd9e2', deco: 'snow', pond: '#ff7a1a' },
+  airship: { sky: ['#f39a5b', '#ffd59a'], ground: '#a4744a', line: '#875b36', deco: 'clouds', pond: '#6b4a2a' },
+  fungle: { sky: ['#ff9f6e', '#ffd3a1'], ground: '#e6c48a', line: '#cfa86c', deco: 'jungle', pond: '#2f9fd8' },
+};
+function cardArt(map = 'skeld') {
+  const T = CARD[map] || CARD.skeld;
   const c = (col, x, y, sc, o = {}) => `<g transform="translate(${x} ${y}) scale(${sc})">${crewSVG({ color: col, ...o }).replace('<svg', '<svg width="250" height="180"')}</g>`;
-  return `<svg viewBox="0 0 320 600" width="320" height="600"><rect width="320" height="600" fill="#2a3352"/><path d="M0 230 Q160 170 320 230 V600 H0Z" fill="#b7b29f"/>
-    <path d="M0 260 L320 260 M0 330 L320 330 M0 400 L320 400 M0 470 L320 470 M60 230 L20 600 M160 220 L160 600 M260 230 L300 600" stroke="#a29d89" stroke-width="3"/>
-    <circle cx="70" cy="40" r="44" fill="#1e7d36" stroke="#000" stroke-width="5"/><circle cx="270" cy="60" r="40" fill="#fff" stroke="#000" stroke-width="5"/>
-    ${c(10, -40, 170, .7, { hat: 'crown' })}${c(14, 50, 160, .65)}<ellipse cx="190" cy="330" rx="90" ry="30" fill="#3a6aa8" stroke="#000" stroke-width="5"/>
-    ${c(7, -60, 330, .8)}${c(0, 70, 360, .9, { flip: true })}<path d="M60 520 C100 480 160 500 140 560 Z" fill="#f2a5c4" stroke="#000" stroke-width="5"/></svg>`;
+  const star = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity=".85"/>`;
+  const cloud = (x, y, k) => `<g transform="translate(${x} ${y}) scale(${k})" fill="#fff" opacity=".92"><ellipse cx="0" cy="0" rx="46" ry="20"/><ellipse cx="-26" cy="-10" rx="24" ry="18"/><ellipse cx="18" cy="-16" rx="28" ry="22"/></g>`;
+  const deco = {
+    space: `${[[30, 30, 2], [120, 60, 1.5], [200, 24, 2.2], [280, 90, 1.6], [60, 120, 1.2], [250, 150, 2], [160, 130, 1.4]].map(a => star(...a)).join('')}
+      <circle cx="70" cy="60" r="40" fill="#1e7d36" stroke="#000" stroke-width="5"/><circle cx="270" cy="70" r="34" fill="#e8e8e8" stroke="#000" stroke-width="5"/>`,
+    sky: `${cloud(70, 70, 1)}${cloud(240, 120, 0.8)}${cloud(150, 30, 0.6)}<rect x="210" y="160" width="70" height="80" rx="6" fill="#9aa9b2" stroke="#000" stroke-width="4"/><rect x="222" y="174" width="46" height="30" fill="#5fd0ff"/>`,
+    snow: `${[[40, 40, 2], [140, 80, 1.5], [260, 30, 2], [220, 120, 1.4], [90, 140, 1.2]].map(a => star(...a)).join('')}
+      <path d="M0 230 L60 150 L110 210 L170 130 L240 220 L290 160 L320 200 V240 H0Z" fill="#7d6b9a" stroke="#000" stroke-width="4"/><path d="M60 150 L75 170 L48 168Z M170 130 L188 154 L156 152Z" fill="#fff"/>`,
+    clouds: `${cloud(60, 60, 1.1)}${cloud(250, 40, 0.9)}${cloud(190, 150, 1.2)}<path d="M20 120 Q160 80 300 120" stroke="#5a3b22" stroke-width="10" fill="none"/>`,
+    jungle: `<circle cx="250" cy="70" r="36" fill="#fff3c4" opacity=".9"/><path d="M0 240 Q40 120 90 200 Q120 100 170 210 Q220 120 260 200 Q300 140 320 220 V240 H0Z" fill="#2f8a3b" stroke="#000" stroke-width="4"/>`,
+  }[T.deco];
+  return `<svg viewBox="0 0 320 600" width="320" height="600"><defs><linearGradient id="cg-${map}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${T.sky[0]}"/><stop offset="1" stop-color="${T.sky[1]}"/></linearGradient></defs>
+    <rect width="320" height="600" fill="url(#cg-${map})"/>${deco}<path d="M0 230 Q160 170 320 230 V600 H0Z" fill="${T.ground}"/>
+    <path d="M0 260 L320 260 M0 330 L320 330 M0 400 L320 400 M0 470 L320 470 M60 230 L20 600 M160 220 L160 600 M260 230 L300 600" stroke="${T.line}" stroke-width="3"/>
+    ${c(10, -40, 170, 0.7, { hat: 'crown' })}${c(14, 50, 160, 0.65)}<ellipse cx="190" cy="330" rx="90" ry="30" fill="${T.pond}" stroke="#000" stroke-width="5"/>
+    ${c(7, -60, 330, 0.8)}${c(0, 70, 360, 0.9, { flip: true })}${T.deco === 'jungle' ? '<g transform="translate(232 232) scale(.85)"><path d="M0 50 C0 0 80 0 80 50 Z" fill="#ff6a3d" stroke="#000" stroke-width="4"/><circle cx="24" cy="30" r="7" fill="#ffe6c8"/><circle cx="52" cy="22" r="6" fill="#ffe6c8"/><rect x="28" y="48" width="24" height="44" rx="8" fill="#fff3dc" stroke="#000" stroke-width="4"/></g>' : '<path d="M60 520 C100 480 160 500 140 560 Z" fill="#f2a5c4" stroke="#000" stroke-width="5"/>'}</svg>`;
 }
 
 // ---------- 코드 입력 ----------

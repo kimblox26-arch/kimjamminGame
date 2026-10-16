@@ -95,23 +95,33 @@ export function openMap() {
   const drawSabButtons = (g, t) => {
     const u = g.u, r = u * 2.6, cdl = Math.max(0, S.sabCd || 0), active = !!S.sab;
     const groups = new Map();
-    const add = (rid, html) => { const room = roomById(m, rid); if (!room) return; const k = room.id; if (!groups.has(k)) groups.set(k, { room, items: [] }); groups.get(k).items.push(html); };
+    // 아이콘 자리: 방 이름표 아래 (방을 못 찾으면 대신 받은 위치)
+    const add = (rid, html, alt) => {
+      const room = roomById(m, rid), k = room?.id || `@${rid}`, at = room ? { x: room.label.x, y: room.label.y + u * 3.4 } : alt;
+      if (!at || !isFinite(at.x)) return;
+      if (!groups.has(k)) groups.set(k, { at, items: [] });
+      groups.get(k).items.push(html);
+    };
     for (const [k, d] of Object.entries(m.sabotages || {})) {
       const dis = active || cdl > 0 || S.phase !== 'play';
+      const fs = m.stations?.[Object.keys(d.fix || {})[0]];
       add(d.room, (x, y) => `<g class="sbtn ${dis ? 'dis' : ''} ${S.sab?.k === k ? 'act' : ''}" data-sab="${k}"><circle cx="${x}" cy="${y}" r="${r * 1.12}" class="ring"/>${icoAt(sabIcon(k, d), x, y, r * 2)}
-        ${cdl > 0 && !active ? pie(x, y, r * 1.05, cdl / (S.sabCdMax || RULES.sabCd * 1000)) + `<text x="${x}" y="${y + r * 0.35}" font-size="${r}" class="cdt">${Math.ceil(cdl / 1000)}</text>` : ''}<title>${esc(d.name)}</title></g>`);
+        ${cdl > 0 && !active ? pie(x, y, r * 1.05, cdl / (S.sabCdMax || RULES.sabCd * 1000)) + `<text x="${x}" y="${y + r * 0.35}" font-size="${r}" class="cdt">${Math.ceil(cdl / 1000)}</text>` : ''}<title>${esc(d.name)}</title></g>`,
+      fs && { x: fs.x, y: fs.y });
     }
     for (const rid of m.doorRooms || []) {
       const cd = Math.max(0, (S.doorCd?.[rid] || 0) - t);
       const closed = (m.doors || []).some(d => d.room === rid && scene.doorsClosed?.has(d.id));
       const dis = cd > 0 || closed || S.phase !== 'play';
+      const d0 = (m.doors || []).find(d => d.room === rid);
       add(rid, (x, y) => `<g class="dbtn ${dis ? 'dis' : ''} ${closed ? 'shut' : ''}" data-door="${rid}"><rect x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" rx="${r * 0.3}" class="ring"/>${icoAt('door', x, y, r * 1.7)}
-        ${cd > 0 ? pie(x, y, r * 0.95, cd / (S.doorCdMax?.[rid] || RULES.doorCd * 1000)) + `<text x="${x}" y="${y + r * 0.35}" font-size="${r}" class="cdt">${Math.ceil(cd / 1000)}</text>` : ''}<title>${esc(roomById(m, rid)?.name || rid)} 문 닫기</title></g>`);
+        ${cd > 0 ? pie(x, y, r * 0.95, cd / (S.doorCdMax?.[rid] || RULES.doorCd * 1000)) + `<text x="${x}" y="${y + r * 0.35}" font-size="${r}" class="cdt">${Math.ceil(cd / 1000)}</text>` : ''}<title>${esc(roomById(m, rid)?.name || rid)} 문 닫기</title></g>`,
+      d0 && { x: d0.x + d0.w / 2, y: d0.y + d0.h / 2 });
     }
     let b = '';
-    for (const { room, items } of groups.values()) {
+    for (const { at, items } of groups.values()) {
       const n = items.length, gap = r * 2.5;
-      items.forEach((f, i) => { b += f(room.label.x + (i - (n - 1) / 2) * gap, room.label.y + u * 3.4); });
+      items.forEach((f, i) => { b += f(at.x + (i - (n - 1) / 2) * gap, at.y); });
     }
     if (btns._h !== b) { btns._h = b; btns.innerHTML = b; }
   };
