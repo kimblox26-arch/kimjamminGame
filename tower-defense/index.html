@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>가족 타워 디펜스</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1d3b12; overflow: hidden; touch-action: none; }
+  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
+  canvas { display: block; image-rendering: pixelated; }
+  #hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+  #hud span { background: rgba(0,0,0,.55); color: #fff; padding: 4px 10px; border-radius: 12px; font-size: 14px; }
+  #spawn { pointer-events: auto; border: 0; border-radius: 12px; padding: 8px 14px; font-size: 15px; font-weight: 700; background: #f6d24a; color: #3a2a00; box-shadow: 0 2px 0 #a8841c; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud"><span id="info">로딩 중…</span><button id="spawn">+ 캐릭터</button></div>
+<script src="game.js"></script>
+</body>
+</html>
