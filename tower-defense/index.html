@@ -2,20 +2,36 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>가족 타워 디펜스</title>
-<style>
-  html, body { margin: 0; height: 100%; background: #1d3b12; overflow: hidden; touch-action: none; }
-  body { display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
-  canvas { display: block; image-rendering: pixelated; }
-  #hud { position: fixed; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
-  #hud span { background: rgba(0,0,0,.55); color: #fff; padding: 4px 10px; border-radius: 12px; font-size: 14px; }
-  #spawn { pointer-events: auto; border: 0; border-radius: 12px; padding: 8px 14px; font-size: 15px; font-weight: 700; background: #f6d24a; color: #3a2a00; box-shadow: 0 2px 0 #a8841c; }
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="hud"><span id="info">로딩 중…</span><button id="spawn">+ 캐릭터</button></div>
+<div id="ui">
+  <div id="money" class="plaque"><i class="ico" data-icon="coin"></i><b id="moneyVal">0</b><span>원</span></div>
+
+  <button id="familyBtn" class="btn sq" data-scene="battle" type="button">
+    <span class="frame"><i class="ico" data-icon="family"></i></span>
+    <span class="name">가족 생성</span>
+    <span class="cost"><i class="ico" data-icon="coin"></i><span class="costVal">10원</span></span>
+    <i class="ico lock" data-icon="lock"></i>
+  </button>
+
+  <button id="buildBtn" class="btn sq build" data-scene="tower" type="button">
+    <span class="frame"><img src="assets/house.png" alt=""></span>
+    <span class="name">집 짓기</span>
+    <span class="cost"><span>Lv.1 대출이 반인 집</span></span>
+  </button>
+
+  <button id="goBtn" class="btn wide" type="button"><i class="ico"></i><span class="label">타워로 가기</span></button>
+
+  <div id="toast" class="plaque"></div>
+  <div id="fade"></div>
+</div>
 <script src="game.js"></script>
 </body>
 </html>
