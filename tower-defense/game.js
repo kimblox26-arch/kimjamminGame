@@ -20,8 +20,9 @@ const OLD_STD = new Set(['dad_back_0', 'dad_back_1', 'dad_turn', 'mom_back_0', '
 const START_MONEY = 10;
 const MAX_ENEMIES = 26;
 
-const PRICE = { loan: 1000, baby: 300, momUp: 300, babyUp: 500, enemyUp: 100, school: 1500, shop: 400, company: 500, office: 800 };
+const PRICE = { loan: 1000, momUp: 300, babyUp: 500, enemyUp: 100, school: 1500, shop: 400, company: 500, office: 800 };
 const SALARY = 30, SALARY_EVERY = 6;   // 회사 월급(원) / 주기(초)
+const babyCost = () => 20 + 20 * state.babiesMade;   // 아기 생성: 20원부터 한 명마다 20원씩 오름
 
 const HOUSE_LV = {
   1: { img: 'house', w: 400, label: 'Lv.1 대출이 반인 집', maxFamily: 3, door: { cx: 0.504, w: 0.14, top: 0.36, bot: 0.095 } },
@@ -45,7 +46,7 @@ const BUILDING = {
   company: { name: '회사', w: 130, img: 'art_company' },  // 6초마다 월급 30원
   office: { name: '분양소', w: 140, img: 'art_office' },  // 가족 자리 +1
 };
-// 타워 화면 카드 (집 Lv.2부터). 잼민이 강화는 전장의 가족 생성 버튼 왼쪽.
+// 타워 화면 카드 (집 Lv.2부터). 잼민이 강화는 전장의 아기 생성 버튼 왼쪽.
 const SHOP_ITEMS = ['momUp', 'babyUp', 'school', 'shop', 'company', 'office'];
 
 // 흙길 중앙선 꼭짓점 (map.png 픽셀 분석값). 오른쪽 아래에서 출발해 시계 방향.
@@ -62,7 +63,7 @@ const NEED = {
   battle: { x0: 30, x1: 658, y0: 200, y1: 1480 },
   tower: { x0: 40, x1: 648, y0: 240, y1: 1480 },
 };
-// 버튼 자리(맵 좌표). 가족 생성 = 사용자가 네모로 그린 곳, 그 아래 이동 버튼.
+// 버튼 자리(맵 좌표). 아기 생성 = 사용자가 네모로 그린 곳, 그 아래 이동 버튼.
 const SLOT_SQ = { x0: 215, x1: 470, y0: 1205, y1: 1397 };
 const SLOT_WIDE = { x0: 190, x1: 495, y0: 1412, y1: 1478 };
 const FONT = "'Jua', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif";
@@ -208,6 +209,7 @@ const state = {
   enemyLevel: 1,
   momLevel: 1,
   familyTotal: 0,            // 만든 가족 수(오는 중 포함)
+  babiesMade: 0,             // 지금까지 만든 아기 수 (아기 생성 가격용)
   built: { school: false, shop: false, company: false, office: false },
   salaryT: 0,
 };
@@ -1474,8 +1476,9 @@ function canAddFamily() { return state.houseLevel > 0 && state.familyTotal < max
 function tapAdd() {
   pillFx.add.press = 0.15;
   if (!canAddFamily()) { pillFx.add.shake = 0.4; return; }
-  if (state.money < PRICE.baby) { pillFx.add.shake = 0.4; shakeEl(ui.moneyBox); return; }
-  state.money -= PRICE.baby;
+  if (state.money < babyCost()) { pillFx.add.shake = 0.4; shakeEl(ui.moneyBox); return; }
+  state.money -= babyCost();
+  state.babiesMade++;
   state.familyTotal++;
   startCut('baby');
 }
@@ -1774,8 +1777,8 @@ function drawTowerScene(ctx) {
     if (state.houseLevel === 1) drawPill(ctx, loanRect(), '대출이자 갚기', String(PRICE.loan), pillFx.loan,
       { pop: pk < 1 ? easeOutBack(pk) : 1, titleColor: '#ffe94a', valueColor: state.money >= PRICE.loan ? '#ffe94a' : '#ffd0a0' });
     const full = !canAddFamily();
-    drawPill(ctx, addRect(), `타워 추가 ${state.familyTotal}/${maxFamily()}`, full ? '최대' : String(PRICE.baby), pillFx.add,
-      { pop: pk < 1 ? easeOutBack(pk) : 1, valueColor: full ? '#d8d8d8' : state.money >= PRICE.baby ? '#ffe94a' : '#ffd0a0' });
+    drawPill(ctx, addRect(), `타워 추가 ${state.familyTotal}/${maxFamily()}`, full ? '최대' : String(babyCost()), pillFx.add,
+      { pop: pk < 1 ? easeOutBack(pk) : 1, valueColor: full ? '#d8d8d8' : state.money >= babyCost() ? '#ffe94a' : '#ffd0a0' });
   }
 
   // 아기 만들기: 지붕 위 큰 하트
@@ -1979,7 +1982,7 @@ function layoutUI() {
     shop = { cx, w: ww, cols: 2, cardH, h: cardH * 3 + 16 };
     shop.top = wide.top - 12 - shop.h;
   } else {
-    // 세로 화면: 사용자가 그린 네모 자리(맵 좌표)에 가족 생성, 그 왼쪽에 잼민이 강화, 아래에 이동 버튼
+    // 세로 화면: 사용자가 그린 네모 자리(맵 좌표)에 아기 생성, 그 왼쪽에 잼민이 강화, 아래에 이동 버튼
     const s = view.s;
     wide = { cx: (SLOT_WIDE.x0 + SLOT_WIDE.x1) / 2 * s + view.ox,
       w: clamp((SLOT_WIDE.x1 - SLOT_WIDE.x0) * s, 170, 300), h: clamp((SLOT_WIDE.y1 - SLOT_WIDE.y0) * s, 42, 60) };
@@ -2037,11 +2040,11 @@ function updateUI() {
     const pic = ui.go.querySelector('.pic');
     pic.className = 'pic ' + (battle ? (state.houseLevel >= 2 ? 'house2' : 'house1') : 'farmer');
   }
-  // 가족 생성(= 타워 추가, 아기 만들기)
+  // 아기 생성(= 타워 추가)
   const full = state.houseLevel > 0 && !canAddFamily();
   ui.family.classList.toggle('locked', !state.houseLevel || full);
-  ui.family.classList.toggle('poor', state.houseLevel > 0 && !full && state.money < PRICE.baby);
-  ui.family.querySelector('.costVal').textContent = !state.houseLevel ? '집이 필요해요' : full ? '최대' : `${PRICE.baby}원`;
+  ui.family.classList.toggle('poor', state.houseLevel > 0 && !full && state.money < babyCost());
+  ui.family.querySelector('.costVal').textContent = !state.houseLevel ? '집이 필요해요' : full ? '최대' : `${babyCost()}원`;
   ui.family.querySelector('.count').textContent = state.houseLevel ? `${state.familyTotal}/${maxFamily()}` : '';
   // 잼민이 강화 (Lv.1 → Lv.2)
   const emax = state.enemyLevel >= 2;
@@ -2112,7 +2115,7 @@ function buy(item) {
   updateUI();
 }
 
-// 전장의 가족 생성 버튼 = 타워 추가(아기). 아기가 숲에서 기어 들어온다.
+// 전장의 아기 생성 버튼 = 타워 추가. 아기가 숲에서 기어 들어온다.
 ui.family.addEventListener('click', () => {
   if (!ready) return;
   if (!state.houseLevel) {                           // 글 대신 버튼 흔들기 + 타워 버튼 강조
@@ -2121,14 +2124,15 @@ ui.family.addEventListener('click', () => {
     return;
   }
   if (!canAddFamily()) { shakeEl(ui.family); return; }
-  if (state.money < PRICE.baby) { shakeEl(ui.family); shakeEl(ui.moneyBox); return; }
-  state.money -= PRICE.baby;
+  if (state.money < babyCost()) { shakeEl(ui.family); shakeEl(ui.moneyBox); return; }
+  state.money -= babyCost();
+  state.babiesMade++;
   state.familyTotal++;
   spawnUnit('baby');
   updateUI();
 });
 
-// 잼민이 강화 (전장, 가족 생성 버튼 왼쪽): 체력 10 → 20, 잡는 수입 5원 → 10원
+// 잼민이 강화 (전장, 아기 생성 버튼 왼쪽): 체력 10 → 20, 잡는 수입 5원 → 10원
 ui.enemy.addEventListener('click', () => {
   if (!ready) return;
   if (state.enemyLevel >= 2) { shakeEl(ui.enemy); return; }
