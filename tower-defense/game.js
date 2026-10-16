@@ -20,12 +20,12 @@ const OLD_STD = new Set(['dad_back_0', 'dad_back_1', 'dad_turn', 'mom_back_0', '
 const START_MONEY = 10;
 const MAX_ENEMIES = 26;
 
-const PRICE = { loan: 1000, baby: 300, momUp: 300, enemyUp: 100, school: 300, shop: 400, company: 500, office: 800 };
+const PRICE = { loan: 1000, baby: 300, momUp: 300, babyUp: 500, enemyUp: 100, school: 1500, shop: 400, company: 500, office: 800 };
 const SALARY = 30, SALARY_EVERY = 6;   // 회사 월급(원) / 주기(초)
 
 const HOUSE_LV = {
-  1: { img: 'house', w: 400, label: 'Lv.1 대출이 반인 집', maxFamily: 2, door: { cx: 0.504, w: 0.14, top: 0.36, bot: 0.095 } },
-  2: { img: 'house2', w: 470, label: 'Lv.2 대출이 절반밖에 안 남은 집', maxFamily: 3, door: { cx: 0.53, w: 0.105, top: 0.40, bot: 0.133 } },
+  1: { img: 'house', w: 400, label: 'Lv.1 대출이 반인 집', maxFamily: 3, door: { cx: 0.504, w: 0.14, top: 0.36, bot: 0.095 } },
+  2: { img: 'house2', w: 470, label: 'Lv.2 대출이 절반밖에 안 남은 집', maxFamily: 4, door: { cx: 0.53, w: 0.105, top: 0.40, bot: 0.133 } },
 };
 const ENEMY_LV = {
   1: { hp: 10, reward: 5, prefix: 'farmer' },
@@ -35,14 +35,18 @@ const UNIT = {
   mom: { dmg: 4, cooldown: 0.95, range: 210, proj: 'slipper' },
   dad: { dmg: 6, cooldown: 1.35, range: 230, proj: 'remote' },
   baby: { dmg: 3, cooldown: 0.8, range: 190, proj: 'bottle' },
+  jam: { dmg: 8, cooldown: 0.7, range: 84, melee: true },   // 애기 강화 → Lv.2 잼민이: 흙길에 서서 주먹으로
 };
+const GUARD_GAP = 46;                  // 아군 잼민이 앞에서 적이 멈춰 서는 거리(경로 길이)
+const GUARD_STATES = new Set(['arrive', 'idle', 'windup', 'throw', 'recover', 'notice']);
 const BUILDING = {
-  school: { name: '학교', w: 140 },      // 가족 공격력 x1.5
-  shop: { name: '상점', w: 135 },        // 잡는 수입 x1.5
-  company: { name: '회사', w: 130 },     // 6초마다 월급 30원
-  office: { name: '분양소', w: 140 },    // 가족 자리 +1
+  school: { name: '학교', w: 250, img: 'school', label: 'Lv.1 학교' },   // 가족 공격력 x1.5, 애기 강화
+  shop: { name: '상점', w: 135, img: 'art_shop' },        // 잡는 수입 x1.5
+  company: { name: '회사', w: 130, img: 'art_company' },  // 6초마다 월급 30원
+  office: { name: '분양소', w: 140, img: 'art_office' },  // 가족 자리 +1
 };
-const SHOP_ITEMS = ['momUp', 'enemyUp', 'school', 'shop', 'company', 'office'];
+// 타워 화면 카드 (집 Lv.2부터). 잼민이 강화는 전장의 가족 생성 버튼 왼쪽.
+const SHOP_ITEMS = ['momUp', 'babyUp', 'school', 'shop', 'company', 'office'];
 
 // 흙길 중앙선 꼭짓점 (map.png 픽셀 분석값). 오른쪽 아래에서 출발해 시계 방향.
 const PATH_CORNERS = [[566, 1094], [90, 1094], [90, 414], [566, 414]];
@@ -125,10 +129,12 @@ const FAMILY_SPRITES = [
   'dad_back_0', 'dad_back_1', 'dad_turn', 'dad_cheer', 'dad_front_0', 'dad_front_1', 'dad_wave', 'dad_lunge', 'dad_rest', 'dad_out', 'dad_beg',
   'dad_walk_0', 'dad_walk_1', 'dad_walk_2', 'dad_walk_3',
   'mom_back_0', 'mom_back_1', 'mom_turn', 'mom_cheer', 'mom_front_0', 'mom_front_1', 'mom_hip', 'mom_hips', 'mom_smoke', 'mom_surprised',
-  'mom2_front_0', 'mom2_front_1', 'baby',
+  'mom2_front_0', 'mom2_front_1', 'baby', 'baby_stand', 'baby_stand2', 'baby_back',
+  'jam2_front_0', 'jam2_front_1', 'jam2_laugh',
 ];
 for (const n of FAMILY_SPRITES) IMAGE_LIST[n] = `assets/characters/family/${n}.png`;
-for (const n of ['school', 'shop', 'company', 'office', 'hand']) IMAGE_LIST['art_' + n] = svgURL(ART[n]);
+IMAGE_LIST.school = 'assets/school.png';
+for (const n of ['shop', 'company', 'office', 'hand', 'fist']) IMAGE_LIST['art_' + n] = svgURL(ART[n]);
 
 function loadAssets() {
   return Promise.all(Object.entries(IMAGE_LIST).map(([k, src]) => new Promise((ok, fail) => {
@@ -183,10 +189,11 @@ function nearestOnPath(x, y) {
     const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
     const t = clamp(((x - ax) * vx + (y - ay) * vy) / l2, 0, 1);
     const px = ax + vx * t, py = ay + vy * t, d = Math.hypot(x - px, y - py);
-    if (!best || d < best.d) best = { x: px, y: py, d };
+    if (!best || d < best.d) best = { x: px, y: py, d, dist: PATH.cum[i - 1] + (PATH.cum[i] - PATH.cum[i - 1]) * t };
   }
   return best;
 }
+const pathGap = (a, b) => ((a - b) % PATH.len + PATH.len) % PATH.len;   // b에서 a까지 앞쪽으로 남은 거리
 
 // ───────────────── 상태 ─────────────────
 const state = {
@@ -379,6 +386,10 @@ function updateEnemy(e, dt) {
     const gap = ((o.dist - e.dist) % PATH.len + PATH.len) % PATH.len;
     if (gap > 0.01 && gap < 40) speed *= clamp((gap - 16) / 24, 0, 1);
   }
+  for (const g of family) {                          // 흙길에 선 아군 잼민이가 길을 막음
+    if (g.type !== 'jam' || g.held || g.pathDist == null || !GUARD_STATES.has(g.state)) continue;
+    if (pathGap(g.pathDist, e.dist) < GUARD_GAP) speed = 0;
+  }
   if (e.kb > 0) { const k = Math.min(e.kb, 140 * dt); e.dist -= k; e.kb -= k; }   // 맞으면 뒤로 밀림
   e.dist += speed * dt;
   e.phase += dt * ENEMY_FRAME_RATE * (speed / e.speed);
@@ -502,12 +513,46 @@ function spawnUnit(type) {
 }
 
 function famSet(f, s) { f.state = s; f.t = 0; }
+
+// 흙길 위 서 있을 자리: 가장 가까운 경로 지점, 다른 아군 잼민이와 겹치면 옆으로
+function pathSpot(x, y, self) {
+  let dist = nearestOnPath(x, y).dist;
+  const others = family.filter(g => g !== self && g.type === 'jam' && g.pathDist != null);
+  for (let k = 0; k < 12; k++) {
+    const hit = others.find(g => Math.min(pathGap(g.pathDist, dist), pathGap(dist, g.pathDist)) < 60);
+    if (!hit) break;
+    dist = (hit.pathDist - 64 + PATH.len) % PATH.len;
+  }
+  const p = pointAt(dist);
+  return { x: p.x, y: p.y + 26, dist };
+}
+
+// 애기 강화: 아기 → Lv.2 잼민이. 흙길로 걸어 들어가 길을 막고 싸운다.
+function promoteBaby(f) {
+  f.type = 'jam';
+  f.idleAct = null;
+  const p = pathSpot(f.slotX, f.slotY, f);
+  f.slotX = p.x; f.slotY = p.y; f.pathDist = p.dist;
+  famSet(f, 'walk');
+  f.glowT = 2.5;
+  setEmote(f, 'note', 1.6);
+}
 const isMom2 = f => f.type === 'mom' && state.momLevel >= 2;
 
 // 상황별 사진
 function keyFor(f, what) {
   const t = f.type, m2 = isMom2(f);
-  if (t === 'baby') return 'baby';
+  if (t === 'baby') {                                // 기어 다니다가 자리에 오면 일어섬
+    if (what === 'walk' || what === 'slack') return 'baby';
+    if (what === 'windup' || what === 'notice') return 'baby_stand2';
+    return f.idleAct || 'baby_stand';
+  }
+  if (t === 'jam') {                                 // Lv.2 잼민이 (아군)
+    if (what === 'windup' || what === 'slack') return 'jam2_front_1';
+    if (what === 'notice') return 'jam2_laugh';
+    if (what === 'walk') return 'jam2_front_0';
+    return f.idleAct || 'jam2_front_0';
+  }
   switch (what) {
     case 'walk': return t === 'dad' ? `dad_walk_${Math.floor(f.walkPhase) % 4}` : `mom_back_${Math.floor(f.walkPhase) % 2}`;
     case 'idle':
@@ -522,7 +567,8 @@ function keyFor(f, what) {
   return 'dad_out';
 }
 function idleActFor(f) {
-  if (f.type === 'baby') return null;
+  if (f.type === 'baby') return f.bored > 5 ? 'baby_stand2' : null;
+  if (f.type === 'jam') return f.bored > 5 ? 'jam2_laugh' : 'jam2_front_1';
   if (f.type === 'dad') return f.bored > 5 ? 'dad_front_0' : pick(['dad_wave', 'dad_front_0', 'dad_front_1']);
   if (isMom2(f)) return 'mom2_front_1';
   return f.bored > 5 ? 'mom_hips' : pick(['mom_hip', 'mom_hips']);
@@ -538,6 +584,15 @@ function dmgOf(f) {
 
 function findTarget(f) {
   const st = UNIT[f.type];
+  if (st.melee) {                                    // 주먹: 바로 앞(경로상 뒤에서 오는) 적 중 가장 가까운
+    let best = null, bd = Infinity;
+    for (const e of enemies) {
+      if (e.dead || e.age < 0.45) continue;
+      const ef = enemyFoot(e), d = Math.hypot(ef.x - f.x, ef.y - f.y);
+      if (d < st.range && d < bd) { bd = d; best = e; }
+    }
+    return best;
+  }
   const ox = f.x, oy = f.y - FAMILY_H * 0.6;
   let best = null;
   for (const e of enemies) {
@@ -557,6 +612,25 @@ function startSlack(f) {
   else f.emote = null;
 }
 
+function releasePunch(f) {                          // 아군 잼민이: 주먹 한 방
+  const tgt = f.target;
+  f.cd = UNIT.jam.cooldown * (0.9 + rand() * 0.2);
+  if (!tgt || tgt.dead) return;
+  const ef = enemyFoot(tgt);
+  f.lean = Math.sign(ef.x - f.x) || f.lean || 1;
+  const d = Math.hypot(ef.x - f.x, ef.y - f.y) || 1;
+  f.punch = { x: (ef.x - f.x) / d, y: (ef.y - f.y) / d };
+  tgt.hp -= dmgOf(f);
+  tgt.hitT = 0.22;
+  tgt.kb += 16;
+  if (!tgt.emote && rand() < 0.35) setEmote(tgt, 'angry', 0.8);
+  const hx = lerp(f.x, ef.x, 0.55), hy = lerp(f.y, ef.y, 0.55) - ENEMY_H * 0.62;
+  effects.push({ type: 'fist', x: hx, y: hy, dir: f.lean, t: 0, dur: 0.42, scene: 'battle' });
+  effects.push({ type: 'swirl', x: hx + f.lean * 14, y: hy, t: 0, dur: 0.4, r: 34, scene: 'battle', rot: rand() * 6 });
+  shake = Math.max(shake, 0.06);
+  if (tgt.hp <= 0) killEnemy(tgt, f);
+}
+
 function releaseThrow(f) {
   const st = UNIT[f.type];
   const tgt = f.target;
@@ -566,7 +640,7 @@ function releaseThrow(f) {
   f.lean = Math.sign(ef.x - f.x) || 1;
   const dmg = dmgOf(f);
   tgt.pending += dmg;
-  const hgt = f.type === 'baby' ? 0.4 : f.special ? 0.55 : 0.82;
+  const hgt = f.type === 'baby' ? 0.74 : f.special ? 0.55 : 0.82;
   const sx = f.x + f.lean * 20, sy = f.y - FAMILY_H * hgt;
   const dist = Math.hypot(ef.x - sx, ef.y - ENEMY_H * 0.55 - sy);
   projectiles.push({
@@ -576,7 +650,7 @@ function releaseThrow(f) {
     x: sx, y: sy, px: sx, py: sy, rot: 0, prot: 0, spin: (rand() < 0.5 ? -1 : 1) * (10 + rand() * 6),
     trail: [], big: f.special || isMom2(f),
   });
-  effects.push({ type: 'swoosh', x: f.x + f.lean * 6, y: f.y - FAMILY_H * (hgt - 0.04), dir: f.lean, t: 0, dur: 0.22, r: f.type === 'baby' ? 22 : 34, scene: 'battle' });
+  effects.push({ type: 'swoosh', x: f.x + f.lean * 6, y: f.y - FAMILY_H * (hgt - 0.04), dir: f.lean, t: 0, dur: 0.22, r: f.type === 'baby' ? 28 : 34, scene: 'battle' });
 }
 
 function updateFamily(f, dt) {
@@ -588,12 +662,12 @@ function updateFamily(f, dt) {
   if (f.state !== 'walk' && f.state !== 'slack' && f.state !== 'notice' && state.away) startSlack(f);
   switch (f.state) {
     case 'walk': {                                 // 사진을 넘기며 자기 자리로 걸어감 (아빠 걷기 사진 4장, 아기는 기어감)
-      const sp = f.type === 'baby' ? 85 : 150;
+      const sp = f.type === 'baby' ? 85 : f.type === 'jam' ? 170 : 150;
       const dx = f.slotX - f.x, dy = f.slotY - f.y, d = Math.hypot(dx, dy), step = sp * dt;
       if (d <= step) { f.x = f.slotX; f.y = f.slotY; famSet(f, 'arrive'); setEmote(f, 'note', 1.1); }
       else { f.x += dx / d * step; f.y += dy / d * step; }
       f.walkPhase += dt * (f.type === 'dad' ? 7.5 : f.type === 'baby' ? 3 : 4);
-      setSprite(f.sprite, keyFor(f, 'walk'), false, 0);
+      setSprite(f.sprite, keyFor(f, 'walk'), f.type === 'jam' && Math.floor(f.walkPhase) % 2 === 1, 0);
       break;
     }
     case 'arrive':                                 // 뒤돌아 앞을 봄
@@ -608,6 +682,7 @@ function updateFamily(f, dt) {
         f.target = tgt;
         f.idleAct = null;
         f.special = f.type === 'dad' && (++f.attacks % 4 === 0);   // 아빠는 네 번에 한 번 날아차기 던지기
+        if (f.type === 'jam') { const ef = enemyFoot(tgt); f.lean = Math.sign(ef.x - f.x) || f.lean || 1; }
         famSet(f, 'windup');
         if (rand() < 0.3) setEmote(f, 'angry', 0.9);
         break;
@@ -620,15 +695,15 @@ function updateFamily(f, dt) {
         if (f.bored > 5 && !f.emote) setEmote(f, 'dots', 1.8);
       }
       if (f.idleAct && (f.idleActT -= dt) <= 0) f.idleAct = null;
-      setSprite(f.sprite, keyFor(f, 'idle'), false, 0.35);
+      setSprite(f.sprite, keyFor(f, 'idle'), f.type === 'jam' && f.lean < 0, 0.35);
       break;
     }
     case 'windup':                                 // 팔을 뒤로 젖혀 준비
-      setSprite(f.sprite, keyFor(f, 'windup'), false, 0.08);
-      if (f.t >= 0.2) { releaseThrow(f); famSet(f, 'throw'); }
+      setSprite(f.sprite, keyFor(f, 'windup'), f.type === 'jam' && f.lean < 0, 0.08);
+      if (f.t >= (f.type === 'jam' ? 0.16 : 0.2)) { if (f.type === 'jam') releasePunch(f); else releaseThrow(f); famSet(f, 'throw'); }
       break;
     case 'throw':                                  // 던지는 순간
-      setSprite(f.sprite, keyFor(f, 'throw'), f.special && f.lean > 0, 0.06);
+      setSprite(f.sprite, keyFor(f, 'throw'), (f.special && f.lean > 0) || (f.type === 'jam' && f.lean < 0), 0.06);
       if (f.t >= (f.special ? 0.5 : 0.26)) famSet(f, 'recover');
       break;
     case 'recover':
@@ -658,21 +733,25 @@ function updateFamily(f, dt) {
 
 function famPose(f) {
   let hop = 0, rot = 0, sx = 1, sy = 1, ox = 0;
-  const t = f.t, baby = f.type === 'baby';
+  const t = f.t, baby = f.type === 'baby', jam = f.type === 'jam';
   if (f.held) return { hop: 18 + Math.sin(f.age * 9) * 3, rot: Math.sin(f.age * 7) * 0.05, sx: 1.06, sy: 1.06, ox: 0 };
   switch (f.state) {
     case 'walk':
       if (baby) { rot = Math.sin(f.walkPhase * Math.PI) * 0.07; ox = Math.sin(f.walkPhase * Math.PI) * 3; hop = Math.abs(Math.sin(f.walkPhase * Math.PI)) * 3; }
       else hop = Math.abs(Math.sin(f.walkPhase * Math.PI)) * (f.type === 'dad' ? 2 : 5);
       break;
-    case 'arrive': hop = Math.sin(Math.min(t / 0.35, 1) * Math.PI) * 14; break;
+    case 'arrive': hop = Math.sin(Math.min(t / 0.35, 1) * Math.PI) * (baby ? 22 : 14); break;   // 아기는 벌떡 일어남
     case 'idle':
-      if (baby) { rot = Math.sin(f.age * 1.8) * 0.04; sy = 1 + Math.sin(f.age * 3.6) * 0.02; }
+      if (jam) { sy = 1 + Math.sin(f.age * 5) * 0.015; ox = Math.sin(f.age * 2.5) * 2; }        // 제자리 스텝
+      else if (baby) { rot = Math.sin(f.age * 1.8) * 0.03; sy = 1 + Math.sin(f.age * 3.6) * 0.015; }
       else { sy = 1 + Math.sin(f.age * 2.4) * 0.012; if (f.idleAct === 'dad_wave') rot = Math.sin(f.age * 7) * 0.03; }
       break;
     case 'windup': { const k = Math.min(t / 0.2, 1); rot = -f.lean * (baby ? 0.18 : 0.1) * easeOut(k); sy = 1 + 0.05 * k; sx = 1 - 0.03 * k; break; }
     case 'throw':
-      if (f.special) { const a = Math.sin(Math.min(t / 0.5, 1) * Math.PI); hop = a * 42; ox = f.lean * a * 36; }
+      if (jam) {                                     // 주먹 내지르기: 적 쪽으로 쭉
+        const a = Math.sin(Math.min(t / 0.26, 1) * Math.PI), p = f.punch || { x: f.lean, y: 0 };
+        ox = p.x * a * 22; hop = -p.y * a * 10; rot = f.lean * 0.14 * a; sx = 1 + 0.05 * a;
+      } else if (f.special) { const a = Math.sin(Math.min(t / 0.5, 1) * Math.PI); hop = a * 42; ox = f.lean * a * 36; }
       else {
         const k = Math.min(t / 0.12, 1); rot = f.lean * (baby ? 0.22 : 0.16) * (1 - k * 0.5);
         sx = 1 + 0.07 * (1 - k); sy = 1 - 0.07 * (1 - k);
@@ -682,6 +761,7 @@ function famPose(f) {
     case 'recover': rot = f.lean * 0.08 * (1 - t / 0.22); break;
     case 'slack':
       if (baby) { sy = 0.9 + Math.sin(f.age * 1.6) * 0.02; sx = 1.04; }
+      else if (jam) { sy = 0.86 + Math.sin(f.age * 1.6) * 0.02; sx = 1.05; }      // 쪼그려 졸기
       else { rot = f.type === 'mom' ? Math.sin(f.age * 1.2) * 0.02 : 0; sy = 1 + Math.sin(f.age * 1.6) * 0.02; }
       break;
     case 'notice':
@@ -693,7 +773,7 @@ function famPose(f) {
   return { hop, rot, sx, sy, ox };
 }
 
-const EMOTE_ANCHOR = { dad_rest: [-0.28, 0.78], dad_lunge: [-0.3, 0.95], dad_beg: [0, 0.8] };
+const EMOTE_ANCHOR = { dad_rest: [-0.28, 0.78], dad_lunge: [-0.3, 0.95], dad_beg: [0, 0.8], baby: [0, 0.9] };
 function emoteAnchor(sprite, personH) {
   const key = sprite.cur.key;
   const { w, h } = spriteSize(key, personH);
@@ -721,6 +801,11 @@ function drawFamily(ctx, f, alpha) {
   const shs = 1 - Math.min(hop, 40) / 80;
   ctx.fillStyle = `rgba(0,0,0,${0.22 * born})`;
   ctx.beginPath(); ctx.ellipse(0, 0, 24 * shs, 8 * shs, 0, 0, Math.PI * 2); ctx.fill();
+  if (f.type === 'jam') {                            // 아군 잼민이: 발밑 하늘색 고리로 적과 구분
+    ctx.strokeStyle = 'rgba(110,210,255,0.95)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.ellipse(0, 0, 30, 10, 0, 0, Math.PI * 2); ctx.stroke();
+  }
   if (f.glowT > 0) {                                 // 강화 직후 반짝임
     const k = f.glowT / 2.5;
     ctx.strokeStyle = `rgba(255,236,150,${k})`;
@@ -856,6 +941,14 @@ function drawEffects(ctx, scene) {
           ctx.beginPath(); ctx.arc(r * 0.35, 0, r * 0.65, 0, Math.PI * 1.1); ctx.stroke();
         }
       }
+    } else if (e.type === 'fist') {               // 주먹: 툭 튀어나와 커졌다가 사라짐
+      const pop = k < 0.25 ? easeOutBack(k / 0.25) : 1;
+      ctx.globalAlpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
+      ctx.translate(e.dir * 10 * easeOut(Math.min(1, k * 3)), 0);
+      ctx.scale(e.dir * pop * 0.62, pop * 0.62);
+      ctx.rotate(-0.15);
+      const img = IMG.art_fist;
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
     } else if (e.type === 'ring') {               // 착지 먼지 고리
       ctx.globalAlpha = (1 - k) * 0.8;
       ctx.strokeStyle = '#fff6d8'; ctx.lineWidth = 6 * (1 - k);
@@ -945,7 +1038,7 @@ function drawFloaters(ctx, scene) {
     ctx.scale(s, s);
     ctx.font = `30px ${FONT}`;
     const tw = ctx.measureText(f.text).width;
-    ctx.drawImage(IMG.coin, -tw / 2 - 34, -14, 28, 28);
+    if (!f.noCoin) ctx.drawImage(IMG.coin, -tw / 2 - 34, -14, 28, 28);
     outlinedText(ctx, f.text, 0, 0, 30, '#ffe94a', '#3a2410', { shadow: '#a86a10' });
     ctx.restore();
   }
@@ -979,7 +1072,7 @@ function doorPoint() {
 }
 function loanRect() { const r = houseRectOf(house); return { x: house.cx - 150, y: r.y - 172, w: 300, h: 96 }; }
 function addRect() { return { x: house.cx - 150, y: house.bottom + 18, w: 300, h: 84 }; }
-function buildingSize(kind) { const img = IMG['art_' + kind], w = BUILDING[kind].w; return { w, h: w * img.height / img.width }; }
+function buildingSize(kind) { const img = IMG[BUILDING[kind].img], w = BUILDING[kind].w; return { w, h: w * img.height / img.width }; }
 function buildingRect(b) { const { w, h } = buildingSize(b.kind); return { x: b.cx - w / 2, y: b.bottom - h, w, h }; }
 
 // 타워 화면에서 물건을 놓을 수 있는 영역(맵 좌표): 위 돈 표시 아래 ~ 아래 버튼 위
@@ -1196,7 +1289,7 @@ const CUTS = {
 
   // 타워 추가 = 아기 만들기: 엄마는 문 앞에서 "싫어", 아빠는 엎드려 빌고 → 하트 → 아기가 기어 나옴 → 전장으로
   baby: {
-    len: 7.2,
+    len: 7.6,
     update(t) {
       const D = doorPoint();
       const inT = seg(t, 2.2, 2.8);
@@ -1223,16 +1316,61 @@ const CUTS = {
       b.show = t >= 4.4;
       if (b.show) {
         const P = { x: D.x, y: house.bottom + 120 };
-        const u = seg(t, 4.4, 6.0), e = easeInOut(u);
-        b.x = lerp(D.x, P.x, e) + Math.sin(t * 8) * 4; b.y = lerp(D.y, P.y, e);
-        b.scale = lerp(0.3, 0.85, e); b.alpha = Math.min(1, u * 3);
-        b.rot = Math.sin(t * 8) * 0.07; b.hop = Math.abs(Math.sin(t * 8)) * 3;
-        if (t >= 4.6 && once('bLabel')) { b.label = 'Lv.1 애기'; b.labelT = 0; }
-        if (t >= 5.2 && once('bNote')) setEmote(b, 'note', 1.3);
-        if (t >= 6.0) { const v = seg(t, 6.0, 7.2); b.y = P.y + v * v * 480; b.alpha = 1 - seg(v, 0.5, 1); }
+        const u = seg(t, 4.4, 5.6), e = easeInOut(u);
+        b.x = lerp(D.x, P.x, e); b.y = lerp(D.y, P.y, e);
+        b.scale = lerp(0.3, 0.9, e); b.alpha = Math.min(1, u * 3);
+        if (t < 5.6) {                               // 엉금엉금
+          b.x += Math.sin(t * 8) * 4; b.rot = Math.sin(t * 8) * 0.07; b.hop = Math.abs(Math.sin(t * 8)) * 3;
+        } else if (t < 6.4) {                        // 벌떡 일어섬
+          if (once('stand')) { setSprite(b.sprite, 'baby_stand', false, 0.18); b.label = 'Lv.1 애기'; b.labelT = 0; }
+          b.rot = 0; b.hop = Math.sin(seg(t, 5.6, 5.95) * Math.PI) * 30;
+          if (t >= 5.9) setSprite(b.sprite, 'baby_stand2', false, 0.15);
+        } else {                                     // 전장으로
+          const v = seg(t, 6.4, 7.6);
+          setSprite(b.sprite, 'baby_stand', Math.floor(t * 4) % 2 === 1, 0.08);
+          b.y = P.y + v * v * 480; b.alpha = 1 - seg(v, 0.5, 1); b.hop = Math.abs(Math.sin(t * Math.PI * 4)) * 8;
+        }
+        if (t >= 5.7 && once('bNote')) setEmote(b, 'note', 1.3);
       }
     },
     finish() { spawnUnit('baby'); },
+  },
+
+  // 애기 강화: 아기가 학교에 들어감 → 어둠 속 푸른 기운 + 붉은 마법진 → 번쩍 → 깔깔 웃는 Lv.2 잼민이가 나옴 → 전장으로
+  babyUp: {
+    len: 6.9,
+    update(t) {
+      const sc = cut.school, D = schoolDoor(sc);
+      const a = actor('kid', 'baby_back');
+      if (t < 1.35) {
+        const u = seg(t, 0, 1.35), e = easeInOut(u);
+        a.show = true;
+        a.x = lerp(D.x + 30, D.x, e); a.y = lerp(sc.bottom + 280, D.y, e);
+        a.scale = lerp(0.95, 0.35, e); a.alpha = 1 - seg(u, 0.75, 1);
+        a.hop = Math.abs(Math.sin(t * Math.PI * 4)) * 8;
+        setSprite(a.sprite, 'baby_back', Math.floor(t * 4) % 2 === 1, 0.08);
+      } else if (t < 4.3) {
+        a.show = false;
+      } else {
+        if (once('j2')) { a.sprite = makeSprite('jam2_laugh'); a.label = 'Lv.2 잼민이'; a.labelT = 0; }
+        a.show = true;
+        const P = { x: D.x, y: sc.bottom + 130 };
+        const u = seg(t, 4.3, 5.6), e = easeInOut(u);
+        a.x = lerp(D.x, P.x, e); a.y = lerp(D.y, P.y, e); a.scale = lerp(0.4, 1, e); a.alpha = Math.min(1, u * 3);
+        a.hop = t < 5.6 ? Math.abs(Math.sin(t * Math.PI * 4)) * 6 : Math.abs(Math.sin((t - 5.6) * Math.PI * 3)) * 22;   // 깔깔 들썩
+        if (t >= 4.9 && once('jNote')) setEmote(a, 'note', 1.6);
+        if (t >= 6.0) {
+          const v = seg(t, 6.0, 6.9);
+          setSprite(a.sprite, 'jam2_front_0', Math.floor(t * 4) % 2 === 1, 0.08);
+          a.y = P.y + v * v * 480; a.alpha = 1 - seg(v, 0.5, 1);
+          a.hop = Math.abs(Math.sin(t * Math.PI * 4)) * 6;
+        }
+      }
+    },
+    finish() {
+      const f = family.find(o => o.id === cut.targetId && o.type === 'baby') || family.find(o => o.type === 'baby');
+      if (f) promoteBaby(f);
+    },
   },
 
   // 엄마 강화: 엄마가 집에 들어감 → 어둠 속 푸른 기운 + 붉은 마법진 → 번쩍 → 새 앞치마 Lv.2 엄마가 나옴
@@ -1275,7 +1413,8 @@ const CUTS = {
   },
 };
 
-function cutDark() { return cut && cut.kind === 'momUp' ? seg(cut.t, 1.3, 1.7) * (1 - seg(cut.t, 3.9, 4.3)) : 0; }
+const POWER_CUTS = new Set(['momUp', 'babyUp']);
+function cutDark() { return cut && POWER_CUTS.has(cut.kind) ? seg(cut.t, 1.3, 1.7) * (1 - seg(cut.t, 3.9, 4.3)) : 0; }
 function doorOpen() {
   if (!cut) return 0;
   const t = cut.t, win = (a, b) => seg(t, a, a + 0.25) * (1 - seg(t, b - 0.3, b));
@@ -1397,7 +1536,7 @@ function drawHouseImg(ctx, o, img, w, h, alpha, ghostMode, squash = 0) {
 }
 
 function drawBuilding(ctx, b) {
-  const img = IMG['art_' + b.kind], { w, h } = buildingSize(b.kind);
+  const img = IMG[BUILDING[b.kind].img], { w, h } = buildingSize(b.kind);
   const drop = b.age < 0.5 ? (1 - easeOutBounce(b.age / 0.5)) * -300 : 0;
   const sq = b.bounce > 0 ? Math.sin(b.bounce / 0.3 * Math.PI) * 0.07 : 0;
   ctx.save();
@@ -1405,7 +1544,19 @@ function drawBuilding(ctx, b) {
   ctx.globalAlpha = Math.min(1, b.age / 0.1);
   drawHouseImg(ctx, b, img, w, h, 1, false, sq);
   ctx.restore();
+  const label = BUILDING[b.kind].label;               // 영상처럼 건물 이름표 (Lv.1 학교)
+  if (label && b.age > 0.5) {
+    const k = seg(b.age, 0.5, 0.85);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, k * 3);
+    ctx.translate(b.cx, b.bottom - h - 22 - b.lift * 26);
+    const sc = k < 1 ? 0.5 + easeOutBounce(k) * 0.5 : 1;
+    ctx.scale(sc, sc);
+    outlinedText(ctx, label, 0, 0, 32, '#ffffff', '#2b1d0e', { shadow: '#f2c23a' });
+    ctx.restore();
+  }
 }
+function schoolDoor(b) { const { h } = buildingSize('school'); return { x: b.cx, y: b.bottom - h * 0.1 }; }
 
 function drawRubble(ctx, t) {
   const img = IMG.rubble, w = HOUSE_LV[1].w * 1.12, h = w * img.height / img.width;
@@ -1467,9 +1618,9 @@ function drawPill(ctx, r, title, value, fx, opts = {}) {
   ctx.restore();
 }
 
-function drawAura(ctx, k, kc, t) {
-  const { w, h } = houseSize();
-  const cx = house.cx, cy = house.bottom - h * 0.45;
+function drawAura(ctx, k, kc, t, focus) {
+  const { w, h } = focus;
+  const cx = focus.cx, cy = focus.bottom - h * 0.45;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   if (k > 0) {                                       // 푸른 기운 + 빛줄기
@@ -1496,16 +1647,17 @@ function drawAura(ctx, k, kc, t) {
     for (let i = 0; i < 8; i++) {
       const x = cx + (Math.sin(i * 12.9898) * 0.5) * w * 1.3;
       const a = (0.25 + 0.35 * Math.abs(Math.sin(t * 7 + i * 3.1))) * kc;
-      const g2 = ctx.createLinearGradient(0, house.bottom, 0, house.bottom - 520);
+      const g2 = ctx.createLinearGradient(0, focus.bottom, 0, focus.bottom - 520);
       g2.addColorStop(0, `rgba(255,60,50,${a})`); g2.addColorStop(1, 'rgba(255,60,50,0)');
       ctx.fillStyle = g2;
-      ctx.fillRect(x - 2.5, house.bottom - 520, 5, 520);
+      ctx.fillRect(x - 2.5, focus.bottom - 520, 5, 520);
     }
-    ctx.translate(cx, house.bottom + 8);
+    ctx.translate(cx, focus.bottom + 8);
     ctx.scale(1, 0.32);
     const R = w * 0.8 * (0.6 + 0.4 * easeOut(kc));
-    ctx.shadowColor = 'rgba(255,40,40,0.9)';
-    ctx.shadowBlur = 18;
+    ctx.strokeStyle = `rgba(255,40,40,${0.25 * kc})`;             // 번지는 빛 (흐림 효과 대신 굵은 선을 겹침: 빠름)
+    ctx.lineWidth = 26;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = `rgba(255,80,70,${0.95 * kc})`;
     ctx.lineWidth = 6;
     ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
@@ -1584,16 +1736,19 @@ function drawTowerScene(ctx) {
   }
 
   const dark = cutDark();
-  if (dark > 0) {                                   // 엄마 강화: 어둠 속에 집만 빛남
-    for (const b of buildings) drawBuilding(ctx, b);
+  if (dark > 0) {                                   // 강화: 어둠 속에 집(엄마) / 학교(애기)만 빛남
+    const school = cut.kind === 'babyUp' ? cut.school : null;
+    for (const b of buildings) if (b !== school) drawBuilding(ctx, b);
+    if (school) drawHouseNow(ctx);
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = `rgba(2,3,8,${0.94 * dark})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
     const t = cut.t;
-    drawAura(ctx, seg(t, 1.7, 2.4) * (1 - seg(t, 3.9, 4.2)), seg(t, 2.5, 2.9) * (1 - seg(t, 3.9, 4.2)), t);
-    drawHouseNow(ctx);
+    const focus = school ? { cx: school.cx, bottom: school.bottom, ...buildingSize('school') } : { cx: house.cx, bottom: house.bottom, ...houseSize() };
+    drawAura(ctx, seg(t, 1.7, 2.4) * (1 - seg(t, 3.9, 4.2)), seg(t, 2.5, 2.9) * (1 - seg(t, 3.9, 4.2)), t, focus);
+    if (school) drawBuilding(ctx, school); else drawHouseNow(ctx);
   } else {
     const items = buildings.map(b => ({ y: b.bottom, draw: () => drawBuilding(ctx, b) }));
     items.push({ y: house.bottom, draw: () => drawHouseNow(ctx) });
@@ -1634,7 +1789,7 @@ function drawTowerScene(ctx) {
 
   drawActors(ctx);
 
-  if (cut && cut.kind === 'momUp' && cut.t >= 3.9 && cut.t < 4.35) {   // 번쩍
+  if (cut && POWER_CUTS.has(cut.kind) && cut.t >= 3.9 && cut.t < 4.35) {   // 번쩍
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = `rgba(255,255,255,${1 - seg(cut.t, 3.9, 4.35)})`;
@@ -1757,7 +1912,7 @@ function render(alpha) {
 // ───────────────── UI (DOM) ─────────────────
 const $ = id => document.getElementById(id);
 const ui = {
-  money: $('moneyVal'), moneyBox: $('money'), family: $('familyBtn'), go: $('goBtn'), shop: $('shop'),
+  money: $('moneyVal'), moneyBox: $('money'), family: $('familyBtn'), enemy: $('enemyBtn'), go: $('goBtn'), shop: $('shop'),
   banners: $('banners'), toast: $('toast'), fade: $('fade'),
 };
 document.querySelectorAll('[data-svg]').forEach(el => { el.innerHTML = ART[el.dataset.svg]; });
@@ -1765,7 +1920,7 @@ document.querySelectorAll('[data-svg]').forEach(el => { el.innerHTML = ART[el.da
 // 상점 카드 (사진·직접 그린 그림 아이콘)
 const CARD = {
   momUp: { name: '엄마 강화', pic: 'photo mom2' },
-  enemyUp: { name: '잼민이 강화', pic: 'photo farmer2' },
+  babyUp: { name: '애기 강화', pic: 'photo babystand' },
   school: { name: '학교', art: 'school' },
   shop: { name: '상점', art: 'shop' },
   company: { name: '회사', art: 'company' },
@@ -1780,7 +1935,7 @@ for (const item of SHOP_ITEMS) {
   el.dataset.item = item;
   el.innerHTML = `<span class="pic ${c.pic || 'art'}">${c.art ? ART[c.art] : ''}</span>
     <span class="txt"><b class="nm">${c.name}</b><span class="cost"><img class="coin" src="assets/ui/coin.png" alt=""><span class="cv">${PRICE[item]}</span></span></span>
-    <i class="lock">${ART.lock}</i><i class="check">${ART.check}</i>`;
+    <i class="lock">${ART.lock}</i>`;
   el.addEventListener('click', () => buy(item));
   ui.shop.appendChild(el);
   cardEls[item] = el;
@@ -1808,40 +1963,48 @@ function layoutUI() {
   const mapRight = view.ox + MAP_W * view.s;
   const sideRoom = view.cw - inset.right - mapRight;
   view.side = sideRoom >= 190;
-  let wide, sq, shop;
+  let wide, sq, en, shop;
   if (view.side) {
-    // 가로 화면: 맵 오른쪽 숲에 버튼을 세로로 쌓는다 (길을 가리지 않게)
+    // 가로 화면: 맵 오른쪽 숲에 버튼을 쌓는다 (길을 가리지 않게)
     const cx = mapRight + sideRoom / 2;
-    const ww = Math.min(sideRoom - 28, 280);
+    const ww = Math.min(sideRoom - 28, 300);
     wide = { cx, w: ww, h: 52 };
     wide.top = bottom - wide.h;
-    const sh = clamp(Math.min(wide.top - 24, ww * 0.8), 104, 176);
-    sq = { cx, w: clamp(sh * 1.3, 128, Math.min(ww, 230)), h: sh, top: wide.top - 12 - sh };
+    const bh = clamp((wide.top - 40) * 0.3, 78, 118);
+    const ew = Math.round(ww * 0.42), fw = ww - ew - 10;
+    const left = cx - ww / 2, top = wide.top - 12 - bh;
+    en = { cx: left + ew / 2, w: ew, h: bh, top };
+    sq = { cx: left + ew + 10 + fw / 2, w: fw, h: bh, top };
     const cardH = clamp((wide.top - 80) / 3 - 8, 46, 58);
-    shop = { cx, w: ww, cols: 2, rows: 3, cardH, h: cardH * 3 + 16 };
+    shop = { cx, w: ww, cols: 2, cardH, h: cardH * 3 + 16 };
     shop.top = wide.top - 12 - shop.h;
   } else {
-    // 세로 화면: 사용자가 그린 네모 자리(맵 좌표) 그대로, 화면 밖으로 나가면 위로 당김
+    // 세로 화면: 사용자가 그린 네모 자리(맵 좌표)에 가족 생성, 그 왼쪽에 잼민이 강화, 아래에 이동 버튼
     const s = view.s;
     wide = { cx: (SLOT_WIDE.x0 + SLOT_WIDE.x1) / 2 * s + view.ox,
       w: clamp((SLOT_WIDE.x1 - SLOT_WIDE.x0) * s, 170, 300), h: clamp((SLOT_WIDE.y1 - SLOT_WIDE.y0) * s, 42, 60) };
     wide.top = Math.min(SLOT_WIDE.y0 * s + view.oy, bottom - wide.h);
-    const sh = clamp((SLOT_SQ.y1 - SLOT_SQ.y0) * s, 104, 176);
-    sq = { cx: (SLOT_SQ.x0 + SLOT_SQ.x1) / 2 * s + view.ox,
-      w: clamp((SLOT_SQ.x1 - SLOT_SQ.x0) * s, 128, 220), h: sh };
-    sq.top = Math.min(SLOT_SQ.y0 * s + view.oy, wide.top - 10 - sh);
+    const fw = clamp((SLOT_SQ.x1 - SLOT_SQ.x0) * s, 128, 210);
+    const bh = clamp((SLOT_SQ.y1 - SLOT_SQ.y0) * s * 0.74, 82, 128);
+    const ew = clamp(fw * 0.7, 100, 148);
+    let fl = (SLOT_SQ.x0 + SLOT_SQ.x1) / 2 * s + view.ox - fw / 2, el = fl - 10 - ew;
+    if (el < 10) { fl += 10 - el; el = 10; }
+    const top = Math.min(SLOT_SQ.y1 * s + view.oy - bh, wide.top - 10 - bh);
+    sq = { cx: fl + fw / 2, w: fw, h: bh, top };
+    en = { cx: el + ew / 2, w: ew, h: bh, top };
     const cardH = clamp(view.ch * 0.068, 48, 60);
-    shop = { cx: view.cw / 2, w: Math.min(view.cw - 20, 460), cols: 3, rows: 2, cardH, h: cardH * 2 + 8 };
+    shop = { cx: view.cw / 2, w: Math.min(view.cw - 20, 460), cols: 3, cardH, h: cardH * 2 + 8 };
     shop.top = wide.top - 10 - shop.h;
   }
   setBox(ui.go, wide.cx, wide.top, wide.w, wide.h);
   ui.go.style.fontSize = clamp(wide.h * 0.4, 15, 23) + 'px';
   setBox(ui.family, sq.cx, sq.top, sq.w, sq.h);
-  ui.family.style.fontSize = clamp(sq.h * 0.13, 13, 21) + 'px';
-  ui.family.style.padding = `${Math.round(sq.h * 0.07)}px ${Math.round(sq.w * 0.06)}px ${Math.round(Math.max(13, sq.h * 0.09))}px`;
+  setBox(ui.enemy, en.cx, en.top, en.w, en.h);
+  const fs = clamp(sq.h * 0.17, 13, 21);
+  ui.family.style.fontSize = fs + 'px';
+  ui.enemy.style.fontSize = Math.min(fs, en.w * 0.115) + 'px';
   setBox(ui.shop, shop.cx, shop.top, shop.w, shop.h);
-  ui.shop.style.gridTemplateColumns = `repeat(${shop.cols}, minmax(0, 1fr))`;
-  ui.shop.style.gridTemplateRows = `repeat(${shop.rows}, ${shop.cardH}px)`;
+  ui.shop.style.setProperty('--cols', shop.cols);
   ui.shop.style.setProperty('--ch', shop.cardH + 'px');
   ui.shop.style.fontSize = clamp(shop.w / shop.cols * 0.095, 11, 16) + 'px';
   ui.moneyBox.style.fontSize = clamp(view.cw * 0.07, 22, 34) + 'px';
@@ -1850,19 +2013,22 @@ function layoutUI() {
   view.moneyBottom = ui.moneyBox.getBoundingClientRect().bottom || 60;
 }
 
+// 카드는 집 Lv.2부터. 다 산 것은 숨겨서 할 수 있는 것만 보이게.
 function cardState(item) {
-  if (item === 'momUp') return !state.houseLevel ? 'locked' : state.momLevel >= 2 ? 'done' : cut ? 'busy' : 'ok';
-  if (item === 'enemyUp') return state.enemyLevel >= 2 ? 'done' : 'ok';
-  return !state.unlocked[item] ? 'locked' : state.built[item] ? 'done' : 'ok';
+  if (state.houseLevel < 2) return 'hidden';
+  if (item === 'momUp') return state.momLevel >= 2 ? 'hidden' : cut ? 'busy' : 'ok';
+  if (item === 'babyUp') return !state.built.school ? 'hidden' : cut ? 'busy' : !family.some(f => f.type === 'baby') ? 'none' : 'ok';
+  return !state.unlocked[item] ? 'locked' : state.built[item] ? 'hidden' : 'ok';
 }
 
 let goScene = null, goLevel = null;
 function updateUI() {
   const battle = state.scene === 'battle';
   ui.family.classList.toggle('show', ready && battle);
+  ui.enemy.classList.toggle('show', ready && battle);
   ui.go.classList.toggle('show', ready);
   ui.moneyBox.classList.toggle('show', ready);
-  ui.shop.classList.toggle('show', ready && !battle && state.houseLevel > 0 && !(cut && cut.kind === 'build'));
+  ui.shop.classList.toggle('show', ready && !battle && state.houseLevel >= 2);
   if (goScene !== state.scene || goLevel !== state.houseLevel) {
     goScene = state.scene; goLevel = state.houseLevel;
     ui.go.classList.toggle('to-tower', battle);
@@ -1877,13 +2043,22 @@ function updateUI() {
   ui.family.classList.toggle('poor', state.houseLevel > 0 && !full && state.money < PRICE.baby);
   ui.family.querySelector('.costVal').textContent = !state.houseLevel ? '집이 필요해요' : full ? '최대' : `${PRICE.baby}원`;
   ui.family.querySelector('.count').textContent = state.houseLevel ? `${state.familyTotal}/${maxFamily()}` : '';
+  // 잼민이 강화 (Lv.1 → Lv.2)
+  const emax = state.enemyLevel >= 2;
+  ui.enemy.classList.toggle('done', emax);
+  ui.enemy.classList.toggle('poor', !emax && state.money < PRICE.enemyUp);
+  ui.enemy.querySelector('.count').textContent = `Lv.${state.enemyLevel}`;
+  ui.enemy.querySelector('.costVal').textContent = emax ? '최대' : `${PRICE.enemyUp}원`;
   for (const item of SHOP_ITEMS) {
     const el = cardEls[item], st = cardState(item);
+    const wasHidden = el.classList.contains('hidden');
+    el.classList.toggle('hidden', st === 'hidden');
+    if (wasHidden && st !== 'hidden') bump(el);        // 새로 생긴 카드는 톡 튀어나옴
     el.classList.toggle('locked', st === 'locked');
-    el.classList.toggle('done', st === 'done');
     el.classList.toggle('busy', st === 'busy');
+    el.classList.toggle('none', st === 'none');
     el.classList.toggle('poor', st === 'ok' && state.money < PRICE[item]);
-    el.querySelector('.cv').textContent = st === 'done' ? (item === 'momUp' || item === 'enemyUp' ? 'Lv.2' : '완공') : PRICE[item];
+    el.querySelector('.cv').textContent = st === 'none' ? '애기 없음' : PRICE[item];
   }
 }
 
@@ -1927,8 +2102,12 @@ function buy(item) {
   if (state.money < PRICE[item]) { shakeEl(el); shakeEl(ui.moneyBox); return; }
   state.money -= PRICE[item];
   if (item === 'momUp') startCut('momUp');
-  else if (item === 'enemyUp') state.enemyLevel = 2;
-  else addBuilding(item);
+  else if (item === 'babyUp') {
+    const kid = family.find(f => f.type === 'baby');
+    startCut('babyUp');
+    cut.school = buildings.find(o => o.kind === 'school');
+    cut.targetId = kid.id;
+  } else addBuilding(item);
   bump(el);
   updateUI();
 }
@@ -1946,6 +2125,19 @@ ui.family.addEventListener('click', () => {
   state.money -= PRICE.baby;
   state.familyTotal++;
   spawnUnit('baby');
+  updateUI();
+});
+
+// 잼민이 강화 (전장, 가족 생성 버튼 왼쪽): 체력 10 → 20, 잡는 수입 5원 → 10원
+ui.enemy.addEventListener('click', () => {
+  if (!ready) return;
+  if (state.enemyLevel >= 2) { shakeEl(ui.enemy); return; }
+  if (state.money < PRICE.enemyUp) { shakeEl(ui.enemy); shakeEl(ui.moneyBox); return; }
+  state.money -= PRICE.enemyUp;
+  state.enemyLevel = 2;
+  const p = pointAt(0);
+  floaters.push({ scene: 'battle', x: Math.min(p.x, MAP_W - 130), y: p.y - 90, t: 0, text: 'Lv.2 잼민이', big: true, noCoin: true });
+  bump(ui.enemy);
   updateUI();
 });
 
@@ -2057,7 +2249,8 @@ function endDrag() {
   drag = null;
   if (kind === 'unit') {
     o.held = false;
-    const s = placeUnit(o.x, o.y);
+    const s = o.type === 'jam' ? pathSpot(o.x, o.y, o) : placeUnit(o.x, o.y);
+    if (o.type === 'jam') o.pathDist = s.dist;
     o.x = o.px = o.slotX = s.x; o.y = o.py = o.slotY = s.y;
     famSet(o, 'arrive');
     effects.push({ type: 'ring', x: o.x, y: o.y, t: 0, dur: 0.4, r: 44, scene: 'battle' });
@@ -2136,5 +2329,5 @@ Promise.all([loadAssets(), Promise.race([fontReady, new Promise(r => setTimeout(
 // 테스트/디버그용 훅
 window.__game = {
   state, enemies, family, projectiles, house, ghost, buildings, view,
-  get cut() { return cut; }, buildHouse, spawnUnit, startCut, finishCut, tapLoan, tapAdd, buy, goAway, comeBack,
+  get cut() { return cut; }, buildHouse, spawnUnit, startCut, finishCut, tapLoan, tapAdd, buy, goAway, comeBack, promoteBaby,
 };

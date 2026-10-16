@@ -36,6 +36,7 @@ img.coin { display: block; pointer-events: none; }
 .photo.baby { background-image: url(assets/characters/family/baby.png); }
 .photo.mom2 { background-image: url(assets/characters/family/mom2_front_0.png); background-size: auto 230%; background-position: center 4%; }
 .photo.farmer2 { background-image: url(assets/characters/farmer2/front_0.png); background-size: auto 220%; background-position: center 3%; }
+.photo.babystand { background-image: url(assets/characters/family/baby_stand.png); background-size: auto 230%; background-position: center 3%; }
 .pic.house1 { background: url(assets/house.png) center / contain no-repeat; }
 .pic.house2 { background: url(assets/house2.png) center / contain no-repeat; }
 .pic.farmer { background: url(assets/characters/farmer/front_0.png) center 4% / auto 200% no-repeat; border-radius: 50%; }
@@ -92,26 +93,17 @@ img.coin { display: block; pointer-events: none; }
 .bump { animation: bumpin .45s var(--spring); }
 @keyframes bumpin { 35% { scale: 1.12; } }
 
-/* 가족 생성 (정사각형) */
-.btn.sq { flex-direction: column; align-items: center; justify-content: space-between; box-sizing: border-box; }
-.btn.sq .frame {
-  position: relative; flex: 0 0 auto; width: 86%; height: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--cream); border: 3px solid var(--ink); border-radius: 6px;
-  box-shadow: inset 0 -4px 0 #e2cf9f;
-  transition: filter .3s ease;
-}
-.btn.sq .frame .photo { width: 92%; height: 92%; }
-.btn.sq.show .frame .photo { animation: crawl 1.6s ease-in-out infinite; }
-@keyframes crawl { 25% { transform: rotate(-4deg) translateX(-2px); } 75% { transform: rotate(4deg) translateX(2px); } }
+/* 전장 버튼: 잼민이 강화 · 가족 생성 (그림 없이 글자만) */
+.btn.sq { flex-direction: column; align-items: center; justify-content: center; gap: .32em; box-sizing: border-box; padding: 6px 6px 12px; }
+.btn.sq .name { font-size: 1.25em; white-space: nowrap; letter-spacing: -.02em; }
 .btn.sq .count {
-  position: absolute; left: -8px; top: -10px; padding: 1px 7px; border-radius: 9px;
-  background: var(--purple); border: 2px solid var(--ink); font-size: .78em; color: #fff;
+  padding: 0 .55em; border-radius: 1em; font-size: .78em; line-height: 1.5;
+  background: var(--purple); border: 2px solid var(--ink); color: #fff;
 }
 .btn.sq .count:empty { display: none; }
-.btn.sq .name { font-size: 1.25em; margin-top: 5%; white-space: nowrap; }
+.btn.sq.up .count { background: #d9472b; }
 .btn.sq .cost {
-  display: flex; align-items: center; gap: 4px; margin-top: 3%;
+  display: flex; align-items: center; gap: 4px;
   background: rgba(42,26,11,.85); border-radius: 6px; padding: 1px 8px;
   font-size: .82em; color: var(--gold); text-shadow: none; white-space: nowrap;
   transition: color .25s ease;
@@ -119,8 +111,10 @@ img.coin { display: block; pointer-events: none; }
 .btn.sq .cost .coin { width: 1.15em; height: 1.15em; }
 .lock { position: absolute; top: -12px; right: -10px; width: 26px; height: 31px; opacity: 0; transform: scale(.4) rotate(-20deg); transition: opacity .3s ease, transform .4s var(--spring); pointer-events: none; }
 .btn.sq.locked .lock { opacity: 1; transform: none; }
-.btn.sq.locked .frame, .btn.sq.locked .name { filter: grayscale(.85) brightness(.85); }
+.btn.sq.locked .name { filter: brightness(.85); }
 .btn.sq.poor .cost { color: #ff8a7a; }
+.btn.sq.done { filter: saturate(.55) brightness(.9); }
+.btn.sq.done .cost .coin { display: none; }
 
 /* 이동 버튼 */
 .btn.wide { align-items: center; justify-content: center; gap: 8px; font-size: 1.15em; }
@@ -138,44 +132,43 @@ img.coin { display: block; pointer-events: none; }
 .btn.wide.nudge { animation: nudge .7s var(--smooth) 2; }
 @keyframes nudge { 30% { scale: 1.12; } 60% { scale: .97; } }
 
-/* 타워 화면 상점 카드 */
+/* 타워 화면 카드 (집 Lv.2부터): 영상의 "학교 1500" 판처럼 반투명 알약 모양 */
 #shop {
-  position: absolute; display: grid; gap: 8px;
+  position: absolute; display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-end; gap: 8px;
   opacity: 0; transform: translateY(20px); pointer-events: none; visibility: hidden;
   transition: opacity .35s var(--smooth), transform .5s var(--spring), visibility 0s .35s;
 }
 #shop.show { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition-delay: 0s; }
 .card {
-  position: relative; display: flex; align-items: center; gap: .35em; min-width: 0; min-height: 0; height: 100%; box-sizing: border-box;
-  padding: 0 .4em 0 .3em; font-family: var(--font); color: #fff; cursor: pointer;
-  border: 3px solid var(--ink); border-radius: 12px;
-  background: rgba(30, 50, 12, .72);
-  box-shadow: inset 0 -4px 0 rgba(0,0,0,.25), inset 0 2px 0 rgba(255,255,255,.18), 0 4px 0 rgba(0,0,0,.3);
-  text-shadow: 2px 0 var(--ink), -2px 0 var(--ink), 0 2px var(--ink), 0 -2px var(--ink);
-  transition: transform .15s var(--spring), filter .25s ease, background .25s ease;
+  position: relative; display: flex; align-items: center; gap: .45em; min-width: 0; box-sizing: border-box;
+  flex: 0 0 calc((100% - (var(--cols, 3) - 1) * 8px) / var(--cols, 3)); height: var(--ch, 54px);
+  padding: 0 .6em 0 5px; font-family: var(--font); color: #fff; cursor: pointer;
+  border: 0; border-radius: 999px;
+  background: rgba(16, 32, 6, .55);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.08), 0 3px 0 rgba(0,0,0,.22);
+  text-shadow: 2px 0 var(--ink-deep), -2px 0 var(--ink-deep), 0 2px var(--ink-deep), 0 -2px var(--ink-deep),
+               1.5px 1.5px var(--ink-deep), -1.5px 1.5px var(--ink-deep), 1.5px -1.5px var(--ink-deep), -1.5px -1.5px var(--ink-deep);
+  transition: transform .15s var(--spring), filter .25s ease, opacity .25s ease;
 }
+.card.hidden { display: none; }
 .card:active { transform: translateY(2px) scale(.95); }
-@media (hover: hover) { .card:hover { transform: translateY(-2px); filter: brightness(1.1); } }
+@media (hover: hover) { .card:hover { transform: translateY(-2px); filter: brightness(1.12); } }
 .card .pic {
-  flex: 0 0 auto; width: calc(var(--ch, 54px) - 14px); height: calc(var(--ch, 54px) - 14px); border-radius: 9px;
-  background-color: rgba(255,255,255,.88); border: 2px solid var(--ink); box-sizing: border-box; overflow: hidden;
+  flex: 0 0 auto; width: calc(var(--ch, 54px) - 10px); height: calc(var(--ch, 54px) - 10px); border-radius: 50%;
+  background-color: rgba(255,255,255,.92); box-sizing: border-box; overflow: hidden;
 }
-.card .pic.art { padding: 2px; background-color: #e9f6ff; }
-.card .txt { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.12; }
+.card .pic.art { padding: 4px; background-color: #eaf6ff; }
+.card .txt { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; min-width: 0; line-height: 1.15; }
 .card .nm { font-weight: normal; font-size: 1em; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.card .cost { display: flex; align-items: center; gap: 3px; color: var(--gold); font-size: .95em; }
-.card .cost .coin { width: 1.05em; height: 1.05em; }
-.card .lock { top: -9px; right: -7px; width: 22px; height: 26px; }
-.card .check { position: absolute; top: -9px; right: -7px; width: 24px; height: 24px; opacity: 0; transform: scale(.3); transition: opacity .3s ease, transform .45s var(--spring); pointer-events: none; }
+.card .cost { display: flex; align-items: center; gap: 3px; color: var(--gold); font-size: 1.05em; }
+.card .cost .coin { width: 1em; height: 1em; }
+.card .lock { top: -7px; right: -2px; width: 20px; height: 24px; }
 .card.locked .lock { opacity: 1; transform: none; }
-.card.locked { background: rgba(40,40,40,.62); }
 .card.locked .pic, .card.locked .txt { filter: grayscale(.9) brightness(.8); }
-.card.done .check { opacity: 1; transform: none; }
-.card.done { background: rgba(60, 110, 30, .75); }
-.card.done .cost { color: #c9f59a; }
-.card.done .cost .coin { display: none; }
-.card.poor .cost { color: #ff9a8a; }
-.card.busy { filter: brightness(.75); }
+.card.poor .cost { color: #ffb0a0; }
+.card.none, .card.busy { opacity: .6; }
+.card.none .cost .coin { display: none; }
+.card.none .cost { font-size: .85em; color: #e8e8e8; }
 
 /* 잠금 해제 안내 띠 (영상처럼 보라색) */
 #banners { position: absolute; inset: 0; pointer-events: none; }

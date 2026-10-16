@@ -110,7 +110,15 @@ const ART = (() => {
       fill="#ffffff" stroke="#2b1d0e" stroke-width="5" stroke-linejoin="round"/>
     <path d="M50 50 V62 M66 54 V64 M81 58 V66" stroke="#2b1d0e" stroke-width="3.5" stroke-linecap="round"/>`);
 
-  return { school, shop, company, office, lock, check, hand };
+  const fist = svg(160, 120, '0 0 160 120', `
+    <g stroke="#ffffff" stroke-width="7" stroke-linecap="round" opacity=".95"><path d="M10 38 h26 M2 60 h32 M10 82 h24"/></g>
+    <path d="M42 36 h30 v50 h-30 z" fill="#e9b48c" stroke="#3a2410" stroke-width="5" stroke-linejoin="round"/>
+    <rect x="62" y="14" width="88" height="90" rx="28" fill="#ffd2ad" stroke="#3a2410" stroke-width="5"/>
+    <path d="M148 40 h-32 M148 60 h-32 M148 80 h-30" stroke="#3a2410" stroke-width="4.5" stroke-linecap="round"/>
+    <path d="M70 74 c10 -15 34 -17 46 -6" fill="none" stroke="#3a2410" stroke-width="5" stroke-linecap="round"/>
+    <path d="M80 26 q18 -7 34 0" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".6"/>`);
+
+  return { school, shop, company, office, lock, check, hand, fist };
 })();
 
 const svgURL = s => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
