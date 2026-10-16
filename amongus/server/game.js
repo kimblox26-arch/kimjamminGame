@@ -515,9 +515,10 @@ export function endSab(g, by) {
 function fix(g, c, st, k, p, on) {
   const S = g.sab;
   if (!S || S.k !== k || !st.alive || g.phase !== 'play' || st.vanish || st.vent || st.trans) return;
-  const fx = S.def.fix || {}, sid = Object.keys(fx).find(s => fx[s] === p);
-  if (!sid) return;
-  const sp = g.map.stations?.[sid];
+  // 같은 부품을 여러 곳에서 고칠 수 있으면(에어십 조명 등) 가장 가까운 곳 기준
+  const fx = S.def.fix || {}, sids = Object.keys(fx).filter(s => fx[s] === p);
+  if (!sids.length) return;
+  const sp = sids.map(s => g.map.stations?.[s]).filter(Boolean).sort((a, b) => d2(c, a) - d2(c, b))[0];
   if (sp && d2(c, sp) > TOL && !c.mod) return;
   const parts = [...new Set(Object.values(fx))];
   on = on === undefined ? true : !!on;
