@@ -100,6 +100,10 @@
 .danger.l2 .dm{animation:dbeat .45s ease-in-out infinite;box-shadow:0 0 0 3px #fff,0 0 30px #f00}
 @keyframes dbeat{50%{transform:scale(1.08)}}
 
+/* 숨바꼭질 유령 출몰 */
+.hauntlbl{position:absolute;left:50%;top:78px;transform:translateX(-50%);padding:6px 22px;border-radius:12px;background:rgba(10,14,20,.7);border:3px solid #cfe8ff;font-size:24px;font-weight:800;color:#fff;-webkit-text-stroke:4px #000;paint-order:stroke fill;pointer-events:none;white-space:nowrap}
+.act.ab-haunt.on .icw{filter:drop-shadow(0 0 12px #8CFFFF)}
+
 /* ---- 연습 모드 버튼 ---- */
 .pracb{position:absolute;right:10px;top:106px;display:flex;align-items:center;gap:8px;height:56px;padding:0 18px 0 8px;border:3px solid #fff;border-radius:12px;background:rgba(0,0,0,.55);font-size:20px;font-weight:800}
 .pracb svg{width:44px;height:44px}
@@ -120,7 +124,7 @@
 .teamscr p,.rolescr p{margin:0;font-size:30px;color:#fff}
 .teamscr .glow{position:absolute;left:50%;bottom:-80px;width:1300px;height:420px;transform:translateX(-50%);background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,var(--tc) 75%,transparent),transparent 70%);filter:blur(10px)}
 .teamscr .lineup{position:absolute;left:0;right:0;bottom:40px;height:320px}
-.teamscr .lc{position:absolute;left:50%;bottom:calc(var(--a) * 22px);transform:translateX(calc(-50% + var(--k) * 118px)) scale(calc(1 - var(--a) * .07));transform-origin:50% 100%;display:flex;flex-direction:column;align-items:center;animation:lcin .6s ease-out backwards;animation-delay:calc(var(--a) * .06s)}
+.teamscr .lc{position:absolute;left:50%;bottom:calc(var(--a) * 22px);transform:translateX(calc(-50% + var(--k) * 112px)) scale(calc(1 - var(--a) * .065));transform-origin:50% 100%;display:flex;flex-direction:column;align-items:center;animation:lcin .6s ease-out backwards;animation-delay:calc(var(--a) * .06s)}
 .teamscr .lc svg{filter:drop-shadow(0 0 12px color-mix(in srgb,var(--tc) 70%,transparent))}
 .teamscr .lc.l svg{transform:scaleX(-1)}
 .teamscr .lc span{font-size:22px;font-weight:800;color:#fff;-webkit-text-stroke:5px #000;paint-order:stroke fill;margin-top:-6px}
@@ -334,20 +338,20 @@
 /* ---- 로비 ---- */
 .hud.lobby .acts2{width:200px;height:180px}
 .lobpanel2{position:absolute;right:10px;top:108px;width:300px;background:linear-gradient(#30373a,#22282b);border:5px solid #4a5254;border-radius:16px;padding:10px 12px 14px;font-size:16px;box-shadow:0 6px 0 rgba(0,0,0,.4)}
-.lobpanel2 h3{margin:2px 6px 8px;font-size:28px;font-weight:400;color:#aaa;border-bottom:2px solid #555;padding-bottom:6px}
+.lobpanel2 h3{margin:0 6px 6px;font-size:24px;font-weight:400;color:#aaa;border-bottom:2px solid #555;padding-bottom:6px}
 .lobpanel2 .rcode{display:flex;align-items:center;gap:8px;background:#111;border:2px solid #555;border-radius:8px;padding:4px 8px;margin-bottom:4px}
-.lobpanel2 .rcode span{font-size:14px;color:#aaa;white-space:nowrap}.lobpanel2 .rcode b{font-size:26px;letter-spacing:4px;flex:1;text-align:center}
+.lobpanel2 .rcode span{flex:none;font-size:14px;color:#aaa;white-space:nowrap}.lobpanel2 .rcode b{font-size:26px;letter-spacing:4px;flex:1;text-align:center}
 .lobpanel2 .rcode .copy{width:38px;height:38px;border-radius:8px;background:#3a4042;font-size:22px}
 .lobpanel2 .l{font-size:14px;color:#ccc;margin:8px 4px 2px}
-.lobpanel2 .mapban{display:flex;align-items:center;gap:8px;white-space:nowrap;font-family:"Arial Narrow",Impact,sans-serif;font-size:30px;color:#d8e6e3}
-.lobpanel2 .mapban svg{width:46px;height:46px;flex:none}
+.lobpanel2 .mapban{display:flex;align-items:center;gap:8px;white-space:nowrap;font-family:"Arial Narrow",Impact,sans-serif;font-size:28px;color:#d8e6e3}
+.lobpanel2 .mapban svg{width:40px;height:40px;flex:none}
 .lobpanel2 .kv{display:grid;grid-template-columns:104px 1fr;gap:6px;margin-top:8px}
-.lobpanel2 .kv>span{background:#3a4042;display:grid;place-items:center;font-size:14px;height:40px;border-radius:4px}
-.lobpanel2 .kv>b{background:#111;border:2px solid #555;display:flex;align-items:center;justify-content:center;gap:6px;font-size:20px;height:40px;border-radius:4px}
+.lobpanel2 .kv>span{background:#3a4042;display:grid;place-items:center;font-size:14px;height:36px;border-radius:4px}
+.lobpanel2 .kv>b{background:#111;border:2px solid #555;display:flex;align-items:center;justify-content:center;gap:6px;font-size:20px;height:36px;border-radius:4px}
 .lobpanel2 .kv>b.click,.lobpanel2 .kv>b.pre{cursor:pointer}
 .lobpanel2 .kv>b svg{width:44px;height:34px}
 .lobpanel2 .two{display:flex;gap:8px;margin-top:6px}
-.lobpanel2 .two button{flex:1;height:56px;border-radius:6px;font-size:28px;font-weight:700;color:#0c3b33;background:linear-gradient(115deg,#2fe8cb 0 36%,#8ff4e3 36% 46%,#2fe8cb 46% 50%,#8ff4e3 50% 60%,#2fe8cb 60%)}
+.lobpanel2 .two button{flex:1;height:50px;border-radius:6px;font-size:28px;font-weight:700;color:#0c3b33;background:linear-gradient(115deg,#2fe8cb 0 36%,#8ff4e3 36% 46%,#2fe8cb 46% 50%,#8ff4e3 50% 60%,#2fe8cb 60%)}
 .lobpanel2 .two button:disabled{filter:grayscale(1);opacity:.5}
 .startbar2{position:absolute;left:560px;bottom:40px;width:480px;text-align:center}
 .startbar2 .host{font-size:24px;-webkit-text-stroke:5px #000;paint-order:stroke fill;margin-bottom:6px}

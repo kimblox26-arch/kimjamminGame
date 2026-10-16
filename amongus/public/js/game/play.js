@@ -169,7 +169,7 @@ function startScene(map) {
 
 // ---------- 로비 ----------
 function lobbyView() {
-  S.game = null; S.phase = 'lobby'; S.dead = new Set(); S.gone = new Set(); S.sab = null; S.meeting = null; S.possessed = null; S.possessing = null;
+  S.game = null; S.phase = 'lobby'; S.dead = new Set(); S.gone = new Set(); S.sab = null; S.meeting = null; S.possessed = null; S.possessing = null; S.haunt = null;
   G.map = LOBBY;
   startScene(LOBBY);
   Object.assign(scene, { ghost: false, vision: 1, lightsOut: false, inVent: null, frozen: false, speed: S.room.settings.playerSpeed || 1, sabTargets: [], taskStations: new Set(),
@@ -282,7 +282,7 @@ net.on('start', m => {
     chat: [], unread: 0, meeting: null, phase: 'intro', track: null, alerts: [], shifted: null, shiftUntil: 0, vanished: false, vanishUntil: 0,
     cases: [], activeCase: null, caseLimit: optBy('detective', /suspect/i, 3), judge: null, vitals: null, vitalsComms: false, doorlog: null, doorlogComms: false,
     hns: null, hnsCfg: typeof m.hns === 'object' ? m.hns : null, possessed: null, possessing: null, transportUntil: 0, ventOutAt: 0,
-    battery: 0, batteryMax: 0, picking: false, pendingSpawn: null, spawnSeen: false, wheel: null, lastBar: m.bar || null,
+    battery: 0, batteryMax: 0, picking: false, pendingSpawn: null, spawnSeen: false, wheel: null, lastBar: m.bar || null, haunt: null,
   });
   if (m.sabCd !== undefined) S.sabCd = S.sabCdMax = Math.max(0, m.sabCd);
   if (S.team === 'impostor') setCd('kill', m.kill ?? RULES.killStart * 1000);
@@ -307,7 +307,7 @@ net.on('start', m => {
   });
   // 서버가 시작 위치 고르기를 따로 알려 주지 않으면 직접 연다 (대비용)
   const pts = m.spawnPick || m.spawnPoints;
-  if (pts?.length) setTimeout(() => { if (S?.game && !S.spawnSeen && S.phase === 'play') PN.spawnPicker(pts, RULES.spawnPickMs); }, intro + 2500);
+  if (pts?.length) setTimeout(() => { if (S?.game && !S.spawnSeen && S.phase === 'play' && alive()) PN.spawnPicker(pts, RULES.spawnPickMs); }, intro + 2500);
 });
 // 역할별 지역 상태 (배터리 등)
 function initRoleLocal() {
@@ -343,7 +343,7 @@ function gameHud() {
     <div class="critov"></div><div class="critbox hidden"><span class="nm"></span><b class="sec"></b></div>
     <div class="hnsbar hidden"><span class="lab"></span><div class="track"><i class="fill"></i></div><b class="tm"></b><em class="cut"></em></div>
     <div class="danger hidden"><div class="dm"><i></i></div><span>위험</span></div>
-    <div class="arrows"></div><div class="acts2"></div>
+    <div class="arrows"></div><div class="hauntlbl hidden"></div><div class="acts2"></div>
     ${practice ? `<button class="pracb">${HUD.icon('players')}<span>역할·맵 바꾸기</span></button>` : ''}`, 'game');
   const hud = G.hud;
   $('.chatb', hud).onclick = openChat;
@@ -381,7 +381,7 @@ net.on('bar', m => { if (S?.game && m.bar) { S.bar = m.bar; HUD.renderTasks(); }
 // ---------- 매 프레임 (20Hz) ----------
 function syncFrozen() {
   const t = now();
-  const f = !!G.mg || !!G.panel?.freeze || (!!S.game && (S.phase !== 'play' || S.picking || !!S.possessed || !!S.hnsLocked || S.transportUntil > t));
+  const f = !!G.mg || !!G.panel?.freeze || !!S.possessed || !!S.haunt || (!!S.game && (S.phase !== 'play' || S.picking || !!S.hnsLocked || S.transportUntil > t));
   if (scene.frozen !== f) scene.frozen = f;
 }
 function tickCds(dtms) {
@@ -410,6 +410,7 @@ function frame() {
     return;
   }
   reconcile(t);
+  if (S.haunt && (S.dead.has(S.haunt) || S.gone.has(S.haunt) || !scene.players.has(S.haunt) || S.phase !== 'play')) { const next = HUD.hauntList()[0]; setHaunt(S.phase === 'play' ? next : null); }
   HUD.updateHud();
   if (S.track) {
     if (S.track.until < t) { S.track = null; scene.tracks = []; }
@@ -486,8 +487,19 @@ function ability(id) {
     case 'protect': return tg && net.send({ t: 'ability', a: 'protect', id: tg });
     case 'message': return tg && net.send({ t: 'ability', a: 'message', id: tg });
     case 'interrogate': if (tg) { S.pendingInterro = tg; net.send({ t: 'ability', a: 'interrogate', id: tg }); } return;
+    case 'haunt': { // 숨바꼭질 유령: 다음 사람 → … → 마지막 다음은 나
+      const list = HUD.hauntList(), i = list.indexOf(S.haunt);
+      return setHaunt(i + 1 < list.length ? list[i + 1] : null);
+    }
     default: return net.send({ t: 'ability', a: id, ...(tg ? { id: tg } : {}) });
   }
+}
+// 숨바꼭질 유령의 출몰(관전) 대상
+function setHaunt(id) {
+  S.haunt = id || null;
+  if (!S.possessing) scene.viewId = S.haunt || S.you;
+  const el = G.hud && $('.hauntlbl', G.hud);
+  if (el) { el.classList.toggle('hidden', !S.haunt); el.innerHTML = S.haunt ? `현재 출몰 중: <b style="color:${COLORS[lookOf(S.haunt).color ?? 0]?.[1] || '#fff'}">${esc(nameOf(S.haunt))}</b>` : ''; }
 }
 // 미니게임 열기 (실패해도 조작이 막히지 않게)
 function openMinigame(gameId, title, ctx, onDone) {
@@ -1084,7 +1096,7 @@ net.on('resume', m => {
   if (m.sabCd !== undefined) S.sabCd = Math.max(0, m.sabCd);
   S.spawnSeen = false;
   const pts = m.spawnPick || m.spawnPoints;
-  if (pts?.length) setTimeout(() => { if (S?.game && !S.picking && S.phase === 'play' && !S.spawnSeen) PN.spawnPicker(pts, RULES.spawnPickMs); }, 2500);
+  if (pts?.length) setTimeout(() => { if (S?.game && !S.picking && S.phase === 'play' && !S.spawnSeen && alive()) PN.spawnPicker(pts, RULES.spawnPickMs); }, 2500);
   HUD.renderTasks();
 });
 
@@ -1207,7 +1219,7 @@ export const modApi = {
   possess(id) {
     if (!S) return;
     const t = id && id !== S.you ? id : null;
+    // 서버가 possess{by:나, target} 로 확인해 주면 시점·조종 대상이 바뀐다 (net.on('possess'))
     net.send({ t: 'mod', a: 'possess', id: t });
-    scene.viewId = scene.controlId = t || S.you; S.possessing = t;
   },
 };

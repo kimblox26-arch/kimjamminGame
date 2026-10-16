@@ -178,6 +178,7 @@ export function buildActs() {
   if (hns) {
     list.push(['use', 'use', '사용', 0]);
     if (live) list.push(isSeeker() ? ['kill', 'kill', '처치', 1, 'k-kill'] : ['vent', 'vent', '환풍구', 1]);
+    else list.push(['ab:haunt', 'ghost', '출몰', 1, 'k-ab ab-haunt']); // 유령: 살아있는 플레이어 따라다니며 보기
   } else if (imp) {
     list.push(['use', 'sabotage', '방해 공작', 0, 'k-sab']);
     if (live) {
@@ -351,6 +352,8 @@ export function updateHud() {
   if (t - lastTasksDraw > 450 && (S.sab || S.track || S.hns || S.shifted || S.vanished || scene.inVent || ['judge', 'scientist', 'detective'].includes(S.role))) renderTasks();
 }
 
+// 숨바꼭질 유령이 따라갈 수 있는 사람 (살아있는 플레이어, 색 순서)
+export const hauntList = () => [...scene.players.values()].filter(p => p.id !== G.S.you && !G.S.dead.has(p.id) && !G.S.gone.has(p.id)).sort((a, b) => (a.look?.color ?? 0) - (b.look?.color ?? 0)).map(p => p.id);
 // 역할 능력 버튼 하나
 function updateAbility(b, id, meP, live, inPlay, comms, t) {
   const S = G.S, cd = cdLeft(id), cdMax = S.cdMax[id] || fullCd(id) || 1;
@@ -401,6 +404,10 @@ function updateAbility(b, id, meP, live, inPlay, comms, t) {
       break;
     }
     case 'notes': ok = true; sub = S.cases?.length ? `${S.cases.length}` : ''; break;
+    case 'haunt': // 숨바꼭질 유령: 살아있는 플레이어 순서대로 따라가기
+      show = !live; ok = !live && S.phase === 'play' && hauntList().length > 0; on = !!S.haunt;
+      label = S.haunt ? nameOf(S.haunt) : '출몰';
+      break;
     case 'overrule': {
       show = live;
       const J = S.judge;
@@ -597,7 +604,7 @@ export function roleIntro(players, ms, done) {
       <div class="lineup">${lineup.map((p, i) => {
         const k = i - lineup.indexOf(meP), a = Math.abs(k);
         const red = (imp || hns) && S.mates.has(p.id);
-        return `<div class="lc ${k < 0 ? 'l' : ''}" style="--k:${k};--a:${a};z-index:${20 - a}">${crewImg(p.look, {}, 260, 187)}<span style="${red ? 'color:#ff3b3b' : ''}">${esc(p.name)}</span></div>`;
+        return `<div class="lc ${k < 0 ? 'l' : ''}" style="--k:${k};--a:${a};z-index:${20 - a}">${crewImg(p.look, {}, 290, 209)}<span style="${red ? 'color:#ff3b3b' : ''}">${esc(p.name)}</span></div>`;
       }).join('')}</div>${hns ? hnsCards(seek) : ''}</div>`;
   };
   const roleHtml = () => {
@@ -643,7 +650,7 @@ export function drawArrows() {
   if (r?.width && st.width && scene.toScreen) {
     const k = st.width / 1600;
     for (const it of items) {
-      const [sx, sy] = scene.toScreen(it.x, it.y) || [0, 0];
+      const sp = scene.toScreen(it.x, it.y) || [0, 0], sx = sp.x ?? sp[0], sy = sp.y ?? sp[1];
       const px = (sx * r.width) / cv.width + r.left, py = (sy * r.height) / cv.height + r.top;
       const lx = (px - st.left) / k, ly = (py - st.top) / k;
       const cx = 800, cy = 360, inside = lx > 60 && lx < 1540 && ly > 60 && ly < 660;
