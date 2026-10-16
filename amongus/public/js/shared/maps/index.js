@@ -7,14 +7,8 @@ import airship from './airship.js';
 import fungle from './fungle.js';
 import lobby from './lobby.js';
 
-export function inPoly(x, y, poly) {
-  let c = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
-  }
-  return c;
-}
+import { inPoly } from './geom.js';
+export { inPoly };
 const centroid = p => ({ x: p.reduce((s, q) => s + q[0], 0) / p.length, y: p.reduce((s, q) => s + q[1], 0) / p.length });
 const inRect = (x, y, r) => x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h;
 const hitProp = (x, y, o) => (o.r ? Math.hypot(x - o.x, y - o.y) < o.r : inRect(x, y, o));

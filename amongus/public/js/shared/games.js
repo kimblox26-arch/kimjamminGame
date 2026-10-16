@@ -38,6 +38,8 @@ export const TASK_GAMES = {
   slider: '범용: 슬라이더를 목표 값에 맞추기 (params.label)',
   rotate: '범용: 조각을 돌려 맞추기 (params.label)',
   clean: '범용: 문질러 닦기 (params.label, params.icon)',
+  lever: '레버 끝까지 내리기/올리기 (params.up)',
+  wifi: 'Wi-Fi 재부팅 — 레버 내림, 60초 뒤 올림 (2단계)',
 };
 export const SAB_GAMES = {
   hand: '손바닥 스캐너 누르고 있기 (together: 두 곳 동시에)',
@@ -48,7 +50,7 @@ export const SAB_GAMES = {
   seismic: '슬라이더를 선에 맞추기 (폴러스 지진 안정기)',
   crash: '코드/레버로 추락 경로 회피 (에어십)',
   mixup: '버섯 혼란 해제 패널 (펑글)',
-  door_switch: '문 패널 스위치 내리기 (폴러스)',
+  door_switch: '차단기 재설정 — 켜진 스위치 모두 내리기 (폴루스 문)',
   door_panel: '문 잠금 해제 (에어십: 카드/누르기/코드 중 무작위)',
 };
 export const ALL_GAMES = { ...TASK_GAMES, ...SAB_GAMES };

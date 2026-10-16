@@ -10,6 +10,7 @@ export const CAP = 42;              // 벽 윗면 두께
 export const CREW_SC = 1.3;         // 크루원 몸 좌표 → 월드 단위
 export const VENT_W = 124, VENT_H = 72;
 export const FONT = '"Pretendard","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif';
+const p2 = d => new Path2D(d);
 const OL = '#14181c';               // 외곽선
 const OUTDOOR = new Set(['snow', 'dirt', 'grass', 'sand', 'rock']);
 

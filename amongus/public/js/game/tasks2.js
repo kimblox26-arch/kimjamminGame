@@ -357,13 +357,34 @@ export const GAMES2 = {
       if (n >= 8) { c.fix?.(true); done(); }
     };
   },
-  door_switch(el, done) {
-    let v = 0;
-    const s = svg(el, bg(`<rect x="280" y="140" width="60" height="360" rx="24" fill="#0b1a20"/><g class="kn"><rect x="230" y="-36" width="160" height="72" rx="16" fill="url(#mg-red)" stroke="#5a0000" stroke-width="5"/></g>`));
-    msg(el, '레버를 끝까지 내려 문을 여세요');
+  lever(el, done, c) { // 레버를 끝까지 내리기(params.up 이면 올리기)
+    const up = !!P(c, 'up', false);
+    let v = up ? 1 : 0;
+    const s = svg(el, bg(`<rect x="280" y="140" width="60" height="360" rx="24" fill="#0b1a20"/>${T(310, 125, up ? '▲' : '', 30, '#ffd23f')}${T(310, 545, up ? '' : '▼', 30, '#ffd23f')}<g class="kn"><rect x="230" y="-36" width="160" height="72" rx="16" fill="url(#mg-red)" stroke="#5a0000" stroke-width="5"/></g>`));
+    label(el, c, up ? '레버를 끝까지 올리세요' : '레버를 끝까지 내리세요');
     const put = () => s.querySelector('.kn').setAttribute('transform', `translate(0 ${150 + v * 340})`);
     put();
-    dragger(el, { down: () => {}, move: ([, y]) => { v = Math.max(0, Math.min(1, (y - 150) / 340)); put(); }, up: () => { if (v > 0.93) done(); else { v = 0; put(); } } });
+    dragger(el, { down: () => !c.locked?.(), move: ([, y]) => { v = Math.max(0, Math.min(1, (y - 150) / 340)); put(); }, up: () => { if (up ? v < 0.07 : v > 0.93) done(); else { v = up ? 1 : 0; put(); } } });
+  },
+  wifi(el, done, c) { // Wi-Fi 재부팅: 레버 내림 → 60초 → 레버 올림
+    const key = 'au_wifi_' + (c.station || '');
+    let t0 = 0;
+    try { t0 = +sessionStorage.getItem(key) || 0; } catch { /* 저장 불가 */ }
+    if (!c.step) return GAMES2.lever(el, () => { try { sessionStorage.setItem(key, String(Date.now())); } catch { /* 저장 불가 */ } done(); }, { params: { label: '레버를 내려 Wi-Fi를 끄세요 (60초 뒤 다시 켜기)' } });
+    const left = () => Math.ceil((t0 + 60000 - Date.now()) / 1000);
+    const stop = GAMES2.lever(el, () => { msg(el, '재부팅 완료'); done(); }, { params: { up: true }, locked: () => left() > 0 });
+    const tick = animate(() => { const l = left(); msg(el, l > 0 ? `${l}초 후 돌아오세요` : '레버를 올려 Wi-Fi를 켜세요'); if (l <= 0) return false; });
+    return () => { stop?.(); tick(); };
+  },
+  door_switch(el, done) { // 폴루스 문: 차단기 재설정 (빨갛게 켜진 스위치를 모두 내리기)
+    const n = 8, lit = shuffle([...Array(n).keys()]).slice(0, 4), on = new Set(lit);
+    const s = svg(el, bg(`${T(310, 115, '차단기 재설정', 30, '#ffd23f')}${[...Array(n).keys()].map(i => { const x = 75 + (i % 4) * 125, y = 170 + Math.floor(i / 4) * 200;
+      return `<g data-i="${i}" style="cursor:pointer"><rect x="${x}" y="${y}" width="96" height="160" rx="12" fill="#1b2328" stroke="#0b0f12" stroke-width="5"/><circle class="led" cx="${x + 48}" cy="${y + 22}" r="10"/><rect class="sw" x="${x + 26}" width="44" height="70" rx="8" stroke="#111" stroke-width="4"/></g>`; }).join('')}`));
+    msg(el, '켜진 차단기를 모두 내려 문을 여세요');
+    const draw = () => s.querySelectorAll('[data-i]').forEach(g => { const i = +g.dataset.i, y = 170 + Math.floor(i / 4) * 200, u = on.has(i);
+      g.querySelector('.led').setAttribute('fill', u ? '#ff3b3b' : '#3a2222'); const w = g.querySelector('.sw'); w.setAttribute('y', u ? y + 42 : y + 80); w.setAttribute('fill', u ? '#ffd23f' : '#9aa5ab'); });
+    draw();
+    s.onclick = e => { const g = e.target.closest('[data-i]'); if (!g) return; const i = +g.dataset.i; if (on.has(i)) on.delete(i); else on.add(i); sfx('click'); draw(); if (!on.size) done(); };
   },
   door_panel(el, done, c) {
     const pick = Math.floor(Math.random() * 3);
