@@ -669,10 +669,10 @@ export function drawArrows() {
     const vp = scene.players.get(scene.viewId ?? S.you);
     const cx0 = vp ? scr(vp.x, vp.y)[0] : cv.width / 2;
     const css = cv.width !== r.width && Math.abs(cx0 - r.width / 2) < Math.abs(cx0 - cv.width / 2);
-    const fx = css ? 1 : r.width / cv.width, fy = css ? 1 : r.height / cv.height;
+    const kx = css ? 1 : r.width / cv.width, ky = css ? 1 : r.height / cv.height;
     for (const it of items) {
       const [sx, sy] = scr(it.x, it.y);
-      const px = sx * fx + r.left, py = sy * fy + r.top;
+      const px = sx * kx + r.left, py = sy * ky + r.top;
       const lx = (px - st.left) / k, ly = (py - st.top) / k;
       const cx = 800, cy = 360, inside = lx > 60 && lx < 1540 && ly > 60 && ly < 660;
       if (it.k === 'target') { if (inside) html += `<i class="tgt" style="left:${lx}px;top:${ly}px;--c:${it.c}"></i>`; continue; }

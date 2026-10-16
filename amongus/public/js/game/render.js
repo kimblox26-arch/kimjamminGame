@@ -926,3 +926,13 @@ export function propSprite(p, art, s) {
   }
   return e;
 }
+
+// 임무/장비 콘솔: 북쪽 벽 가까이면 벽면에 붙은 패널, 아니면 바닥 콘솔
+function buildConsoles(art) {
+  const m = art.map;
+  return Object.entries(m.stations || {}).filter(([id]) => !['laptop', 'box'].includes(id)).map(([id, s]) => {
+    const w = wallAbove(art, s.x, s.y, 240);
+    return { id, x: s.x, y: s.y, wall: w ? w.y : null, H: w ? w.s.H : 0 };
+  });
+}
+function buildOverlays() { return []; }

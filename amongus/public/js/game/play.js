@@ -86,6 +86,8 @@ export function roomLabel(x, y, map = G.map) {
 }
 const mapIdOf = v => (typeof v === 'string' ? v : v?.id) || null;
 const normTasks = list => (list || []).map(t => ({ ...t, st: t.st || t.stations || [], step: t.step || 0 }));
+// 내 입력이 움직이는 대상 (mod 조종 중이면 그 사람)
+const ctlId = () => (S?.possessing && (scene.players.has(S.possessing) || S.room?.players.some(p => p.id === S.possessing)) ? S.possessing : S?.you);
 const canFree = () => me.status === 'green' && S.room.settings.chatType !== 'quick';
 
 // ---------- 방 입장/퇴장 ----------
@@ -137,7 +139,8 @@ function closeAll() {
   gs?.close?.(); gs = null;
   $$('.modal-back,.chat2,.mapov2,.mg-back').forEach(e => e.remove());
 }
-export const overlay = HUD.overlay, dropOverlay = HUD.dropOverlay;
+// 순환 import 순서와 상관없이 동작하도록 늦게 연결
+export const overlay = html => HUD.overlay(html), dropOverlay = el => HUD.dropOverlay(el);
 
 // ---------- 공통 HUD 뼈대 ----------
 function baseHud(inner, cls = '') {
@@ -173,11 +176,12 @@ function startScene(map) {
 
 // ---------- 로비 ----------
 function lobbyView() {
-  S.game = null; S.phase = 'lobby'; S.dead = new Set(); S.gone = new Set(); S.sab = null; S.meeting = null; S.possessed = null; S.possessing = null; S.haunt = null;
+  S.game = null; S.phase = 'lobby'; S.dead = new Set(); S.gone = new Set(); S.sab = null; S.meeting = null; S.haunt = null;
+  // mod 조종(possess)은 서버에서 로비/게임을 넘어 유지되므로 그대로 둔다
   G.map = LOBBY;
   startScene(LOBBY);
   Object.assign(scene, { ghost: false, vision: 1, lightsOut: false, inVent: null, frozen: false, speed: S.room.settings.playerSpeed || 1, sabTargets: [], taskStations: new Set(),
-    redNames: new Set(), bodies: [], tracks: [], noises: [], mixup: false, doorsClosed: new Set(), hl: null, killId: null, reportId: null, abilityId: null, viewId: S.you, controlId: S.you,
+    redNames: new Set(), bodies: [], tracks: [], noises: [], mixup: false, doorsClosed: new Set(), hl: null, killId: null, reportId: null, abilityId: null, viewId: ctlId(), controlId: ctlId(),
     flashlight: null, hideNames: false });
   scene.players.clear(); scene.visuals?.clear();
   for (const p of S.room.players) scene.setPlayer({ ...p, dead: false, vent: 0, disguise: null, invisible: false, shield: false, moving: false });
@@ -203,7 +207,7 @@ function renderLobby() {
   lp.innerHTML = `<h3>${r.mode === 'local' ? '로컬 로비' : r.mode === 'practice' ? '연습 모드' : '온라인 로비'}</h3>
     ${r.mode === 'online' ? `<div class="rcode"><span>방 코드</span><b>${settings.streamer ? '******' : r.code}</b><button class="copy" title="복사">⧉</button></div>` : ''}
     <div class="l">방 설정</div>
-    <div class="mapban">${mapIcon(mp.id)}<span>${esc(mp.name || s.map)}</span></div>
+    <div class="mapban">${mapIcon(mp.id)}<span>${esc(mp.ko || mp.name || s.map)}</span></div>
     <div class="kv"><span>용량</span><b>${crewSVG({ color: 0 }, { noPet: true })}<span style="color:${n >= s.maxPlayers ? '#f33' : '#fff'}">${n}/${s.maxPlayers}</span></b>
     <span>프리셋</span><b class="pre">${esc(s.preset || '핵심 설정')}</b><span>개인 정보 보호</span><b class="priv ${mine && r.mode === 'online' ? 'click' : ''}">${pv}</b>
     <span>게임 유형</span><b>${s.gameType === 'hns' ? '숨바꼭질' : '클래식'}</b></div>
@@ -285,7 +289,7 @@ net.on('start', m => {
     cdl: {}, cdMax: {}, emergLeft: m.meetings ?? s.emergencyMeetings, emergAt: now() + (m.emerg ?? intro + (+s.emergencyCooldown || 0) * 1000),
     chat: [], unread: 0, meeting: null, phase: 'intro', track: null, alerts: [], shifted: null, shiftUntil: 0, vanished: false, vanishUntil: 0,
     cases: [], activeCase: null, caseLimit: optBy('detective', /suspect/i, 3), judge: null, vitals: null, vitalsComms: false, doorlog: null, doorlogComms: false,
-    hns: null, hnsCfg: typeof m.hns === 'object' ? m.hns : null, possessed: null, possessing: null, transportUntil: 0, ventOutAt: 0,
+    hns: null, hnsCfg: typeof m.hns === 'object' ? m.hns : null, transportUntil: 0, ventOutAt: 0,
     battery: 0, batteryMax: 0, picking: false, pendingSpawn: null, spawnSeen: false, wheel: null, lastBar: m.bar || null, haunt: null, stepAt: {},
   });
   if (m.sabCd !== undefined) S.sabCd = S.sabCdMax = Math.max(0, m.sabCd);
@@ -297,7 +301,7 @@ net.on('start', m => {
   scene.players.clear(); scene.visuals?.clear();
   for (const p of m.players || []) scene.setPlayer({ ...p, dead: false, vent: 0, ventId: null, disguise: null, invisible: false, shield: false, moving: false });
   Object.assign(scene, { ghost: false, inVent: null, lightsOut: false, sabTargets: [], bodies: [], tracks: [], noises: [], mixup: false, doorsClosed: new Set(m.doors?.closed || []),
-    redNames: S.team === 'impostor' || S.game.hns ? new Set(S.mates) : new Set(), viewId: S.you, controlId: S.you, hl: null, killId: null, reportId: null, abilityId: null, taskStations: new Set() });
+    redNames: S.team === 'impostor' || S.game.hns ? new Set(S.mates) : new Set(), viewId: ctlId(), controlId: ctlId(), hl: null, killId: null, reportId: null, abilityId: null, taskStations: new Set() });
   if (m.doors?.cd) for (const [room, ms] of Object.entries(m.doors.cd)) { S.doorCd[room] = now() + ms; S.doorCdMax[room] = RULES.doorCd * 1000; }
   applyVision();
   stat('started'); stat(isImp() ? 'impGames' : 'crewGames');
@@ -602,10 +606,10 @@ net.on('vent', m => {
   if (!S?.game) return;
   const p = scene.players.get(m.id), prev = p?.ventId;
   if (p) { p.vent = m.v ? 1 : 0; p.ventId = m.v || null; }
-  const fx = { id: m.id, vent: m.v || prev, x: m.x, y: m.y };
-  if (m.a === 'in') fx('ventIn', fx);
-  else if (m.a === 'out') fx('ventOut', fx);
-  else if (m.a === 'move') fx('ventMove', fx);
+  const vd = { id: m.id, vent: m.v || prev, x: m.x, y: m.y };
+  if (m.a === 'in') fx('ventIn', vd);
+  else if (m.a === 'out') fx('ventOut', vd);
+  else if (m.a === 'move') fx('ventMove', vd);
   if (m.id === S.you) {
     scene.inVent = m.v || null;
     if (isFinite(m.x)) scene.teleport(S.you, m.x, m.y);
@@ -1052,11 +1056,11 @@ net.on('result', m => {
 });
 // 판사 판결 연출: 망치가 내려치고 유리가 깨짐 ("The Judge has spoken")
 function judgeEffect() {
-  const fx = meet && $('.judgefx', meet);
-  if (!fx) return;
-  fx.innerHTML = `<div class="gv">${HUD.icon('overrule')}</div><svg class="jglass" viewBox="0 0 1600 720" preserveAspectRatio="none">${crackLines()}</svg>
+  const box = meet && $('.judgefx', meet);
+  if (!box) return;
+  box.innerHTML = `<div class="gv">${HUD.icon('overrule')}</div><svg class="jglass" viewBox="0 0 1600 720" preserveAspectRatio="none">${crackLines()}</svg>
     <div class="jtxt">판사가 판결을 내렸습니다</div>`;
-  fx.classList.add('on');
+  box.classList.add('on');
   setTimeout(() => HUD.SND.gavel(), 380);
 }
 function crackLines() {
