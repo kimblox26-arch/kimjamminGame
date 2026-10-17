@@ -1,33 +1,10 @@
 'use strict';
-// 직접 그린 벡터 그림 (픽셀 아님). 버튼 아이콘과 타워 화면의 건물로 함께 쓴다.
+// 직접 그린 벡터 그림 (픽셀 아님). 버튼 아이콘과 타워 화면의 상점·분양소로 함께 쓴다.
 
 const ART = (() => {
   const svg = (w, h, vb, body) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${vb}">${body}</svg>`;
   const shadow = '<ellipse cx="60" cy="104" rx="54" ry="5" fill="#000" opacity=".2"/>';
-
-  const school = svg(240, 220, '0 0 120 110', `
-    <defs>
-      <linearGradient id="schW" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ef8a5c"/><stop offset="1" stop-color="#c0522f"/></linearGradient>
-      <linearGradient id="schR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6f93e6"/><stop offset="1" stop-color="#3c58ad"/></linearGradient>
-    </defs>${shadow}
-    <rect x="8" y="46" width="104" height="56" rx="3" fill="url(#schW)" stroke="#5a2414" stroke-width="2.5"/>
-    <g fill="#c86a45" opacity=".55"><rect x="12" y="66" width="10" height="3"/><rect x="26" y="90" width="12" height="3"/><rect x="86" y="70" width="10" height="3"/><rect x="96" y="92" width="10" height="3"/></g>
-    <rect x="4" y="40" width="112" height="9" rx="3" fill="url(#schR)" stroke="#23336b" stroke-width="2.5"/>
-    <g fill="#bfe6ff" stroke="#fff" stroke-width="2">
-      <rect x="14" y="55" width="12" height="11" rx="1.5"/><rect x="29" y="55" width="12" height="11" rx="1.5"/>
-      <rect x="79" y="55" width="12" height="11" rx="1.5"/><rect x="94" y="55" width="12" height="11" rx="1.5"/>
-      <rect x="14" y="76" width="12" height="11" rx="1.5"/><rect x="29" y="76" width="12" height="11" rx="1.5"/>
-      <rect x="79" y="76" width="12" height="11" rx="1.5"/><rect x="94" y="76" width="12" height="11" rx="1.5"/>
-    </g>
-    <rect x="42" y="22" width="36" height="80" fill="#f6ead2" stroke="#5a2414" stroke-width="2.5"/>
-    <path d="M37 24 L60 5 L83 24 Z" fill="url(#schR)" stroke="#23336b" stroke-width="2.5" stroke-linejoin="round"/>
-    <circle cx="60" cy="38" r="9" fill="#fff" stroke="#5a2414" stroke-width="2.5"/>
-    <path d="M60 38 V32 M60 38 L64.5 40" stroke="#2b2b2b" stroke-width="2" stroke-linecap="round"/>
-    <path d="M51 102 V84 a9 9 0 0 1 18 0 V102 Z" fill="#7a4622" stroke="#3a1d0b" stroke-width="2.2"/>
-    <line x1="60" y1="76" x2="60" y2="102" stroke="#3a1d0b" stroke-width="1.6"/>
-    <line x1="13" y1="40" x2="13" y2="16" stroke="#5a4636" stroke-width="2.2" stroke-linecap="round"/>
-    <path d="M13 17 L30 21 L13 26 Z" fill="#ff5a4a" stroke="#8a1f16" stroke-width="1.6" stroke-linejoin="round"/>`);
 
   let stripes = '';
   for (let i = 0; i < 8; i++) {
@@ -52,23 +29,6 @@ const ART = (() => {
   for (let r = 0; r < 7; r++) for (let c = 0; c < 3; c++) grid += `<rect x="${42.5 + c * 12.5}" y="${18 + r * 10}" width="9" height="6.5" rx="1" fill="#d9f2ff" opacity="${0.55 + ((r + c) % 3) * 0.15}"/>`;
   let wing = '';
   for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) wing += `<rect x="${14 + c * 13}" y="${54 + r * 10}" width="9" height="6" rx="1" fill="#e8f7ff" opacity=".8"/><rect x="${82 + c * 13}" y="${42 + r * 12}" width="9" height="7" rx="1" fill="#e8f7ff" opacity=".8"/>`;
-  const company = svg(240, 220, '0 0 120 110', `
-    <defs>
-      <linearGradient id="cmpG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7cc3f5"/><stop offset="1" stop-color="#2f6fb5"/></linearGradient>
-      <linearGradient id="cmpS" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9aa9bb"/><stop offset="1" stop-color="#5d6c80"/></linearGradient>
-    </defs>${shadow}
-    <rect x="10" y="48" width="32" height="54" rx="2" fill="url(#cmpS)" stroke="#1d2f4f" stroke-width="2.5"/>
-    <rect x="78" y="36" width="32" height="66" rx="2" fill="url(#cmpS)" stroke="#1d2f4f" stroke-width="2.5"/>
-    ${wing}
-    <rect x="38" y="12" width="44" height="90" rx="2" fill="url(#cmpG)" stroke="#1d2f4f" stroke-width="2.5"/>
-    ${grid}
-    <path d="M42 14 L56 14 L42 40 Z" fill="#fff" opacity=".35"/>
-    <line x1="60" y1="12" x2="60" y2="1" stroke="#1d2f4f" stroke-width="2.2"/>
-    <circle cx="60" cy="2" r="2.4" fill="#ff4a3a"/>
-    <rect x="49" y="86" width="22" height="16" rx="1.5" fill="#1d3a5f" stroke="#0e1d33" stroke-width="2"/>
-    <line x1="60" y1="86" x2="60" y2="102" stroke="#7cc3f5" stroke-width="1.5"/>
-    <rect x="44" y="80" width="32" height="5" rx="1.5" fill="#ffd23a" stroke="#8a5a00" stroke-width="1.4"/>`);
-
   let flags = '';
   const fc = ['#ff5a4a', '#ffd23a', '#4ab0ff', '#7ed957', '#ff7aa8', '#b07cff'];
   for (let i = 0; i < 6; i++) {
@@ -118,7 +78,10 @@ const ART = (() => {
     <path d="M70 74 c10 -15 34 -17 46 -6" fill="none" stroke="#3a2410" stroke-width="5" stroke-linecap="round"/>
     <path d="M80 26 q18 -7 34 0" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".6"/>`);
 
-  return { school, shop, company, office, lock, check, hand, fist };
+  const arrow = svg(64, 40, '0 0 64 40', `
+    <path d="M4 20 L26 3 V13 H60 V27 H26 V37 Z" fill="#ffffff" stroke="#2b1d0e" stroke-width="4" stroke-linejoin="round"/>`);
+
+  return { shop, office, lock, check, hand, fist, arrow };
 })();
 
 const svgURL = s => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
