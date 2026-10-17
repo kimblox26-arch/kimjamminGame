@@ -44,7 +44,7 @@ const UNIT = {
   mom: { dmg: [7, 9], cooldown: 0.95, range: 215, proj: 'slipper' },
   dad: { dmg: [6, 8, 8], cooldown: 1.3, range: 235, proj: 'booger' },
   baby: { dmg: [3], cooldown: 0.8, range: 195, proj: 'bottle' },
-  jam: { dmg: [13], cooldown: 0.85, range: 100, melee: true },   // 애기 강화 → Lv.2 잼민이: 흙길에 서서 주먹으로
+  jam: { dmg: [13], cooldown: 0.85, range: 150, melee: true },   // 애기 강화 → Lv.2 잼민이: 흙길에 서서 주먹으로
 };
 const MOM_AWAKE_MUL = 3;               // 아빠가 가장이 되면 엄마 각성: 공격력 3배
 const GUARD_GAP = 50;                  // 아군 잼민이 앞에서 적이 멈춰 서는 거리(경로 길이)
@@ -255,6 +255,8 @@ const maxFamily = () => (state.houseLevel ? HOUSE_LV[state.houseLevel].maxFamily
 const yardCount = () => family.filter(f => f.type !== 'jam').length
   + (cut && cut.kind === 'baby' ? 1 : 0) + (cut && cut.kind === 'build' && !family.length ? 2 : 0);
 const canAddFamily = () => state.houseLevel > 0 && yardCount() < maxFamily();
+// 가족 생성(엄마·아빠)은 첫 아기를 만들기 전까지 아기 자리 하나를 남겨 둔다(아빠 Lv.2 → 학교·회사 진행이 막히지 않게)
+const canAddParent = () => canAddFamily() && (state.babiesMade > 0 || yardCount() < maxFamily() - 1);
 const lvInfo = () => HOUSE_LV[Math.max(1, state.houseLevel)];
 
 // ───────────────── 사진(스프라이트) 전환 ─────────────────
@@ -544,12 +546,12 @@ function pathPoint(dist, lat) {
   const p = pointAt(dist);
   return { x: p.x - p.dy * lat, y: p.y + p.dx * lat + 26, dist: ((dist % PATH.len) + PATH.len) % PATH.len };
 }
-const jamFree = (pt, self) => !family.some(g => g !== self && g.type === 'jam' && Math.hypot(g.slotX - pt.x, g.slotY - pt.y) < 52);
+const jamFree = (pt, self) => !family.some(g => g !== self && g.type === 'jam' && Math.hypot(g.slotX - pt.x, g.slotY - pt.y) < 36);
 // 입구 자리: 적이 나오는 오른쪽 아래 모서리 바로 앞. 여럿이면 길 폭으로 나란히 서고, 그다음은 한 줄 뒤에.
 function entranceSpot(self) {
   for (let row = 0; row < 6; row++) {
-    for (const lat of [0, -30, 30]) {
-      const pt = pathPoint(ENTRANCE_DIST + row * 56, lat);
+    for (const lat of [0, -40, 40]) {
+      const pt = pathPoint(ENTRANCE_DIST + row * 46, lat);
       if (jamFree(pt, self)) return pt;
     }
   }
@@ -1166,7 +1168,7 @@ function updateSpawner(dt) {
   const alive = enemies.filter(e => !e.dead).length;
   if (alive >= MAX_ENEMIES) { spawner.timer = 0.25; return; }
   // 입구가 막혀 있으면(앞 잼민이가 아직 입구에 있거나 아군에게 막혀 있으면) 비워질 때까지 기다림
-  if (enemies.some(e => !e.dead && pathGap(e.dist, 0) < 44)) { spawner.timer = 0.1; return; }
+  if (enemies.some(e => !e.dead && pathGap(e.dist, 0) < 22)) { spawner.timer = 0.1; return; }
   spawnEnemy();
   spawner.timer = ENEMY_LV[state.enemyLevel].every;
 }
@@ -1208,7 +1210,8 @@ function towerBounds(page = 0) {
 }
 function clampHouse(cx, bottom, lv) {
   const b = towerBounds(0), { w, h } = houseSize(lv);
-  const minX = b.x0 + w / 2 + 6, maxX = b.x1 - w / 2 - 6;
+  const half = w / 2 + 36;                              // 이름표가 집보다 조금 넓다
+  const minX = b.x0 + half, maxX = b.x1 - half;
   const minB = b.y0 + h + 178, maxB = b.y1 - 106;       // 위: 이름표·윗판 / 아래: 타워 추가 판
   return {
     cx: minX < maxX ? clamp(cx, minX, maxX) : (b.x0 + b.x1) / 2,
@@ -1606,16 +1609,19 @@ function doorOpen() {
 const BANNER_TEXT = { school: '학교를 지을 수 있습니다', shop: '상점을 지을 수 있습니다', company: '회사를 지을 수 있습니다', office: '분양소를 지을 수 있습니다' };
 function showBanners() {
   clearBanners();
-  const w = Math.min(view.cw * 0.72, 380);
+  const x0 = view.side ? Math.max(0, view.ox) : 0, x1 = view.side ? Math.min(view.cw, view.ox + MAP_W * view.s) : view.cw;
+  const aw = x1 - x0, w = Math.min(aw * 0.8, 380), fs = clamp(w * 0.075, 14, 28);
+  const top0 = Math.max(view.ch * 0.17, view.moneyBottom + 10);
+  const step = Math.min(88, Math.max(fs * 2.3, (view.ch * 0.8 - top0) / 4));
   BANNER_ITEMS.forEach((k, i) => {
     const el = document.createElement('div');
     el.className = 'banner ' + (i % 2 ? 'from-right' : 'from-left');
     el.textContent = BANNER_TEXT[k];
     el.dataset.item = k;
     el.style.width = w + 'px';
-    el.style.fontSize = clamp(w * 0.085, 16, 30) + 'px';
-    el.style.left = (i % 2 ? view.cw - w - view.cw * 0.04 : view.cw * 0.04) + 'px';
-    el.style.top = (view.ch * 0.17 + i * Math.min(88, view.ch * 0.12)) + 'px';
+    el.style.fontSize = fs + 'px';
+    el.style.left = (i % 2 ? x1 - w - aw * 0.04 : x0 + aw * 0.04) + 'px';
+    el.style.top = (top0 + i * step) + 'px';
     el.style.animationDelay = (i * 0.18) + 's';
     ui.banners.appendChild(el);
   });
@@ -2085,7 +2091,8 @@ function layoutFor(scene, cw, ch) {
   const s = Math.min(cover, fit);
   const visW = cw / s, visH = ch / s;
   const left = visW >= MAP_W ? (MAP_W - visW) / 2 : clamp((need.x0 + need.x1) / 2 - visW / 2, 0, MAP_W - visW);
-  const top = visH >= MAP_H ? (MAP_H - visH) / 2 : clamp((need.y0 + need.y1) / 2 - visH / 2, 0, MAP_H - visH);
+  let top = visH >= MAP_H ? (MAP_H - visH) / 2 : clamp((need.y0 + need.y1) / 2 - visH / 2, 0, MAP_H - visH);
+  if (scene === 'battle' && cw <= ch && visH < MAP_H) top = clamp(Math.min(top, 268 - 66 / s), Math.max(0, need.y1 - visH), top);
   return { s, ox: -left * s, oy: -top * s };
 }
 
@@ -2236,17 +2243,24 @@ function layoutUI() {
     sq = { cx, w: ww, h: bh, top: wide.top - 12 - bh };
     up = { cx, w: ww, h: 50, top: sq.top - 12 - 50 };
     nav = { cx, w: ww, h: 52, top: wide.top - 12 - 52 };
+    ui.moneyBox.style.left = cx + 'px';
   } else {
-    // 세로 화면: 사용자가 표시한 자리(맵 좌표)
+    // 세로 화면: 사용자가 표시한 자리(맵 좌표). 흙길 아래 가장자리와 화면 아래 사이에 쌓고,
+    // 자리가 모자라면 버튼 높이를 줄인다(업그레이드 막대가 길을 가리지 않게).
     const s = view.s, X = x => x * s + view.ox, Y = y => y * s + view.oy;
-    wide = { cx: X((SLOT_WIDE.x0 + SLOT_WIDE.x1) / 2), w: clamp((SLOT_WIDE.x1 - SLOT_WIDE.x0) * s, 170, 300), h: clamp((SLOT_WIDE.y1 - SLOT_WIDE.y0) * s, 42, 60) };
-    wide.top = Math.min(Y(SLOT_WIDE.y0), bottom - wide.h);
+    const pathBot = Y(PATH_CORNERS[0][1] + PATH_HALF) + 4;
+    let wh = clamp((SLOT_WIDE.y1 - SLOT_WIDE.y0) * s, 42, 60);
+    let bh = clamp((SLOT_SQ.y1 - SLOT_SQ.y0) * s * 0.74, 78, 124);
+    let uh = clamp((SLOT_UP.y1 - SLOT_UP.y0) * s, 40, 56);
+    const fitK = (bottom - pathBot - 18) / (wh + bh + uh);
+    if (fitK < 1) { const f = Math.max(fitK, 0.55); wh *= f; bh *= f; uh *= f; }
+    wide = { cx: X((SLOT_WIDE.x0 + SLOT_WIDE.x1) / 2), w: clamp((SLOT_WIDE.x1 - SLOT_WIDE.x0) * s, 170, 300), h: wh };
+    wide.top = Math.min(Y(SLOT_WIDE.y0), bottom - wh);
     const fw = clamp((SLOT_SQ.x1 - SLOT_SQ.x0) * s, 128, 210);
-    const bh = clamp((SLOT_SQ.y1 - SLOT_SQ.y0) * s * 0.74, 78, 124);
     sq = { cx: X((SLOT_SQ.x0 + SLOT_SQ.x1) / 2), w: fw, h: bh, top: Math.min(Y(SLOT_SQ.y1) - bh, wide.top - 10 - bh) };
-    const uh = clamp((SLOT_UP.y1 - SLOT_UP.y0) * s, 40, 56);
     up = { cx: X((SLOT_UP.x0 + SLOT_UP.x1) / 2), w: clamp((SLOT_UP.x1 - SLOT_UP.x0) * s, 200, 320), h: uh };
-    up.top = Math.min(Y(SLOT_UP.y0), sq.top - 8 - uh);
+    up.top = Math.max(pathBot, Math.min(Y(SLOT_UP.y0), sq.top - 8 - uh));
+    ui.moneyBox.style.left = '';
     const left = wide.cx - wide.w / 2 - 10, nw = clamp(left - 10, 64, 120);
     nav = { cx: Math.max(10 + nw / 2, left - nw / 2), w: nw, h: wide.h, top: wide.top };
   }
@@ -2261,7 +2275,8 @@ function layoutUI() {
   ui.moneyBox.style.fontSize = clamp(view.cw * 0.07, 22, 34) + 'px';
   view.upTop = up.top;
   view.bottomUiTop = view.side ? view.ch : wide.top;   // 가로 화면은 버튼이 맵 옆이라 아래를 막지 않음
-  view.moneyBottom = ui.moneyBox.getBoundingClientRect().bottom || 60;
+  // 돈 표시 아래 끝(나타나는 중인 transform은 무시). 가로 화면은 돈이 맵 옆이라 맵 위를 막지 않는다.
+  view.moneyBottom = view.side ? 0 : (ui.moneyBox.offsetTop + ui.moneyBox.offsetHeight || 60);
 }
 
 let goScene = null, goLevel = null;
@@ -2285,7 +2300,7 @@ function updateUI() {
   ui.nav.querySelector('.label').textContent = state.town === 1 ? '집' : '건물';
   ui.nav.classList.toggle('busy', !!cut);
   // 가족 생성: 엄마·아빠를 부른다 (아기는 타워 추가로)
-  const full = state.houseLevel > 0 && !canAddFamily();
+  const full = state.houseLevel > 0 && !canAddParent();
   ui.family.classList.toggle('locked', !state.houseLevel || full);
   ui.family.classList.toggle('poor', state.houseLevel > 0 && !full && state.money < PRICE.family);
   ui.family.querySelector('.costVal').textContent = !state.houseLevel ? '집 필요' : full ? '최대' : PRICE.family;
@@ -2339,7 +2354,7 @@ ui.family.addEventListener('click', () => {
     ui.go.classList.remove('nudge'); void ui.go.offsetWidth; ui.go.classList.add('nudge');
     return;
   }
-  if (!canAddFamily()) { shakeEl(ui.family); return; }
+  if (!canAddParent()) { shakeEl(ui.family); return; }
   if (state.money < PRICE.family) { shakeEl(ui.family); shakeEl(ui.moneyBox); return; }
   state.money -= PRICE.family;
   const n = t => family.filter(f => f.type === t).length;
@@ -2443,11 +2458,13 @@ canvas.addEventListener('pointerdown', ev => {
     return;
   }
   if (!cut) {                                        // 화면에 보이는 판만 눌린다 (넓은 화면은 두 칸이 함께 보임)
-    if (topPill() && house.landed && hitRect(topRect(), p)) { tapTop(); return; }
-    if (hitRect(addRect(), p)) { tapAdd(); return; }
-    for (const b of buildings) if (BUILDING[b.kind].up && b.age > 0.6 && hitRect(upRect(b), p)) { tapUpgrade(b); return; }
+    const right = view.side ? view.ox + MAP_W * view.s : view.cw;   // 가로 화면: 오른쪽 버튼 줄 밑은 안 보이는 곳
+    const tap = r => { const cx = (r.x + r.w / 2) * view.s + view.ox + towerPanPx(); return cx > 0 && cx < right && hitRect(r, p); };
+    if (topPill() && house.landed && tap(topRect())) { tapTop(); return; }
+    if (tap(addRect())) { tapAdd(); return; }
+    for (const b of buildings) if (BUILDING[b.kind].up && b.age > 0.6 && upState(b) !== 'done' && tap(upRect(b))) { tapUpgrade(b); return; }
     for (const kind of TOWN_ORDER) {
-      if (state.unlocked[kind] && !state.built[kind] && hitRect(buildRect(kind), p)) { tapBuild(kind); return; }
+      if (state.unlocked[kind] && !state.built[kind] && tap(buildRect(kind))) { tapBuild(kind); return; }
     }
   }
   const b = [...buildings].sort((a, c) => c.bottom - a.bottom).find(o => hitRect(buildingRect(o), p));
