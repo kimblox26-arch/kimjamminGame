@@ -326,4 +326,5 @@ function frame(now) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);
-window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg };
+window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, origin, resetWorld };
+window.__origin = origin;
