@@ -28,6 +28,7 @@
   <div class="info">
     <div id="h-state" class="state">지상</div>
     <div class="row"><span>고도</span><b id="h-alt">0 m</b></div>
+    <div class="row"><b id="h-layer">대류권</b></div>
   </div>
   <div class="perf"><span id="h-fps">0 FPS</span> <span id="h-res" class="dim"></span></div>
   <button id="btn-mute" class="mute" title="소리 (M)">🔊</button>
@@ -43,7 +44,9 @@
     <li><kbd>Shift</kbd> 지상: 질주 (스태미나) · 비행: 가속 → <b>음속 돌파 → 보우쇼크</b></li>
     <li><kbd>Z</kbd> 느리게 비행 · 지상에선 살금살금</li>
     <li><kbd>Q</kbd>/<kbd>E</kbd> 배럴 롤 · 옆돌기 &nbsp; <kbd>R</kbd> 공중제비</li>
-    <li>빠르게 땅에 꽂히면 <b>슈퍼히어로 착지</b></li>
+    <li>빠르게 땅에 꽂히면 <b>슈퍼히어로 착지</b> · 더 빠르면 크레이터, 도시가 날아감</li>
+    <li>계속 위로 올라가면 <b>우주</b> → 은하·달·태양. 우주에서 부스트하면 광속을 넘음</li>
+    <li>엄청난 속도로 지구/달에 돌진하면 <b>행성 폭발</b>, 태양에 들어가면 <b>초신성</b></li>
     <li><kbd>휠</kbd> 줌 · <kbd>M</kbd> 소리 · <kbd>P</kbd> 120FPS 제한 · <kbd>H</kbd> 도움말</li>
   </ul>
 </div>
@@ -57,6 +60,7 @@
 </div>
 
 <div id="toast" class="toast"></div>
+<button id="reset" class="reset" hidden>지구 복원 (Enter)</button>
 
 <!-- 터치 조작 -->
 <div id="touch">

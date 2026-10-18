@@ -7,6 +7,12 @@ import { GameAudio } from './audio.js';
 import { Player } from './player.js';
 import { CameraRig } from './camera.js';
 import { Input } from './input.js';
+import * as terrainMod from './terrain.js';
+import { Terrain } from './terrain.js';
+import { City } from './city.js';
+import { Space } from './space.js';
+import { Cosmic } from './cosmic.js';
+import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT } from './frame.js';
 
 const SIM_HZ = 120;
 const STEP = 1 / SIM_HZ;
@@ -29,19 +35,27 @@ renderer.setPixelRatio(pixelRatio);
 renderer.setSize(innerWidth, innerHeight, false);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 30000);
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 2e6);
 camera.position.set(0, 2.5, -8);
 
 // ── 모듈 ──
 // 해: 스폰 카메라의 오른쪽 뒤, 고도 30° → 캐릭터 면마다 명암이 갈려 하얀 바닥 위에서도 형태가 또렷함
-const sunDir = new THREE.Vector3(-0.66, 0.5, -0.56).normalize();
+const sunDir = SUN_DIR.clone();
 const world = new World(renderer, scene, { quality, sunDir });
+const terrain = new Terrain(renderer, scene, { quality, sunDir });
+const city = new City(renderer, scene, { quality, sunDir });
+const space = new Space(renderer, { quality });
 world.params.sunIntensity = 2.75;
 world.params.hemiIntensity = 1.05;
 world.applyParams();
 const post = new Post(renderer, scene, camera, { quality });
+post.attachSpace(space.scene, space.camera);
 const audio = new GameAudio();
 const rig = new CameraRig(camera);
+rig.groundAt = (x, z) => {
+  const ax = x + origin.x, az = z + origin.z;
+  return Math.max(terrainMod.heightAt(ax, az), terrainMod.waterLevelAt(ax, az), city.roofAt(ax, az)) - origin.y;
+};
 
 let timeScale = 1, hitStopT = 0, hitStopScale = 1;
 let flash = 0;
@@ -56,11 +70,59 @@ const hooks = {
   },
 };
 const fx = new FX(scene, camera, hooks, { quality, sunDir });
+const cosmic = new Cosmic(space, hooks, { quality });
+const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3();
+let earthGone = false;
 const game = {
-  fx, audio, hooks,
+  fx, audio, hooks, cosmic, city,
+  terrain: terrainMod,
   hitStop(dur, scale) { hitStopT = Math.max(hitStopT, dur); hitStopScale = scale; },
+  // 천체 충돌: 지구/달 폭발, 해 초신성
+  planetImpact(name, pl, dirLocal) {
+    const ax = pl.pos.x + origin.x, az = pl.pos.z + origin.z;
+    localToPlanetQuat(ax, az, _qP);
+    _dP.copy(dirLocal).normalize().applyQuaternion(_qP);
+    hooks.flash(1);
+    hooks.shake(1);
+    audio.play('sonicBoom', 1);
+    if (name === 'sun') { cosmic.supernova(); toast('태양 초신성 폭발!'); return; }
+    cosmic.explode(name, _dP);
+    if (name === 'earth') {
+      earthGone = true;
+      pl.hidden = true;
+      pl.avatar.root.visible = false;
+      post.setSpaceOnly(true);
+      $('reset').hidden = false;
+      toast('지구 파괴!');
+    } else toast('달 파괴!');
+  },
 };
 const player = new Player(scene, game);
+// 스폰: 한강 북쪽 둔치 공원
+function spawn() {
+  if (origin.lengthSq() > 0) rebase(-origin.x, -origin.y, -origin.z);
+  player.pos.set(0, terrainMod.heightAt(0, 0) + 1.0, 0);
+  player.prevPos.copy(player.pos);
+  player.vel.set(0, 0, 0);
+  player.mode = 'ground';
+  player.hidden = false;
+  player.moonGone = false;
+  player.avatar.root.visible = true;
+  player.snapshot(player.snapCur);
+  player.copySnap(player.snapPrev, player.snapCur);
+}
+spawn();
+function resetWorld() {
+  cosmic.reset();
+  city.restoreAll();
+  earthGone = false;
+  post.setSpaceOnly(false);
+  $('reset').hidden = true;
+  spawn();
+  rig.first = true;
+  toast('지구 복원');
+}
+$('reset')?.addEventListener('click', resetWorld);
 
 const ui = {
   joy: $('joy'), knob: $('knob'),
@@ -76,6 +138,7 @@ input.onKey = (code) => {
   if (code === 'KeyM') { audio.muted = !audio.muted; toast(audio.muted ? '소리 끔' : '소리 켬'); }
   if (code === 'KeyH') $('help').classList.toggle('hide');
   if (code === 'KeyP') { fpsCap = !fpsCap; toast(fpsCap ? 'FPS 제한: 120' : 'FPS 제한: 없음 (모니터 주사율)'); }
+  if (code === 'Enter' && (earthGone || player.moonGone)) resetWorld();
 };
 $('btn-mute')?.addEventListener('click', () => { audio.muted = !audio.muted; $('btn-mute').textContent = audio.muted ? '🔇' : '🔊'; });
 let toastT = 0;
@@ -99,7 +162,7 @@ resize();
 // ── HUD ──
 const hud = {
   speed: $('h-speed'), unit: $('h-unit'), mach: $('h-mach'), alt: $('h-alt'), state: $('h-state'),
-  fps: $('h-fps'), bar: $('h-bar'), res: $('h-res'),
+  fps: $('h-fps'), bar: $('h-bar'), res: $('h-res'), layer: $('h-layer'),
 };
 const stamUi = { el: $('stam'), fill: $('stam-fill'), v: -1, ex: null, full: null };
 function updateStamina() {
@@ -115,11 +178,15 @@ function updateHud(dt, fps) {
   hudT -= dt;
   if (hudT > 0) return;
   hudT = 0.08;
-  const kmh = player.speed * 3.6;
-  hud.speed.textContent = kmh < 100 ? kmh.toFixed(0) : Math.round(kmh).toLocaleString();
-  hud.mach.textContent = 'MACH ' + player.mach.toFixed(2);
+  const v = player.speed;
+  if (v < 1000) { hud.speed.textContent = Math.round(v * 3.6).toLocaleString(); hud.unit.textContent = 'km/h'; }
+  else if (v < 0.01 * C_LIGHT) { hud.speed.textContent = (v / 1000).toLocaleString(undefined, { maximumFractionDigits: v < 1e4 ? 2 : 0 }); hud.unit.textContent = 'km/s'; }
+  else { hud.speed.textContent = (v / C_LIGHT).toLocaleString(undefined, { maximumFractionDigits: 2 }); hud.unit.textContent = '× 광속'; }
+  hud.mach.textContent = player.inSpace ? '진공' : 'MACH ' + player.mach.toFixed(2);
   hud.mach.classList.toggle('super', player.mach >= 1);
-  hud.alt.textContent = Math.max(0, player.pos.y - 1).toFixed(0) + ' m';
+  const altM = player.pos.y + origin.y - 1;
+  hud.alt.textContent = altM < 10000 ? Math.max(0, altM).toFixed(0) + ' m' : Math.round(altM / 1000).toLocaleString() + ' km';
+  hud.layer.textContent = altM < 12000 ? '대류권' : altM < 50000 ? '성층권' : altM < 80000 ? '중간권' : altM < ATMO_TOP ? '열권' : altM < 3e7 ? '지구 궤도' : '우주';
   let st = STATE_NAME[player.mode];
   if (player.mode === 'fly') {
     if (player.mach >= 1.6) st = '극초음속 · 보우쇼크';
@@ -132,7 +199,7 @@ function updateHud(dt, fps) {
   else if (player.mode === 'ground' && player.sprinting) st = '질주';
   if (player.trick) st = { roll: '배럴 롤', flip: '공중제비', cart: '옆돌기' }[player.trick.type];
   hud.state.textContent = st;
-  hud.bar.style.transform = `scaleX(${Math.min(1, player.mach / 4.4).toFixed(3)})`;
+  hud.bar.style.transform = `scaleX(${Math.min(1, Math.log10(1 + v) / 11).toFixed(3)})`;
   hud.fps.textContent = fps.toFixed(0) + ' FPS';
   hud.fps.classList.toggle('good', fps >= 115);
   hud.res.textContent = '×' + pixelRatio.toFixed(2);
@@ -149,6 +216,23 @@ let failPR = Infinity, failT = 0;
 const rafSamples = new Float32Array(60);
 let rafN = 0, measured = false;
 const elapsed = { t: 0 };
+const camAbs = new THREE.Vector3();
+// 지구 폭발 연출: 우주 장면만, cosmic 이 제안하는 위치에서 바라봄
+const cine = { active: false, planetPosMeters: new THREE.Vector3(), lookAtPlanetMeters: new THREE.Vector3() };
+const _cineCam = new THREE.PerspectiveCamera(), _cf = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cm = new THREE.Matrix4();
+function cinematic(dt) {
+  if (cosmic.cameraHint) cosmic.cameraHint(cine);
+  if (!cine.active || cine.planetPosMeters.lengthSq() === 0) cine.planetPosMeters.set(0, 6.5e7, 2.5e7), cine.lookAtPlanetMeters.set(0, 0, 0);
+  const P = cine.planetPosMeters;
+  planetToFlat(P.x, P.y, P.z, _cf);
+  // 행성 좌표에서 목표를 보는 방향 → 지역 좌표 카메라 방향으로 환산
+  _cm.lookAt(P, cine.lookAtPlanetMeters, _cineCam.up.set(0, 1, 0));
+  _cq.setFromRotationMatrix(_cm);
+  localToPlanetQuat(_cf.x, _cf.z, _qP);
+  _cineCam.quaternion.copy(_qP.invert()).multiply(_cq);
+  _cineCam.fov = 55; _cineCam.aspect = camera.aspect; _cineCam.updateProjectionMatrix();
+  space.update(dt, _cineCam, _cf, _cf.y);
+}
 const dbg = { paused: false, pending: 0 };
 
 function frame(now) {
@@ -192,12 +276,20 @@ function frame(now) {
     steps++;
   }
   if (steps === maxSteps) acc = 0;
+  // 플로팅 원점: 플레이어가 렌더 원점에서 3 km 넘게 벗어나면 원점을 옮김
+  const pp = player.pos;
+  if (Math.abs(pp.x) > 3000 || Math.abs(pp.y) > 3000 || Math.abs(pp.z) > 3000) rebase(Math.round(pp.x), Math.round(pp.y), Math.round(pp.z));
   player.interpolate(acc / STEP);
   player.updateVisual(dt);
 
   elapsed.t += dt;
   rig.update(dt, player, input);
-  world.update(dt, elapsed.t, camera, player.renderPos);
+  camAbs.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
+  world.update(dt, elapsed.t, camera, player.renderPos, camAbs);
+  terrain.update(dt, camera, camAbs);
+  city.update(dt, camera, camAbs);
+  if (earthGone) cinematic(dt); else space.update(dt, camera, camAbs, camAbs.y);
+  cosmic.update(dt, camAbs);
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
   audio.update(dt, player.audioState);
 

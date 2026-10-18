@@ -1,5 +1,6 @@
 // 3인칭 추적 카메라: 마우스/터치 궤도, 속도에 따른 거리·FOV, 지연 추적, 트라우마 기반 흔들림
 import * as THREE from 'three';
+import { onRebase } from './frame.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 function smooth(e0, e1, x) {
@@ -25,6 +26,8 @@ export class CameraRig {
     this.time = 0;
     this.first = true;
     this.sens = 0.0022;
+    this.groundAt = null;   // (x, z) → 렌더 좌표 지면 높이 (main 에서 연결)
+    onRebase((dx, dy, dz) => { this.lastTarget.x -= dx; this.lastTarget.y -= dy; this.lastTarget.z -= dz; });
   }
 
   addTrauma(a) { this.trauma = clamp(this.trauma + a, 0, 1); }
@@ -63,7 +66,9 @@ export class CameraRig {
     const cp = Math.cos(this.pitch);
     _f.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp);
     _p.copy(target).addScaledVector(_f, -this.dist);
-    if (_p.y < 0.35) _p.y = 0.35;  // 바닥 아래로 내려가지 않게
+    // 지면/옥상 아래로 내려가지 않게
+    const gmin = (this.groundAt ? this.groundAt(_p.x, _p.z) : 0) + 0.4;
+    if (_p.y < gmin) _p.y = gmin;
     this.cam.position.copy(_p);
     this.cam.lookAt(target);
     // 비행 선회 시 카메라도 살짝 같이 기울어짐 (영화 같은 추적)

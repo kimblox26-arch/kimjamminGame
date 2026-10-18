@@ -56,6 +56,15 @@ function makeNoiseTexture(size = 128) {
 // - 해상도 배율 (high 1 → 밝은영역 1/2 해상도, low 0.5 → 1/4)
 // - 4탭 Karis 평균 + 소프트 니 하이패스 (작은 HDR 하이라이트 깜빡임/파이어플라이 억제, half-float 오버플로 방지)
 // - 마지막 가산 합성 생략: 결과(bloom.texture)는 최종 패스가 직접 샘플
+// 그림자 맵 갱신을 프레임당 한 번으로 제한하는 씬 패스
+class ScenePass extends RenderPass {
+  constructor(scene, camera, shadows) { super(scene, camera); this.shadows = shadows; }
+  render(renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+    if (this.shadows) renderer.shadowMap.needsUpdate = true;
+    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+  }
+}
+
 class SkyBloomPass extends UnrealBloomPass {
   constructor(resolution, strength, radius, threshold, scale = 1) {
     super(resolution, strength, radius, threshold);
@@ -364,7 +373,17 @@ export class Post {
     this.composer.setPixelRatio(1);   // 컴포저는 드로잉버퍼 픽셀 단위로 직접 관리
     this.composer.renderToScreen = true;
 
-    this.renderPass = new RenderPass(scene, camera);
+    // 근/원거리 2단 렌더: 수백 km 시야에서도 깊이 정밀도 유지 (원거리 패스 → 깊이 비우고 근거리 패스)
+    // 하늘 돔처럼 원거리 패스에만 그릴 것은 layer 1 에 둔다.
+    this.split = 1000;
+    this.farCam = new THREE.PerspectiveCamera();
+    this.nearCam = new THREE.PerspectiveCamera();
+    this.farCam.layers.enable(1);
+    this.renderPass = new ScenePass(scene, this.farCam, true);
+    this.nearPass = new ScenePass(scene, this.nearCam, false);
+    this.nearPass.clear = false;
+    this.nearPass.clearDepth = true;
+    this.spacePass = null;
     this.bloom = new SkyBloomPass(new THREE.Vector2(pw, ph), 0.55, 0.5, 0.9, low ? 0.5 : 1);
 
     this.noise = makeNoiseTexture(128);
@@ -384,6 +403,7 @@ export class Post {
     this.uniforms.tBloom.value = this.bloom.texture;
 
     this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.nearPass);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.final);
 
@@ -466,8 +486,40 @@ export class Post {
     }
   }
 
+  // 우주 장면(별/은하/지구/달/해)을 맨 먼저 그리고, 그 위에 지역 장면을 색 지우지 않고 그림
+  attachSpace(spaceScene, spaceCamera) {
+    this.spacePass = new RenderPass(spaceScene, spaceCamera);
+    this.composer.insertPass(this.spacePass, 0);
+    this.renderPass.clear = false;
+    this.renderPass.clearDepth = true;
+  }
+
+  // 지구가 사라진 연출 등: 우주 장면만
+  setSpaceOnly(on) {
+    this.renderPass.enabled = !on;
+    this.nearPass.enabled = !on;
+  }
+
+  _syncCams() {
+    const c = this.camera;
+    for (const k of [this.farCam, this.nearCam]) {
+      k.position.copy(c.position);
+      k.quaternion.copy(c.quaternion);
+      k.fov = c.fov; k.aspect = c.aspect; k.zoom = c.zoom;
+    }
+    this.nearCam.near = c.near;
+    this.nearCam.far = this.split * 1.03;
+    this.farCam.near = this.split * 0.97;
+    this.farCam.far = Math.max(this.split * 4, c.far);
+    this.nearCam.updateProjectionMatrix();
+    this.farCam.updateProjectionMatrix();
+  }
+
   render(dt = 0) {
     if (!(dt > 0)) dt = 0;
+    this._syncCams();
+    // 그림자 맵은 프레임당 한 번 (원거리 패스에서) 갱신하고 근거리 패스는 재사용
+    this.renderer.shadowMap.autoUpdate = false;
     this.time += dt;
     this._frame++;
     const u = this.uniforms, P = this.params, T = this.tune;
@@ -497,7 +549,10 @@ export class Post {
     const prev = r.getRenderTarget();
     try {
       r.setRenderTarget(this.composer.readBuffer);
-      r.compile(this.scene, this.camera);
+      this._syncCams();
+      r.compile(this.scene, this.farCam);
+      r.compile(this.scene, this.nearCam);
+      if (this.spacePass) r.compile(this.spacePass.scene, this.spacePass.camera);
     } catch (e) { console.warn(e); }
     r.setRenderTarget(prev);
     this.render(0);

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Avatar, RIG } from './avatar.js';
 import { Animator, CH } from './animator.js';
+import { origin, onRebase, airDensity, ATMO_TOP, flatToPlanet, planetToFlat, localToPlanetQuat, MOON, SUN, C_LIGHT } from './frame.js';
 
 export const SOUND_SPEED = 343;
 const STUD = 0.4;
@@ -9,7 +10,12 @@ const WALK = 12 * STUD, SPRINT = 26 * STUD, SNEAK = 7 * STUD;
 const STAMINA_MAX = 100, STAMINA_DRAIN = 10, STAMINA_REGEN = 20, EXHAUST_DELAY = 3, EXHAUST_RECOVER = 20;
 const TAU = Math.PI * 2;
 const GRAVITY = 34;
-const VMAX = 1500;
+const MASS = 80;                       // 충돌 에너지 계산용 (kg)
+const V_SPACE_MAX = 1e11;              // 우주 최고 속도 (비현실적, 의도적)
+const V_EARTH_BREAK = 3e6;             // 이 속도 이상으로 지면 충돌 → 지구 폭발
+const V_MOON_BREAK = 2e4;              // 이 속도 이상으로 달 충돌 → 달 폭발
+// 대기 중 최고 속도: 해면 12 km/s, 공기가 옅을수록 빨라짐
+const airVmax = (dens) => Math.min(60000, 12000 / Math.max(0.08, Math.sqrt(dens)));
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -42,6 +48,21 @@ class Spring {
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
+const _P0 = new THREE.Vector3(), _P1 = new THREE.Vector3(), _Vp = new THREE.Vector3(), _F = new THREE.Vector3();
+const _N = new THREE.Vector3();
+const _hit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: -1 };
+// 선분 P0→P1 과 구(C, r) 의 첫 교차 t (0..1), 없으면 -1
+function segSphere(P0, P1, C, r) {
+  const dx = P1.x - P0.x, dy = P1.y - P0.y, dz = P1.z - P0.z;
+  const fx = P0.x - C.x, fy = P0.y - C.y, fz = P0.z - C.z;
+  const a = dx * dx + dy * dy + dz * dz, b = 2 * (fx * dx + fy * dy + fz * dz), c = fx * fx + fy * fy + fz * fz - r * r;
+  if (c < 0) return 0;
+  if (a < 1e-12) return -1;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return -1;
+  const t = (-b - Math.sqrt(disc)) / (2 * a);
+  return t >= 0 && t <= 1 ? t : -1;
+}
 const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
 const UP = Y;
 
@@ -60,6 +81,17 @@ export class Player {
     this.accel = new THREE.Vector3();
     this.mode = 'ground';
     this.time = 0;
+    this.prevPos = new THREE.Vector3().copy(this.pos);
+    this.inSpace = false;
+    this.dens = 1;
+    this.agl = 0;           // 지표(지형/물/옥상)로부터 높이
+    this.surfKind = 'ground';
+    this.hidden = false;    // 지구 폭발 등으로 사라진 상태
+    this.cbrtE = 0;
+    // 플로팅 원점: 저장해 둔 렌더 좌표 이동
+    onRebase((dx, dy, dz) => {
+      for (const v of [this.pos, this.prevPos, this.renderPos, this.snapPrev.pos, this.snapCur.pos]) { v.x -= dx; v.y -= dy; v.z -= dz; }
+    });
 
     this.heading = 0;
     this.headingSpring = new Spring(2.6, 0.9);
@@ -86,6 +118,8 @@ export class Player {
     this.landT = -1;
     this.landHard = 0;
     this.heroT = 0;
+    this.groundY = 0;
+    this.moonGone = false;
     this.stamina = STAMINA_MAX;
     this.exhausted = false;
     this.exhaustT = 0;
@@ -128,7 +162,7 @@ export class Player {
     this.anim.onStep = (side, strength) => {
       const foot = side ? this.avatar.limbs.footL : this.avatar.limbs.footR;
       foot.getWorldPosition(_v3);
-      _v3.y = 0.02;
+      _v3.y = this.groundY + 0.02;
       this.game.fx.step(_v3, strength);
       this.game.audio.play('step', strength * 0.6);
     };
@@ -223,15 +257,26 @@ export class Player {
     else if (this.mode === 'launch') this.stepLaunch(dt);
     this.launchPoseT += dt;
 
-    // 대시(롤 회피) 감쇠 및 적분
-    this.pos.addScaledVector(this.vel, dt).addScaledVector(this.dash, dt);
+    if (this.hidden) { this.vel.set(0, 0, 0); this.snapshot(this.snapCur); return; }
+    // 적분: 대기권 위에서는 행성 좌표로 적분해 실제 3D 궤적(지구 중심 기준)을 따름
+    this.prevPos.copy(this.pos);
+    if (this.mode === 'fly' && this.pos.y + origin.y > ATMO_TOP) this.integratePlanet(dt);
+    else this.pos.addScaledVector(this.vel, dt);
+    this.pos.addScaledVector(this.dash, dt);
     this.dash.multiplyScalar(Math.exp(-5.5 * dt));
     this.speed = this.vel.length();
-    this.mach = this.speed / SOUND_SPEED;
-    if (this.pos.y > 9000) { this.pos.y = 9000; if (this.vel.y > 0) this.vel.y = 0; }
+    const absY = this.pos.y + origin.y;
+    this.inSpace = absY > ATMO_TOP;
+    this.dens = airDensity(absY);
+    // 마하는 공기가 있을 때만 의미가 있음
+    // 유효 마하: 공기가 옅으면 같은 속도라도 충격파/가열이 약함 (진공에서는 0)
+    this.mach = this.speed / SOUND_SPEED * clamp(Math.sqrt(this.dens) * 8, 0, 1);
 
-    // 지면 처리
+    // 건물 / 지면 처리
+    this.buildingCollide(dt);
+    if (this.hidden) { this.snapshot(this.snapCur); return; }
     this.groundCollide(dt);
+    if (this.hidden) { this.snapshot(this.snapCur); return; }
 
     // 가속도 (고유 가속도: 자유낙하 중엔 0)
     _v3.subVectors(this.vel, this.prevVel).divideScalar(dt);
@@ -241,11 +286,11 @@ export class Player {
 
     // 음속 돌파 / 플라즈마 점화 이벤트
     if (this.mach < 0.85) this.boomArmed = true;
-    if (this.boomArmed && this.mach >= 1.0 && this.flying) {
+    if (this.boomArmed && this.mach >= 1.0 && this.flying && this.dens > 0.01) {
       this.boomArmed = false;
       _v3.copy(this.vel).normalize();
-      fx.sonicBoom(this.pos, _v3);
-      au.play('sonicBoom', 1);
+      fx.sonicBoom(this.pos, _v3, clamp(this.dens, 0.15, 1));
+      au.play('sonicBoom', clamp(this.dens * 1.2, 0.2, 1));
       this.game.hitStop(0.06, 0.08);
       this.anim.kickArms(-6, 4); this.anim.kickLegs(-5, 3);
     }
@@ -272,11 +317,11 @@ export class Player {
     const tx = dir.x * top, tz = dir.z * top;
     const dvx = tx - this.vel.x, dvz = tz - this.vel.z;
     const dl = Math.hypot(dvx, dvz);
-    const acc = (tx * this.vel.x + tz * this.vel.z > 0 || mag > 0.1 ? 60 : 45) * dt;
+    const acc = (mag > 0.1 ? (tx * this.vel.x + tz * this.vel.z >= 0 ? 24 : 34) : 30) * dt;
     if (dl > acc) { this.vel.x += (dvx / dl) * acc; this.vel.z += (dvz / dl) * acc; }
     else { this.vel.x = tx; this.vel.z = tz; }
     this.vel.y = 0;
-    if (mag > 0.08) this.turnHeading(Math.atan2(dir.x, dir.z), 13, dt);
+    if (mag > 0.08) this.turnHeading(Math.atan2(dir.x, dir.z), 10, dt);
     this.coyote = 0.1;
     this.landT = this.landT >= 0 ? this.landT + dt : -1;
 
@@ -318,7 +363,7 @@ export class Player {
   startLaunch() {
     this.mode = 'launch';
     this.launchT = 0;
-    _v3.copy(this.pos); _v3.y = 0.02;
+    _v3.copy(this.pos); _v3.y = this.groundY + 0.02;
     this.game.fx.step(_v3, 0.8);
     this.anim.kickBody(-0.8, 0.6);
   }
@@ -335,7 +380,7 @@ export class Player {
     this.mode = 'air';
     this.coyote = 0;
     this.airFlips = 0;
-    _v3.copy(this.pos); _v3.y = 0.02;
+    _v3.copy(this.pos); _v3.y = this.groundY + 0.02;
     this.game.fx.jump(_v3, strength);
     this.game.audio.play('jump', strength);
     this.anim.kickBody(-0.9, 0);
@@ -352,7 +397,7 @@ export class Player {
     // 공중 제어: 입력 방향으로만 가속, 입력 없으면 거의 유지
     if (mag > 0.08) {
       const dvx = tx - this.vel.x, dvz = tz - this.vel.z;
-      const dl = Math.hypot(dvx, dvz), acc = 22 * dt;
+      const dl = Math.hypot(dvx, dvz), acc = 13 * dt;
       if (dl > acc) { this.vel.x += (dvx / dl) * acc; this.vel.z += (dvz / dl) * acc; }
       else { this.vel.x = tx; this.vel.z = tz; }
       this.turnHeading(Math.atan2(dir.x, dir.z), 7, dt);
@@ -387,7 +432,7 @@ export class Player {
     if (fromGround) {
       this.vel.y = Math.max(this.vel.y, 19);
       this.launchPoseT = 0;
-      _v3.copy(this.pos); _v3.y = 0.02;
+      _v3.copy(this.pos); _v3.y = this.groundY + 0.02;
       fx.takeoff(_v3, 1);
       au.play('takeoff', 1);
       this.anim.kickBody(-1.6, 0);
@@ -425,7 +470,9 @@ export class Player {
     const boosting = I.boost && hasInput && !this.slow;
     let speed = this.speed;
     const onlyVert = hasInput && mag < 0.08;
-    const tier = this.slow ? 7.5 : onlyVert ? 14 : 30;
+    const space = this.inSpace;
+    const vcap = space ? V_SPACE_MAX : airVmax(this.dens);
+    const tier = space ? (this.slow ? 300 : 3000) : this.slow ? 7.5 : onlyVert ? 14 : 30;
 
     if (boosting && !this.wasBoosting) {
       fx.boostBurst(this.pos, dir);
@@ -440,21 +487,24 @@ export class Player {
     // 속력 제어
     let target;
     if (boosting) {
-      const a = speed < 110 ? 150 : 50 + 0.55 * speed;
-      target = Math.min(VMAX, speed + a * dt);
+      // 지수 가속: 대기 중 약 0.55초마다 두 배, 우주에서는 약 0.28초마다 두 배
+      const a = space ? 400 + 2.5 * speed : speed < 110 ? 160 : 80 + 1.25 * speed;
+      target = speed > vcap ? speed : Math.min(vcap, speed + a * dt);
     } else if (hasInput) {
       const t = tier * dmag;
-      if (speed < t) target = Math.min(t, speed + (this.slow ? 14 : 45) * dt);
-      else target = Math.max(t, speed - (18 + 0.75 * speed) * dt);
+      if (speed < t) target = Math.min(t, speed + (space ? 2000 : this.slow ? 14 : 45) * dt);
+      else target = Math.max(t, speed - (space ? 1.2 * speed : 18 + 0.75 * speed) * dt);
     } else {
-      target = Math.max(0, speed - (22 + 1.5 * speed) * dt);
+      target = space ? speed * Math.exp(-1.6 * dt) : Math.max(0, speed - (22 + 1.5 * speed) * dt);
     }
+    // 대기 저항: 부스트 없이 한계 속도를 넘으면 공기가 진할수록 빠르게 감속 (재진입)
+    if (!boosting && !space && target > vcap) target = vcap + (target - vcap) * Math.exp(-3 * this.dens * dt);
 
     if (speed < 7 || !hasInput) {
       // 저속: 속도 벡터를 목표 벡터로 직접 (자유로운 호버 이동)
       if (hasInput && speed < 7) {
         const ax = dir.x * target - this.vel.x, ay = dir.y * target - this.vel.y, az = dir.z * target - this.vel.z;
-        const dl = Math.hypot(ax, ay, az), acc = (this.slow ? 16 : 34) * dt;
+        const dl = Math.hypot(ax, ay, az), acc = (this.slow ? 12 : 24) * dt;
         if (dl > acc) { this.vel.x += (ax / dl) * acc; this.vel.y += (ay / dl) * acc; this.vel.z += (az / dl) * acc; }
         else this.vel.set(dir.x * target, dir.y * target, dir.z * target);
       } else if (speed > 1e-4) {
@@ -464,7 +514,7 @@ export class Player {
       // 고속: 방향은 최대 선회율로 회전, 속력은 따로
       const cur = _v1.copy(this.vel).divideScalar(speed);
       const ang = Math.acos(clamp(cur.dot(dir), -1, 1));
-      const turn = lerp(5.2, 0.95, smooth(30, 1200, speed)) * (this.slow ? 0.7 : 1);
+      const turn = (space ? 2.6 : lerp(5.2, 0.95, smooth(30, 1200, speed))) * (this.slow ? 0.7 : 1);
       if (ang > 1e-4) {
         const axis = _v2.crossVectors(cur, dir);
         if (axis.lengthSq() < 1e-8) axis.set(0, 1, 0); else axis.normalize();
@@ -529,23 +579,53 @@ export class Player {
     return this.pos.y + cy - ext;
   }
 
+  // 렌더 좌표 (rx, rz) 아래 밟을 수 있는 표면 높이 (렌더 y): 지형 / 물 / 건물 옥상 중 가장 높은 것
+  surfaceAt(rx, rz) {
+    const ax = rx + origin.x, az = rz + origin.z;
+    const T = this.game.terrain, Ci = this.game.city;
+    let h = T ? T.heightAt(ax, az) : 0, kind = 'ground';
+    if (T) { const w = T.waterLevelAt(ax, az); if (w > h) { h = w; kind = 'water'; } }
+    if (Ci) { const r = Ci.roofAt(ax, az); if (r > h) { h = r; kind = 'roof'; } }
+    this.surfKind = kind;
+    return h - origin.y;
+  }
+
   groundCollide(dt) {
     const fx = this.game.fx, au = this.game.audio;
-    if (this.mode === 'ground' || this.mode === 'hero' || this.mode === 'launch') { this.pos.y = RIG.pivotY; return; }
+    const g = this.surfaceAt(this.pos.x, this.pos.z);
+    this.groundY = g;
+    this.agl = this.pos.y - RIG.pivotY - g;
+    if (this.mode === 'ground' || this.mode === 'hero' || this.mode === 'launch') {
+      // 발보다 1.2 m 넘게 높은 곳(벽/옥상)으로는 걸어 올라가지 못함
+      if (this.agl < -1.2) {
+        this.pos.x = this.prevPos.x; this.pos.z = this.prevPos.z;
+        this.vel.x = 0; this.vel.z = 0;
+        const g2 = this.surfaceAt(this.pos.x, this.pos.z);
+        this.groundY = g2;
+        this.agl = this.pos.y - RIG.pivotY - g2;
+        this.pos.y = g2 + RIG.pivotY;
+        return;
+      }
+      // 옥상 끝이나 절벽에서 걸어 나가면 낙하, 아니면 지면을 따라감 (경사/계단은 부드럽게)
+      if (this.mode === 'ground' && this.agl > 0.8) { this.mode = 'air'; this.coyote = 0.1; this.vel.y = 0; return; }
+      const want = g + RIG.pivotY;
+      this.pos.y = this.agl < -0.6 ? want : lerp(this.pos.y, want, 1 - Math.exp(-30 * dt));
+      return;
+    }
     if (this.mode === 'air') {
-      if (this.pos.y <= RIG.pivotY && this.vel.y <= 0) {
+      if (this.pos.y <= g + RIG.pivotY && this.vel.y <= 0) {
         const impact = -this.vel.y;
         const hs = Math.hypot(this.vel.x, this.vel.z);
-        if (hs > 20 || impact > 45) { this.heroLand(clamp(impact / 70 + hs / 700, 0.35, 1)); return; }
+        if (hs > 20 || impact > 45) { this.pos.y = g + RIG.pivotY; this.impactGround(this.vel.length(), clamp(impact / 70 + hs / 700, 0.35, 1)); return; }
         if (hs > 16) { const k = 16 / hs; this.vel.x *= k; this.vel.z *= k; }
         this.handOffTrick();
-        this.pos.y = RIG.pivotY;
+        this.pos.y = g + RIG.pivotY;
         this.vel.y = 0;
         this.mode = 'ground';
         this.landT = 0;
         this.landHard = smooth(13, 32, impact);
         const st = clamp(impact / 34, 0.15, 1);
-        _v3.copy(this.pos); _v3.y = 0.02;
+        _v3.copy(this.pos); _v3.y = g + 0.02;
         fx.land(_v3, st);
         au.play('land', st);
         this.anim.kickBody(-impact * 0.09, impact * 0.04);
@@ -554,35 +634,57 @@ export class Player {
       }
       return;
     }
-    // 비행 중
-    const low = this.lowestPoint();
-    if (low >= 0) return;
+    // 비행 중: 한 스텝에 지면을 크게 뚫고 지나갔으면 (초고속) 진입 지점으로 되돌림
+    let low = this.lowestPoint();
+    if (low >= g) return;
+    if (this.prevPos.y - this.pos.y > 30) {
+      const t = clamp((this.prevPos.y - (g + RIG.pivotY)) / (this.prevPos.y - this.pos.y), 0, 1);
+      this.pos.lerpVectors(this.prevPos, this.pos, t);
+      const g2 = this.surfaceAt(this.pos.x, this.pos.z);
+      this.groundY = g2;
+      this.pos.y = Math.max(this.pos.y, g2 + 0.3);
+      low = g2 - 1;
+    }
     const speed = this.speed;
     const elev = speed > 0.1 ? Math.asin(clamp(this.vel.y / speed, -1, 1)) : 0;
     if (this.vel.y < -22 || (speed > 45 && elev < -0.35)) {
-      this.heroLand(clamp(-this.vel.y / 70 + speed / 700, 0.35, 1));
+      this.pos.y = this.groundY + RIG.pivotY;
+      this.impactGround(speed, clamp(-this.vel.y / 70 + speed / 700, 0.35, 1));
     } else if (speed < 14 && this.pitch.y < 0.9) {
       // 부드러운 착지
-      this.pos.y = RIG.pivotY;
+      this.pos.y = this.groundY + RIG.pivotY;
       this.vel.y = 0;
       this.mode = 'ground';
       this.landT = 0;
       this.landHard = 0;
       this.boostAmt = 0;
-      _v3.copy(this.pos); _v3.y = 0.02;
+      _v3.copy(this.pos); _v3.y = this.groundY + 0.02;
       fx.land(_v3, 0.25);
       au.play('land', 0.3);
       this.anim.kickBody(-0.6, 0.2);
     } else {
       // 지면 스치기: 밀어올리고 하강 성분 제거
-      this.pos.y -= low;
+      this.pos.y += this.groundY - low;
       if (this.vel.y < 0) this.vel.y *= -0.1;
     }
   }
 
-  // 슈퍼히어로 착지 (비행 중 급강하 또는 고속 낙하)
-  heroLand(st) {
-    this.pos.y = RIG.pivotY;
+  // 지면 충돌: 속도(에너지)에 따라 영웅 착지 → 크레이터 → 도시 파괴 → 지구 폭발
+  impactGround(speed, st) {
+    const E = 0.5 * MASS * speed * speed;
+    _N.set(0, 1, 0);
+    if (speed >= V_EARTH_BREAK) {
+      _v2.copy(this.vel).normalize();
+      this.game.planetImpact('earth', this, _v2);
+      return;
+    }
+    this.heroLand(st, E, _N);
+  }
+
+  // 슈퍼히어로 착지 (비행 중 급강하 또는 고속 낙하). E = 충돌 에너지 (J), n = 표면 법선
+  heroLand(st, E = 0, n = null) {
+    const g = this.groundY !== undefined ? this.groundY : 0;
+    this.pos.y = g + RIG.pivotY;
     this.vel.set(0, 0, 0);
     this.dash.set(0, 0, 0);
     this.mode = 'hero';
@@ -594,10 +696,102 @@ export class Player {
     this.pitch.y = Math.min(this.pitch.y, 0.5); this.pitch.v = 0;
     this.bank.y = 0; this.bank.v = 0;
     this.lean.y = 0; this.lean.v = 0;
-    _v3.copy(this.pos); _v3.y = 0.02;
-    this.game.fx.heroLanding(_v3, st);
-    this.game.audio.play('heroLand', st);
-    this.game.hitStop(0.09, 0.04);
+    _v3.copy(this.pos); _v3.y = g + 0.02;
+    const fx = this.game.fx;
+    if (E > 0 && fx.impact) {
+      fx.impact(_v3, E, n || _v1.set(0, 1, 0));
+      // 큰 충돌은 주변 건물을 날려버림 (폭발 반경 ≈ 0.25·E^(1/3))
+      const r = 0.25 * Math.cbrt(E);
+      if (r > 25) this.smash(_v3.x, _v3.y, _v3.z, r * 0.7);
+    } else fx.heroLanding(_v3, st);
+    this.game.audio.play('heroLand', clamp(st + Math.log10(Math.max(1, E)) / 30, 0, 1));
+    this.game.hitStop(0.09 + 0.08 * smooth(1e7, 1e12, E), 0.04);
+  }
+
+  // 반경 r 안의 건물 파괴 + 잔해 (렌더 좌표)
+  smash(x, y, z, r) {
+    const Ci = this.game.city;
+    if (!Ci) return;
+    const boxes = Ci.destroy(x + origin.x, y + origin.y, z + origin.z, r);
+    if (boxes && boxes.length && this.game.fx.debris) this.game.fx.debris(boxes);
+  }
+
+  // 우주: 행성 좌표에서 직선 이동 → 평면 좌표로 환산 (지역 축 회전에 맞춰 속도도 다시 표현)
+  integratePlanet(dt) {
+    const ax = this.pos.x + origin.x, ay = this.pos.y + origin.y, az = this.pos.z + origin.z;
+    flatToPlanet(ax, ay, az, _P0);
+    localToPlanetQuat(ax, az, _q1);
+    _Vp.copy(this.vel).applyQuaternion(_q1);
+    _P1.copy(_P0).addScaledVector(_Vp, dt);
+    // 천체 충돌 (선분-구)
+    if (this.celestialHit(_P0, _P1)) return;
+    planetToFlat(_P1.x, _P1.y, _P1.z, _F);
+    localToPlanetQuat(_F.x, _F.z, _q2);
+    this.vel.copy(_Vp).applyQuaternion(_q2.invert());
+    this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
+  }
+
+  celestialHit(P0, P1) {
+    const C = this.game.cosmic;
+    const sp = this.speed;
+    if (segSphere(P0, P1, SUN.pos, SUN.radius) >= 0) {
+      if (C && !C.active) this.game.planetImpact('sun', this, _Vp);
+      return false;
+    }
+    if (!this.moonGone) {
+      const t = segSphere(P0, P1, MOON.pos, MOON.radius + 3);
+      if (t >= 0) {
+        if (sp >= V_MOON_BREAK) {
+          this.moonGone = true;
+          _v3.copy(_Vp).normalize();
+          this.game.planetImpact('moon', this, _v3);
+          return false;
+        }
+        // 느리면 달 표면에서 멈춤
+        P1.lerpVectors(P0, P1, t);
+        planetToFlat(P1.x, P1.y, P1.z, _F);
+        this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
+        this.vel.set(0, 0, 0);
+        this.game.hooks.shake(0.4);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 건물 충돌: 빠르면 뚫고 지나가며 파괴, 느리면 튕기거나 미끄러짐
+  buildingCollide(dt) {
+    const Ci = this.game.city;
+    if (!Ci || this.mode === 'hero' || this.mode === 'launch') return;
+    const ox = origin.x, oy = origin.y, oz = origin.z;
+    if (!Ci.segmentHit(this.prevPos.x + ox, this.prevPos.y + oy, this.prevPos.z + oz, this.pos.x + ox, this.pos.y + oy, this.pos.z + oz, _hit)) return;
+    const n = _v1.set(_hit.nx, _hit.ny, _hit.nz);
+    if (n.y > 0.7) return;   // 옥상 위는 지면 처리에서
+    const hx = _hit.x - ox, hy = _hit.y - oy, hz = _hit.z - oz;
+    const speed = this.speed;
+    const vn = -this.vel.dot(n);
+    if (this.mode === 'fly' && speed > 110 && vn > 40) {
+      // 관통: 에너지 일부를 건물에 쏟고 계속 날아감
+      const E = 0.5 * MASS * speed * speed;
+      _v3.set(hx, hy, hz);
+      this.game.fx.impact ? this.game.fx.impact(_v3, E * 0.35, n) : this.game.fx.heroLanding(_v3, 1);
+      this.smash(hx, hy, hz, Math.max(18, 0.16 * Math.cbrt(E)));
+      this.vel.multiplyScalar(speed > 2000 ? 0.97 : 0.8);
+      this.game.hooks.shake(clamp(0.3 + speed / 3000, 0, 1));
+      this.game.audio.play('heroLand', clamp(speed / 1500, 0.3, 1));
+      this.game.hitStop(0.05, 0.1);
+      return;
+    }
+    // 벽: 밀어내고 법선 방향 속도 제거 (빠르면 튕김)
+    this.pos.set(hx + n.x * 0.5, this.pos.y, hz + n.z * 0.5);
+    if (vn > 0) this.vel.addScaledVector(n, vn * (vn > 12 && this.mode === 'fly' ? 1.4 : 1));
+    if (vn > 12) {
+      _v3.set(hx, hy, hz);
+      this.game.fx.land(_v3, clamp(vn / 40, 0.2, 1));
+      this.game.audio.play('land', clamp(vn / 40, 0.2, 1));
+      this.game.hooks.shake(clamp(vn / 60, 0.1, 0.6));
+      this.anim.kickArms(-vn * 0.1, vn * 0.15);
+    }
   }
 
   // 트릭 도중 착지: 남은 회전을 자세 스프링으로 넘겨 한 틱에 꺾이지 않게
@@ -769,7 +963,11 @@ export class Player {
     c.mach = this.mach;
     c.flying = this.flying;
     c.grounded = this.grounded;
-    c.altitude = Math.max(0, c.pos.y);
+    c.altitude = Math.max(0, this.agl + 1.0);
+    c.absAltitude = this.pos.y + origin.y;
+    c.airDensity = this.dens;
+    c.vacuum = this.inSpace;
+    c.groundY = this.groundY;
     c.time = this.time;
     this.avatar.body.getWorldQuaternion(c.bodyQuat);
     c.boost = this.boostAmt;
@@ -778,7 +976,8 @@ export class Player {
     const plasma = this.flying ? smooth(1.6, 3.0, this.mach) : 0;
     const vapor = this.flying ? smooth(0.85, 1.0, this.mach) * (1 - smooth(1.15, 1.3, this.mach)) : 0;
     const A = this.audioState;
-    A.speed = this.speed; A.mach = this.mach; A.flying = this.flying; A.grounded = this.grounded;
+    // 진공에서는 바람 소리가 없음: 공기 밀도로 체감 풍속을 줄임
+    A.speed = Math.min(4000, this.speed * clamp(Math.sqrt(this.dens) * 4, 0, 1)); A.mach = this.mach; A.flying = this.flying; A.grounded = this.grounded;
     A.boost = this.boostAmt; A.plasma = plasma; A.vapor = vapor; A.altitude = c.altitude;
 
     // 공력 가열: 몸이 달아오름 (주황 → 백열)
@@ -787,12 +986,12 @@ export class Player {
     this.avatar.material.emissive.setRGB(1.0 * h * 1.6, 0.38 * h * 1.6, 0.08 * h * 1.6);
 
     // 블롭 그림자 (지면 근처에서는 실제 그림자가 있으니 서서히 등장)
-    const alt = Math.max(0, c.pos.y - 1.0);
+    const alt = Math.max(0, this.agl);
     const op = smooth(3, 10, alt) * (1 - smooth(60, 160, alt)) * 0.85;
     this.blob.material.opacity = op;
     this.blob.visible = op > 0.002;
     const sc = 1.6 + alt * 0.035;
     this.blob.scale.set(sc, sc, 1);
-    this.blob.position.set(c.pos.x, 0.03, c.pos.z);
+    this.blob.position.set(c.pos.x, this.groundY + 0.03, c.pos.z);
   }
 }
