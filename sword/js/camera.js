@@ -56,7 +56,7 @@ export class CameraRig {
     target.add(this.lag);
 
     // 거리: 속도가 빠를수록 뒤로
-    const want = this.zoom + 3.2 * smooth(25, 300, speed) + 2.0 * smooth(300, 1400, speed) - (player.mode === 'hero' ? 1.2 : 0);
+    const want = this.zoom + 2.6 * smooth(25, 300, speed) + 0.9 * smooth(300, 1400, speed) - (player.mode === 'hero' ? 1.2 : 0);
     this.dist += (want - this.dist) * (1 - Math.exp(-3 * dt));
 
     const cp = Math.cos(this.pitch);
