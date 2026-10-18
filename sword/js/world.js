@@ -984,6 +984,7 @@ ${lights}`;
     const alt = Math.max(0, focus.y);
     this._updateShadow(focus, alt);
     fu.uShadowAmt.value = lerp(1, 0.22, smooth(3, 90, alt)) * (1 - smooth(110, 170, alt));
+    this.sun.shadow.autoUpdate = fu.uShadowAmt.value > 0.001;
 
     // 구름
     this._updateClouds(cx, cy, cz, fx, fy, fz, elapsed, dX, dZ);

@@ -411,7 +411,9 @@ export class Post {
     this._w = width; this._h = height;
     const pr = this.renderer.getPixelRatio();
     const pw = Math.max(1, Math.floor(width * pr)), ph = Math.max(1, Math.floor(height * pr));
-    const samples = this._pickSamples(pw * ph);
+    let samples = this._pickSamples(pw * ph);
+    // 처음 정한 샘플 수보다 늘리지 않음 (해상도를 낮췄는데 MSAA가 늘어 더 무거워지는 것 방지)
+    if (this._samplesCap === undefined) this._samplesCap = samples; else samples = Math.min(samples, this._samplesCap);
     const c = this.composer;
     if (samples !== this._samples) {
       this._samples = samples;

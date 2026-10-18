@@ -130,33 +130,36 @@ function updateHud(dt, fps) {
 
 // ── 루프 ──
 let last = performance.now();
-let nextDue = 0;
+let vsyncN = 0;
 let acc = 0;
 let fpsFrames = 0, fpsTime = 0, fps = 0;
 // 적응형 해상도: 목표 = min(120, 모니터 주사율)
-let refreshEst = 60, rafSamples = [], lastRaf = 0, perfT = 0, perfFrames = 0, slowSecs = 0, fastSecs = 0;
+let refreshEst = 60, lastRaf = 0, perfT = 0, perfFrames = 0, slowSecs = 0, fastSecs = 0;
+let failPR = Infinity, failT = 0;
+const rafSamples = new Float32Array(60);
+let rafN = 0, measured = false;
 const elapsed = { t: 0 };
 const dbg = { paused: false, pending: 0 };
 
 function frame(now) {
   requestAnimationFrame(frame);
-  // 주사율 추정 (처음 120 프레임)
-  if (lastRaf && rafSamples.length < 120) {
-    rafSamples.push(now - lastRaf);
-    if (rafSamples.length === 120) {
-      const s = rafSamples.slice().sort((a, b) => a - b);
-      refreshEst = 1000 / s[60];
+  // 모니터 주사율 추정: 렌더 없이 도는 rAF 간격의 중앙값 (시작 직후 60틱은 측정만 함)
+  if (lastRaf) {
+    rafSamples[rafN % 60] = now - lastRaf;
+    rafN++;
+    if (rafN % 60 === 0) {
+      const sorted = Array.from(rafSamples).sort((a, b) => a - b);
+      const est = 1000 / Math.max(1, sorted[30]);
+      if (!measured) { refreshEst = est; measured = true; }
+      else if (est > refreshEst * 1.15) refreshEst = Math.min(360, est);   // 더 빠른 주사율이 관측될 때만 올림
     }
   }
   lastRaf = now;
+  if (!measured) { last = now; return; }
 
-  // 120fps 제한 (모니터가 더 빠를 때): 누적 예약 방식이라 144Hz 등에서도 ~120 유지
-  if (fpsCap) {
-    const gap = 1000 / 120;
-    if (now < nextDue - 1.0) return;
-    nextDue += gap;
-    if (nextDue < now - gap) nextDue = now + gap;
-  }
+  // 120fps 제한: 주사율의 정수배로만 건너뜀 (240Hz → 120, 144Hz는 그대로) → 프레임 간격이 고르게 유지됨
+  const div = Math.max(1, Math.round(refreshEst / 120));
+  if (fpsCap && div > 1 && (++vsyncN % div) !== 0) return;
   // rAF 타임스탬프가 로드 시점보다 앞설 수 있으니 음수 dt 방지
   let dt = (now - last) / 1000;
   last = now;
@@ -209,8 +212,11 @@ function frame(now) {
     const f = perfFrames / perfT;
     const target = Math.min(120, refreshEst) * 0.92;
     if (f < target) { slowSecs++; fastSecs = 0; } else { fastSecs++; slowSecs = 0; }
-    if (slowSecs >= 2 && pixelRatio > 0.6) { pixelRatio = Math.max(0.6, pixelRatio - 0.15); resize(); slowSecs = 0; }
-    if (fastSecs >= 5 && pixelRatio < maxPR) { pixelRatio = Math.min(maxPR, pixelRatio + 0.1); resize(); fastSecs = 0; }
+    // 실패한 해상도는 30초 동안 다시 시도하지 않음 (오르내림 반복 방지)
+    if (slowSecs >= 2 && pixelRatio > 0.6) { failPR = pixelRatio; failT = 30; pixelRatio = Math.max(0.6, pixelRatio - 0.15); resize(); slowSecs = 0; }
+    failT = Math.max(0, failT - 1);
+    if (failT === 0) failPR = Infinity;
+    if (fastSecs >= 5 && pixelRatio < maxPR && pixelRatio + 0.1 < failPR - 1e-3) { pixelRatio = Math.min(maxPR, pixelRatio + 0.1); resize(); fastSecs = 0; }
     perfT = 0; perfFrames = 0;
   }
   updateHud(dt, fps);

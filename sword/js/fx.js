@@ -520,6 +520,7 @@ class ParticlePool {
   upload(camVel, ply) {
     const n = this.n;
     this.geo.instanceCount = n;
+    this.mesh.visible = n > 0;
     if (n === 0) return;
     const d = this.d, A = this.aA.array, B = this.aB.array, C = this.aC.array, D = this.aD.array;
     for (let i = 0; i < n; i++) {
@@ -712,6 +713,7 @@ class RingPool {
   upload() {
     const n = this.n;
     this.geo.instanceCount = n;
+    this.mesh.visible = n > 0;
     if (n === 0) return;
     const d = this.d;
     const P = this.attrs[0].array, Q = this.attrs[1].array, C = this.attrs[2].array, H = this.attrs[3].array, A = this.attrs[4].array;
@@ -835,6 +837,7 @@ class ShellPool {
   upload() {
     const n = this.n;
     this.geo.instanceCount = n;
+    this.mesh.visible = n > 0;
     if (n === 0) return;
     const d = this.d, P = this.attrs[0].array, C = this.attrs[1].array, Q = this.attrs[2].array;
     for (let i = 0; i < n; i++) {
@@ -1154,7 +1157,7 @@ class Ribbons {
       const dx = x - h.p[o], dy = y - h.p[o + 1], dz = z - h.p[o + 2];
       if (dx * dx + dy * dy + dz * dz > 250 * 250) h.len = 0; // teleport
     }
-    if (h.len === 0 || time - h.last >= 1 / 125) {
+    if (h.len === 0 || time - h.last >= 1 / 60) {
       h.head = (h.head + 1) % N;
       h.len = Math.min(h.len + 1, N);
       h.last = time;

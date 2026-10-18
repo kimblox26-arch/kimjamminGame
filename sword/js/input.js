@@ -12,7 +12,7 @@ export class Input {
     this.edges = new Set();
     this.state = { moveX: 0, moveY: 0, up: false, down: false, boost: false, slow: false, lookDX: 0, lookDY: 0, zoom: 0 };
     this.touch = { joyId: -1, joyX: 0, joyY: 0, ox: 0, oy: 0, lookId: -1, lx: 0, ly: 0, hold: new Set() };
-    this.isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+    this.isTouch = matchMedia('(pointer: coarse)').matches;
     this.onFirstGesture = null;
     this.onKey = null;
     this.locked = false;
@@ -26,13 +26,17 @@ export class Input {
       if (!e.repeat && this.onKey) this.onKey(e.code);
     });
     addEventListener('keyup', (e) => { if (KEYMAP[e.code]) this.keys.delete(KEYMAP[e.code]); });
-    addEventListener('blur', () => { this.keys.clear(); this.touch.hold.clear(); });
+    addEventListener('blur', () => {
+      this.keys.clear(); this.touch.hold.clear();
+      for (const b of ui.buttons) b.classList.remove('on', 'lit');
+    });
 
     // 마우스: 클릭 시 포인터 락 (데스크톱), 락이 안 되면 드래그로 회전
     let dragging = false, lx = 0, ly = 0;
     canvas.addEventListener('mousedown', (e) => {
       this.gesture();
-      if (this.isTouch) return;
+      // 터치에서 흉내 낸 마우스 이벤트만 무시 (터치스크린 노트북의 진짜 마우스는 허용)
+      if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
       if (!this.locked && canvas.requestPointerLock) {
         try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) { /* 무시 */ }
       }

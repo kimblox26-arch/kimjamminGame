@@ -47,7 +47,8 @@ export class CameraRig {
     // 지연 추적: 목표가 움직인 만큼 오차가 생기고, 지수적으로 따라잡음 (고속에서도 화면 밖으로 안 나가게 제한)
     if (this.first) { this.lastTarget.copy(target); this.first = false; }
     _d.subVectors(target, this.lastTarget);
-    if (_d.lengthSq() > 2500) _d.set(0, 0, 0);   // 순간이동 방지
+    const tp = Math.max(50, speed * dt * 3);
+    if (_d.lengthSq() > tp * tp) _d.set(0, 0, 0);   // 순간이동 방지 (최고속에서도 오작동 없게)
     this.lag.sub(_d);
     this.lag.multiplyScalar(Math.exp(-7.5 * dt));
     const maxLag = 0.6 + 1.1 * smooth(5, 120, speed);

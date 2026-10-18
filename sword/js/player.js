@@ -193,11 +193,13 @@ export class Player {
     this.slow = I.slow;
     this.sprint = I.boost;
 
-    if (input.consume('jump')) this.jumpBuffer = 0.14;
+    // 착지 동작/이륙 준비 중에는 입력을 소비하지 않고 남겨 둠 → 끝나는 즉시 실행
+    const busy = this.mode === 'launch' || (this.mode === 'hero' && this.heroT < 0.6);
+    if (!busy && input.consume('jump')) this.jumpBuffer = 0.14;
     else this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
-    const wantFly = input.consume('fly');
-    const rollL = input.consume('rollL'), rollR = input.consume('rollR');
-    const wantFlip = input.consume('flip');
+    const wantFly = this.mode !== 'launch' && !(this.mode === 'hero' && this.heroT <= 0.3) && input.consume('fly');
+    const rollL = !busy && input.consume('rollL'), rollR = !busy && input.consume('rollR');
+    const wantFlip = !busy && input.consume('flip');
     this.trickCool = Math.max(0, this.trickCool - dt);
     this.brakeCool = Math.max(0, this.brakeCool - dt);
 
@@ -376,6 +378,7 @@ export class Player {
       this.mode = 'air';
       this.coyote = 0;
       this.airFlips = 0;
+      this.boostAmt = 0; this.wasBoosting = false; this.brakeAmt = 0;
       au.play('brake', 0.35);
       return;
     }
@@ -500,6 +503,10 @@ export class Player {
     if (this.mode === 'air') {
       if (this.pos.y <= RIG.pivotY && this.vel.y <= 0) {
         const impact = -this.vel.y;
+        const hs = Math.hypot(this.vel.x, this.vel.z);
+        if (hs > 20 || impact > 45) { this.heroLand(clamp(impact / 70 + hs / 700, 0.35, 1)); return; }
+        if (hs > 16) { const k = 16 / hs; this.vel.x *= k; this.vel.z *= k; }
+        this.handOffTrick();
         this.pos.y = RIG.pivotY;
         this.vel.y = 0;
         this.mode = 'ground';
@@ -512,7 +519,6 @@ export class Player {
         this.anim.kickBody(-impact * 0.09, impact * 0.04);
         this.anim.kickArms(-impact * 0.12, impact * 0.18);
         if (impact > 28) this.game.hooks.shake(0.25 + 0.4 * this.landHard);
-        if (this.trick && this.trick.p < 0.85) this.trick = null;
       }
       return;
     }
@@ -522,22 +528,7 @@ export class Player {
     const speed = this.speed;
     const elev = speed > 0.1 ? Math.asin(clamp(this.vel.y / speed, -1, 1)) : 0;
     if (this.vel.y < -22 || (speed > 45 && elev < -0.35)) {
-      // 슈퍼히어로 착지
-      const st = clamp(-this.vel.y / 70 + speed / 700, 0.35, 1);
-      this.pos.y = RIG.pivotY;
-      this.vel.set(0, 0, 0);
-      this.dash.set(0, 0, 0);
-      this.mode = 'hero';
-      this.heroT = 0;
-      this.trick = null;
-      this.boostAmt = 0;
-      this.wasBoosting = false;
-      this.pitch.y = Math.min(this.pitch.y, 0.5); this.pitch.v = 0;
-      this.bank.y = 0; this.bank.v = 0;
-      _v3.copy(this.pos); _v3.y = 0.02;
-      fx.heroLanding(_v3, st);
-      au.play('heroLand', st);
-      this.game.hitStop(0.09, 0.04);
+      this.heroLand(clamp(-this.vel.y / 70 + speed / 700, 0.35, 1));
     } else if (speed < 14 && this.pitch.y < 0.9) {
       // 부드러운 착지
       this.pos.y = RIG.pivotY;
@@ -557,6 +548,37 @@ export class Player {
     }
   }
 
+  // 슈퍼히어로 착지 (비행 중 급강하 또는 고속 낙하)
+  heroLand(st) {
+    this.pos.y = RIG.pivotY;
+    this.vel.set(0, 0, 0);
+    this.dash.set(0, 0, 0);
+    this.mode = 'hero';
+    this.heroT = 0;
+    this.trick = null;
+    this.boostAmt = 0;
+    this.wasBoosting = false;
+    this.brakeAmt = 0;
+    this.pitch.y = Math.min(this.pitch.y, 0.5); this.pitch.v = 0;
+    this.bank.y = 0; this.bank.v = 0;
+    this.lean.y = 0; this.lean.v = 0;
+    _v3.copy(this.pos); _v3.y = 0.02;
+    this.game.fx.heroLanding(_v3, st);
+    this.game.audio.play('heroLand', st);
+    this.game.hitStop(0.09, 0.04);
+  }
+
+  // 트릭 도중 착지: 남은 회전을 자세 스프링으로 넘겨 한 틱에 꺾이지 않게
+  handOffTrick() {
+    const tr = this.trick;
+    if (!tr) return;
+    const a = wrapAngle(tr.sign * TAU * easeRot(clamp(tr.p, 0, 1)));
+    if (tr.type === 'flip') this.pitch.y += a;
+    else if (tr.type === 'roll') this.bank.y += a;
+    else this.lean.y += a;
+    this.trick = null;
+  }
+
   startTrick(type, dur, sign) {
     const axis = type === 'roll' ? Y : type === 'flip' ? X : Z;
     this.trick = { type, p: 0, dur, axis, sign };
@@ -565,7 +587,7 @@ export class Player {
     if (_v3.lengthSq() < 1) _v3.set(Math.sin(this.heading), 0, Math.cos(this.heading));
     _v3.normalize();
     if (type === 'flip') { this.game.fx.flip(this.pos, _v3); this.game.audio.play('flip', 1); }
-    else { this.game.fx.roll(this.pos, _v3, sign); this.game.audio.play('roll', 1); }
+    else { this.game.fx.roll(this.pos, _v3, sign); this.game.audio.play('roll', 1, sign); }
     // 예비 동작: 반대 방향으로 살짝 감았다가 회전
     if (type === 'roll') this.bank.v -= sign * 2.2;
     if (type === 'cart') this.lean.v -= sign * 1.5;
