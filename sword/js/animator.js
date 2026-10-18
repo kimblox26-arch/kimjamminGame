@@ -290,37 +290,42 @@ export class Animator {
     leg(T, w, 0, 1.5 * sway, 2 - 1.2 * sway);
     leg(T, w, 1, -1.5 * sway, 2 + 1.2 * sway);
     head(T, w, -1 + 2 * wobble(t * 0.3, 7), 10 * wobble(t * 0.18, 3), 2 * sway);
+    // 탈진: 상체를 숙여 무릎 쪽에 손을 대고 크게 헐떡임
+    const k = w * (s.tired || 0);
+    if (k > 0.001) {
+      const pant = Math.sin(t * TAU * 1.35);
+      bodyP(T, k, 0, 0.018 * pant, 0.03, 24 + 3 * pant, 0, 0);
+      arms(T, k, 30 + 2 * pant, 4 + 3 * pant);
+      legs(T, k, 0, 3);
+      head(T, k, -14 + 4 * pant);
+    }
   }
 
+  // 포세이큰 스타일: 걷기 12 스터드/s(4.8 m/s)는 여유 있게, 질주 26 스터드/s(10.4 m/s)는 상체를 숙이고 팔을 크게 흔듦
   poseLoco(T, w, t, s, ph) {
     const gs = s.groundSpeed;
-    const run = smooth(4, 9.5, gs), spr = smooth(10, 16, gs);
+    const run = smooth(5.5, 10, gs);
+    const tired = s.tired || 0;
     const sn = Math.sin(ph), cs = Math.cos(ph);
-    const legA = lerp(30, 50, run) + 10 * spr;
-    const armA = lerp(24, 52, run) + 12 * spr;
-    // 다리: 달릴 땐 앞다리가 더 높이, 뒷다리는 덜 (차기 느낌)
-    const lr = sn * legA + run * 8 * Math.max(0, sn) - run * 4;
-    const ll = -sn * legA + run * 8 * Math.max(0, -sn) - run * 4;
-    leg(T, w, 0, lr, 2 + run * 2);
-    leg(T, w, 1, ll, 2 + run * 2);
-    // 팔: 다리와 반대, 달릴 땐 앞쪽 치우침 + 몸 안쪽으로 교차
-    const ab = run * 10 + spr * 6;
-    arm(T, w, 0, -sn * armA + ab, lerp(5, 11, run) + Math.max(0, -sn) * run * 6, -run * 12);
-    arm(T, w, 1, sn * armA + ab, lerp(5, 11, run) + Math.max(0, sn) * run * 6, -run * 12);
-    // 전력질주(Shift): 팔을 뒤로 쭉 젖힌 닌자 달리기
-    if (spr > 0.001) {
-      const k = w * spr * 0.9;
-      lerpTo(T, ARM_R, k, 72 * D + sn * 6 * D, 0, -16 * D);
-      lerpTo(T, ARM_L, k, 72 * D - sn * 6 * D, 0, 16 * D);
-    }
-    // 몸통: 상하 반동(걷기=통과 시 높음, 달리기=체공 시 높음), 비틀림, 좌우 흔들림, 앞 기울기, 회전 시 안쪽으로 기울기
+    const legA = lerp(27, 50, run);
+    const armA = lerp(20, 60, run) * (1 - 0.4 * tired);
+    // 다리: 달릴 땐 앞다리를 높이 들고 뒷다리로 차냄
+    const lr = sn * legA + run * 9 * Math.max(0, sn) - run * 5;
+    const ll = -sn * legA + run * 9 * Math.max(0, -sn) - run * 5;
+    leg(T, w, 0, lr, 2 + run * 1.5);
+    leg(T, w, 1, ll, 2 + run * 1.5);
+    // 팔: 다리와 반대로, 달릴 땐 앞쪽으로 치우쳐 힘차게 펌핑 + 몸 안쪽으로 살짝 교차
+    const ab = run * 12 - tired * 6;
+    arm(T, w, 0, -sn * armA + ab, lerp(4, 9, run) + Math.max(0, -sn) * run * 5, -run * 14);
+    arm(T, w, 1, sn * armA + ab, lerp(4, 9, run) + Math.max(0, sn) * run * 5, -run * 14);
+    // 몸통: 상하 반동(걷기=통과 시 높음, 달리기=체공 시 높음), 비틀림, 좌우 흔들림, 앞 기울기, 회전 시 안쪽 기울기
     const c2 = Math.cos(2 * ph);
-    const bob = lerp(0.022 * c2, -0.05 * c2 + 0.02, run);
-    const lean = lerp(3, 9, run) + 16 * spr;
+    const bob = lerp(0.02 * c2, -0.05 * c2 + 0.02, run) * (1 + 0.5 * tired);
+    const lean = lerp(2.5, 15, run) + 10 * tired;
     const turn = clamp(s.turnLean || 0, -22, 22);
-    bodyP(T, w, 0, bob, 0, lean, -sn * lerp(4, 8, run) * (1 - spr * 0.6), sn * lerp(2, 3, run) + turn);
-    // 머리는 안정화 (몸 비틀림/기울기 상쇄)
-    head(T, w, -lean * 0.6 + 1.5 * cs * run, sn * lerp(3, 6, run), -sn * 1.5);
+    bodyP(T, w, 0, bob, 0, lean, -sn * lerp(3, 9, run), sn * lerp(1.8, 3, run) + turn);
+    // 머리는 안정화 (몸 비틀림/기울기 상쇄), 지치면 고개가 처짐
+    head(T, w, -lean * 0.6 + 1.5 * cs * run + 9 * tired, sn * lerp(2.5, 7, run), -sn * 1.5);
   }
 
   poseAir(T, w, t, s) {

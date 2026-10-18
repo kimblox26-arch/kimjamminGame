@@ -101,6 +101,14 @@ const hud = {
   speed: $('h-speed'), unit: $('h-unit'), mach: $('h-mach'), alt: $('h-alt'), state: $('h-state'),
   fps: $('h-fps'), bar: $('h-bar'), res: $('h-res'),
 };
+const stamUi = { el: $('stam'), fill: $('stam-fill'), v: -1, ex: null, full: null };
+function updateStamina() {
+  const v = Math.round(player.stamina * 4) / 400;
+  if (v !== stamUi.v) { stamUi.v = v; stamUi.fill.style.transform = `scaleX(${v})`; }
+  const full = v >= 1 && !player.sprinting;
+  if (full !== stamUi.full) { stamUi.full = full; stamUi.el.classList.toggle('full', full); }
+  if (player.exhausted !== stamUi.ex) { stamUi.ex = player.exhausted; stamUi.el.classList.toggle('ex', player.exhausted); }
+}
 const STATE_NAME = { ground: '지상', air: '공중', fly: '비행', hero: '착지!', launch: '이륙' };
 let hudT = 0;
 function updateHud(dt, fps) {
@@ -120,6 +128,8 @@ function updateHud(dt, fps) {
     else if (player.slow) st = '느리게 비행';
     else if (player.speed < 3) st = '호버링';
   }
+  if (player.mode === 'ground' && player.exhausted) st = '탈진';
+  else if (player.mode === 'ground' && player.sprinting) st = '질주';
   if (player.trick) st = { roll: '배럴 롤', flip: '공중제비', cart: '옆돌기' }[player.trick.type];
   hud.state.textContent = st;
   hud.bar.style.transform = `scaleX(${Math.min(1, player.mach / 4.4).toFixed(3)})`;
@@ -220,6 +230,7 @@ function frame(now) {
     perfT = 0; perfFrames = 0;
   }
   updateHud(dt, fps);
+  updateStamina();
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);

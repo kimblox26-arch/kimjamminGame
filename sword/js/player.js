@@ -4,6 +4,9 @@ import { Avatar, RIG } from './avatar.js';
 import { Animator, CH } from './animator.js';
 
 export const SOUND_SPEED = 343;
+const STUD = 0.4;
+const WALK = 12 * STUD, SPRINT = 26 * STUD, SNEAK = 7 * STUD;
+const STAMINA_MAX = 100, STAMINA_DRAIN = 10, STAMINA_REGEN = 20, EXHAUST_DELAY = 3, EXHAUST_RECOVER = 20;
 const TAU = Math.PI * 2;
 const GRAVITY = 34;
 const VMAX = 1500;
@@ -83,6 +86,12 @@ export class Player {
     this.landT = -1;
     this.landHard = 0;
     this.heroT = 0;
+    this.stamina = STAMINA_MAX;
+    this.exhausted = false;
+    this.exhaustT = 0;
+    this.sprinting = false;
+    this.tired = 0;
+    this.sprintAmt = 0;
     this.launchT = 0;
     this.launchPoseT = 9;   // 이륙 후 경과 시간 (주먹 뻗기 자세)
     this.turnLean = 0;
@@ -192,6 +201,7 @@ export class Player {
     const mag = Math.min(1, Math.hypot(mx, my));
     this.slow = I.slow;
     this.sprint = I.boost;
+    this.updateStamina(dt, mag);
 
     // 착지 동작/이륙 준비 중에는 입력을 소비하지 않고 남겨 둠 → 끝나는 즉시 실행
     const busy = this.mode === 'launch' || (this.mode === 'hero' && this.heroT < 0.6);
@@ -258,7 +268,7 @@ export class Player {
     const fx = this.game.fx, au = this.game.audio;
     const dir = _v3.set(0, 0, 0).addScaledVector(fwd, my).addScaledVector(right, mx);
     if (dir.lengthSq() > 1) dir.normalize();
-    const top = this.slow ? 3.6 : this.sprint ? 16 : 9.5;
+    const top = this.slow ? SNEAK : this.sprinting ? SPRINT : WALK;
     const tx = dir.x * top, tz = dir.z * top;
     const dvx = tx - this.vel.x, dvz = tz - this.vel.z;
     const dl = Math.hypot(dvx, dvz);
@@ -280,6 +290,28 @@ export class Player {
       this.dash.add(_v3);
       this.startTrick('cart', 0.6, s);
     }
+  }
+
+  // 포세이큰식 스태미나: 지상에서 Shift 질주 시 소모, 바닥나면 3초간 탈진(질주 불가, 회복 정지)
+  updateStamina(dt, mag) {
+    const onFoot = this.mode === 'ground' || this.mode === 'air';
+    this.sprinting = onFoot && this.sprint && mag > 0.1 && !this.exhausted && !this.slow && this.stamina > 0;
+    if (this.sprinting && this.mode === 'ground') {
+      this.stamina -= STAMINA_DRAIN * dt;
+      if (this.stamina <= 0) {
+        this.stamina = 0;
+        this.exhausted = true;
+        this.exhaustT = EXHAUST_DELAY;
+        this.sprinting = false;
+      }
+    } else if (this.exhaustT > 0) {
+      this.exhaustT -= dt;
+    } else {
+      this.stamina = Math.min(STAMINA_MAX, this.stamina + STAMINA_REGEN * dt);
+      if (this.exhausted && this.stamina >= EXHAUST_RECOVER) this.exhausted = false;
+    }
+    this.tired = lerp(this.tired, this.exhausted ? 1 : 0, 1 - Math.exp(-(this.exhausted ? 5 : 1.6) * dt));
+    this.sprintAmt = lerp(this.sprintAmt, this.sprinting && this.mode === 'ground' ? 1 : 0, 1 - Math.exp(-6 * dt));
   }
 
   // 이륙 예비 동작: 0.13초 웅크렸다가 발사
@@ -314,7 +346,7 @@ export class Player {
   stepAir(dt, fwd, right, mx, my, mag, wantFly, rollL, rollR, wantFlip) {
     const dir = _v3.set(0, 0, 0).addScaledVector(fwd, my).addScaledVector(right, mx);
     if (dir.lengthSq() > 1) dir.normalize();
-    const top = this.slow ? 3.6 : this.sprint ? 16 : 9.5;
+    const top = this.slow ? SNEAK : this.sprinting ? SPRINT : WALK;
     const tx = dir.x * top, tz = dir.z * top;
     const hs = Math.hypot(this.vel.x, this.vel.z);
     // 공중 제어: 입력 방향으로만 가속, 입력 없으면 거의 유지
@@ -687,7 +719,8 @@ export class Player {
     s.mode = this.mode;
     s.groundSpeed = this.mode === 'ground' ? Math.hypot(this.vel.x, this.vel.z) : 0;
     s.vy = this.vel.y;
-    s.sprint = this.sprint; s.slow = this.slow;
+    s.sprint = this.sprinting; s.slow = this.slow;
+    s.tired = this.tired;
     s.flySpeed = this.speed;
     s.mach = this.mach;
     s.boost = this.boostAmt;

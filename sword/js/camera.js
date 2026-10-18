@@ -91,7 +91,7 @@ export class CameraRig {
     const k = 90, c = 2 * Math.sqrt(k) * 0.65;
     this.fovKickV += (-k * this.fovKick - c * this.fovKickV) * dt;
     this.fovKick += this.fovKickV * dt;
-    const fov = this.baseFov + 15 * smooth(15, 340, speed) + 9 * smooth(340, 1400, speed) + clamp(this.fovKick, -10, 22);
+    const fov = this.baseFov + 5 * player.sprintAmt + 15 * smooth(15, 340, speed) + 9 * smooth(340, 1400, speed) + clamp(this.fovKick, -10, 22);
     if (Math.abs(fov - this.cam.fov) > 0.01) {
       this.cam.fov = fov;
       this.cam.updateProjectionMatrix();
