@@ -33,7 +33,12 @@ const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 30
 camera.position.set(0, 2.5, -8);
 
 // ── 모듈 ──
-const world = new World(renderer, scene, { quality });
+// 해: 스폰 카메라의 오른쪽 뒤, 고도 30° → 캐릭터 면마다 명암이 갈려 하얀 바닥 위에서도 형태가 또렷함
+const sunDir = new THREE.Vector3(-0.66, 0.5, -0.56).normalize();
+const world = new World(renderer, scene, { quality, sunDir });
+world.params.sunIntensity = 2.75;
+world.params.hemiIntensity = 1.05;
+world.applyParams();
 const post = new Post(renderer, scene, camera, { quality });
 const audio = new GameAudio();
 const rig = new CameraRig(camera);
@@ -50,7 +55,7 @@ const hooks = {
     if (_uv.z < 1) post.addShockwave(new THREE.Vector2(_uv.x * 0.5 + 0.5, _uv.y * 0.5 + 0.5), s);
   },
 };
-const fx = new FX(scene, camera, hooks, { quality });
+const fx = new FX(scene, camera, hooks, { quality, sunDir });
 const game = {
   fx, audio, hooks,
   hitStop(dur, scale) { hitStopT = Math.max(hitStopT, dur); hitStopScale = scale; },
@@ -77,7 +82,8 @@ let toastT = 0;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); toastT = 1.6; }
 
 // 셰이더 미리 컴파일 (첫 부스트/폭발 시 끊김 방지)
-try { renderer.compile(scene, camera); } catch (e) { console.warn(e); }
+post.bloom.threshold = 1.25;   // 하얀 캐릭터/바닥은 번지지 않고 해·불꽃만 빛나게
+try { post.prewarm(); } catch (e) { console.warn(e); }
 
 function resize() {
   const w = innerWidth, h = innerHeight;
@@ -95,7 +101,7 @@ const hud = {
   speed: $('h-speed'), unit: $('h-unit'), mach: $('h-mach'), alt: $('h-alt'), state: $('h-state'),
   fps: $('h-fps'), bar: $('h-bar'), res: $('h-res'),
 };
-const STATE_NAME = { ground: '지상', air: '공중', fly: '비행', hero: '착지!' };
+const STATE_NAME = { ground: '지상', air: '공중', fly: '비행', hero: '착지!', launch: '이륙' };
 let hudT = 0;
 function updateHud(dt, fps) {
   hudT -= dt;
@@ -130,6 +136,7 @@ let fpsFrames = 0, fpsTime = 0, fps = 0;
 // 적응형 해상도: 목표 = min(120, 모니터 주사율)
 let refreshEst = 60, rafSamples = [], lastRaf = 0, perfT = 0, perfFrames = 0, slowSecs = 0, fastSecs = 0;
 const elapsed = { t: 0 };
+const dbg = { paused: false, pending: 0 };
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -150,22 +157,28 @@ function frame(now) {
     nextDue += gap;
     if (nextDue < now - gap) nextDue = now + gap;
   }
+  // rAF 타임스탬프가 로드 시점보다 앞설 수 있으니 음수 dt 방지
   let dt = (now - last) / 1000;
   last = now;
+  if (!(dt > 0)) dt = 0;
   if (dt > 0.1) dt = 0.1;
 
   // 히트스톱 (충격 순간 시간이 잠깐 멈칫)
   if (hitStopT > 0) { hitStopT -= dt; timeScale = hitStopScale; } else timeScale += (1 - timeScale) * (1 - Math.exp(-20 * dt));
 
   input.poll();
-  acc += dt * timeScale;
+  let simDt = dt * timeScale;
+  // 디버그(테스트 하네스): 일시정지 후 정확한 시간만큼 진행
+  if (dbg.paused) { simDt = dbg.pending; dbg.pending = 0; dt = simDt; }
+  acc += simDt;
   let steps = 0;
-  while (acc >= STEP && steps < 12) {
+  const maxSteps = dbg.paused ? 1e6 : 12;
+  while (acc >= STEP && steps < maxSteps) {
     player.step(STEP, input, rig);
     acc -= STEP;
     steps++;
   }
-  if (steps === 12) acc = 0;
+  if (steps === maxSteps) acc = 0;
   player.interpolate(acc / STEP);
   player.updateVisual(dt);
 
@@ -204,4 +217,4 @@ function frame(now) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);
-window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene };
+window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg };

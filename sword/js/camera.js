@@ -13,8 +13,9 @@ export class CameraRig {
     this.cam = camera;
     this.yaw = 0;            // 0 = +Z 방향을 봄
     this.pitch = -0.16;      // + = 위를 봄
-    this.zoom = 8.5;         // 휠로 조절
-    this.dist = 8.5;
+    this.zoom = 6.2;         // 휠로 조절 (로블록스 기본 거리 비슷하게)
+    this.dist = 6.2;
+    this.roll = 0;
     this.lag = new THREE.Vector3();
     this.lastTarget = new THREE.Vector3();
     this.trauma = 0;
@@ -64,6 +65,10 @@ export class CameraRig {
     if (_p.y < 0.35) _p.y = 0.35;  // 바닥 아래로 내려가지 않게
     this.cam.position.copy(_p);
     this.cam.lookAt(target);
+    // 비행 선회 시 카메라도 살짝 같이 기울어짐 (영화 같은 추적)
+    const rollT = player.flying ? -player.bank.y * 0.16 : 0;
+    this.roll += (rollT - this.roll) * (1 - Math.exp(-4 * dt));
+    if (Math.abs(this.roll) > 1e-4) this.cam.rotateZ(this.roll);
 
     // 흔들림: 충격 트라우마 + 고속 진동
     this.trauma = Math.max(0, this.trauma - dt * 1.3);

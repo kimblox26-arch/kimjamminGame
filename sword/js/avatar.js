@@ -68,10 +68,36 @@ function headGeometry(radius, height, corner) {
   return g;
 }
 
+// 클래식 스마일 얼굴 텍스처 (원통 둘레 1.9 rad 에 펼쳐짐 → 가로를 그만큼 넓게)
+function faceTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#111';
+  // 눈: 세로로 긴 타원
+  for (const x of [196, 316]) {
+    g.beginPath();
+    g.ellipse(x, 92, 15, 31, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  // 입: 넓은 미소 곡선
+  g.strokeStyle = '#111';
+  g.lineWidth = 15;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.ellipse(256, 128, 96, 62, 0, Math.PI * 0.2, Math.PI * 0.8);
+  g.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 export class Avatar {
   constructor() {
+    // 로블록스 플라스틱: 살짝 매끈한 흰색
     this.material = new THREE.MeshStandardMaterial({
-      color: 0xf4f4f6, roughness: 0.6, metalness: 0.0,
+      color: 0xe6e7ea, roughness: 0.48, metalness: 0.0,
       emissive: 0x000000, emissiveIntensity: 1.0,
     });
     const m = this.material;
@@ -100,7 +126,19 @@ export class Avatar {
     this.neck.rotation.order = 'YXZ';
     this.body.add(this.neck);
     mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.06, 20), this.neck, 0.02);
-    this.head = mesh(headGeometry(0.255, 0.47, 0.1), this.neck, 0.27);
+    this.head = mesh(headGeometry(0.245, 0.47, 0.1), this.neck, 0.27);
+    // 로블록스 기본 얼굴 (Smile): 머리 앞면을 감싸는 얇은 원통 조각에 데칼
+    const face = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2465, 0.2465, 0.3, 24, 1, true, -0.95, 1.9),
+      new THREE.MeshStandardMaterial({
+        map: faceTexture(), transparent: true, roughness: 0.5, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -1,
+      }),
+    );
+    face.position.y = 0.285;
+    face.renderOrder = 2;
+    this.neck.add(face);
+    this.face = face;
 
     const limbGeo = roundedBox(0.4, 0.8, 0.4, 0.035);
     const makeLimb = (x, y, len) => {

@@ -83,6 +83,9 @@ export class Player {
     this.landT = -1;
     this.landHard = 0;
     this.heroT = 0;
+    this.launchT = 0;
+    this.launchPoseT = 9;   // 이륙 후 경과 시간 (주먹 뻗기 자세)
+    this.turnLean = 0;
 
     this.trick = null;       // { type, p, dur, axis: Vector3(local), sign }
     this.trickObj = { type: '', p: 0 };
@@ -171,7 +174,7 @@ export class Player {
   }
 
   get flying() { return this.mode === 'fly'; }
-  get grounded() { return this.mode === 'ground' || this.mode === 'hero'; }
+  get grounded() { return this.mode === 'ground' || this.mode === 'hero' || this.mode === 'launch'; }
 
   // ───────────────────────── 고정 스텝 ─────────────────────────
   step(dt, input, cam) {
@@ -205,6 +208,8 @@ export class Player {
     else if (this.mode === 'air') this.stepAir(dt, fwdFlat, right, mx, my, mag, wantFly, rollL, rollR, wantFlip);
     else if (this.mode === 'fly') this.stepFly(dt, cam, cy, sy, cp, sp, mx, my, mag, I, wantFly, rollL, rollR, wantFlip, prevSpeed);
     else if (this.mode === 'hero') this.stepHero(dt, wantFly);
+    else if (this.mode === 'launch') this.stepLaunch(dt);
+    this.launchPoseT += dt;
 
     // 대시(롤 회피) 감쇠 및 적분
     this.pos.addScaledVector(this.vel, dt).addScaledVector(this.dash, dt);
@@ -263,7 +268,7 @@ export class Player {
     this.coyote = 0.1;
     this.landT = this.landT >= 0 ? this.landT + dt : -1;
 
-    if (wantFly) { this.takeoff(true); return; }
+    if (wantFly) { this.startLaunch(); return; }
     if (this.jumpBuffer > 0) { this.jumpBuffer = 0; this.jump(12.2, 1); return; }
     if (wantFlip) { this.jump(13.2, 0.8); this.startTrick('flip', 0.72, 1); return; }
     if (rollL || rollR) {
@@ -273,6 +278,22 @@ export class Player {
       this.dash.add(_v3);
       this.startTrick('cart', 0.6, s);
     }
+  }
+
+  // 이륙 예비 동작: 0.13초 웅크렸다가 발사
+  startLaunch() {
+    this.mode = 'launch';
+    this.launchT = 0;
+    _v3.copy(this.pos); _v3.y = 0.02;
+    this.game.fx.step(_v3, 0.8);
+    this.anim.kickBody(-0.8, 0.6);
+  }
+
+  stepLaunch(dt) {
+    this.launchT += dt;
+    const k = Math.exp(-14 * dt);
+    this.vel.x *= k; this.vel.z *= k; this.vel.y = 0;
+    if (this.launchT >= 0.13) this.takeoff(true);
   }
 
   jump(v, strength) {
@@ -330,7 +351,8 @@ export class Player {
     this.mode = 'fly';
     this.boomArmed = this.mach < 0.85;
     if (fromGround) {
-      this.vel.y = Math.max(this.vel.y, 17);
+      this.vel.y = Math.max(this.vel.y, 19);
+      this.launchPoseT = 0;
       _v3.copy(this.pos); _v3.y = 0.02;
       fx.takeoff(_v3, 1);
       au.play('takeoff', 1);
@@ -449,7 +471,7 @@ export class Player {
   stepHero(dt, wantFly) {
     this.heroT += dt;
     this.vel.set(0, 0, 0);
-    if (wantFly && this.heroT > 0.3) { this.takeoff(true); return; }
+    if (wantFly && this.heroT > 0.3) { this.startLaunch(); return; }
     if (this.heroT > 1.05) {
       this.mode = 'ground';
       this.landT = -1;
@@ -474,7 +496,7 @@ export class Player {
 
   groundCollide(dt) {
     const fx = this.game.fx, au = this.game.audio;
-    if (this.mode === 'ground' || this.mode === 'hero') { this.pos.y = RIG.pivotY; return; }
+    if (this.mode === 'ground' || this.mode === 'hero' || this.mode === 'launch') { this.pos.y = RIG.pivotY; return; }
     if (this.mode === 'air') {
       if (this.pos.y <= RIG.pivotY && this.vel.y <= 0) {
         const impact = -this.vel.y;
@@ -597,6 +619,9 @@ export class Player {
     }
     this.yawRate = lerp(this.yawRate, wrapAngle(this.heading - this.prevHeading) / dt, 1 - Math.exp(-10 * dt));
     this.prevHeading = this.heading;
+    // 지상에서 돌 때 몸을 안쪽으로 기울임 (도 단위)
+    const gsp = this.mode === 'ground' ? Math.hypot(this.vel.x, this.vel.z) : 0;
+    this.turnLean = lerp(this.turnLean, clamp(-this.yawRate * gsp * 0.9, -22, 22), 1 - Math.exp(-8 * dt));
 
     // 스프링 주파수: 지상에서는 단단하게
     const air = this.mode === 'fly';
@@ -653,6 +678,9 @@ export class Player {
     s.heroT = this.heroT;
     s.landT = this.landT;
     s.landHard = this.landHard;
+    s.launchT = this.launchT;
+    s.launchPose = this.mode === 'fly' ? (1 - smooth(0.3, 0.75, this.launchPoseT)) * smooth(-2, 4, this.vel.y) : 0;
+    s.turnLean = this.turnLean;
     // 고개: 카메라가 보는 방향 (몸 기준)
     s.lookYaw = wrapAngle(cam.yaw - this.heading);
     if (Math.abs(s.lookYaw) > 2.2) s.lookYaw = 0;

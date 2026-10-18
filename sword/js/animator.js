@@ -54,6 +54,11 @@ function bodyP(T, w, px, py, pz, rx = 0, ry = 0, rz = 0) {
   T[BROT] += w * rx * D; T[BROT + 1] += w * ry * D; T[BROT + 2] += w * rz * D;
 }
 
+// 채널 3개를 목표 각(라디안, 내부 부호 그대로)으로 보간
+function lerpTo(T, b, k, x, y, z) {
+  T[b] = lerp(T[b], x, k); T[b + 1] = lerp(T[b + 1], y, k); T[b + 2] = lerp(T[b + 2], z, k);
+}
+
 // 값 노이즈 대신 비정수 주파수 사인 합 (할당 없음, 연속)
 function wobble(t, seed) {
   return (Math.sin(t * 1.0 + seed) * 0.5 + Math.sin(t * 2.31 + seed * 1.7) * 0.3 + Math.sin(t * 4.77 + seed * 3.1) * 0.2);
@@ -122,9 +127,10 @@ export class Animator {
 
     // ── 레이어 가중치 ──
     const moving = smooth(0.25, 1.6, s.groundSpeed);
+    const onGround = s.mode === 'ground' || s.mode === 'launch';
     const tw = {
-      idle: s.mode === 'ground' ? 1 - moving : 0,
-      loco: s.mode === 'ground' ? moving : 0,
+      idle: onGround ? 1 - moving : 0,
+      loco: onGround ? moving : 0,
       air: s.mode === 'air' ? 1 : 0,
       fly: s.mode === 'fly' ? 1 : 0,
       hero: s.mode === 'hero' ? 1 : 0,
@@ -171,6 +177,24 @@ export class Animator {
       arms(T, k, 26, 38);
       bodyP(T, k, 0, 0, 0.04, 16, 0, 0);
       head(T, k, 8);
+    }
+
+    // 이륙 예비 동작: 깊게 웅크렸다가 튀어오름
+    if (s.mode === 'launch') {
+      const k = smooth(0, 0.07, s.launchT);
+      leg(T, k, 0, 46, 7); leg(T, k, 1, -30, 9);
+      arm(T, k, 0, -38, 24, 10); arm(T, k, 1, -44, 30, 10);
+      bodyP(T, k, 0, 0, 0.02, 24, -8, 0);
+      head(T, k, 16);
+    }
+    // 이륙 직후: 한 주먹을 하늘로 뻗는 슈퍼히어로 상승 자세
+    if (s.mode === 'fly' && s.launchPose > 0) {
+      const k = s.launchPose;
+      lerpTo(T, ARM_R, k, -178 * D, 0, 6 * D * -1);
+      lerpTo(T, ARM_L, k, 8 * D, 0, 10 * D);
+      lerpTo(T, LEG_R, k, 4 * D, 0, -1 * D);
+      lerpTo(T, LEG_L, k, 14 * D, 0, 1 * D);
+      T[NECK] = lerp(T[NECK], -18 * D, k);
     }
 
     // ── 시선 ──
@@ -283,11 +307,18 @@ export class Animator {
     const ab = run * 10 + spr * 6;
     arm(T, w, 0, -sn * armA + ab, lerp(5, 11, run) + Math.max(0, -sn) * run * 6, -run * 12);
     arm(T, w, 1, sn * armA + ab, lerp(5, 11, run) + Math.max(0, sn) * run * 6, -run * 12);
-    // 몸통: 상하 반동(걷기=통과 시 높음, 달리기=체공 시 높음), 비틀림, 좌우 흔들림, 앞 기울기
+    // 전력질주(Shift): 팔을 뒤로 쭉 젖힌 닌자 달리기
+    if (spr > 0.001) {
+      const k = w * spr * 0.9;
+      lerpTo(T, ARM_R, k, 72 * D + sn * 6 * D, 0, -16 * D);
+      lerpTo(T, ARM_L, k, 72 * D - sn * 6 * D, 0, 16 * D);
+    }
+    // 몸통: 상하 반동(걷기=통과 시 높음, 달리기=체공 시 높음), 비틀림, 좌우 흔들림, 앞 기울기, 회전 시 안쪽으로 기울기
     const c2 = Math.cos(2 * ph);
     const bob = lerp(0.022 * c2, -0.05 * c2 + 0.02, run);
-    const lean = lerp(3, 9, run) + 6 * spr;
-    bodyP(T, w, 0, bob, 0, lean, -sn * lerp(4, 8, run), sn * lerp(2, 3, run));
+    const lean = lerp(3, 9, run) + 16 * spr;
+    const turn = clamp(s.turnLean || 0, -22, 22);
+    bodyP(T, w, 0, bob, 0, lean, -sn * lerp(4, 8, run) * (1 - spr * 0.6), sn * lerp(2, 3, run) + turn);
     // 머리는 안정화 (몸 비틀림/기울기 상쇄)
     head(T, w, -lean * 0.6 + 1.5 * cs * run, sn * lerp(3, 6, run), -sn * 1.5);
   }
@@ -298,13 +329,13 @@ export class Animator {
     const apex = Math.max(0, 1 - rise - fall);
     // 상승: 팔을 크게 위로, 한쪽 다리 접어올림
     if (rise > 0) {
-      arm(T, w * rise, 0, 150, 16, -10); arm(T, w * rise, 1, 138, 22, -10);
-      leg(T, w * rise, 0, 42, 4); leg(T, w * rise, 1, -12, 5);
+      arm(T, w * rise, 0, 172, 9, -6); arm(T, w * rise, 1, 166, 12, -6);
+      leg(T, w * rise, 0, 34, 4); leg(T, w * rise, 1, -14, 5);
       bodyP(T, w * rise, 0, 0, 0, -5, 0, 0);
       head(T, w * rise, -8);
     }
     if (apex > 0) {
-      arm(T, w * apex, 0, 118, 34); arm(T, w * apex, 1, 110, 38);
+      arm(T, w * apex, 0, 150, 26); arm(T, w * apex, 1, 142, 30);
       leg(T, w * apex, 0, 22, 6); leg(T, w * apex, 1, -6, 6);
       bodyP(T, w * apex, 0, 0, 0, 0, 0, 0);
     }
