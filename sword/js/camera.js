@@ -16,7 +16,8 @@ export class CameraRig {
     this.pitch = -0.16;      // + = 위를 봄
     this.zoom = 6.2;         // 휠로 조절 (로블록스 기본 거리 비슷하게)
     this.dist = 6.2;
-    this.roll = 0;
+    this.arm = 6.2;          // 실제 카메라 거리 (가려지면 줄어듦)
+    this.first2 = true;
     this.lag = new THREE.Vector3();
     this.lastTarget = new THREE.Vector3();
     this.trauma = 0;
@@ -48,7 +49,7 @@ export class CameraRig {
     target.y += 0.75;
 
     // 지연 추적: 목표가 움직인 만큼 오차가 생기고, 지수적으로 따라잡음 (고속에서도 화면 밖으로 안 나가게 제한)
-    if (this.first) { this.lastTarget.copy(target); this.first = false; }
+    if (this.first) { this.lastTarget.copy(target); this.first = false; this.first2 = true; }
     _d.subVectors(target, this.lastTarget);
     const tp = Math.max(50, speed * dt * 3);
     if (_d.lengthSq() > tp * tp) _d.set(0, 0, 0);   // 순간이동 방지 (최고속에서도 오작동 없게)
@@ -65,16 +66,30 @@ export class CameraRig {
 
     const cp = Math.cos(this.pitch);
     _f.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp);
-    _p.copy(target).addScaledVector(_f, -this.dist);
-    // 지면/옥상 아래로 내려가지 않게
+    // 건물·언덕이 카메라와 캐릭터 사이를 막으면 카메라를 캐릭터 쪽으로 당김 (로블록스 팝퍼 카메라).
+    // 높이를 억지로 올리면 시선이 갑자기 꺾이므로, 막힐 때는 거리만 줄이고 시선 방향은 그대로 둠
+    let arm = this.dist;
+    if (this.groundAt) {
+      const g0 = this.groundAt(target.x, target.z);
+      const N = 8;
+      for (let i = 1; i <= N; i++) {
+        const s = (this.dist * i) / N;
+        const px = target.x - _f.x * s, py = target.y - _f.y * s, pz = target.z - _f.z * s;
+        const gh = this.groundAt(px, pz);
+        if (py < gh + 0.4 && gh > g0 + 1.0) { arm = Math.max(0.8, (this.dist * (i - 1)) / N); break; }
+      }
+    }
+    if (this.first2 || arm < this.arm) this.arm = arm;   // 막히면 즉시, 풀리면 부드럽게
+    else this.arm += (arm - this.arm) * (1 - Math.exp(-4 * dt));
+    this.first2 = false;
+    _p.copy(target).addScaledVector(_f, -this.arm);
+    // 평평한 땅을 올려다볼 때만 지면 위로 (지형은 매끄러워 시선이 튀지 않음)
     const gmin = (this.groundAt ? this.groundAt(_p.x, _p.z) : 0) + 0.4;
     if (_p.y < gmin) _p.y = gmin;
     this.cam.position.copy(_p);
     this.cam.lookAt(target);
-    // 비행 선회 시 카메라도 살짝 같이 기울어짐 (영화 같은 추적)
-    const rollT = player.flying ? -player.bank.y * 0.16 : 0;
-    this.roll += (rollT - this.roll) * (1 - Math.exp(-4 * dt));
-    if (Math.abs(this.roll) > 1e-4) this.cam.rotateZ(this.roll);
+    // 화면은 항상 수평 유지: 이동/선회(조이스틱·WASD)로 카메라가 기울거나 돌지 않음.
+    // 시점은 시점 드래그·마우스·오른쪽 스틱으로만 바뀜
 
     // 흔들림: 충격 트라우마 + 고속 진동
     this.trauma = Math.max(0, this.trauma - dt * 1.3);

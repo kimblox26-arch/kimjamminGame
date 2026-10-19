@@ -306,7 +306,7 @@ function frame(now) {
   // 히트스톱 (충격 순간 시간이 잠깐 멈칫)
   if (hitStopT > 0) { hitStopT -= dt; timeScale = hitStopScale; } else timeScale += (1 - timeScale) * (1 - Math.exp(-20 * dt));
 
-  input.poll();
+  input.poll(dt);
   let simDt = dt * timeScale;
   // 디버그(테스트 하네스): 일시정지 후 정확한 시간만큼 진행
   if (dbg.paused) { simDt = dbg.pending; dbg.pending = 0; dt = simDt; }
