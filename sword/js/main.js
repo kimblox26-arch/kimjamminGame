@@ -13,6 +13,8 @@ import { Terrain } from './terrain.js';
 import { City } from './city.js';
 import { Space } from './space.js';
 import { Cosmic } from './cosmic.js';
+import { Water } from './water.js';
+import { Trees } from './trees.js';
 import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
 import { TARGETS } from './player.js';
 
@@ -46,6 +48,8 @@ const sunDir = SUN_DIR.clone();
 const world = new World(renderer, scene, { quality, sunDir });
 const terrain = new Terrain(renderer, scene, { quality, sunDir });
 const city = new City(renderer, scene, { quality, sunDir });
+const water = new Water(renderer, scene, { quality, envMap: city.envMap });
+const trees = new Trees(renderer, scene, { quality, envMap: city.envMap, footprint: (x, z) => city.roofAt(x, z) });
 const space = new Space(renderer, { quality });
 world.params.sunIntensity = 2.75;
 world.params.hemiIntensity = 1.05;
@@ -73,6 +77,7 @@ const hooks = {
   },
 };
 const fx = new FX(scene, camera, hooks, { quality, sunDir });
+fx.setGround((x, z) => rig.groundAt(x, z));
 const cosmic = new Cosmic(space, hooks, { quality });
 const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3();
 let earthGone = false, cineMode = false;
@@ -102,6 +107,7 @@ const game = {
   },
 };
 const player = new Player(scene, game);
+player.avatar.setEnv(city.envMap);
 // 스폰: 한강 북쪽 둔치 공원
 function spawn() {
   if (origin.lengthSq() > 0) rebase(-origin.x, -origin.y, -origin.z);
@@ -326,6 +332,9 @@ function frame(now) {
   world.update(dt, elapsed.t, camera, player.renderPos, camAbs);
   terrain.update(dt, camera, camAbs);
   city.update(dt, camera, camAbs);
+  if (!water.ready && (terrain.stats.draws > 30 || elapsed.t > 8)) water.ready = true;
+  water.update(dt, camera, camAbs);
+  trees.update(dt, camera, camAbs, camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
   if (cineMode) cinematic(dt); else space.update(dt, camera, camAbs, camAbs.y);
   cosmic.update(dt, camAbs);
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
@@ -365,7 +374,9 @@ function frame(now) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);
-window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, origin, resetWorld };
+window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;
+window.__wl = terrainMod.waterLevelAt;
+window.__ts = terrainMod.terrainSample;

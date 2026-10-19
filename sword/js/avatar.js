@@ -94,10 +94,13 @@ function faceTexture() {
 }
 
 export class Avatar {
+  setEnv(envMap) { this.material.envMap = envMap; this.material.needsUpdate = true; }
   constructor() {
     // 로블록스 플라스틱: 살짝 매끈한 흰색
-    this.material = new THREE.MeshStandardMaterial({
-      color: 0xe6e7ea, roughness: 0.48, metalness: 0.0,
+    // 클리어코트: 플라스틱 위에 얇은 광택층 → 하늘·태양이 몸에 비침
+    this.material = new THREE.MeshPhysicalMaterial({
+      color: 0xe6e7ea, roughness: 0.42, metalness: 0.0,
+      clearcoat: 0.55, clearcoatRoughness: 0.22, envMapIntensity: 0.9,
       emissive: 0x000000, emissiveIntensity: 1.0,
     });
     const m = this.material;

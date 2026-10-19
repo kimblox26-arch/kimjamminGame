@@ -263,6 +263,7 @@ export class Player {
       do { this.targetIdx = (this.targetIdx + 1) % TARGETS.length; } while (this.gone.has(TARGETS[this.targetIdx]) && this.gone.size < TARGETS.length);
       this.game.toast && this.game.toast(`목표: ${BODY[TARGETS[this.targetIdx]].name}`);
     }
+    if (this.autopilot && (this.mode === 'ground' || this.mode === 'hero')) this.autopilot = false;   // 착지하면 해제
     if (input.consume('auto')) {
       this.autopilot = !this.autopilot;
       if (this.autopilot && this.mode !== 'fly') this.mode === 'ground' ? this.startLaunch() : this.takeoff(false);
@@ -517,6 +518,12 @@ export class Player {
       // 지수 가속: 대기 중 약 0.55초마다 두 배, 우주에서는 약 0.28초마다 두 배
       const a = space ? 400 + 2.5 * speed : speed < 110 ? 160 : 80 + 1.25 * speed;
       target = speed > vcap ? speed : Math.min(vcap, speed + a * dt);
+    } else if (this.autopilot) {
+      // 자동 항법 순항: 남은 거리에 비례한 속도 → 어디서든 수십 초 안에 도착하고 표면 앞에서 부드럽게 감속
+      // (방향이 덜 맞았으면 먼저 돌고 나서 가속. 부수고 싶으면 Shift 로 부스트)
+      const al = speed > 1 ? Math.max(0, _v1.copy(this.vel).divideScalar(speed).dot(dir)) : 1;
+      const want = Math.min(vcap, Math.max(30, (this.targetDist || 0) * 0.8)) * al * al * al * al;
+      target = want < speed ? want : speed + (want - speed) * (1 - Math.exp(-1.5 * dt));
     } else if (hasInput) {
       const t = tier * dmag;
       if (speed < t) target = Math.min(t, speed + (space ? 2000 : this.slow ? 14 : 45) * dt);
@@ -551,7 +558,7 @@ export class Player {
       // 고속: 방향은 최대 선회율로 회전, 속력은 따로
       const cur = _v1.copy(this.vel).divideScalar(speed);
       const ang = Math.acos(clamp(cur.dot(dir), -1, 1));
-      const turn = (space ? 2.6 : lerp(5.2, 0.95, smooth(30, 1200, speed))) * (this.slow ? 0.7 : 1);
+      const turn = this.autopilot ? 4 : (space ? 2.6 : lerp(5.2, 0.95, smooth(30, 1200, speed))) * (this.slow ? 0.7 : 1);
       if (ang > 1e-4) {
         const axis = _v2.crossVectors(cur, dir);
         if (axis.lengthSq() < 1e-8) axis.set(0, 1, 0); else axis.normalize();
@@ -787,12 +794,16 @@ export class Player {
       if (b.id === 'earth' || this.gone.has(b.id)) continue;
       const t = segSphere(P0, P1, b.pos, b.radius + 3);
       if (t < 0) continue;
+      // 표면에 서 있다가 떠나는 중이면 무시
+      _v3.subVectors(P0, b.pos);
+      if (_v3.length() <= b.radius + 4 && _v3.dot(_v2.subVectors(P1, P0)) >= 0) continue;
       if (b.id === 'sun') {
         if (C && !C.active) { this.gone.add('sun'); this.game.planetImpact('sun', this, _Vp); }
         return true;
       }
       if (sp >= b.breakV) {
         this.gone.add(b.id);
+        if (b.id === TARGETS[this.targetIdx]) this.autopilot = false;
         if (b.id === 'moon') this.moonGone = true;
         _v3.copy(_Vp).normalize();
         this.game.planetImpact(b.id, this, _v3);
@@ -805,7 +816,7 @@ export class Player {
       this.vel.set(0, 0, 0);
       this.speedLock = 0; this.autopilot = false;
       this.game.hooks.shake(clamp(0.2 + Math.log10(1 + sp) / 10, 0, 1));
-      this.game.toast && this.game.toast(`${b.name}에 충돌 (파괴하려면 초속 ${fmtSpeed(b.breakV)} 이상)`);
+      this.game.toast && this.game.toast(sp < 400 ? `${b.name} 표면에 도착` : `${b.name}에 충돌 (파괴하려면 초속 ${fmtSpeed(b.breakV)} 이상)`);
       return true;
     }
     return false;

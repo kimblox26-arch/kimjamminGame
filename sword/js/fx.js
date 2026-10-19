@@ -359,6 +359,7 @@ const MAX_STRETCH = 34;
 const SP = {};
 // v2: 지면 높이 (렌더 좌표). 지형 위에서도 바운스/부드러운 접지/크레이터가 맞게
 const FLOOR_U = { value: 0 };
+let GROUND_FN = null;   // (렌더 x,z) → 렌더 y: 지형/물/지붕 (main 에서 설정)
 
 function sp() {
   SP.x = 0; SP.y = 0; SP.z = 0; SP.vx = 0; SP.vy = 0; SP.vz = 0;
@@ -961,6 +962,7 @@ class DebrisPool {
     this.p = new Float32Array(max * 3); this.v = new Float32Array(max * 3);
     this.q = new Float32Array(max * 4); this.w = new Float32Array(max * 3);
     this.s = new Float32Array(max); this.age = new Float32Array(max); this.life = new Float32Array(max);
+    this.g = new Float32Array(max).fill(NaN); this._fr = 0;   // 조각별 바닥 높이 캐시 (지형·지붕)
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 });
     this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, max);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -990,11 +992,12 @@ class DebrisPool {
   _copy(dst, src) {
     this.p.copyWithin(dst * 3, src * 3, src * 3 + 3); this.v.copyWithin(dst * 3, src * 3, src * 3 + 3);
     this.q.copyWithin(dst * 4, src * 4, src * 4 + 4); this.w.copyWithin(dst * 3, src * 3, src * 3 + 3);
-    this.s[dst] = this.s[src]; this.age[dst] = this.age[src]; this.life[dst] = this.life[src];
+    this.s[dst] = this.s[src]; this.age[dst] = this.age[src]; this.life[dst] = this.life[src]; this.g[dst] = this.g[src];
   }
   update(dt) {
     let n = this.n;
-    const p = this.p, v = this.v, q = this.q, w = this.w;
+    const p = this.p, v = this.v, q = this.q, w = this.w, G = this.g;
+    const fr = ++this._fr;
     for (let i = 0; i < n; i++) {
       this.age[i] += dt;
       if (this.age[i] >= this.life[i]) { n--; if (i < n) { this._copy(i, n); i--; } continue; }
@@ -1004,8 +1007,13 @@ class DebrisPool {
       const k = Math.exp(-0.25 * dt);
       v[i3] *= k; v[i3 + 2] *= k;
       p[i3] += v[i3] * dt; p[i3 + 1] += v[i3 + 1] * dt; p[i3 + 2] += v[i3 + 2] * dt;
-      if (p[i3 + 1] < FLOOR_U.value + hs) {
-        p[i3 + 1] = FLOOR_U.value + hs;
+      let fy = FLOOR_U.value;
+      if (GROUND_FN) {
+        if (((i + fr) & 7) === 0 || G[i] !== G[i]) G[i] = GROUND_FN(p[i3], p[i3 + 2]);
+        fy = G[i];
+      }
+      if (p[i3 + 1] < fy + hs) {
+        p[i3 + 1] = fy + hs;
         if (v[i3 + 1] < 0) {
           v[i3 + 1] = -v[i3 + 1] * 0.34;
           if (v[i3 + 1] < 0.6) v[i3 + 1] = 0;
@@ -2475,7 +2483,10 @@ FX.prototype.update = function (dt, ctx) {
   return _update.call(this, dt, ctx);
 };
 
+FX.prototype.setGround = function (fn) { GROUND_FN = fn; };
+
 FX.prototype._rebase = function (dx, dy, dz) {
+  this.debris.g.fill(NaN);
   for (const pool of [this.smoke, this.glow]) for (let i = 0; i < pool.n; i++) { const o = i * S; pool.d[o] -= dx; pool.d[o + 1] -= dy; pool.d[o + 2] -= dz; }
   for (let i = 0; i < this.rings.n; i++) { const o = i * RS; this.rings.d[o] -= dx; this.rings.d[o + 1] -= dy; this.rings.d[o + 2] -= dz; }
   for (let i = 0; i < this.shells.n; i++) { const o = i * HS; this.shells.d[o] -= dx; this.shells.d[o + 1] -= dy; this.shells.d[o + 2] -= dz; }

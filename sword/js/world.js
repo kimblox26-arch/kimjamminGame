@@ -133,8 +133,13 @@ uniform vec3 uSunDisc;
 uniform vec3 uSunGlow;
 uniform float uSunR;
 uniform float uCamAlt;      // 카메라 해발 고도 (m)
+uniform vec2 uCamXZ;        // 카메라 절대 x,z (권운 층 위치)
+uniform float uSkyTime;
 varying vec3 vDir;
 float skyHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float cNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(skyHash(i), skyHash(i + vec2(1.0, 0.0)), f.x), mix(skyHash(i + vec2(0.0, 1.0)), skyHash(i + vec2(1.0, 1.0)), f.x), f.y); }
+float cFbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * cNoise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p; a *= 0.5; } return s; }
 void main() {
   vec3 dir = normalize(vDir);
   vec3 col = skyRadiance(dir);
@@ -148,6 +153,21 @@ void main() {
   col += uSunDisc * (disc * limb * above);
   float x = max(ang - uSunR, 0.0);
   col += uSunGlow * (exp(-x * 300.0) * 0.8 + exp(-x * 32.0) * 0.14 + exp(-x * 6.0) * 0.035) * above;
+  // 권운 (고도 9 km 의 얇은 새털구름): 하늘 평면과의 교점에서 바람 방향으로 늘어진 fbm 줄무늬
+  {
+    float cirH = 9000.0 - uCamAlt;
+    if (cirH > 0.0 && dir.y > 0.0) {
+      float t = cirH / max(dir.y, 0.03);
+      vec2 p = (uCamXZ + dir.xz * t) * 0.00009 + vec2(uSkyTime * 0.0012, 0.0);
+      vec2 q = vec2(p.x * 0.45 + p.y * 0.25, p.y * 2.2 - p.x * 0.5);
+      float n = cFbm(q + 0.35 * vec2(cFbm(q * 1.7 + 3.1), 0.0));
+      float cov = smoothstep(0.5, 0.82, n) * smoothstep(0.0, 0.1, dir.y) * (1.0 - smoothstep(60000.0, 160000.0, t));
+      float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      float fwd = exp(-max(ang, 0.0) * 4.0);
+      vec3 cir = vec3(lum * 1.7) + uSunGlow * (0.004 + 0.03 * fwd);
+      col = mix(col, cir, cov * 0.55 * (1.0 - smoothstep(6000.0, 9000.0, uCamAlt) * 0.5));
+    }
+  }
   col *= 1.0 + (skyHash(gl_FragCoord.xy) - 0.5) * 0.008;  // 미세 디더 (그라디언트 밴딩 방지)
   // 고도: 카메라 위쪽 공기의 광학 두께 → 하늘이 짙은 남색 → 보랏빛 검정 → 투명(우주)
   // 지평선 쪽은 공기층을 길게 지나므로 마지막까지 밝은 띠(림)로 남음
@@ -584,6 +604,8 @@ export class World {
       uSunGlow: { value: new THREE.Color() },
       uSunR: { value: 0.005 },
       uCamAlt: { value: 0 },
+      uCamXZ: { value: new THREE.Vector2() },
+      uSkyTime: { value: 0 },
     });
     const mat = new THREE.ShaderMaterial({
       name: 'SkyDome',
@@ -976,6 +998,8 @@ ${lights}`;
     const airD = Math.exp(-Math.max(0, camAlt) / 8500);
     this.airDensity = airD;
     this.skyUniforms.uCamAlt.value = camAlt;
+    if (camAbs) this.skyUniforms.uCamXZ.value.set(camAbs.x, camAbs.z);
+    this.skyUniforms.uSkyTime.value = elapsed;
     // 연무: 공기가 옅을수록 멀리까지 보임
     if (this.scene.fog) this.scene.fog.density = 0.000045 * Math.pow(airD, 0.6);
     camera.updateWorldMatrix(true, false);

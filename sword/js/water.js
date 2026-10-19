@@ -47,6 +47,8 @@ vWPos = wp0 + disp;
 `;
 const FRAG_PARS = /* glsl */`
 uniform float uTime;
+uniform vec3 uWaterCol;
+uniform float uFoam;
 varying vec3 vWPos;
 varying float vCrest;
 float wHash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
@@ -63,7 +65,8 @@ const FRAG_NORMAL = /* glsl */`
   float hx = wNoise((p + vec2(e, 0.0)) * 1.3 + vec2(t * 0.6, t * 0.4)) + 0.5 * wNoise((p + vec2(e, 0.0)) * 3.1 - vec2(t * 0.9, -t * 0.7));
   float hz = wNoise((p + vec2(0.0, e)) * 1.3 + vec2(t * 0.6, t * 0.4)) + 0.5 * wNoise((p + vec2(0.0, e)) * 3.1 - vec2(t * 0.9, -t * 0.7));
   float dist = length(vWPos - cameraPosition);
-  float amt = 0.22 * (1.0 - smoothstep(30.0, 400.0, dist));
+  // 화면 픽셀보다 잘아지는 잔물결은 끔 (반짝이 노이즈 방지)
+  float amt = 0.09 * (1.0 - smoothstep(6.0, 70.0, dist));
   vec3 pn = normalize(vec3(-(hx - h0) / e * amt, 1.0, -(hz - h0) / e * amt));
   normal = normalize(normal + (mat3(viewMatrix) * pn - mat3(viewMatrix) * vec3(0.0, 1.0, 0.0)));
 }
@@ -71,8 +74,8 @@ const FRAG_NORMAL = /* glsl */`
 const FRAG_COLOR = /* glsl */`
 // 물마루 거품
 {
-  float foam = smoothstep(0.35, 0.75, vCrest) * (0.6 + 0.4 * wNoise(vWPos.xz * 0.8 + uTime * 0.3));
-  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.88, 0.9), foam * 0.7);
+  float foam = smoothstep(0.5, 0.85, vCrest) * smoothstep(0.35, 0.8, wNoise(vWPos.xz * 0.35 + uTime * 0.2));
+  diffuseColor.rgb = mix(uWaterCol, vec3(0.8, 0.84, 0.86), foam * 0.6 * uFoam);
 }
 `;
 
@@ -81,7 +84,7 @@ export class Water {
     const low = opts.quality === 'low';
     this.scene = scene;
     // 극좌표 격자: 반지름이 지수적으로 커짐
-    const A = low ? 96 : 160, Rn = low ? 90 : 140, r0 = 0.6, gr = low ? 1.07 : 1.045;
+    const A = low ? 96 : 160, Rn = low ? 90 : 140, r0 = 0.6, gr = low ? 1.095 : 1.06;
     const pos = [], idx = [];
     pos.push(0, 0, 0);
     let r = r0;
@@ -108,7 +111,7 @@ export class Water {
       this.uW2.push(new THREE.Vector4(q / (k * amp * NW), 0, w, 0));
       return { dx: Math.cos(a), dz: Math.sin(a), k };
     });
-    this.uniforms = { uW: { value: this.uW }, uW2: { value: this.uW2 }, uTime: { value: 0 }, uAmp: { value: 1 } };
+    this.uniforms = { uW: { value: this.uW }, uW2: { value: this.uW2 }, uTime: { value: 0 }, uAmp: { value: 1 }, uWaterCol: { value: new THREE.Color(0x0a2630) }, uFoam: { value: 1 } };
     const m = new THREE.MeshStandardMaterial({ color: 0x0c2a33, roughness: 0.05, metalness: 0.0, envMap: opts.envMap || null, envMapIntensity: 1.0 });
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, this.uniforms);
@@ -132,6 +135,7 @@ export class Water {
     this.mesh.renderOrder = -5;
     scene.add(this.mesh);
     this.level = 0;
+    this.ready = false;     // 지형이 깔린 뒤에 보이기 (main 에서 설정)
     this.time = 0;
     this._probe = 0;
   }
@@ -154,9 +158,12 @@ export class Water {
       if (found) this.level = lv;
     }
     const alt = camAbs.y - this.level;
-    this.mesh.visible = this.found && alt < 6000;
+    this.mesh.visible = this.ready && this.found && alt < 6000;
     // 바다(수위 0)는 크게, 강은 잔잔하게
-    this.uniforms.uAmp.value = this.level < 0.5 ? 1.0 : 0.25;
+    const sea = this.level < 0.5;
+    this.uniforms.uAmp.value = sea ? 1.0 : 0.25;
+    this.uniforms.uFoam.value = sea ? 1 : 0;
+    this.uniforms.uWaterCol.value.setHex(sea ? 0x0a2630 : 0x12302a);   // 바다: 짙은 청록 / 한강: 녹회색
     this.mesh.position.set(camAbs.x - origin.x, this.level - origin.y, camAbs.z - origin.z);
     // 원점 보정 위상: k·(origin.xz) 를 2π 로 나눈 나머지 (배정밀도로 계산)
     for (let i = 0; i < NW; i++) {
