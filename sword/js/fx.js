@@ -2505,7 +2505,8 @@ FX.prototype._rebase = function (dx, dy, dz) {
 // 에너지 비례 충격: 폭발 반경 R ≈ 0.25·E^(1/3) m (폭발 상사 법칙)
 //  ~36 kJ 영웅 착지 → 수 MJ 크레이터 → GJ 블록 파괴 → 10^12 J 이상 버섯구름과 수 km 충격파
 FX.prototype.impact = function (pos, E, n) {
-  const R = 0.25 * Math.cbrt(Math.max(E, 1));
+  // 화면에 담을 수 있는 크기로 상한 (40 km: 그 이상은 지평선 너머)
+  const R = Math.min(40000, 0.25 * Math.cbrt(Math.max(E, 1)));
   this.heroLanding(pos, clamp01(R / 12));
   if (R < 14) return;
   const gy = pos.y - 0.02, x = pos.x, z = pos.z;
@@ -2607,8 +2608,12 @@ FX.prototype._groundBurstAt = function (gx, gy, gz, n, r0, r1, spd0, spd1, s0, s
 };
 
 // 무너진 건물 잔해: 덩어리 + 먼지 기둥 (상자는 절대 좌표 중심)
-FX.prototype.debris = function (boxes) {
+FX.prototype.debrisBoxes = function (boxes) {
   if (!boxes || !boxes.length) return;
+  if (boxes.length > 70) {   // 많으면 카메라에 가까운 건물부터
+    const c = this._camPos, ox = origin.x, oz = origin.z;
+    boxes = boxes.slice().sort((a, b) => Math.hypot(a.x - ox - c.x, a.z - oz - c.z) - Math.hypot(b.x - ox - c.x, b.z - oz - c.z));
+  }
   const nb = Math.min(boxes.length, 70);
   const per = Math.max(1, Math.round(240 / nb));
   for (let k = 0; k < nb; k++) {

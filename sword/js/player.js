@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Avatar, RIG } from './avatar.js';
 import { Animator, CH } from './animator.js';
-import { origin, onRebase, airDensity, ATMO_TOP, flatToPlanet, planetToFlat, localToPlanetQuat, MOON, SUN, C_LIGHT, BODIES, BODY, EARTH_BREAK_V } from './frame.js';
+import { origin, onRebase, airDensity, ATMO_TOP, flatToPlanet, planetToFlat, localToPlanetQuat, MOON, SUN, EARTH, R_EARTH, C_LIGHT, BODIES, BODY, EARTH_BREAK_V } from './frame.js';
 
 export const SOUND_SPEED = 343;
 const STUD = 0.4;
@@ -746,7 +746,7 @@ export class Player {
       fx.impact(_v3, E, n || _v1.set(0, 1, 0));
       // 큰 충돌은 주변 건물을 날려버림 (폭발 반경 ≈ 0.25·E^(1/3))
       const r = 0.25 * Math.cbrt(E);
-      if (r > 25) this.smash(_v3.x, _v3.y, _v3.z, r * 0.7);
+      if (r > 25) this.smash(_v3.x, _v3.y, _v3.z, Math.min(r * 0.7, 24000));   // 상한: 도시 전체 규모
     } else fx.heroLanding(_v3, st);
     this.game.audio.play('heroLand', clamp(st + Math.log10(Math.max(1, E)) / 30, 0, 1));
     this.game.hitStop(0.09 + 0.08 * smooth(1e7, 1e12, E), 0.04);
@@ -757,7 +757,7 @@ export class Player {
     const Ci = this.game.city;
     if (!Ci) return;
     const boxes = Ci.destroy(x + origin.x, y + origin.y, z + origin.z, r);
-    if (boxes && boxes.length && this.game.fx.debris) this.game.fx.debris(boxes);
+    if (boxes && boxes.length && this.game.fx.debrisBoxes) this.game.fx.debrisBoxes(boxes);
   }
 
   // 우주: 행성 좌표에서 직선 이동 → 평면 좌표로 환산 (지역 축 회전에 맞춰 속도도 다시 표현)
@@ -778,6 +778,14 @@ export class Player {
       }
     }
     _P1.copy(_P0).addScaledVector(_Vp, dt);
+    // 대기권 진입 (선분-구): 한 스텝에 지구를 통째로 지나치지 않도록 대기 상단에서 멈추고 평면 좌표로 넘김
+    if (!this.gone.has('earth')) {
+      const RA = R_EARTH + ATMO_TOP - 1;
+      if (_P0.lengthSq() > RA * RA) {
+        const t = segSphere(_P0, _P1, EARTH.pos, RA);
+        if (t > 0) _P1.lerpVectors(_P0, _P1, t);
+      }
+    }
     // 천체 충돌 (선분-구)
     if (this.celestialHit(_P0, _P1)) return;
     planetToFlat(_P1.x, _P1.y, _P1.z, _F);
