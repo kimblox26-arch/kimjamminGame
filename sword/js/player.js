@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Avatar, RIG } from './avatar.js';
 import { Animator, CH } from './animator.js';
-import { origin, onRebase, airDensity, ATMO_TOP, flatToPlanet, planetToFlat, localToPlanetQuat, MOON, SUN, C_LIGHT } from './frame.js';
+import { origin, onRebase, airDensity, ATMO_TOP, flatToPlanet, planetToFlat, localToPlanetQuat, MOON, SUN, C_LIGHT, BODIES, BODY, EARTH_BREAK_V } from './frame.js';
 
 export const SOUND_SPEED = 343;
 const STUD = 0.4;
@@ -11,9 +11,10 @@ const STAMINA_MAX = 100, STAMINA_DRAIN = 10, STAMINA_REGEN = 20, EXHAUST_DELAY =
 const TAU = Math.PI * 2;
 const GRAVITY = 34;
 const MASS = 80;                       // 충돌 에너지 계산용 (kg)
-const V_SPACE_MAX = 1e11;              // 우주 최고 속도 (비현실적, 의도적)
-const V_EARTH_BREAK = 3e6;             // 이 속도 이상으로 지면 충돌 → 지구 폭발
-const V_MOON_BREAK = 2e4;              // 이 속도 이상으로 달 충돌 → 달 폭발
+const V_SPACE_MAX = 3e12;              // 우주 최고 속도 (광속의 만 배, 비현실적·의도적: 해왕성까지 수 초)
+const V_EARTH_BREAK = EARTH_BREAK_V;   // 이 속도 이상으로 지면 충돌 → 지구 폭발 (광속의 약 33배)
+// 목표 천체 순서 (T 키)
+export const TARGETS = ['earth', 'moon', 'sun', 'mercury', 'venus', 'mars', 'jupiter', 'io', 'europa', 'ganymede', 'callisto', 'saturn', 'titan', 'uranus', 'neptune', 'pluto'];
 // 대기 중 최고 속도: 해면 12 km/s, 공기가 옅을수록 빨라짐
 const airVmax = (dens) => Math.min(60000, 12000 / Math.max(0.08, Math.sqrt(dens)));
 
@@ -49,7 +50,12 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 const _P0 = new THREE.Vector3(), _P1 = new THREE.Vector3(), _Vp = new THREE.Vector3(), _F = new THREE.Vector3();
-const _N = new THREE.Vector3();
+const _N = new THREE.Vector3(), _g = new THREE.Vector3();
+function fmtSpeed(v) {
+  if (v < 1000) return Math.round(v * 3.6) + ' km/h';
+  if (v < 0.01 * C_LIGHT) return (v / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' km/s';
+  return (v / C_LIGHT).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' × 광속';
+}
 const _hit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, id: -1 };
 // 선분 P0→P1 과 구(C, r) 의 첫 교차 t (0..1), 없으면 -1
 function segSphere(P0, P1, C, r) {
@@ -120,6 +126,11 @@ export class Player {
     this.heroT = 0;
     this.groundY = 0;
     this.moonGone = false;
+    this.gone = new Set();     // 파괴된 천체
+    this.speedLock = 0;        // 속도 고정 (m/s, 0 = 해제)
+    this.autopilot = false;    // 목표 천체로 자동 항법
+    this.targetIdx = 0;        // TARGETS 인덱스
+    this.coasting = false;     // 우주 관성 비행 (중력만 작용)
     this.stamina = STAMINA_MAX;
     this.exhausted = false;
     this.exhaustT = 0;
@@ -244,6 +255,19 @@ export class Player {
     const wantFly = this.mode !== 'launch' && !(this.mode === 'hero' && this.heroT <= 0.3) && input.consume('fly');
     const rollL = !busy && input.consume('rollL'), rollR = !busy && input.consume('rollR');
     const wantFlip = !busy && input.consume('flip');
+    if (input.consume('lock')) {
+      this.speedLock = this.speedLock > 0 ? 0 : Math.max(this.speed, this.inSpace ? 3000 : 30);
+      this.game.toast && this.game.toast(this.speedLock > 0 ? `속도 고정: ${fmtSpeed(this.speedLock)}` : '속도 고정 해제');
+    }
+    if (input.consume('target')) {
+      do { this.targetIdx = (this.targetIdx + 1) % TARGETS.length; } while (this.gone.has(TARGETS[this.targetIdx]) && this.gone.size < TARGETS.length);
+      this.game.toast && this.game.toast(`목표: ${BODY[TARGETS[this.targetIdx]].name}`);
+    }
+    if (input.consume('auto')) {
+      this.autopilot = !this.autopilot;
+      if (this.autopilot && this.mode !== 'fly') this.mode === 'ground' ? this.startLaunch() : this.takeoff(false);
+      this.game.toast && this.game.toast(this.autopilot ? `자동 항법: ${BODY[TARGETS[this.targetIdx]].name} 방향` : '자동 항법 해제');
+    }
     this.trickCool = Math.max(0, this.trickCool - dt);
     this.brakeCool = Math.max(0, this.brakeCool - dt);
 
@@ -463,11 +487,14 @@ export class Player {
     const vert = (I.up ? 1 : 0) - (I.down ? 1 : 0);
     this.vert = vert;
     const dir = _v3.set(sy * cp * my - cy * mx, sp * my + vert, cy * cp * my + sy * mx);
-    const dmag = Math.min(1, dir.length());
-    const hasInput = dmag > 0.08;
-    if (hasInput) dir.divideScalar(dir.length());
+    if (this.autopilot) this.targetDirLocal(dir);
+    const dmag = this.autopilot ? 1 : Math.min(1, dir.length());
+    const hasInput = this.autopilot || dmag > 0.08;
+    if (hasInput) dir.divideScalar(dir.length() || 1);
 
     const boosting = I.boost && hasInput && !this.slow;
+    // 우주 관성 비행: 입력도 속도 고정도 없으면 추진 없이 중력만 (뉴턴 역학)
+    this.coasting = this.inSpace && !hasInput && !this.speedLock && !this.slow;
     let speed = this.speed;
     const onlyVert = hasInput && mag < 0.08;
     const space = this.inSpace;
@@ -495,12 +522,22 @@ export class Player {
       if (speed < t) target = Math.min(t, speed + (space ? 2000 : this.slow ? 14 : 45) * dt);
       else target = Math.max(t, speed - (space ? 1.2 * speed : 18 + 0.75 * speed) * dt);
     } else {
-      target = space ? speed * Math.exp(-4 * dt) : Math.max(0, speed - (22 + 1.5 * speed) * dt);
+      target = space ? speed : Math.max(0, speed - (22 + 1.5 * speed) * dt);
     }
-    // 대기 저항: 부스트 없이 한계 속도를 넘으면 공기가 진할수록 빠르게 감속 (재진입)
-    if (!boosting && !space && target > vcap) target = vcap + (target - vcap) * Math.exp(-3 * this.dens * dt);
+    // 속도 고정: 부스트하는 동안만 바뀌고, 놓으면 그 속도로 다시 고정
+    if (this.speedLock > 0) {
+      if (boosting) this.speedLock = target;
+      else target = this.speedLock;
+    }
+    // 우주에서 Z (느리게) = 역추진 제동
+    if (space && this.slow && !hasInput) target = speed * Math.exp(-3 * dt);
+    // 대기 저항: 부스트 없이 한계 속도를 넘으면 공기가 진할수록 빠르게 감속 (재진입). 속도 고정 중에도 공기 저항은 받음
+    if (!boosting && !space && target > vcap) { target = vcap + (target - vcap) * Math.exp(-3 * this.dens * dt); if (this.speedLock > 0) this.speedLock = target; }
+    if (this.coasting) target = speed;
 
-    if (speed < 7 || !hasInput) {
+    if (this.coasting) {
+      // 관성 비행: 속도 벡터는 그대로 (중력은 integratePlanet 에서)
+    } else if (speed < 7 || !hasInput) {
       // 저속: 속도 벡터를 목표 벡터로 직접 (자유로운 호버 이동)
       if (hasInput && speed < 7) {
         const ax = dir.x * target - this.vel.x, ay = dir.y * target - this.vel.y, az = dir.z * target - this.vel.z;
@@ -673,7 +710,7 @@ export class Player {
   impactGround(speed, st) {
     const E = 0.5 * MASS * speed * speed;
     _N.set(0, 1, 0);
-    if (speed >= V_EARTH_BREAK) {
+    if (speed >= V_EARTH_BREAK && !this.gone.has('earth')) {
       _v2.copy(this.vel).normalize();
       this.game.planetImpact('earth', this, _v2);
       return;
@@ -722,6 +759,17 @@ export class Player {
     flatToPlanet(ax, ay, az, _P0);
     localToPlanetQuat(ax, az, _q1);
     _Vp.copy(this.vel).applyQuaternion(_q1);
+    // 관성 비행 중에는 뉴턴 중력 (지구·달·태양 + 가까운 행성)
+    if (this.coasting) {
+      for (const b of BODIES) {
+        if (this.gone.has(b.id)) continue;
+        _g.subVectors(b.pos, _P0);
+        const r2 = _g.lengthSq();
+        if (b.id !== 'earth' && b.id !== 'sun' && b.id !== 'moon' && r2 > 1e4 * b.radius * b.radius) continue;
+        const r = Math.sqrt(r2);
+        _Vp.addScaledVector(_g, (b.GM / (r2 * r)) * dt);
+      }
+    }
     _P1.copy(_P0).addScaledVector(_Vp, dt);
     // 천체 충돌 (선분-구)
     if (this.celestialHit(_P0, _P1)) return;
@@ -731,32 +779,47 @@ export class Player {
     this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
   }
 
+  // 지구 밖 천체와의 충돌 (선분-구): 파괴 속도 이상이면 폭발, 해는 초신성, 아니면 표면에서 멈춤
   celestialHit(P0, P1) {
     const C = this.game.cosmic;
     const sp = this.speed;
-    if (segSphere(P0, P1, SUN.pos, SUN.radius) >= 0) {
-      if (C && !C.active) this.game.planetImpact('sun', this, _Vp);
-      return true;   // 적분 중단 (planetImpact 가 정지/숨김 처리)
-    }
-    if (!this.moonGone) {
-      const t = segSphere(P0, P1, MOON.pos, MOON.radius + 3);
-      if (t >= 0) {
-        if (sp >= V_MOON_BREAK) {
-          this.moonGone = true;
-          _v3.copy(_Vp).normalize();
-          this.game.planetImpact('moon', this, _v3);
-          return false;
-        }
-        // 느리면 달 표면에서 멈춤
-        P1.lerpVectors(P0, P1, t);
-        planetToFlat(P1.x, P1.y, P1.z, _F);
-        this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
-        this.vel.set(0, 0, 0);
-        this.game.hooks.shake(0.4);
+    for (const b of BODIES) {
+      if (b.id === 'earth' || this.gone.has(b.id)) continue;
+      const t = segSphere(P0, P1, b.pos, b.radius + 3);
+      if (t < 0) continue;
+      if (b.id === 'sun') {
+        if (C && !C.active) { this.gone.add('sun'); this.game.planetImpact('sun', this, _Vp); }
         return true;
       }
+      if (sp >= b.breakV) {
+        this.gone.add(b.id);
+        if (b.id === 'moon') this.moonGone = true;
+        _v3.copy(_Vp).normalize();
+        this.game.planetImpact(b.id, this, _v3);
+        return false;
+      }
+      // 표면에서 멈춤 (충돌 에너지만큼 흔들림)
+      P1.lerpVectors(P0, P1, t);
+      planetToFlat(P1.x, P1.y, P1.z, _F);
+      this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
+      this.vel.set(0, 0, 0);
+      this.speedLock = 0; this.autopilot = false;
+      this.game.hooks.shake(clamp(0.2 + Math.log10(1 + sp) / 10, 0, 1));
+      this.game.toast && this.game.toast(`${b.name}에 충돌 (파괴하려면 초속 ${fmtSpeed(b.breakV)} 이상)`);
+      return true;
     }
     return false;
+  }
+
+  // 목표 천체 중심 방향 (지역 좌표 단위 벡터)
+  targetDirLocal(out) {
+    const b = BODY[TARGETS[this.targetIdx]];
+    const ax = this.pos.x + origin.x, ay = this.pos.y + origin.y, az = this.pos.z + origin.z;
+    flatToPlanet(ax, ay, az, _P0);
+    out.subVectors(b.pos, _P0);
+    this.targetDist = out.length() - b.radius;
+    localToPlanetQuat(ax, az, _q1);
+    return out.applyQuaternion(_q1.invert()).normalize();
   }
 
   // 건물 충돌: 빠르면 뚫고 지나가며 파괴, 느리면 튕기거나 미끄러짐
@@ -968,6 +1031,9 @@ export class Player {
     c.airDensity = this.dens;
     c.vacuum = this.inSpace;
     c.groundY = this.groundY;
+    // 목표 천체까지 거리 (HUD)
+    this.targetDirLocal(_v3);
+    this.targetDistNow = this.targetDist;
     c.time = this.time;
     this.avatar.body.getWorldQuaternion(c.bodyQuat);
     c.boost = this.boostAmt;

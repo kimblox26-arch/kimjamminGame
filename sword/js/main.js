@@ -13,7 +13,8 @@ import { Terrain } from './terrain.js';
 import { City } from './city.js';
 import { Space } from './space.js';
 import { Cosmic } from './cosmic.js';
-import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT } from './frame.js';
+import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
+import { TARGETS } from './player.js';
 
 const SIM_HZ = 120;
 const STEP = 1 / SIM_HZ;
@@ -76,7 +77,7 @@ const cosmic = new Cosmic(space, hooks, { quality });
 const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3();
 let earthGone = false, cineMode = false;
 const game = {
-  fx, audio, hooks, cosmic, city,
+  fx, audio, hooks, cosmic, city, toast: (m) => toast(m),
   terrain: terrainMod,
   hitStop(dur, scale) { hitStopT = Math.max(hitStopT, dur); hitStopScale = scale; },
   // 천체 충돌: 지구/달 폭발, 해 초신성
@@ -97,7 +98,7 @@ const game = {
       post.setSpaceOnly(true);
       $('reset').hidden = false;
       toast(name === 'earth' ? '지구 파괴!' : '태양 초신성 폭발!');
-    } else toast('달 파괴!');
+    } else toast(`${BODY[name].name} 파괴!`);
   },
 };
 const player = new Player(scene, game);
@@ -110,6 +111,8 @@ function spawn() {
   player.mode = 'ground';
   player.hidden = false;
   player.moonGone = false;
+  player.gone.clear();
+  player.speedLock = 0; player.autopilot = false;
   player.avatar.root.visible = true;
   player.snapshot(player.snapCur);
   player.copySnap(player.snapPrev, player.snapCur);
@@ -142,7 +145,7 @@ input.onKey = (code) => {
   if (code === 'KeyM') { audio.muted = !audio.muted; toast(audio.muted ? '소리 끔' : '소리 켬'); }
   if (code === 'KeyH') $('help').classList.toggle('hide');
   if (code === 'KeyP') { fpsCap = !fpsCap; toast(fpsCap ? 'FPS 제한: 120' : 'FPS 제한: 없음 (모니터 주사율)'); }
-  if (code === 'Enter' && (cineMode || player.moonGone)) resetWorld();
+  if (code === 'Enter' && (cineMode || player.gone.size > 0)) resetWorld();
 };
 $('btn-mute')?.addEventListener('click', () => { audio.muted = !audio.muted; $('btn-mute').textContent = audio.muted ? '🔇' : '🔊'; });
 let toastT = 0;
@@ -166,8 +169,36 @@ resize();
 // ── HUD ──
 const hud = {
   speed: $('h-speed'), unit: $('h-unit'), mach: $('h-mach'), alt: $('h-alt'), state: $('h-state'),
-  fps: $('h-fps'), bar: $('h-bar'), res: $('h-res'), layer: $('h-layer'),
+  fps: $('h-fps'), bar: $('h-bar'), res: $('h-res'), layer: $('h-layer'), target: $('h-target'), modes: $('h-modes'),
 };
+// 목표 천체 표시: 화면 위치 (화면 밖이면 가장자리에 붙임)
+const tmark = { el: $('tmark'), label: null, v: new THREE.Vector3() };
+tmark.label = tmark.el.querySelector('span');
+function fmtDist(m) {
+  if (m < 1e4) return Math.round(m) + ' m';
+  if (m < 1e9) return Math.round(m / 1000).toLocaleString() + ' km';
+  if (m < 1e14) return (m / 1.496e11).toFixed(m < 1.496e12 ? 2 : 1) + ' AU';
+  return (m / 9.461e15).toFixed(2) + ' 광년';
+}
+function updateTargetMark() {
+  const id = TARGETS[player.targetIdx], b = space.bodies[id];
+  const show = (player.inSpace || cineMode === false && camAbs.y > 20000) && !cineMode && b && b.group.visible;
+  tmark.el.hidden = !show;
+  if (!show) return;
+  const v = tmark.v.copy(b.group.position).applyMatrix4(space.camera.matrixWorldInverse);
+  const behind = v.z > 0;
+  v.applyMatrix4(space.camera.projectionMatrix);
+  let x = v.x, y = v.y;
+  if (behind) { x = -x; y = -y; }
+  const m = Math.max(Math.abs(x), Math.abs(y));
+  const off = behind || m > 0.95;
+  if (off) { x = x / m * 0.92; y = y / m * 0.92; }
+  tmark.el.classList.toggle('off', off);
+  tmark.el.style.transform = `translate(${((x * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((-y * 0.5 + 0.5) * innerHeight).toFixed(1)}px)`;
+  const d = player.targetDistNow || 0;
+  const eta = player.speed > 1 ? d / player.speed : Infinity;
+  tmark.label.textContent = `${BODY[id].name} ${fmtDist(d)}${eta < 1e5 ? ' · ' + (eta < 1 ? eta.toFixed(2) : eta < 120 ? eta.toFixed(0) : Math.round(eta / 60) + '분') + (eta < 120 ? '초' : '') : ''}`;
+}
 const stamUi = { el: $('stam'), fill: $('stam-fill'), v: -1, ex: null, full: null };
 function updateStamina() {
   const v = Math.round(player.stamina * 4) / 400;
@@ -190,6 +221,8 @@ function updateHud(dt, fps) {
   hud.mach.classList.toggle('super', player.mach >= 1);
   const altM = player.pos.y + origin.y - 1;
   hud.alt.textContent = altM < 10000 ? Math.max(0, altM).toFixed(0) + ' m' : Math.round(altM / 1000).toLocaleString() + ' km';
+  hud.target.textContent = BODY[TARGETS[player.targetIdx]].name + ' ' + fmtDist(player.targetDistNow || 0);
+  hud.modes.textContent = (player.speedLock > 0 ? '속도 고정 ' : '') + (player.autopilot ? '자동 항법 ' : '') + (player.coasting ? '관성 비행' : '');
   hud.layer.textContent = altM < 12000 ? '대류권' : altM < 50000 ? '성층권' : altM < 80000 ? '중간권' : altM < ATMO_TOP ? '열권' : altM < 3e7 ? '지구 궤도' : '우주';
   let st = STATE_NAME[player.mode];
   if (player.mode === 'fly') {
@@ -327,6 +360,7 @@ function frame(now) {
     perfT = 0; perfFrames = 0;
   }
   updateHud(dt, fps);
+  updateTargetMark();
   updateStamina();
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
@@ -334,3 +368,4 @@ requestAnimationFrame(frame);
 window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
+window.__targets = TARGETS;

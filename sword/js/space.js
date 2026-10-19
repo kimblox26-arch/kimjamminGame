@@ -4,7 +4,7 @@
 //  - 깊이 테스트 없이 거리순(renderOrder)으로 그림: 배경(별/은하) → 해 → 먼 천체 → 가까운 천체
 //  - 모든 셰이더 출력은 선형 HDR (OutputPass 에서 톤매핑)
 import * as THREE from 'three';
-import { SUN_DIR, SUN, MOON, flatToPlanet, localToPlanetQuat } from './frame.js';
+import { SUN_DIR, SUN, MOON, BODIES, ECLIPTIC, AU, flatToPlanet, localToPlanetQuat } from './frame.js';
 
 const RE = 6371, RM = MOON.radius / 1000, RS = SUN.radius / 1000;   // km
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -268,7 +268,167 @@ void main() {
   gl_FragColor = vec4(c * rim * 2.2 * uI, 1.0);   // AdditiveBlending 은 src alpha 를 곱함
 }`;
 
-const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _cp = new THREE.Vector3();
+// ── 행성 (암석/가스/얼음/구름) ──
+const PLANET_FS = /* glsl */`
+${NOISE}
+uniform vec3 uSunL;     // 행성 → 태양 방향
+uniform vec3 uAxis;     // 자전축 (황도 북극 근사)
+uniform vec3 uC1;
+uniform vec3 uC2;
+uniform float uKind;    // 0 암석, 1 가스, 2 얼음, 3 구름
+uniform float uSeed;
+uniform float uSpot;
+uniform float uIce;
+uniform float uTime;
+uniform float uI;
+varying vec3 vN;
+varying vec3 vW;
+void main() {
+  vec3 n = normalize(vN);
+  vec3 V = normalize(-vW);
+  float lat = asin(clamp(dot(n, uAxis), -1.0, 1.0));
+  vec3 q = n * 1.0 + uSeed;
+  vec3 alb;
+  vec3 nb = n;
+  if (uKind < 0.5) {
+    // 암석: 크레이터 + 지형 무늬
+    float h = craters(q * 6.0) * 0.6 + craters(q * 17.0) * 0.25 + fbm(q * 20.0, 4) * 0.08;
+    float m = fbm(q * 2.5, 5);
+    alb = mix(uC2, uC1, smoothstep(0.35, 0.65, m)) * (0.85 + 0.3 * fbm(q * 40.0, 3));
+    alb *= 0.85 + 2.0 * clamp(h, -0.1, 0.1);
+    if (uIce > 0.5) alb = mix(alb, vec3(0.9, 0.9, 0.92), smoothstep(1.2, 1.32, abs(lat)));
+  } else if (uKind < 1.5) {
+    // 가스 행성: 위도 띠 + 난류 + 대적점
+    float w = fbm(vec3(n.x * 3.0, lat * 2.0, n.z * 3.0) + uSeed + vec3(uTime * 0.002, 0.0, 0.0), 5);
+    float bands = sin(lat * 18.0 + w * 3.5) * 0.5 + 0.5;
+    float fine = sin(lat * 55.0 + w * 6.0) * 0.5 + 0.5;
+    alb = mix(uC2, uC1, bands * 0.75 + fine * 0.25);
+    if (uSpot > 0.5) {
+      vec3 sc = normalize(vec3(0.0, -0.38, 1.0) - uAxis * dot(vec3(0.0, -0.38, 1.0), uAxis) * 0.0);
+      float d = length((n - normalize(uAxis * -0.37 + cross(uAxis, vec3(1.0, 0.0, 0.0)) * 0.93)) * vec3(0.55, 1.0, 0.55));
+      alb = mix(alb, vec3(0.72, 0.32, 0.18), smoothstep(0.18, 0.1, d) * 0.9);
+    }
+  } else if (uKind < 2.5) {
+    // 얼음 거인: 은은한 띠
+    float w = fbm(n * 3.0 + uSeed, 4);
+    alb = mix(uC2, uC1, 0.5 + 0.5 * sin(lat * 7.0 + w * 2.0)) * (0.95 + 0.1 * w);
+  } else {
+    // 두꺼운 구름 (금성/타이탄)
+    float w = fbm(q * 3.0 + vec3(uTime * 0.003, 0.0, 0.0), 6);
+    alb = mix(uC2, uC1, smoothstep(0.3, 0.7, w + 0.15 * sin(lat * 6.0)));
+  }
+  float NL = dot(nb, uSunL);
+  float lit = max(NL, 0.0);
+  float ndv = max(dot(n, V), 0.0);
+  vec3 col = alb * lit * 1.05;
+  // 대기가 있는 행성은 가장자리가 밝게 번짐
+  if (uKind > 0.5) col += mix(uC1, vec3(0.6, 0.75, 1.0), 0.3) * pow(1.0 - ndv, 4.0) * smoothstep(-0.2, 0.3, NL) * 0.25;
+  gl_FragColor = vec4(col * uI, 1.0);
+}`;
+// 토성 고리 (평면, 반지름에 따른 띠와 카시니 간극, 행성 그림자)
+const RINGP_VS = /* glsl */`
+varying vec3 vL;
+varying vec3 vW;
+void main() {
+  vL = position;
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vW = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+  gl_Position.z = 0.5 * gl_Position.w;
+}`;
+const RINGP_FS = /* glsl */`
+${NOISE}
+uniform vec3 uSunL;
+uniform vec3 uCenter;   // 행성 중심 (카메라 기준 km)
+uniform float uR;       // 행성 반지름 (km)
+uniform float uI;
+varying vec3 vL;
+varying vec3 vW;
+void main() {
+  float r = length(vL.xy) / uR;
+  if (r < 1.24 || r > 2.27) discard;
+  float t = (r - 1.24) / 1.03;
+  float dens = 0.55 + 0.45 * sin(r * 90.0) * sin(r * 37.0) + 0.3 * vnoise(vec3(r * 300.0, 0.0, 0.0));
+  dens *= 1.0 - smoothstep(1.95, 2.03, r) * (1.0 - smoothstep(2.03, 2.05, r)) * 0.9;   // 카시니 간극
+  dens *= smoothstep(1.24, 1.32, r) * (1.0 - smoothstep(2.2, 2.27, r));
+  dens = clamp(dens, 0.0, 1.0);
+  vec3 c = mix(vec3(0.75, 0.68, 0.55), vec3(0.95, 0.9, 0.78), t) * 0.8;
+  // 행성 그림자
+  vec3 toC = uCenter - vW;
+  float along = dot(toC, uSunL);
+  float shadow = 1.0;
+  if (along < 0.0) { float dperp = length(toC - uSunL * along); shadow = smoothstep(uR * 0.97, uR * 1.03, dperp); }
+  gl_FragColor = vec4(c * dens * shadow * uI, dens);
+}`;
+// 먼 천체를 밝은 점으로 (행성은 각지름이 화소보다 작아도 하늘에서 보여야 함)
+const DOT_VS = /* glsl */`
+attribute float aI;
+attribute float aSz;
+varying float vI;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_Position.z = 0.5 * gl_Position.w;
+  gl_PointSize = aSz;
+  vI = aI;
+}`;
+const DOT_FS = /* glsl */`
+varying float vI;
+void main() {
+  vec2 q = gl_PointCoord - 0.5;
+  float a = exp(-dot(q, q) * 14.0);
+  gl_FragColor = vec4(vec3(1.0, 0.96, 0.9) * vI * a, 1.0);
+}`;
+// 소행성대
+const BELT_VS = /* glsl */`
+attribute float aB;
+uniform vec3 uOff;      // 카메라 기준 태양 위치 (km)
+uniform float uPR;
+varying float vB;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position + uOff, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_Position.z = 0.5 * gl_Position.w;
+  float d = -mv.z;
+  gl_PointSize = clamp(2.0e7 / max(d, 1.0), 1.0, 4.0) * uPR;
+  vB = aB * clamp(4.0e7 / max(d, 1.0), 0.15, 1.0);
+}`;
+const BELT_FS = /* glsl */`
+varying float vB;
+void main() {
+  vec2 q = gl_PointCoord - 0.5;
+  float a = exp(-dot(q, q) * 12.0);
+  gl_FragColor = vec4(vec3(0.75, 0.68, 0.6) * vB * a, 1.0);
+}`;
+// 안드로메다 은하 (먼 배경)
+const GAL_FS = /* glsl */`
+${NOISE}
+uniform float uVis;
+varying vec2 vUv;
+void main() {
+  vec2 p = vUv;
+  float c = cos(0.6), s = sin(0.6);
+  p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+  p.y *= 3.2;
+  float r = length(p);
+  float ang = atan(p.y, p.x);
+  float arms = 0.6 + 0.4 * sin(ang * 2.0 - log(r + 0.05) * 6.0);
+  float I = exp(-r * 3.2) * (0.5 + 0.5 * arms) + exp(-r * 14.0) * 1.5;
+  I *= 0.8 + 0.4 * fbm(vec3(p * 8.0, 1.0), 4);
+  vec3 col = mix(vec3(0.6, 0.7, 1.0), vec3(1.0, 0.85, 0.65), exp(-r * 6.0)) * I;
+  gl_FragColor = vec4(col * 0.35 * uVis * (1.0 - smoothstep(0.7, 1.0, length(vUv))), 1.0);
+}`;
+const GAL_VS = /* glsl */`
+varying vec2 vUv;
+void main() {
+  vUv = uv * 2.0 - 1.0;
+  vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  mv.xy += position.xy * vec2(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz));
+  gl_Position = projectionMatrix * mv;
+  gl_Position.z = 0.5 * gl_Position.w;
+}`;
+
+const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _cp = new THREE.Vector3(), _w = new THREE.Vector3();
 
 export class Space {
   constructor(renderer, opts = {}) {
@@ -291,6 +451,90 @@ export class Space {
       moon: { group: this.moon, radius: RM, center: MOON.pos.clone() },
       sun: { group: this.sun, radius: RS, center: SUN.pos.clone() },
     };
+    this._buildPlanets(low);
+    this._buildBelt(low);
+    this._buildDots();
+    this._buildAndromeda();
+    this.list = BODIES.map((b) => Object.assign(this.bodies[b.id], { id: b.id, name: b.name }));
+  }
+
+  _buildPlanets(low) {
+    const KIND = { rocky: 0, gas: 1, ice: 2, cloud: 3 };
+    this.planetMats = [];
+    let seed = 1;
+    for (const b of BODIES) {
+      if (b.id === 'sun' || b.id === 'earth' || b.id === 'moon') continue;
+      const rk = b.radius / 1000;
+      const u = {
+        uSunL: { value: new THREE.Vector3() }, uAxis: { value: ECLIPTIC.n }, uC1: { value: new THREE.Color(...b.c1) }, uC2: { value: new THREE.Color(...b.c2) },
+        uKind: { value: KIND[b.kind] }, uSeed: { value: seed++ * 3.7 }, uSpot: { value: b.spot ? 1 : 0 }, uIce: { value: b.ice ? 1 : 0 }, uTime: { value: 0 }, uI: { value: 1 },
+      };
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(rk, low ? 64 : 112, low ? 32 : 56), new THREE.ShaderMaterial({
+        vertexShader: BODY_VS, fragmentShader: PLANET_FS, uniforms: u, depthTest: false, depthWrite: false,
+      }));
+      mesh.frustumCulled = false;
+      const grp = new THREE.Group();
+      grp.add(mesh);
+      if (b.rings) {
+        this.ringU = { uSunL: u.uSunL, uCenter: { value: new THREE.Vector3() }, uR: { value: rk }, uI: { value: 1 } };
+        const ring = new THREE.Mesh(new THREE.RingGeometry(rk * 1.2, rk * 2.3, 256, 4), new THREE.ShaderMaterial({
+          vertexShader: RINGP_VS, fragmentShader: RINGP_FS, uniforms: this.ringU, side: THREE.DoubleSide,
+          depthTest: false, depthWrite: false, transparent: true,
+        }));
+        // 고리 평면: 황도에서 26.7° 기움
+        ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ECLIPTIC.n.clone().applyAxisAngle(ECLIPTIC.u, 0.466));
+        ring.frustumCulled = false;
+        grp.add(ring);
+        this.ring = ring;
+      }
+      this.scene.add(grp);
+      this.bodies[b.id] = { group: grp, radius: rk, center: b.pos.clone(), mat: u };
+      this.planetMats.push(u);
+    }
+  }
+
+  _buildBelt(low) {
+    const N = low ? 2500 : 7000;
+    const pos = new Float32Array(N * 3), br = new Float32Array(N);
+    let seed = 99;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < N; i++) {
+      const a = (2.15 + 1.15 * Math.pow(rnd(), 0.8)) * AU / 1000, t = rnd() * Math.PI * 2, h = (rnd() - 0.5) * 0.12 * a;
+      _v.copy(ECLIPTIC.u).multiplyScalar(Math.cos(t) * a).addScaledVector(ECLIPTIC.v, Math.sin(t) * a).addScaledVector(ECLIPTIC.n, h);
+      pos.set([_v.x, _v.y, _v.z], i * 3);
+      br[i] = 0.3 + 0.7 * rnd();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aB', new THREE.BufferAttribute(br, 1));
+    this.beltU = { uOff: { value: new THREE.Vector3() }, uPR: { value: 1 } };
+    this.belt = new THREE.Points(g, new THREE.ShaderMaterial({ vertexShader: BELT_VS, fragmentShader: BELT_FS, uniforms: this.beltU, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+    this.belt.frustumCulled = false;
+    this.belt.renderOrder = -95;
+    this.scene.add(this.belt);
+  }
+
+  _buildDots() {
+    const N = BODIES.length;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    g.setAttribute('aI', new THREE.BufferAttribute(new Float32Array(N), 1));
+    g.setAttribute('aSz', new THREE.BufferAttribute(new Float32Array(N), 1));
+    this.dots = new THREE.Points(g, new THREE.ShaderMaterial({ vertexShader: DOT_VS, fragmentShader: DOT_FS, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+    this.dots.frustumCulled = false;
+    this.dots.renderOrder = -90;
+    this.scene.add(this.dots);
+  }
+
+  _buildAndromeda() {
+    this.galU = { uVis: { value: 1 } };
+    this.andromeda = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ vertexShader: GAL_VS, fragmentShader: GAL_FS, uniforms: this.galU, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+    this.andromeda.position.set(0.55, 0.62, 0.56).normalize().multiplyScalar(9e7);
+    const half = 9e7 * Math.tan(0.06);
+    this.andromeda.scale.set(half, half, 1);
+    this.andromeda.frustumCulled = false;
+    this.andromeda.renderOrder = -105;
+    this.scene.add(this.andromeda);
   }
 
   _buildStars(low) {
@@ -401,20 +645,48 @@ export class Space {
     if (cam.fov !== mainCamera.fov || cam.aspect !== mainCamera.aspect) { cam.fov = mainCamera.fov; cam.aspect = mainCamera.aspect; }
     const alt = Math.max(0, altitude);
 
-    // 천체 위치 (카메라 기준 km)
-    this.toCamera(this.bodies.earth.center, this.earth.position);
-    this.toCamera(this.bodies.moon.center, this.moon.position);
-    this.toCamera(this.bodies.sun.center, this.sun.position);
-    // 가까운 것을 나중에 (깊이 테스트 없이 가림)
-    const dE = this.earth.position.length() - RE, dM = this.moon.position.length() - RM, dS = this.sun.position.length() - RS;
-    const order = [[dE, this.earth], [dM, this.moon], [dS, this.sun]].sort((a, b) => b[0] - a[0]);
-    for (let i = 0; i < 3; i++) {
-      const o = order[i][1];
-      o.renderOrder = i * 10;
-      o.traverse((c) => { if (c !== o) c.renderOrder = i * 10 + (c === this.earthAtmo ? 2 : c === this.sunGlow ? 3 : 1); });
+    // 천체 위치 (카메라 기준 km) + 거리순 그리기 + 먼 천체는 밝은 점
+    let minD = Infinity;
+    const L = this.list;
+    const dPos = this.dots.geometry.attributes.position, dI = this.dots.geometry.attributes.aI, dS = this.dots.geometry.attributes.aSz;
+    const pxPerRad = (this.renderer.domElement.height / 2) / Math.tan((cam.fov * Math.PI / 180) / 2);
+    for (let k = 0; k < L.length; k++) {
+      const b = L[k];
+      this.toCamera(b.center, b.group.position);
+      const d = b.group.position.length();
+      b.dist = d - b.radius;
+      if (b.group.visible) minD = Math.min(minD, b.dist);
+      if (b.mat) {
+        // 행성마다 태양 방향
+        _w.subVectors(this.sun.position, b.group.position).normalize();
+        b.mat.uSunL.value.copy(_w);
+        b.mat.uTime.value = this.time;
+      }
+      // 각지름이 3 px 보다 작으면 점으로
+      const px = Math.atan(b.radius / Math.max(d, 1)) * pxPerRad;
+      dPos.setXYZ(k, b.group.position.x, b.group.position.y, b.group.position.z);
+      let I = 0, sz = 0;
+      if (b.id !== 'sun' && b.group.visible && px < 3) {
+        const dsun = Math.max(_w.subVectors(this.sun.position, b.group.position).length() / 1.496e8, 0.05);
+        const flux = (b.radius * b.radius) / (dsun * dsun * Math.pow(Math.max(d / 1.496e8, 1e-4), 2));
+        I = clamp(Math.sqrt(flux) * 2.2e-4, 0.08, 6);
+        sz = clamp(2 + Math.log10(1 + flux) * 0.25, 2.2, 5) * this.renderer.getPixelRatio();
+      }
+      dI.setX(k, I); dS.setX(k, sz);
     }
+    dPos.needsUpdate = true; dI.needsUpdate = true; dS.needsUpdate = true;
+    const sorted = this._sorted || (this._sorted = L.slice());
+    sorted.sort((a, b) => b.dist - a.dist);
+    for (let i = 0; i < sorted.length; i++) {
+      const o = sorted[i].group;
+      o.renderOrder = i * 10;
+      o.traverse((c) => { if (c !== o) c.renderOrder = i * 10 + (c === this.earthAtmo || c === this.ring ? 2 : c === this.sunGlow ? 3 : 1); });
+    }
+    if (this.ringU) { this.ringU.uCenter.value.copy(this.bodies.saturn.group.position); }
+    this.beltU.uOff.value.copy(this.sun.position);
+    this.beltU.uPR.value = this.renderer.getPixelRatio();
     // 가까운 천체 표면까지 거리로 near 결정 (잘림 방지)
-    const near = clamp(Math.min(dE, dM, dS) * 0.3, 1e-5, 500);
+    const near = clamp(minD * 0.3, 1e-5, 500);
     if (Math.abs(cam.near - near) > near * 0.05) cam.near = near;
     cam.far = 2e9;
     cam.updateProjectionMatrix();
@@ -434,6 +706,7 @@ export class Space {
     const hk = smooth(15000, 90000, alt);
     this.starUniforms.uVis.value = 0.15 + 0.85 * hk;
     this.mwUniforms.uVis.value = hk;
+    this.galU.uVis.value = hk;
     this.starUniforms.uPR.value = this.renderer.getPixelRatio();
     // 지구 대기 바깥 껍질은 대기권 밖에서만
     this.earthAtmo.visible = alt > 60000;

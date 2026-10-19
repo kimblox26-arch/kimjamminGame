@@ -381,7 +381,7 @@ export class Cosmic {
     this.group.visible = false;
     for (const m of this.group.children) m.visible = false;
     if (showBodies) {
-      for (const n of ['earth', 'moon', 'sun']) this.space.setBodyVisible(n, true);
+      for (const n in this.space.bodies) this.space.setBodyVisible(n, true);
       const s = this.space.bodies.sun.group;
       s.scale.setScalar(1);
       if (this.space.sunUniforms) this.space.sunUniforms.uI.value = 1;
