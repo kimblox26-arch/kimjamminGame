@@ -124,6 +124,7 @@ varying vec3 vDir;
 void main() {
   vDir = position;   // 돔이 카메라를 따라다니므로 로컬 위치 = 월드 방향 (원거리 정밀도 문제 없음)
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  gl_Position.z = gl_Position.w * 0.99999;   // 원평면에 고정 → 근/원 분할 렌더에서도 잘리지 않음
 }`;
 
 const SKY_FRAG = /* glsl */`
@@ -131,6 +132,7 @@ ${GLSL_ATMOS}
 uniform vec3 uSunDisc;
 uniform vec3 uSunGlow;
 uniform float uSunR;
+uniform float uCamAlt;      // 카메라 해발 고도 (m)
 varying vec3 vDir;
 float skyHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void main() {
@@ -147,7 +149,19 @@ void main() {
   float x = max(ang - uSunR, 0.0);
   col += uSunGlow * (exp(-x * 300.0) * 0.8 + exp(-x * 32.0) * 0.14 + exp(-x * 6.0) * 0.035) * above;
   col *= 1.0 + (skyHash(gl_FragCoord.xy) - 0.5) * 0.008;  // 미세 디더 (그라디언트 밴딩 방지)
-  gl_FragColor = vec4(col, 1.0);
+  // 고도: 카메라 위쪽 공기의 광학 두께 → 하늘이 짙은 남색 → 보랏빛 검정 → 투명(우주)
+  // 지평선 쪽은 공기층을 길게 지나므로 마지막까지 밝은 띠(림)로 남음
+  float dens = exp(-max(uCamAlt, 0.0) / 8500.0);
+  float muz = max(dir.y, 0.0);
+  float airmass = 1.0 / (muz + 0.05 * exp(-max(uCamAlt, 0.0) / 30000.0) + 0.012);
+  float tau = 1.15 * dens * min(airmass, 40.0);
+  float alpha = 1.0 - exp(-tau * 2.2);
+  float hk = smoothstep(4000.0, 60000.0, uCamAlt);
+  vec3 deep = vec3(0.55, 0.62, 1.25);                      // 높은 하늘은 더 짙고 보랏빛
+  col *= mix(vec3(1.0), deep, hk * (1.0 - smoothstep(0.0, 0.25, 1.0 - muz))) * mix(1.0, alpha, hk);
+  alpha = mix(1.0, alpha, hk);                             // 저고도에서는 완전히 불투명 (낮에 별이 비치지 않게)
+  alpha = clamp(alpha, 0.0, 1.0);
+  gl_FragColor = vec4(col * mix(1.0, alpha, hk), alpha);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -569,6 +583,7 @@ export class World {
       uSunDisc: { value: new THREE.Color() },   // 선형 HDR (applyParams)
       uSunGlow: { value: new THREE.Color() },
       uSunR: { value: 0.005 },
+      uCamAlt: { value: 0 },
     });
     const mat = new THREE.ShaderMaterial({
       name: 'SkyDome',
@@ -579,6 +594,10 @@ export class World {
       depthWrite: false,
       depthTest: false,
       fog: false,
+      transparent: false,          // 불투명 목록 맨 앞(renderOrder -1000)에 그려야 지형/도시가 그 위에 덮임
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
     });
     mat.extensions.derivatives = true;
     const geo = new THREE.SphereGeometry(1000, low ? 32 : 64, low ? 16 : 32);
@@ -586,6 +605,7 @@ export class World {
     this.sky.name = 'skyDome';
     this.sky.frustumCulled = false;
     this.sky.renderOrder = -1000;   // 가장 먼저, 깊이 기록 없음 → 모든 것 뒤
+    this.sky.layers.set(1);         // 원거리 패스에서만 (post.js 2단 렌더)
     this.scene.add(this.sky);
   }
 
@@ -701,6 +721,7 @@ ${lights}`;
     this.floor.castShadow = false;
     this.floor.frustumCulled = false;
     this.floor.renderOrder = -10;
+    this.floor.visible = false;     // v2: terrain.js 가 지면을 그림
     this.scene.add(this.floor);
   }
 
@@ -943,12 +964,20 @@ ${lights}`;
     this.mist.name = 'cloudMist';
     this.mist.frustumCulled = false;
     this.mist.renderOrder = 9000;
+    this.mist.layers.set(2);        // 근거리 패스에서만 한 번
     this.scene.add(this.mist);
   }
 
   // ===================== 매 프레임 =====================
-  update(dt, elapsed, camera, focus) {
+  update(dt, elapsed, camera, focus, camAbs) {
     this._frame++;
+    const camAlt = camAbs ? camAbs.y : 0;
+    this.camAlt = camAlt;
+    const airD = Math.exp(-Math.max(0, camAlt) / 8500);
+    this.airDensity = airD;
+    this.skyUniforms.uCamAlt.value = camAlt;
+    // 연무: 공기가 옅을수록 멀리까지 보임
+    if (this.scene.fog) this.scene.fog.density = 0.000045 * Math.pow(airD, 0.6);
     camera.updateWorldMatrix(true, false);
     const e = camera.matrixWorld.elements;
     const cx = e[12], cy = e[13], cz = e[14];
@@ -981,7 +1010,7 @@ ${lights}`;
     fu.uCloudShadowAmt.value = p.cloudShadow;
 
     // 태양 그림자 카메라
-    const alt = Math.max(0, focus.y);
+    const alt = Math.max(0, this.focusAGL !== undefined ? this.focusAGL : focus.y);
     this._updateShadow(focus, alt);
     fu.uShadowAmt.value = lerp(1, 0.22, smooth(3, 90, alt)) * (1 - smooth(110, 170, alt));
     this.sun.shadow.autoUpdate = fu.uShadowAmt.value > 0.001;
@@ -994,9 +1023,13 @@ ${lights}`;
     const k = 1 - Math.exp(-dt * 5);
     this.sunVisibility += (vis - this.sunVisibility) * (this._frame < 3 ? 1 : k);
     const sv = lerp(1, this.sunVisibility, clamp(p.cloudShadow * 1.45, 0, 1));
-    this.sun.intensity = p.sunIntensity * sv;
+    // 우주로 갈수록 대기에 덜 가려 햇빛은 강하고 하얗게, 하늘빛(산란 환경광)은 사라짐
+    const space = 1 - airD;
+    this.sun.intensity = p.sunIntensity * sv * (1 + 0.45 * space);
     fu.uSunComp.value = 1 / Math.max(sv, 0.05);
-    this.hemi.intensity = p.hemiIntensity;
+    this.hemi.intensity = p.hemiIntensity * (0.08 + 0.92 * Math.sqrt(airD));
+    // 구름층(300~1,800 m)은 높이 올라가면 점점 사라짐 (먼 곳은 지구 구름이 대신)
+    this.clouds.visible = camAlt < 14000;
 
     // 카메라가 구름 속 → 화이트아웃 안개
     const dens = this._densityAtRel(0, 0, 0);

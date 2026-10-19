@@ -495,7 +495,7 @@ export class Player {
       if (speed < t) target = Math.min(t, speed + (space ? 2000 : this.slow ? 14 : 45) * dt);
       else target = Math.max(t, speed - (space ? 1.2 * speed : 18 + 0.75 * speed) * dt);
     } else {
-      target = space ? speed * Math.exp(-1.6 * dt) : Math.max(0, speed - (22 + 1.5 * speed) * dt);
+      target = space ? speed * Math.exp(-4 * dt) : Math.max(0, speed - (22 + 1.5 * speed) * dt);
     }
     // 대기 저항: 부스트 없이 한계 속도를 넘으면 공기가 진할수록 빠르게 감속 (재진입)
     if (!boosting && !space && target > vcap) target = vcap + (target - vcap) * Math.exp(-3 * this.dens * dt);
@@ -736,7 +736,7 @@ export class Player {
     const sp = this.speed;
     if (segSphere(P0, P1, SUN.pos, SUN.radius) >= 0) {
       if (C && !C.active) this.game.planetImpact('sun', this, _Vp);
-      return false;
+      return true;   // 적분 중단 (planetImpact 가 정지/숨김 처리)
     }
     if (!this.moonGone) {
       const t = segSphere(P0, P1, MOON.pos, MOON.radius + 3);

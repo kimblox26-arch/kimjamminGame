@@ -4,6 +4,7 @@
 //
 // Draw calls (max ~10): craters, smoke, rings, shells, vapor, ribbons, wind lines, glow, plasma, debris.
 import * as THREE from 'three';
+import { onRebase, origin } from './frame.js';
 
 const TAU = Math.PI * 2;
 const MACH = 343;
@@ -356,6 +357,9 @@ const MAX_STRETCH = 34;
 
 // reusable spawn descriptor
 const SP = {};
+// v2: 지면 높이 (렌더 좌표). 지형 위에서도 바운스/부드러운 접지/크레이터가 맞게
+const FLOOR_U = { value: 0 };
+
 function sp() {
   SP.x = 0; SP.y = 0; SP.z = 0; SP.vx = 0; SP.vy = 0; SP.vz = 0;
   SP.life = 1; SP.s0 = 1; SP.s1 = 1; SP.spow = 1.6; SP.rot = Math.random() * TAU; SP.rotv = 0;
@@ -421,10 +425,11 @@ varying float vDist;
 varying float vShade;
 varying float vShadeAmt;
 varying float vNear;
+uniform float uFloorY;
 void main() {
   float d = texture2D(uMap, vUv).a;
   float a = d * vCol.a;
-  if (vSoft > 0.0) a *= smoothstep(0.0, vSoft, vWy);
+  if (vSoft > 0.0) a *= smoothstep(0.0, vSoft, vWy - uFloorY);
   a *= vNear;
   if (a < 0.003) discard;
   // fake volumetric lighting: lit from above, denser core slightly self-shadowed
@@ -458,6 +463,7 @@ class ParticlePool {
       uAtlas: { value: atlas },
       uCamRight: { value: new THREE.Vector3(1, 0, 0) },
       uCamUp: { value: new THREE.Vector3(0, 1, 0) },
+      uFloorY: FLOOR_U,
     };
     this.mat = premulMaterial({ uniforms: this.uniforms, vertexShader: PARTICLE_VS, fragmentShader: PARTICLE_FS });
     this.mesh = new THREE.Mesh(g, this.mat);
@@ -505,8 +511,8 @@ class ParticlePool {
       let nvy = vy;
       let nvx = vx, nvz = vz;
       const b = d[o + BOUNCE];
-      if (b >= 0 && y < 0.04) {
-        y = 0.04;
+      if (b >= 0 && y < FLOOR_U.value + 0.04) {
+        y = FLOOR_U.value + 0.04;
         if (nvy < 0) nvy = -nvy * b;
         nvx *= 0.82; nvz *= 0.82;
       }
@@ -768,6 +774,7 @@ varying vec3 vN;
 varying vec3 vW;
 varying vec4 vCol;
 varying vec4 vP;
+uniform float uFloorY;
 ${GLSL_NOISE}
 void main() {
   vec3 V = normalize(cameraPosition - vW);
@@ -776,7 +783,7 @@ void main() {
   float fr = pow(f, vP.x);
   float n = fxNoise(N * 7.0 + vP.y) * 0.7 + fxNoise(N * 19.0 - vP.y) * 0.3;
   float a = vCol.a * fr * mix(1.0, 0.3 + 1.3 * n, vP.w);
-  a *= smoothstep(0.0, 0.25, vW.y + 0.25); // ground contact softening
+  a *= smoothstep(0.0, 0.25, vW.y - uFloorY + 0.25); // ground contact softening
   if (a < 0.002) discard;
   gl_FragColor = vec4(vCol.rgb * a, min(a, 1.0) * (1.0 - vP.z));
 }
@@ -798,7 +805,7 @@ class ShellPool {
     this.attrs = [mk('aPosR'), mk('aCol'), mk('aP')];
     g.instanceCount = 0;
     this.geo = g;
-    this.mat = premulMaterial({ vertexShader: SHELL_VS, fragmentShader: SHELL_FS, side: THREE.DoubleSide, defines: { FBM_OCT: 2 } });
+    this.mat = premulMaterial({ uniforms: { uFloorY: FLOOR_U }, vertexShader: SHELL_VS, fragmentShader: SHELL_FS, side: THREE.DoubleSide, defines: { FBM_OCT: 2 } });
     this.mesh = new THREE.Mesh(g, this.mat);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 4;
@@ -861,6 +868,7 @@ class ShellPool {
 // ---------------------------------------------------------------------------------------------
 const CRATER_VS = /* glsl */`
 attribute vec4 aCr; // x, z, size, rotation
+uniform float uFloorC;   // 크레이터를 만든 순간의 지면 높이
 attribute vec4 aCv; // alpha, variant, reveal, -
 varying vec2 vUv;
 varying vec2 vLp;
@@ -870,7 +878,7 @@ void main() {
   vec2 lp = position.xy;
   float c = cos(aCr.w), s = sin(aCr.w);
   vec2 rp = vec2(c * lp.x - s * lp.y, s * lp.x + c * lp.y) * aCr.z;
-  vec3 wp = vec3(aCr.x + rp.x, 0.012, aCr.y - rp.y);
+  vec3 wp = vec3(aCr.x + rp.x, uFloorC + 0.012, aCr.y - rp.y);
   vec2 cell = vec2(mod(aCv.y, 2.0), floor(aCv.y / 2.0));
   vUv = (lp + 0.5 + cell) * 0.5;
   vLp = lp * 2.0;
@@ -909,7 +917,7 @@ class CraterPool {
     g.instanceCount = 0;
     this.geo = g;
     this.mat = premulMaterial({
-      uniforms: { uMap: { value: map } }, vertexShader: CRATER_VS, fragmentShader: CRATER_FS,
+      uniforms: { uMap: { value: map }, uFloorC: { value: 0 } }, vertexShader: CRATER_VS, fragmentShader: CRATER_FS,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
     });
     this.mesh = new THREE.Mesh(g, this.mat);
@@ -996,8 +1004,8 @@ class DebrisPool {
       const k = Math.exp(-0.25 * dt);
       v[i3] *= k; v[i3 + 2] *= k;
       p[i3] += v[i3] * dt; p[i3 + 1] += v[i3 + 1] * dt; p[i3 + 2] += v[i3 + 2] * dt;
-      if (p[i3 + 1] < hs) {
-        p[i3 + 1] = hs;
+      if (p[i3 + 1] < FLOOR_U.value + hs) {
+        p[i3 + 1] = FLOOR_U.value + hs;
         if (v[i3 + 1] < 0) {
           v[i3 + 1] = -v[i3 + 1] * 0.34;
           if (v[i3 + 1] < 0.6) v[i3 + 1] = 0;
@@ -1507,7 +1515,7 @@ export class FX {
     this.glow = new ParticlePool(hi ? 1400 : 550, this.texGlow, 1, 8, 'fx.glow');
     this.rings = new RingPool(hi ? 64 : 32);
     this.shells = new ShellPool(3, hi ? 40 : 24);
-    this.debris = new DebrisPool(scene, hi ? 64 : 24);
+    this.debris = new DebrisPool(scene, hi ? 420 : 120);
     this.ribbons = new Ribbons(4, hi ? 40 : 24);
 
     // wind lines
@@ -2407,3 +2415,211 @@ export class FX {
     this.texSmoke.dispose(); this.texGlow.dispose(); this.texCrater.dispose();
   }
 }
+
+
+// ═════════════════════════ v2 확장: 지형 높이, 플로팅 원점, 에너지 비례 충격 ═════════════════════════
+const _lp = new THREE.Vector3();
+function poolMark(fx) { return [fx.smoke.n, fx.glow.n, fx.rings.n, fx.shells.n, fx.debris.n]; }
+function poolShiftY(fx, m, dy) {
+  for (let i = m[0]; i < fx.smoke.n; i++) fx.smoke.d[i * S + 1] += dy;
+  for (let i = m[1]; i < fx.glow.n; i++) fx.glow.d[i * S + 1] += dy;
+  for (let i = m[2]; i < fx.rings.n; i++) fx.rings.d[i * RS + 1] += dy;
+  for (let i = Math.min(m[3], fx.shells.n - 1); i < fx.shells.n; i++) if (i >= 0) fx.shells.d[i * HS + 1] += dy;
+  for (let i = m[4]; i < fx.debris.n; i++) fx.debris.p[i * 3 + 1] += dy;
+}
+
+// 지면 원샷: 원래 코드는 바닥 y=0 기준이므로 지역 높이로 호출한 뒤 새로 생긴 입자를 지면 높이만큼 올림
+for (const name of ['jump', 'step', 'land', 'heroLanding', 'takeoff']) {
+  const orig = FX.prototype[name];
+  FX.prototype[name] = function (pos, strength) {
+    const gy = pos.y - 0.02;
+    _lp.set(pos.x, 0.02, pos.z);
+    const m = poolMark(this);
+    if (name === 'heroLanding') this.craters.mat.uniforms.uFloorC.value = gy;
+    const hooks = this.hooks;
+    this.hooks = this._shiftHooks(gy, hooks);
+    const age0 = this._lightFlash.age;
+    try { orig.call(this, _lp, strength); } finally { this.hooks = hooks; }
+    if (this._lightFlash.age === 0 && age0 !== 0) this._lightFlash.pos.y += gy;
+    poolShiftY(this, m, gy);
+  };
+}
+
+FX.prototype._shiftHooks = function (gy, hooks) {
+  const H = this._hooksShifted || (this._hooksShifted = {});
+  H.shake = hooks.shake; H.flash = hooks.flash; H.fovKick = hooks.fovKick;
+  H.shockwave = (p, st) => { if (hooks.shockwave) hooks.shockwave(p.set(p.x, p.y + gy, p.z), st); };
+  return H;
+};
+
+// 소닉붐: 세기(공기 밀도)에 따라 고리 크기
+const _sonic = FX.prototype.sonicBoom;
+FX.prototype.sonicBoom = function (pos, dir, strength = 1) {
+  const m = poolMark(this);
+  _sonic.call(this, pos, dir);
+  const f = 0.55 + 0.9 * clamp01(strength);
+  for (let i = m[2]; i < this.rings.n; i++) this.rings.d[i * RS + 9] *= f;
+  for (let i = Math.max(0, Math.min(m[3], this.shells.n - 1)); i < this.shells.n; i++) this.shells.d[i * HS + 9] *= f;
+};
+
+// 매 프레임: 지면 높이, 플라즈마 꼬리 길이(속도 비례), 원점 이동 등록
+const _update = FX.prototype.update;
+const _plumeBase = new WeakMap();
+FX.prototype.update = function (dt, ctx) {
+  if (!this._rebaseReg) { this._rebaseReg = true; onRebase((dx, dy, dz) => this._rebase(dx, dy, dz)); }
+  if (ctx && ctx.groundY !== undefined) FLOOR_U.value = ctx.groundY;
+  if (!_plumeBase.has(this)) _plumeBase.set(this, this.params.plumeLength);
+  // 재진입처럼 아주 빠르면 꼬리가 수백 m~km 로 길어짐
+  const sp = ctx && ctx.speed ? ctx.speed : 0;
+  this.params.plumeLength = _plumeBase.get(this) * (1 + Math.min(60, sp / 400));
+  return _update.call(this, dt, ctx);
+};
+
+FX.prototype._rebase = function (dx, dy, dz) {
+  for (const pool of [this.smoke, this.glow]) for (let i = 0; i < pool.n; i++) { const o = i * S; pool.d[o] -= dx; pool.d[o + 1] -= dy; pool.d[o + 2] -= dz; }
+  for (let i = 0; i < this.rings.n; i++) { const o = i * RS; this.rings.d[o] -= dx; this.rings.d[o + 1] -= dy; this.rings.d[o + 2] -= dz; }
+  for (let i = 0; i < this.shells.n; i++) { const o = i * HS; this.shells.d[o] -= dx; this.shells.d[o + 1] -= dy; this.shells.d[o + 2] -= dz; }
+  const dp = this.debris.p;
+  for (let i = 0; i < this.debris.n; i++) { dp[i * 3] -= dx; dp[i * 3 + 1] -= dy; dp[i * 3 + 2] -= dz; }
+  const A = this.craters.aCr.array;
+  for (let i = 0; i < 3; i++) { A[i * 4] -= dx; A[i * 4 + 1] -= dz; }
+  this.craters.aCr.needsUpdate = true;
+  this.craters.mat.uniforms.uFloorC.value -= dy;
+  for (const h of this.ribbons.hist) for (let i = 0; i < h.p.length; i += 3) { h.p[i] -= dx; h.p[i + 1] -= dy; h.p[i + 2] -= dz; }
+  this._camPrev.x -= dx; this._camPrev.y -= dy; this._camPrev.z -= dz;
+  this._lightFlash.pos.x -= dx; this._lightFlash.pos.y -= dy; this._lightFlash.pos.z -= dz;
+  FLOOR_U.value -= dy;
+};
+
+// 에너지 비례 충격: 폭발 반경 R ≈ 0.25·E^(1/3) m (폭발 상사 법칙)
+//  ~36 kJ 영웅 착지 → 수 MJ 크레이터 → GJ 블록 파괴 → 10^12 J 이상 버섯구름과 수 km 충격파
+FX.prototype.impact = function (pos, E, n) {
+  const R = 0.25 * Math.cbrt(Math.max(E, 1));
+  this.heroLanding(pos, clamp01(R / 12));
+  if (R < 14) return;
+  const gy = pos.y - 0.02, x = pos.x, z = pos.z;
+  const big = clamp01(Math.log10(R / 14) / 2.6);          // 0 (14 m) → 1 (~5 km)
+  const life = Math.min(16, 1.2 * Math.sqrt(R / 12));
+  const cam = this._camPos;
+  const dist = Math.hypot(cam.x - x, cam.y - gy, cam.z - z);
+  const near = clamp01((R * 3) / (dist + R));
+  // ① 지면을 달리는 밝은 충격파 전선 + 먼지 고리 (두 겹)
+  let Rg = rp();
+  Rg.x = x; Rg.y = gy + 0.3; Rg.z = z; Rg.R0 = R * 0.15; Rg.R1 = R * 3.6; Rg.rpow = 1.8; Rg.life = life * 0.55;
+  Rg.r = 2.4; Rg.g = 2.4; Rg.b = 2.6; Rg.a = 0.7; Rg.w0 = 0.06; Rg.w1 = 0.03; Rg.add = 0.7; Rg.noise = 0.5; Rg.fin = 0.01; Rg.apow = 1.5;
+  this.rings.spawn(Rg);
+  Rg = this._ringDust(rp());
+  Rg.x = x; Rg.y = gy + 0.2; Rg.z = z; Rg.R0 = R * 0.2; Rg.R1 = R * 2.8; Rg.rpow = 2.2; Rg.life = life * 1.3;
+  Rg.a = 0.75; Rg.w0 = 0.35; Rg.w1 = 0.22; Rg.noise = 0.9; Rg.fin = 0.02; Rg.apow = 1.1;
+  this.rings.spawn(Rg);
+  // ② 윌슨 응결 돔 (순간적으로 생겼다 사라지는 흰 반구)
+  const H = hp();
+  H.x = x; H.y = gy; H.z = z; H.R0 = R * 0.3; H.R1 = R * 2.4; H.rpow = 2.2; H.life = life * 0.5;
+  H.r = 1.3; H.g = 1.32; H.b = 1.4; H.a = 0.5; H.fres = 2.2; H.add = 0.35; H.noise = 0.85; H.apow = 1.6;
+  this.shells.spawn(H);
+  // ③ 불덩이: 뜨거운 핵이 부풀며 떠오름
+  const nF = Math.round((22 + 30 * big) * this.q) + 6;
+  for (let i = 0; i < nF; i++) {
+    const a = Math.random() * TAU, r = Math.random() * R * 0.35;
+    const P = sp();
+    P.x = x + Math.cos(a) * r; P.y = gy + R * rnd(0.05, 0.4); P.z = z + Math.sin(a) * r;
+    P.vx = Math.cos(a) * R * rnd(0.1, 0.5); P.vy = R * rnd(0.15, 0.6) * (0.5 + big); P.vz = Math.sin(a) * R * rnd(0.1, 0.5);
+    P.life = life * rnd(0.35, 0.7); P.s0 = R * rnd(0.2, 0.4); P.s1 = R * rnd(0.7, 1.2); P.spow = 2.2;
+    P.r0 = 6; P.g0 = 3.6; P.b0 = 1.2; P.r1 = 0.9; P.g1 = 0.18; P.b1 = 0.03;
+    P.a = 0.9; P.add0 = 1; P.add1 = 0.4; P.drag = 1.2; P.grav = -R * 0.05; P.shade = 0; P.fin = 0.02; P.fpow = 1.2; P.rotv = rnd(-0.4, 0.4);
+    this.glow.spawn(P);
+  }
+  // ④ 버섯구름 (큰 폭발): 기둥 + 꼭대기 갓
+  if (R > 90) {
+    const top = R * (2.2 + 1.5 * big);
+    const nC = Math.round((26 + 30 * big) * this.q) + 8;
+    for (let i = 0; i < nC; i++) {
+      const t = i / nC, a = Math.random() * TAU, r = R * 0.12 * (1 - t * 0.4) * Math.random();
+      const P = this._dust(sp(), 0.55);
+      P.x = x + Math.cos(a) * r; P.y = gy + top * t * 0.85; P.z = z + Math.sin(a) * r;
+      P.vx = 0; P.vy = top * 0.18 * (1 - t * 0.5); P.vz = 0;
+      P.life = life * rnd(1.4, 2.2); P.s0 = R * 0.25; P.s1 = R * rnd(0.5, 0.8); P.a = 0.75; P.fin = 0.06; P.fpow = 1.3;
+      P.drag = 0.35; P.grav = 0; P.rotv = rnd(-0.2, 0.2); P.preAge = t * 0.4;
+      this.smoke.spawn(P);
+    }
+    const nCap = Math.round((30 + 26 * big) * this.q) + 8;
+    for (let i = 0; i < nCap; i++) {
+      const a = (i / nCap) * TAU, rr = R * rnd(0.4, 0.9);
+      const P = this._dust(sp(), 0.7);
+      P.x = x + Math.cos(a) * rr; P.y = gy + top; P.z = z + Math.sin(a) * rr;
+      P.vx = Math.cos(a) * R * rnd(0.15, 0.35); P.vy = R * rnd(0.05, 0.2); P.vz = Math.sin(a) * R * rnd(0.15, 0.35);
+      P.life = life * rnd(1.8, 2.6); P.s0 = R * 0.5; P.s1 = R * rnd(1.0, 1.6); P.a = 0.8; P.fin = 0.1; P.fpow = 1.2;
+      P.drag = 0.4; P.grav = -R * 0.004; P.rotv = rnd(-0.15, 0.15);
+      this.smoke.spawn(P);
+    }
+    // 아래에서 비추는 불빛 (갓 밑면이 주황으로 달아오름)
+    for (let i = 0; i < 6; i++) {
+      const P = sp();
+      P.x = x; P.y = gy + top * rnd(0.3, 0.9); P.z = z;
+      P.vy = top * 0.1; P.life = life * 0.9; P.s0 = R * 0.6; P.s1 = R * 1.3;
+      P.r0 = 2.2; P.g0 = 0.8; P.b0 = 0.2; P.r1 = 0.3; P.g1 = 0.05; P.b1 = 0.01; P.a = 0.5; P.add0 = P.add1 = 1; P.shade = 0;
+      this.glow.spawn(P);
+    }
+  }
+  // ⑤ 지면을 덮는 먼지 해일
+  this._groundBurstAt(x, gy, z, Math.round((40 + 50 * big) * this.q) + 8, R * 0.2, R * 0.6, R * 0.5, R * 1.2, R * 0.6, R * 1.2, life * 1.2, life * 2.2);
+  // ⑥ 파편 덩어리
+  const nD = Math.round((20 + 60 * big) * (this.quality === 'high' ? 1 : 0.4));
+  for (let i = 0; i < nD; i++) {
+    const a = Math.random() * TAU, sp2 = Math.min(380, R * rnd(0.3, 1.2));
+    const sz = Math.min(6, R * rnd(0.004, 0.02));
+    this.debris.spawn(x + Math.cos(a) * R * 0.1, gy + 1 + Math.random() * R * 0.1, z + Math.sin(a) * R * 0.1,
+      Math.cos(a) * sp2, sp2 * rnd(0.4, 1.0), Math.sin(a) * sp2, sz, rnd(4, 9));
+  }
+  // ⑦ 빛과 화면 효과 (카메라와의 거리에 따라)
+  this._flashLight(x, gy + R * 0.3, z, 80 + 400 * big, 0.6 + big, 1.0, 0.75, 0.45);
+  this._hook('flash', clamp01(0.25 + 0.75 * big) * (0.35 + 0.65 * near));
+  this._hook('shake', clamp01(0.5 + 0.5 * big) * (0.4 + 0.6 * near));
+  this._hook('shockwave', this._hookPos(x, gy + 1, z), 1);
+  this._hook('fovKick', 6 + 14 * big * near);
+};
+
+// 지면 높이를 받는 먼지 해일 (원래 _groundBurst 는 y=0 기준)
+FX.prototype._groundBurstAt = function (gx, gy, gz, n, r0, r1, spd0, spd1, s0, s1, life0, life1) {
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * TAU + rnd(-0.5, 0.5) * (TAU / n);
+    const c = Math.cos(ang), s = Math.sin(ang);
+    const r = rnd(r0, r1), spd = rnd(spd0, spd1);
+    const P = this._dust(sp(), 0.95);
+    P.x = gx + c * r; P.y = gy + rnd(0.2, 1.0) * s0 * 0.3; P.z = gz + s * r;
+    P.vx = c * spd; P.vy = spd * rnd(0.05, 0.2); P.vz = s * spd;
+    P.life = rnd(life0, life1); P.s0 = s0 * rnd(0.7, 1.1); P.s1 = s1 * rnd(0.8, 1.3); P.spow = 2.5;
+    P.a = rnd(0.55, 0.85); P.fin = 0.04; P.fpow = 1.3; P.drag = 1.1; P.grav = -0.02 * spd;
+    P.rotv = rnd(-0.4, 0.4); P.soft = 0;
+    this.smoke.spawn(P);
+  }
+};
+
+// 무너진 건물 잔해: 덩어리 + 먼지 기둥 (상자는 절대 좌표 중심)
+FX.prototype.debris = function (boxes) {
+  if (!boxes || !boxes.length) return;
+  const nb = Math.min(boxes.length, 70);
+  const per = Math.max(1, Math.round(240 / nb));
+  for (let k = 0; k < nb; k++) {
+    const b = boxes[k];
+    const x = b.x - origin.x, y = b.y - origin.y, z = b.z - origin.z;
+    const foot = Math.max(b.w, b.d), base = y - b.h / 2;
+    // 먼지 기둥
+    const nP = 2 + Math.round(3 * this.q);
+    for (let i = 0; i < nP; i++) {
+      const P = this._dust(sp(), 0.75);
+      P.x = x + rnd(-0.4, 0.4) * foot; P.y = base + b.h * rnd(0.1, 0.8); P.z = z + rnd(-0.4, 0.4) * foot;
+      P.vx = rnd(-6, 6); P.vy = rnd(2, 10); P.vz = rnd(-6, 6);
+      P.life = rnd(6, 11); P.s0 = foot * 0.6; P.s1 = foot * rnd(1.4, 2.4); P.a = 0.7; P.fin = 0.05; P.fpow = 1.2; P.drag = 0.6; P.grav = -0.3;
+      this.smoke.spawn(P);
+    }
+    // 덩어리
+    for (let i = 0; i < per; i++) {
+      const sz = Math.min(5, Math.min(b.w, b.d, b.h) * rnd(0.08, 0.22));
+      const out = rnd(8, 45);
+      const a = Math.random() * TAU;
+      this.debris.spawn(x + rnd(-0.5, 0.5) * b.w, base + b.h * Math.random(), z + rnd(-0.5, 0.5) * b.d,
+        Math.cos(a) * out, rnd(4, 40), Math.sin(a) * out, sz, rnd(5, 10));
+    }
+  }
+};

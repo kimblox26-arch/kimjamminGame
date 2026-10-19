@@ -8,6 +8,7 @@ import { Player } from './player.js';
 import { CameraRig } from './camera.js';
 import { Input } from './input.js';
 import * as terrainMod from './terrain.js';
+import * as frameMod from './frame.js';
 import { Terrain } from './terrain.js';
 import { City } from './city.js';
 import { Space } from './space.js';
@@ -50,6 +51,7 @@ world.params.hemiIntensity = 1.05;
 world.applyParams();
 const post = new Post(renderer, scene, camera, { quality });
 post.attachSpace(space.scene, space.camera);
+post.nearCam.layers.enable(2);   // 구름 속 안개 오버레이는 근거리 패스에서 한 번만
 const audio = new GameAudio();
 const rig = new CameraRig(camera);
 rig.groundAt = (x, z) => {
@@ -72,7 +74,7 @@ const hooks = {
 const fx = new FX(scene, camera, hooks, { quality, sunDir });
 const cosmic = new Cosmic(space, hooks, { quality });
 const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3();
-let earthGone = false;
+let earthGone = false, cineMode = false;
 const game = {
   fx, audio, hooks, cosmic, city,
   terrain: terrainMod,
@@ -85,15 +87,16 @@ const game = {
     hooks.flash(1);
     hooks.shake(1);
     audio.play('sonicBoom', 1);
-    if (name === 'sun') { cosmic.supernova(); toast('태양 초신성 폭발!'); return; }
-    cosmic.explode(name, _dP);
-    if (name === 'earth') {
-      earthGone = true;
+    if (name === 'sun') cosmic.supernova(); else cosmic.explode(name, _dP);
+    if (name === 'earth' || name === 'sun') {
+      earthGone = name === 'earth';
+      cineMode = true;
       pl.hidden = true;
+      pl.vel.set(0, 0, 0); pl.speed = 0; pl.mach = 0; pl.boostAmt = 0;
       pl.avatar.root.visible = false;
       post.setSpaceOnly(true);
       $('reset').hidden = false;
-      toast('지구 파괴!');
+      toast(name === 'earth' ? '지구 파괴!' : '태양 초신성 폭발!');
     } else toast('달 파괴!');
   },
 };
@@ -116,6 +119,7 @@ function resetWorld() {
   cosmic.reset();
   city.restoreAll();
   earthGone = false;
+  cineMode = false;
   post.setSpaceOnly(false);
   $('reset').hidden = true;
   spawn();
@@ -138,7 +142,7 @@ input.onKey = (code) => {
   if (code === 'KeyM') { audio.muted = !audio.muted; toast(audio.muted ? '소리 끔' : '소리 켬'); }
   if (code === 'KeyH') $('help').classList.toggle('hide');
   if (code === 'KeyP') { fpsCap = !fpsCap; toast(fpsCap ? 'FPS 제한: 120' : 'FPS 제한: 없음 (모니터 주사율)'); }
-  if (code === 'Enter' && (earthGone || player.moonGone)) resetWorld();
+  if (code === 'Enter' && (cineMode || player.moonGone)) resetWorld();
 };
 $('btn-mute')?.addEventListener('click', () => { audio.muted = !audio.muted; $('btn-mute').textContent = audio.muted ? '🔇' : '🔊'; });
 let toastT = 0;
@@ -285,10 +289,11 @@ function frame(now) {
   elapsed.t += dt;
   rig.update(dt, player, input);
   camAbs.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
+  world.focusAGL = player.agl + 1;
   world.update(dt, elapsed.t, camera, player.renderPos, camAbs);
   terrain.update(dt, camera, camAbs);
   city.update(dt, camera, camAbs);
-  if (earthGone) cinematic(dt); else space.update(dt, camera, camAbs, camAbs.y);
+  if (cineMode) cinematic(dt); else space.update(dt, camera, camAbs, camAbs.y);
   cosmic.update(dt, camAbs);
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
   audio.update(dt, player.audioState);
@@ -328,3 +333,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, origin, resetWorld };
 window.__origin = origin;
+window.__frame = frameMod;
