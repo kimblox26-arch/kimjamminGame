@@ -1,0 +1,16 @@
+{
+  "name": "pixel-world-war",
+  "version": "1.0.0",
+  "description": "픽셀 세계지도 실시간 땅따먹기 전쟁 게임 (멀티플레이 서버)",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

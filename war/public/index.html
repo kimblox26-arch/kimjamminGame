@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>픽셀 월드 워</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hover"></div>
+
+<div id="top" class="panel hidden">
+  <span id="meName"></span>
+  <span class="stat" title="자금 (초당 수입)">💰 <b id="money">0</b> <small id="income"></small></span>
+  <span class="stat" title="병력 / 최대 병력">🪖 <b id="troops">0</b><small id="cap"></small></span>
+  <span class="stat" title="영토 픽셀">🗺️ <b id="land">0</b></span>
+  <span class="stat" title="순위">🏆 <b id="rankNo">-</b></span>
+  <span class="stat" title="보유 유닛">⚙️ <b id="unitCount">0</b></span>
+  <button id="btnHome" title="우리나라로 이동 (Space)">🏠</button>
+  <button id="btnChange">나라 변경</button>
+</div>
+
+<div id="build" class="panel hidden">
+  <div class="title">🏭 병력 소환 <small>클릭 후 지도 클릭</small></div>
+  <div id="unitBtns"></div>
+  <div class="row">수량
+    <button class="q on" data-q="1">×1</button><button class="q" data-q="5">×5</button><button class="q" data-q="10">×10</button><button class="q" data-q="20">×20</button>
+  </div>
+  <div class="row">
+    <button id="mSelect" title="Q">⬚ 선택 모드</button><button id="mAll" title="E">전체 선택</button><button id="mNone" title="Esc">해제</button>
+  </div>
+  <div id="selInfo"></div>
+</div>
+
+<div id="info" class="panel hidden"></div>
+
+<div id="side" class="panel">
+  <div class="title">🏆 영토 순위</div>
+  <ol id="rank"></ol>
+  <div id="warsBox" class="hidden"><div class="title">⚔️ 나의 전쟁</div><div id="wars"></div></div>
+</div>
+
+<div id="news"></div>
+<div id="toasts"></div>
+<div id="mode"></div>
+<button id="btnHelp" class="panel">❓</button>
+<div id="help" class="panel hidden">
+  <div class="title">🎮 조작법</div>
+  <p><b>지도</b> 드래그 = 이동 · 휠/핀치 = 확대 · WASD/화살표 = 이동</p>
+  <p><b>나라 클릭</b> = 정보 · 선전포고 · 공격(땅 뺏기) · 평화 제안</p>
+  <p><b>소환</b> 유닛 버튼(1~9) 누르고 우리 땅 클릭 → 그 자리에 소환 (군함은 우리 해안 근처 바다)</p>
+  <p><b>미사일/핵</b> 버튼 누르고 목표 지점 클릭 → 수도에서 발사</p>
+  <p><b>유닛 명령</b> 선택 모드(Q)에서 드래그로 선택(E = 전체 선택) → 클릭 지점으로 이동 / PC는 우클릭으로 이동</p>
+  <p><b>공격</b> = 병력을 보내 국경선을 실시간으로 밀어냄. 국경이 없으면 클릭한 곳으로 상륙!</p>
+  <p>지상 유닛(군인·탱크·포병·방공포)은 지나가는 적 땅을 점령합니다. 회색 땅(남극 등)은 무주지라 누구나 점령 가능.</p>
+  <p>수도를 빼앗기면 병력·자금 손실, 땅이 0이 되면 멸망!</p>
+</div>
+
+<div id="start">
+  <div class="box">
+    <h1>🌍 픽셀 월드 워</h1>
+    <p class="sub">실시간 세계 땅따먹기 전쟁 · <span id="netMode">연결 중...</span></p>
+    <div class="row"><input id="pname" maxlength="16" placeholder="닉네임"><input id="search" placeholder="🔍 나라 검색 (예: 대한민국, Japan)"></div>
+    <div id="clist"></div>
+    <div class="row"><button id="btnWatch">👀 관전하기 (지도에서 나라 클릭해서 선택 가능)</button></div>
+  </div>
+</div>
+
+<script src="sim.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
