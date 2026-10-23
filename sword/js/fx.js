@@ -2660,12 +2660,12 @@ FX.prototype.sparks = function (pos, dir, n, spread = 0.6, speed = 30, r = 1.6, 
   }
 };
 // 에너지 폭발: 빛 덩어리 + 고리 + 불꽃 (scale = 반경 m)
-FX.prototype.energyBurst = function (pos, scale = 4, r = 0.6, g = 1.4, b = 2.6, rings = true) {
+FX.prototype.energyBurst = function (pos, scale = 4, r = 0.6, g = 1.4, b = 2.6, rings = false) {
   // 중심 섬광
   for (let k = 0; k < 3; k++) {
     const P = sp();
     P.x = pos.x; P.y = pos.y; P.z = pos.z;
-    P.life = 0.25 + k * 0.12; P.s0 = scale * (0.6 + k * 0.5); P.s1 = scale * (2.2 + k * 1.2); P.spow = 0.6;
+    P.life = 0.2 + k * 0.1; P.s0 = scale * (0.4 + k * 0.3); P.s1 = scale * (1.3 + k * 0.7); P.spow = 0.6;
     P.r0 = r * 3; P.g0 = g * 3; P.b0 = b * 3; P.r1 = r; P.g1 = g; P.b1 = b;
     P.a = 0.9 - k * 0.2; P.add0 = P.add1 = 1; P.shade = 0; P.fin = 0.02;
     this.glow.spawn(P);
@@ -2680,8 +2680,8 @@ FX.prototype.energyBurst = function (pos, scale = 4, r = 0.6, g = 1.4, b = 2.6, 
   }
   _v0.set(0, 1, 0);
   this.sparks(pos, _v0, 60, 1.6, scale * 9, r * 1.6, g * 1.4, b * 1.2, 0.08 + scale * 0.01);
-  this._flashLight(pos.x, pos.y, pos.z, 30 + scale * 6, 0.25, r, g, b);
-  this._hook('shockwave', this._hookPos(pos.x, pos.y, pos.z), Math.min(1, 0.3 + scale / 20));
+  this._flashLight(pos.x, pos.y, pos.z, 12 + scale * 3, 0.2, r, g, b);
+  if (rings && scale > 5) this._hook('shockwave', this._hookPos(pos.x, pos.y, pos.z), Math.min(1, scale / 25));
 };
 // 먼지 구름 (건물 붕괴): 지면 (x, gy, z) 둘레 반경 R 로 퍼지는 회색 먼지 + 위로 솟는 기둥
 FX.prototype.dustCloud = function (x, gy, z, R, height = 20) {

@@ -186,7 +186,7 @@ class Trail {
 
 // ── 초승달 검광 (베기 잔상 / 날아가는 검기) ──
 const ARC_VS = /* glsl */`
-uniform float uR0; uniform float uR1; uniform float uA0; uniform float uSpan;
+uniform float uR0; uniform float uR1; uniform float uA0; uniform float uSpan; uniform float uBow;
 varying vec2 vUv;
 void main() {
   vUv = uv;
@@ -194,7 +194,9 @@ void main() {
   // 가운데가 두껍고 양끝이 가늘어지는 초승달
   float th = sin(3.14159 * uv.x);
   float r = mix(uR1 - (uR1 - uR0) * th, uR1, uv.y);
-  vec3 p = vec3(cos(ang) * r, sin(ang) * r, 0.0);
+  // 날아가는 검기: 양끝이 뒤로 휨 (가운데가 앞으로 볼록)
+  float mid = uA0 + 0.5 * uSpan;
+  vec3 p = vec3(cos(ang) * r, sin(ang) * r, -uBow * r * (1.0 - cos(ang - mid)));
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }`;
 const ARC_FS = /* glsl */`
@@ -206,7 +208,7 @@ void main() {
   float lead = mix(1.0, smoothstep(uReveal - 0.5, uReveal, vUv.x), uLead);   // 베기: 앞쪽(최근)일수록 밝음
   float rim = smoothstep(0.0, 1.0, vUv.y);                           // 바깥 날 쪽이 밝음
   float streak = 0.75 + 0.25 * h1(floor(vUv.y * 14.0) + floor(uTime * 30.0));
-  float ends = smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
+  float ends = smoothstep(0.0, 0.08, vUv.x) * (1.0 - smoothstep(0.92, 1.0, vUv.x));
   float a = uI * ends * (0.25 + 0.75 * lead) * (0.15 + 0.85 * rim * rim) * streak;
   vec3 col = mix(uColor, vec3(3.0), rim * rim * rim * 0.8);
   gl_FragColor = vec4(col * a, 1.0);
@@ -230,7 +232,7 @@ function arcGeo() {
 function makeArc(scene) {
   const mat = new THREE.ShaderMaterial({
     uniforms: {
-      uR0: { value: 1 }, uR1: { value: 2 }, uA0: { value: 0 }, uSpan: { value: 2 },
+      uR0: { value: 1 }, uR1: { value: 2 }, uA0: { value: 0 }, uSpan: { value: 2 }, uBow: { value: 0 },
       uColor: { value: new THREE.Color(1.3, 1.6, 2.4) }, uI: { value: 1 }, uReveal: { value: 1 }, uTime: { value: 0 }, uLead: { value: 1 },
     },
     vertexShader: ARC_VS, fragmentShader: ARC_FS,
@@ -471,7 +473,7 @@ export class Blade {
         const fx = this.game.fx;
         _v.set(x - origin.x, y - origin.y, z - origin.z);
         if (fx.sparks) fx.sparks(_v, _e.copy(_b).negate(), 40, 0.7, 26, 2.2, 1.6, 0.9, 0.06);
-        if (fx.energyBurst) fx.energyBurst(_v, 1.6, 1.0, 1.3, 2.0);
+        if (fx.energyBurst) fx.energyBurst(_v, 1.2, 1.0, 1.3, 2.0);
         this.game.audio.play('clang', 1);
         this.game.hooks.shake(0.35);
         this.game.hitStop(0.07, 0.05);
@@ -487,24 +489,26 @@ export class Blade {
     const dir = this.aimDir.clone();
     const side = _v.crossVectors(Y, dir);
     if (side.lengthSq() < 1e-6) side.set(1, 0, 0); else side.normalize();
-    // 비스듬히 (진행축 둘레로 기울임, 번갈아 좌우) → 뒤에서도 잘 보이고 건물을 사선으로 벰
+    // 진행 방향에 수직으로 선 초승달 (뒤에서 보면 웃는 입 모양), 진행축 둘레로 비스듬히 (번갈아 좌우) → 건물을 사선으로 벰
     this.waveN = (this.waveN || 0) + 1;
-    const tilt = (this.waveN % 2 ? 1 : -1) * 28 * D2R;
-    const up2 = _c.crossVectors(dir, side).normalize();
-    side.multiplyScalar(Math.cos(tilt)).addScaledVector(up2, Math.sin(tilt)).normalize();
+    const tilt = (this.waveN % 2 ? 1 : -1) * 24 * D2R;
+    const up = new THREE.Vector3().crossVectors(dir, side).normalize();
+    const s2 = side.clone().multiplyScalar(Math.cos(tilt)).addScaledVector(up, Math.sin(tilt)).normalize();
+    up.crossVectors(dir, s2).normalize();
     const p = new THREE.Vector3(P.pos.x + origin.x, P.pos.y + origin.y + 0.3, P.pos.z + origin.z).addScaledVector(dir, 2);
     const arc = { mesh: makeArc(this.scene), t: 0, life: 9, kind: 'wave' };
     const core = makeArc(this.scene);
-    const w = { p, prev: p.clone(), dir, side: side.clone(), R: 18, span: 2.3, speed: 280, life: 4.2, t: 0, hit: new Set(), arc, core };
+    const w = { p, prev: p.clone(), dir, side: s2, up, R: 16, span: 2.2, bow: 0.35, speed: 280, life: 4.2, t: 0, hit: new Set(), arc, core };
     this.waves.push(w);
+    const a0 = -Math.PI / 2 - w.span / 2;
     const u = arc.mesh.material.uniforms;
-    u.uColor.value.copy(ENERGY); u.uR0.value = w.R * 0.8; u.uR1.value = w.R; u.uA0.value = -w.span / 2; u.uSpan.value = w.span; u.uI.value = 1.6; u.uReveal.value = 1; u.uLead.value = 0;
+    u.uColor.value.copy(ENERGY); u.uR0.value = w.R * 0.82; u.uR1.value = w.R; u.uA0.value = a0; u.uSpan.value = w.span; u.uBow.value = w.bow; u.uI.value = 1.6; u.uReveal.value = 1; u.uLead.value = 0;
     const u2 = core.material.uniforms;
-    u2.uColor.value.setRGB(3, 3.3, 3.6); u2.uR0.value = w.R * 0.95; u2.uR1.value = w.R * 0.995; u2.uA0.value = -w.span * 0.45; u2.uSpan.value = w.span * 0.9; u2.uI.value = 1.4; u2.uReveal.value = 1; u2.uLead.value = 0;
+    u2.uColor.value.setRGB(3, 3.3, 3.6); u2.uR0.value = w.R * 0.95; u2.uR1.value = w.R * 0.995; u2.uA0.value = a0 + w.span * 0.05; u2.uSpan.value = w.span * 0.9; u2.uBow.value = w.bow; u2.uI.value = 1.4; u2.uReveal.value = 1; u2.uLead.value = 0;
     arc.mesh.visible = true; core.visible = true;
     const fx = this.game.fx;
     _v.set(p.x - origin.x, p.y - origin.y, p.z - origin.z);
-    if (fx.energyBurst) fx.energyBurst(_v, 2.5);
+    if (fx.energyBurst) fx.energyBurst(_v, 1.5, ENERGY.r, ENERGY.g, ENERGY.b);
     this.game.audio.play('boost', 0.8);
     this.game.hooks.shake(0.4);
     this.game.hooks.fovKick && this.game.hooks.fovKick(6);
@@ -516,15 +520,14 @@ export class Blade {
     w.prev.copy(w.p);
     w.p.addScaledVector(w.dir, w.speed * dt);
     const C = this.game.city, Wk = this.game.wreck, fx = this.game.fx, T = this.game.terrain;
-    const cx = w.p.x - w.dir.x * w.R, cy = w.p.y - w.dir.y * w.R, cz = w.p.z - w.dir.z * w.R;
     const hit = this._hit2 || (this._hit2 = {});
     // 초승달 위의 점 9개가 이번 스텝에 지나간 선분으로 건물 판정
     for (let j = 0; j <= 8; j++) {
       const th = -w.span / 2 + (w.span * j) / 8;
-      const ox = (w.dir.x * Math.cos(th) + w.side.x * Math.sin(th)) * w.R;
-      const oy = (w.dir.y * Math.cos(th) + w.side.y * Math.sin(th)) * w.R;
-      const oz = (w.dir.z * Math.cos(th) + w.side.z * Math.sin(th)) * w.R;
-      const bx = cx + ox, by = cy + oy, bz = cz + oz;
+      const sn = Math.sin(th) * w.R, cs = (1 - Math.cos(th)) * w.R;
+      const bx = w.p.x + w.side.x * sn + w.up.x * cs - w.dir.x * cs * w.bow;
+      const by = w.p.y + w.side.y * sn + w.up.y * cs - w.dir.y * cs * w.bow;
+      const bz = w.p.z + w.side.z * sn + w.up.z * cs - w.dir.z * cs * w.bow;
       const s = w.speed * dt;
       const axp = bx - w.dir.x * s, ayp = by - w.dir.y * s, azp = bz - w.dir.z * s;
       if (!C || !C.segmentHit(axp, ayp, azp, bx, by, bz, hit) || w.hit.has(hit.id)) continue;
@@ -544,8 +547,8 @@ export class Blade {
       const g = Math.max(T.heightAt(w.p.x, w.p.z), T.waterLevelAt(w.p.x, w.p.z));
       if (w.p.y < g + 0.5) {
         _v.set(w.p.x - origin.x, g - origin.y, w.p.z - origin.z);
-        if (fx.energyBurst) fx.energyBurst(_v, 6);
-        if (fx.dustCloud) fx.dustCloud(_v.x, _v.y, _v.z, 25, 15);
+        if (fx.energyBurst) fx.energyBurst(_v, 6, ENERGY.r, ENERGY.g, ENERGY.b, true);
+        if (fx.dustCloud) fx.dustCloud(_v.x, _v.y, _v.z, 18, 10);
         this.game.smashAt && this.game.smashAt(w.p.x, g, w.p.z, 22);
         this.game.audio.play('heroLand', 0.8);
         return false;
@@ -602,8 +605,8 @@ export class Blade {
       B.nb = (B.nb || 0) + 1;
       const E = this.beamTo;
       _v.set(E.x - origin.x, E.y - origin.y, E.z - origin.z);
-      if (fx.energyBurst) fx.energyBurst(_v, 3 + B.r * 2, ENERGY.r, ENERGY.g, ENERGY.b, B.nb % 3 === 1);
-      if (fx.dustCloud) fx.dustCloud(_v.x, _v.y, _v.z, 10 + B.r * 6, 12);
+      if (fx.energyBurst) fx.energyBurst(_v, 2 + B.r * 1.5, ENERGY.r, ENERGY.g, ENERGY.b, B.nb === 1);
+      if (fx.dustCloud && B.nb % 3 === 1) fx.dustCloud(_v.x, _v.y, _v.z, 6 + B.r * 3, 8);
       this.game.smashAt && this.game.smashAt(E.x, E.y, E.z, 8 + B.r * 5);
       const T = this.game.terrain;
       if (T && T.waterLevelAt(E.x, E.z) > T.heightAt(E.x, E.z) && fx.splash) fx.splash(_v.x, _v.y, _v.z, 1.5);
@@ -685,9 +688,8 @@ export class Blade {
     }
     // 날아가는 검기
     for (const w of this.waves) {
-      _c.set(w.p.x - origin.x - w.dir.x * w.R, w.p.y - origin.y - w.dir.y * w.R, w.p.z - origin.z - w.dir.z * w.R);
-      _a.copy(w.dir); _b.copy(w.side); _d.crossVectors(_a, _b);
-      _q.setFromRotationMatrix(_m.makeBasis(_a, _b, _d));
+      _c.set(w.p.x - origin.x + w.up.x * w.R, w.p.y - origin.y + w.up.y * w.R, w.p.z - origin.z + w.up.z * w.R);
+      _q.setFromRotationMatrix(_m.makeBasis(w.side, w.up, w.dir));
       const fade = 1 - smooth(w.life - 0.6, w.life, w.t);
       for (const [M, I] of [[w.arc.mesh, 3.0], [w.core, 2.2]]) {
         M.position.copy(_c); M.quaternion.copy(_q);
@@ -696,7 +698,7 @@ export class Blade {
       // 칼날 가장자리에서 흩날리는 불꽃
       if (this.game.fx.sparks && Math.random() < 0.7) {
         const th = (Math.random() - 0.5) * w.span;
-        _e.copy(w.dir).multiplyScalar(Math.cos(th) * w.R).addScaledVector(w.side, Math.sin(th) * w.R).add(_c);
+        _e.set(w.p.x - origin.x, w.p.y - origin.y, w.p.z - origin.z).addScaledVector(w.side, Math.sin(th) * w.R).addScaledVector(w.up, (1 - Math.cos(th)) * w.R);
         this.game.fx.sparks(_e, _f.copy(w.dir).negate(), 3, 0.5, 30, ENERGY.r * 1.3, ENERGY.g * 1.2, ENERGY.b, 0.12);
       }
     }
@@ -711,14 +713,14 @@ export class Blade {
       _q.setFromUnitVectors(Y, _d);
       const fade = smooth(0, 0.06, B.t) * (1 - smooth(B.dur - 0.25, B.dur, B.t));
       const jitter = 1 + 0.08 * Math.sin(this.time * 70);
-      for (const [m, r, I] of [[BM.core, B.r * 0.28, 1.8], [BM.glow, B.r * 1.1, 0.55]]) {
+      for (const [m, r, I] of [[BM.core, B.r * 0.2, 1.1], [BM.glow, B.r * 0.75, 0.4]]) {
         m.visible = true;
         m.position.copy(_a); m.quaternion.copy(_q); m.scale.set(r * jitter, L, r * jitter);
         const u = m.material.uniforms; u.uI.value = I * fade; u.uTime.value = this.time; u.uLen.value = L;
       }
       // 칼끝 섬광
       this._fx -= dt;
-      if (this._fx <= 0 && this.game.fx.energyBurst) { this._fx = 0.07; this.game.fx.energyBurst(_a, 0.5 + B.r * 0.25, ENERGY.r, ENERGY.g, ENERGY.b, false); }
+      if (this._fx <= 0 && this.game.fx.sparks) { this._fx = 0.05; this.game.fx.sparks(_a, _d, 6, 0.5, 25, ENERGY.r * 1.5, ENERGY.g * 1.3, ENERGY.b, 0.06); }
     } else { BM.core.visible = false; BM.glow.visible = false; }
     // 기 모으기: 빛 알갱이가 칼로 빨려 들어옴
     if (this.charging && this.game.fx.sparks) {
