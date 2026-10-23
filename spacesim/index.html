@@ -4,10 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>SpaceSim</title>
-<meta name="description" content="SpaceSim — 3D 천체물리 시뮬레이션: N체 중력, 일반상대론 보정, 블랙홀 강착원반, 은하 충돌, 행성 형성, 우주선 조종">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">
 { "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
@@ -15,107 +11,26 @@
 </head>
 <body>
 <canvas id="gl"></canvas>
-<div id="labels"></div>
-
-<header id="top">
-  <div class="brand"><b>Space<span>Sim</span></b><small>Astrophysical Simulation Software</small></div>
-  <div class="clock">
-    <div id="date" class="mono">—</div>
-    <div class="warp-row">
-      <button id="w-down" title="시간 가속 감소 ( , )">⏪</button>
-      <button id="w-pause" title="일시정지 (Space)">⏸</button>
-      <button id="w-up" title="시간 가속 증가 ( . )">⏩</button>
-      <span id="warp" class="mono">1×</span>
-      <button id="w-1" title="실시간 ( / )">1×</button>
-    </div>
-  </div>
-  <div class="tools">
-    <select id="scenario" title="시나리오"></select>
-    <button id="btn-scen" title="시나리오 목록">☰</button>
-    <button id="btn-info" class="mob" title="정보 패널">ℹ</button>
-    <button id="btn-help" title="도움말 (H)">?</button>
-  </div>
-</header>
-
-<aside id="left" class="panel">
-  <button class="fold" data-target="left" title="패널 접기">‹</button>
-  <section><h3>천체</h3><div id="bodies" class="list"></div></section>
-  <section><h3>물리 엔진</h3>
-    <label>적분기 <select id="method"></select></label>
-    <label>정밀도 η <input id="eta" type="range" min="-3" max="-0.8" step="0.05"><span id="eta-v" class="mono"></span></label>
-    <label class="chk"><input id="gr" type="checkbox"> 일반상대론 1PN 보정 (근일점 세차)</label>
-    <label class="chk"><input id="collide" type="checkbox"> 충돌 · 비탄성 병합</label>
-  </section>
-  <section><h3>표시</h3>
-    <label>궤도 <select id="orbit-mode"><option value="kepler">접촉 궤도 (케플러)</option><option value="trail">궤적 (실제 경로)</option><option value="off">끔</option></select></label>
-    <label class="chk"><input id="labels-on" type="checkbox" checked> 이름표</label>
-    <label class="chk"><input id="parts-on" type="checkbox" checked> 입자 (소행성·항성·원반)</label>
-    <label class="chk"><input id="lens-on" type="checkbox" checked> 중력 렌즈 효과</label>
-    <label>블룸 <input id="bloom" type="range" min="0" max="2" step="0.05" value="0.7"></label>
-  </section>
-  <section><h3>천체 추가</h3>
-    <label>종류 <select id="spawn-kind">
-      <option value="rocky">암석 행성 (×M⊕)</option><option value="ocean">바다 행성 (×M⊕)</option>
-      <option value="gas">가스 행성 (×M♃)</option><option value="star">항성 (×M☉)</option><option value="blackhole">블랙홀 (×10 M☉)</option>
-    </select></label>
-    <label>질량 배율 <input id="spawn-mass" type="range" min="-1" max="2" step="0.05" value="0"><span id="spawn-mass-v" class="mono">1×</span></label>
-    <button id="spawn-btn" class="wide">🖱 클릭하여 배치</button>
-    <p class="hint">포커스 천체의 궤도면을 클릭하면 원궤도로, 드래그하면 끌어낸 방향·길이로 속도를 줍니다.</p>
-  </section>
-</aside>
-<button id="open-left" class="opener hidden" title="패널 열기">☰ 천체</button>
-
-<aside id="right" class="panel">
-  <div id="info"></div>
-  <div class="row"><button id="btn-focus">🎯 포커스</button><button id="btn-del">🗑 삭제</button></div>
-</aside>
-
-<div id="diag" class="panel mono"></div>
-
-<div id="shiphud" class="panel hidden">
-  <div class="hud-top"><b>🚀 우주선</b><select id="engine"></select><button id="refuel" title="연료 재보급">⛽</button><button id="respawn" title="저궤도 재배치 (R)">↺</button></div>
-  <div class="bar"><span>스로틀</span><div id="thr-bar" class="track"><i id="b-thr"></i></div><em id="v-thr" class="mono"></em></div>
-  <div class="bar"><span>연료</span><div class="track"><i id="b-fuel"></i></div><em id="v-fuel" class="mono"></em></div>
-  <div id="ship-stats" class="mono"></div>
-  <div id="sas" class="sas"></div>
+<div id="bar" class="panel">
+  <b>Space<span>Sim</span></b>
+  <select id="scene"></select>
+  <button id="slow" title="느리게">⏪</button><button id="pause" title="일시정지 (Space)">⏸</button><button id="fast" title="빠르게">⏩</button>
+  <span id="speed">1×</span>
+  <label><input id="trails" type="checkbox" checked> 궤적</label>
+  <button id="reset" title="처음부터">↺</button>
 </div>
-
+<div id="tools" class="panel">
+  <select id="kind"><option value="planet">행성</option><option value="star">별</option></select>
+  <label>질량 <input id="mass" type="range" min="-2" max="2" step="0.1" value="0"> <span id="massv">1.0</span></label>
+  <button id="add">＋ 천체 추가</button>
+  <small>추가 모드: 클릭 = 원궤도 · 드래그 = 던지기</small>
+</div>
+<div id="info" class="panel hidden">
+  <b id="info-name"></b><div id="info-body"></div>
+  <button id="follow">따라가기</button><button id="del">삭제</button>
+</div>
+<div id="count" class="panel"></div>
 <div id="toasts"></div>
-
-<div id="help" class="modal hidden"><div class="card">
-  <h2>조작법</h2>
-  <div class="cols">
-    <div><h4>카메라</h4>
-      <p><kbd>드래그</kbd> 회전 · <kbd>휠</kbd>/<kbd>핀치</kbd> 확대</p>
-      <p><kbd>클릭</kbd> 선택 · <kbd>더블클릭</kbd> 포커스</p>
-      <p><kbd>[</kbd> <kbd>]</kbd> 천체 전환 · <kbd>F</kbd> 우주선 · <kbd>G</kbd> 질량중심</p>
-      <h4>시간</h4>
-      <p><kbd>,</kbd> <kbd>.</kbd> 가속 감소/증가 · <kbd>/</kbd> 실시간 · <kbd>Space</kbd> 일시정지</p>
-      <h4>표시</h4>
-      <p><kbd>O</kbd> 궤도 표시 전환 · <kbd>L</kbd> 이름표 · <kbd>H</kbd> 도움말</p>
-    </div>
-    <div><h4>우주선 (태양계)</h4>
-      <p><kbd>W</kbd><kbd>S</kbd> 피치 · <kbd>A</kbd><kbd>D</kbd> 요 · <kbd>Q</kbd><kbd>E</kbd> 롤</p>
-      <p><kbd>Shift</kbd> 스로틀 증가 · <kbd>C</kbd> 감소 · <kbd>Z</kbd> 최대 · <kbd>X</kbd> 차단</p>
-      <p><kbd>1</kbd>~<kbd>7</kbd> SAS: 자세유지 · 순행 · 역행 · 법선 · 반법선 · 방사외향 · 방사내향 · <kbd>T</kbd> SAS 끔</p>
-      <p><kbd>R</kbd> 저궤도 재배치</p>
-      <h4>팁</h4>
-      <p>달 가기: 순행(2)으로 정렬 → 예측 궤적(하늘색)이 달 궤도에 닿을 때까지 가속. 주황색 구간이 달 영향권(SOI) 진입 후 궤적입니다.</p>
-      <p>추진 중에는 시간 가속이 제한됩니다. 대기권 재진입 시 공력가열이 발생합니다.</p>
-    </div>
-  </div>
-  <button class="close wide">닫기</button>
-</div></div>
-
-<div id="intro" class="modal hidden"><div class="card wide-card">
-  <h1>Space<span>Sim</span></h1>
-  <p class="sub">Astrophysical Simulation Software — 실제 물리 법칙으로 움직이는 3D 우주</p>
-  <div id="scen-cards" class="scen-cards"></div>
-  <p class="hint">모든 천체는 뉴턴 만유인력(N체 직접합)과 심플렉틱 적분기로 실시간 계산됩니다. 언제든 상단 메뉴에서 시나리오를 바꿀 수 있습니다.</p>
-</div></div>
-
-<div id="loading"><b>Space<span>Sim</span></b><small id="loading-msg">셰이더 컴파일 중…</small></div>
-
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

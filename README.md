@@ -11,7 +11,7 @@ index.html 을 로컬 웹서버로 열면 바로 실행됩니다.
 > 파일을 더블클릭(`file://`)하면 ES 모듈 보안 정책 때문에 실행되지 않습니다. 반드시 웹서버로 여세요.
 > 필요 라이브러리(three.js)는 `vendor/` 에 포함되어 있어 **인터넷 없이도 동작**합니다.
 
-> 🌌 **새 프로젝트: [SpaceSim — 3D 천체물리 시뮬레이터](spacesim/README.md)** — 같은 웹서버에서 `/spacesim/` 으로 접속하세요.
+> 🪐 **[SpaceSim](spacesim/README.md)** — 간단한 3D 중력 샌드박스. 같은 웹서버에서 `/spacesim/` 으로 접속하세요.
 
 ---
 
