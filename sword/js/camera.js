@@ -27,7 +27,8 @@ export class CameraRig {
     this.time = 0;
     this.first = true;
     this.sens = 0.0022;
-    this.groundAt = null;   // (x, z) → 렌더 좌표 지면 높이 (main 에서 연결)
+    this.groundAt = null;
+    this.firstPerson = false;   // (x, z) → 렌더 좌표 지면 높이 (main 에서 연결)
     onRebase((dx, dy, dz) => { this.lastTarget.x -= dx; this.lastTarget.y -= dy; this.lastTarget.z -= dz; });
   }
 
@@ -66,6 +67,18 @@ export class CameraRig {
 
     const cp = Math.cos(this.pitch);
     _f.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp);
+    // 1인칭: 머리 위치에서 시선 방향 그대로 (머리는 숨김 → 내 몸·팔·검이 보임)
+    const av = player.avatar;
+    if (av.neck.visible === this.firstPerson) av.neck.visible = !this.firstPerson;
+    if (this.firstPerson) {
+      av.head.getWorldPosition(_p);
+      _p.y += 0.06;
+      _p.addScaledVector(_f, 0.12);
+      this.cam.position.copy(_p);
+      _d.copy(_p).add(_f);
+      this.cam.lookAt(_d);
+      this.arm = this.dist; this.lag.set(0, 0, 0);
+    } else {
     // 건물·언덕이 카메라와 캐릭터 사이를 막으면 카메라를 캐릭터 쪽으로 당김 (로블록스 팝퍼 카메라).
     // 높이를 억지로 올리면 시선이 갑자기 꺾이므로, 막힐 때는 거리만 줄이고 시선 방향은 그대로 둠
     let arm = this.dist;
@@ -88,6 +101,7 @@ export class CameraRig {
     if (_p.y < gmin) _p.y = gmin;
     this.cam.position.copy(_p);
     this.cam.lookAt(target);
+    }
     // 화면은 항상 수평 유지: 이동/선회(조이스틱·WASD)로 카메라가 기울거나 돌지 않음.
     // 시점은 시점 드래그·마우스·오른쪽 스틱으로만 바뀜
 
@@ -111,7 +125,7 @@ export class CameraRig {
     const k = 90, c = 2 * Math.sqrt(k) * 0.65;
     this.fovKickV += (-k * this.fovKick - c * this.fovKickV) * dt;
     this.fovKick += this.fovKickV * dt;
-    const fov = this.baseFov + 5 * player.sprintAmt + 15 * smooth(15, 340, speed) + 9 * smooth(340, 1400, speed) + clamp(this.fovKick, -10, 22);
+    const fov = this.baseFov + (this.firstPerson ? 8 : 0) + 5 * player.sprintAmt + 15 * smooth(15, 340, speed) + 9 * smooth(340, 1400, speed) + clamp(this.fovKick, -10, 22);
     if (Math.abs(fov - this.cam.fov) > 0.01) {
       this.cam.fov = fov;
       this.cam.updateProjectionMatrix();

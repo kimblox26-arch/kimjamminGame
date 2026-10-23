@@ -1,16 +1,16 @@
 // 입력: 키보드 + 마우스(포인터 락/드래그) + 터치(가상 조이스틱, 시점 드래그, 버튼) + 게임패드
 const KEYMAP = {
   KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
-  Space: 'up', KeyC: 'down', ShiftLeft: 'boost', ShiftRight: 'boost', KeyZ: 'slow',
+  Space: 'up', KeyC: 'down', ShiftLeft: 'boost', ShiftRight: 'boost', KeyZ: 'slow', KeyK: 'beam',
 };
-const EDGE = { Space: 'jump', KeyF: 'fly', KeyQ: 'rollL', KeyE: 'rollR', KeyR: 'flip', KeyX: 'lock', KeyT: 'target', KeyG: 'auto' };
+const EDGE = { Space: 'jump', KeyF: 'fly', KeyQ: 'rollL', KeyE: 'rollR', KeyR: 'flip', KeyX: 'lock', KeyT: 'target', KeyG: 'auto', KeyV: 'view', KeyJ: 'slash', KeyL: 'wave' };
 
 export class Input {
   constructor(canvas, ui) {
     this.canvas = canvas;
     this.keys = new Set();
     this.edges = new Set();
-    this.state = { moveX: 0, moveY: 0, up: false, down: false, boost: false, slow: false, lookDX: 0, lookDY: 0, zoom: 0 };
+    this.state = { moveX: 0, moveY: 0, up: false, down: false, boost: false, slow: false, beam: false, lookDX: 0, lookDY: 0, zoom: 0 };
     this.touch = { joyId: -1, joyX: 0, joyY: 0, ox: 0, oy: 0, lookId: -1, lx: 0, ly: 0, hold: new Set() };
     this.isTouch = matchMedia('(pointer: coarse)').matches;
     this.onFirstGesture = null;
@@ -27,7 +27,7 @@ export class Input {
     });
     addEventListener('keyup', (e) => { if (KEYMAP[e.code]) this.keys.delete(KEYMAP[e.code]); });
     addEventListener('blur', () => {
-      this.keys.clear(); this.touch.hold.clear();
+      this.keys.clear(); this.touch.hold.clear(); dragging = false;
       this.touch.joyId = -1; this.touch.lookId = -1; this.touch.joyX = 0; this.touch.joyY = 0; ui.joy.style.display = 'none';
       for (const b of ui.buttons) b.classList.remove('on', 'lit');
     });
@@ -38,12 +38,19 @@ export class Input {
       this.gesture();
       // 터치에서 흉내 낸 마우스 이벤트만 무시 (터치스크린 노트북의 진짜 마우스는 허용)
       if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
-      if (!this.locked && canvas.requestPointerLock) {
+      // 포인터가 고정된 상태: 왼쪽 = 베기, 오른쪽 = 빔(누르는 동안 기 모으기)
+      if (this.locked) {
+        if (e.button === 0) this.edges.add('slash');
+        if (e.button === 2) this.keys.add('beam');
+        return;
+      }
+      if (e.button === 2) { this.keys.add('beam'); return; }
+      if (canvas.requestPointerLock) {
         try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) { /* 무시 */ }
       }
       dragging = true; lx = e.clientX; ly = e.clientY;
     });
-    addEventListener('mouseup', () => { dragging = false; });
+    addEventListener('mouseup', (e) => { dragging = false; if (e.button === 2) this.keys.delete('beam'); });
     addEventListener('mousemove', (e) => {
       if (this.locked) { this.state.lookDX += e.movementX; this.state.lookDY += e.movementY; }
       else if (dragging) {
@@ -131,7 +138,8 @@ export class Input {
   }
 
   // 게임패드 (표준 매핑): 왼쪽 스틱 = 이동만, 오른쪽 스틱 = 시점만
-  //  A 점프/상승 · B 하강 · X 비행 · Y 공중제비 · LB/RB 롤 · LT 느리게 · RT/L3 부스트 · Back 속도 고정 · Start 자동 항법 · 십자 위 목표
+  //  A 점프/상승 · X 비행 · Y 공중제비 · RB 베기 · LB 검기 · B 빔(꾹) · LT 느리게 · RT/L3 부스트 · R3 시점
+  //  십자: 위 목표 · 아래 하강 · 좌/우 롤 · Back 속도 고정 · Start 자동 항법
   _pad(dt) {
     const pads = navigator.getGamepads ? navigator.getGamepads() : null;
     const P = this.pad || (this.pad = { prev: [], x: 0, y: 0, hold: new Set(), active: false });
@@ -153,10 +161,11 @@ export class Input {
     this.state.lookDX += Math.sign(rx) * rx * rx * 1100 * dt;
     this.state.lookDY += Math.sign(ry) * ry * ry * 750 * dt;
     const B = (i) => { const b = g.buttons[i]; return !!b && (b.pressed || b.value > 0.5); };
-    const EDGEB = { 0: 'jump', 2: 'fly', 3: 'flip', 4: 'rollL', 5: 'rollR', 8: 'lock', 9: 'auto', 12: 'target' };
+    const EDGEB = { 0: 'jump', 2: 'fly', 3: 'flip', 4: 'wave', 5: 'slash', 8: 'lock', 9: 'auto', 11: 'view', 12: 'target', 14: 'rollL', 15: 'rollR' };
     for (const i in EDGEB) { const on = B(+i); if (on && !P.prev[i]) { this.edges.add(EDGEB[i]); this.gesture(); } P.prev[i] = on; }
     if (B(0)) P.hold.add('up');
-    if (B(1)) P.hold.add('down');
+    if (B(13)) P.hold.add('down');
+    if (B(1)) P.hold.add('beam');
     if (B(6)) P.hold.add('slow');
     if (B(7) || B(10)) P.hold.add('boost');
   }
@@ -177,6 +186,7 @@ export class Input {
     s.down = h('down');
     s.boost = h('boost');
     s.slow = h('slow');
+    s.beam = h('beam');
   }
 
   consume(name) {

@@ -23,6 +23,7 @@ function hash2(x, z, s) {
 const VERT_PARS = /* glsl */`
 attribute vec3 aDim;
 attribute vec4 aInfo;     // x: 종류, y: 시드, z: 동 번호, w: 색조
+attribute float aOff;     // 잘린 조각: 원래 건물에서의 높이 오프셋 (창문 층이 이어지게)
 varying vec3 vObjP;
 varying vec3 vObjN;
 varying vec4 vInfo;
@@ -30,9 +31,11 @@ varying vec3 vDim;
 `;
 const VERT_MAIN = /* glsl */`
 vObjP = position * aDim;
+vObjP.y += aOff;
 vObjN = normal;
 vInfo = aInfo;
 vDim = aDim;
+vDim.y += aOff;
 `;
 const FRAG_PARS = /* glsl */`
 uniform sampler2D uDigits;
@@ -196,7 +199,7 @@ function makeFacadeMaterial(digits, envMap) {
 }
 
 // 단위 박스 (바닥면 없음, 밑면이 y=0) — 인스턴스 스케일 = 건물 크기
-function unitBox() {
+export function unitBox() {
   const g = new THREE.BoxGeometry(1, 1, 1);
   g.translate(0, 0.5, 0);
   return g;
@@ -449,6 +452,7 @@ export class City {
   }
 
   _landmarkMesh(geo, x, y, z) {
+    if (!geo.attributes.aOff) geo.setAttribute('aOff', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count), 1));
     const mesh = new THREE.Mesh(geo, this.material);
     mesh.castShadow = true; mesh.receiveShadow = true;
     this.landmarks.push({ mesh, ax: x, ay: y, az: z, idx: -1 });
@@ -494,6 +498,7 @@ export class City {
       const info = new THREE.InstancedBufferAttribute(new Float32Array(N * 4), 4);
       g.setAttribute('aDim', dim);
       g.setAttribute('aInfo', info);
+      g.setAttribute('aOff', new THREE.InstancedBufferAttribute(new Float32Array(N), 1));
       const mesh = new THREE.InstancedMesh(g, this.material, N);
       mesh.castShadow = true; mesh.receiveShadow = true;
       let minY = Infinity, maxY = -Infinity;
@@ -517,6 +522,7 @@ export class City {
       this.group.add(mesh);
     }
     this.count = this.n;
+    this.bh0 = this.bh.slice();   // 복원용 원래 높이
   }
 
   update(dt, camera, camAbs) {
@@ -626,6 +632,50 @@ export class City {
     return true;
   }
 
+
+  // ── 개별 건물 (건물 물리용) ──
+  /** 절대 (x,z) 위에 서 있는 살아 있는 건물 index (가장 높은 것), 없으면 -1 */
+  roofId(x, z) {
+    const a = this.grid.get(Math.floor(x / GRID) * 100003 + Math.floor(z / GRID));
+    if (!a) return -1;
+    let top = -Infinity, id = -1;
+    const L = _l;
+    for (let k = 0; k < a.length; k++) {
+      const i = a[k];
+      if (!this.alive[i]) continue;
+      this._local(i, x, z, L);
+      if (Math.abs(L[0]) <= this.bw[i] / 2 && Math.abs(L[1]) <= this.bd[i] / 2 && this.by[i] + this.bh[i] > top) { top = this.by[i] + this.bh[i]; id = i; }
+    }
+    return id;
+  }
+  /** 잘 그려지는 일반 건물인지 (타일 인스턴스) */
+  isDynamicable(i) { return i >= 0 && this.alive[i] && this.btile[i] >= 0 && this.btype[i] !== T_BRIDGE; }
+  /** 건물 높이를 줄임 (잘린 그루터기). h = 새 높이 (m) */
+  setHeight(i, h) {
+    const ti = this.btile[i];
+    this.bh[i] = h;
+    if (ti < 0) return;
+    const t = this.tiles[ti], j = this.binst[i];
+    const q = _q.setFromAxisAngle(_Y, -Math.atan2(this.bs[i], this.bc[i]));
+    _s.set(this.bw[i], h, this.bd[i]);
+    _p.set(this.bx[i] - t.ox, this.by[i], this.bz[i] - t.oz);
+    t.mesh.setMatrixAt(j, _mm.compose(_p, q, _s));
+    t.mesh.instanceMatrix.needsUpdate = true;
+    const dim = t.mesh.geometry.attributes.aDim;
+    dim.setY(j, h); dim.needsUpdate = true;
+  }
+  /** 건물 하나 제거 → 잔해 박스 (절대 좌표 중심) */
+  kill(i) {
+    if (!this.alive[i]) return null;
+    this.alive[i] = 0;
+    const ti = this.btile[i];
+    if (ti >= 0) { const t = this.tiles[ti]; t.mesh.setMatrixAt(this.binst[i], _zero); t.mesh.instanceMatrix.needsUpdate = true; }
+    const b = { x: this.bx[i], z: this.bz[i], y: this.by[i] + this.bh[i] / 2, w: this.bw[i], h: this.bh[i], d: this.bd[i] };
+    const ty = this.btype[i];
+    b.color = ty === T_APT ? 0xdcd8cf : ty === T_OFFICE ? 0x3a4652 : ty === T_BRIDGE ? 0x8a8a86 : 0x9a8a7a;
+    return b;
+  }
+
   // 구 안의 건물 파괴 → 잔해 박스 목록 (절대 좌표 중심)
   destroy(x, y, z, radius) {
     const out = this._out; out.length = 0;
@@ -671,7 +721,13 @@ export class City {
 
   restoreAll() {
     for (let i = 0; i < this.n; i++) this.alive[i] = 1;
-    for (const t of this.tiles) { t.mesh.instanceMatrix.array.set(t.orig); t.mesh.instanceMatrix.needsUpdate = true; }
+    if (this.bh0) this.bh.set(this.bh0);
+    for (const t of this.tiles) {
+      t.mesh.instanceMatrix.array.set(t.orig); t.mesh.instanceMatrix.needsUpdate = true;
+      const dim = t.mesh.geometry.attributes.aDim;
+      t.ids.forEach((i, j) => dim.setY(j, this.bh[i]));
+      dim.needsUpdate = true;
+    }
     for (const L of this.landmarks) L.mesh.visible = true;
     // 생성 시 랜드마크 자리 정리로 숨긴 건물은 계속 숨김
     for (let i = 0; i < this.n; i++) if (this.btile[i] < 0 && this.btype[i] !== T_LANDMARK) this.alive[i] = 0;
@@ -682,3 +738,5 @@ const _l = [0, 0];
 const _seen = new Set();
 const _touched = new Set();
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
+const _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _mm = new THREE.Matrix4(), _Y = new THREE.Vector3(0, 1, 0);
+export { T_APT, T_OFFICE, T_LOW, T_BRIDGE, T_LANDMARK };

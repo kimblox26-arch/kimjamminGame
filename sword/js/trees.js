@@ -132,6 +132,8 @@ export class Trees {
     onRebase(() => { this.dirty = true; });
   }
 
+  setRadius(r) { if (r !== this.radius) { this.radius = r; this.cx = 1e9; } }
+
   _gen(ix, iz) {
     const out = [];
     const cell = this.low ? 9 : 6.5;

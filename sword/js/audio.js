@@ -20,12 +20,17 @@ const RULES = {
   boost: [0.1, 2, 3],
   heroLand: [0.2, 2, 5],
   sonicBoom: [0.25, 2, 5],
+  slash: [0.05, 3, 3],
+  clang: [0.05, 3, 3],
+  charge: [0.3, 1, 3],
+  beam: [0.2, 2, 5],
+  splash: [0.1, 3, 3],
 };
 
 // 원샷 출력 레벨 (튜닝용)
 const LEVEL = {
   step: 1, jump: 1, land: 1, dash: 1, roll: 1, flip: 1, brake: 1,
-  takeoff: 1, boost: 1, heroLand: 1, sonicBoom: 1,
+  takeoff: 1, boost: 1, heroLand: 1, sonicBoom: 1, slash: 1, clang: 0.8, charge: 0.8, beam: 1, splash: 1,
 };
 
 // 연속 레이어 믹스 (튜닝용)
@@ -619,6 +624,11 @@ export class GameAudio {
         case 'boost': this._boost(st, pn, t); break;
         case 'heroLand': this._heroLand(st, pn, t); break;
         case 'sonicBoom': this._sonicBoom(st, pn, t); break;
+        case 'slash': this._slash(st, pn, t); break;
+        case 'clang': this._clang(st, pn, t); break;
+        case 'charge': this._charge(st, pn, t); break;
+        case 'beam': this._beam(st, pn, t); break;
+        case 'splash': this._splash(st, pn, t); break;
         default: break;
       }
     } catch (e) { /* noop */ }
@@ -987,6 +997,87 @@ export class GameAudio {
   }
 
   // 급제동: 아래로 쓸려 내려가는 공기 폭발
+  // 검 휘두르기: 짧고 날카로운 바람 가르는 소리 (고역 스윕)
+  _slash(s, pan, t) {
+    const B = this._B, dur = 0.26;
+    const v = this._v('slash', t, 0.4, 0.08, pan);
+    const w = this._noise(v, B.white, t, dur, 1);
+    const f = this._bq('bandpass', 900, 2.6);
+    f.frequency.setValueAtTime(900, t);
+    f.frequency.exponentialRampToValueAtTime(5200, t + 0.09);
+    f.frequency.exponentialRampToValueAtTime(1400, t + dur);
+    const g = this._g();
+    this._bell(g.gain, t, dur, 1.4 * s, 1.5, 3.5);
+    this._chain(w, f, g, v.out);
+    const o = this._tone(v, 'sine', t, 0.18, 220, 90, 0.15);
+    const og = this._g();
+    this._env(og.gain, t, 0.004, 0.12 * s, 0.12);
+    this._chain(o, og, v.out);
+  }
+  // 금속/콘크리트 타격: 날카로운 땡 + 부서지는 잡음
+  _clang(s, pan, t) {
+    const B = this._B;
+    const v = this._v('clang', t, 1.2, 0.2, pan);
+    for (const [fr, a] of [[1870, 0.25], [2930, 0.16], [4410, 0.1]]) {
+      const o = this._tone(v, 'sine', t, 0.9, fr, fr * 0.98, 0.8);
+      const og = this._g();
+      this._env(og.gain, t, 0.001, a * s, 0.35);
+      this._chain(o, og, v.out);
+    }
+    const n = this._noise(v, B.pink, t, 0.4, 1);
+    const nf = this._bq('bandpass', 1200, 0.8), ng = this._g();
+    this._env(ng.gain, t, 0.002, 0.9 * s, 0.18);
+    this._chain(n, nf, ng, v.out);
+  }
+  // 기 모으기: 점점 올라가는 웅웅거림
+  _charge(s, pan, t) {
+    const B = this._B, dur = 2.0;
+    const v = this._v('charge', t, dur + 0.2, 0.2, pan);
+    const o = this._tone(v, 'sawtooth', t, dur, 70, 260, 1.8);
+    const of = this._bq('lowpass', 400, 4);
+    this._sweep(of.frequency, t, 400, 2600, dur);
+    const og = this._g();
+    og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.16 * s, t + dur * 0.9); og.gain.linearRampToValueAtTime(0, t + dur);
+    this._chain(o, of, og, v.out);
+    const n = this._noise(v, B.white, t, dur, 1);
+    const nf = this._bq('bandpass', 2000, 3); this._sweep(nf.frequency, t, 2000, 7000, dur);
+    const ng = this._g();
+    ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.25 * s, t + dur * 0.9); ng.gain.linearRampToValueAtTime(0, t + dur);
+    this._chain(n, nf, ng, v.out);
+  }
+  // 에너지 빔 발사: 쿵 하는 발사음 + 지글거리는 굉음
+  _beam(s, pan, t) {
+    const B = this._B, dur = 1.6;
+    const v = this._v('beam', t, dur + 0.3, 0.45, pan);
+    const o = this._tone(v, 'sine', t, 0.8, 140, 40, 0.5);
+    const og = this._g();
+    this._env(og.gain, t, 0.002, 0.8 * s, 0.5);
+    this._chain(o, og, v.out);
+    const z = this._tone(v, 'sawtooth', t, dur, 110, 95, dur);
+    const zf = this._bq('bandpass', 900, 1.2), zg = this._g();
+    this._bell(zg.gain, t, dur, 0.35 * s, 1.2, 4);
+    this._chain(z, zf, zg, v.out);
+    const n = this._noise(v, B.pink, t, dur, 1);
+    const nf = this._bq('bandpass', 1500, 0.7), ng = this._g();
+    this._bell(ng.gain, t, dur, 1.3 * s, 1.1, 3.5);
+    this._chain(n, nf, ng, v.out);
+  }
+  // 물 첨벙
+  _splash(s, pan, t) {
+    const B = this._B, dur = 0.5 + 0.9 * s;
+    const v = this._v('splash', t, dur + 0.2, 0.25, pan);
+    const n = this._noise(v, B.white, t, dur, 1);
+    const nf = this._bq('bandpass', 2400, 0.6);
+    this._sweep(nf.frequency, t, 3800, 900, dur);
+    const ng = this._g();
+    this._env(ng.gain, t, 0.004, 1.2 * s, dur * 0.4);
+    this._chain(n, nf, ng, v.out);
+    const lo = this._noise(v, B.brown, t, dur, 1);
+    const lf = this._bq('lowpass', 260, 0.7), lg = this._g();
+    this._env(lg.gain, t, 0.006, 0.9 * s, dur * 0.5);
+    this._chain(lo, lf, lg, v.out);
+  }
+
   _brake(s, pan, t) {
     const B = this._B, k = 0.45 + 0.55 * s;
     const v = this._v('brake', t, 1.0, 0.12, pan);

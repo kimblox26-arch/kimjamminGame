@@ -2639,3 +2639,85 @@ FX.prototype.debrisBoxes = function (boxes) {
     }
   }
 };
+
+// ───────────── 검/스킬/건물 붕괴용 도우미 (렌더 좌표) ─────────────
+// 불꽃 튀김: dir 쪽 원뿔로, 색 (r,g,b 는 HDR 배율)
+FX.prototype.sparks = function (pos, dir, n, spread = 0.6, speed = 30, r = 1.6, g = 1.5, b = 1.2, size = 0.07) {
+  basis(dir, _bx, _by);
+  n = Math.round(n * (0.4 + 0.6 * this.q));
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, c = Math.random() * spread;
+    const ca = Math.cos(a) * c, sa = Math.sin(a) * c;
+    const dx = dir.x + _bx.x * ca + _by.x * sa, dy = dir.y + _bx.y * ca + _by.y * sa, dz = dir.z + _bx.z * ca + _by.z * sa;
+    const v = speed * rnd(0.4, 1.2);
+    const P = sp();
+    P.x = pos.x; P.y = pos.y; P.z = pos.z;
+    P.vx = dx * v; P.vy = dy * v; P.vz = dz * v;
+    P.life = rnd(0.25, 0.7); P.s0 = P.s1 = size * rnd(0.6, 1.4);
+    P.r0 = r; P.g0 = g; P.b0 = b; P.r1 = r * 0.9; P.g1 = g * 0.5; P.b1 = b * 0.3;
+    P.a = 1; P.add0 = P.add1 = 1; P.drag = 1.5; P.grav = -9.8; P.smode = 1; P.sk = 0.04; P.shade = 0; P.fin = 0.02; P.bounce = 0.3;
+    this.glow.spawn(P);
+  }
+};
+// 에너지 폭발: 빛 덩어리 + 고리 + 불꽃 (scale = 반경 m)
+FX.prototype.energyBurst = function (pos, scale = 4, r = 0.6, g = 1.4, b = 2.6, rings = true) {
+  // 중심 섬광
+  for (let k = 0; k < 3; k++) {
+    const P = sp();
+    P.x = pos.x; P.y = pos.y; P.z = pos.z;
+    P.life = 0.25 + k * 0.12; P.s0 = scale * (0.6 + k * 0.5); P.s1 = scale * (2.2 + k * 1.2); P.spow = 0.6;
+    P.r0 = r * 3; P.g0 = g * 3; P.b0 = b * 3; P.r1 = r; P.g1 = g; P.b1 = b;
+    P.a = 0.9 - k * 0.2; P.add0 = P.add1 = 1; P.shade = 0; P.fin = 0.02;
+    this.glow.spawn(P);
+  }
+  // 수평 충격 고리 두 겹
+  for (let k = 0; k < (rings ? 2 : 0); k++) {
+    const R = rp();
+    R.x = pos.x; R.y = pos.y; R.z = pos.z; R.q = Q_GROUND;
+    R.R0 = scale * 0.3; R.R1 = scale * (5 + k * 4); R.rpow = 2.2; R.life = 0.55 + k * 0.25; R.delay = k * 0.05;
+    R.r = r * 1.5; R.g = g * 1.5; R.b = b * 1.5; R.a = 0.8 - k * 0.3; R.w0 = 0.12; R.w1 = 0.04; R.add = 0.9; R.noise = 0.5; R.fin = 0.02;
+    this.rings.spawn(R);
+  }
+  _v0.set(0, 1, 0);
+  this.sparks(pos, _v0, 60, 1.6, scale * 9, r * 1.6, g * 1.4, b * 1.2, 0.08 + scale * 0.01);
+  this._flashLight(pos.x, pos.y, pos.z, 30 + scale * 6, 0.25, r, g, b);
+  this._hook('shockwave', this._hookPos(pos.x, pos.y, pos.z), Math.min(1, 0.3 + scale / 20));
+};
+// 먼지 구름 (건물 붕괴): 지면 (x, gy, z) 둘레 반경 R 로 퍼지는 회색 먼지 + 위로 솟는 기둥
+FX.prototype.dustCloud = function (x, gy, z, R, height = 20) {
+  const n = Math.round((24 + Math.min(40, R)) * (0.4 + 0.6 * this.q));
+  this._groundBurstAt(x, gy, z, n, R * 0.2, R * 0.8, R * 0.4, R * 1.1, Math.max(4, R * 0.35), Math.max(10, R * 0.9), 5, 10);
+  const m = Math.round(n * 0.5);
+  for (let i = 0; i < m; i++) {
+    const P = this._dust(sp(), 0.9);
+    P.x = x + rnd(-R, R) * 0.5; P.y = gy + Math.random() * height; P.z = z + rnd(-R, R) * 0.5;
+    P.vx = rnd(-3, 3); P.vy = rnd(2, 8); P.vz = rnd(-3, 3);
+    P.life = rnd(6, 11); P.s0 = Math.max(4, R * 0.3); P.s1 = Math.max(12, R * 0.9); P.spow = 2.2;
+    P.a = rnd(0.5, 0.8); P.fin = 0.05; P.fpow = 1.2; P.drag = 0.7; P.grav = -0.4; P.rotv = rnd(-0.3, 0.3);
+    this.smoke.spawn(P);
+  }
+};
+// 물보라: 왕관 모양 물기둥 + 물안개 (렌더 좌표, 수면 높이 wy), s = 세기 0..1+
+FX.prototype.splash = function (x, wy, z, s = 1, dir = null) {
+  const n = Math.round((30 + 90 * Math.min(2, s)) * (0.4 + 0.6 * this.q));
+  const up = 8 + 40 * Math.min(3, s), R = 1 + 4 * Math.min(4, s);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, c = Math.cos(a), sn = Math.sin(a);
+    const P = this._white(sp(), 1.05);
+    const out = rnd(0.2, 1) * up * 0.35;
+    P.x = x + c * R * rnd(0.3, 1); P.y = wy + 0.2; P.z = z + sn * R * rnd(0.3, 1);
+    P.vx = c * out + (dir ? dir.x * up * 0.3 : 0); P.vy = up * rnd(0.5, 1.1); P.vz = sn * out + (dir ? dir.z * up * 0.3 : 0);
+    P.life = rnd(1.2, 2.4) * Math.sqrt(Math.max(0.3, s)); P.s0 = 0.3 + s * 0.4; P.s1 = 1.2 + s * 3; P.spow = 1.5;
+    P.a = rnd(0.55, 0.85); P.fin = 0.03; P.drag = 0.6; P.grav = -18; P.smode = 1; P.sk = 0.05; P.bounce = -1;
+    this.smoke.spawn(P);
+  }
+  // 수면 고리 (물결 거품)
+  for (let k = 0; k < 3; k++) {
+    const Rg = rp();
+    Rg.x = x; Rg.y = wy + 0.15; Rg.z = z; Rg.q = Q_GROUND;
+    Rg.R0 = R * 0.5; Rg.R1 = R * (4 + k * 3) * (1 + s); Rg.rpow = 1.6; Rg.life = 1.6 + k * 0.6; Rg.delay = k * 0.15;
+    Rg.r = 1.5; Rg.g = 1.55; Rg.b = 1.6; Rg.a = 0.55 - k * 0.12; Rg.w0 = 0.12; Rg.w1 = 0.05; Rg.add = 0.1; Rg.noise = 0.7; Rg.fin = 0.02;
+    this.rings.spawn(Rg);
+  }
+  this._hook('shake', Math.min(0.8, 0.15 + s * 0.3));
+};

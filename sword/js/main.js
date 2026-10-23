@@ -1,4 +1,4 @@
-// 메인: 렌더러, 고정 120Hz 시뮬레이션 + 렌더 보간, 120fps 프레임 제한, 적응형 해상도, HUD
+// 메인: 렌더러, 고정 120Hz 시뮬레이션 + 렌더 보간, 60fps 프레임 제한(발열), 최적화 모드, 적응형 해상도, HUD
 import * as THREE from 'three';
 import { World } from './world.js';
 import { FX } from './fx.js';
@@ -15,6 +15,8 @@ import { Space } from './space.js';
 import { Cosmic } from './cosmic.js';
 import { Water } from './water.js';
 import { Trees } from './trees.js';
+import { Wreck } from './wreck.js';
+import { Blade } from './blade.js';
 import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
 import { TARGETS } from './player.js';
 
@@ -33,7 +35,8 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.85;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-const maxPR = Math.min(devicePixelRatio || 1, quality === 'low' ? 1.5 : 2);
+let maxPR = Math.min(devicePixelRatio || 1, quality === 'low' ? 1.5 : 2);
+const MAX_PR_FULL = maxPR;
 let pixelRatio = maxPR;
 renderer.setPixelRatio(pixelRatio);
 renderer.setSize(innerWidth, innerHeight, false);
@@ -61,7 +64,9 @@ const audio = new GameAudio();
 const rig = new CameraRig(camera);
 rig.groundAt = (x, z) => {
   const ax = x + origin.x, az = z + origin.z;
-  return Math.max(terrainMod.heightAt(ax, az), terrainMod.waterLevelAt(ax, az), city.roofAt(ax, az)) - origin.y;
+  // 수영 중엔 카메라도 물속으로 들어갈 수 있음
+  const wl = rig.inWater ? -Infinity : terrainMod.waterLevelAt(ax, az);
+  return Math.max(terrainMod.heightAt(ax, az), wl, city.roofAt(ax, az)) - origin.y;
 };
 
 let timeScale = 1, hitStopT = 0, hitStopScale = 1;
@@ -79,11 +84,18 @@ const hooks = {
 const fx = new FX(scene, camera, hooks, { quality, sunDir });
 fx.setGround((x, z) => rig.groundAt(x, z));
 const cosmic = new Cosmic(space, hooks, { quality });
+// 건물 물리 (잘린 조각/넘어지는 건물)
+const wreck = new Wreck(city, scene, { fx, audio, hooks, terrainH: (x, z) => terrainMod.heightAt(x, z) });
 const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3();
 let earthGone = false, cineMode = false;
 const game = {
-  fx, audio, hooks, cosmic, city, toast: (m) => toast(m),
-  terrain: terrainMod,
+  fx, audio, hooks, cosmic, city, wreck, toast: (m) => toast(m),
+  terrain: terrainMod, envMap: city.envMap, water,
+  // 절대 좌표 (x,y,z) 반경 r 안의 건물 → 잔해
+  smashAt(x, y, z, r) {
+    const boxes = city.destroy(x, y, z, r);
+    if (boxes && boxes.length) fx.debrisBoxes(boxes);
+  },
   hitStop(dur, scale) { hitStopT = Math.max(hitStopT, dur); hitStopScale = scale; },
   // 천체 충돌: 지구/달 폭발, 해 초신성
   planetImpact(name, pl, dirLocal) {
@@ -108,6 +120,8 @@ const game = {
 };
 const player = new Player(scene, game);
 player.avatar.setEnv(city.envMap);
+const blade = new Blade(scene, game, player);
+player.blade = blade;
 // 스폰: 한강 북쪽 둔치 공원
 function spawn() {
   if (origin.lengthSq() > 0) rebase(-origin.x, -origin.y, -origin.z);
@@ -126,6 +140,8 @@ function spawn() {
 spawn();
 function resetWorld() {
   cosmic.reset();
+  wreck.reset();
+  blade.reset();
   city.restoreAll();
   earthGone = false;
   cineMode = false;
@@ -146,14 +162,43 @@ input.onFirstGesture = () => { audio.unlock(); $('start').classList.add('hide');
 if (input.isTouch) document.body.classList.add('touch');
 
 // ── 설정 토글 ──
-let fpsCap = true;
+// 프레임 제한 (발열 방지): 60 → 30 → 제한 없음 (P)
+const CAPS = [60, 30, 0];
+let capIdx = 0;
+const store = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* 무시 */ } } };
+// 최적화 모드: 해상도↓, 그림자·블룸·MSAA 끔, 나무 반경↓ (모바일은 기본 켬)
+let eco = store.get('skyblade.eco') !== null ? store.get('skyblade.eco') === '1' : isMobile;
+function applyEco(show) {
+  maxPR = eco ? Math.min(devicePixelRatio || 1, 1) : MAX_PR_FULL;
+  pixelRatio = Math.min(pixelRatio, maxPR);
+  if (!eco) pixelRatio = maxPR;
+  world.sun.castShadow = !eco;
+  post.renderPass.shadows = !eco;
+  post.bloom.enabled = !eco;
+  post._samplesCap = eco ? 0 : undefined;
+  post._samples = -1;
+  trees.setRadius(eco ? 380 : (quality === 'low' ? 520 : 900));
+  water.setDetail && water.setDetail(eco);
+  resize();
+  store.set('skyblade.eco', eco ? '1' : '0');
+  const b = $('btn-eco'); if (b) b.classList.toggle('on', eco);
+  if (show) toast(eco ? '최적화 모드 켬 (발열↓)' : '최적화 모드 끔 (고화질)');
+}
 input.onKey = (code) => {
   if (code === 'KeyM') { audio.muted = !audio.muted; toast(audio.muted ? '소리 끔' : '소리 켬'); }
   if (code === 'KeyH') $('help').classList.toggle('hide');
-  if (code === 'KeyP') { fpsCap = !fpsCap; toast(fpsCap ? 'FPS 제한: 120' : 'FPS 제한: 없음 (모니터 주사율)'); }
+  if (code === 'KeyP') { capIdx = (capIdx + 1) % CAPS.length; toast(CAPS[capIdx] ? `FPS 제한: ${CAPS[capIdx]}` : 'FPS 제한: 없음 (모니터 주사율)'); }
+  if (code === 'KeyO') { eco = !eco; applyEco(true); }
   if (code === 'Enter' && (cineMode || player.gone.size > 0)) resetWorld();
 };
 $('btn-mute')?.addEventListener('click', () => { audio.muted = !audio.muted; $('btn-mute').textContent = audio.muted ? '🔇' : '🔊'; });
+$('btn-eco')?.addEventListener('click', () => { eco = !eco; applyEco(true); });
+function toggleView() {
+  rig.firstPerson = !rig.firstPerson;
+  $('btn-view')?.classList.toggle('on', rig.firstPerson);
+  toast(rig.firstPerson ? '1인칭 시점' : '3인칭 시점');
+}
+$('btn-view')?.addEventListener('click', toggleView);
 let toastT = 0;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); toastT = 1.6; }
 
@@ -171,6 +216,7 @@ function resize() {
 }
 addEventListener('resize', resize);
 resize();
+applyEco(false);
 
 // ── HUD ──
 const hud = {
@@ -250,10 +296,10 @@ function updateHud(dt, fps) {
 
 // ── 루프 ──
 let last = performance.now();
-let vsyncN = 0;
+let nextFrameT = 0;
 let acc = 0;
 let fpsFrames = 0, fpsTime = 0, fps = 0;
-// 적응형 해상도: 목표 = min(120, 모니터 주사율)
+// 적응형 해상도: 목표 = min(프레임 제한, 모니터 주사율)
 let refreshEst = 60, lastRaf = 0, perfT = 0, perfFrames = 0, slowSecs = 0, fastSecs = 0;
 let failPR = Infinity, failT = 0;
 const rafSamples = new Float32Array(60);
@@ -294,9 +340,13 @@ function frame(now) {
   lastRaf = now;
   if (!measured) { last = now; return; }
 
-  // 120fps 제한: 주사율의 정수배로만 건너뜀 (240Hz → 120, 144Hz는 그대로) → 프레임 간격이 고르게 유지됨
-  const div = Math.max(1, Math.round(refreshEst / 120));
-  if (fpsCap && div > 1 && (++vsyncN % div) !== 0) return;
+  // 프레임 제한 (기본 60): 다음 프레임 예정 시각 전이면 건너뜀. 주사율이 배수(120/240)면 고르게, 90/144Hz 도 평균 60
+  const cap = CAPS[capIdx];
+  if (cap && !dbg.paused && refreshEst > cap * 1.1) {
+    const iv = 1000 / cap, slack = 500 / refreshEst;
+    if (now < nextFrameT - slack) return;
+    nextFrameT = Math.max(nextFrameT + iv, now - iv);
+  }
   // rAF 타임스탬프가 로드 시점보다 앞설 수 있으니 음수 dt 방지
   let dt = (now - last) / 1000;
   last = now;
@@ -307,6 +357,7 @@ function frame(now) {
   if (hitStopT > 0) { hitStopT -= dt; timeScale = hitStopScale; } else timeScale += (1 - timeScale) * (1 - Math.exp(-20 * dt));
 
   input.poll(dt);
+  if (input.consume('view')) toggleView();
   let simDt = dt * timeScale;
   // 디버그(테스트 하네스): 일시정지 후 정확한 시간만큼 진행
   if (dbg.paused) { simDt = dbg.pending; dbg.pending = 0; dt = simDt; }
@@ -324,14 +375,17 @@ function frame(now) {
   if (Math.abs(pp.x) > 3000 || Math.abs(pp.y) > 3000 || Math.abs(pp.z) > 3000) rebase(Math.round(pp.x), Math.round(pp.y), Math.round(pp.z));
   player.interpolate(acc / STEP);
   player.updateVisual(dt);
+  blade.render(dt, camera);
 
   elapsed.t += dt;
+  rig.inWater = player.mode === 'swim';
   rig.update(dt, player, input);
   camAbs.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
   world.focusAGL = player.agl + 1;
   world.update(dt, elapsed.t, camera, player.renderPos, camAbs);
   terrain.update(dt, camera, camAbs);
   city.update(dt, camera, camAbs);
+  wreck.update(dbg.paused ? dt : dt * timeScale, camAbs);
   if (!water.ready && (terrain.stats.draws > 30 || elapsed.t > 8)) water.ready = true;
   water.update(dt, camera, camAbs);
   trees.update(dt, camera, camAbs, camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
@@ -347,6 +401,9 @@ function frame(now) {
   P.heat = Math.min(1, Math.max(0, (player.mach - 1.5) / 1.5)) * (player.flying ? 1 : 0);
   P.chroma = Math.min(1, P.speed * 0.8 + flash * 0.5);
   P.vignette = 0.28 + P.speed * 0.35;
+  // 물속 화면 (카메라가 수면 아래)
+  const cwl = terrainMod.waterLevelAt(camAbs.x, camAbs.z);
+  P.under = Math.min(1, Math.max(0, (cwl - camAbs.y) * 3));
   flash = Math.max(0, flash - dt * 2.6);
   P.flash = flash;
   _uv.copy(player.renderPos).project(camera);
@@ -359,7 +416,7 @@ function frame(now) {
   perfT += dt; perfFrames++;
   if (perfT >= 1) {
     const f = perfFrames / perfT;
-    const target = Math.min(120, refreshEst) * 0.92;
+    const target = Math.min(CAPS[capIdx] || 120, refreshEst) * 0.92;
     if (f < target) { slowSecs++; fastSecs = 0; } else { fastSecs++; slowSecs = 0; }
     // 실패한 해상도는 30초 동안 다시 시도하지 않음 (오르내림 반복 방지)
     if (slowSecs >= 2 && pixelRatio > 0.6) { failPR = pixelRatio; failT = 30; pixelRatio = Math.max(0.6, pixelRatio - 0.15); resize(); slowSecs = 0; }
@@ -374,7 +431,7 @@ function frame(now) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);
-window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, origin, resetWorld };
+window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;

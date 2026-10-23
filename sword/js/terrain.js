@@ -441,7 +441,7 @@ function terrainCore() {
         const x = x0 + (gi - 2) * step;
         const inner = innerJ && gi >= 2 && gi <= N + 2;
         evalTerrain(x, z, inner);
-        const vis = S.level > S.h ? S.level - (S.level < 0.5 ? 1.0 : 0.5) : S.h;   // 파도 메쉬(water.js)가 위를 덮도록 조금 낮춤
+        const vis = S.level > S.h ? S.level - (S.level < 0.5 ? 2.5 : 2.0) : S.h;   // 파도 메쉬(water.js)가 위를 덮도록 조금 낮춤
         H[gj * G + gi] = vis;
         if (inner) {
           const v = ((gj - 2) * N1 + (gi - 2)) * 4;

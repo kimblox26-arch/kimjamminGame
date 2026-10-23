@@ -92,6 +92,8 @@ export class Player {
     this.dens = 1;
     this.agl = 0;           // 지표(지형/물/옥상)로부터 높이
     this.surfKind = 'ground';
+    this.waterY = -Infinity;   // 발밑 수면 (렌더 y), 없으면 -Infinity
+    this.submerged = false;
     this.hidden = false;    // 지구 폭발 등으로 사라진 상태
     this.cbrtE = 0;
     // 플로팅 원점: 저장해 둔 렌더 좌표 이동
@@ -101,9 +103,10 @@ export class Player {
 
     this.heading = 0;
     this.headingSpring = new Spring(2.6, 0.9);
-    this.pitch = new Spring(3.2, 0.78);
-    this.bank = new Spring(2.3, 0.55);
-    this.lean = new Spring(3.0, 0.7);
+    // 자세 스프링: 임계 감쇠에 가깝게 (출렁이며 좌우로 휘청이지 않게)
+    this.pitch = new Spring(3.2, 0.95);
+    this.bank = new Spring(2.6, 1.0);
+    this.lean = new Spring(3.0, 1.0);
     this.prevHeading = 0;
     this.yawRate = 0;
 
@@ -232,6 +235,7 @@ export class Player {
 
   // ───────────────────────── 고정 스텝 ─────────────────────────
   step(dt, input, cam) {
+    this.cam = cam;
     this.copySnap(this.snapPrev, this.snapCur);
     this.time += dt;
     const I = input.state;
@@ -271,6 +275,8 @@ export class Player {
     }
     this.trickCool = Math.max(0, this.trickCool - dt);
     this.brakeCool = Math.max(0, this.brakeCool - dt);
+    // 검: 공격/스킬 입력과 상태 (자세는 updateAnimation 에서)
+    if (this.blade) this.blade.step(dt, input, cam);
 
     this.prevVel.copy(this.vel);
     const prevSpeed = this.speed;
@@ -280,6 +286,7 @@ export class Player {
     else if (this.mode === 'fly') this.stepFly(dt, cam, cy, sy, cp, sp, mx, my, mag, I, wantFly, rollL, rollR, wantFlip, prevSpeed);
     else if (this.mode === 'hero') this.stepHero(dt, wantFly);
     else if (this.mode === 'launch') this.stepLaunch(dt);
+    else if (this.mode === 'swim') this.stepSwim(dt, fwdFlat, right, mx, my, mag, I, wantFly);
     this.launchPoseT += dt;
 
     if (this.hidden) { this.vel.set(0, 0, 0); this.snapshot(this.snapCur); return; }
@@ -328,6 +335,7 @@ export class Player {
       this.game.hooks.shake(0.5);
     }
 
+    if (cam.firstPerson && this.mode === 'air') this.turnHeading(cam.yaw, 18, dt);
     this.updateTrick(dt);
     this.updateAttitude(dt, cam);
     this.updateAnimation(dt, cam);
@@ -346,7 +354,11 @@ export class Player {
     if (dl > acc) { this.vel.x += (dvx / dl) * acc; this.vel.z += (dvz / dl) * acc; }
     else { this.vel.x = tx; this.vel.z = tz; }
     this.vel.y = 0;
-    if (mag > 0.08) this.turnHeading(Math.atan2(dir.x, dir.z), 10, dt);
+    // 1인칭: 몸이 시선 방향을 향함 (옆 이동 = 게걸음). 3인칭: 이동 방향으로 돎
+    const B = this.blade;
+    if (B && B.busy) this.turnHeading(Math.atan2(B.aimDir.x, B.aimDir.z), 20, dt);   // 공격 중엔 조준 쪽을 봄
+    else if (this.cam && this.cam.firstPerson) this.turnHeading(this.cam.yaw, 18, dt);
+    else if (mag > 0.08) this.turnHeading(Math.atan2(dir.x, dir.z), 12, dt);
     this.coyote = 0.1;
     this.landT = this.landT >= 0 ? this.landT + dt : -1;
 
@@ -425,7 +437,7 @@ export class Player {
       const dl = Math.hypot(dvx, dvz), acc = 13 * dt;
       if (dl > acc) { this.vel.x += (dvx / dl) * acc; this.vel.z += (dvz / dl) * acc; }
       else { this.vel.x = tx; this.vel.z = tz; }
-      this.turnHeading(Math.atan2(dir.x, dir.z), 7, dt);
+      if (!(this.cam && this.cam.firstPerson)) this.turnHeading(Math.atan2(dir.x, dir.z), 7, dt);
     } else if (hs > 0.01) {
       const k = Math.exp(-0.6 * dt);
       this.vel.x *= k; this.vel.z *= k;
@@ -558,7 +570,8 @@ export class Player {
       // 고속: 방향은 최대 선회율로 회전, 속력은 따로
       const cur = _v1.copy(this.vel).divideScalar(speed);
       const ang = Math.acos(clamp(cur.dot(dir), -1, 1));
-      const turn = this.autopilot ? 4 : (space ? 2.6 : lerp(5.2, 0.95, smooth(30, 1200, speed))) * (this.slow ? 0.7 : 1);
+      // 선회율: 원하는 방향으로 곧게 (크게 휘어 도는 호를 그리지 않게). 아주 빠를 때만 조금 무거워짐
+      const turn = this.autopilot ? 4 : (space ? 3.5 : lerp(9, 2.4, smooth(60, 2000, speed))) * (this.slow ? 0.8 : 1);
       if (ang > 1e-4) {
         const axis = _v2.crossVectors(cur, dir);
         if (axis.lengthSq() < 1e-8) axis.set(0, 1, 0); else axis.normalize();
@@ -628,10 +641,89 @@ export class Player {
     const ax = rx + origin.x, az = rz + origin.z;
     const T = this.game.terrain, Ci = this.game.city;
     let h = T ? T.heightAt(ax, az) : 0, kind = 'ground';
-    if (T) { const w = T.waterLevelAt(ax, az); if (w > h) { h = w; kind = 'water'; } }
     if (Ci) { const r = Ci.roofAt(ax, az); if (r > h) { h = r; kind = 'roof'; } }
+    // 물은 밟을 수 없음: 수면 높이만 따로 (없으면 -Infinity)
+    const w = T ? T.waterLevelAt(ax, az) : -Infinity;
+    this.waterY = w > h ? w - origin.y : -Infinity;
     this.surfKind = kind;
     return h - origin.y;
+  }
+
+  // ───────── 물 ─────────
+  // 수면 충돌: 속도가 클수록 큰 물보라 + 수면 파문, 몸은 물속으로 파고듦 (물의 저항으로 급감속)
+  enterWater(wy) {
+    const fx = this.game.fx, au = this.game.audio;
+    const sp = this.vel.length();
+    const s = sp / 35;
+    const ax = this.pos.x + origin.x, az = this.pos.z + origin.z;
+    _v3.copy(this.vel).setY(0);
+    const hs = _v3.length();
+    if (hs > 1e-3) _v3.divideScalar(hs);
+    if (s > 0.15 && fx.splash) fx.splash(this.pos.x, wy, this.pos.z, Math.min(6, s), hs > 1 ? _v3 : null);
+    if (this.game.water) this.game.water.ripple(ax, az, Math.min(25, 0.2 + s * 0.7), 8 + Math.min(70, s * 5));
+    au.play('splash', clamp(0.25 + s * 0.3, 0.2, 1));
+    if (s > 3) { this.game.hooks.shake(clamp(0.2 + s * 0.05, 0, 1)); this.game.hitStop(0.05, 0.15); }
+    if (sp > 900 && fx.impact) {
+      // 초고속: 수증기 폭발 (물이 순간 증발)
+      _v3.set(this.pos.x, wy, this.pos.z);
+      fx.impact(_v3, 0.5 * MASS * sp * sp * 0.25, _N.set(0, 1, 0));
+    }
+    this.mode = 'swim';
+    this.trick = null; this.boostAmt = 0; this.wasBoosting = false; this.brakeAmt = 0;
+    this.autopilot = false;
+    this.vel.clampLength(0, 90);
+    this.anim.kickArms(-8, 6); this.anim.kickLegs(-6, 3);
+  }
+
+  stepSwim(dt, fwd, right, mx, my, mag, I, wantFly) {
+    const wy = this.waterY;
+    if (!(wy > -1e8)) { this.mode = 'air'; this.coyote = 0; return; }
+    const fx = this.game.fx;
+    // 물의 저항: 빠를수록 크게 (항력 ∝ v²) → 뛰어들면 몇 m 파고들다 멈춤
+    const sp = this.vel.length();
+    this.vel.multiplyScalar(Math.exp(-(1.1 + 0.07 * sp) * dt));
+    // 수평 헤엄
+    const dir = _v3.set(0, 0, 0).addScaledVector(fwd, my).addScaledVector(right, mx);
+    if (dir.lengthSq() > 1) dir.normalize();
+    const top = (this.sprint ? 4.2 : 2.6) * (this.slow ? 0.5 : 1);
+    const k = 1 - Math.exp(-2.5 * dt);
+    if (mag > 0.08) {
+      this.vel.x += (dir.x * top - this.vel.x) * k; this.vel.z += (dir.z * top - this.vel.z) * k;
+      this.turnHeading(Math.atan2(dir.x, dir.z), 6, dt);
+    }
+    // 수직: 위/아래 키로 헤엄, 아니면 부력으로 가슴까지 잠겨 뜸
+    const floatY = wy - 0.45;
+    let ay;
+    if (this.pos.y > wy + 0.25) ay = -9.81;                       // 물 밖 → 중력
+    else if (I.up) ay = (2.6 - this.vel.y) * 4;
+    else if (I.down) ay = (-2.4 - this.vel.y) * 4;
+    else ay = (floatY - this.pos.y) * 3.0 - this.vel.y * 2.2;
+    this.vel.y += ay * dt;
+    // 수면에서 점프 → 물 밖으로, F → 날아오름
+    if (this.jumpBuffer > 0 && this.pos.y > floatY - 0.7) {
+      this.jumpBuffer = 0;
+      this.vel.y = 10.5; this.mode = 'air'; this.coyote = 0; this.airFlips = 0;
+      if (fx.splash) fx.splash(this.pos.x, wy, this.pos.z, 0.35);
+      this.game.audio.play('splash', 0.4);
+      return;
+    }
+    if (wantFly) {
+      this.takeoff(false);
+      this.vel.y = Math.max(this.vel.y, 10);
+      if (fx.splash) fx.splash(this.pos.x, wy, this.pos.z, 0.8);
+      if (this.game.water) this.game.water.ripple(this.pos.x + origin.x, this.pos.z + origin.z, 0.6, 9);
+      this.game.audio.play('splash', 0.7);
+    }
+  }
+
+  swimCollide(g, wy) {
+    // 바닥
+    if (this.pos.y < g + 0.55) { this.pos.y = g + 0.55; if (this.vel.y < 0) this.vel.y = 0; }
+    if (!(wy > g + 0.2)) { this.mode = this.agl < 0.6 ? 'ground' : 'air'; this.coyote = 0.1; return; }
+    // 얕은 곳: 걸어서 나옴
+    if (wy - g < 1.15 && this.pos.y <= g + RIG.pivotY + 0.35) {
+      this.mode = 'ground'; this.pos.y = g + RIG.pivotY; this.vel.y = 0; this.landT = -1;
+    }
   }
 
   groundCollide(dt) {
@@ -639,6 +731,14 @@ export class Player {
     const g = this.surfaceAt(this.pos.x, this.pos.z);
     this.groundY = g;
     this.agl = this.pos.y - RIG.pivotY - g;
+    const wy = this.waterY;
+    this.submerged = this.pos.y + 0.7 < wy;
+    if (this.mode === 'swim') { this.swimCollide(g, wy); return; }
+    // 물에 들어감: 공중/비행으로 수면 아래로, 또는 걸어서 깊은 곳으로
+    if (wy > g + 0.3 && this.mode !== 'launch' && this.mode !== 'hero') {
+      const deep = wy - g;
+      if ((this.mode === 'ground' && deep > 1.35) || (this.mode !== 'ground' && this.pos.y - 0.4 < wy)) { this.enterWater(wy); return; }
+    }
     if (this.mode === 'ground' || this.mode === 'hero' || this.mode === 'launch') {
       // 발보다 1.2 m 넘게 높은 곳(벽/옥상)으로는 걸어 올라가지 못함
       if (this.agl < -1.2) {
@@ -853,12 +953,29 @@ export class Player {
     const speed = this.speed;
     const vn = -this.vel.dot(n);
     if (this.mode === 'fly' && speed > 110 && vn > 40) {
-      // 관통: 에너지 일부를 건물에 쏟고 계속 날아감
+      // 관통: 맞은 높이에 구멍이 나고, 큰 건물은 윗부분이 날아가는 쪽으로 기울며 무너짐 (작은 건물은 산산조각)
       const E = 0.5 * MASS * speed * speed;
+      const W = this.game.wreck, id = _hit.id;
       _v3.set(hx, hy, hz);
-      this.game.fx.impact ? this.game.fx.impact(_v3, E * 0.35, n) : this.game.fx.heroLanding(_v3, 1);
-      this.smash(hx, hy, hz, Math.max(18, 0.16 * Math.cbrt(E)));
-      this.vel.multiplyScalar(speed > 2000 ? 0.97 : 0.8);
+      const fx = this.game.fx;
+      if (speed > 2500) {
+        // 초고속: 충격파가 주변까지 날려버림
+        fx.impact ? fx.impact(_v3, E * 0.35, n) : fx.heroLanding(_v3, 1);
+        this.smash(hx, hy, hz, Math.max(18, 0.16 * Math.cbrt(E)));
+      } else if (W) {
+        _v2.copy(this.vel).normalize();
+        const k = clamp(speed / 400, 0.5, 4);
+        if (Ci.bh[id] > 22 && Ci.isDynamicable(id) && _hit.y - Ci.by[id] > 6) {
+          _v1.copy(_v2).multiplyScalar(4 + 5 * k).setY(Math.max(0, _v2.y) * 4);
+          _N.set(_v2.z, 0, -_v2.x).multiplyScalar(0.18 * k);
+          W.cut(id, _hit.y - 3, _v1, _N);
+        } else W.blast(id, _hit.x, _hit.y, _hit.z, _v2.x, _v2.y, _v2.z, k);
+        if (fx.sparks) fx.sparks(_v3, _v2, 50, 0.9, Math.min(80, speed * 0.2), 2.0, 1.7, 1.3, 0.08);
+        if (fx.dustCloud) fx.dustCloud(hx, hy, hz, 10 + 4 * k, 4);
+        fx.land(_v3, 1);
+        n.set(_hit.nx, _hit.ny, _hit.nz);
+      }
+      this.vel.multiplyScalar(speed > 2000 ? 0.97 : 0.85);
       this.game.hooks.shake(clamp(0.3 + speed / 3000, 0, 1));
       this.game.audio.play('heroLand', clamp(speed / 1500, 0.3, 1));
       this.game.hitStop(0.05, 0.1);
@@ -917,14 +1034,14 @@ export class Player {
   updateAttitude(dt, cam) {
     const speed = this.speed;
     let yawT = this.heading, pitchT = 0, bankT = 0, leanT = 0;
-    if (this.mode === 'fly') {
+    if (this.mode === 'fly' || this.mode === 'swim') {
       const hs = Math.hypot(this.vel.x, this.vel.z);
       const w = smooth(6, 22, speed);
       // 진행 방향을 향함 (거의 수직 이동이면 카메라 방향)
       if (speed > 4 && hs > 0.22 * speed) yawT = Math.atan2(this.vel.x, this.vel.z);
       else if (speed < 6) yawT = cam.yaw;
       else yawT = this.heading;
-      const rate = lerp(5, 3.2, w);
+      const rate = lerp(12, 9, w);   // 몸이 진행 방향을 곧바로 따라감 (옆으로 미끄러지듯 보이지 않게)
       const d = wrapAngle(yawT - this.heading);
       this.heading = wrapAngle(this.heading + d * (1 - Math.exp(-rate * dt)));
 
@@ -933,17 +1050,19 @@ export class Player {
       const fwdV = this.vel.x * sh + this.vel.z * ch;
       const rightV = -this.vel.x * ch + this.vel.z * sh;
       const pitchLow = clamp(fwdV * 0.09, -0.42, 0.8);
-      leanT = clamp(rightV * 0.045, -0.45, 0.45) * (1 - w);
+      leanT = clamp(rightV * 0.02, -0.15, 0.15) * (1 - w);
       // 고속: 몸축을 속도 방향에 정렬 (수평 = 90°, 수직 상승 = 0°, 다이브 = 180°)
       const elev = speed > 0.5 ? Math.asin(clamp(this.vel.y / speed, -1, 1)) : 0;
       const pitchAl = Math.PI / 2 - elev;
       pitchT = lerp(pitchLow, pitchAl, w);
       // 급제동: 몸을 일으켜 세움
       pitchT -= this.brakeAmt * Math.min(pitchT, 1.15);
-      // 선회 뱅크 (구심 가속 기준)
+      // 수영: 앞으로 헤엄칠 땐 몸이 수평으로 눕고, 멈추면 선 채로 떠 있음
+      if (this.mode === 'swim') { pitchT = lerp(0.12, 1.3, smooth(0.6, 2.4, hs)) - (this.vel.y > 1 ? 0.5 : 0); leanT = 0; }
+      // 선회 뱅크 (구심 가속 기준): 실제 비행처럼 살짝만
       const latAcc = this.yawRate * hs;
-      bankT = -Math.atan(latAcc / 16) * w;
-      bankT = clamp(bankT, -1.3, 1.3);
+      bankT = -Math.atan(latAcc / 60) * w;
+      bankT = clamp(bankT, -0.35, 0.35);
     } else if (this.mode === 'air') {
       pitchT = 0;
     }
@@ -951,11 +1070,11 @@ export class Player {
     this.prevHeading = this.heading;
     // 지상에서 돌 때 몸을 안쪽으로 기울임 (도 단위)
     const gsp = this.mode === 'ground' ? Math.hypot(this.vel.x, this.vel.z) : 0;
-    this.turnLean = lerp(this.turnLean, clamp(-this.yawRate * gsp * 0.9, -22, 22), 1 - Math.exp(-8 * dt));
+    this.turnLean = lerp(this.turnLean, clamp(-this.yawRate * gsp * 0.4, -6, 6), 1 - Math.exp(-8 * dt));
 
     // 스프링 주파수: 지상에서는 단단하게
     const air = this.mode === 'fly';
-    this.pitch.f = air ? 3.2 : 7; this.pitch.z = air ? 0.78 : 0.9;
+    this.pitch.f = air ? 3.6 : 7; this.pitch.z = air ? 0.95 : 0.95;
     this.bank.f = air ? 2.3 : 6;
     this.lean.f = air ? 3.0 : 6;
     const pitch = this.pitch.step(pitchT, dt);
@@ -992,7 +1111,7 @@ export class Player {
   updateAnimation(dt, cam) {
     const s = this.animState;
     s.t = this.time; s.dt = dt;
-    s.mode = this.mode;
+    s.mode = this.mode === 'swim' ? 'fly' : this.mode;
     s.groundSpeed = this.mode === 'ground' ? Math.hypot(this.vel.x, this.vel.z) : 0;
     s.vy = this.vel.y;
     s.sprint = this.sprinting; s.slow = this.slow;
@@ -1023,6 +1142,7 @@ export class Player {
     _q1.setFromEuler(this.anim.bodyRot);
     av.body.quaternion.copy(this.attitude).multiply(_q1);
     av.body.position.copy(this.anim.bodyPos).applyAxisAngle(Y, this.heading);
+    if (this.blade) this.blade.pose(av);
   }
 
   // ───────────────────────── 렌더 보간 ─────────────────────────

@@ -190,6 +190,7 @@ const FinalShader = {
     uHeat: { value: 0 },
     uFlash: { value: 0 },
     uVignette: { value: 0.25 },
+    uUnder: { value: 0 },
     uChroma: { value: 0 },
     uBlurMax: { value: 0.13 },
     uCaMax: { value: 0.016 },
@@ -215,6 +216,7 @@ const FinalShader = {
     uniform float uHeat;
     uniform float uFlash;
     uniform float uVignette;
+    uniform float uUnder;     // 물속 (0..1)
     uniform float uChroma;
     uniform float uBlurMax;
     uniform float uCaMax;
@@ -312,6 +314,16 @@ const FinalShader = {
       col = col * (1.0 + glowC * 0.55) + glowC * (0.45 * uInvExposure * 2.2);
       col *= 1.0 + vec3(0.07, 0.0, -0.08) * hazeW;
 
+      // ── 물속: 청록으로 흡수되고 위쪽(수면)이 밝으며 일렁이는 빛줄기 ──
+      if (uUnder > 0.001) {
+        float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        vec3 deep = vec3(0.012, 0.06, 0.07) * uInvExposure * 2.2;
+        vec3 tint = mix(deep, vec3(0.05, 0.28, 0.3) * uInvExposure * 2.2, smoothstep(0.1, 1.0, uv.y));
+        float caust = 0.5 + 0.5 * sin(uv.x * 40.0 + uTime * 2.3 + sin(uv.y * 23.0 - uTime * 1.7) * 2.0);
+        tint *= 0.85 + 0.3 * caust * smoothstep(0.4, 1.0, uv.y);
+        col = mix(col, tint + col * vec3(0.15, 0.45, 0.5) * 0.6, uUnder * (0.75 + 0.2 * smoothstep(0.0, 0.6, lum)));
+      }
+
       // ── 비네팅 (cos^4 근사, 선형 공간) ──
       vec2 vp = uv - 0.5;
       float r2 = dot(vp, vp) * 2.0;
@@ -343,7 +355,7 @@ export class Post {
     this.msaa = opts && opts.msaa !== undefined ? opts.msaa : 'auto';
 
     this.params = {
-      speed: 0, heat: 0, flash: 0, vignette: 0.25, chroma: 0,
+      speed: 0, heat: 0, flash: 0, vignette: 0.25, chroma: 0, under: 0,
       focus: new THREE.Vector2(0.5, 0.5),
     };
     // 튜닝용 (런타임 변경 OK, 재컴파일 없음)
@@ -529,6 +541,7 @@ export class Post {
     u.uHeat.value = clamp01(P.heat);
     u.uFlash.value = clamp01(P.flash * T.flashGain);
     u.uVignette.value = clamp01(P.vignette);
+    u.uUnder.value = clamp01(P.under || 0);
     u.uChroma.value = clamp01(P.chroma);
     const f = P.focus;
     if (f && Number.isFinite(f.x) && Number.isFinite(f.y)) u.uFocus.value.copy(f);

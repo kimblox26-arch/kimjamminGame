@@ -207,7 +207,7 @@ export class Animator {
     const ab = s.accelB, wb = s.angB;
     const inAir = W.fly + W.air;
     const accK = 0.55 + inAir * 0.5;   // 도 / (m/s²)
-    const ax = clamp(ab.x * accK, -28, 28), az = clamp(ab.z * accK, -32, 32), ay = clamp(ab.y * accK, -30, 30);
+    const ax = clamp(ab.x * accK * 0.5, -10, 10), az = clamp(ab.z * accK, -32, 32), ay = clamp(ab.y * accK, -30, 30);
     arms(T, 1, -az, 0); legs(T, 1, -az * 0.6, 0);
     arm(T, 1, 0, 0, ax * 0.8); arm(T, 1, 1, 0, -ax * 0.8);
     leg(T, 1, 0, 0, ax * 0.4); leg(T, 1, 1, 0, -ax * 0.4);
@@ -217,7 +217,7 @@ export class Animator {
     const wx = clamp(wb.x, -14, 14), wy = clamp(wb.y, -20, 20), wz = clamp(wb.z, -14, 14);
     arms(T, inAir, -wx * 2.2, Math.abs(wy) * 1.3);
     legs(T, inAir, -wx * 1.6, Math.abs(wy) * 0.8);
-    arm(T, inAir, 0, 0, wz * 2.0); arm(T, inAir, 1, 0, -wz * 2.0);
+    arm(T, inAir, 0, 0, wz * 0.8); arm(T, inAir, 1, 0, -wz * 0.8);
     head(T, inAir, wx * 1.2, 0, 0);
 
     // ── 트릭 오버라이드 ──
@@ -239,7 +239,7 @@ export class Animator {
     const O = this.O;
     O.set(this.Y);
     const sp = s.flySpeed * W.fly;
-    const fl = smooth(70, 500, sp) * 1.1 + smooth(330, 1300, sp) * 2.4 + s.boost * W.fly * 0.6;
+    const fl = smooth(70, 500, sp) * 0.6 + smooth(330, 1300, sp) * 1.4 + s.boost * W.fly * 0.4;
     if (fl > 0.01) {
       const a = fl * D;
       for (let i = 3; i < 15; i++) O[i] += flutter(t, i * 1.37) * a * (i >= 9 ? 1.6 : 1);
@@ -322,8 +322,8 @@ export class Animator {
     const c2 = Math.cos(2 * ph);
     const bob = lerp(0.02 * c2, -0.05 * c2 + 0.02, run) * (1 + 0.5 * tired);
     const lean = lerp(2.5, 15, run) + 10 * tired;
-    const turn = clamp(s.turnLean || 0, -22, 22);
-    bodyP(T, w, 0, bob, 0, lean, -sn * lerp(3, 9, run), sn * lerp(1.8, 3, run) + turn);
+    const turn = clamp(s.turnLean || 0, -6, 6);
+    bodyP(T, w, 0, bob, 0, lean, -sn * lerp(2.5, 6, run), sn * lerp(0.8, 1.4, run) + turn);
     // 머리는 안정화 (몸 비틀림/기울기 상쇄), 지치면 고개가 처짐
     head(T, w, -lean * 0.6 + 1.5 * cs * run + 9 * tired, sn * lerp(2.5, 7, run), -sn * 1.5);
   }
@@ -387,7 +387,7 @@ export class Animator {
       arm(T, hv, 1, 8 + 5 * Math.sin(t * 1.1 + 0.8) - 22 * up + 18 * dn, 19 + 5 * Math.sin(t * 1.3 + 1.1) - 6 * up + 26 * dn, 6);
       leg(T, hv, 0, 9 + 7 * Math.sin(t * 1.45) - 14 * up + 16 * dn, 4 + 2 * Math.sin(t * 0.9));
       leg(T, hv, 1, -3 + 7 * Math.sin(t * 1.45 + 1.7) - 14 * up + 10 * dn, 5 + 2 * Math.sin(t * 0.9 + 2));
-      bodyP(T, hv, 0, 0.07 * Math.sin(t * 1.7), 0, 3 + 2 * Math.sin(t * 0.9) - 3 * up, 0, 1.8 * Math.sin(t * 0.7));
+      bodyP(T, hv, 0, 0.05 * Math.sin(t * 1.7), 0, 3 + 1.5 * Math.sin(t * 0.9) - 3 * up, 0, 0.5 * Math.sin(t * 0.7));
       head(T, hv, 3 * Math.sin(t * 0.8) + 6 * dn - 4 * up);
     }
     // 느린 비행(활공): 날개처럼 팔을 펼치고 다리는 가볍게 물장구
@@ -397,7 +397,7 @@ export class Animator {
       arm(T, gl, 1, -8 + 4 * Math.sin(t * 1.8 + 0.4), 74 + 7 * Math.sin(t * 1.8 + 0.4), 12);
       leg(T, gl, 0, -9 + 8 * Math.sin(t * 2.6), 5);
       leg(T, gl, 1, -12 + 8 * Math.sin(t * 2.6 + Math.PI), 5);
-      bodyP(T, gl, 0, 0.05 * Math.sin(t * 1.8 + 0.5), 0, 0, 0, 2.5 * Math.sin(t * 0.9));
+      bodyP(T, gl, 0, 0.04 * Math.sin(t * 1.8 + 0.5), 0, 0, 0, 0.6 * Math.sin(t * 0.9));
     }
     // 순항: 팔을 몸 옆 뒤로, 다리 모아 뻗음
     if (cr > 0) {
