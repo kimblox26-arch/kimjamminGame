@@ -373,6 +373,8 @@ export class Life {
 
   // ───────── 바깥에서 부르는 사건 ─────────
   /** 폭발 (절대 좌표): R 안은 날아감 (세기 power m/s 정도), 3R 안 사람은 도망 */
+  // 칼·검기·빔이 지나간 선분: 사람은 죽고 차는 부서짐
+  hit(ax, ay, az, bx, by, bz, r, power = 1) { return this.town ? this.town.hit(ax, ay, az, bx, by, bz, r, power) : 0; }
   blast(x, y, z, R, power = 20) {
     if (this.town) this.town.blast(x, y, z, R, power);
     for (const o of this.people) if (o.alive) {

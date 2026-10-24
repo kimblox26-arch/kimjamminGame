@@ -533,6 +533,15 @@ export class Blade {
         // 이분법으로 다듬기
         let lo = prev, hi = s;
         for (let k = 0; k < 8; k++) { const m = (lo + hi) / 2; if (ay + dy * m < ground(ax + dx * m, az + dz * m)) hi = m; else lo = m; }
+        // 이미 뚫린 굴이면 굴 끝 암벽까지 지나감 (빔이 계속 더 깊이 뚫음)
+        const GH = this.game.holes;
+        if (GH && GH.list.length && GH.inside(ax + dx * (hi + 0.5), ay + dy * (hi + 0.5), az + dz * (hi + 0.5), -0.2)) {
+          let m = hi + 0.5;
+          while (m < L && GH.inside(ax + dx * m, ay + dy * m, az + dz * m, -0.2)) m += 0.7;
+          if (m >= L) return -1;
+          if (ay + dy * m < ground(ax + dx * m, az + dz * m)) return m;
+          prev = m; s = m; continue;
+        }
         return hi;
       }
       prev = s;
@@ -549,6 +558,12 @@ export class Blade {
     _v.set(Math.sin(P.heading), 0, Math.cos(P.heading));
     _c.copy(P.pos).addScaledVector(_v, 2.2); _c.y += 0.4;
     if (fx.energyBurst) fx.energyBurst(_c, d.spin || d.dash ? 1.4 : 0.9, 1.1, 1.5, 2.4, !!(d.spin || d.dash));
+    // 칼날이 닿은 사람·차
+    if (this.game.life && this.game.life.hit && !d.slam) {
+      const ax = P.pos.x + origin.x, ay = P.pos.y + origin.y, az = P.pos.z + origin.z;
+      if (d.spin) this.game.life.hit(ax, ay, az, ax, ay + 0.1, az, 4.2, 1.2);
+      else this.game.life.hit(ax, ay, az, ax + _v.x * 4.2, ay, az + _v.z * 4.2, 1.9, 1);
+    }
     if (d.slam) return this._slam();
     if (d.dash) this._dashCut();
     let hitAny = false, maxHit = d.spin ? 4 : 1;
@@ -679,6 +694,7 @@ export class Blade {
     if (w.t > w.life) return false;
     w.prev.copy(w.p);
     w.p.addScaledVector(w.dir, w.speed * dt);
+    if (this.game.life && this.game.life.hit) this.game.life.hit(w.prev.x, w.prev.y, w.prev.z, w.p.x, w.p.y, w.p.z, Math.max(2.5, w.R * 0.8), 2);
     const C = this.game.city, Wk = this.game.wreck, fx = this.game.fx, T = this.game.terrain;
     const hit = this._hit2 || (this._hit2 = {});
     // 초승달 위의 점 9개가 이번 스텝에 지나간 선분으로 건물 판정
@@ -746,6 +762,7 @@ export class Blade {
     const C = this.game.city, Wk = this.game.wreck, fx = this.game.fx;
     if (B.tick <= 0) {
       B.tick = 0.05;
+      if (this.game.life && this.game.life.hit) this.game.life.hit(S.x, S.y, S.z, this.beamTo.x, this.beamTo.y, this.beamTo.z, 1.6 + B.r, 3);
       const hit = this._hit2 || (this._hit2 = {});
       let ox = S.x, oy = S.y, oz = S.z;
       if (!B.holed) B.holed = new Map();
@@ -772,6 +789,8 @@ export class Blade {
       B.boom = 0.18;
       B.nb = (B.nb || 0) + 1;
       const E = this.beamTo;
+      // 땅에 굴을 뚫음 (빔 방향으로 몇 m씩 계속 깊어짐)
+      if (this.game.holes && !(this.game.player && this.game.player.onPlanet)) this.game.holes.add(E.x - D.x * 1.5, E.y - D.y * 1.5, E.z - D.z * 1.5, E.x + D.x * (3 + B.r * 2), E.y + D.y * (3 + B.r * 2), E.z + D.z * (3 + B.r * 2), 1.3 + B.r * 0.7);
       _v.set(E.x - origin.x, E.y - origin.y, E.z - origin.z);
       if (fx.energyBurst) fx.energyBurst(_v, 2 + B.r * 1.5, ENERGY.r, ENERGY.g, ENERGY.b, B.nb === 1);
       if (fx.dustCloud && B.nb % 3 === 1) fx.dustCloud(_v.x, _v.y, _v.z, 6 + B.r * 3, 8);

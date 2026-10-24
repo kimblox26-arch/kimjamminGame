@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { origin } from './frame.js';
 import { T_BRIDGE } from './city.js';
+import { GH_U, GH_GLSL } from './holes.js';
 
 const TILE = 300;
 const SEG_MAX = 50;                          // 긴 직선은 이 길이로 잘라 둠 (타일 소속·지형 따라가기)
@@ -122,9 +123,11 @@ const ROAD_FS = /* glsl */`
 function roadMaterial(offset) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -offset });
   m.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + ROAD_VS)
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRd = aRd; vRk = aRk;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + ROAD_FS_PARS + 'float fRoadRough = 0.9;')
+    Object.assign(sh.uniforms, GH_U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + ROAD_VS + '\nvarying vec3 vRW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRd = aRd; vRk = aRk; vRW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + ROAD_FS_PARS + 'float fRoadRough = 0.9;\nvarying vec3 vRW;\n' + GH_GLSL)
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uGHN > 0.5 && gHole(vRW)) discard;')
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + ROAD_FS)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = fRoadRough;');
   };

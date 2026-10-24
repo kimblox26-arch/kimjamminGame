@@ -29,6 +29,9 @@ import { Cape } from './cape.js';
 import { Nukes } from './nuke.js';
 import { Life } from './life.js';
 import { PlanetSurface, SURF } from './planet.js';
+import { Flood } from './flood.js';
+import { Drive } from './vehicle.js';
+import { GroundHoles } from './holes.js';
 import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY, SUN, ECLIPTIC } from './frame.js';
 import { TARGETS } from './player.js';
 
@@ -126,6 +129,14 @@ const fx = new FX(scene, camera, hooks, { quality, sunDir });
 fx.setGround((x, z) => rig.groundAt(x, z));
 const cosmic = new Cosmic(space, hooks, { quality });
 // 건물 물리 (잘린 조각/넘어지는 건물)
+// 해일·침수: 원래 물 높이에 침수 수위를 더한 지형 (물리·카메라·사람이 같이 씀)
+const flood = new Flood(scene, { quality, sunDir: world.sunDir });
+const holes = new GroundHoles(scene, (x, z) => terrainMod.heightAt(x, z));
+const earthT = {
+  heightAt: (x, z) => terrainMod.heightAt(x, z),
+  waterLevelAt: (x, z) => { const w = terrainMod.waterLevelAt(x, z); return flood.active ? flood.levelAt(x, z, w) : w; },
+  roadAt: (x, z) => terrainMod.roadAt(x, z),
+};
 const wreck = new Wreck(city, scene, { fx, audio, hooks, terrainH: (x, z) => terrainMod.heightAt(x, z) });
 const under = new Underground(scene);
 const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3(), _pAbs = new THREE.Vector3();
@@ -133,7 +144,7 @@ let earthGone = false, cineMode = false, onPlanet = null;
 const lastGone = [];
 const game = {
   fx, audio, hooks, cosmic, city, wreck, toast: (m) => toast(m),
-  terrain: terrainMod, envMap: city.envMap, water,
+  terrain: earthT, envMap: city.envMap, water, flood, holes,
   // 절대 좌표 (x,y,z) 반경 r 안의 건물 → 잔해
   smashAt(x, y, z, r) {
     if (onPlanet) return;
@@ -167,7 +178,9 @@ const nukes = new Nukes(scene, game);
 // 사람·자동차·여객기·배·새
 const life = new Life(scene, game, { eco: isMobile });
 game.life = life;
-const town = roads ? new Town(scene, { roads, heightAt: (x, z) => terrainMod.heightAt(x, z), city, audio }, { eco: isMobile }) : null;
+const town = roads ? new Town(scene, { roads, heightAt: (x, z) => terrainMod.heightAt(x, z), city, audio, fx }, { eco: isMobile }) : null;
+const drive = new Drive(game);
+game.drive = drive; game.rig = rig;
 if (town) life.setTown(town);
 wreck.life = life;
 // 구름을 뚫으면 찢긴 수증기가 진행 방향으로 끌려가며 흩어짐
@@ -188,6 +201,7 @@ $('btn-nuke')?.addEventListener('click', fireNuke);
 player.blade = blade;
 // 스폰: 한강 북쪽 둔치 공원
 function spawn() {
+  if (drive.active) drive.exit();
   if (onPlanet) leavePlanet(false);
   if (origin.lengthSq() > 0) rebase(-origin.x, -origin.y, -origin.z);
   // 서울광장 근처, 건물·물이 아닌 곳
@@ -215,7 +229,7 @@ function resetWorld() {
   lastGone.length = 0;
   cosmic.reset();
   wreck.reset();
-  blade.reset(); nukes.reset(); life.reset();
+  blade.reset(); nukes.reset(); life.reset(); flood.reset(); holes.reset();
   city.restoreAll();
   earthGone = false;
   cineMode = false;
@@ -280,6 +294,7 @@ function planetPoint(S, L, out) {
 function enterPlanet(id, nP, vP) {
   const b = BODY[id], I = SURF[id];
   if (!b || !I) return;
+  if (drive.active) drive.exit();
   if (onPlanet) leavePlanet(false);
   const EU = ECLIPTIC.u, EV = ECLIPTIC.v, EN = ECLIPTIC.n;
   let lat = I.lat * Math.PI / 180, lon = I.lon * Math.PI / 180;
@@ -304,7 +319,9 @@ function enterPlanet(id, nP, vP) {
   _earthSun.copy(world.sunDir);
   if (scene.fog) _earthFog.copy(scene.fog.color);
   planet.enter(id, b, lat * 180 / Math.PI, lon * 180 / Math.PI);
-  game.terrain = planetTerrain; game.city = noCity;
+  game.terrain = planetTerrain; game.city = noCity; game.holes = null;
+  holes.group.visible = false;
+  flood.reset();
   ground.setSource({ quality, sample: (x, z) => planet.sample(x, z), rockCol: (I.rock || [0.5, 0.5, 0.5]).map((v) => Math.pow(v, 2.2) * 1.6) });
   player.onPlanet = id; player.gScale = I.g / 9.81; player.atm = I.atm;
   const y0 = I.gas ? 300 : planet.heightAt(0, 0) + 25;
@@ -332,7 +349,8 @@ function leavePlanet(toSpace) {
   _plV.copy(player.vel).applyQuaternion(S.q);
   onPlanet = null;
   planet.leave();
-  game.terrain = terrainMod; game.city = city;
+  game.terrain = earthT; game.city = city; game.holes = holes;
+  holes.group.visible = true;
   ground.setSource(groundEarth);
   player.onPlanet = null; player.gScale = 1; player.atm = 0;
   setSunDir(_earthSun);
@@ -714,6 +732,7 @@ function frame(now) {
   { const I = input.state; idleT = (player.speed < 0.3 && !I.moveX && !I.moveY && !I.lookDX && !I.lookDY && !I.up && !I.down && !I.beam && !input.edges.size) ? idleT + dt : 0; }
   if (input.consume('view')) toggleView();
   if (input.consume('nuke')) fireNuke();
+  if (input.consume('board')) drive.toggle();
   let simDt = dt * timeScale;
   // 디버그(테스트 하네스): 일시정지 후 정확한 시간만큼 진행
   if (dbg.paused) { simDt = dbg.pending; dbg.pending = 0; dt = simDt; }
@@ -736,12 +755,16 @@ function frame(now) {
   { const _t0 = PROF ? performance.now() : 0;
   blade.render(dt, camera);
   if (PROF) PROF['blade'] = (PROF['blade'] || 0) + performance.now() - _t0; }
-  cape.update(dt, player.vel, !rig.firstPerson && !player.hidden && player.mode !== 'dig');
+  cape.update(dt, player.vel, !rig.firstPerson && !player.hidden && player.mode !== 'dig' && player.mode !== 'drive');
 
   elapsed.t += dt;
   rig.inWater = player.mode === 'swim';
-  rig.underground = player.mode === 'dig';
+  rig.underground = player.mode === 'dig' || !!player.inTunnel;
+  // 굴 속에서는 카메라를 몸 가까이 (바위 속으로 빠지지 않게)
+  const zoom0 = rig.zoom;
+  if (player.inTunnel) rig.zoom = Math.min(rig.zoom, 2.2);
   rig.update(dt, player, input);
+  rig.zoom = zoom0;
   camAbs.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
   world.focusAGL = player.agl + 1;
   // 지구가 부서졌으면 땅·도시·바다·하늘을 모두 '아주 높은 곳'처럼 숨김
@@ -775,13 +798,24 @@ function frame(now) {
   const camDepth = player.mode === 'dig' && (!earthGone || onPlanet) ? game.terrain.heightAt(camAbs.x, camAbs.z) - camAbs.y : 0;
   under.update(dt, camera, camAbs, camDepth, player.vel);
   if (camDepth > 0.3) { world.sun.intensity *= 0.06; world.hemi.intensity *= 0.25; }
+  if (!onPlanet) holes.update(camAbs);
+  // 굴 속: 깊을수록 어두움
+  if (player.inTunnel && player.mode !== 'dig') { const dd = terrainMod.heightAt(camAbs.x, camAbs.z) - camAbs.y; if (dd > 2) { const k = Math.max(0.08, Math.exp(-(dd - 2) / 12)); world.sun.intensity *= k; world.hemi.intensity *= Math.max(0.2, k); } }
   cosmic.update(dt, camAbs);
   nukes.update(dbg.paused ? dt : dt * timeScale, camAbs);
   _pAbs.set(player.renderPos.x + origin.x, player.renderPos.y + origin.y, player.renderPos.z + origin.z);
   life.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, !hideEarth && !player.hidden);
   { const _t0 = PROF ? performance.now() : 0;
-  if (town) town.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, { flying: player.mode === 'fly', sword: blade.drawn, camera }, !hideEarth && !player.hidden);
+  if (town) town.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, { flying: player.mode === 'fly', sword: blade.drawn, camera, driving: player.mode === 'drive' }, !hideEarth && !player.hidden);
   if (PROF) PROF['town'] = (PROF['town'] || 0) + performance.now() - _t0; }
+  if (flood.active && !hideEarth) {
+    const fdt = dbg.paused ? dt : dt * timeScale;
+    flood.update(fdt);
+    if (town) town.sweep(flood, fdt);
+    // 물벽에 휩쓸림
+    const c = flood.crestAt(_pAbs.x, _pAbs.z);
+    if (c && _pAbs.y < c[2] && player.mode !== 'fly' && player.mode !== 'dig') { player.vel.x += c[0] * c[3] * 2.5 * fdt; player.vel.z += c[1] * c[3] * 2.5 * fdt; }
+  }
   { const _t0 = PROF ? performance.now() : 0;
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
   if (PROF) PROF['fx'] = (PROF['fx'] || 0) + performance.now() - _t0; }
@@ -795,7 +829,7 @@ function frame(now) {
   P.chroma = Math.min(1, P.speed * 0.8 + flash * 0.5);
   P.vignette = 0.28 + P.speed * 0.35;
   // 물속 화면 (카메라가 수면 아래)
-  const cwl = hideEarth || player.mode === 'dig' ? -Infinity : terrainMod.waterLevelAt(camAbs.x, camAbs.z);
+  const cwl = hideEarth || player.mode === 'dig' ? -Infinity : earthT.waterLevelAt(camAbs.x, camAbs.z);
   P.under = Math.min(1, Math.max(0, (cwl - camAbs.y) * 3));
   flash = Math.max(0, flash - dt * 2.6);
   P.flash = flash;
@@ -832,7 +866,7 @@ $('m-start').disabled = false;
 requestAnimationFrame(frame);
 window.__THREE = THREE;
 let PROF = null;
-window.__game = { planet, enterPlanet, leavePlanet, restoreBody, goSeoul, town, roads, seoul, life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
+window.__game = { holes, drive, flood, planet, enterPlanet, leavePlanet, restoreBody, goSeoul, town, roads, seoul, life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;

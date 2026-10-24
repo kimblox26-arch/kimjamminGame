@@ -278,6 +278,22 @@ void main() {
   gl_FragColor = vec4(c * rim * 2.2 * uI, 1.0);   // AdditiveBlending 은 src alpha 를 곱함
 }`;
 
+// 다른 행성의 대기 바깥 껍질 (가장자리 빛무리)
+const ATMO2_FS = /* glsl */`
+uniform vec3 uSunL;
+uniform vec3 uC;
+uniform float uI, uK;
+varying vec3 vN;
+varying vec3 vW;
+void main() {
+  vec3 n = normalize(vN);
+  vec3 V = normalize(-vW);
+  float ndv = dot(n, V);
+  float rim = pow(clamp(1.0 - abs(ndv), 0.0, 1.0), 5.0);
+  float NL = dot(n, uSunL);
+  vec3 c = mix(vec3(1.0, 0.45, 0.18), uC, smoothstep(-0.1, 0.35, NL)) * smoothstep(-0.35, 0.2, NL);
+  gl_FragColor = vec4(c * rim * uK * uI, 1.0);
+}`;
 // ── 행성 (암석/가스/얼음/구름) ──
 const PLANET_FS = /* glsl */`
 ${NOISE}
@@ -296,8 +312,12 @@ uniform float uHasMap;
 uniform vec3 uRef;        // 경도 0 방향 (자전축에 수직)
 uniform float uRot;       // 자전 각속도 (rad/s)
 uniform float uAlb;
+uniform vec3 uAtmC;      // 대기 산란 색
+uniform float uAtm;      // 대기 세기 (0 = 없음)
+uniform float uCrack;    // 유로파: 얼음 균열
 varying vec3 vN;
 varying vec3 vW;
+float relief(vec3 q) { return craters(q * 6.0) * 0.6 + craters(q * 17.0) * 0.25 + craters(q * 43.0) * 0.08 + fbm(q * 20.0, 4) * 0.06; }
 vec4 mapTex(sampler2D t, vec2 uv) {
   vec2 uvB = vec2(fract(uv.x + 0.5), uv.y);
   vec2 dxA = dFdx(uv), dyA = dFdy(uv), dxB = dFdx(uvB), dyB = dFdy(uvB);
@@ -328,6 +348,12 @@ void main() {
       float d = length((n - normalize(uAxis * -0.37 + cross(uAxis, vec3(1.0, 0.0, 0.0)) * 0.93)) * vec3(0.55, 1.0, 0.55));
       alb = mix(alb, vec3(0.72, 0.32, 0.18), smoothstep(0.18, 0.1, d) * 0.9);
     }
+  } else if (uCrack > 0.5) {
+    // 유로파: 흰 얼음 위 붉은 갈색 균열 (리니에)
+    float w = fbm(q * 4.0, 5);
+    float cr = 0.0;
+    for (int i = 0; i < 3; i++) { float f = fbm(q * (3.0 + float(i) * 2.3) + float(i) * 7.1, 4); cr = max(cr, 1.0 - smoothstep(0.0, 0.025, abs(f - 0.5))); }
+    alb = mix(uC1, uC2, clamp(cr * 0.85 + smoothstep(0.55, 0.8, w) * 0.4, 0.0, 1.0));
   } else if (uKind < 2.5) {
     // 얼음 거인: 은은한 띠
     float w = fbm(n * 3.0 + uSeed, 4);
@@ -345,13 +371,42 @@ void main() {
     // 가까이 가면 보이는 잔무늬 (암석 행성은 크레이터 음영)
     float det = uKind < 0.5 ? clamp(alb.r / max(uC1.r, 1e-3), 0.6, 1.4) : 1.0;
     alb = tex * uAlb * mix(1.0, det, 0.35) * (0.94 + 0.12 * fbm(q * 60.0, 3));
+    // 지도 밝기 기울기로 지형 음영 (협곡·크레이터 가장자리)
+    if (uKind < 0.5) {
+      vec3 east = normalize(cross(uAxis, n) + 1e-5), north = cross(n, east);
+      float du = 1.5 / 1024.0, dv = 1.5 / 512.0;
+      float l0 = dot(tex, vec3(0.33));
+      float le = dot(mapTex(uMap, uv + vec2(du, 0.0)).rgb, vec3(0.33)), ln = dot(mapTex(uMap, uv + vec2(0.0, dv)).rgb, vec3(0.33));
+      nb = normalize(nb - (east * (le - l0) + north * (ln - l0)) * 1.6);
+    }
+  }
+  // 암석 천체: 크레이터 높이장으로 법선 섭동 (빛 방향에 따라 그림자가 생김)
+  if (uKind < 0.5) {
+    vec3 t1 = normalize(cross(n, vec3(0.0, 1.0, 0.1))), t2 = cross(n, t1);
+    float e = 0.004, h0 = relief(q);
+    float hx = relief(normalize(n + t1 * e) + uSeed), hy = relief(normalize(n + t2 * e) + uSeed);
+    nb = normalize(nb - (t1 * (hx - h0) + t2 * (hy - h0)) * 2.2 / e * (uHasMap > 0.5 ? 0.006 : 0.012));
   }
   float NL = dot(nb, uSunL);
-  float lit = max(NL, 0.0);
   float ndv = max(dot(n, V), 0.0);
-  vec3 col = alb * lit * 1.05;
-  // 대기가 있는 행성은 가장자리가 밝게 번짐
-  if (uKind > 0.5) col += mix(uC1, vec3(0.6, 0.75, 1.0), 0.3) * pow(1.0 - ndv, 4.0) * smoothstep(-0.2, 0.3, NL) * 0.25;
+  vec3 col;
+  if (uKind < 0.5) {
+    // 대기 없는 암석: 로멜-지리거 반사 (보름 때 가장자리가 어두워지지 않음)
+    float nl = max(NL, 0.0), nv = max(dot(nb, V), 1e-3);
+    col = alb * mix(nl, nl / (nl + nv) * 2.0, 0.55) * 1.1;
+  } else {
+    // 가스·구름: 부드러운 명암 경계 + 가장자리 어두워짐
+    float lit = clamp((dot(n, uSunL) + 0.05) / 1.05, 0.0, 1.0);
+    col = alb * lit * (0.55 + 0.45 * pow(ndv, 0.35)) * 1.1;
+  }
+  // 대기: 가장자리 산란 (낮 쪽, 명암 경계에선 붉게)
+  float NL0 = dot(n, uSunL);
+  if (uAtm > 0.0) {
+    float rim = pow(1.0 - ndv, 3.0);
+    vec3 ac = mix(vec3(1.0, 0.45, 0.2), uAtmC, smoothstep(-0.05, 0.35, NL0));
+    col += ac * rim * smoothstep(-0.3, 0.25, NL0) * 0.45 * uAtm;
+  }
+  col += alb * 0.004;     // 아주 희미한 밤쪽 (별빛)
   gl_FragColor = vec4(col * uI, 1.0);
 }`;
 // 토성 고리 (평면, 반지름에 따른 띠와 카시니 간극, 행성 그림자)
@@ -478,6 +533,11 @@ void main() {
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _cp = new THREE.Vector3(), _w = new THREE.Vector3();
 
 // 실제 행성 지도 (파일, 자전 주기 h (음수 = 역방향), 밝기 배율)
+// 대기 (산란 색, 세기, 껍질 두께 / 반지름)
+const ATM = {
+  venus: [[1.0, 0.86, 0.55], 1.0, 0.03], mars: [[0.95, 0.6, 0.45], 0.45, 0.012], titan: [[0.95, 0.62, 0.28], 1.2, 0.09],
+  jupiter: [[0.8, 0.82, 0.95], 0.5, 0.012], saturn: [[0.92, 0.86, 0.7], 0.5, 0.012], uranus: [[0.6, 0.9, 1.0], 0.7, 0.02], neptune: [[0.45, 0.62, 1.0], 0.7, 0.02],
+};
 const MAPS = {
   mercury: ['mercury.jpg', 1407.6, 0.55], venus: ['venus.jpg', -5832.5, 0.9], mars: ['mars.jpg', 24.62, 0.5], jupiter: ['jupiter.jpg', 9.93, 1.0],
   saturn: ['saturn.jpg', 10.7, 0.95], uranus: ['uranus.jpg', -17.24, 0.9], neptune: ['neptune.jpg', 16.11, 0.9], pluto: ['pluto.jpg', -153.3, 0.65],
@@ -524,6 +584,7 @@ export class Space {
         uSunL: { value: new THREE.Vector3() }, uAxis: { value: ECLIPTIC.n }, uC1: { value: new THREE.Color(...b.c1) }, uC2: { value: new THREE.Color(...b.c2) },
         uKind: { value: KIND[b.kind] }, uSeed: { value: seed++ * 3.7 }, uSpot: { value: b.spot ? 1 : 0 }, uIce: { value: b.ice ? 1 : 0 }, uTime: { value: 0 }, uI: { value: 1 },
         uMap: { value: map ? loadTex('./assets/' + map[0]) : null }, uHasMap: { value: map ? 1 : 0 }, uRef: { value: ECLIPTIC.u }, uRot: { value: map ? (2 * Math.PI) / (map[1] * 3600) : 0 }, uAlb: { value: map ? map[2] : 1 },
+        uAtmC: { value: new THREE.Color(...(ATM[b.id] ? ATM[b.id][0] : [0, 0, 0])) }, uAtm: { value: ATM[b.id] ? ATM[b.id][1] : 0 }, uCrack: { value: b.id === 'europa' ? 1 : 0 },
       };
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(rk, low ? 64 : 112, low ? 32 : 56), new THREE.ShaderMaterial({
         vertexShader: BODY_VS, fragmentShader: PLANET_FS, uniforms: u, depthTest: false, depthWrite: false,
@@ -531,6 +592,15 @@ export class Space {
       mesh.frustumCulled = false;
       const grp = new THREE.Group();
       grp.add(mesh);
+      // 대기가 있으면 바깥 빛무리 껍질
+      if (ATM[b.id]) {
+        const [c, k, th] = ATM[b.id];
+        const halo = new THREE.Mesh(new THREE.SphereGeometry(rk * (1 + th), low ? 48 : 80, low ? 24 : 40), new THREE.ShaderMaterial({
+          vertexShader: BODY_VS, fragmentShader: ATMO2_FS, uniforms: { uSunL: u.uSunL, uC: { value: new THREE.Color(...c) }, uI: u.uI, uK: { value: k * 1.6 } },
+          depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+        halo.frustumCulled = false;
+        grp.add(halo);
+      }
       if (b.rings) {
         this.ringU = { uSunL: u.uSunL, uCenter: { value: new THREE.Vector3() }, uR: { value: rk }, uI: { value: 1 } };
         const ring = new THREE.Mesh(new THREE.RingGeometry(rk * 1.2, rk * 2.3, 256, 4), new THREE.ShaderMaterial({

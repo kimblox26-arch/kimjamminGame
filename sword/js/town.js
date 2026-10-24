@@ -241,7 +241,7 @@ export class Town {
       this.tMesh[k] = m;
     }
     this.trains = [];
-    for (let i = 0; i < 10; i++) this.trains.push({ alive: false, p: 0, d: 0, dir: 1, v: 0, n: 8, hist: [], kind: 'sub' });
+    for (let i = 0; i < 16; i++) this.trains.push({ alive: false, p: 0, d: 0, dir: 1, v: 0, n: 8, hist: [], kind: 'sub', player: false, derailed: false, cars: null, steer: 0 });
     // 말풍선 (화면 위 DOM)
     this.bubbles = [];
     const hud = document.getElementById('hud') || document.body;
@@ -254,7 +254,7 @@ export class Town {
     }
   }
 
-  setEco(eco, k = 1) { this.eco = eco; this.R = eco ? 260 : 420; this.maxP = Math.round((eco ? 120 : 340) * k); this.maxC = Math.round((eco ? 60 : 190) * k); this.maxT = Math.max(2, Math.round((eco ? 6 : 12) * k)); }
+  setEco(eco, k = 1) { this.eco = eco; this.R = eco ? 260 : 420; this.maxP = Math.round((eco ? 120 : 340) * k); this.maxC = Math.round((eco ? 60 : 190) * k); this.maxT = Math.max(3, Math.round((eco ? 8 : 16) * k)); }
 
   _h(x, z) { return this.game.heightAt(x, z); }
 
@@ -297,14 +297,25 @@ export class Town {
     for (const o of this.people) if (o.alive) {
       const d = Math.hypot(o.x - x, o.y - y, o.z - z);
       if (d < R) this._fling(o, x, z, power * (1 - d / R) + 4);
+      if (d < R * 0.35 && power >= 20) o.dead = true;
     }
     for (const o of this.cars) if (o.alive && !o.hidden) {
       const d = Math.hypot(o.x - x, o.y - y, o.z - z);
-      if (d < R * 0.8) this._fling(o, x, z, power * 0.6 * (1 - d / R) + 2);
+      if (d < R * 0.8) { this._fling(o, x, z, power * 0.6 * (1 - d / R) + 2); if (power >= 20 && d < R * 0.4) this._wreck(o, true); }
       else if (d < R * 3 && o.st === 'drive') { o.st = 'stop'; o.t = 0; }
     }
   }
   panic(x, z, R) { this.event('collapse', x, z, R, 0.7); }
+  // 해일 물벽에 휩쓸림
+  sweep(F, dt) {
+    for (const list of [this.people, this.cars]) for (const o of list) {
+      if (!o.alive || o.hidden) continue;
+      const c = F.crestAt(o.x, o.z);
+      if (!c || o.y > c[2]) continue;
+      if (o.st !== 'fly') { this.event('collapse', o.x, o.z, 300, 1); this._fling(o, o.x - c[0], o.z - c[1], c[3] * (list === this.cars ? 0.6 : 0.9)); o.vy = Math.min(o.vy, 3); }
+      else { o.vx += c[0] * c[3] * dt * 1.5; o.vz += c[1] * c[3] * dt * 1.5; }
+    }
+  }
   shock(id, x, gy, z, front, vap, R5, Rmax) {
     if (!this._nukeEv || this._nukeEv !== id) { this._nukeEv = id; this.event('nuke', x, z, 40000, 1); }
     const hit = (o, car) => {
@@ -314,17 +325,59 @@ export class Town {
       o.shock = id;
       if (d < vap) { o.alive = false; return; }
       this._fling(o, x, z, clamp(Math.pow(R5 / Math.max(d, 30), 1.4) * (car ? 35 : 45), 3, 250));
+      if (car && d < R5 * 2) this._wreck(o, false);
     };
     for (const o of this.people) hit(o, false);
     for (const o of this.cars) if (!o.hidden) hit(o, true);
   }
   _fling(o, x, z, v) {
     const dx = o.x - x, dz = o.z - z, l = Math.hypot(dx, dz) || 1;
+    if (o.mood && v > 24) o.dead = true;                // 사람: 세게 날아가면 죽음
     o.vx = dx / l * v; o.vz = dz / l * v; o.vy = v * rnd(0.25, 0.6) + 1;
     o.wx = rnd(-8, 8); o.wz = rnd(-8, 8);
     if (o.st !== 'fly') { o.rx = 0; o.rz = 0; }
     o.st = 'fly'; o.t = 0;
-    if (o.mood) { o.mood[1] = 1; this._say(o, pick(SAY.hit), 3); }
+    if (o.mood) { if (o.dead) this._die(o); else { o.mood[1] = 1; this._say(o, pick(SAY.hit), 3); } }
+  }
+  // 죽음: 그 자리에 쓰러져 다시 일어나지 않음, 주변 사람들은 겁에 질려 달아남
+  _die(o) {
+    o.dead = true; o.tt = 0; o.thought = '';
+    o.mood[0] = 0; o.mood[1] = 0; o.mood[2] = 0; o.mood[3] = 0; o.mood[4] = 0;
+    this.event('blast', o.x, o.z, 90, 1);
+  }
+  // 차량 파괴: 불타는 잔해 (폭발 + 연기), 다시 움직이지 않음
+  _wreck(o, boom) {
+    if (o.broken) return;
+    o.broken = true; o.burn = boom ? 40 : 15;
+    o.col = o.col.clone().multiplyScalar(0.18);
+    if (o.st !== 'fly') { o.st = 'wreck'; o.t = 0; }
+    const fx = this.game.fx;
+    if (boom && fx) {
+      _p.set(o.x - origin.x, o.y + 1 - origin.y, o.z - origin.z);
+      if (fx.energyBurst) fx.energyBurst(_p, o.kind === 'bus' ? 6 : 4, 2.4, 1.2, 0.4, true);
+      if (fx.sparks) fx.sparks(_p, _v.set(0, 1, 0), 30, 1.2, 25, 2.4, 1.4, 0.5, 0.08);
+      this.game.audio && this.game.audio.play('clang', 1);
+    }
+    this.event('blast', o.x, o.z, 150, 1);
+  }
+  // 칼·검기·빔이 지나간 선분 (a→b, 반지름 r) 안의 사람은 죽고 차는 부서짐
+  hit(ax, ay, az, bx, by, bz, r, power = 1) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az, L2 = dx * dx + dy * dy + dz * dz || 1;
+    const near = (o, h) => {
+      const t = clamp(((o.x - ax) * dx + (o.y + h - ay) * dy + (o.z - az) * dz) / L2, 0, 1);
+      return Math.hypot(ax + dx * t - o.x, ay + dy * t - o.y - h, az + dz * t - o.z) < r;
+    };
+    const l = Math.sqrt(L2), ux = dx / l, uz = dz / l;
+    let n = 0;
+    for (const o of this.people) if (o.alive && !o.dead && near(o, 0.9)) {
+      o.dead = true; n++;
+      o.vx = ux * 6 * power; o.vz = uz * 6 * power; o.vy = 2; o.wx = rnd(-6, 6); o.wz = rnd(-6, 6); o.st = 'fly'; o.t = 0;
+      this._die(o);
+    }
+    for (const o of this.cars) if (o.alive && !o.hidden && !o.broken && near(o, 0.8)) {
+      this._fling(o, o.x - ux, o.z - uz, 8 * power); this._wreck(o, true); n++;
+    }
+    return n;
   }
   _say(o, text, dur = 4) { o.thought = text; o.tt = dur; }
 
@@ -391,13 +444,14 @@ export class Town {
     const hash = new Map();
     for (const o of this.cars) if (o.alive && !o.hidden) { const k = Math.floor(o.x / 25) * 100000 + Math.floor(o.z / 25); let a = hash.get(k); if (!a) { a = []; hash.set(k, a); } a.push(o); }
     for (const o of this.cars) {
-      if (o.alive && Math.hypot(o.x - cam.x, o.z - cam.z) > R * 1.25 && o.st !== 'fly') o.alive = false;
+      if (o.alive && o.st !== 'player' && Math.hypot(o.x - cam.x, o.z - cam.z) > R * 1.25 && o.st !== 'fly') o.alive = false;
       if (!o.alive) {
         if (o.i >= this.maxC || spawns <= 0) continue;
         spawns--;
         if (!this._spawnOn(o, cam, this.time < 2 ? 15 : R * 0.7, R, true)) continue;
         if (o.kind === 'bus' && L.cls[o.p] > 4) continue;
         o.alive = true; o.st = 'drive'; o.v = 0; o.t = 0; o.rx = o.rz = 0; o.shock = -1;
+        if (o.broken) { o.broken = false; o.col = new THREE.Color(pick(this.kinds[o.kind].colors)); }
         const c = L.cls[o.p], hw = L.width[o.p] / 2;
         const lanes = c <= 2 ? Math.max(1, Math.round(hw * 2 / 3.3)) : Math.max(1, Math.floor(hw / 3.2));
         o.lane = Math.floor(Math.random() * lanes);
@@ -405,10 +459,19 @@ export class Town {
       }
       o.t += dt;
       if (o.st === 'fly') { if (this._physics(o, dt) && o.t > 0.5) { o.st = 'wreck'; o.t = 0; o.rx = Math.round(o.rx / Math.PI) * Math.PI; o.rz = Math.round(o.rz / Math.PI) * Math.PI; } continue; }
+      if (o.st === 'player') continue;
+      if (o.broken && o.burn > 0) {
+        // 불타는 잔해: 연기
+        o.burn -= dt;
+        const fx = this.game.fx;
+        if (fx && fx.puff && Math.random() < dt * 6 && Math.hypot(o.x - cam.x, o.z - cam.z) < 600)
+          fx.puff({ x: o.x - origin.x + rnd(-1, 1), y: o.y + 1.4 - origin.y, z: o.z - origin.z + rnd(-1, 1), vx: rnd(-0.5, 0.5), vy: rnd(2, 4), vz: rnd(-0.5, 0.5), life: rnd(4, 7), s0: 1, s1: 6, a: 0.5, r0: 0.12, g0: 0.11, b0: 0.1, r1: 0.25, g1: 0.24, b1: 0.23, fin: 0.05, drag: 0.3, rotv: rnd(-0.4, 0.4) }, 'smoke');
+      }
       if (o.st === 'wreck') continue;
       // 플레이어와 충돌
       if (!o.hidden && Math.hypot(o.x - pa.x, o.y + 0.8 - pa.y, o.z - pa.z) < 3 && pSp > 15) {
         o.vx = pv.x * 0.6; o.vy = Math.max(2, pSp * 0.15); o.vz = pv.z * 0.6; o.wx = rnd(-3, 3); o.wz = rnd(-3, 3); o.st = 'fly'; o.t = 0;
+        if (pSp > 35) this._wreck(o, pSp > 60);
         this.game.audio && this.game.audio.play('clang', 0.8);
         continue;
       }
@@ -484,7 +547,7 @@ export class Town {
         if (o.i >= this.maxP || spawns <= 0) continue;
         spawns--;
         if (!this._spawnOn(o, cam, this.time < 2 ? 6 : R * 0.65, R, false)) continue;
-        o.alive = true; o.st = 'walk'; o.v = rnd(1.1, 1.6); o.side = Math.random() < 0.5 ? 1 : -1; o.t = 0; o.rx = o.rz = 0; o.shock = -1;
+        o.alive = true; o.dead = false; o.st = 'walk'; o.v = rnd(1.1, 1.6); o.side = Math.random() < 0.5 ? 1 : -1; o.t = 0; o.rx = o.rz = 0; o.shock = -1;
         o.mood = [0.15 + o.cheer * 0.3, 0, 0, 0, (1 - o.cheer) * 0.15]; o.goal = pick(GOAL_LIST); o.tt = 0; o.think = rnd(1, 10); o.arm = 0;
         this._place(o, L);
         o.y = this._h(o.x, o.z);
@@ -496,7 +559,8 @@ export class Town {
       for (let k = 1; k < 4; k++) M[k] *= Math.exp(-dt * (k === 3 ? 0.5 : 0.12));
       M[4] += ((1 - o.cheer) * 0.15 - M[4]) * dt * 0.05;
       o.tt -= dt; o.think -= dt;
-      if (o.st === 'fly') { if (this._physics(o, dt) && o.t > 0.4) { o.st = 'down'; o.t = 0; o.rx = Math.PI / 2 * (Math.random() < 0.5 ? 1 : -1); o.rz = 0; M[4] = Math.max(M[4], 0.6); } continue; }
+      if (o.st === 'fly') { if (this._physics(o, dt) && o.t > 0.4) { o.st = o.dead ? 'dead' : 'down'; o.t = 0; o.rx = Math.PI / 2 * (Math.random() < 0.5 ? 1 : -1); o.rz = 0; M[4] = Math.max(M[4], 0.6); } continue; }
+      if (o.st === 'dead' || o.dead) { if (o.st !== 'dead') { o.st = 'fly'; o.t = 0; } continue; }
       if (o.st === 'down') {
         if (o.t > rnd(4, 8)) { o.rx = o.rz = 0; o.st = 'flee'; o.t = 0; const a = Math.random() * 6.28; o.fx = Math.sin(a); o.fz = Math.cos(a); o.v = rnd(2.5, 4.2); this._say(o, pick(SAY.calm), 3); }
         continue;
@@ -506,7 +570,7 @@ export class Town {
       if (o.sense <= 0) { o.sense = 0.4; this._perceive(o, pa, pSp, info); }
       // 부딪힘
       const dp = Math.hypot(o.x - pa.x, o.y + 0.9 - pa.y, o.z - pa.z);
-      if (dp < 1.6 && pSp > 6) { o.vx = pv.x * 0.8; o.vy = Math.max(3, pv.y * 0.5 + pSp * 0.25); o.vz = pv.z * 0.8; o.wx = rnd(-10, 10); o.wz = rnd(-10, 10); o.st = 'fly'; o.t = 0; M[1] = 1; this._say(o, pick(SAY.hit), 2.5); continue; }
+      if (dp < (info.driving ? 2.6 : 1.6) && pSp > 6) { o.vx = pv.x * 0.8; o.vy = Math.max(3, pv.y * 0.5 + pSp * 0.25); o.vz = pv.z * 0.8; o.wx = rnd(-10, 10); o.wz = rnd(-10, 10); o.st = 'fly'; o.t = 0; M[1] = 1; if (pSp > (info.driving ? 11 : 18)) this._die(o); else this._say(o, pick(SAY.hit), 2.5); continue; }
       if (o.st === 'walk') {
         o.d += o.v * dt * o.dir;
         const len = L.len[o.p];
@@ -597,7 +661,9 @@ export class Town {
     if (!RL) return;
     let spawns = 1;
     for (const T of this.trains) {
-      if (T.alive && Math.hypot(T.x - cam.x, T.z - cam.z) > 7000) T.alive = false;
+      if (T.alive && !T.player && Math.hypot(T.x - cam.x, T.z - cam.z) > 7000) T.alive = false;
+      if (T.alive && T.derailed) { this._stepDerailed(T, dt); continue; }
+      if (T.alive && T.player) continue;     // 플레이어가 운전 (vehicle.js)
       const idx = this.trains.indexOf(T);
       if (!T.alive) {
         if (idx >= this.maxT || spawns <= 0) continue;
@@ -610,14 +676,16 @@ export class Town {
           const a = RL.start[i];
           const d = Math.hypot(RL.pts[a * 2] - cam.x, RL.pts[a * 2 + 1] - cam.z);
           if (d > 5000) continue;
-          const sc = -d / 1000 + ((RL.flags[i] & 2) ? 0 : 3) + Math.random();
+          // 지상 구간(터널 아님)·일반 철도를 더 자주 → 땅 위를 달리는 열차가 잘 보임
+          const sc = -d / 1000 + ((RL.flags[i] & 2) ? 0 : 6) + (RL.cls[i] === 1 ? 2 : 0) + Math.random();
           if (sc > bs) { bs = sc; best = i; }
         }
         if (best < 0) continue;
-        T.alive = true; T.p = best; T.d = 0; T.dir = 1; T.v = rnd(16, 22); T.kind = RL.cls[best] === 0 ? 'sub' : 'rail'; T.n = T.kind === 'sub' ? 8 : 6; T.hist.length = 0;
+        T.alive = true; T.derailed = false; T.cars = null; T.player = false; T.p = best; T.d = 0; T.dir = 1; T.v = rnd(16, 22); T.kind = RL.cls[best] === 0 ? 'sub' : 'rail'; T.n = T.kind === 'sub' ? 8 : 6; T.hist.length = 0;
         // 미리 열차 길이만큼 달려 둠 (뒤 칸 자리 기록)
         for (let s = 0; s < T.n * 20.5 + 10; s += 2) this._trainStep(T, 2);
       }
+      T.v += (19 - T.v) * Math.min(1, dt * 0.3);
       this._trainStep(T, T.v * dt);
     }
   }
@@ -628,17 +696,107 @@ export class Town {
     if (T.d > len || T.d < 0) {
       const end = T.dir > 0 ? RL.nb[T.p] : RL.na[T.p];
       const over = T.d > len ? T.d - len : -T.d;
-      const nxt = this._next(this.radj, RL, end, T.p, (j) => (RL.cls[j] === RL.cls[T.p] ? 2 : 0));
+      const steer = T.player ? T.steer : 0, ctx = T.tx * T.dir, ctz = T.tz * T.dir;
+      const nxt = this._next(this.radj, RL, end, T.p, (j) => {
+        let w = RL.cls[j] === RL.cls[T.p] ? 2 : 0;
+        if (steer) {
+          // 갈림길: 조종 방향(왼쪽/오른쪽)으로 꺾이는 선로
+          const a = RL.start[j], b = RL.start[j + 1] - 1, fwd = RL.na[j] === end;
+          const i0 = fwd ? a : b, i1 = fwd ? a + 1 : b - 1;
+          const dx = RL.pts[i1 * 2] - RL.pts[i0 * 2], dz = RL.pts[i1 * 2 + 1] - RL.pts[i0 * 2 + 1], l = Math.hypot(dx, dz) || 1;
+          w += steer * (ctx * dz - ctz * dx) / l * 6;
+        }
+        return w;
+      });
       if (nxt < 0) { T.dir = -T.dir; T.d = clamp(T.d, 0, len); T.hist.length = 0; }
       else { T.p = nxt; if (RL.na[nxt] === end) { T.dir = 1; T.d = Math.min(over, RL.len[nxt]); } else { T.dir = -1; T.d = Math.max(0, RL.len[nxt] - over); } }
     }
-    const o = this._at(RL, T.p, T.d, T);
+    const o = this._at(RL, T.p, T.d, T, true);
     const y = o.deckY !== null ? o.deckY : o.tunnel ? this._h(o.x, o.z) - 25 : this._h(o.x, o.z);
     const H = T.hist;
     const last = H.length ? H[H.length - 1] : null;
     if (!last || Math.hypot(o.x - last[0], o.z - last[2]) > 1.5) {
       H.push([o.x, y, o.z, (last ? last[3] : 0) + (last ? Math.hypot(o.x - last[0], o.z - last[2]) : 0), o.tunnel ? 1 : 0]);
       if (H.length > 160) H.shift();
+    }
+  }
+
+  // 열차 칸들의 현재 위치·방향 (기록된 길을 따라)
+  trainCars(T, out = []) {
+    out.length = 0;
+    if (T.derailed && T.cars) { for (const c of T.cars) out.push({ x: c.x, y: c.y, z: c.z, h: c.h }); return out; }
+    const H = T.hist;
+    if (H.length < 2) return out;
+    const end = H[H.length - 1][3];
+    let hi = H.length - 1;
+    for (let j = 0; j < T.n; j++) {
+      const sc = end - 10 - j * 20.5;
+      while (hi > 0 && H[hi - 1][3] > sc) hi--;
+      if (hi <= 0) break;
+      const a = H[hi - 1], b = H[hi];
+      const u = clamp((sc - a[3]) / Math.max(b[3] - a[3], 1e-3), 0, 1);
+      out.push({ x: a[0] + (b[0] - a[0]) * u, y: a[1] + (b[1] - a[1]) * u, z: a[2] + (b[2] - a[2]) * u, h: Math.atan2(b[0] - a[0], b[2] - a[2]), tunnel: a[4] && b[4] });
+    }
+    return out;
+  }
+  // 앞 칸 진행 방향의 곡률 (1/m): 최근 기록 몇 개로
+  trainCurv(T) {
+    const H = T.hist, n = H.length;
+    if (n < 8) return 0;
+    const a = H[n - 8], b = H[n - 4], c = H[n - 1];
+    const h1 = Math.atan2(b[0] - a[0], b[2] - a[2]), h2 = Math.atan2(c[0] - b[0], c[2] - b[2]);
+    let dh = h2 - h1; dh -= Math.round(dh / (Math.PI * 2)) * Math.PI * 2;
+    const s = Math.max(1, (c[3] - a[3]) * 0.5);
+    return dh / s;
+  }
+  // 탈선: 칸마다 따로 날아가 구르고 미끄러짐
+  derail(T) {
+    if (T.derailed) return;
+    const cars = this.trainCars(T);
+    const k = this.trainCurv(T), side = k > 0 ? -1 : 1;
+    T.cars = cars.map((c, j) => {
+      const fx = Math.sin(c.h), fz = Math.cos(c.h), v = T.v * (1 - j * 0.02);
+      // 원심력 쪽(커브 바깥)으로 튕겨 나감
+      return { x: c.x, y: c.y + 0.3, z: c.z, h: c.h, vx: fx * v + fz * side * v * 0.25, vy: 2 + Math.random() * 3, vz: fz * v - fx * side * v * 0.25,
+        rx: 0, rz: 0, wx: rnd(-0.5, 0.5), wz: side * rnd(1.2, 2.6) * (1 + j * 0.05), wh: rnd(-0.6, 0.6), rest: 0 };
+    });
+    T.derailed = true; T.t = 0;
+    const fx = this.game.fx;
+    if (fx && fx.sparks && cars[0]) { _p.set(cars[0].x - origin.x, cars[0].y + 1 - origin.y, cars[0].z - origin.z); fx.sparks(_p, _v.set(0, 1, 0), 60, 1.2, 30, 2.4, 1.6, 0.8, 0.08); }
+    this.game.audio && this.game.audio.play('clang', 1);
+    this.event('blast', T.x, T.z, 300, 1);
+  }
+  _stepDerailed(T, dt) {
+    T.t += dt;
+    if (T.t > 120) { T.alive = false; return; }
+    const fx = this.game.fx;
+    for (const c of T.cars) {
+      if (c.rest > 2) continue;
+      const gy = this._h(c.x, c.z);
+      c.vy -= G * dt;
+      c.x += c.vx * dt; c.y += c.vy * dt; c.z += c.vz * dt;
+      c.rx += c.wx * dt; c.rz += c.wz * dt; c.h += c.wh * dt;
+      if (c.y <= gy) {
+        c.y = gy;
+        if (c.vy < -2) c.vy *= -0.2; else c.vy = 0;
+        // 땅에 끌리며 감속 (구르는 회전도 줄어듦)
+        const k = Math.exp(-1.6 * dt);
+        c.vx *= k; c.vz *= k; c.wx *= Math.exp(-2.5 * dt); c.wz *= Math.exp(-2.5 * dt); c.wh *= Math.exp(-3 * dt);
+        const sp = Math.hypot(c.vx, c.vz);
+        if (sp > 6 && fx && fx.puff && Math.random() < dt * 8) fx.puff({ x: c.x - origin.x, y: gy + 0.5 - origin.y, z: c.z - origin.z, vx: rnd(-1, 1), vy: rnd(1, 3), vz: rnd(-1, 1), life: rnd(2, 4), s0: 2, s1: 8, a: 0.4, r0: 0.5, g0: 0.45, b0: 0.38, r1: 0.6, g1: 0.56, b1: 0.5, fin: 0.05, drag: 0.5 }, 'smoke', 1);
+        if (sp < 0.5 && Math.abs(c.wz) < 0.3) {
+          c.rest += dt;
+          // 옆으로 눕거나 바로 섬
+          c.rz += (Math.round(c.rz / (Math.PI / 2)) * (Math.PI / 2) - c.rz) * Math.min(1, dt * 3);
+        }
+      }
+    }
+    // 칸끼리 사람·차를 침
+    for (const c of T.cars) {
+      const sp = Math.hypot(c.vx, c.vz);
+      if (sp < 5) continue;
+      for (const o of this.people) if (o.alive && !o.dead && Math.hypot(o.x - c.x, o.z - c.z) < 3) { this._fling(o, c.x, c.z, sp); this._die(o); }
+      for (const o of this.cars) if (o.alive && !o.hidden && o.st !== 'player' && Math.hypot(o.x - c.x, o.z - c.z) < 3.5) { this._fling(o, c.x, c.z, sp * 0.6); this._wreck(o, sp > 20); }
     }
   }
 
@@ -678,6 +836,15 @@ export class Town {
     // 전동차: 기록된 길을 따라 칸마다 배치
     const tc = { sub: 0, rail: 0 };
     for (const T of this.trains) {
+      if (T.alive && T.derailed && T.cars) {
+        const M = this.tMesh[T.kind];
+        for (const c of T.cars) {
+          _q.setFromAxisAngle(Y, c.h).premultiply(_q2.setFromEuler(_e.set(c.rx, 0, c.rz)));
+          _p.set(c.x - origin.x, c.y - origin.y, c.z - origin.z);
+          if (tc[T.kind] < 120) M.setMatrixAt(tc[T.kind]++, _m.compose(_p, _q, _s));
+        }
+        continue;
+      }
       if (!T.alive || T.hist.length < 2) continue;
       const H = T.hist, end = H[H.length - 1][3];
       let hi = H.length - 1;
@@ -731,7 +898,7 @@ export class Town {
   reset() {
     for (const o of this.people) o.alive = false;
     for (const o of this.cars) o.alive = false;
-    for (const T of this.trains) T.alive = false;
+    for (const T of this.trains) { T.alive = false; T.player = false; T.derailed = false; T.cars = null; }
     this.events.length = 0;
   }
 }

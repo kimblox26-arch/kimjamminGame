@@ -245,6 +245,17 @@ export class Player {
     this.time += dt;
     const I = input.state;
     const fx = this.game.fx, au = this.game.audio;
+    // 탈것 운전 중: 위치·속도는 탈것이 정함 (vehicle.js)
+    if (this.mode === 'drive') {
+      this.prevPos.copy(this.pos);
+      if (this.game.drive) this.game.drive.step(dt, input, cam); else this.mode = 'air';
+      if (this.mode === 'drive') {
+        this.inSpace = false; this.dens = airDensity(this.pos.y + origin.y); this.mach = 0;
+        this.groundY = this.pos.y - 1.3; this.agl = 1.3;
+        this.snapshot(this.snapCur);
+        return;
+      }
+    }
 
     // 카메라 기준 방향
     const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
@@ -322,6 +333,8 @@ export class Player {
       if (this.hidden) { this.snapshot(this.snapCur); return; }
       this.groundCollide(dt);
       if (this.hidden) { this.snapshot(this.snapCur); return; }
+      // 굴 벽 밖으로는 못 나감
+      if (this.game.holes) this.inTunnel = this.game.holes.constrain(this, this.game.terrain.heightAt(this.pos.x + origin.x, this.pos.z + origin.z)) && this.game.holes.inTunnel;
     }
 
     // 가속도 (고유 가속도: 자유낙하 중엔 0)
@@ -655,6 +668,10 @@ export class Player {
     const ax = rx + origin.x, az = rz + origin.z;
     const T = this.game.terrain, Ci = this.game.city;
     let h = T ? T.heightAt(ax, az) : 0, kind = 'ground';
+    // 땅에 뚫린 구멍·굴: 지표 대신 굴 바닥
+    const GH = this.game.holes;
+    this.holeFloor = false;
+    if (GH && GH.list.length) { const f = GH.floorAt(ax, this.pos.y + origin.y - RIG.pivotY, az, h); if (f !== null) { h = f; this.holeFloor = true; } }
     if (Ci) {
       const r = Ci.roofAt(ax, az);
       // 뚫린 구멍 속을 지나는 중이면 지붕을 땅으로 치지 않음
@@ -680,6 +697,8 @@ export class Player {
     this.game.hitStop(0.06, 0.1);
     this.mode = 'dig';
     this.trick = null;
+    // 파고든 길을 굴로 남김
+    this.digLast = new THREE.Vector3(this.pos.x + origin.x, this.groundY + origin.y + 1.2, this.pos.z + origin.z);
     this.pos.y = Math.min(this.pos.y, this.groundY - 2);
     this.game.toast && this.game.toast('땅속으로! (Shift 로 더 빠르게, 지구 중심을 지나면 반대편으로)');
   }
@@ -723,6 +742,7 @@ export class Player {
       this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
       this.prevPos.copy(this.pos);
       this.game.toast && this.game.toast('지구 중심 통과 → 반대편으로!');
+      this.digLast = null;
       this.game.hooks.flash && this.game.hooks.flash(0.5);
       return;
     }
@@ -730,6 +750,15 @@ export class Player {
     const g = (T ? T.heightAt(ax, az) : 0) - origin.y;
     this.groundY = g;
     this.depth = g - this.pos.y;
+    const GH = this.game.holes;
+    if (GH && !this.onPlanet) {
+      if (!this.digLast) this.digLast = new THREE.Vector3(ax, ay, az);
+      const seg = Math.max(8, this.speed * 0.06);
+      if (this.digLast.distanceTo(_v3.set(ax, ay, az)) > seg || this.pos.y > g + 0.5) {
+        if (this.depth < 2e5) GH.add(this.digLast.x, this.digLast.y, this.digLast.z, ax, ay, az, 1.9);
+        this.digLast.set(ax, ay, az);
+      }
+    }
     this.agl = -this.depth;
     if (this.pos.y > g + 0.5) {
       // 지표로 분출
@@ -741,6 +770,7 @@ export class Player {
       this.game.hooks.shake(0.6);
       this.mode = 'fly';
       this.vel.y = Math.max(this.vel.y, 15);
+      this.digLast = null;
       this.depth = 0;
     }
   }
@@ -759,6 +789,12 @@ export class Player {
     if (this.game.water) this.game.water.ripple(ax, az, Math.min(25, 0.2 + s * 0.7), 8 + Math.min(70, s * 5));
     au.play('splash', clamp(0.25 + s * 0.3, 0.2, 1));
     if (s > 3) { this.game.hooks.shake(clamp(0.2 + s * 0.05, 0, 1)); this.game.hitStop(0.05, 0.15); }
+    // 아주 세게 부딪히면 해일
+    if (sp > 260 && this.game.flood && !this.onPlanet) {
+      const ev = this.game.flood.trigger(ax, az, wy + origin.y, sp);
+      if (ev && this.game.toast) this.game.toast(`해일 발생! 물벽 높이 ${ev.H0.toFixed(0)} m — 주변이 잠길 수 있음`);
+      this.game.hooks.shake(1);
+    }
     if (sp > 900 && fx.impact) {
       // 초고속: 수증기 폭발 (물이 순간 증발)
       _v3.set(this.pos.x, wy, this.pos.z);

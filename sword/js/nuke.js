@@ -241,6 +241,8 @@ export class Nukes {
     const gy = T ? T.heightAt(p.x, p.z) : p.y;
     const wl = T ? T.waterLevelAt(p.x, p.z) : -1e9;
     const B = { id: (this._n = (this._n || 0) + 1), p: p.clone(), gy: Math.max(gy, wl), water: wl > gy && p.y - wl < R_FIRE, t: 0, k: 0, heard: false, hitPlayer: false, front: 0 };
+    // 물 위 핵폭발 → 거대한 해일
+    if (B.water && G.flood && !(G.player && G.player.onPlanet)) G.flood.trigger(p.x, p.z, wl, 2600);
     // 불덩이 + 갓
     const u = { uTime: { value: 0 }, uHeat: { value: 1 }, uCap: { value: 0 }, uRough: { value: 0.12 }, uA: { value: 1 }, uSun: { value: SUN_DIR } };
     B.ball = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 40), new THREE.ShaderMaterial({ vertexShader: BALL_VS, fragmentShader: BALL_FS, uniforms: u, transparent: true, depthWrite: false, fog: false }));
