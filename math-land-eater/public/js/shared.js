@@ -198,7 +198,7 @@
     spin: { name: '검 회전 속도', vals: [0.25, 0.30, 0.40], max: 3, fmt: v => `+${v.toFixed(2)}×` },
     sword: { name: '검 추가', vals: [1, 2, 3], max: 13, fmt: v => `+${v}개` },
     hp: { name: '체력', vals: [100, 200, 300], max: 1e9, fmt: v => `+${v}` },
-    slow: { name: '괴물 접근', vals: [0.10, 0.20, 0.40], max: 0.7, fmt: v => `−${Math.round(v * 100)}%` },
+    near: { name: '괴물 접근', vals: [0.10, 0.20, 0.40], max: 2, fmt: v => `+${Math.round(v * 100)}%` }, // 괴물이 다가오는 속도 +
   };
   const MINI_RARE = [0.62, 0.28, 0.10]; // 별 1 · 2 · 3 이 나올 확률
   const MINI_MAXLV = 50;
