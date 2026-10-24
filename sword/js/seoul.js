@@ -12,8 +12,15 @@
 //  시설 점: 0 가로등, 1 신호등, 2 횡단보도, 3 버스정류장, 4 벤치, 5 송전탑, 6 지하철역, 7 기차역, 8 가로수
 
 async function bytes(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(url + ' ' + res.status);
+  // 정적 호스팅에 따라 .gz 바이너리를 못 올리는 곳이 있어 같은 내용을 '.wasm' 이름으로도 찾음
+  let res = null;
+  for (const u of [url, url + '.wasm']) {
+    try {
+      const r = await fetch(u);
+      if (r.ok && !(r.headers.get('content-type') || '').includes('text/html')) { res = r; break; }
+    } catch (e) { /* 다음 이름 */ }
+  }
+  if (!res) throw new Error(url + ' 없음');
   const buf = new Uint8Array(await res.arrayBuffer());
   // 서버가 이미 풀어서 줄 수도 있음 (gzip 매직 넘버로 판별)
   if (buf[0] !== 0x1f || buf[1] !== 0x8b) return buf.buffer;
