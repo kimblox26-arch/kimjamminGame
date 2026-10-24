@@ -95,6 +95,7 @@ export class Player {
     this.surfKind = 'ground';
     this.waterY = -Infinity;   // 발밑 수면 (렌더 y), 없으면 -Infinity
     this.submerged = false;
+    this.depth = 0;            // 땅속 깊이 (m)
     this.hidden = false;    // 지구 폭발 등으로 사라진 상태
     this.cbrtE = 0;
     // 플로팅 원점: 저장해 둔 렌더 좌표 이동
@@ -288,6 +289,7 @@ export class Player {
     else if (this.mode === 'hero') this.stepHero(dt, wantFly);
     else if (this.mode === 'launch') this.stepLaunch(dt);
     else if (this.mode === 'swim') this.stepSwim(dt, fwdFlat, right, mx, my, mag, I, wantFly);
+    else if (this.mode === 'dig') this.stepDig(dt, cy, sy, cp, sp, mx, my, I);
     this.launchPoseT += dt;
 
     if (this.hidden) { this.vel.set(0, 0, 0); this.snapshot(this.snapCur); return; }
@@ -309,7 +311,8 @@ export class Player {
     this.mach = this.speed / SOUND_SPEED * clamp(Math.sqrt(this.dens) * 8, 0, 1);
 
     // 건물 / 지면 처리
-    if (!noEarth) {
+    if (this.mode === 'dig') this.digCollide(dt);
+    else if (!noEarth) {
       this.buildingCollide(dt);
       if (this.hidden) { this.snapshot(this.snapCur); return; }
       this.groundCollide(dt);
@@ -655,6 +658,83 @@ export class Player {
     return h - origin.y;
   }
 
+  // ───────── 땅속 (지구 중심까지) ─────────
+  startDig() {
+    const fx = this.game.fx;
+    _v3.copy(this.pos); _v3.y = this.groundY + 0.02;
+    const E = 0.5 * MASS * this.speed * this.speed;
+    if (fx.impact) fx.impact(_v3, Math.min(E, 4e9), _N.set(0, 1, 0));
+    if (fx.dustCloud) fx.dustCloud(_v3.x, _v3.y, _v3.z, 20, 15);
+    this.game.audio.play('heroLand', 1);
+    this.game.hooks.shake(0.8);
+    this.game.hitStop(0.06, 0.1);
+    this.mode = 'dig';
+    this.trick = null;
+    this.pos.y = Math.min(this.pos.y, this.groundY - 2);
+    this.game.toast && this.game.toast('땅속으로! (Shift 로 더 빠르게, 지구 중심을 지나면 반대편으로)');
+  }
+
+  stepDig(dt, cy, sy, cp, sp, mx, my, I) {
+    // 비행처럼 카메라 방향으로, 위/아래 키는 수직
+    const vert = (I.up ? 1 : 0) - (I.down ? 1 : 0);
+    const dir = _v3.set(sy * cp * my - cy * mx, sp * my + vert, cy * cp * my + sy * mx);
+    const dm = Math.min(1, dir.length());
+    const speed = this.speed;
+    let target;
+    if (I.boost && dm > 0.08) target = Math.min(3e5, speed + (200 + 1.6 * speed) * dt);   // 최고 초속 300 km
+    else if (dm > 0.08) target = Math.max(30 * dm, speed - (40 + 0.9 * speed) * dt);
+    else target = Math.max(0, speed - (40 + 1.5 * speed) * dt);
+    if (dm > 0.08) {
+      dir.divideScalar(dir.length());
+      const cur = speed > 0.5 ? _v1.copy(this.vel).divideScalar(speed) : _v1.copy(dir);
+      const ang = Math.acos(clamp(cur.dot(dir), -1, 1));
+      if (ang > 1e-4) {
+        const ax = _v2.crossVectors(cur, dir);
+        if (ax.lengthSq() < 1e-8) ax.set(0, 1, 0); else ax.normalize();
+        cur.applyAxisAngle(ax, Math.min(ang, 5 * dt));
+      }
+      this.vel.copy(cur).multiplyScalar(target);
+    } else if (speed > 1e-4) this.vel.multiplyScalar(target / speed);
+    this.boostAmt = lerp(this.boostAmt, I.boost ? 1 : 0, 1 - Math.exp(-6 * dt));
+    this.vert = vert;
+  }
+
+  // 땅속: 지구 중심을 지나면 반대편(대척점)으로, 지표 위로 나오면 분출
+  digCollide(dt) {
+    const ax = this.pos.x + origin.x, ay = this.pos.y + origin.y, az = this.pos.z + origin.z;
+    if (R_EARTH + ay < 0) {
+      // 행성 좌표는 직선으로 이어짐: 새 위치의 지역 좌표로 다시 표현
+      flatToPlanet(ax, ay, az, _P0);
+      localToPlanetQuat(ax, az, _q1);
+      _Vp.copy(this.vel).applyQuaternion(_q1);
+      planetToFlat(_P0.x, _P0.y, _P0.z, _F);
+      localToPlanetQuat(_F.x, _F.z, _q2);
+      this.vel.copy(_Vp).applyQuaternion(_q2.invert());
+      this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
+      this.prevPos.copy(this.pos);
+      this.game.toast && this.game.toast('지구 중심 통과 → 반대편으로!');
+      this.game.hooks.flash && this.game.hooks.flash(0.5);
+      return;
+    }
+    const T = this.game.terrain;
+    const g = (T ? T.heightAt(ax, az) : 0) - origin.y;
+    this.groundY = g;
+    this.depth = g - this.pos.y;
+    this.agl = -this.depth;
+    if (this.pos.y > g + 0.5) {
+      // 지표로 분출
+      const fx = this.game.fx;
+      _v3.copy(this.pos); _v3.y = g + 0.02;
+      if (fx.impact) fx.impact(_v3, Math.min(0.5 * MASS * this.speed * this.speed, 2e9), _N.set(0, 1, 0));
+      if (fx.dustCloud) fx.dustCloud(_v3.x, _v3.y, _v3.z, 18, 20);
+      this.game.audio.play('heroLand', 0.9);
+      this.game.hooks.shake(0.6);
+      this.mode = 'fly';
+      this.vel.y = Math.max(this.vel.y, 15);
+      this.depth = 0;
+    }
+  }
+
   // ───────── 물 ─────────
   // 수면 충돌: 속도가 클수록 큰 물보라 + 수면 파문, 몸은 물속으로 파고듦 (물의 저항으로 급감속)
   enterWater(wy) {
@@ -797,6 +877,8 @@ export class Player {
     }
     const speed = this.speed;
     const elev = speed > 0.1 ? Math.asin(clamp(this.vel.y / speed, -1, 1)) : 0;
+    // 부스트를 누른 채 빠르게 내리꽂으면 땅을 뚫고 들어감 (지구 중심까지 갈 수 있음)
+    if (this.sprint && speed > 80 && elev < -0.3 && this.surfKind !== 'roof' && speed < V_EARTH_BREAK) { this.startDig(); return; }
     if (this.vel.y < -22 || (speed > 45 && elev < -0.35)) {
       this.pos.y = this.groundY + RIG.pivotY;
       this.impactGround(speed, clamp(-this.vel.y / 70 + speed / 700, 0.35, 1));
@@ -1067,7 +1149,7 @@ export class Player {
   updateAttitude(dt, cam) {
     const speed = this.speed;
     let yawT = this.heading, pitchT = 0, bankT = 0, leanT = 0;
-    if (this.mode === 'fly' || this.mode === 'swim') {
+    if (this.mode === 'fly' || this.mode === 'swim' || this.mode === 'dig') {
       const hs = Math.hypot(this.vel.x, this.vel.z);
       const w = smooth(6, 22, speed);
       // 진행 방향을 향함 (거의 수직 이동이면 카메라 방향)
@@ -1144,7 +1226,7 @@ export class Player {
   updateAnimation(dt, cam) {
     const s = this.animState;
     s.t = this.time; s.dt = dt;
-    s.mode = this.mode === 'swim' ? 'fly' : this.mode;
+    s.mode = this.mode === 'swim' || this.mode === 'dig' ? 'fly' : this.mode;
     s.groundSpeed = this.mode === 'ground' ? Math.hypot(this.vel.x, this.vel.z) : 0;
     s.vy = this.vel.y;
     s.sprint = this.sprinting; s.slow = this.slow;

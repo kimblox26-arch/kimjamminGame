@@ -19,6 +19,7 @@ import { Wreck } from './wreck.js';
 import * as geoMod from './geo.js';
 import { loadGeo } from './geo.js';
 import { Blade } from './blade.js';
+import { Underground, layerName } from './underground.js';
 import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
 import { TARGETS } from './player.js';
 
@@ -67,6 +68,7 @@ post.nearCam.layers.enable(2);   // 구름 속 안개 오버레이는 근거리 
 const audio = new GameAudio();
 const rig = new CameraRig(camera);
 rig.groundAt = (x, z) => {
+  if (rig.underground) return -Infinity;   // 땅속을 파고드는 중엔 카메라도 땅속으로
   const ax = x + origin.x, az = z + origin.z;
   // 수영 중엔 카메라도 물속으로 들어갈 수 있음
   const wl = rig.inWater ? -Infinity : terrainMod.waterLevelAt(ax, az);
@@ -90,6 +92,7 @@ fx.setGround((x, z) => rig.groundAt(x, z));
 const cosmic = new Cosmic(space, hooks, { quality });
 // 건물 물리 (잘린 조각/넘어지는 건물)
 const wreck = new Wreck(city, scene, { fx, audio, hooks, terrainH: (x, z) => terrainMod.heightAt(x, z) });
+const under = new Underground(scene);
 const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3();
 let earthGone = false, cineMode = false;
 const game = {
@@ -275,6 +278,11 @@ function updateHud(dt, fps) {
   hud.target.textContent = BODY[TARGETS[player.targetIdx]].name + ' ' + fmtDist(player.targetDistNow || 0);
   hud.modes.textContent = (player.speedLock > 0 ? '속도 고정 ' : '') + (player.autopilot ? '자동 항법 ' : '') + (player.coasting ? '관성 비행' : '');
   hud.layer.textContent = altM < 12000 ? '대류권' : altM < 50000 ? '성층권' : altM < 80000 ? '중간권' : altM < ATMO_TOP ? '열권' : altM < 3e7 ? '지구 궤도' : '우주';
+  if (player.mode === 'dig') {
+    const d = Math.max(0, player.depth || 0);
+    hud.alt.textContent = '-' + (d < 10000 ? d.toFixed(0) + ' m' : Math.round(d / 1000).toLocaleString() + ' km');
+    hud.layer.textContent = layerName(d);
+  }
   let st = STATE_NAME[player.mode];
   if (player.mode === 'fly') {
     if (player.mach >= 1.6) st = '극초음속 · 보우쇼크';
@@ -286,6 +294,8 @@ function updateHud(dt, fps) {
   if (player.mode === 'ground' && player.exhausted) st = '탈진';
   else if (player.mode === 'ground' && player.sprinting) st = '질주';
   if (player.trick) st = { roll: '배럴 롤', flip: '공중제비', cart: '옆돌기' }[player.trick.type];
+  if (player.mode === 'dig') st = player.boostAmt > 0.5 ? '땅속 돌진' : '땅속';
+  if (player.mode === 'swim') st = player.submerged ? '잠수' : '수영';
   hud.state.textContent = st;
   hud.bar.style.transform = `scaleX(${Math.min(1, Math.log10(1 + v) / 11).toFixed(3)})`;
   hud.fps.textContent = fps.toFixed(0) + ' FPS';
@@ -378,6 +388,7 @@ function frame(now) {
 
   elapsed.t += dt;
   rig.inWater = player.mode === 'swim';
+  rig.underground = player.mode === 'dig';
   rig.update(dt, player, input);
   camAbs.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
   world.focusAGL = player.agl + 1;
@@ -391,6 +402,10 @@ function frame(now) {
   water.update(dt, camera, wAbs);
   trees.update(dt, camera, wAbs, earthGone ? 1e9 : camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
   space.update(dt, camera, camAbs, earthGone ? 5e8 : camAbs.y);
+  // 땅속: 카메라를 감싼 암석/맨틀/핵 껍질, 햇빛은 거의 닿지 않음
+  const camDepth = player.mode === 'dig' && !earthGone ? terrainMod.heightAt(camAbs.x, camAbs.z) - camAbs.y : 0;
+  under.update(dt, camera, camAbs, camDepth, player.vel);
+  if (camDepth > 0.3) { world.sun.intensity *= 0.06; world.hemi.intensity *= 0.25; }
   cosmic.update(dt, camAbs);
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
   audio.update(dt, player.audioState);
@@ -403,7 +418,7 @@ function frame(now) {
   P.chroma = Math.min(1, P.speed * 0.8 + flash * 0.5);
   P.vignette = 0.28 + P.speed * 0.35;
   // 물속 화면 (카메라가 수면 아래)
-  const cwl = earthGone ? -Infinity : terrainMod.waterLevelAt(camAbs.x, camAbs.z);
+  const cwl = earthGone || player.mode === 'dig' ? -Infinity : terrainMod.waterLevelAt(camAbs.x, camAbs.z);
   P.under = Math.min(1, Math.max(0, (cwl - camAbs.y) * 3));
   flash = Math.max(0, flash - dt * 2.6);
   P.flash = flash;
