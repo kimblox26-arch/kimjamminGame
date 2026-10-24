@@ -285,7 +285,7 @@ export class Nukes {
     // 충격파가 지나간 건물: 가까우면 증발/산산조각, 멀면 바깥으로 쓰러짐
     if (C && W) {
       const boxes = [];
-      let budget = 40;
+      let budget = 160;
       while (B.k < B.q.length && B.q[B.k][0] < B.front && budget-- > 0) {
         const [d, i] = B.q[B.k++];
         if (!C.alive[i]) continue;

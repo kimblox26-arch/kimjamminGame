@@ -86,7 +86,15 @@ def build(N, step, dem):
                 dw.line([tuple(v) for v in pts], fill=1, width=max(1, int(round(w / step))))
     c = np.asarray(C).copy(); wm = np.asarray(W) > 0
     # SRTM 은 지표면 모델(건물·나무 포함) → 도시에서는 건물 높이만큼 볼록 → 열림 연산(최솟값→최댓값)으로 걷어냄
-    urb = ndimage.gaussian_filter(((c == 1) | (c == 7)).astype(float), 3)
+    #  큰 산림·바위 지대(0.6 km² 이상)만 원래 높이를 두고, 도시·공원·작은 숲은 걷어냄. 경계는 넓게 섞어 절벽이 안 생기게
+    nat = np.isin(c, [2, 5])
+    lab, nl = ndimage.label(nat)
+    if nl:
+        sizes = ndimage.sum(nat, lab, np.arange(1, nl + 1)) * step * step
+        big = np.isin(lab, np.where(sizes > 6e5)[0] + 1)
+    else:
+        big = nat
+    urb = np.clip(ndimage.gaussian_filter((~big).astype(float), max(2.0, 120 / step)), 0, 1)
     k = max(3, int(round(150 / step)) | 1)
     op = ndimage.grey_opening(dem, size=(k, k))
     op = ndimage.gaussian_filter(op, max(1.0, 40 / step))
