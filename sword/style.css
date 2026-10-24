@@ -167,3 +167,4 @@ body.touch .perf { top: 12px; left: 12px; }
 body.touch .skills, body.touch .gear { display: none; }
 body.touch .gear.touchgear { display: block; top: 52px; left: 12px; right: auto; }
 .mute, .start { display: none !important; }
+.credit { margin-top: 12px; font-size: 10.5px; line-height: 1.5; opacity: .55; }

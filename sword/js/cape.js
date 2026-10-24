@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { onRebase } from './frame.js';
 
 const W = 8, H = 12;           // 가로 점, 세로 점
-const WIDTH = 0.78, LEN = 1.5;  // 폭, 길이 (m)
+const WIDTH = 0.5, LEN = 1.25;  // 폭, 길이 (m)
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _inv = new THREE.Matrix4();
@@ -63,7 +63,7 @@ export class Cape {
     const p = this.p, o = this.o;
     for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
       const k = (j * W + i) * 3;
-      this._body(-WIDTH / 2 + i * this.rest, 0.56 - j * this.restV, -0.23 - j * 0.02, _a);
+      this._body(-WIDTH / 2 + i * this.rest, 0.52 - j * this.restV, -0.14 - j * 0.02, _a);
       p[k] = o[k] = _a.x; p[k + 1] = o[k + 1] = _a.y; p[k + 2] = o[k + 2] = _a.z;
     }
     this.init = true;
@@ -74,7 +74,7 @@ export class Cape {
     this.mesh.visible = visible;
     if (!visible) return;
     this.av.body.updateWorldMatrix(true, false);
-    this._body(0, 0.56, -0.23, _a);
+    this._body(0, 0.52, -0.14, _a);
     if (!this.init || _a.distanceTo(this.anchorPrev) > 8) this._reset();
     this.anchorPrev.copy(_a);
     const p = this.p, o = this.o;
@@ -101,7 +101,7 @@ export class Cape {
       }
       // 윗줄 고정 (어깨 뒤)
       for (let i = 0; i < W; i++) {
-        this._body(-WIDTH / 2 + i * this.rest, 0.56, -0.23, _a);
+        this._body(-WIDTH / 2 + i * this.rest, 0.52, -0.14, _a);
         const k = i * 3;
         o[k] = p[k] = _a.x; o[k + 1] = p[k + 1] = _a.y; o[k + 2] = p[k + 2] = _a.z;
       }
@@ -118,7 +118,7 @@ export class Cape {
           const k = (j * W + i) * 3;
           _b.set(p[k], p[k + 1], p[k + 2]).applyMatrix4(_inv);
           let moved = false;
-          if (_b.y > -1.05 && _b.y < 0.62 && Math.abs(_b.x) < 0.46 && _b.z > -0.24) { _b.z = -0.24; moved = true; }
+          if (_b.y > -1.05 && _b.y < 0.6 && Math.abs(_b.x) < 0.3 && _b.z > -0.15) { _b.z = -0.15; moved = true; }
           if (moved) { _b.applyMatrix4(_m); p[k] = _b.x; p[k + 1] = _b.y; p[k + 2] = _b.z; }
         }
       }

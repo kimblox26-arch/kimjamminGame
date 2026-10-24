@@ -22,6 +22,7 @@ import { loadSeoul, loadBuildings, loadLines, loadPoints } from './seoul.js';
 import { Roads } from './roads.js';
 import { PeakLabels } from './labels.js';
 import { Town } from './town.js';
+import { GroundDetail } from './ground.js';
 import { Blade } from './blade.js';
 import { Underground, layerName } from './underground.js';
 import { Cape } from './cape.js';
@@ -87,6 +88,7 @@ bootT.city = performance.now() - bootT.t0;
 const water = new Water(renderer, scene, { quality, envMap: city.envMap });
 const trees = new Trees(renderer, scene, { quality, envMap: city.envMap, footprint: (x, z) => city.roofAt(x, z) });
 if (roads) trees.extra = (x, z, s) => roads.streetTrees(x, z, s);
+const ground = new GroundDetail(scene, { quality, sample: (x, z) => terrainMod.terrainSample(x, z), roofAt: (x, z) => city.roofAt(x, z), road: (x, z) => terrainMod.roadAt(x, z) });
 const peaks = seoul ? new PeakLabels(scene, seoul.peaks, (x, z) => terrainMod.heightAt(x, z)) : null;
 const space = new Space(renderer, { quality });
 world.params.sunIntensity = 2.75;
@@ -243,6 +245,7 @@ function applyEco(show) {
   post._samples = -1;
   trees.setRadius(eco ? 380 : (quality === 'low' ? 520 : 900));
   life.setEco(eco);
+  ground.setLow(eco);
   city.nearR = eco ? 1500 : 3000;
   if (roads) { roads.R = eco ? 1100 : 2000; terrain.uniforms.tRoadR.value = roads.R; }
   water.setDetail && water.setDetail(eco);
@@ -529,6 +532,7 @@ function frame(now) {
   if (roads) roads.update(dt, wAbs, elapsed.t);
   if (PROF) PROF['roads'] = (PROF['roads'] || 0) + performance.now() - _t0; }
   if (peaks) peaks.update(dt, wAbs, !earthGone && camAbs.y < 30000);
+  ground.update(dt, wAbs, !earthGone && player.mode !== 'dig');
   wreck.update(dbg.paused ? dt : dt * timeScale, camAbs);
   if (!water.ready && (terrain.stats.draws > 30 || elapsed.t > 8)) water.ready = true;
   { const _t0 = PROF ? performance.now() : 0;

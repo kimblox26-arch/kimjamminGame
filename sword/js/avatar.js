@@ -70,23 +70,29 @@ function headGeometry(radius, height, corner) {
 
 // 클래식 스마일 얼굴 텍스처 (원통 둘레 1.9 rad 에 펼쳐짐 → 가로를 그만큼 넓게)
 function faceTexture() {
+  // 구면 조각 (가로 1.7 rad, 세로 1.25 rad) 에 펼쳐지는 사람 얼굴: 눈(흰자·갈색 홍채·하이라이트), 눈썹, 코 그늘, 입술
   const c = document.createElement('canvas');
-  c.width = 512; c.height = 256;
+  c.width = 512; c.height = 384;
   const g = c.getContext('2d');
-  g.fillStyle = '#111';
-  // 눈: 세로로 긴 타원
-  for (const x of [196, 316]) {
-    g.beginPath();
-    g.ellipse(x, 92, 15, 31, 0, 0, Math.PI * 2);
-    g.fill();
+  const cx = 256;
+  for (const sx of [-1, 1]) {
+    const x = cx + sx * 58, y = 150;
+    g.fillStyle = '#f4efe8'; g.beginPath(); g.ellipse(x, y, 26, 12, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#3a2416'; g.beginPath(); g.arc(x + sx * -2, y + 1, 10.5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#0b0807'; g.beginPath(); g.arc(x + sx * -2, y + 1, 5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x + sx * -2 + 3, y - 3, 2.6, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#1a120d'; g.lineWidth = 4; g.beginPath(); g.ellipse(x, y + 1, 27, 13, 0, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
+    g.strokeStyle = '#1c130e'; g.lineWidth = 9; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x - sx * 30, y - 30); g.quadraticCurveTo(x, y - 42, x + sx * 30, y - 34); g.stroke();
   }
-  // 입: 넓은 미소 곡선
-  g.strokeStyle = '#111';
-  g.lineWidth = 15;
-  g.lineCap = 'round';
-  g.beginPath();
-  g.ellipse(256, 128, 96, 62, 0, Math.PI * 0.2, Math.PI * 0.8);
-  g.stroke();
+  // 코: 콧대 그늘 + 콧볼
+  g.strokeStyle = 'rgba(120,70,50,0.35)'; g.lineWidth = 6;
+  g.beginPath(); g.moveTo(cx + 8, 165); g.quadraticCurveTo(cx + 14, 215, cx + 4, 236); g.stroke();
+  g.fillStyle = 'rgba(110,60,45,0.4)';
+  for (const sx of [-1, 1]) { g.beginPath(); g.ellipse(cx + sx * 13, 240, 7, 4, 0, 0, Math.PI * 2); g.fill(); }
+  // 입술
+  g.fillStyle = '#a65a52'; g.beginPath(); g.moveTo(cx - 34, 286); g.quadraticCurveTo(cx, 276, cx + 34, 286); g.quadraticCurveTo(cx, 302, cx - 34, 286); g.fill();
+  g.strokeStyle = '#5a2a26'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 34, 286); g.quadraticCurveTo(cx, 290, cx + 34, 286); g.stroke();
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
@@ -99,14 +105,16 @@ export class Avatar {
     for (const m of this.gearMats || []) { m.envMap = envMap; m.needsUpdate = true; }
   }
   constructor() {
-    // 로블록스 플라스틱: 살짝 매끈한 흰색
-    // 클리어코트: 플라스틱 위에 얇은 광택층 → 하늘·태양이 몸에 비침
-    this.material = new THREE.MeshPhysicalMaterial({
-      color: 0xe6e7ea, roughness: 0.42, metalness: 0.0,
-      clearcoat: 0.55, clearcoatRoughness: 0.22, envMapIntensity: 0.9,
-      emissive: 0x000000, emissiveIntensity: 1.0,
-    });
+    // 실제 사람 비율의 영웅: 피부·머리카락·얼굴 + 몸에 맞는 전투복 (짙은 남색), 장갑·부츠
+    //  (관절 위치·이름은 그대로 → 애니메이션·검·망토가 같은 리그를 씀)
+    this.material = new THREE.MeshPhysicalMaterial({ color: 0x1d2433, roughness: 0.55, metalness: 0.0, sheen: 0.6, sheenRoughness: 0.5, sheenColor: 0x6a7a9a, clearcoat: 0.15, emissive: 0x000000 });
     const m = this.material;
+    const skin = new THREE.MeshPhysicalMaterial({ color: 0xd8a98c, roughness: 0.5, sheen: 0.3, sheenColor: 0xffc8b0, emissive: 0x000000 });
+    skin.emissive = m.emissive;      // 보우쇼크로 달아오를 때 같이
+    const hair = new THREE.MeshStandardMaterial({ color: 0x14100d, roughness: 0.45 });
+    const glove = new THREE.MeshStandardMaterial({ color: 0x0f1115, roughness: 0.6, metalness: 0.1 });
+    const trim = new THREE.MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.4, metalness: 0.6 });
+    this.skinMat = skin;
 
     this.root = new THREE.Group();
     this.root.name = 'avatar';
@@ -114,56 +122,81 @@ export class Avatar {
     this.body.position.y = RIG.pivotY;
     this.root.add(this.body);
 
-    const mesh = (geo, parent, y = 0, x = 0) => {
-      const o = new THREE.Mesh(geo, m);
+    const mesh = (geo, parent, y = 0, x = 0, mat = m) => {
+      const o = new THREE.Mesh(geo, mat);
       o.position.set(x, y, 0);
       o.castShadow = true;
       o.receiveShadow = true;
       parent.add(o);
       return o;
     };
+    // 회전체 몸통: (높이, 반지름) 윤곽을 너비·두께 비율로 눌러 가슴·허리·골반 형태
+    const lathe = (prof, sx, sz, seg = 28) => {
+      const g = new THREE.LatheGeometry(prof.map(([y, r]) => new THREE.Vector2(r, y)), seg);
+      g.scale(sx, 1, sz);
+      g.computeVertexNormals();
+      return g;
+    };
+    // 몸통: 골반(-0.22) → 허리(0.0) → 가슴(0.32) → 어깨(0.5) → 목 밑(0.6)
+    this.torso = mesh(lathe([[-0.24, 0.0], [-0.235, 0.13], [-0.16, 0.165], [-0.04, 0.15], [0.06, 0.148], [0.2, 0.17], [0.34, 0.182], [0.46, 0.17], [0.53, 0.13], [0.6, 0.065], [0.61, 0.0]], 1.32, 0.72), this.body, 0);
+    // 가슴 장식선 (흰 트림)
+    const tr = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.008, 6, 40, Math.PI), trim);
+    tr.rotation.set(Math.PI / 2, 0, Math.PI); tr.scale.set(1.18, 0.72, 1); tr.position.set(0, 0.47, 0.0); this.body.add(tr);
 
-    // 몸통 0.8 x 0.8 x 0.4 (중심 body 기준 +0.2)
-    this.torso = mesh(roundedBox(0.8, 0.8, 0.4, 0.035), this.body, 0.2);
-
-    // 목 + 머리
+    // 목 + 머리 (얼굴은 앞쪽 구면 조각에 그린 텍스처)
     this.neck = new THREE.Group();
     this.neck.position.set(0, RIG.neckY, 0);
     this.neck.rotation.order = 'YXZ';
     this.body.add(this.neck);
-    mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.06, 20), this.neck, 0.02);
-    this.head = mesh(headGeometry(0.245, 0.47, 0.1), this.neck, 0.27);
-    // 로블록스 기본 얼굴 (Smile): 머리 앞면을 감싸는 얇은 원통 조각에 데칼
+    mesh(new THREE.CylinderGeometry(0.052, 0.06, 0.13, 16), this.neck, 0.03, 0, skin);
+    const hg = new THREE.SphereGeometry(0.112, 32, 24); hg.scale(0.9, 1.14, 1.0);
+    this.head = mesh(hg, this.neck, 0.17, 0, skin);
+    // 귀
+    for (const sx of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), skin); e.scale.set(0.5, 1, 0.8); e.position.set(sx * 0.1, 0.165, -0.005); this.neck.add(e); }
+    // 머리카락: 뒤·위를 덮는 짧은 머리 (앞머리 살짝)
+    const hairG = new THREE.SphereGeometry(0.121, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.58); hairG.scale(0.93, 1.1, 1.04);
+    const hairM = mesh(hairG, this.neck, 0.185, 0, hair); hairM.rotation.x = -0.32;
+    const fringe = new THREE.SphereGeometry(0.118, 24, 8, Math.PI * 0.25, Math.PI * 0.5, Math.PI * 0.18, Math.PI * 0.16); fringe.scale(0.95, 1.1, 1.05);
+    mesh(fringe, this.neck, 0.17, 0, hair);
     const face = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.2465, 0.2465, 0.3, 24, 1, true, -0.95, 1.9),
-      new THREE.MeshStandardMaterial({
-        map: faceTexture(), transparent: true, roughness: 0.5, depthWrite: false,
-        polygonOffset: true, polygonOffsetFactor: -1,
-      }),
+      new THREE.SphereGeometry(0.1135, 32, 16, Math.PI / 2 - 0.85, 1.7, 0.95, 1.25),
+      new THREE.MeshStandardMaterial({ map: faceTexture(), transparent: true, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 }),
     );
-    face.position.y = 0.285;
+    face.scale.set(0.9, 1.14, 1.0);
+    face.position.y = 0.17;
     face.renderOrder = 2;
     this.neck.add(face);
     this.face = face;
 
-    const limbGeo = roundedBox(0.4, 0.8, 0.4, 0.035);
-    const makeLimb = (x, y, len) => {
+    // 팔·다리: 위·아래 마디가 가늘어지는 캡슐 + 손·신발
+    const makeLimb = (x, y, arm) => {
       const j = new THREE.Group();
       j.position.set(x, y, 0);
       j.rotation.order = 'XZY';
       this.body.add(j);
-      mesh(limbGeo, j, -len / 2 + (len === RIG.armLen ? 0.2 : 0));
+      const len = arm ? 0.7 : RIG.legLen;
+      if (arm) {
+        const up = new THREE.CapsuleGeometry(0.055, 0.25, 6, 14); up.translate(0, -0.15, 0);
+        const lo = new THREE.CapsuleGeometry(0.046, 0.23, 6, 14); lo.translate(0, -0.44, 0);
+        mesh(up, j, 0); mesh(lo, j, 0);
+        const hand = new THREE.CapsuleGeometry(0.038, 0.06, 4, 10); hand.scale(1, 1, 0.65); hand.translate(0, -0.64, 0.005);
+        mesh(hand, j, 0, 0, glove);
+      } else {
+        const th = new THREE.CapsuleGeometry(0.078, 0.3, 6, 14); th.translate(0, -0.2, 0);
+        const ca = new THREE.CapsuleGeometry(0.058, 0.3, 6, 14); ca.translate(0, -0.55, 0);
+        mesh(th, j, 0); mesh(ca, j, 0, 0, glove);
+        const shoe = roundedBox(0.105, 0.09, 0.27, 0.03); shoe.translate(0, -0.755, 0.045);
+        mesh(shoe, j, 0, 0, glove);
+      }
       const tip = new THREE.Object3D();
-      tip.position.set(0, -len + 0.06 + (len === RIG.armLen ? 0.2 : 0), 0);
+      tip.position.set(0, arm ? -0.62 : -len + 0.06, 0);
       j.add(tip);
       return { joint: j, tip };
     };
-    // 팔: 관절은 팔 윗면에서 0.2 아래 (로블록스 R6 어깨 위치)
-    const ar = makeLimb(-0.6, RIG.shoulderY, RIG.armLen);
-    const al = makeLimb(0.6, RIG.shoulderY, RIG.armLen);
-    // 다리: 관절은 다리 윗면
-    const lr = makeLimb(-0.2, RIG.hipY, RIG.legLen);
-    const ll = makeLimb(0.2, RIG.hipY, RIG.legLen);
+    const ar = makeLimb(-0.255, RIG.shoulderY + 0.08, true);
+    const al = makeLimb(0.255, RIG.shoulderY + 0.08, true);
+    const lr = makeLimb(-0.1, RIG.hipY, false);
+    const ll = makeLimb(0.1, RIG.hipY, false);
     this.shoulderR = ar.joint; this.shoulderL = al.joint;
     this.hipR = lr.joint; this.hipL = ll.joint;
     this.limbs = { handR: ar.tip, handL: al.tip, footR: lr.tip, footL: ll.tip };
@@ -180,17 +213,17 @@ export class Avatar {
       return o;
     };
     for (const [sh, s] of [[this.shoulderR, -1], [this.shoulderL, 1]]) {
-      gear(roundedBox(0.5, 0.16, 0.48, 0.05), steel, sh, s * 0.02, 0.27, 0, 0, 0, s * 0.18);
-      gear(roundedBox(0.52, 0.04, 0.5, 0.015), gold, sh, s * 0.02, 0.2, 0, 0, 0, s * 0.18);
+      gear(roundedBox(0.2, 0.08, 0.2, 0.035), steel, sh, s * 0.02, 0.03, 0, 0, 0, s * 0.3);
+      gear(roundedBox(0.21, 0.02, 0.21, 0.01), gold, sh, s * 0.02, -0.005, 0, 0, 0, s * 0.3);
     }
-    gear(roundedBox(0.84, 0.11, 0.44, 0.02), leather, this.body, 0, -0.14, 0);
-    gear(roundedBox(0.16, 0.12, 0.05, 0.015), gold, this.body, 0, -0.14, 0.215);
-    const emb = gear(new THREE.OctahedronGeometry(0.075, 0), new THREE.MeshStandardMaterial({ color: 0x3aa0ff, emissive: 0x2a7cff, emissiveIntensity: 2.5, roughness: 0.2 }), this.body, 0, 0.36, 0.205);
+    gear(roundedBox(0.4, 0.07, 0.25, 0.03), leather, this.body, 0, -0.1, 0);
+    gear(roundedBox(0.08, 0.07, 0.03, 0.01), gold, this.body, 0, -0.1, 0.125);
+    const emb = gear(new THREE.OctahedronGeometry(0.04, 0), new THREE.MeshStandardMaterial({ color: 0x3aa0ff, emissive: 0x2a7cff, emissiveIntensity: 2.5, roughness: 0.2 }), this.body, 0, 0.33, 0.135);
     emb.scale.set(1, 1.3, 0.35);
     this.emblem = emb;
     // 칼집: 왼쪽 허리, 뒤로 비스듬히 (칼날이 들어가는 방향 SDIR)
     const SDIR = new THREE.Vector3(0.12, -0.33, -0.94).normalize();
-    const mouth = new THREE.Vector3(0.47, -0.08, 0.2);
+    const mouth = new THREE.Vector3(0.2, -0.08, 0.12);
     const sc = new THREE.Group();
     sc.position.copy(mouth);
     sc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), SDIR);
