@@ -20,6 +20,8 @@ import * as geoMod from './geo.js';
 import { loadGeo } from './geo.js';
 import { Blade } from './blade.js';
 import { Underground, layerName } from './underground.js';
+import { Cape } from './cape.js';
+import { Nukes } from './nuke.js';
 import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
 import { TARGETS } from './player.js';
 
@@ -123,6 +125,17 @@ const game = {
 const player = new Player(scene, game);
 player.avatar.setEnv(city.envMap);
 const blade = new Blade(scene, game, player);
+const cape = new Cape(scene, player.avatar);
+game.player = player; game.trees = trees;
+const nukes = new Nukes(scene, game);
+// 핵 발사: 칼(가슴) 위에서 조준점 (카메라 시선이 처음 닿는 건물/땅, 없으면 3 km 앞) 으로
+function fireNuke() {
+  if (player.hidden || earthGone || player.mode === 'dig') return;
+  blade._aim(rig);
+  const from = new THREE.Vector3(player.pos.x + origin.x, player.pos.y + origin.y + 2.5, player.pos.z + origin.z);
+  nukes.launch(from, blade.aimAbs, player.vel);
+}
+$('btn-nuke')?.addEventListener('click', fireNuke);
 player.blade = blade;
 // 스폰: 한강 북쪽 둔치 공원
 function spawn() {
@@ -143,7 +156,7 @@ spawn();
 function resetWorld() {
   cosmic.reset();
   wreck.reset();
-  blade.reset();
+  blade.reset(); nukes.reset();
   city.restoreAll();
   earthGone = false;
   cineMode = false;
@@ -367,6 +380,7 @@ function frame(now) {
 
   input.poll(dt);
   if (input.consume('view')) toggleView();
+  if (input.consume('nuke')) fireNuke();
   let simDt = dt * timeScale;
   // 디버그(테스트 하네스): 일시정지 후 정확한 시간만큼 진행
   if (dbg.paused) { simDt = dbg.pending; dbg.pending = 0; dt = simDt; }
@@ -385,6 +399,7 @@ function frame(now) {
   player.interpolate(acc / STEP);
   player.updateVisual(dt);
   blade.render(dt, camera);
+  cape.update(dt, player.vel, !rig.firstPerson && !player.hidden && player.mode !== 'dig');
 
   elapsed.t += dt;
   rig.inWater = player.mode === 'swim';
@@ -407,6 +422,7 @@ function frame(now) {
   under.update(dt, camera, camAbs, camDepth, player.vel);
   if (camDepth > 0.3) { world.sun.intensity *= 0.06; world.hemi.intensity *= 0.25; }
   cosmic.update(dt, camAbs);
+  nukes.update(dbg.paused ? dt : dt * timeScale, camAbs);
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
   audio.update(dt, player.audioState);
 
@@ -447,7 +463,7 @@ function frame(now) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);
-window.__game = { player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
+window.__game = { nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;

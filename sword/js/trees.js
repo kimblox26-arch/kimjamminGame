@@ -94,6 +94,7 @@ vec3 transformed = vec3(position);
 }
 `;
 
+const _ax = new THREE.Vector3(), _qt = new THREE.Quaternion();
 export class Trees {
   constructor(renderer, scene, opts = {}) {
     const low = opts.quality === 'low';
@@ -131,6 +132,10 @@ export class Trees {
     this.footprint = opts.footprint || null;   // (x,z) → 건물 지붕 높이 (-Inf = 없음)
     onRebase(() => { this.dirty = true; });
   }
+
+  /** 폭풍 구역 (절대 x,z): 충격파 front 가 지나간 곳 중 burn 안은 사라지고, flat 안은 바깥으로 쓰러짐 */
+  addBlast(x, z, burn, flat) { const Z = { x, z, burn, flat, front: 0 }; (this.zones || (this.zones = [])).push(Z); return Z; }
+  setFront(Z, r) { if (Z.front < Z.flat && (r - Z.front > 40 || r >= Z.flat)) { Z.front = Math.min(r, Z.flat); this.dirty = true; } }
 
   setRadius(r) { if (r !== this.radius) { this.radius = r; this.cx = 1e9; } }
 
@@ -208,6 +213,18 @@ export class Trees {
         const mesh = kind === 0 ? mc : mb;
         if (cnt[kind] >= this.max) continue;
         Q.setFromAxisAngle(up, c[o + 4]);
+        if (this.zones) {
+          let tilt = 0, gone = false;
+          for (const Z of this.zones) {
+            const dx = c[o] - Z.x, dz = c[o + 2] - Z.z, d = Math.hypot(dx, dz);
+            if (d > Z.front) continue;
+            if (d < Z.burn) { gone = true; break; }
+            const k = 1 - (d - Z.burn) / (Z.flat - Z.burn), tl = Math.min(1.45, 0.25 + 1.5 * k);
+            if (tl > tilt) { tilt = tl; _ax.set(dz / d, 0, -dx / d); }
+          }
+          if (gone) continue;
+          if (tilt) Q.premultiply(_qt.setFromAxisAngle(_ax, tilt));   // 폭심 반대쪽으로 쓰러짐
+        }
         const h = c[o + 3], w = kind === 0 ? h * 0.9 : h * (0.95 + 0.25 * ((c[o + 4] * 7.13) % 1));
         S.set(w, h, w);
         V.set(c[o] - origin.x, c[o + 1] - origin.y, c[o + 2] - origin.z);

@@ -12,6 +12,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
 const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+const easeInOut = (p) => p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
 
 const _v = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
 const _e = new THREE.Vector3(), _f = new THREE.Vector3(), _g = new THREE.Vector3(), _h = new THREE.Vector3();
@@ -31,12 +32,17 @@ function armQuat(a, b, out) {
   return out.setFromRotationMatrix(_m);
 }
 
-// 3단 콤보 + 검기 (팔 방향 시작/끝 [az, el] °, 휘두르기·준비·회수 시간)
+// 4단 콤보 + 발도/납도/돌진 베기/검기 (팔 방향 시작/끝 [az, el] °, 휘두르기·준비·회수 시간)
+//  spin: 몸이 한 바퀴 돌며 주위를 모두 벰, slam: 뛰어올라 내려찍어 땅에 충격파
 const SLASH = [
-  { a0: [-125, 14], a1: [80, -4], sw: 0.15, tw: 0.06, tr: 0.24 },
-  { a0: [72, 58], a1: [-98, -28], sw: 0.14, tw: 0.06, tr: 0.24 },
-  { a0: [-12, 128], a1: [-6, -58], sw: 0.16, tw: 0.09, tr: 0.32 },
+  { a0: [-125, 14], a1: [80, -4], sw: 0.14, tw: 0.07, tr: 0.24 },
+  { a0: [72, 58], a1: [-98, -28], sw: 0.13, tw: 0.06, tr: 0.24 },
+  { a0: [-95, 6], a1: [-95, 2], sw: 0.34, tw: 0.08, tr: 0.26, spin: 1 },
+  { a0: [-12, 135], a1: [-6, -62], sw: 0.15, tw: 0.2, tr: 0.36, slam: 1 },
 ];
+const DRAW = { a0: [58, -30], a1: [-118, 12], sw: 0.12, tw: 0.14, tr: 0.3, draw: 1 };     // 발도: 왼쪽 허리에서 뽑으며 벰
+const SHEATHE = { a0: [40, -40], a1: [40, -40], sw: 0.01, tw: 0.3, tr: 0.25, sheathe: 1 };  // 납도
+const DASH = { a0: [-70, 18], a1: [75, -8], sw: 0.12, tw: 0.05, tr: 0.26, dash: 1 };      // 돌진 베기
 const WAVE = { a0: [-150, 22], a1: [100, 4], sw: 0.13, tw: 0.2, tr: 0.32 };
 
 // ── 검 모델 ──
@@ -88,20 +94,48 @@ void main() {
   gl_FragColor = vec4(uColor * a, 1.0);
 }`;
 
+// 날 가운데 새겨진 문양: 기를 모으면 흐르듯 빛남
+const RUNE_FS = /* glsl */`
+uniform vec3 uColor; uniform float uI; uniform float uTime;
+varying vec2 vUv;
+void main() {
+  float g = 1.0 - smoothstep(0.15, 0.5, abs(vUv.x - 0.5));
+  float flow = 0.55 + 0.45 * sin(vUv.y * 46.0 - uTime * 9.0);
+  float glyph = step(0.55, fract(vUv.y * 23.0 + sin(floor(vUv.y * 23.0) * 7.1) * 0.3));
+  float a = uI * g * (0.35 + 0.65 * flow) * (0.6 + 0.4 * glyph) * smoothstep(0.0, 0.05, vUv.y) * (1.0 - smoothstep(0.9, 1.0, vUv.y));
+  gl_FragColor = vec4(uColor * a, 1.0);
+}`;
+const RUNE_VS = /* glsl */`
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+
 export function makeSword(envMap) {
   const pivot = new THREE.Group();
   pivot.name = 'sword';
-  const len = 1.38;
-  const blade = new THREE.Mesh(bladeGeometry(len, 0.1, 0.026), new THREE.MeshPhysicalMaterial({
-    color: 0xe9eef4, metalness: 1, roughness: 0.14, envMap, envMapIntensity: 1.4, clearcoat: 1, clearcoatRoughness: 0.06,
+  const len = 1.5;
+  const blade = new THREE.Mesh(bladeGeometry(len, 0.11, 0.028), new THREE.MeshPhysicalMaterial({
+    color: 0xe3ebf4, metalness: 1, roughness: 0.12, envMap, envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.05,
     emissive: 0x000000,
   }));
-  const gold = new THREE.MeshStandardMaterial({ color: 0xc9a052, metalness: 1, roughness: 0.28, envMap, envMapIntensity: 1.1 });
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.045, 0.08), gold);
-  guard.position.y = 0.145;
-  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.031, 0.27, 10), new THREE.MeshStandardMaterial({ color: 0x24180f, roughness: 0.85 }));
-  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), gold);
-  pommel.position.y = -0.155;
+  const gold = new THREE.MeshPhysicalMaterial({ color: 0xd2a650, metalness: 1, roughness: 0.25, envMap, envMapIntensity: 1.2, clearcoat: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1c130c, roughness: 0.85 });
+  const gemMat = new THREE.MeshStandardMaterial({ color: 0x3aa8ff, emissive: 0x2a88ff, emissiveIntensity: 2.2, roughness: 0.15, metalness: 0.2 });
+  // 코등이: 날 쪽으로 휜 두 갈래 + 가운데 보석
+  const qc = new THREE.CatmullRomCurve3([new THREE.Vector3(-0.23, 0.215, 0), new THREE.Vector3(-0.12, 0.155, 0), new THREE.Vector3(0, 0.14, 0), new THREE.Vector3(0.12, 0.155, 0), new THREE.Vector3(0.23, 0.215, 0)]);
+  const guard = new THREE.Mesh(new THREE.TubeGeometry(qc, 24, 0.02, 8, false), gold);
+  const guardC = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.07), gold);
+  guardC.position.y = 0.15;
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.03, 0), gemMat);
+  gem.position.set(0, 0.15, 0.038); gem.scale.set(1, 1.3, 0.5);
+  const gem2 = gem.clone(); gem2.position.z = -0.038;
+  for (const e of [-0.235, 0.235]) { const k = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), gold); k.position.set(e, 0.22, 0); pivot.add(k); }
+  // 손잡이: 가죽 + 감개 고리
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.031, 0.27, 12), dark);
+  for (let i = 0; i < 6; i++) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.031, 0.006, 6, 16), dark); r.rotation.x = Math.PI / 2; r.position.y = -0.11 + i * 0.045; pivot.add(r); }
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.048, 14, 10), gold);
+  pommel.position.y = -0.16;
+  const pgem = new THREE.Mesh(new THREE.OctahedronGeometry(0.022, 0), gemMat);
+  pgem.position.y = -0.2;
   const glowMat = new THREE.ShaderMaterial({
     uniforms: { uColor: { value: ENERGY.clone() }, uI: { value: 0 }, uTime: { value: 0 } },
     vertexShader: GLOW_VS, fragmentShader: GLOW_FS,
@@ -110,15 +144,29 @@ export function makeSword(envMap) {
   const glow = new THREE.Mesh(blade.geometry, glowMat);
   glow.scale.set(2.6, 1.03, 5);
   glow.visible = false;
-  for (const m of [blade, guard, grip, pommel]) { m.castShadow = true; pivot.add(m); }
+  // 문양 띠 (날 양면)
+  const runeMat = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: ENERGY.clone() }, uI: { value: 0.35 }, uTime: { value: 0 } },
+    vertexShader: RUNE_VS, fragmentShader: RUNE_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  for (const sz of [1, -1]) {
+    const r = new THREE.Mesh(new THREE.PlaneGeometry(0.018, len * 0.78), runeMat);
+    r.position.set(0, 0.17 + len * 0.42, sz * 0.0145);
+    if (sz < 0) r.rotation.y = Math.PI;
+    pivot.add(r);
+  }
+  for (const m of [blade, guard, guardC, gem, gem2, grip, pommel, pgem]) { m.castShadow = true; pivot.add(m); }
   pivot.add(glow);
   // 손 좌표계: 팔 = -Y, 손등 앞 = +Z. 날은 손에서 앞·아래로 (0.6a + 0.8b), 날의 폭은 휘두르는 쪽
   _g.set(0, -0.6, 0.8); _e.set(0, 0.8, 0.6); _h.crossVectors(_e, _g);
-  pivot.quaternion.setFromRotationMatrix(_m.makeBasis(_e, _g, _h));
+  const handQ = new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(_e, _g, _h));
+  pivot.quaternion.copy(handQ);
   pivot.position.set(0, 0.02, 0.02);
   const tip = new THREE.Object3D(); tip.position.y = 0.17 + len; pivot.add(tip);
   const base = new THREE.Object3D(); base.position.y = 0.3; pivot.add(base);
-  return { pivot, blade, glow, glowMat, tip, base, len };
+  const tip2 = new THREE.Object3D(); tip2.position.y = 0.17 + len + 0.45; pivot.add(tip2);
+  const base2 = new THREE.Object3D(); base2.position.y = 0.6; pivot.add(base2);
+  return { pivot, blade, glow, glowMat, runeMat, tip, base, tip2, base2, len, handQ };
 }
 
 // ── 칼끝 궤적 리본 ──
@@ -291,8 +339,12 @@ export class Blade {
   constructor(scene, game, player) {
     this.scene = scene; this.game = game; this.player = player;
     this.sword = makeSword(game.envMap || null);
-    player.avatar.limbs.handR.add(this.sword.pivot);
+    this.drawn = false;      // 처음엔 왼쪽 허리 칼집에
+    this._toSheath();
+    this.idleT = 0;
     this.trail = new Trail(scene);
+    this.trail2 = new Trail(scene);      // 넓고 흐린 바깥 빛
+    this.trail2.mat.uniforms.uI.value = 0.45;
     this.arcs = [];
     for (let i = 0; i < 6; i++) this.arcs.push({ mesh: makeArc(scene), t: 9, life: 0.3, kind: 'slash' });
     this.waves = [];
@@ -319,6 +371,20 @@ export class Blade {
 
   get busy() { return !!this.atk || this.charging || !!this.beam; }
 
+  // 칼을 손으로 / 칼집으로 옮김
+  _toHand() {
+    const S = this.sword, h = this.player.avatar.limbs.handR;
+    h.add(S.pivot);
+    S.pivot.position.set(0, 0.02, 0.02); S.pivot.quaternion.copy(S.handQ);
+    this.drawn = true;
+  }
+  _toSheath() {
+    const S = this.sword;
+    this.player.avatar.sheathSocket.add(S.pivot);
+    S.pivot.position.set(0, 0, 0); S.pivot.quaternion.identity();
+    this.drawn = false;
+  }
+
   // ───────── 고정 스텝: 입력 → 상태 ─────────
   step(dt, input, cam) {
     const P = this.player, I = input.state;
@@ -336,27 +402,38 @@ export class Blade {
     else {
       // 베기 / 검기 (공격 중 누르면 다음 콤보로 예약)
       if (wantSlash) { if (this.atk) this.queued = true; else this._startSlash(); }
-      if (wantWave && !this.atk && this.waveCool <= 0 && !this.beam) this._start(WAVE, 'wave');
+      if (wantWave && !this.atk && this.waveCool <= 0 && !this.beam) { if (!this.drawn) this._toHand(); this._start(WAVE, 'wave'); }
       // 빔: 누르는 동안 기 모으기 → 놓으면 발사
       if (I.beam && !this.atk && !this.beam && this.beamCool <= 0) {
+        if (!this.drawn) this._toHand();
         if (!this.charging) { this.charging = true; this.charge = 0; this.game.audio.play('charge', 1); }
         this.charge = Math.min(1.6, this.charge + dt);
         if (this.charge >= 1.6) this._fire();
       } else if (this.charging) this._fire();
     }
+    // 한동안 싸우지 않으면 칼을 칼집에 넣음
+    this.idleT = this.busy ? 0 : this.idleT + dt;
+    if (can && this.drawn && this.idleT > 7 && !this.atk && P.mode !== 'fly') this._start(SHEATHE, 'sheathe');
     // 공격 진행
     const A = this.atk;
     let wT = 0;
     if (A) {
       A.t += dt;
       const d = A.def, tSw = A.t - d.tw;
-      if (tSw >= d.sw * 0.45 && !A.hit) { A.hit = true; A.kind === 'wave' ? this._launchWave() : this._slashHit(A); }
-      if (tSw >= d.sw && this.queued && A.kind === 'slash') { this.queued = false; this._startSlash(); }
+      if (d.draw && tSw >= 0 && !this.drawn) { this._toHand(); this.game.audio.play('clang', 0.35); }
+      if (d.sheathe && tSw >= 0 && this.drawn) { this._toSheath(); this.game.audio.play('clang', 0.3); }
+      if (tSw >= d.sw * 0.45 && !A.hit && !d.sheathe) { A.hit = true; A.kind === 'wave' ? this._launchWave() : this._slashHit(A); }
+      if (tSw >= d.sw && this.queued && A.kind === 'slash' && !d.sheathe) { this.queued = false; this._startSlash(); }
       else if (tSw >= d.sw + d.tr) { this.atk = null; }
       wT = A === this.atk ? (A.t < d.tw ? smooth(0, d.tw, A.t) : tSw < d.sw ? 1 : 1 - smooth(d.sw, d.sw + d.tr, tSw)) : 0;
     }
     if (this.charging || this.beam) wT = 1;
     this.w = this.charging || this.beam || this.atk ? Math.max(wT, lerp(this.w, wT, 1 - Math.exp(-30 * dt))) : lerp(this.w, 0, 1 - Math.exp(-12 * dt));
+    // 내려찍기: 땅에 닿으면 충격파 (0.6 s 안에 못 닿으면 취소)
+    if (this.slamPending > 0) {
+      this.slamPending -= dt;
+      if (P.mode === 'ground' && P.vel.y > -1) { this.slamPending = 0; this._slamLand(); }
+    }
     // 빔 진행
     if (this.beam) this._stepBeam(dt);
     // 검기 비행
@@ -368,6 +445,11 @@ export class Blade {
 
   _startSlash() {
     if (this.cool > 0) return;
+    const P = this.player;
+    // 칼집에 있으면 뽑으면서 베기 (발도술)
+    if (!this.drawn) { this.combo = 1; this.comboT = 0.9; this._start(DRAW, 'slash', 0); return; }
+    // 달리거나 빠르게 날면 돌진 베기
+    if ((P.mode === 'ground' && P.sprinting) || (P.mode === 'fly' && P.speed > 25 && P.speed < 400)) { this.combo = 0; this._start(DASH, 'slash', 0); return; }
     const idx = this.combo % SLASH.length;
     this.combo++; this.comboT = 0.9;
     this._start(SLASH[idx], 'slash', idx);
@@ -377,10 +459,21 @@ export class Blade {
     this.atk = { def, kind, idx, t: 0, hit: false };
     this.cool = 0.05;
     if (kind === 'wave') this.waveCool = 0.7;
-    // 조준 쪽으로 몸을 돌리고 살짝 내딛기
+    if (def.sheathe) return;
+    // 조준 쪽으로 몸을 돌리고 내딛기
     P.heading = Math.atan2(this.aimDir.x, this.aimDir.z);
-    if (P.mode === 'ground') P.dash.addScaledVector(_v.set(Math.sin(P.heading), 0, Math.cos(P.heading)), kind === 'wave' ? 5 : 3.2);
-    this.game.audio.play('slash', kind === 'wave' ? 1 : 0.75);
+    _v.set(Math.sin(P.heading), 0, Math.cos(P.heading));
+    if (P.mode === 'ground') P.dash.addScaledVector(_v, kind === 'wave' ? 5 : def.slam ? 2 : 3.6);
+    if (def.dash) {
+      // 돌진: 순식간에 앞으로 (지상 약 14 m, 비행 중엔 더 멀리)
+      if (P.mode === 'ground') P.dash.addScaledVector(_v, 34);
+      else P.vel.addScaledVector(this.aimDir, 45);
+      this.dashFrom = new THREE.Vector3(P.pos.x + origin.x, P.pos.y + origin.y + 0.4, P.pos.z + origin.z);
+      if (this.game.fx.dash) this.game.fx.dash(P.pos, _v);
+    }
+    if (def.slam && P.mode === 'ground') P.jump(9.5, 0.7);
+    this.game.audio.play('slash', kind === 'wave' || def.dash || def.slam ? 1 : 0.8);
+    this.game.hooks.fovKick && this.game.hooks.fovKick(def.dash ? 7 : 3);
     // 초승달 잔상
     const arc = this.arcs.find((a) => a.t > a.life) || this.arcs[0];
     arc.def = def; arc.t = -def.tw; arc.life = def.sw + 0.22; arc.kind = kind;
@@ -450,36 +543,101 @@ export class Blade {
   // 베기 판정: 칼이 지나가는 부채꼴 안의 건물 → 그 높이에서 잘림 (잘린 윗부분이 베는 방향으로 미끄러짐)
   _slashHit(A) {
     const P = this.player, C = this.game.city, W = this.game.wreck;
-    const d = A.def;
+    const d = A.def, fx = this.game.fx, H = this.game.hooks;
     _q2.setFromAxisAngle(Y, P.heading);
-    let hitAny = false;
+    // 휘두를 때마다 칼끝에서 터지는 검풍
+    _v.set(Math.sin(P.heading), 0, Math.cos(P.heading));
+    _c.copy(P.pos).addScaledVector(_v, 2.2); _c.y += 0.4;
+    if (fx.energyBurst) fx.energyBurst(_c, d.spin || d.dash ? 1.4 : 0.9, 1.1, 1.5, 2.4, !!(d.spin || d.dash));
+    if (d.slam) return this._slam();
+    if (d.dash) this._dashCut();
+    let hitAny = false, maxHit = d.spin ? 4 : 1;
     const seen = new Set();
-    for (let k = 0; k <= 8 && !hitAny; k++) {
-      const s = k / 8;
-      dirAzEl(lerp(d.a0[0], d.a1[0], s), lerp(d.a0[1], d.a1[1], s), _a).applyQuaternion(_q2);
-      for (const r of [1.6, 2.6, 3.6, 4.6]) {
+    const N = d.spin ? 24 : 8;
+    for (let k = 0; k <= N && hitAny < maxHit; k++) {
+      const s = k / N;
+      // 회전 베기는 몸이 한 바퀴 돌며 주위 360° 를 벰
+      if (d.spin) dirAzEl(d.a0[0] + 360 * s, 4, _a).applyQuaternion(_q2);
+      else dirAzEl(lerp(d.a0[0], d.a1[0], s), lerp(d.a0[1], d.a1[1], s), _a).applyQuaternion(_q2);
+      for (const r of d.spin ? [1.6, 2.8, 4.0, 5.2] : [1.6, 2.6, 3.6, 4.6]) {
         const x = P.pos.x + origin.x + _a.x * r, y = P.pos.y + origin.y + 0.4 + _a.y * r, z = P.pos.z + origin.z + _a.z * r;
         const id = C ? C.roofId(x, z) : -1;
         if (id < 0 || seen.has(id) || y > C.by[id] + C.bh[id] || y < C.by[id]) continue;
         seen.add(id);
-        hitAny = true;
+        hitAny++;
         // 휘두르는 방향 (접선)
-        dirAzEl(lerp(d.a0[0], d.a1[0], s + 0.05), lerp(d.a0[1], d.a1[1], s + 0.05), _b).applyQuaternion(_q2).sub(_a).normalize();
+        if (d.spin) _b.set(_a.z, 0, -_a.x).normalize();
+        else dirAzEl(lerp(d.a0[0], d.a1[0], s + 0.05), lerp(d.a0[1], d.a1[1], s + 0.05), _b).applyQuaternion(_q2).sub(_a).normalize();
         if (W && C.bh[id] > 14 && C.isDynamicable(id)) {
           _c.copy(_b).setY(0).multiplyScalar(5).addScaledVector(_v.set(Math.sin(P.heading), 0, Math.cos(P.heading)), 3);
           _d.set(0, (d.a1[0] - d.a0[0]) > 0 ? 0.25 : -0.25, 0).add(_e.set(_b.z, 0, -_b.x).multiplyScalar(0.12));
           W.cut(id, y, _c, _d);
         } else if (W) W.blast(id, x, y, z, _a.x, _a.y, _a.z, 1);
-        const fx = this.game.fx;
         _v.set(x - origin.x, y - origin.y, z - origin.z);
-        if (fx.sparks) fx.sparks(_v, _e.copy(_b).negate(), 40, 0.7, 26, 2.2, 1.6, 0.9, 0.06);
-        if (fx.energyBurst) fx.energyBurst(_v, 1.2, 1.0, 1.3, 2.0);
+        // 콘크리트를 가르는 불꽃 + 칼날 방향으로 뿜어지는 섬광
+        if (fx.sparks) { fx.sparks(_v, _e.copy(_b).negate(), 90, 0.8, 34, 2.4, 1.7, 0.9, 0.07); fx.sparks(_v, _b, 50, 0.35, 55, 1.4, 1.8, 2.6, 0.05); }
+        if (fx.energyBurst) fx.energyBurst(_v, 2.2, 1.0, 1.4, 2.4, true);
+        if (fx.dustCloud && Math.random() < 0.6) fx.dustCloud(x, y - 2, z, 6, 8);
         this.game.audio.play('clang', 1);
-        this.game.hooks.shake(0.35);
-        this.game.hitStop(0.07, 0.05);
+        H.shake(0.5); H.flash(0.15); H.shockwave && H.shockwave(_v, 0.25);
+        this.game.hitStop(0.09, 0.04);
         this.hits++;
         break;
       }
+    }
+  }
+  // 내려찍기: 땅에 닿는 순간 충격파 → 주변 건물이 바깥으로 쓰러지거나 부서짐
+  _slam() {
+    const P = this.player, C = this.game.city, W = this.game.wreck, fx = this.game.fx, H = this.game.hooks;
+    P.vel.y = Math.min(P.vel.y, -30);
+    this.slamPending = 0.6;
+  }
+  _slamLand() {
+    const P = this.player, C = this.game.city, W = this.game.wreck, fx = this.game.fx, H = this.game.hooks;
+    const ax = P.pos.x + origin.x, az = P.pos.z + origin.z;
+    const T = this.game.terrain, gy = T ? T.heightAt(ax, az) : P.pos.y + origin.y - 1;
+    _v.set(P.pos.x, gy - origin.y + 0.3, P.pos.z);
+    if (fx.impact) fx.impact(_v, 3e6, _e.set(0, 1, 0));
+    if (fx.energyBurst) fx.energyBurst(_v, 3.5, 1.0, 1.4, 2.6, true);
+    if (fx.dustCloud) fx.dustCloud(ax, gy, az, 18, 6);
+    H.shake(1); H.flash(0.35); H.fovKick(9); H.shockwave && H.shockwave(_v, 0.6);
+    this.game.audio.play('clang', 1);
+    this.game.hitStop(0.12, 0.03);
+    if (!C || !W) return;
+    // 16 m 안 건물: 가까우면 부서짐, 멀면 바깥쪽으로 쓰러짐
+    const seen = new Set();
+    for (let r = 4; r <= 16; r += 3) for (let k = 0; k < 16; k++) {
+      const a = k / 16 * Math.PI * 2, x = ax + Math.sin(a) * r, z = az + Math.cos(a) * r;
+      const id = C.roofId(x, z);
+      if (id < 0 || seen.has(id)) continue;
+      seen.add(id);
+      if (r < 9 || !C.isDynamicable(id) || C.bh[id] < 10) W.blast(id, x, gy + 1.5, z, Math.sin(a), 0.3, Math.cos(a), 1.5);
+      else W.topple(id, Math.sin(a), Math.cos(a), 1.2);
+    }
+  }
+  // 돌진 베기: 지나간 길 위의 건물 (최대 3채) 을 벰
+  _dashCut() {
+    const P = this.player, C = this.game.city, W = this.game.wreck, fx = this.game.fx;
+    if (!C || !W || !this.dashFrom) return;
+    const a = this.dashFrom;
+    _v.set(Math.sin(P.heading), 0, Math.cos(P.heading));
+    if (P.mode === 'fly') _v.copy(this.aimDir);
+    const L = P.mode === 'fly' ? 40 : 18;
+    let ax = a.x, ay = a.y, az = a.z;
+    const hit = this._hit || (this._hit = {});
+    for (let n = 0; n < 3 && L > 0; n++) {
+      if (!C.segmentHit(ax, ay, az, a.x + _v.x * L, a.y + _v.y * L, a.z + _v.z * L, hit) || hit.id === undefined || hit.id < 0) break;
+      const id = hit.id;
+      const hx = ax + (a.x + _v.x * L - ax) * hit.t, hy = ay + (a.y + _v.y * L - ay) * hit.t, hz = az + (a.z + _v.z * L - az) * hit.t;
+      if (C.bh[id] > 14 && C.isDynamicable(id)) W.cut(id, hy, _c.copy(_v).multiplyScalar(8), _d.set(0, 0.3, 0));
+      else W.blast(id, hx, hy, hz, _v.x, _v.y, _v.z, 1.3);
+      _e.set(hx - origin.x, hy - origin.y, hz - origin.z);
+      if (fx.sparks) fx.sparks(_e, _v, 120, 0.9, 40, 2.4, 1.7, 0.9, 0.08);
+      if (fx.energyBurst) fx.energyBurst(_e, 2.4, 1.0, 1.4, 2.4, true);
+      this.game.audio.play('clang', 1);
+      this.game.hooks.shake(0.6);
+      this.game.hitStop(0.1, 0.04);
+      ax = hx + _v.x * 0.5; ay = hy + _v.y * 0.5; az = hz + _v.z * 0.5;
     }
   }
 
@@ -647,13 +805,15 @@ export class Blade {
       if (_b.lengthSq() < 1e-8) _b.set(0, 1, 0).addScaledVector(_a, -_a.y);
       _b.normalize();
       az = lerp(d.a0[0], d.a1[0], p);
+      // 회전 베기: 팔은 옆으로 뻗은 채 몸이 한 바퀴
+      if (d.spin) { this.spinA = A.t < d.tw ? 0 : easeInOut(clamp((A.t - d.tw) / d.sw, 0, 1)) * Math.PI * 2; az = 0; }
     } else return;
     armQuat(_a, _b, this.armQ);
     av.shoulderR.quaternion.slerp(this.armQ, w);
     // 상체 비틀기 (팔을 따라)
     const tw = clamp(az * 0.35, -45, 45) * D2R * w;
     this.twist = tw;
-    av.body.quaternion.multiply(_q.setFromAxisAngle(Y, tw));
+    av.body.quaternion.multiply(_q.setFromAxisAngle(Y, tw + (this.atk && this.atk.def.spin ? this.spinA * w : 0)));
     // 왼팔은 균형 잡듯 반대로
     av.shoulderL.quaternion.slerp(_q2.setFromEuler(_euler.set(-0.6 * w, 0, -0.25 * w)), 0.5 * w);
   }
@@ -665,8 +825,16 @@ export class Blade {
     S.tip.getWorldPosition(this._tipW);
     S.base.getWorldPosition(this._baseW);
     const swinging = this.atk && this.atk.t >= this.atk.def.tw - 0.01;
-    if (swinging) this.trail.push(this._baseW, this._tipW, this.time);
-    this.trail.update(this.time, 0.16, this.atk && this.atk.kind === 'wave' ? 1 : this.energy);
+    if (swinging) {
+      this.trail.push(this._baseW, this._tipW, this.time);
+      S.tip2.getWorldPosition(_c); S.base2.getWorldPosition(_d);
+      this.trail2.push(_d, _c, this.time);
+    }
+    const tE = this.atk && (this.atk.kind === 'wave' || this.atk.def.spin || this.atk.def.dash || this.atk.def.slam) ? 1 : this.energy;
+    this.trail.update(this.time, 0.16, tE);
+    this.trail2.update(this.time, 0.22, tE);
+    // 룬: 기가 오를수록 밝게 맥동
+    if (S.runeMat) { S.runeMat.uniforms.uI.value = 0.35 + this.energy * 2.2 + (swinging ? 0.6 : 0); S.runeMat.uniforms.uTime.value = this.time; }
     // 날 빛
     const e = this.energy;
     S.glow.visible = e > 0.03;
@@ -742,7 +910,8 @@ export class Blade {
     this.atk = null; this.beam = null; this.charging = false;
     for (const w of this.waves) this._dropWave(w);
     this.waves.length = 0;
-    this.trail.clear();
+    this.trail.clear(); this.trail2.clear();
+    this.slamPending = 0;
   }
 }
 const _euler = new THREE.Euler(0, 0, 0, 'XZY');

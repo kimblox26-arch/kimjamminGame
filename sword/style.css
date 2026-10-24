@@ -30,11 +30,13 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #cfd9e6; c
 
 .mute.eco { top: 124px; }
 .mute.view { top: 164px; }
+.mute.nuke { top: 208px; color: #ffd23a; }
 .mute.on { background: rgba(255,214,90,.85); }
 body.touch .mute { top: auto; right: auto; left: 12px; }
 body.touch .mute { top: 52px; }
 body.touch .mute.eco { top: 92px; }
 body.touch .mute.view { top: 132px; }
+body.touch .mute.nuke { top: 172px; }
 
 .help { position: fixed; left: 18px; top: 52px; max-width: 360px; padding: 12px 14px; font-size: 13px; line-height: 1.65;
   background: rgba(255,255,255,.58); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 12px;

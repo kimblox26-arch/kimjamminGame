@@ -2721,3 +2721,41 @@ FX.prototype.splash = function (x, wy, z, s = 1, dir = null) {
   }
   this._hook('shake', Math.min(0.8, 0.15 + s * 0.3));
 };
+
+// 범용 입자 하나 (o 의 필드를 그대로 씀, 렌더 좌표) — pool: 'smoke' | 'glow', dust > 0 이면 먼지 색
+FX.prototype.puff = function (o, pool = 'smoke', dust = 0) {
+  const P = sp();
+  if (dust) this._dust(P, dust);
+  Object.assign(P, o);
+  this[pool].spawn(P);
+};
+
+// 핵폭발 순간 (렌더 좌표, pos = 지면 바로 위): 섬광, 지면을 달리는 충격파 고리, 윌슨 응결 구름, 먼지 해일, 파편
+//  Rf = 불덩이 반지름, Rb = 5 psi 반지름, hb = 폭발 높이 (지면 위)
+FX.prototype.nukeBlast = function (pos, Rf, Rb, hb = 0) {
+  const x = pos.x, gy = pos.y, z = pos.z;
+  const tFront = Rb / 343;
+  let Rg = rp();
+  Rg.x = x; Rg.y = gy + 2; Rg.z = z; Rg.R0 = Rf * 0.8; Rg.R1 = Rb * 1.1; Rg.rpow = 1.15; Rg.life = tFront;
+  Rg.r = 3; Rg.g = 3; Rg.b = 3.2; Rg.a = 0.8; Rg.w0 = 0.05; Rg.w1 = 0.02; Rg.add = 0.8; Rg.noise = 0.5; Rg.fin = 0.005; Rg.apow = 1.3;
+  this.rings.spawn(Rg);
+  Rg = this._ringDust(rp());
+  Rg.x = x; Rg.y = gy + 1; Rg.z = z; Rg.R0 = Rf; Rg.R1 = Rb * 1.05; Rg.rpow = 1.2; Rg.life = tFront * 1.6;
+  Rg.a = 0.85; Rg.w0 = 0.25; Rg.w1 = 0.12; Rg.noise = 0.9; Rg.fin = 0.01; Rg.apow = 1.1;
+  this.rings.spawn(Rg);
+  // 윌슨 응결 돔: 충격파 뒤 습기가 순간 응결된 흰 반구 (1~3 초)
+  const H = hp();
+  H.x = x; H.y = gy + hb; H.z = z; H.R0 = Rf * 1.2; H.R1 = Rf * 5; H.rpow = 1.6; H.life = 2.6;
+  H.r = 1.4; H.g = 1.42; H.b = 1.5; H.a = 0.55; H.fres = 2.4; H.add = 0.3; H.noise = 0.9; H.apow = 1.4;
+  this.shells.spawn(H);
+  // 지면을 덮는 먼지 해일 (기둥 아래 치마)
+  this._groundBurstAt(x, gy, z, Math.round(70 * this.q) + 10, Rf * 0.4, Rf * 1.2, 90, 220, Rf * 0.35, Rf * 1.1, 12, 30);
+  // 파편
+  const nD = this.quality === 'high' ? 90 : 35;
+  for (let i = 0; i < nD; i++) {
+    const a = Math.random() * TAU, s = rnd(80, 380);
+    this.debris.spawn(x + Math.cos(a) * Rf * 0.5, gy + 2 + Math.random() * 20, z + Math.sin(a) * Rf * 0.5,
+      Math.cos(a) * s, s * rnd(0.2, 0.7), Math.sin(a) * s, rnd(1, 6), rnd(6, 12));
+  }
+  this._flashLight(x, gy + Rf, z, 6000, 2.5, 1.0, 0.85, 0.62);
+};

@@ -3,7 +3,7 @@ const KEYMAP = {
   KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
   Space: 'up', KeyC: 'down', ShiftLeft: 'boost', ShiftRight: 'boost', KeyZ: 'slow', KeyK: 'beam',
 };
-const EDGE = { Space: 'jump', KeyF: 'fly', KeyQ: 'rollL', KeyE: 'rollR', KeyR: 'flip', KeyX: 'lock', KeyT: 'target', KeyG: 'auto', KeyV: 'view', KeyJ: 'slash', KeyL: 'wave' };
+const EDGE = { Space: 'jump', KeyF: 'fly', KeyQ: 'rollL', KeyE: 'rollR', KeyR: 'flip', KeyX: 'lock', KeyT: 'target', KeyG: 'auto', KeyV: 'view', KeyJ: 'slash', KeyL: 'wave', KeyN: 'nuke' };
 
 export class Input {
   constructor(canvas, ui) {

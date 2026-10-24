@@ -94,7 +94,10 @@ function faceTexture() {
 }
 
 export class Avatar {
-  setEnv(envMap) { this.material.envMap = envMap; this.material.needsUpdate = true; }
+  setEnv(envMap) {
+    this.material.envMap = envMap; this.material.needsUpdate = true;
+    for (const m of this.gearMats || []) { m.envMap = envMap; m.needsUpdate = true; }
+  }
   constructor() {
     // 로블록스 플라스틱: 살짝 매끈한 흰색
     // 클리어코트: 플라스틱 위에 얇은 광택층 → 하늘·태양이 몸에 비침
@@ -164,6 +167,42 @@ export class Avatar {
     this.shoulderR = ar.joint; this.shoulderL = al.joint;
     this.hipR = lr.joint; this.hipL = ll.joint;
     this.limbs = { handR: ar.tip, handL: al.tip, footR: lr.tip, footL: ll.tip };
+
+    // ── 장비: 어깨 갑옷, 허리띠, 가슴 문장, 왼쪽 허리의 칼집 ──
+    const gold = new THREE.MeshPhysicalMaterial({ color: 0xc9a052, metalness: 1, roughness: 0.3, clearcoat: 0.6 });
+    const steel = new THREE.MeshPhysicalMaterial({ color: 0x9aa3ad, metalness: 1, roughness: 0.32, clearcoat: 0.4 });
+    const leather = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.8 });
+    this.gearMats = [gold, steel];
+    const gear = (geo, mat, parent, x, y, z, rx = 0, ry = 0, rz = 0) => {
+      const o = new THREE.Mesh(geo, mat);
+      o.position.set(x, y, z); o.rotation.set(rx, ry, rz);
+      o.castShadow = true; parent.add(o);
+      return o;
+    };
+    for (const [sh, s] of [[this.shoulderR, -1], [this.shoulderL, 1]]) {
+      gear(roundedBox(0.5, 0.16, 0.48, 0.05), steel, sh, s * 0.02, 0.27, 0, 0, 0, s * 0.18);
+      gear(roundedBox(0.52, 0.04, 0.5, 0.015), gold, sh, s * 0.02, 0.2, 0, 0, 0, s * 0.18);
+    }
+    gear(roundedBox(0.84, 0.11, 0.44, 0.02), leather, this.body, 0, -0.14, 0);
+    gear(roundedBox(0.16, 0.12, 0.05, 0.015), gold, this.body, 0, -0.14, 0.215);
+    const emb = gear(new THREE.OctahedronGeometry(0.075, 0), new THREE.MeshStandardMaterial({ color: 0x3aa0ff, emissive: 0x2a7cff, emissiveIntensity: 2.5, roughness: 0.2 }), this.body, 0, 0.36, 0.205);
+    emb.scale.set(1, 1.3, 0.35);
+    this.emblem = emb;
+    // 칼집: 왼쪽 허리, 뒤로 비스듬히 (칼날이 들어가는 방향 SDIR)
+    const SDIR = new THREE.Vector3(0.12, -0.33, -0.94).normalize();
+    const mouth = new THREE.Vector3(0.47, -0.08, 0.2);
+    const sc = new THREE.Group();
+    sc.position.copy(mouth);
+    sc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), SDIR);
+    this.body.add(sc);
+    gear(new THREE.BoxGeometry(0.11, 1.42, 0.045), new THREE.MeshPhysicalMaterial({ color: 0x14141c, roughness: 0.35, clearcoat: 1 }), sc, 0, 0.73, 0);
+    gear(new THREE.BoxGeometry(0.125, 0.06, 0.06), gold, sc, 0, 0.04, 0);
+    gear(new THREE.BoxGeometry(0.125, 0.08, 0.06), gold, sc, 0, 1.42, 0);
+    this.scabbard = sc;
+    // 칼이 칼집에 있을 때의 자리: 손잡이는 입구 앞, 날은 칼집 안 (칼 로컬 +Y = 날)
+    this.sheathSocket = new THREE.Object3D();
+    this.sheathSocket.position.set(0, -0.2, 0);
+    sc.add(this.sheathSocket);
 
     // 보간 대상 (고정 120Hz 시뮬레이션 ↔ 렌더 프레임)
     this.joints = [this.neck, this.shoulderR, this.shoulderL, this.hipR, this.hipL];

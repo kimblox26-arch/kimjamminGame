@@ -25,12 +25,14 @@ const RULES = {
   charge: [0.3, 1, 3],
   beam: [0.2, 2, 5],
   splash: [0.1, 3, 3],
+  nuke: [0.5, 2, 4],
+  launch: [0.3, 2, 3],
 };
 
 // 원샷 출력 레벨 (튜닝용)
 const LEVEL = {
   step: 1, jump: 1, land: 1, dash: 1, roll: 1, flip: 1, brake: 1,
-  takeoff: 1, boost: 1, heroLand: 1, sonicBoom: 1, slash: 1, clang: 0.8, charge: 0.8, beam: 1, splash: 1,
+  takeoff: 1, boost: 1, heroLand: 1, sonicBoom: 1, slash: 1, clang: 0.8, charge: 0.8, beam: 1, splash: 1, nuke: 1, launch: 0.8,
 };
 
 // 연속 레이어 믹스 (튜닝용)
@@ -629,6 +631,8 @@ export class GameAudio {
         case 'charge': this._charge(st, pn, t); break;
         case 'beam': this._beam(st, pn, t); break;
         case 'splash': this._splash(st, pn, t); break;
+        case 'nuke': this._nuke(st, pn, t); break;
+        case 'launch': this._launch(st, pn, t); break;
         default: break;
       }
     } catch (e) { /* noop */ }
@@ -840,6 +844,36 @@ export class GameAudio {
   }
 
   // 슈퍼히어로 착지: 서브베이스 드롭 + 크런치 + 거대한 쿵 꼬리 + 튀는 파편
+  // 핵폭발: 날카로운 충격파 → 땅을 울리는 긴 굉음 (s 가 작으면 = 멀면 고음이 먼저 사라짐)
+  _nuke(s, pan, t) {
+    const B = this._B, k = 0.55 + 0.45 * s;
+    const v = this._v('nuke', t, 15, 0.25, pan);
+    const sub = this._tone(v, 'sine', t, 7, 52, 17, 1.2);
+    const sg = this._g(); this._env(sg.gain, t, 0.01, 1.0 * k, 6.5); this._chain(sub, sg, v.out);
+    const cr = this._noise(v, B.white, t, 1.6, 1);
+    const f0 = 300 + 3200 * s;
+    const cf = this._bq('lowpass', f0, 0.7); this._sweep(cf.frequency, t, f0, 180, 1.4);
+    const csh = this.ctx.createWaveShaper(); csh.curve = _crunch;
+    const cpre = this.ctx.createGain(); cpre.gain.value = 3;
+    const cg = this._g(); this._env(cg.gain, t, 0.002, 0.8 * k, 1.3);
+    this._chain(cr, cf, cpre, csh, cg, v.out);
+    const tl = this._noise(v, B.brown, t, 14, 1);
+    const tf = this._bq('lowpass', 340, 0.8); this._sweep(tf.frequency, t, 340, 55, 13);
+    const tg = this._g(); this._env(tg.gain, t, 0.1, 3.2 * k, 13.5);
+    this._chain(tl, tf, tg, v.out);
+  }
+  // 미사일 점화: 쉬익 하는 분사음
+  _launch(s, pan, t) {
+    const B = this._B;
+    const v = this._v('launch', t, 3, 0.2, pan);
+    const n = this._noise(v, B.white, t, 2.8, 1);
+    const f = this._bq('bandpass', 900, 0.6); this._sweep(f.frequency, t, 600, 2400, 2.5);
+    const g = this._g(); this._env(g.gain, t, 0.05, 0.9 * s, 2.6);
+    this._chain(n, f, g, v.out);
+    const lo = this._noise(v, B.brown, t, 2.8, 1);
+    const lf = this._bq('lowpass', 200, 0.7), lg = this._g(); this._env(lg.gain, t, 0.03, 1.4 * s, 2.5);
+    this._chain(lo, lf, lg, v.out);
+  }
   _heroLand(s, pan, t) {
     const B = this._B, k = 0.55 + 0.45 * s;
     const v = this._v('heroLand', t, 3.6, 0.32, pan);
