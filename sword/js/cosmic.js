@@ -357,13 +357,13 @@ export class Cosmic {
     this.hooks.shake && this.hooks.shake(1);
   }
 
-  supernova() {
-    if (this.active && this.kind === 'nova') return;
+  supernova(name = 'sun') {
+    if (this.active && this.kind === 'nova' && this.body === name) return;
     this.reset(false);
-    const b = this.space.bodies.sun;
+    const b = this.space.bodies[name] || this.space.bodies.sun;
     this.active = true;
     this.kind = 'nova';
-    this.body = 'sun';
+    this.body = name;
     this.t = 0;
     this.boomed = false;
     this.doneFired = false;
@@ -418,7 +418,7 @@ export class Cosmic {
   }
 
   _planet(dt, t, R) {
-    const TB = 3.8;                      // 폭발 시각
+    const TB = 0;                        // 연출 없이 즉시 부서짐
     const bodyG = this.space.bodies[this.body].group;
     // 섬광: 충돌 지점
     this.flash.position.copy(this.impactN).multiplyScalar(R * 1.01);
@@ -473,9 +473,9 @@ export class Cosmic {
   }
 
   _nova(dt, t, R) {
-    const sunG = this.space.bodies.sun.group;
-    const su = this.space.sunUniforms;
-    const T1 = 2.2, T2 = 3.2;            // 붕괴 시작, 폭발
+    const sunG = this.space.bodies[this.body].group;
+    const su = this.body === 'sun' ? this.space.sunUniforms : null;
+    const T1 = 0, T2 = 0;                // 연출 없이 즉시 폭발
     if (t < T1) {
       // 부풀며 불안정하게 깜빡임
       const k = 1 + 0.6 * smooth(0, T1, t);
@@ -492,7 +492,7 @@ export class Cosmic {
     } else {
       if (!this.boomed) {
         this.boomed = true;
-        this.space.setBodyVisible('sun', false);
+        this.space.setBodyVisible(this.body, false);
         this.neb.visible = this.shock.visible = this.dust.visible = true;
         this.hooks.flash && this.hooks.flash(1);
         this.hooks.shake && this.hooks.shake(1);

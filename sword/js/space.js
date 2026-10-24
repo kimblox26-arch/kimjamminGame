@@ -4,7 +4,8 @@
 //  - 깊이 테스트 없이 거리순(renderOrder)으로 그림: 배경(별/은하) → 해 → 먼 천체 → 가까운 천체
 //  - 모든 셰이더 출력은 선형 HDR (OutputPass 에서 톤매핑)
 import * as THREE from 'three';
-import { SUN_DIR, SUN, MOON, BODIES, ECLIPTIC, AU, flatToPlanet, localToPlanetQuat } from './frame.js';
+import { GE, GU, GN, loadTex } from './geo.js';
+import { SUN_DIR, SUN, MOON, BODIES, ECLIPTIC, AU, flatToPlanet, localToPlanetQuat, eqToLocal, GMST, FAR, LY } from './frame.js';
 
 const RE = 6371, RM = MOON.radius / 1000, RS = SUN.radius / 1000;   // km
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -13,8 +14,8 @@ const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); ret
 // 지구 자전축 (서울 위도 37.5°N): 서울 천정에서 북쪽(-Z)으로 52.5° 기운 방향
 const POLE = new THREE.Vector3(0, Math.cos(52.5 * Math.PI / 180), -Math.sin(52.5 * Math.PI / 180)).normalize();
 // 은하 북극 / 은하 중심 방향 (임의, 서울 밤하늘에서 은하수가 비스듬히 지나가게)
-const GAL_N = new THREE.Vector3(0.42, 0.35, 0.84).normalize();
-const GAL_C = new THREE.Vector3(-0.62, 0.71, 0.0).normalize().projectOnPlane(GAL_N).normalize();
+const GAL_N = eqToLocal(192.8595, 27.1283).normalize();
+const GAL_C = eqToLocal(266.405, -28.936).normalize().projectOnPlane(GAL_N).normalize();
 
 const NOISE = /* glsl */`
 float h31(vec3 p) { p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
@@ -80,19 +81,25 @@ ${NOISE}
 uniform vec3 uGN;
 uniform vec3 uGC;
 uniform float uVis;
+uniform sampler2D uMW;     // 실제 은하수 윤곽 (적경 u, 적위 v)
+uniform vec3 uEE; uniform vec3 uEU; uniform vec3 uEN;
+uniform float uGMST;
 varying vec3 vD;
 void main() {
   vec3 d = normalize(vD);
   float b = asin(clamp(dot(d, uGN), -1.0, 1.0));            // 은하 위도
   float l = acos(clamp(dot(normalize(d - uGN * dot(d, uGN)), uGC), -1.0, 1.0));   // 중심으로부터 경도 각
-  float band = exp(-pow(b / 0.16, 2.0));
-  float bulge = exp(-pow(l / 0.55, 2.0) - pow(b / 0.22, 2.0));
+  vec3 e = d.x * uEE + d.y * uEU - d.z * uEN;
+  float ra = atan(e.y, e.x) + uGMST, dec = asin(clamp(e.z, -1.0, 1.0));
+  float mw = texture2D(uMW, vec2(fract(ra / 6.2831853), 0.5 + dec / 3.14159265)).r;
+  float band = mw;
+  float bulge = exp(-pow(l / 0.55, 2.0) - pow(b / 0.22, 2.0)) * mw;
   float n = fbm(d * 7.0, 6);
   float fine = fbm(d * 38.0, 4);
   // 먼지띠: 은하 적도 근처에 어두운 갈라짐
   float dust = smoothstep(0.42, 0.72, fbm(d * 13.0 + 4.0, 5)) * exp(-pow(b / 0.05, 2.0));
-  float I = (band * (0.35 + 0.9 * n) + bulge * 1.6) * (0.75 + 0.5 * fine);
-  I *= 1.0 - 0.85 * dust;
+  float I = (band * (0.5 + 0.7 * n) + bulge * 1.2) * (0.75 + 0.5 * fine);
+  I *= 1.0 - 0.7 * dust;
   vec3 col = mix(vec3(0.55, 0.62, 0.85), vec3(1.0, 0.82, 0.62), bulge * 0.9) * I;
   // 희미한 성운 얼룩
   col += vec3(0.9, 0.3, 0.35) * pow(max(fbm(d * 21.0 + 9.0, 4) - 0.55, 0.0), 2.0) * band * 2.0;
@@ -114,13 +121,14 @@ const SUN_FS = /* glsl */`
 ${NOISE}
 uniform float uTime;
 uniform float uI;
+uniform vec3 uTint;
 varying vec3 vN;
 varying vec3 vV;
 void main() {
   float mu = clamp(dot(vN, vV), 0.0, 1.0);
   float limb = 0.35 + 0.65 * pow(mu, 0.55);                 // 주연 감광
   float gran = 0.85 + 0.3 * fbm(vN * 180.0 + uTime * 0.05, 4);   // 쌀알 무늬
-  vec3 col = vec3(1.0, 0.93, 0.82) * 60.0 * limb * gran;
+  vec3 col = uTint * 60.0 * limb * gran;
   gl_FragColor = vec4(col * uI, 1.0);
 }`;
 const GLOW_VS = /* glsl */`
@@ -135,13 +143,14 @@ void main() {
 const GLOW_FS = /* glsl */`
 uniform float uR;      // 해 원반 반지름 (쿼드 반폭 대비)
 uniform float uI;
+uniform vec3 uTint;
 varying vec2 vUv;
 void main() {
   float r = length(vUv);
   float x = max(r - uR, 0.0) / max(1.0 - uR, 1e-4);
   float a = atan(vUv.y, vUv.x);
   float rays = 0.6 + 0.4 * pow(abs(sin(a * 6.0 + 0.4)), 18.0) + 0.25 * pow(abs(sin(a * 11.0 - 1.1)), 30.0);
-  vec3 c = vec3(1.0, 0.86, 0.7) * (exp(-x * 9.0) * 3.0 + exp(-x * 2.6) * 0.35 * rays) * (1.0 - smoothstep(0.85, 1.0, r));
+  vec3 c = uTint * (exp(-x * 9.0) * 3.0 + exp(-x * 2.6) * 0.35 * rays) * (1.0 - smoothstep(0.85, 1.0, r));
   gl_FragColor = vec4(c * uI, 1.0);   // AdditiveBlending 은 src alpha 를 곱함
 }`;
 
@@ -160,8 +169,16 @@ const MOON_FS = /* glsl */`
 ${NOISE}
 uniform vec3 uSun;
 uniform float uI;
+uniform sampler2D uMap;
+uniform vec3 uAxis;
+uniform vec3 uRef;     // 지구 쪽 (조석 고정: 앞면이 늘 지구를 봄)
 varying vec3 vN;
 varying vec3 vW;
+vec4 mapTex(sampler2D t, vec2 uv) {
+  vec2 uvB = vec2(fract(uv.x + 0.5), uv.y);
+  vec2 dxA = dFdx(uv), dyA = dFdy(uv), dxB = dFdx(uvB), dyB = dFdy(uvB);
+  return textureGrad(t, uv, abs(dxA.x) <= abs(dxB.x) ? dxA : dxB, abs(dyA.x) <= abs(dyB.x) ? dyA : dyB);
+}
 float hgt(vec3 p) {
   return craters(p * 7.0) * 0.6 + craters(p * 19.0) * 0.25 + craters(p * 47.0) * 0.08 + fbm(p * 30.0, 4) * 0.05;
 }
@@ -175,8 +192,12 @@ void main() {
   float hx = hgt(normalize(n + t1 * e)), hy = hgt(normalize(n + t2 * e));
   vec3 nb = normalize(n - (t1 * (hx - h0) + t2 * (hy - h0)) * 2.2 / e * 0.012);
   // 바다(어두운 현무암 평원)와 고지대
-  float maria = smoothstep(0.52, 0.62, fbm(n * 2.3 + 5.0, 5));
-  float alb = mix(0.2, 0.085, maria) * (0.85 + 0.3 * fbm(n * 60.0, 3));
+  // 실제 달 지도 (LRO): 앞면 경도 0 이 지구 쪽
+  float lat = asin(clamp(dot(n, uAxis), -1.0, 1.0));
+  vec3 r1 = cross(uAxis, uRef);
+  float lon = atan(dot(n, r1), dot(n, uRef));
+  vec3 tex = mapTex(uMap, vec2(fract(lon / 6.2831853 + 0.5), 0.5 + lat / 3.14159265)).rgb;
+  float alb = dot(tex, vec3(0.3, 0.59, 0.11)) * 0.42 * (0.9 + 0.2 * fbm(n * 160.0, 3));
   alb += 0.05 * smoothstep(0.03, 0.08, h0);                  // 밝은 크레이터 테두리/광조
   float nl = max(dot(nb, uSun), 0.0);
   vec3 V = normalize(-vW);
@@ -187,64 +208,53 @@ void main() {
   gl_FragColor = vec4(col * uI, 1.0);
 }`;
 
-// ── 지구 ──
+// ── 지구 (실제 위성 사진: NASA 블루마블, 야간 조명, 구름) ──
 const EARTH_FS = /* glsl */`
-${NOISE}
 uniform vec3 uSun;
-uniform vec3 uPole;
-uniform vec3 uSeoul;
+uniform vec3 uGE;
+uniform vec3 uGU;
+uniform vec3 uGN;
+uniform sampler2D uDay;
+uniform sampler2D uNight;
+uniform sampler2D uCloud;
+uniform sampler2D uWater;
 uniform float uTime;
 uniform float uI;
 varying vec3 vN;
 varying vec3 vW;
-float landMask(vec3 n) {
-  float c = fbm(n * 1.6 + 2.0, 6) + 0.18 * fbm(n * 7.0, 4);
-  c += 0.22 * exp(-pow(acos(clamp(dot(n, uSeoul), -1.0, 1.0)) / 0.25, 2.0));   // 서울 부근은 대륙 (한반도)
-  return c;
+// 경도 ±180° 이음매에서 밉맵이 튀지 않게: 이음매 없는 쪽 미분으로 샘플
+vec4 geoTex(sampler2D t, vec2 uv) {
+  vec2 uvB = vec2(fract(uv.x + 0.5), uv.y);
+  vec2 dxA = dFdx(uv), dyA = dFdy(uv), dxB = dFdx(uvB), dyB = dFdy(uvB);
+  vec2 dx = abs(dxA.x) <= abs(dxB.x) ? dxA : dxB;
+  vec2 dy = abs(dyA.x) <= abs(dyB.x) ? dyA : dyB;
+  return textureGrad(t, uv, dx, dy);
 }
 void main() {
   vec3 n = normalize(vN);
   vec3 V = normalize(-vW);
-  float lat = asin(clamp(dot(n, uPole), -1.0, 1.0));
-  float alat = abs(lat);
-  float c = landMask(n);
-  float land = smoothstep(0.545, 0.56, c);
-  float coast = smoothstep(0.50, 0.545, c) * (1.0 - land);
-  // 육지: 위도대별 숲/초원/사막/툰드라 + 산맥
-  float dry = smoothstep(0.12, 0.42, 1.0 - abs(alat - 0.42) * 3.0) * smoothstep(0.45, 0.7, fbm(n * 4.0 + 9.0, 4));
-  vec3 forest = vec3(0.045, 0.075, 0.03), grass = vec3(0.11, 0.12, 0.055), desert = vec3(0.34, 0.26, 0.15), tundra = vec3(0.13, 0.12, 0.1);
-  vec3 lc = mix(forest, grass, fbm(n * 9.0, 4));
-  dry *= smoothstep(0.08, 0.3, acos(clamp(dot(n, uSeoul), -1.0, 1.0)));   // 한반도는 푸른 산림
-  lc = mix(lc, desert, dry);
-  lc = mix(lc, tundra, smoothstep(0.95, 1.15, alat));
-  lc *= 0.8 + 0.4 * fbm(n * 40.0, 4);
-  float mtn = smoothstep(0.6, 0.75, fbm(n * 6.0 + 3.0, 5)) * land;
-  lc = mix(lc, vec3(0.2, 0.19, 0.17), mtn * 0.6);
-  // 바다: 깊은 남색 → 얕은 해안은 청록
-  vec3 oc = mix(vec3(0.004, 0.018, 0.05), vec3(0.02, 0.09, 0.12), coast);
-  vec3 alb = mix(oc, lc, land);
-  // 극지 얼음
-  float ice = smoothstep(1.12, 1.22, alat + 0.06 * fbm(n * 12.0, 3));
-  alb = mix(alb, vec3(0.75, 0.8, 0.85), ice);
-  // 구름 (천천히 흐름)
-  vec3 q = n + vec3(uTime * 0.0004, 0.0, uTime * 0.00025);
-  float cl = fbm(q * 3.2 + fbm(q * 6.0, 3) * 0.8, 7);
-  float band = 0.06 * exp(-pow((alat - 0.95) / 0.25, 2.0)) - 0.05 * exp(-pow((alat - 0.42) / 0.12, 2.0));
-  float cov = smoothstep(0.56, 0.74, cl + band);
+  // 서울 기준 행성 좌표 → 지구 고정 좌표 → 위도·경도
+  vec3 e = n.x * uGE + n.y * uGU - n.z * uGN;
+  float lat = asin(clamp(e.z, -1.0, 1.0));
+  float lon = atan(e.y, e.x);
+  vec2 uv = vec2(lon / 6.2831853 + 0.5, 0.5 + lat / 3.14159265);
+  vec3 alb = geoTex(uDay, uv).rgb;
+  float sea = geoTex(uWater, uv).r;
+  vec2 cuv = vec2(uv.x + uTime * 0.000004, uv.y);
+  float cov = smoothstep(0.04, 0.8, geoTex(uCloud, cuv).r) * 0.95;
   float NL = dot(n, uSun);
   float day = smoothstep(-0.08, 0.12, NL);
   float lit = max(NL, 0.0);
-  vec3 col = alb * lit * 2.6;
+  vec3 col = alb * lit * 2.3;
   // 바다 햇빛 반짝임
   vec3 H = normalize(uSun + V);
-  float spec = pow(max(dot(n, H), 0.0), 220.0) * (1.0 - land) * (1.0 - ice) * (1.0 - cov);
-  col += vec3(1.0, 0.92, 0.8) * spec * 6.0 * lit;
-  // 구름: 밝게, 아래에 그림자
-  col = mix(col * (1.0 - 0.5 * cov), vec3(0.9, 0.92, 0.95) * (lit * 2.4 + 0.02), cov);
-  // 밤: 도시 불빛 (육지, 해안에 많음)
-  float city = smoothstep(0.62, 0.8, fbm(n * 70.0, 4)) * land * (1.0 - ice) * (0.3 + 0.7 * smoothstep(0.545, 0.6, c) * (1.0 - smoothstep(0.62, 0.7, c)));
-  city += 2.5 * exp(-pow(acos(clamp(dot(n, uSeoul), -1.0, 1.0)) / 0.006, 2.0));   // 서울
-  col += vec3(1.0, 0.62, 0.25) * city * (1.0 - day) * (1.0 - cov * 0.7) * 0.5;
+  float spec = pow(max(dot(n, H), 0.0), 180.0) * sea * (1.0 - cov);
+  col += vec3(1.0, 0.92, 0.8) * spec * 5.0 * lit;
+  // 구름: 밝게, 아래 지면은 조금 어둡게
+  col = mix(col * (1.0 - 0.45 * cov), vec3(0.92, 0.94, 0.97) * (lit * 2.3 + 0.015), cov * 0.9);
+  // 밤: 실제 도시 불빛
+  vec3 lights = geoTex(uNight, uv).rgb;
+  col += lights * vec3(1.0, 0.8, 0.55) * (1.0 - day) * (1.0 - cov * 0.6) * 1.4;
   // 대기: 가장자리로 갈수록 파란 산란광, 명암 경계는 붉게
   float ndv = max(dot(n, V), 0.0);
   float fres = pow(1.0 - ndv, 5.0);
@@ -281,8 +291,18 @@ uniform float uSpot;
 uniform float uIce;
 uniform float uTime;
 uniform float uI;
+uniform sampler2D uMap;   // 실제 행성 지도 (있으면)
+uniform float uHasMap;
+uniform vec3 uRef;        // 경도 0 방향 (자전축에 수직)
+uniform float uRot;       // 자전 각속도 (rad/s)
+uniform float uAlb;
 varying vec3 vN;
 varying vec3 vW;
+vec4 mapTex(sampler2D t, vec2 uv) {
+  vec2 uvB = vec2(fract(uv.x + 0.5), uv.y);
+  vec2 dxA = dFdx(uv), dyA = dFdy(uv), dxB = dFdx(uvB), dyB = dFdy(uvB);
+  return textureGrad(t, uv, abs(dxA.x) <= abs(dxB.x) ? dxA : dxB, abs(dyA.x) <= abs(dyB.x) ? dyA : dyB);
+}
 void main() {
   vec3 n = normalize(vN);
   vec3 V = normalize(-vW);
@@ -316,6 +336,15 @@ void main() {
     // 두꺼운 구름 (금성/타이탄)
     float w = fbm(q * 3.0 + vec3(uTime * 0.003, 0.0, 0.0), 6);
     alb = mix(uC2, uC1, smoothstep(0.3, 0.7, w + 0.15 * sin(lat * 6.0)));
+  }
+  if (uHasMap > 0.5) {
+    vec3 r1 = cross(uAxis, uRef);
+    float lon = atan(dot(n, r1), dot(n, uRef)) + uTime * uRot;
+    vec2 uv = vec2(fract(lon / 6.2831853 + 0.5), 0.5 + lat / 3.14159265);
+    vec3 tex = mapTex(uMap, uv).rgb;
+    // 가까이 가면 보이는 잔무늬 (암석 행성은 크레이터 음영)
+    float det = uKind < 0.5 ? clamp(alb.r / max(uC1.r, 1e-3), 0.6, 1.4) : 1.0;
+    alb = tex * uAlb * mix(1.0, det, 0.35) * (0.94 + 0.12 * fbm(q * 60.0, 3));
   }
   float NL = dot(nb, uSunL);
   float lit = max(NL, 0.0);
@@ -428,7 +457,31 @@ void main() {
   gl_Position.z = 0.5 * gl_Position.w;
 }`;
 
+// 블랙홀 강착 원반: 안쪽이 희고 바깥은 주황, 소용돌이
+const DISK_VS = /* glsl */`
+varying vec3 vL;
+void main() { vL = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = 0.5 * gl_Position.w; }`;
+const DISK_FS = /* glsl */`
+${NOISE}
+uniform float uTime;
+uniform float uR;
+varying vec3 vL;
+void main() {
+  float r = length(vL.xy) / uR;
+  float a = atan(vL.y, vL.x);
+  float sw = fbm(vec3(cos(a - uTime * 0.6 / r) * r, sin(a - uTime * 0.6 / r) * r, r * 0.5), 5);
+  float I = smoothstep(2.6, 3.2, r) * (1.0 - smoothstep(6.0, 9.0, r)) * (0.5 + sw) * 3.0 / (r - 2.0);
+  vec3 col = mix(vec3(1.0, 0.45, 0.12), vec3(1.0, 0.95, 0.85), smoothstep(5.0, 3.0, r));
+  gl_FragColor = vec4(col * I, 1.0);
+}`;
+
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _cp = new THREE.Vector3(), _w = new THREE.Vector3();
+
+// 실제 행성 지도 (파일, 자전 주기 h (음수 = 역방향), 밝기 배율)
+const MAPS = {
+  mercury: ['mercury.jpg', 1407.6, 0.55], venus: ['venus.jpg', -5832.5, 0.9], mars: ['mars.jpg', 24.62, 0.5], jupiter: ['jupiter.jpg', 9.93, 1.0],
+  saturn: ['saturn.jpg', 10.7, 0.95], uranus: ['uranus.jpg', -17.24, 0.9], neptune: ['neptune.jpg', 16.11, 0.9], pluto: ['pluto.jpg', -153.3, 0.65],
+};
 
 export class Space {
   constructor(renderer, opts = {}) {
@@ -455,7 +508,8 @@ export class Space {
     this._buildBelt(low);
     this._buildDots();
     this._buildAndromeda();
-    this.list = BODIES.map((b) => Object.assign(this.bodies[b.id], { id: b.id, name: b.name }));
+    this._buildFar();
+    this.list = [...BODIES, ...FAR].map((b) => Object.assign(this.bodies[b.id], { id: b.id, name: b.name }));
   }
 
   _buildPlanets(low) {
@@ -465,9 +519,11 @@ export class Space {
     for (const b of BODIES) {
       if (b.id === 'sun' || b.id === 'earth' || b.id === 'moon') continue;
       const rk = b.radius / 1000;
+      const map = MAPS[b.id];
       const u = {
         uSunL: { value: new THREE.Vector3() }, uAxis: { value: ECLIPTIC.n }, uC1: { value: new THREE.Color(...b.c1) }, uC2: { value: new THREE.Color(...b.c2) },
         uKind: { value: KIND[b.kind] }, uSeed: { value: seed++ * 3.7 }, uSpot: { value: b.spot ? 1 : 0 }, uIce: { value: b.ice ? 1 : 0 }, uTime: { value: 0 }, uI: { value: 1 },
+        uMap: { value: map ? loadTex('./assets/' + map[0]) : null }, uHasMap: { value: map ? 1 : 0 }, uRef: { value: ECLIPTIC.u }, uRot: { value: map ? (2 * Math.PI) / (map[1] * 3600) : 0 }, uAlb: { value: map ? map[2] : 1 },
       };
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(rk, low ? 64 : 112, low ? 32 : 56), new THREE.ShaderMaterial({
         vertexShader: BODY_VS, fragmentShader: PLANET_FS, uniforms: u, depthTest: false, depthWrite: false,
@@ -528,6 +584,7 @@ export class Space {
 
   _buildAndromeda() {
     this.galU = { uVis: { value: 1 } };
+    return;   // 안드로메다는 _buildFar 에서 실제 위치·거리로
     this.andromeda = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ vertexShader: GAL_VS, fragmentShader: GAL_FS, uniforms: this.galU, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
     this.andromeda.position.set(0.55, 0.62, 0.56).normalize().multiplyScalar(9e7);
     const half = 9e7 * Math.tan(0.06);
@@ -537,40 +594,107 @@ export class Space {
     this.scene.add(this.andromeda);
   }
 
+  // 실제 별: 히파르코스 목록 (6등급까지 약 5천 개, 적경·적위·등급·색지수) + 그보다 어두운 배경 별
   _buildStars(low) {
-    const N = low ? 3500 : 9000;
-    const pos = new Float32Array(N * 3), mag = new Float32Array(N), col = new Float32Array(N * 3);
-    let seed = 1234567;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const v = new THREE.Vector3();
-    for (let i = 0; i < N; i++) {
-      // 일부는 은하면에 몰리게
-      v.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize();
-      if (rnd() < 0.45) v.addScaledVector(GAL_N, -v.dot(GAL_N) * (0.75 + 0.2 * rnd())).normalize();
-      pos[i * 3] = v.x * 1e8; pos[i * 3 + 1] = v.y * 1e8; pos[i * 3 + 2] = v.z * 1e8;
-      mag[i] = 1.0 + 5.5 * Math.pow(rnd(), 0.45);
-      // 색온도: 붉은 별 ~ 푸른 별
-      const t = rnd();
-      const c = t < 0.15 ? [1.0, 0.72, 0.5] : t < 0.45 ? [1.0, 0.9, 0.78] : t < 0.85 ? [0.95, 0.96, 1.0] : [0.72, 0.82, 1.0];
-      col.set(c, i * 3);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('aMag', new THREE.BufferAttribute(mag, 1));
-    g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
     this.starUniforms = { uPR: { value: this.renderer.getPixelRatio() }, uVis: { value: 1 } };
     const m = new THREE.ShaderMaterial({
       vertexShader: STAR_VS, fragmentShader: STAR_FS, uniforms: this.starUniforms,
       depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending,
     });
-    this.stars = new THREE.Points(g, m);
-    this.stars.frustumCulled = false;
-    this.stars.renderOrder = -100;
-    this.scene.add(this.stars);
+    const make = (ra, dec, mag, bv) => {
+      const N = mag.length;
+      const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        eqToLocal(ra[i], dec[i], _v).multiplyScalar(1e8);
+        pos[i * 3] = _v.x; pos[i * 3 + 1] = _v.y; pos[i * 3 + 2] = _v.z;
+        // 색지수(B-V) → 색: 푸른 별 ~ 붉은 별
+        const t = Math.max(-0.4, Math.min(2.0, bv[i]));
+        const c = t < 0 ? [0.68 + 0.5 * (t + 0.4), 0.78 + 0.4 * (t + 0.4), 1.0] : t < 0.6 ? [0.88 + 0.2 * t, 0.94, 1.0 - 0.18 * t] : [1.0, 0.94 - 0.22 * (t - 0.6), 0.89 - 0.38 * (t - 0.6)];
+        col[i * 3] = c[0]; col[i * 3 + 1] = Math.max(0.5, c[1]); col[i * 3 + 2] = Math.max(0.3, c[2]);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('aMag', new THREE.BufferAttribute(new Float32Array(mag), 1));
+      g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
+      const pts = new THREE.Points(g, m);
+      pts.frustumCulled = false;
+      pts.renderOrder = -100;
+      this.scene.add(pts);
+      return pts;
+    };
+    // 배경: 6~7.5 등급 별을 은하면에 몰리게 (실제 은하수 방향)
+    const NB = low ? 2500 : 6000;
+    let seed = 1234567;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const ra = [], dec = [], mag = [], bv = [];
+    const ar = [0, 0];
+    for (let i = 0; i < NB; i++) {
+      _v.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize();
+      if (rnd() < 0.55) _v.addScaledVector(GAL_N, -_v.dot(GAL_N) * (0.8 + 0.18 * rnd())).normalize();
+      const e = this._toEq(_v, ar);
+      ra.push(e[0]); dec.push(e[1]); mag.push(6 + 1.6 * rnd()); bv.push(rnd() * 1.4 - 0.1);
+    }
+    this.stars = make(ra, dec, mag, bv);
+    fetch('./assets/stars.json').then((r) => r.json()).then((d) => {
+      const S = d.stars, n = S.length / 4;
+      const a = new Array(n), b = new Array(n), mg = new Array(n), c = new Array(n);
+      for (let i = 0; i < n; i++) { a[i] = S[i * 4]; b[i] = S[i * 4 + 1]; mg[i] = S[i * 4 + 2]; c[i] = S[i * 4 + 3]; }
+      this.realStars = make(a, b, mg, c);
+      this.starCount = n;
+    }).catch((e) => console.warn('[space] 별 목록 없음', e));
+  }
+  // 행성 좌표 방향 → 적경·적위 (도)
+  _toEq(v, out) {
+    const ex = v.x * GE.x + v.y * GU.x - v.z * GN.x, ey = v.x * GE.y + v.y * GU.y - v.z * GN.y, ez = v.x * GE.z + v.y * GU.z - v.z * GN.z;
+    out[0] = ((Math.atan2(ey, ex) + GMST) * 180 / Math.PI + 720) % 360;
+    out[1] = Math.asin(Math.max(-1, Math.min(1, ez))) * 180 / Math.PI;
+    return out;
+  }
+
+  // 태양계 밖 천체: 별 (표면 + 빛무리), 블랙홀 (검은 구 + 강착 원반), 은하 (나선 판)
+  _buildFar() {
+    for (const f of FAR) {
+      const grp = new THREE.Group();
+      const rk = f.radius / 1000;
+      const entry = { group: grp, radius: rk, center: f.pos.clone(), far: true, kind: f.kind };
+      if (f.kind === 'star') {
+        const T = f.temp;
+        const tint = T > 8000 ? new THREE.Color(0.75, 0.85, 1.0) : T > 5500 ? new THREE.Color(1.0, 0.95, 0.85) : T > 4000 ? new THREE.Color(1.0, 0.8, 0.55) : new THREE.Color(1.0, 0.55, 0.3);
+        const su = { uTime: this.sunUniforms.uTime, uI: { value: 1 }, uTint: { value: tint } };
+        const body = new THREE.Mesh(new THREE.SphereGeometry(rk, 48, 24), new THREE.ShaderMaterial({ vertexShader: SUN_VS, fragmentShader: SUN_FS, uniforms: su, depthTest: false, depthWrite: false }));
+        body.frustumCulled = false;
+        const gu = { uR: { value: 0.1 }, uI: { value: 1 }, uTint: { value: tint.clone().multiplyScalar(0.9) } };
+        const glow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ vertexShader: GLOW_VS, fragmentShader: GLOW_FS, uniforms: gu, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+        glow.frustumCulled = false;
+        grp.add(body, glow);
+        entry.glow = glow; entry.glowU = gu;
+      } else if (f.kind === 'blackhole') {
+        const hole = new THREE.Mesh(new THREE.SphereGeometry(rk, 48, 24), new THREE.MeshBasicMaterial({ color: 0x000000, depthTest: false, depthWrite: false }));
+        hole.frustumCulled = false;
+        const du = { uTime: this.sunUniforms.uTime, uR: { value: rk } };
+        const disk = new THREE.Mesh(new THREE.RingGeometry(rk * 2.6, rk * 9, 128, 8), new THREE.ShaderMaterial({
+          vertexShader: DISK_VS, fragmentShader: DISK_FS, uniforms: du, side: THREE.DoubleSide, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending,
+        }));
+        disk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), GAL_N);
+        disk.frustumCulled = false;
+        grp.add(disk, hole);
+      } else {
+        const gu = { uVis: this.galU.uVis };
+        const gal = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ vertexShader: GAL_VS, fragmentShader: GAL_FS, uniforms: gu, depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
+        gal.scale.set(rk, rk, 1);
+        gal.frustumCulled = false;
+        grp.add(gal);
+      }
+      this.scene.add(grp);
+      this.bodies[f.id] = entry;
+    }
   }
 
   _buildMilkyWay(low) {
-    this.mwUniforms = { uGN: { value: GAL_N }, uGC: { value: GAL_C }, uVis: { value: 1 } };
+    const mwTex = loadTex('./assets/milkyway.png', false);
+    mwTex.generateMipmaps = false; mwTex.minFilter = THREE.LinearFilter;   // 적경 0° 이음매에 선이 생기지 않게
+    this.mwUniforms = { uGN: { value: GAL_N }, uGC: { value: GAL_C }, uVis: { value: 1 }, uMW: { value: mwTex },
+      uEE: { value: GE }, uEU: { value: GU }, uEN: { value: GN }, uGMST: { value: GMST } };
     const m = new THREE.ShaderMaterial({
       vertexShader: MW_VS, fragmentShader: MW_FS, uniforms: this.mwUniforms, side: THREE.BackSide,
       depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending,
@@ -583,12 +707,12 @@ export class Space {
 
   _buildSun() {
     this.sun = new THREE.Group();
-    this.sunUniforms = { uTime: { value: 0 }, uI: { value: 1 } };
+    this.sunUniforms = { uTime: { value: 0 }, uI: { value: 1 }, uTint: { value: new THREE.Color(1.0, 0.93, 0.82) } };
     const body = new THREE.Mesh(new THREE.SphereGeometry(RS, 48, 24), new THREE.ShaderMaterial({
       vertexShader: SUN_VS, fragmentShader: SUN_FS, uniforms: this.sunUniforms, depthTest: false, depthWrite: false,
     }));
     body.frustumCulled = false;
-    this.glowUniforms = { uR: { value: 0.1 }, uI: { value: 1 } };
+    this.glowUniforms = { uR: { value: 0.1 }, uI: { value: 1 }, uTint: { value: new THREE.Color(1.0, 0.86, 0.7) } };
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
       vertexShader: GLOW_VS, fragmentShader: GLOW_FS, uniforms: this.glowUniforms,
       depthTest: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending,
@@ -600,7 +724,10 @@ export class Space {
   }
 
   _buildMoon(low) {
-    this.moonUniforms = { uSun: { value: this.sunDir }, uI: { value: 1 } };
+    const toEarth = MOON.pos.clone().negate().normalize();
+    const ax = ECLIPTIC.n.clone();
+    const ref = toEarth.clone().addScaledVector(ax, -toEarth.dot(ax)).normalize();
+    this.moonUniforms = { uSun: { value: this.sunDir }, uI: { value: 1 }, uMap: { value: loadTex('./assets/moon.jpg') }, uAxis: { value: ax }, uRef: { value: ref } };
     this.moon = new THREE.Mesh(new THREE.SphereGeometry(RM, low ? 64 : 128, low ? 32 : 64), new THREE.ShaderMaterial({
       vertexShader: BODY_VS, fragmentShader: MOON_FS, uniforms: this.moonUniforms, depthTest: false, depthWrite: false,
     }));
@@ -610,8 +737,13 @@ export class Space {
 
   _buildEarth(low) {
     this.earth = new THREE.Group();
-    const seoul = new THREE.Vector3(0, 1, 0);
-    this.earthUniforms = { uSun: { value: this.sunDir }, uPole: { value: POLE }, uSeoul: { value: seoul }, uTime: { value: 0 }, uI: { value: 1 } };
+    const A = './assets/';
+    this.earthUniforms = {
+      uSun: { value: this.sunDir }, uTime: { value: 0 }, uI: { value: 1 },
+      uGE: { value: GE }, uGU: { value: GU }, uGN: { value: GN },
+      uDay: { value: loadTex(A + 'earth_day.jpg') }, uNight: { value: loadTex(A + 'earth_night.jpg') },
+      uCloud: { value: loadTex(A + 'earth_clouds.jpg', false) }, uWater: { value: loadTex(A + 'earth_water.png', false) },
+    };
     const surf = new THREE.Mesh(new THREE.SphereGeometry(RE, low ? 96 : 192, low ? 48 : 96), new THREE.ShaderMaterial({
       vertexShader: BODY_VS, fragmentShader: EARTH_FS, uniforms: this.earthUniforms, depthTest: false, depthWrite: false,
     }));
@@ -666,7 +798,7 @@ export class Space {
       const px = Math.atan(b.radius / Math.max(d, 1)) * pxPerRad;
       dPos.setXYZ(k, b.group.position.x, b.group.position.y, b.group.position.z);
       let I = 0, sz = 0;
-      if (b.id !== 'sun' && b.group.visible && px < 3) {
+      if (b.id !== 'sun' && !b.far && b.group.visible && px < 3) {
         const dsun = Math.max(_w.subVectors(this.sun.position, b.group.position).length() / 1.496e8, 0.05);
         const flux = (b.radius * b.radius) / (dsun * dsun * Math.pow(Math.max(d / 1.496e8, 1e-4), 2));
         I = clamp(Math.sqrt(flux) * 2.2e-4, 0.08, 6);
@@ -701,6 +833,17 @@ export class Space {
     this.glowUniforms.uR.value = clamp(Math.tan(angR) / Math.tan(Math.min(glowAng, 1.2)), 0, 0.95);
     this.sunUniforms.uTime.value = this.time;
     this.earthUniforms.uTime.value = this.time;
+    // 먼 별: 가까이 가면 빛무리가 생김
+    for (const b of L) {
+      if (!b.glow) continue;
+      const d = b.group.position.length();
+      const aR = Math.asin(clamp(b.radius / d, 0, 1));
+      const gA = Math.min(Math.max(aR * 9, 0.004), 1.2);
+      const hw = d * Math.tan(gA);
+      b.glow.scale.set(hw, hw, 1);
+      b.glowU.uR.value = clamp(Math.tan(aR) / Math.tan(gA), 0, 0.95);
+      b.glowU.uI.value = clamp(aR * 4000, 0, 1);
+    }
 
     // 대기권 안에서는 낮하늘이 별을 가림 (world 하늘 돔이 불투명) → 여기서는 대기 투과만 근사
     const hk = smooth(15000, 90000, alt);

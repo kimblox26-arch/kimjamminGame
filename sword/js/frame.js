@@ -50,11 +50,36 @@ export function localToPlanetQuat(x, z, out) {
   return out.setFromRotationMatrix(_m);
 }
 
-// 천체 (행성 좌표, 미터). 해는 서울 하늘에서 보이는 방향과 같게 (main 의 sunDir).
-export const SUN_DIR = new THREE.Vector3(-0.66, 0.5, -0.56).normalize();
+// ───────── 실제 하늘 ─────────
+// 시각: 하지(6월 21일) 오후, 서울에서 해 고도 27° (서북서). 이 시각의 항성시로 별·은하수·황도를 실제 위치에 둠
+const D2R = Math.PI / 180;
+const LAT0 = 37.5665 * D2R, LON0 = 126.978 * D2R;
+const SUN_RA = 90 * D2R, SUN_DEC = 23.44 * D2R, SUN_ALT = 27 * D2R;
+const _H = Math.acos((Math.sin(SUN_ALT) - Math.sin(LAT0) * Math.sin(SUN_DEC)) / (Math.cos(LAT0) * Math.cos(SUN_DEC)));   // 시간각 (오후 = +)
+export const GMST = SUN_RA + _H - LON0;   // 그리니치 항성시 (rad)
+const _E = [-Math.sin(LON0), Math.cos(LON0), 0];
+const _U = [Math.cos(LAT0) * Math.cos(LON0), Math.cos(LAT0) * Math.sin(LON0), Math.sin(LAT0)];
+const _N = [-Math.sin(LAT0) * Math.cos(LON0), -Math.sin(LAT0) * Math.sin(LON0), Math.cos(LAT0)];
+/** 적경·적위 (도) → 행성 좌표(서울 기준) 단위 벡터 */
+export function eqToLocal(raDeg, decDeg, out = new THREE.Vector3()) {
+  const ra = raDeg * D2R - GMST, dec = decDeg * D2R;
+  const x = Math.cos(dec) * Math.cos(ra), y = Math.cos(dec) * Math.sin(ra), z = Math.sin(dec);
+  return out.set(x * _E[0] + y * _E[1], x * _U[0] + y * _U[1] + z * _U[2], -(x * _N[0] + y * _N[1] + z * _N[2]));
+}
+/** 행성 좌표 단위 벡터 → [적경, 적위] (rad) */
+export function localToEq(v, out = [0, 0]) {
+  const ex = v.x * _E[0] + v.y * _U[0] - v.z * _N[0], ey = v.x * _E[1] + v.y * _U[1] - v.z * _N[1], ez = v.y * _U[2] - v.z * _N[2];
+  out[0] = Math.atan2(ey, ex) + GMST; out[1] = Math.asin(Math.max(-1, Math.min(1, ez)));
+  return out;
+}
+
+// 천체 (행성 좌표, 미터). 해: 위 시각의 실제 방향
+export const SUN_DIR = eqToLocal(90, 23.44).normalize();
 export const SUN = { dir: SUN_DIR, dist: 1.496e11, radius: 6.9634e8, pos: SUN_DIR.clone().multiplyScalar(1.496e11) };
-// 달: 서울 낮하늘 북동쪽 고도 약 45°
-export const MOON_DIR = new THREE.Vector3(0.45, 0.72, -0.53).normalize();
+// 황도 북극 (적경 270°, 적위 66.56°)
+const _ECL_N = eqToLocal(270, 66.5607).normalize();
+// 달: 황도 위, 해에서 동쪽으로 120° (차오르는 달)
+export const MOON_DIR = SUN_DIR.clone().applyAxisAngle(_ECL_N, 120 * D2R).normalize();
 export const MOON = { radius: 1737400, dist: 3.844e8, pos: MOON_DIR.clone().multiplyScalar(3.844e8) };
 export const EARTH = { radius: R_EARTH, pos: new THREE.Vector3(0, 0, 0) };
 
@@ -63,8 +88,7 @@ export const EARTH = { radius: R_EARTH, pos: new THREE.Vector3(0, 0, 0) };
 const AU = 1.496e11;
 export { AU };
 const _eu = SUN_DIR.clone().negate();
-const _en = new THREE.Vector3(0, Math.cos(52.5 * Math.PI / 180), -Math.sin(52.5 * Math.PI / 180)).projectOnPlane(_eu).normalize()
-  .applyAxisAngle(_eu, 23.4 * Math.PI / 180);
+const _en = _ECL_N.clone().projectOnPlane(_eu).normalize();
 const _ev = new THREE.Vector3().crossVectors(_en, _eu).normalize();
 export const ECLIPTIC = { u: _eu, v: _ev, n: _en };
 const G = 6.674e-11;
@@ -107,3 +131,23 @@ export const BODIES = [
 export const BODY = Object.fromEntries(BODIES.map((b) => [b.id, b]));
 // 지구 파괴 속도 (게임 값): 광속의 약 33배
 export const EARTH_BREAK_V = BODY.earth.breakV;
+
+// ───────── 태양계 밖: 가까운 별, 블랙홀, 은하 (실제 적경·적위·거리·반지름) ─────────
+export const LY = 9.4607e15;
+const RSUN = 6.957e8;
+function far(id, name, kind, ra, dec, distLy, radius, extra = {}) {
+  const pos = eqToLocal(ra, dec).multiplyScalar(distLy * LY);
+  return Object.assign({ id, name, kind, ra, dec, distLy, pos, radius, far: true, breakV: Infinity, GM: 0 }, extra);
+}
+export const FAR = [
+  far('proxima', '프록시마 센타우리', 'star', 217.4289, -62.6795, 4.2465, 0.154 * RSUN, { temp: 3042 }),
+  far('alphacen', '알파 센타우리 A', 'star', 219.9021, -60.834, 4.367, 1.22 * RSUN, { temp: 5790 }),
+  far('sirius', '시리우스', 'star', 101.2872, -16.7161, 8.611, 1.711 * RSUN, { temp: 9940 }),
+  far('vega', '베가', 'star', 279.2347, 38.7837, 25.04, 2.36 * RSUN, { temp: 9602 }),
+  far('polaris', '북극성', 'star', 37.9546, 89.2641, 433, 37.5 * RSUN, { temp: 6015 }),
+  far('betelgeuse', '베텔게우스', 'star', 88.7929, 7.4071, 548, 764 * RSUN, { temp: 3600 }),
+  far('sgra', '궁수자리 A* (블랙홀)', 'blackhole', 266.4168, -29.0078, 26670, 1.2e10),
+  far('lmc', '대마젤란 은하', 'galaxy', 80.894, -69.756, 163000, 7000 * LY),
+  far('andromeda', '안드로메다 은하', 'galaxy', 10.6847, 41.2687, 2537000, 110000 * LY),
+];
+for (const f of FAR) BODY[f.id] = f;

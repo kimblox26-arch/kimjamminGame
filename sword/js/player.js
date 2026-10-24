@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Avatar, RIG } from './avatar.js';
 import { Animator, CH } from './animator.js';
-import { origin, onRebase, airDensity, ATMO_TOP, flatToPlanet, planetToFlat, localToPlanetQuat, MOON, SUN, EARTH, R_EARTH, C_LIGHT, BODIES, BODY, EARTH_BREAK_V } from './frame.js';
+import { origin, onRebase, airDensity, ATMO_TOP, flatToPlanet, planetToFlat, localToPlanetQuat, MOON, SUN, EARTH, R_EARTH, C_LIGHT, BODIES, BODY, EARTH_BREAK_V, FAR } from './frame.js';
 
 export const SOUND_SPEED = 343;
 const STUD = 0.4;
@@ -11,10 +11,11 @@ const STAMINA_MAX = 100, STAMINA_DRAIN = 10, STAMINA_REGEN = 20, EXHAUST_DELAY =
 const TAU = Math.PI * 2;
 const GRAVITY = 34;
 const MASS = 80;                       // 충돌 에너지 계산용 (kg)
-const V_SPACE_MAX = 3e12;              // 우주 최고 속도 (광속의 만 배, 비현실적·의도적: 해왕성까지 수 초)
+const V_SPACE_MAX = 1e26;              // 우주 최고 속도 (비현실적·의도적: 은하 사이도 수십 초)
 const V_EARTH_BREAK = EARTH_BREAK_V;   // 이 속도 이상으로 지면 충돌 → 지구 폭발 (광속의 약 33배)
 // 목표 천체 순서 (T 키)
-export const TARGETS = ['earth', 'moon', 'sun', 'mercury', 'venus', 'mars', 'jupiter', 'io', 'europa', 'ganymede', 'callisto', 'saturn', 'titan', 'uranus', 'neptune', 'pluto'];
+export const TARGETS = ['earth', 'moon', 'sun', 'mercury', 'venus', 'mars', 'jupiter', 'io', 'europa', 'ganymede', 'callisto', 'saturn', 'titan', 'uranus', 'neptune', 'pluto',
+  'proxima', 'alphacen', 'sirius', 'vega', 'polaris', 'betelgeuse', 'sgra', 'lmc', 'andromeda'];
 // 대기 중 최고 속도: 해면 12 km/s, 공기가 옅을수록 빨라짐
 const airVmax = (dens) => Math.min(60000, 12000 / Math.max(0.08, Math.sqrt(dens)));
 
@@ -290,25 +291,30 @@ export class Player {
     this.launchPoseT += dt;
 
     if (this.hidden) { this.vel.set(0, 0, 0); this.snapshot(this.snapCur); return; }
+    // 지구가 부서졌으면 땅도 공기도 없음: 계속 우주 비행
+    const noEarth = this.gone.has('earth');
+    if (noEarth && this.mode !== 'fly') { this.mode = 'fly'; this.trick = null; }
     // 적분: 대기권 위에서는 행성 좌표로 적분해 실제 3D 궤적(지구 중심 기준)을 따름
     this.prevPos.copy(this.pos);
-    if (this.mode === 'fly' && this.pos.y + origin.y > ATMO_TOP) this.integratePlanet(dt);
+    if (this.mode === 'fly' && (this.pos.y + origin.y > ATMO_TOP || noEarth)) this.integratePlanet(dt);
     else this.pos.addScaledVector(this.vel, dt);
     this.pos.addScaledVector(this.dash, dt);
     this.dash.multiplyScalar(Math.exp(-5.5 * dt));
     this.speed = this.vel.length();
     const absY = this.pos.y + origin.y;
-    this.inSpace = absY > ATMO_TOP;
-    this.dens = airDensity(absY);
+    this.inSpace = absY > ATMO_TOP || noEarth;
+    this.dens = noEarth ? 0 : airDensity(absY);
     // 마하는 공기가 있을 때만 의미가 있음
     // 유효 마하: 공기가 옅으면 같은 속도라도 충격파/가열이 약함 (진공에서는 0)
     this.mach = this.speed / SOUND_SPEED * clamp(Math.sqrt(this.dens) * 8, 0, 1);
 
     // 건물 / 지면 처리
-    this.buildingCollide(dt);
-    if (this.hidden) { this.snapshot(this.snapCur); return; }
-    this.groundCollide(dt);
-    if (this.hidden) { this.snapshot(this.snapCur); return; }
+    if (!noEarth) {
+      this.buildingCollide(dt);
+      if (this.hidden) { this.snapshot(this.snapCur); return; }
+      this.groundCollide(dt);
+      if (this.hidden) { this.snapshot(this.snapCur); return; }
+    }
 
     // 가속도 (고유 가속도: 자유낙하 중엔 0)
     _v3.subVectors(this.vel, this.prevVel).divideScalar(dt);
@@ -917,14 +923,41 @@ export class Player {
         this.game.planetImpact(b.id, this, _v3);
         return false;
       }
-      // 표면에서 멈춤 (충돌 에너지만큼 흔들림)
+      // 표면: 안쪽으로 파고드는 속도만 없애고 표면을 따라 미끄러짐 → 그 천체 위를 날아다닐 수 있음
+      P1.lerpVectors(P0, P1, t);
+      _v3.subVectors(P1, b.pos).normalize();                 // 표면 법선
+      P1.copy(b.pos).addScaledVector(_v3, b.radius + 4);
+      const vn = _Vp.dot(_v3);
+      if (vn < 0) _Vp.addScaledVector(_v3, -vn);
+      _Vp.multiplyScalar(sp > 2000 ? 0.3 : 0.9);              // 세게 부딪히면 크게 감속
+      planetToFlat(P1.x, P1.y, P1.z, _F);
+      localToPlanetQuat(_F.x, _F.z, _q2);
+      this.vel.copy(_Vp).applyQuaternion(_q2.invert());
+      this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
+      this.surfBody = b.id;
+      if (this.autopilot && b.id === TARGETS[this.targetIdx]) { this.autopilot = false; this.speedLock = 0; }
+      if (-vn > 50) this.game.hooks.shake(clamp(0.2 + Math.log10(1 + -vn) / 10, 0, 1));
+      if (this.game.toast && (this._landToast || 0) < this.time) {
+        this._landToast = this.time + 6;
+        this.game.toast(-vn < 400 ? `${b.name} 표면 — 표면을 따라 날 수 있음` : `${b.name}에 충돌 (부수려면 초속 ${fmtSpeed(b.breakV)} 이상)`);
+      }
+      return true;
+    }
+    // 태양계 밖 별: 부딪히면 그 별이 폭발 (초신성), 블랙홀: 사건의 지평선에서 더 못 들어감
+    for (const b of FAR) {
+      if (b.kind === 'galaxy' || this.gone.has(b.id)) continue;
+      const t = segSphere(P0, P1, b.pos, b.radius * (b.kind === 'blackhole' ? 3 : 1));
+      if (t < 0) continue;
+      if (b.kind === 'star') {
+        if (C) { this.gone.add(b.id); this.game.planetImpact(b.id, this, _Vp); }
+        if (b.id === TARGETS[this.targetIdx]) this.autopilot = false;
+        return false;
+      }
       P1.lerpVectors(P0, P1, t);
       planetToFlat(P1.x, P1.y, P1.z, _F);
       this.pos.set(_F.x - origin.x, _F.y - origin.y, _F.z - origin.z);
-      this.vel.set(0, 0, 0);
-      this.speedLock = 0; this.autopilot = false;
-      this.game.hooks.shake(clamp(0.2 + Math.log10(1 + sp) / 10, 0, 1));
-      this.game.toast && this.game.toast(sp < 400 ? `${b.name} 표면에 도착` : `${b.name}에 충돌 (파괴하려면 초속 ${fmtSpeed(b.breakV)} 이상)`);
+      this.vel.set(0, 0, 0); this.autopilot = false; this.speedLock = 0;
+      this.game.toast && this.game.toast('블랙홀 사건의 지평선 — 빛도 빠져나오지 못하는 곳');
       return true;
     }
     return false;

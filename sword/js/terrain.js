@@ -208,7 +208,89 @@ function terrainCore() {
   // ---------- 결과 구조체 ----------
   const S = { h: 0, level: -1e9, urban: 0, forest: 0, park: 0, rock: 0, edge: 1e4, floor: 0, relief: 0, sea: 0 };
 
+  // ===== 실제 지구 (먼 곳): NASA 고도 + 바다 마스크 + 식생 =====
+  let GEO = null;
+  const RE = 6371000;
+  const LA0 = 37.5665 * Math.PI / 180, LO0 = 126.978 * Math.PI / 180;
+  const EX = -Math.sin(LO0), EY = Math.cos(LO0);
+  const UX = Math.cos(LA0) * Math.cos(LO0), UY = Math.cos(LA0) * Math.sin(LO0), UZ = Math.sin(LA0);
+  const NX = -Math.sin(LA0) * Math.cos(LO0), NY = -Math.sin(LA0) * Math.sin(LO0), NZ = Math.cos(LA0);
+  const BL0 = 60000, BL1 = 110000;   // 이 거리부터 실제 지구로 넘어감
+  function setGeo(g) { GEO = g; }
+  let GU = 0, GV = 0;
+  function geoUV(x, z) {
+    const a = x / RE, b = z / RE, ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+    const nx = sa * cb, ny = ca * cb, nz = sb;
+    const ex = nx * EX + ny * UX - nz * NX, ey = nx * EY + ny * UY - nz * NY, ez = ny * UZ - nz * NZ;
+    const lat = Math.asin(ez < -1 ? -1 : ez > 1 ? 1 : ez), lon = Math.atan2(ey, ex);
+    GU = lon / (2 * Math.PI) + 0.5; GV = 0.5 - lat / Math.PI;
+  }
+  function bil(A, W, H, u, v) {
+    let px = u * W - 0.5, py = v * H - 0.5;
+    const x0 = Math.floor(px), y0 = Math.floor(py), fx = px - x0, fy = py - y0;
+    const xa = ((x0 % W) + W) % W, xb = (xa + 1) % W;
+    const ya = y0 < 0 ? 0 : y0 >= H ? H - 1 : y0, yb = y0 + 1 >= H ? H - 1 : y0 + 1 < 0 ? 0 : y0 + 1;
+    const a = A[ya * W + xa], b = A[ya * W + xb], c = A[yb * W + xa], d = A[yb * W + xb];
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+  }
+  function bit(B, W, H, xi, yi) { xi = ((xi % W) + W) % W; yi = yi < 0 ? 0 : yi >= H ? H - 1 : yi; const i = yi * W + xi; return (B[i >> 3] >> (i & 7)) & 1; }
+  function bilBit(B, W, H, u, v) {
+    const px = u * W - 0.5, py = v * H - 0.5;
+    const x0 = Math.floor(px), y0 = Math.floor(py), fx = px - x0, fy = py - y0;
+    const a = bit(B, W, H, x0, y0), b = bit(B, W, H, x0 + 1, y0), c = bit(B, W, H, x0, y0 + 1), d = bit(B, W, H, x0 + 1, y0 + 1);
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy;
+  }
+  // 실제 지구 지형 → S
+  function evalGeo(x, z, full) {
+    const G = GEO;
+    geoUV(x, z);
+    const e = bil(G.topo, G.tw, G.th, GU, GV) * 25;                       // 고도 (m)
+    let m = bilBit(G.water, G.ww, G.wh, GU, GV);                          // 1 = 물
+    m += 0.16 * noise(x * (1 / 2600) + 3.1, z * (1 / 2600) - 1.7) + 0.07 * noise(x * (1 / 700) - 5.2, z * (1 / 700) + 2.4);   // 프랙털 해안선
+    const coast = sstep(0.62, 0.42, m);                                    // 1 = 내륙, 0 = 해안
+    const amp = 14 + 0.32 * e;
+    const det = amp * efbm(x * (1 / 5200) + 1.3, z * (1 / 5200) - 7.7, 5) + 0.35 * amp * ridged(x * (1 / 1700) + 4.4, z * (1 / 1700) + 0.6, 4);
+    let h, level = -1e9;
+    const floor = 1.5 + e * 0.92 * coast;
+    if (m > 0.5) {
+      // 바다/호수: 해안에서 멀수록 깊음
+      h = -2 - 60 * sstep(0.5, 0.95, m) - 5 * noise(x * (1 / 900), z * (1 / 900));
+      level = 0;
+    } else {
+      h = 1.2 + (e + det) * coast + 1.5 * noise(x * (1 / 140), z * (1 / 140));
+      if (h < 0.8) h = 0.8;
+    }
+    S.h = h; S.level = level; S.edge = 1e4; S.floor = floor;
+    if (!full) return h;
+    S.relief = Math.max(0, h - floor);
+    const gr = bil(G.green, G.cw, G.ch, GU, GV) / 255, ar = bil(G.arid, G.cw, G.ch, GU, GV) / 255;
+    S.urban = 0; S.park = 0;
+    S.forest = m > 0.5 ? 0 : clamp(gr * 1.6 - ar * 0.5, 0, 1) * (1 - sstep(2600, 3600, e));
+    S.rock = m > 0.5 ? 0 : clamp(ar * 0.9 + sstep(2400, 4200, e) + sstep(40, 200, S.relief) * 0.4, 0, 1);
+    S.sea = m > 0.5 ? 1 : 0;
+    return h;
+  }
+  const SL = { h: 0, level: 0, urban: 0, forest: 0, park: 0, rock: 0, edge: 0, floor: 0, relief: 0, sea: 0 };
   function evalTerrain(x, z, full) {
+    if (!GEO) return evalLocal(x, z, full);
+    const d = Math.sqrt(x * x + z * z);
+    if (d <= BL0) return evalLocal(x, z, full);
+    if (d >= BL1) return evalGeo(x, z, full);
+    // 경계: 두 지형을 섞음
+    evalLocal(x, z, full);
+    Object.assign(SL, S);
+    evalGeo(x, z, full);
+    const t = sstep(BL0, BL1, d);
+    S.h = lerp(SL.h, S.h, t); S.floor = lerp(SL.floor, S.floor, t);
+    S.level = t < 0.5 ? SL.level : S.level; S.edge = t < 0.5 ? SL.edge : S.edge;
+    if (full) {
+      S.urban = lerp(SL.urban, S.urban, t); S.forest = lerp(SL.forest, S.forest, t); S.park = lerp(SL.park, S.park, t);
+      S.rock = lerp(SL.rock, S.rock, t); S.relief = lerp(SL.relief, S.relief, t); S.sea = lerp(SL.sea, S.sea, t);
+    }
+    return S.h;
+  }
+
+  function evalLocal(x, z, full) {
     // --- 시골: 휘어진 골짜기망 + 산줄기 ---
     const ex = (x - 2500) * (1 / 23000), ez = (z + 1500) * (1 / 19500);
     const ed = Math.sqrt(ex * ex + ez * ez) + 0.2 * noise(x * (1 / 11000) - 3.1, z * (1 / 11000) + 2.2);
@@ -560,7 +642,7 @@ function terrainCore() {
     return idx;
   }
 
-  return { heightAt, waterLevelAt, urbanAt, sample, roadAt, genChunk, buildIndex, evalTerrain, S, noise };
+  return { heightAt, waterLevelAt, urbanAt, sample, roadAt, genChunk, buildIndex, evalTerrain, S, noise, setGeo };
 }
 /*CORE-END*/
 
@@ -1105,6 +1187,11 @@ export class Terrain {
     this.stats = { draws: 0, tris: 0, nodes: 0, slots: 0, pending: 0, inflight: 0, genMs: 0, generated: 0 };
 
     this._initWorkers(opts.workers !== undefined ? opts.workers : (low ? 2 : 4));
+    // 실제 지구 데이터 (먼 곳 지형): 메인과 워커 모두에
+    if (opts.geo) {
+      CORE.setGeo(opts.geo);
+      for (const rec of this._workers) rec.w.postMessage({ geo: opts.geo });
+    }
     this._syncBufs = null;
 
     // 최상위 청크 3×3 은 바로 생성 (구멍 방지)
@@ -1125,6 +1212,7 @@ export class Terrain {
       'self.onmessage = (e) => {\n' +
       '  const d = e.data;\n' +
       '  if (d.recycle) { pool.push(d.recycle); return; }\n' +
+      '  if (d.geo) { core.setGeo(d.geo); return; }\n' +
       '  const r = core.genChunk(d.level, d.ix, d.iz, d.N, d.leaf, d.sx, d.sy, d.sz, pool.pop());\n' +
       '  self.postMessage({ key: d.key, r }, [r.pos.buffer, r.n.buffer, r.nc.buffer, r.attr.buffer, r.data.buffer]);\n' +
       '};\n';

@@ -16,6 +16,8 @@ import { Cosmic } from './cosmic.js';
 import { Water } from './water.js';
 import { Trees } from './trees.js';
 import { Wreck } from './wreck.js';
+import * as geoMod from './geo.js';
+import { loadGeo } from './geo.js';
 import { Blade } from './blade.js';
 import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
 import { TARGETS } from './player.js';
@@ -49,7 +51,9 @@ camera.position.set(0, 2.5, -8);
 // 해: 스폰 카메라의 오른쪽 뒤, 고도 30° → 캐릭터 면마다 명암이 갈려 하얀 바닥 위에서도 형태가 또렷함
 const sunDir = SUN_DIR.clone();
 const world = new World(renderer, scene, { quality, sunDir });
-const terrain = new Terrain(renderer, scene, { quality, sunDir });
+// 실제 지구 데이터 (먼 곳 지형·해안선). 없으면 절차적 지형만
+const geo = await loadGeo('./assets/');
+const terrain = new Terrain(renderer, scene, { quality, sunDir, geo });
 const city = new City(renderer, scene, { quality, sunDir });
 const water = new Water(renderer, scene, { quality, envMap: city.envMap });
 const trees = new Trees(renderer, scene, { quality, envMap: city.envMap, footprint: (x, z) => city.roofAt(x, z) });
@@ -105,17 +109,12 @@ const game = {
     hooks.flash(1);
     hooks.shake(1);
     audio.play('sonicBoom', 1);
-    if (name === 'sun') cosmic.supernova(); else cosmic.explode(name, _dP);
-    if (name === 'earth' || name === 'sun') {
-      earthGone = name === 'earth';
-      cineMode = true;
-      pl.hidden = true;
-      pl.vel.set(0, 0, 0); pl.speed = 0; pl.mach = 0; pl.boostAmt = 0;
-      pl.avatar.root.visible = false;
-      post.setSpaceOnly(true);
-      $('reset').hidden = false;
-      toast(name === 'earth' ? '지구 파괴!' : '태양 초신성 폭발!');
-    } else toast(`${BODY[name].name} 파괴!`);
+    const star = name === 'sun' || (BODY[name] && BODY[name].kind === 'star');
+    if (star) cosmic.supernova(name); else cosmic.explode(name, _dP);
+    // 연출 없이 그 자리에서 바로 부서짐. 플레이어는 계속 조종 (지구가 사라지면 땅·바다·하늘도 사라지고 우주에 남음)
+    if (name === 'earth') { earthGone = true; pl.mode = 'fly'; }
+    $('reset').hidden = false;
+    toast(name === 'earth' ? '지구 파괴!' : star ? `${BODY[name].name} 초신성 폭발!` : `${BODY[name].name} 파괴!`);
   },
 };
 const player = new Player(scene, game);
@@ -189,7 +188,7 @@ input.onKey = (code) => {
   if (code === 'KeyH') $('help').classList.toggle('hide');
   if (code === 'KeyP') { capIdx = (capIdx + 1) % CAPS.length; toast(CAPS[capIdx] ? `FPS 제한: ${CAPS[capIdx]}` : 'FPS 제한: 없음 (모니터 주사율)'); }
   if (code === 'KeyO') { eco = !eco; applyEco(true); }
-  if (code === 'Enter' && (cineMode || player.gone.size > 0)) resetWorld();
+  if (code === 'Enter' && player.gone.size > 0) resetWorld();
 };
 $('btn-mute')?.addEventListener('click', () => { audio.muted = !audio.muted; $('btn-mute').textContent = audio.muted ? '🔇' : '🔊'; });
 $('btn-eco')?.addEventListener('click', () => { eco = !eco; applyEco(true); });
@@ -234,7 +233,7 @@ function fmtDist(m) {
 }
 function updateTargetMark() {
   const id = TARGETS[player.targetIdx], b = space.bodies[id];
-  const show = (player.inSpace || cineMode === false && camAbs.y > 20000) && !cineMode && b && b.group.visible;
+  const show = (player.inSpace || camAbs.y > 20000) && b && b.group.visible;
   tmark.el.hidden = !show;
   if (!show) return;
   const v = tmark.v.copy(b.group.position).applyMatrix4(space.camera.matrixWorldInverse);
@@ -305,7 +304,7 @@ let failPR = Infinity, failT = 0;
 const rafSamples = new Float32Array(60);
 let rafN = 0, measured = false;
 const elapsed = { t: 0 };
-const camAbs = new THREE.Vector3();
+const camAbs = new THREE.Vector3(), _wAbs = new THREE.Vector3();
 // 지구 폭발 연출: 우주 장면만, cosmic 이 제안하는 위치에서 바라봄
 const cine = { active: false, planetPosMeters: new THREE.Vector3(), lookAtPlanetMeters: new THREE.Vector3() };
 const _cineCam = new THREE.PerspectiveCamera(), _cf = new THREE.Vector3(), _cq = new THREE.Quaternion(), _cm = new THREE.Matrix4();
@@ -382,14 +381,16 @@ function frame(now) {
   rig.update(dt, player, input);
   camAbs.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
   world.focusAGL = player.agl + 1;
-  world.update(dt, elapsed.t, camera, player.renderPos, camAbs);
-  terrain.update(dt, camera, camAbs);
-  city.update(dt, camera, camAbs);
+  // 지구가 부서졌으면 땅·도시·바다·하늘을 모두 '아주 높은 곳'처럼 숨김
+  const wAbs = earthGone ? _wAbs.set(camAbs.x, 5e8, camAbs.z) : camAbs;
+  world.update(dt, elapsed.t, camera, player.renderPos, wAbs);
+  terrain.update(dt, camera, wAbs);
+  city.update(dt, camera, wAbs);
   wreck.update(dbg.paused ? dt : dt * timeScale, camAbs);
   if (!water.ready && (terrain.stats.draws > 30 || elapsed.t > 8)) water.ready = true;
-  water.update(dt, camera, camAbs);
-  trees.update(dt, camera, camAbs, camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
-  if (cineMode) cinematic(dt); else space.update(dt, camera, camAbs, camAbs.y);
+  water.update(dt, camera, wAbs);
+  trees.update(dt, camera, wAbs, earthGone ? 1e9 : camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
+  space.update(dt, camera, camAbs, earthGone ? 5e8 : camAbs.y);
   cosmic.update(dt, camAbs);
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
   audio.update(dt, player.audioState);
@@ -402,7 +403,7 @@ function frame(now) {
   P.chroma = Math.min(1, P.speed * 0.8 + flash * 0.5);
   P.vignette = 0.28 + P.speed * 0.35;
   // 물속 화면 (카메라가 수면 아래)
-  const cwl = terrainMod.waterLevelAt(camAbs.x, camAbs.z);
+  const cwl = earthGone ? -Infinity : terrainMod.waterLevelAt(camAbs.x, camAbs.z);
   P.under = Math.min(1, Math.max(0, (cwl - camAbs.y) * 3));
   flash = Math.max(0, flash - dt * 2.6);
   P.flash = flash;
@@ -437,3 +438,4 @@ window.__frame = frameMod;
 window.__targets = TARGETS;
 window.__wl = terrainMod.waterLevelAt;
 window.__ts = terrainMod.terrainSample;
+window.__geo = geoMod;
