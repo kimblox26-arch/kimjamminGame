@@ -589,6 +589,45 @@
   </div>
 </div>
 <input type="file" id="pfFile" hidden>
+<!-- 미니게임 '검의 회오리' (js/mini.js) -->
+<div id="miniGame" class="mini" hidden>
+  <canvas id="mgCv"></canvas>
+  <div class="mg-hud" id="mgHud" hidden>
+    <div class="mg-chip"><small>시간</small><b id="mgTime">0:00</b></div>
+    <div class="mg-chip"><small>처치</small><b id="mgKills">0</b></div>
+    <div class="mg-chip mg-gold"><small>포인트</small><b id="mgPts">0</b></div>
+    <button type="button" class="mg-round" id="mgPauseBtn" aria-label="일시정지"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg></button>
+  </div>
+  <div class="mg-panel" id="mgLobby" hidden>
+    <div class="mg-card">
+      <button type="button" class="mg-round mg-x" aria-label="닫기">✕</button>
+      <div class="mg-title"><span class="mg-emb"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="3" stroke-dasharray="20 7" stroke-linecap="round"/><path d="M24 5l4 5v19h-8V10z" fill="#fff"/><path d="M24 7v21" stroke="#c9d2ff" stroke-width="1.6"/><rect x="16" y="29" width="16" height="4" rx="2" fill="#ffc23d"/><rect x="22" y="33" width="4" height="7" rx="1.5" fill="#7b4a24"/><circle cx="24" cy="42" r="2.6" fill="#ffc23d"/></svg></span><div><h2>검의 회오리</h2><p>내 둘레를 도는 검으로 괴물을 물리쳐요</p></div></div>
+      <div class="mg-bank"><span>모은 포인트</span><b id="mgBankL">0</b><small id="mgBest"></small></div>
+      <div class="mg-ups" id="mgUps"></div>
+      <p class="mg-tip">손가락으로 끌거나 WASD · 방향키로 움직여요. 체력 포션을 먹으면 체력이 차요!</p>
+      <button type="button" class="mg-go" id="mgStart">시작하기</button>
+    </div>
+  </div>
+  <div class="mg-panel" id="mgPause" hidden>
+    <div class="mg-card mg-small">
+      <h2>잠깐 멈춤</h2>
+      <p class="mg-tip">그만해도 지금까지 모은 포인트는 받아요.</p>
+      <button type="button" class="mg-go" id="mgResume">계속하기</button>
+      <button type="button" class="mg-sub" id="mgQuit">그만하기</button>
+    </div>
+  </div>
+  <div class="mg-panel" id="mgOver" hidden>
+    <div class="mg-card mg-small">
+      <button type="button" class="mg-round mg-x" aria-label="닫기">✕</button>
+      <h2>쓰러졌어요!</h2>
+      <p class="mg-rec" id="mgRecord" hidden>최고 기록 달성!</p>
+      <div class="mg-stats" id="mgOverStats"></div>
+      <p class="mg-tip">모은 포인트 <b id="mgBank">0</b>P</p>
+      <button type="button" class="mg-go" id="mgAgain">다시 하기</button>
+      <button type="button" class="mg-sub" id="mgToLobby">업그레이드 하러 가기</button>
+    </div>
+  </div>
+</div>
 <div id="hubModal" class="modal" hidden>
   <div class="card wide hub-card">
     <div class="row between"><h3>👑 도전</h3><button type="button" class="icon-btn" data-close="hubModal">✕</button></div>
@@ -768,6 +807,7 @@
 <script src="js/intro.js"></script>
 <script src="js/shared.js"></script>
 <script src="js/problems.js"></script>
+<script src="js/mini.js"></script>
 <script>window.MLE_MAP_URL = "map.json?v=zj1s-6df6ea5824"; window.MLE_MAP_BIN_URL = "map.bin?v=zj1s-6df6ea5824"; window.MLE_MAPS = {"e":["map.json?v=zj1s-6df6ea5824","map.bin?v=zj1s-6df6ea5824"],"m":["map-m.json?v=ziyc-1b821eca46","map-m.bin?v=ziyc-1b821eca46"],"h":["map-h.json?v=124a4-72799705e0","map-h.bin?v=124a4-72799705e0"]};</script>
 <script src="js/firebase-config.js"></script>
 <script src="js/backend.js"></script>
