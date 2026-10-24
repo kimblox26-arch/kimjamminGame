@@ -321,6 +321,7 @@ export class Wreck {
   // 잔해 + 먼지 + 소리/흔들림 (상자는 절대 좌표)
   _crumbleBoxes(boxes, x, gy, z, R, quiet = false) {
     const fx = this.fx;
+    if (this.life) this.life.blast(x, gy, z, clamp(R * 1.5, 10, 150), 12);
     if (fx && fx.debrisBoxes) fx.debrisBoxes(boxes);
     if (fx && fx.dustCloud) fx.dustCloud(x - origin.x, gy - origin.y, z - origin.z, clamp(R, 8, 120), 25);
     const d = Math.hypot(x - this.camAbs.x, z - this.camAbs.z);

@@ -240,7 +240,7 @@ export class Nukes {
     const G = this.game, C = G.city, T = G.terrain;
     const gy = T ? T.heightAt(p.x, p.z) : p.y;
     const wl = T ? T.waterLevelAt(p.x, p.z) : -1e9;
-    const B = { p: p.clone(), gy: Math.max(gy, wl), water: wl > gy && p.y - wl < R_FIRE, t: 0, k: 0, heard: false, hitPlayer: false, front: 0 };
+    const B = { id: (this._n = (this._n || 0) + 1), p: p.clone(), gy: Math.max(gy, wl), water: wl > gy && p.y - wl < R_FIRE, t: 0, k: 0, heard: false, hitPlayer: false, front: 0 };
     // 불덩이 + 갓
     const u = { uTime: { value: 0 }, uHeat: { value: 1 }, uCap: { value: 0 }, uRough: { value: 0.12 }, uA: { value: 1 }, uSun: { value: SUN_DIR } };
     B.ball = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 40), new THREE.ShaderMaterial({ vertexShader: BALL_VS, fragmentShader: BALL_FS, uniforms: u, transparent: true, depthWrite: false, fog: false }));
@@ -298,6 +298,7 @@ export class Nukes {
       if (boxes.length && fx.debrisBoxes) fx.debrisBoxes(boxes);
     }
     if (B.zone && G.trees.setFront) G.trees.setFront(B.zone, B.front);
+    if (G.life) G.life.shock(B.id, B.p.x, B.gy, B.p.z, B.front, R_FIRE * 1.4, R_5, R_1);
     // 플레이어: 충격파가 닿으면 날아감
     const P = G.player;
     if (P && !B.hitPlayer && !P.hidden) {

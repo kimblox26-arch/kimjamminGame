@@ -579,6 +579,7 @@ export class Blade {
         if (fx.energyBurst) fx.energyBurst(_v, 2.2, 1.0, 1.4, 2.4, true);
         if (fx.dustCloud && Math.random() < 0.6) fx.dustCloud(x, y - 2, z, 6, 8);
         this.game.audio.play('clang', 1);
+        if (this.game.life) this.game.life.panic(x, z, 120);
         H.shake(0.5); H.flash(0.15); H.shockwave && H.shockwave(_v, 0.25);
         this.game.hitStop(0.09, 0.04);
         this.hits++;
@@ -603,6 +604,7 @@ export class Blade {
     H.shake(1); H.flash(0.2); H.fovKick(9); H.shockwave && H.shockwave(_v, 0.6);
     this.game.audio.play('clang', 1);
     this.game.hitStop(0.12, 0.03);
+    if (this.game.life) this.game.life.blast(ax, gy, az, 22, 22);
     if (!C || !W) return;
     // 16 m 안 건물: 가까우면 부서짐, 멀면 바깥쪽으로 쓰러짐
     const seen = new Set();

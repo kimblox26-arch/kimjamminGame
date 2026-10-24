@@ -22,6 +22,7 @@ import { Blade } from './blade.js';
 import { Underground, layerName } from './underground.js';
 import { Cape } from './cape.js';
 import { Nukes } from './nuke.js';
+import { Life } from './life.js';
 import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
 import { TARGETS } from './player.js';
 
@@ -95,7 +96,7 @@ const cosmic = new Cosmic(space, hooks, { quality });
 // 건물 물리 (잘린 조각/넘어지는 건물)
 const wreck = new Wreck(city, scene, { fx, audio, hooks, terrainH: (x, z) => terrainMod.heightAt(x, z) });
 const under = new Underground(scene);
-const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3();
+const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3(), _pAbs = new THREE.Vector3();
 let earthGone = false, cineMode = false;
 const game = {
   fx, audio, hooks, cosmic, city, wreck, toast: (m) => toast(m),
@@ -128,6 +129,10 @@ const blade = new Blade(scene, game, player);
 const cape = new Cape(scene, player.avatar);
 game.player = player; game.trees = trees;
 const nukes = new Nukes(scene, game);
+// 사람·자동차·여객기·배·새
+const life = new Life(scene, game, { eco: isMobile });
+game.life = life;
+wreck.life = life;
 // 구름을 뚫으면 찢긴 수증기가 진행 방향으로 끌려가며 흩어짐
 world.onCloudPunch = (x, y, z, r) => {
   const v = player.vel;
@@ -163,7 +168,7 @@ spawn();
 function resetWorld() {
   cosmic.reset();
   wreck.reset();
-  blade.reset(); nukes.reset();
+  blade.reset(); nukes.reset(); life.reset();
   city.restoreAll();
   earthGone = false;
   cineMode = false;
@@ -200,6 +205,7 @@ function applyEco(show) {
   post._samplesCap = eco ? 0 : undefined;
   post._samples = -1;
   trees.setRadius(eco ? 380 : (quality === 'low' ? 520 : 900));
+  life.setEco(eco);
   water.setDetail && water.setDetail(eco);
   resize();
   store.set('skyblade.eco', eco ? '1' : '0');
@@ -430,6 +436,8 @@ function frame(now) {
   if (camDepth > 0.3) { world.sun.intensity *= 0.06; world.hemi.intensity *= 0.25; }
   cosmic.update(dt, camAbs);
   nukes.update(dbg.paused ? dt : dt * timeScale, camAbs);
+  _pAbs.set(player.renderPos.x + origin.x, player.renderPos.y + origin.y, player.renderPos.z + origin.z);
+  life.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, !earthGone && !player.hidden);
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
   audio.update(dt, player.audioState);
 
@@ -470,7 +478,7 @@ function frame(now) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);
-window.__game = { nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
+window.__game = { life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;

@@ -945,6 +945,7 @@ export class Player {
     const Ci = this.game.city;
     if (!Ci) return;
     const boxes = Ci.destroy(x + origin.x, y + origin.y, z + origin.z, r);
+    if (this.game.life) this.game.life.blast(x + origin.x, y + origin.y, z + origin.z, r * 2.5, 40);
     if (boxes && boxes.length && this.game.fx.debrisBoxes) this.game.fx.debrisBoxes(boxes);
   }
 
