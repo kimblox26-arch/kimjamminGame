@@ -237,6 +237,7 @@ export class Player {
 
   // ───────────────────────── 고정 스텝 ─────────────────────────
   step(dt, input, cam) {
+    if (this.pierced && this.pierced.size) for (const [k, v] of this.pierced) { if (v - dt <= 0) this.pierced.delete(k); else this.pierced.set(k, v - dt); }
     this.cam = cam;
     this.copySnap(this.snapPrev, this.snapCur);
     this.time += dt;
@@ -650,7 +651,12 @@ export class Player {
     const ax = rx + origin.x, az = rz + origin.z;
     const T = this.game.terrain, Ci = this.game.city;
     let h = T ? T.heightAt(ax, az) : 0, kind = 'ground';
-    if (Ci) { const r = Ci.roofAt(ax, az); if (r > h) { h = r; kind = 'roof'; } }
+    if (Ci) {
+      const r = Ci.roofAt(ax, az);
+      // 뚫린 구멍 속을 지나는 중이면 지붕을 땅으로 치지 않음
+      const py = this.pos.y + origin.y;
+      if (r > h && !(r > py + 1 && Ci.inHole && Ci.holes.length && Ci.inHole(ax, py, az, 1.0))) { h = r; kind = 'roof'; }
+    }
     // 물은 밟을 수 없음: 수면 높이만 따로 (없으면 -Infinity)
     const w = T ? T.waterLevelAt(ax, az) : -Infinity;
     this.waterY = w > h ? w - origin.y : -Infinity;
@@ -1061,6 +1067,7 @@ export class Player {
   buildingCollide(dt) {
     const Ci = this.game.city;
     if (!Ci || this.mode === 'hero' || this.mode === 'launch') return;
+    Ci.ignore = this.pierced && this.pierced.size ? this.pierced : null;
     const ox = origin.x, oy = origin.y, oz = origin.z;
     let ax = this.prevPos.x + ox, ay = this.prevPos.y + oy, az = this.prevPos.z + oz;
     const bx = this.pos.x + ox, by = this.pos.y + oy, bz = this.pos.z + oz;
@@ -1086,7 +1093,16 @@ export class Player {
       } else if (W) {
         _v2.copy(this.vel).normalize();
         const k = clamp(speed / 400, 0.5, 4);
-        if (Ci.bh[id] > 22 && Ci.isDynamicable(id) && _hit.y - Ci.by[id] > 6) {
+        // 실제처럼: 뚫고 지나간 자리만 구멍 (창문 깨짐·철근 노출), 구조가 버티지 못할 때만 무너짐
+        const hr = clamp(1.3 + speed / 320, 1.3, 4.5);
+        const res = Ci.addHole ? Ci.addHole(id, _hit.x, _hit.y, _hit.z, this.vel.x, this.vel.y, this.vel.z, hr) : 'collapse';
+        if (!this.pierced) this.pierced = new Map();
+        this.pierced.set(id, 0.7);
+        if (res === 'hole') {
+          if (fx.sparks) { fx.sparks(_v3, _v2, 90, 1.0, Math.min(70, speed * 0.2), 1.6, 1.9, 2.4, 0.045); fx.sparks(_v3, _v2, 40, 0.8, 25, 1.4, 1.3, 1.2, 0.09); }
+          if (fx.dustCloud) fx.dustCloud(hx, hy, hz, 6 + hr * 2, 3);
+          if (this.game.life) this.game.life.panic(_hit.x, _hit.z, 150);
+        } else if (Ci.bh[id] > 22 && Ci.isDynamicable(id) && _hit.y - Ci.by[id] > 6) {
           _v1.copy(_v2).multiplyScalar(4 + 5 * k).setY(Math.max(0, _v2.y) * 4);
           _N.set(_v2.z, 0, -_v2.x).multiplyScalar(0.18 * k);
           W.cut(id, _hit.y - 3, _v1, _N);
@@ -1101,6 +1117,7 @@ export class Player {
       this.game.hooks.shake(clamp(0.3 + speed / 3000, 0, 1));
       this.game.audio.play('heroLand', clamp(speed / 1500, 0.3, 1));
       if (pass === 0 && speed < 1500) this.game.hitStop(0.04, 0.15);
+      Ci.ignore = this.pierced;
       // 같은 스텝에서 그 뒤 건물로 이어서
       const L = Math.hypot(bx - _hit.x, by - _hit.y, bz - _hit.z);
       if (L < 0.8) return;

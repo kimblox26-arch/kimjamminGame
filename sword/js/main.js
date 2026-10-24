@@ -20,6 +20,8 @@ import * as geoMod from './geo.js';
 import { loadGeo } from './geo.js';
 import { loadSeoul, loadBuildings, loadLines, loadPoints } from './seoul.js';
 import { Roads } from './roads.js';
+import { PeakLabels } from './labels.js';
+import { Town } from './town.js';
 import { Blade } from './blade.js';
 import { Underground, layerName } from './underground.js';
 import { Cape } from './cape.js';
@@ -60,7 +62,8 @@ const world = new World(renderer, scene, { quality, sunDir });
 // 실제 지구 데이터 (먼 곳 지형·해안선). 없으면 절차적 지형만
 const geo = await loadGeo('./assets/');
 // 실제 서울: 고도·물·토지 격자 → 지형, 건물 → 도시, 도로·철도·시설 → 도로
-const loadMsg = (m) => { const e = document.querySelector('#start .tap'); if (e) e.textContent = m; };
+let loadStep = 0;
+const loadMsg = (m) => { const e = $('m-msg'); if (e) e.textContent = m; const b = $('m-bar'); if (b) b.style.width = Math.min(95, (++loadStep) * 22) + '%'; };
 const bootT = { t0: performance.now() };
 window.__boot = bootT;
 loadMsg('실제 서울 지형 불러오는 중…');
@@ -84,6 +87,7 @@ bootT.city = performance.now() - bootT.t0;
 const water = new Water(renderer, scene, { quality, envMap: city.envMap });
 const trees = new Trees(renderer, scene, { quality, envMap: city.envMap, footprint: (x, z) => city.roofAt(x, z) });
 if (roads) trees.extra = (x, z, s) => roads.streetTrees(x, z, s);
+const peaks = seoul ? new PeakLabels(scene, seoul.peaks, (x, z) => terrainMod.heightAt(x, z)) : null;
 const space = new Space(renderer, { quality });
 world.params.sunIntensity = 2.75;
 world.params.hemiIntensity = 1.05;
@@ -155,6 +159,8 @@ const nukes = new Nukes(scene, game);
 // 사람·자동차·여객기·배·새
 const life = new Life(scene, game, { eco: isMobile });
 game.life = life;
+const town = roads ? new Town(scene, { roads, heightAt: (x, z) => terrainMod.heightAt(x, z), city, audio }, { eco: isMobile }) : null;
+if (town) life.setTown(town);
 wreck.life = life;
 // 구름을 뚫으면 찢긴 수증기가 진행 방향으로 끌려가며 흩어짐
 world.onCloudPunch = (x, y, z, r) => {
@@ -215,7 +221,8 @@ const ui = {
   buttons: document.querySelectorAll('#touch [data-edge], #touch [data-hold]'),
 };
 const input = new Input(canvas, ui);
-input.onFirstGesture = () => { audio.unlock(); $('start').classList.add('hide'); };
+input.onFirstGesture = () => { audio.unlock(); };
+input.enabled = false;   // 메인 화면에서 시작을 누를 때까지
 if (input.isTouch) document.body.classList.add('touch');
 
 // ── 설정 토글 ──
@@ -244,15 +251,64 @@ function applyEco(show) {
   const b = $('btn-eco'); if (b) b.classList.toggle('on', eco);
   if (show) toast(eco ? '최적화 모드 켬 (발열↓)' : '최적화 모드 끔 (고화질)');
 }
-input.onKey = (code) => {
+input.onKey = (code, blocked) => {
+  if (code === 'Escape') { if (!$('settings').hidden) closeSettings(); else if ($('menu').classList.contains('hide')) openSettings(); return; }
+  if (blocked) return;
   if (code === 'KeyM') { audio.muted = !audio.muted; toast(audio.muted ? '소리 끔' : '소리 켬'); }
   if (code === 'KeyH') $('help').classList.toggle('hide');
   if (code === 'KeyP') { capIdx = (capIdx + 1) % CAPS.length; toast(CAPS[capIdx] ? `FPS 제한: ${CAPS[capIdx]}` : 'FPS 제한: 없음 (모니터 주사율)'); }
   if (code === 'KeyO') { eco = !eco; applyEco(true); }
   if (code === 'Enter' && player.gone.size > 0) resetWorld();
 };
-$('btn-mute')?.addEventListener('click', () => { audio.muted = !audio.muted; $('btn-mute').textContent = audio.muted ? '🔇' : '🔊'; });
-$('btn-eco')?.addEventListener('click', () => { eco = !eco; applyEco(true); });
+// ── 메인 화면 · 설정 ──
+const S = JSON.parse(store.get('skyblade.settings') || '{}');
+const saveS = () => store.set('skyblade.settings', JSON.stringify(S));
+function syncSettings() {
+  $('s-eco').checked = eco;
+  $('s-fps').value = String(capIdx);
+  $('s-sound').checked = !audio.muted;
+  $('s-fp').checked = rig.firstPerson;
+  $('s-sens').value = String(S.sens || 1);
+  $('s-bubbles').checked = S.bubbles !== false;
+  $('s-peaks').checked = S.peaks !== false;
+  $('s-help').checked = !$('help').classList.contains('hide');
+}
+function applySettings() {
+  rig.sens = 0.0022 * (S.sens || 1);
+  if (town) town.showBubbles = S.bubbles !== false;
+  if (peaks) peaks.enabled = S.peaks !== false;
+}
+function openSettings() { syncSettings(); $('settings').hidden = false; input.enabled = false; if (document.exitPointerLock) document.exitPointerLock(); }
+function closeSettings() { $('settings').hidden = true; input.enabled = $('menu').classList.contains('hide'); }
+function startGame() {
+  $('menu').classList.add('hide'); input.enabled = true; audio.unlock();
+  setTimeout(() => { if ($('menu').classList.contains('hide')) $('menu').style.display = 'none'; }, 500);   // 흐림 효과 합성 비용 제거
+  if (!input.isTouch && canvas.requestPointerLock) { try { const r = canvas.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) { /* 무시 */ } }
+  toast('서울에 오신 걸 환영합니다 — Esc 설정, H 조작법');
+}
+$('m-start').addEventListener('click', startGame);
+$('m-set').addEventListener('click', openSettings);
+$('btn-set').addEventListener('click', openSettings);
+$('s-close').addEventListener('click', closeSettings);
+$('s-menu').addEventListener('click', () => { $('settings').hidden = true; $('menu').style.display = ''; $('menu').classList.remove('hide'); input.enabled = false; });
+$('s-eco').addEventListener('change', (e) => { eco = e.target.checked; applyEco(true); });
+$('s-fps').addEventListener('change', (e) => { capIdx = +e.target.value; S.fps = capIdx; saveS(); });
+$('s-sound').addEventListener('change', (e) => { audio.muted = !e.target.checked; S.muted = audio.muted; saveS(); });
+$('s-fp').addEventListener('change', (e) => { if (e.target.checked !== rig.firstPerson) toggleView(); });
+$('s-sens').addEventListener('input', (e) => { S.sens = +e.target.value; saveS(); applySettings(); });
+$('s-bubbles').addEventListener('change', (e) => { S.bubbles = e.target.checked; saveS(); applySettings(); });
+$('s-peaks').addEventListener('change', (e) => { S.peaks = e.target.checked; saveS(); applySettings(); });
+$('s-help').addEventListener('change', (e) => $('help').classList.toggle('hide', !e.target.checked));
+if (S.fps !== undefined) capIdx = S.fps;
+if (S.muted) audio.muted = true;
+// 스킬 버튼 (클릭 = 키)
+for (const b of document.querySelectorAll('#skills [data-k]')) {
+  const k = b.dataset.k;
+  if (k === 'KeyK') {
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); input.keys.add('beam'); });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => input.keys.delete('beam'));
+  } else b.addEventListener('click', () => { const m = { KeyJ: 'slash', KeyL: 'wave', KeyN: 'nuke', KeyV: 'view' }[k]; if (m) input.edges.add(m); });
+}
 function toggleView() {
   rig.firstPerson = !rig.firstPerson;
   $('btn-view')?.classList.toggle('on', rig.firstPerson);
@@ -393,6 +449,8 @@ const dbg = { paused: false, pending: 0 };
 
 function frame(now) {
   requestAnimationFrame(frame);
+  PROF = window.__prof || null;
+  if (PROF) PROF.frames = (PROF.frames || 0) + 1;
   // 모니터 주사율 추정: 렌더 없이 도는 rAF 간격의 중앙값 (시작 직후 60틱은 측정만 함)
   if (lastRaf) {
     rafSamples[rafN % 60] = now - lastRaf;
@@ -433,7 +491,9 @@ function frame(now) {
   let steps = 0;
   const maxSteps = dbg.paused ? 1e6 : 12;
   while (acc >= STEP && steps < maxSteps) {
-    player.step(STEP, input, rig);
+    { const _t0 = PROF ? performance.now() : 0;
+  player.step(STEP, input, rig);
+  if (PROF) PROF['player'] = (PROF['player'] || 0) + performance.now() - _t0; }
     acc -= STEP;
     steps++;
   }
@@ -443,7 +503,9 @@ function frame(now) {
   if (Math.abs(pp.x) > 3000 || Math.abs(pp.y) > 3000 || Math.abs(pp.z) > 3000) rebase(Math.round(pp.x), Math.round(pp.y), Math.round(pp.z));
   player.interpolate(acc / STEP);
   player.updateVisual(dt);
+  { const _t0 = PROF ? performance.now() : 0;
   blade.render(dt, camera);
+  if (PROF) PROF['blade'] = (PROF['blade'] || 0) + performance.now() - _t0; }
   cape.update(dt, player.vel, !rig.firstPerson && !player.hidden && player.mode !== 'dig');
 
   elapsed.t += dt;
@@ -454,14 +516,27 @@ function frame(now) {
   world.focusAGL = player.agl + 1;
   // 지구가 부서졌으면 땅·도시·바다·하늘을 모두 '아주 높은 곳'처럼 숨김
   const wAbs = earthGone ? _wAbs.set(camAbs.x, 5e8, camAbs.z) : camAbs;
+  { const _t0 = PROF ? performance.now() : 0;
   world.update(dt, elapsed.t, camera, player.renderPos, wAbs);
+  if (PROF) PROF['world'] = (PROF['world'] || 0) + performance.now() - _t0; }
+  { const _t0 = PROF ? performance.now() : 0;
   terrain.update(dt, camera, wAbs);
+  if (PROF) PROF['terrain'] = (PROF['terrain'] || 0) + performance.now() - _t0; }
+  { const _t0 = PROF ? performance.now() : 0;
   city.update(dt, camera, wAbs);
+  if (PROF) PROF['city'] = (PROF['city'] || 0) + performance.now() - _t0; }
+  { const _t0 = PROF ? performance.now() : 0;
   if (roads) roads.update(dt, wAbs, elapsed.t);
+  if (PROF) PROF['roads'] = (PROF['roads'] || 0) + performance.now() - _t0; }
+  if (peaks) peaks.update(dt, wAbs, !earthGone && camAbs.y < 30000);
   wreck.update(dbg.paused ? dt : dt * timeScale, camAbs);
   if (!water.ready && (terrain.stats.draws > 30 || elapsed.t > 8)) water.ready = true;
+  { const _t0 = PROF ? performance.now() : 0;
   water.update(dt, camera, wAbs);
+  if (PROF) PROF['water'] = (PROF['water'] || 0) + performance.now() - _t0; }
+  { const _t0 = PROF ? performance.now() : 0;
   trees.update(dt, camera, wAbs, earthGone ? 1e9 : camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
+  if (PROF) PROF['trees'] = (PROF['trees'] || 0) + performance.now() - _t0; }
   space.update(dt, camera, camAbs, earthGone ? 5e8 : camAbs.y);
   // 땅속: 카메라를 감싼 암석/맨틀/핵 껍질, 햇빛은 거의 닿지 않음
   const camDepth = player.mode === 'dig' && !earthGone ? terrainMod.heightAt(camAbs.x, camAbs.z) - camAbs.y : 0;
@@ -471,7 +546,12 @@ function frame(now) {
   nukes.update(dbg.paused ? dt : dt * timeScale, camAbs);
   _pAbs.set(player.renderPos.x + origin.x, player.renderPos.y + origin.y, player.renderPos.z + origin.z);
   life.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, !earthGone && !player.hidden);
+  { const _t0 = PROF ? performance.now() : 0;
+  if (town) town.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, { flying: player.mode === 'fly', sword: blade.drawn, camera }, !earthGone && !player.hidden);
+  if (PROF) PROF['town'] = (PROF['town'] || 0) + performance.now() - _t0; }
+  { const _t0 = PROF ? performance.now() : 0;
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
+  if (PROF) PROF['fx'] = (PROF['fx'] || 0) + performance.now() - _t0; }
   audio.update(dt, player.audioState);
 
   // 후처리 파라미터
@@ -488,7 +568,9 @@ function frame(now) {
   P.flash = flash;
   _uv.copy(player.renderPos).project(camera);
   P.focus.set(_uv.x * 0.5 + 0.5, _uv.y * 0.5 + 0.5);
+  { const _t0 = PROF ? performance.now() : 0;
   post.render(dt);
+  if (PROF) PROF['post'] = (PROF['post'] || 0) + performance.now() - _t0; }
 
   // FPS / 적응형 해상도
   fpsFrames++; fpsTime += dt;
@@ -510,8 +592,14 @@ function frame(now) {
   updateStamina();
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
+applySettings();
+$('m-load').classList.add('done');
+$('m-msg').textContent = '준비 완료';
+$('m-start').disabled = false;
 requestAnimationFrame(frame);
-window.__game = { roads, seoul, life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
+window.__THREE = THREE;
+let PROF = null;
+window.__game = { town, roads, seoul, life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;

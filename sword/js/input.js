@@ -16,8 +16,10 @@ export class Input {
     this.onFirstGesture = null;
     this.onKey = null;
     this.locked = false;
+    this.enabled = true;          // 메뉴가 열려 있으면 게임 입력을 막음
 
     addEventListener('keydown', (e) => {
+      if (!this.enabled) { if (this.onKey && !e.repeat) this.onKey(e.code, true); return; }
       this.gesture();
       if (e.code === 'Tab') e.preventDefault();
       if (KEYMAP[e.code] || EDGE[e.code]) e.preventDefault();
@@ -35,6 +37,7 @@ export class Input {
     // 마우스: 클릭 시 포인터 락 (데스크톱), 락이 안 되면 드래그로 회전
     let dragging = false, lx = 0, ly = 0;
     canvas.addEventListener('mousedown', (e) => {
+      if (!this.enabled) return;
       this.gesture();
       // 터치에서 흉내 낸 마우스 이벤트만 무시 (터치스크린 노트북의 진짜 마우스는 허용)
       if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
@@ -172,6 +175,7 @@ export class Input {
 
   // 프레임마다 호출: 키/터치/게임패드를 합쳐 상태 갱신
   poll(dt = 0) {
+    if (!this.enabled) { this.keys.clear(); this.edges.clear(); this.state.lookDX = this.state.lookDY = 0; }
     this._pad(dt);
     const k = this.keys, T = this.touch, s = this.state, P = this.pad;
     let x = (k.has('r') ? 1 : 0) - (k.has('l') ? 1 : 0);

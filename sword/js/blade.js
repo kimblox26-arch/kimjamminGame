@@ -748,15 +748,23 @@ export class Blade {
       B.tick = 0.05;
       const hit = this._hit2 || (this._hit2 = {});
       let ox = S.x, oy = S.y, oz = S.z;
-      for (let k = 0; k < 3 && C; k++) {
+      if (!B.holed) B.holed = new Map();
+      const prevIgn = C ? C.ignore : null;
+      if (C) C.ignore = B.holed;
+      for (let k = 0; k < 4 && C; k++) {
         const rem = end - Math.hypot(ox - S.x, oy - S.y, oz - S.z);
         if (rem < 2 || !C.segmentHit(ox, oy, oz, ox + D.x * rem, oy + D.y * rem, oz + D.z * rem, hit)) break;
-        if (Wk) Wk.blast(hit.id, hit.x, hit.y, hit.z, D.x, D.y, D.z, B.power);
+        // 빔은 건물을 관통하는 터널을 뚫음 (기둥이 못 버티면 그때 무너짐)
+        const res = C.addHole ? C.addHole(hit.id, hit.x, hit.y, hit.z, D.x, D.y, D.z, 1.2 + B.r * 1.4) : 'collapse';
+        B.holed.set(hit.id, 1);
+        if (res !== 'hole' && Wk) Wk.blast(hit.id, hit.x, hit.y, hit.z, D.x, D.y, D.z, B.power);
+        if (this.game.life) this.game.life.panic(hit.x, hit.z, 200);
         _v.set(hit.x - origin.x, hit.y - origin.y, hit.z - origin.z);
         if (fx.energyBurst) fx.energyBurst(_v, 2 + B.r, ENERGY.r, ENERGY.g, ENERGY.b, false);
         if (fx.sparks) fx.sparks(_v, _e.copy(D).negate(), 40, 1.0, 35, 2.2, 1.8, 1.4, 0.09);
         ox = hit.x + D.x * 2; oy = hit.y + D.y * 2; oz = hit.z + D.z * 2;
       }
+      if (C) C.ignore = prevIgn;
     }
     // 끝점 폭발 (주기적으로)
     B.boom -= dt;

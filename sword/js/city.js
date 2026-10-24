@@ -28,8 +28,14 @@ varying vec3 vObjP;
 varying vec3 vObjN;
 varying vec4 vInfo;
 varying vec3 vDim;
+varying vec3 vWPos;
 `;
 const VERT_MAIN = /* glsl */`
+#ifdef USE_INSTANCING
+vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+#else
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+#endif
 vObjP = position * aDim;
 vObjP.y += aOff;
 vObjN = normal;
@@ -39,6 +45,22 @@ vDim.y += aOff;
 `;
 const FRAG_PARS = /* glsl */`
 uniform sampler2D uDigits;
+uniform vec4 uHoleA[16];   // 구멍 캡슐: 입구 (렌더 좌표) + 반지름
+uniform vec4 uHoleB[16];   // 출구
+varying vec3 vWPos;
+float fGlass = 0.0;
+// 가장 가까운 구멍까지 거리 / 반지름 (< 0 이면 구멍 안)
+float holeN(vec3 p) {
+  float m = 1e9;
+  for (int i = 0; i < 16; i++) {
+    vec4 A = uHoleA[i];
+    if (A.w <= 0.0) continue;
+    vec3 ab = uHoleB[i].xyz - A.xyz;
+    float t = clamp(dot(p - A.xyz, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+    m = min(m, (length(p - A.xyz - ab * t) - A.w) / A.w);
+  }
+  return m;
+}
 varying vec3 vObjP;
 varying vec3 vObjN;
 varying vec4 vInfo;
@@ -53,6 +75,12 @@ float fRough = 0.8;
 float fMetal = 0.0;
 `;
 const FRAG_COLOR = /* glsl */`
+// 뚫린 구멍: 들쭉날쭉한 가장자리로 벽을 지움 (안쪽은 구멍 터널 메시가 보임)
+float hN = holeN(vWPos);
+if (hN < 1.5) {
+  float jag = fract(sin(dot(floor(vWPos * 2.3), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  if (hN + (jag - 0.5) * 0.45 < 0.0) discard;
+}
 {
   float type = vInfo.x;
   float seed = vInfo.y;
@@ -69,6 +97,15 @@ const FRAG_COLOR = /* glsl */`
   if (roof) {
     col = vec3(0.16, 0.165, 0.17) * (0.85 + 0.3 * fHash(floor(p.xz * 0.5)));
     if (type < 0.5) col = vec3(0.32, 0.33, 0.33);
+    // 저층 옥상: 초록 방수 페인트 (서울 다세대 지붕), 일부 회색·파란 방수포
+    if (type > 1.5 && type < 2.5) {
+      float rs = fHash(vec2(seed, 21.0));
+      col = rs < 0.55 ? vec3(0.09, 0.2, 0.13) : rs < 0.8 ? vec3(0.27, 0.27, 0.26) : rs < 0.9 ? vec3(0.07, 0.15, 0.3) : vec3(0.33, 0.13, 0.08);
+      col *= 0.85 + 0.25 * fHash(floor(p.xz * 0.7) + seed);
+      // 옥상 난간 (테두리)
+      vec2 e = vDim.xz * 0.5 - abs(p.xz);
+      col = mix(col, vec3(0.6, 0.58, 0.54), step(min(e.x, e.y), 0.3));
+    }
     fRough = 0.9; fMetal = 0.0;
   } else if (type < 0.5) {
     // ── 아파트: 크림색 벽, 세대별 발코니 창, 꼭대기 색띠, 측벽에 큰 동 번호 ──
@@ -76,7 +113,7 @@ const FRAG_COLOR = /* glsl */`
     float hue = vInfo.w;
     vec3 brand = 0.5 + 0.45 * cos(6.2831 * (hue + vec3(0.0, 0.33, 0.67)));
     brand *= vec3(0.55, 0.6, 0.75);
-    bool gable = abs(n.x) > 0.5;      // 슬래브 짧은 면 (동 번호)
+    bool gable = vDim.z < vDim.x ? abs(n.x) > 0.5 : abs(n.z) > 0.5;      // 슬래브 짧은 면 (동 번호)
     col = wall;
     if (!gable) {
       float fl = 2.8, uw = 3.6;
@@ -91,10 +128,11 @@ const FRAG_COLOR = /* glsl */`
       col = mix(c, mix(wall, glass, 0.45), far);
       if (v < 3.0) col = wall * 0.8;              // 필로티
       if (win > 0.5) { fRough = 0.15; fMetal = 0.3; } else fRough = 0.85;
+      fGlass = win;
     } else {
       // 측벽: 상단 색띠 + 동 번호 (3자리)
       float top = vDim.y;
-      float halfD = vDim.z * 0.5;
+      float halfD = min(vDim.x, vDim.z) * 0.5;
       float uu = u;                                   // -halfD..halfD
       // 브랜드 사선 띠
       float stripe = smoothstep(0.0, 0.4, 1.0 - abs(uu + (v - top + 18.0) * 0.35) / 1.4) * step(top - 30.0, v) * step(v, top - 15.0);
@@ -130,19 +168,49 @@ const FRAG_COLOR = /* glsl */`
     col *= 0.9 + 0.2 * fHash(floor(vec2(u / mw, v / fl)) + seed);
     if (v < 6.0) col = mix(vec3(0.2, 0.22, 0.24), col, 0.4);  // 로비층
     fRough = mix(0.06, 0.45, m); fMetal = mix(0.85, 0.6, m);
+    fGlass = 1.0 - m;
   } else if (type < 2.5) {
-    // ── 저층 주거/상가: 벽돌·베이지·회색 벽, 작은 창 ──
+    // ── 저층 (서울 다세대·상가): 붉은 벽돌·갈색 벽돌·석재 타일·회색 화강석, 미닫이 창, 1층 상가 간판 ──
     float c = fHash(vec2(seed, 5.0));
-    vec3 wall = c < 0.3 ? vec3(0.42, 0.25, 0.19) : c < 0.55 ? vec3(0.7, 0.64, 0.54) : c < 0.8 ? vec3(0.55, 0.56, 0.57) : vec3(0.82, 0.8, 0.76);
-    float fl = 3.0, ww = 3.4;
+    vec3 wall = c < 0.28 ? vec3(0.4, 0.2, 0.14) : c < 0.42 ? vec3(0.3, 0.2, 0.15) : c < 0.62 ? vec3(0.72, 0.68, 0.6) : c < 0.8 ? vec3(0.5, 0.5, 0.49) : c < 0.9 ? vec3(0.8, 0.78, 0.74) : vec3(0.62, 0.5, 0.44);
+    // 벽돌 줄눈 (가까이서만)
+    float brick = step(c, 0.42) * (1.0 - smoothstep(0.02, 0.06, px));
+    vec2 bk = vec2(u / 0.24 + floor(v / 0.075) * 0.5, v / 0.075);
+    vec2 bg = abs(fract(bk) - 0.5);
+    wall *= 1.0 - 0.18 * brick * step(0.42, max(bg.x * 0.6, bg.y));
+    wall *= 0.92 + 0.12 * fHash(floor(vec2(u / 0.24, v / 0.075)) + seed) * brick + 0.04;
+    float fl = 2.9, ww = 3.6;
+    vec2 cell = floor(vec2(u / ww, v / fl));
     vec2 f = vec2(fract(u / ww), fract(v / fl));
     float aa = clamp(px / ww * 1.5, 0.0, 0.5);
-    float win = rectMask(f, vec2(0.25, 0.3), vec2(0.75, 0.78), vec2(aa));
-    vec3 glass = vec3(0.08, 0.09, 0.1);
+    float has = step(0.18, fHash(cell + seed * 3.1));                    // 창이 없는 칸도 있음
+    float win = rectMask(f, vec2(0.18, 0.32), vec2(0.82, 0.8), vec2(aa)) * has;
+    float frame = win * (1.0 - rectMask(f, vec2(0.21, 0.35), vec2(0.79, 0.77), vec2(aa)));
+    float mid = win * (1.0 - smoothstep(0.495 - aa, 0.5, abs(f.x - 0.5) + 0.49) );
+    vec3 glass = mix(vec3(0.06, 0.07, 0.08), vec3(0.16, 0.18, 0.2), fHash(cell + seed));
+    vec3 cw = mix(wall, glass, win);
+    cw = mix(cw, vec3(0.55, 0.56, 0.57), max(frame, mid) * 0.9);         // 알루미늄 창틀
     float far = smoothstep(0.3, 0.7, px / ww);
-    col = mix(mix(wall, glass, win), mix(wall, glass, 0.25), far);
-    if (v < 3.2) col = mix(vec3(0.15, 0.17, 0.2), wall, 0.3) ;          // 1층 상가
-    fRough = win > 0.5 ? 0.2 : 0.9;
+    col = mix(cw, mix(wall, glass, 0.3), far);
+    fGlass = win;
+    // 1층: 상가 유리 + 간판 띠 (높이 3~4 m)
+    float shop = step(0.35, fHash(vec2(seed, 31.0)));
+    if (v < 3.0 && shop > 0.5) {
+      vec2 sf = vec2(fract(u / 4.5), v / 3.0);
+      col = mix(vec3(0.09, 0.11, 0.12), vec3(0.4, 0.41, 0.42), step(0.94, sf.x) + step(sf.y, 0.08));
+      fRough = 0.15;
+    } else if (v < 4.1 && v >= 3.0 && shop > 0.5) {
+      float sc = fHash(floor(vec2(u / 6.0, 3.0)) + seed);
+      vec3 sign = sc < 0.25 ? vec3(0.6, 0.06, 0.05) : sc < 0.45 ? vec3(0.05, 0.2, 0.55) : sc < 0.62 ? vec3(0.75, 0.55, 0.05) : sc < 0.78 ? vec3(0.05, 0.4, 0.15) : vec3(0.85, 0.85, 0.82);
+      // 글자 느낌
+      vec2 gl = vec2(fract(u / 0.7), (v - 3.0) / 1.1);
+      float txt = step(0.25, gl.y) * step(gl.y, 0.75) * step(0.15, gl.x) * step(gl.x, 0.85) * step(0.35, fHash(floor(vec2(u / 0.7, 7.0)) + seed));
+      col = mix(sign, vec3(1.0) - sign * 0.6, txt * (1.0 - far));
+      fRough = 0.4;
+    } else {
+      if (v < 3.0) col = mix(vec3(0.12, 0.13, 0.14), wall, 0.45);        // 필로티 주차장 / 현관
+      fRough = win > 0.5 ? 0.15 : 0.9;
+    }
   } else if (type < 3.5) {
     // ── 다리: 콘크리트 + 측면 난간 띠 ──
     col = vec3(0.55, 0.55, 0.53);
@@ -159,6 +227,14 @@ const FRAG_COLOR = /* glsl */`
     float m = mix(mull, 0.2, far);
     col = mix(glass, vec3(0.75, 0.76, 0.78), m * 0.8);
     fRough = mix(0.05, 0.35, m); fMetal = 0.85;
+  }
+  // 구멍 둘레: 깨진 창 (안쪽이 어둡게 보임) + 그을음·균열
+  if (hN < 3.0 && !roof) {
+    float near = smoothstep(3.0, 0.6, hN);
+    float crack = step(0.35, fract(sin(dot(floor(vec2(u, v) * 1.7), vec2(41.3, 17.9))) * 9183.7));
+    col = mix(col, vec3(0.02, 0.022, 0.025), fGlass * near * crack);
+    if (fGlass * near * crack > 0.5) { fRough = 0.9; fMetal = 0.0; }
+    col *= mix(1.0, 0.45, smoothstep(0.9, 0.0, hN));
   }
   diffuseColor.rgb = col;
 }
@@ -181,10 +257,37 @@ function makeDigitAtlas() {
   return t;
 }
 
+// 구멍 유니폼 (모든 파사드 재질이 공유)
+const HOLE_U = { A: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) }, B: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) } };
+// 구멍 안쪽 (터널): 부서진 콘크리트 + 층 슬래브 띠 + 철근 점
+function tunnelMat() {
+  const m = new THREE.MeshStandardMaterial({ color: 0x8a8580, roughness: 0.95, side: THREE.BackSide });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTW;\nuniform float uOy;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+{
+  vec3 q = vTW;
+  float n = fract(sin(dot(floor(q * 1.3), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  vec3 c = mix(vec3(0.33, 0.32, 0.3), vec3(0.18, 0.17, 0.16), n);
+  float slab = 1.0 - smoothstep(0.0, 0.12, abs(fract((q.y + uOy) / 3.1) - 0.5) * 3.1 - 1.3);
+  c = mix(c, vec3(0.5, 0.49, 0.47), slab * 0.7);
+  float reb = step(0.93, fract(sin(dot(floor(q * 6.0), vec3(7.1, 3.7, 9.3))) * 4375.85));
+  c = mix(c, vec3(0.22, 0.12, 0.08), reb);
+  diffuseColor.rgb = c;
+}`);
+    sh.uniforms.uOy = TUN_OY;
+  };
+  return m;
+}
+const TUN_OY = { value: 0 };
+
 function makeFacadeMaterial(digits, envMap) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.0, envMap, envMapIntensity: 1.0 });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uDigits = { value: digits };
+    sh.uniforms.uHoleA = HOLE_U.A; sh.uniforms.uHoleB = HOLE_U.B;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\n' + VERT_PARS)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + VERT_MAIN);
@@ -231,6 +334,13 @@ export class City {
     for (let i = 0; i < 400; i++) this._boxes.push({ x: 0, y: 0, z: 0, w: 0, h: 0, d: 0, color: 0x999999 });
     this._out = [];
 
+    this.holes = [];
+    this.holeGroup = new THREE.Group(); this.holeGroup.name = 'holes';
+    scene.add(this.holeGroup);
+    this.rebarMax = 4000; this.rebarN = 0;
+    this.rebar = new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 0.035, 1), new THREE.MeshStandardMaterial({ color: 0x4a3b30, roughness: 0.7, metalness: 0.4 }), this.rebarMax);
+    this.rebar.count = 0; this.rebar.frustumCulled = false;
+    this.holeGroup.add(this.rebar);
     this.digits = makeDigitAtlas();
     this.envMap = this._makeEnv(renderer, scene);
     this.material = makeFacadeMaterial(this.digits, this.envMap);
@@ -571,8 +681,92 @@ export class City {
       if (t.near) t.mesh.visible = Math.abs(t.ox - camAbs.x) < R + 400 && Math.abs(t.oz - camAbs.z) < R + 400 && camAbs.y - t.maxY < R;
     }
     for (const L of this.landmarks) L.mesh.position.set(L.ax - origin.x, L.ay - origin.y, L.az - origin.z);
+    this._holesUpdate(camAbs);
     // 아주 높이 올라가면 도시를 숨김 (지구 원반이 대신)
     this.group.visible = camAbs.y < 120000;
+  }
+
+  // ── 국지 파괴: 뚫고 지나간 자리만 구멍 (캡슐) ──
+  /** 건물 i 를 점 (ax,ay,az) 에서 방향 (dx,dy,dz) 로 반지름 r 만큼 뚫음 → 'hole' | 'collapse' | null */
+  addHole(i, ax, ay, az, dx, dy, dz, r) {
+    if (!this.alive[i] || this.btype[i] === T_LANDMARK) return null;
+    const dl = Math.hypot(dx, dy, dz) || 1; dx /= dl; dy /= dl; dz /= dl;
+    const c = this.bc[i], sn = this.bs[i];
+    const rx = ax - this.bx[i], rz = az - this.bz[i];
+    const lo = [rx * c + rz * sn, ay - this.by[i], -rx * sn + rz * c], ld = [dx * c + dz * sn, dy, -dx * sn + dz * c];
+    const lo0 = [-this.bw[i] / 2, 0, -this.bd[i] / 2], hi0 = [this.bw[i] / 2, this.bh[i], this.bd[i] / 2];
+    let t0 = -1e9, t1 = 1e9;
+    for (let k = 0; k < 3; k++) {
+      if (Math.abs(ld[k]) < 1e-9) { if (lo[k] < lo0[k] || lo[k] > hi0[k]) return null; continue; }
+      let ta = (lo0[k] - lo[k]) / ld[k], tb = (hi0[k] - lo[k]) / ld[k];
+      if (ta > tb) { const t = ta; ta = tb; tb = t; }
+      t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+    }
+    if (t0 > t1) return null;
+    const E = new THREE.Vector3(ax + dx * t0, ay + dy * t0, az + dz * t0), X = new THREE.Vector3(ax + dx * t1, ay + dy * t1, az + dz * t1);
+    const len = Math.max(0.5, t1 - t0);
+    // 구조 손상: 기둥 폭에 비해 큰 구멍이거나 누적 손실이 크면 그 높이에서 무너짐
+    if (!this.dmg) this.dmg = new Float32Array(this.max + 64);
+    this.dmg[i] += Math.PI * r * r * len / Math.max(1, this.bw[i] * this.bd[i] * this.bh[i]);
+    const minWD = Math.min(this.bw[i], this.bd[i]);
+    if (r * 2 > 0.8 * minWD || this.dmg[i] > 0.28 || (this.bh[i] < 7 && this.bw[i] * this.bd[i] < 70)) return 'collapse';
+    const H = { i, a: E, b: X, r, mesh: null };
+    // 터널 메시
+    const g = new THREE.CylinderGeometry(r * 0.94, r * 0.94, len, 14, 1, true);
+    g.translate(0, len / 2, 0);
+    const mesh = new THREE.Mesh(g, this._tunMat || (this._tunMat = tunnelMat()));
+    mesh.position.copy(E);
+    mesh.quaternion.setFromUnitVectors(_Y, _p.subVectors(X, E).normalize());
+    this.holeGroup.add(mesh);
+    H.mesh = mesh;
+    // 철근: 입구·출구 둘레에서 바깥으로 삐져나옴 (출구 쪽은 진행 방향으로 휨)
+    const ax2 = _p.subVectors(X, E).normalize().clone();
+    const u = new THREE.Vector3(1, 0, 0).cross(ax2); if (u.lengthSq() < 0.1) u.set(0, 0, 1).cross(ax2); u.normalize();
+    const w = new THREE.Vector3().crossVectors(ax2, u);
+    for (const [P, out] of [[E, -1], [X, 1]]) {
+      const n = 8 + ((r * 3) | 0);
+      for (let k = 0; k < n && this.rebarN < this.rebarMax; k++) {
+        const a = (k + Math.random() * 0.6) / n * Math.PI * 2;
+        const rr = r * (0.95 + Math.random() * 0.25);
+        const base = P.clone().addScaledVector(u, Math.cos(a) * rr).addScaledVector(w, Math.sin(a) * rr);
+        const L2 = 0.4 + Math.random() * 1.1;
+        const dir = ax2.clone().multiplyScalar(out * (0.6 + Math.random() * 0.5)).addScaledVector(u, Math.cos(a) * 0.35).addScaledVector(w, Math.sin(a) * 0.35).normalize();
+        _q.setFromUnitVectors(_Z, dir);
+        this.rebar.setMatrixAt(this.rebarN++, _mm.compose(base.addScaledVector(dir, L2 / 2), _q, _s.set(1, 1, L2)));
+      }
+    }
+    this.rebar.count = this.rebarN;
+    this.rebar.instanceMatrix.needsUpdate = true;
+    this.holes.push(H);
+    return 'hole';
+  }
+  /** 절대 좌표 점이 구멍 안인지 */
+  inHole(x, y, z, pad = 0.3) {
+    for (const H of this.holes) {
+      const a = H.a, b = H.b;
+      const bx = b.x - a.x, by = b.y - a.y, bz = b.z - a.z, l2 = bx * bx + by * by + bz * bz || 1;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * bx + (y - a.y) * by + (z - a.z) * bz) / l2));
+      if (Math.hypot(x - a.x - bx * t, y - a.y - by * t, z - a.z - bz * t) < H.r + pad) return true;
+    }
+    return false;
+  }
+  _holesUpdate(camAbs) {
+    this.holeGroup.position.set(-origin.x, -origin.y, -origin.z);
+    TUN_OY.value = origin.y;
+    // 카메라에 가까운 16 개만 셰이더로
+    const list = this.holes.filter((H) => this.alive[H.i]);
+    if (list.length !== this.holes.length) {
+      for (const H of this.holes) if (!this.alive[H.i] && H.mesh) { this.holeGroup.remove(H.mesh); H.mesh.geometry.dispose(); H.mesh = null; }
+      this.holes = list;
+    }
+    list.sort((p, q) => p.a.distanceToSquared(camAbs) - q.a.distanceToSquared(camAbs));
+    const A = HOLE_U.A.value, B = HOLE_U.B.value;
+    for (let k = 0; k < 16; k++) {
+      const H = list[k];
+      if (!H) { A[k].w = 0; continue; }
+      A[k].set(H.a.x - origin.x, H.a.y - origin.y, H.a.z - origin.z, H.r);
+      B[k].set(H.b.x - origin.x, H.b.y - origin.y, H.b.z - origin.z, 1);
+    }
   }
 
   // ── 충돌 질의 (절대 좌표) ──
@@ -613,7 +807,7 @@ export class City {
         if (!a) continue;
         for (let k = 0; k < a.length; k++) {
           const i = a[k];
-          if (!this.alive[i] || seen.has(i)) continue;
+          if (!this.alive[i] || seen.has(i) || (this.ignore && this.ignore.has(i))) continue;
           seen.add(i);
           // 박스 지역 좌표로 변환
           const c = this.bc[i], sn = this.bs[i];
@@ -762,6 +956,8 @@ export class City {
   }
 
   restoreAll() {
+    for (const H of this.holes) if (H.mesh) { this.holeGroup.remove(H.mesh); H.mesh.geometry.dispose(); }
+    this.holes.length = 0; this.rebarN = 0; this.rebar.count = 0; if (this.dmg) this.dmg.fill(0);
     for (let i = 0; i < this.n; i++) this.alive[i] = 1;
     if (this.bh0) this.bh.set(this.bh0);
     for (const t of this.tiles) {
@@ -780,5 +976,5 @@ const _l = [0, 0];
 const _seen = new Set();
 const _touched = new Set();
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
-const _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _mm = new THREE.Matrix4(), _Y = new THREE.Vector3(0, 1, 0);
+const _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _mm = new THREE.Matrix4(), _Y = new THREE.Vector3(0, 1, 0), _Z = new THREE.Vector3(0, 0, 1);
 export { T_APT, T_OFFICE, T_LOW, T_BRIDGE, T_LANDMARK };

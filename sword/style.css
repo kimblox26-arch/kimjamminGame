@@ -112,3 +112,58 @@ body.touch .perf { top: 12px; left: 12px; }
 .tb.beam { background: rgba(110,170,255,.7); }
 .tb.on { transform: scale(.93); background: rgba(255,255,255,.9); }
 .tb.lit { background: rgba(140,180,255,.7); }
+
+/* 사람들의 생각 말풍선 */
+.bubble { position: absolute; left: 0; top: 0; max-width: 220px; padding: 5px 10px; border-radius: 12px; pointer-events: none;
+  background: rgba(255,255,255,.88); color: #1d2430; font: 600 12px/1.35 system-ui, "Noto Sans KR", sans-serif; white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0,0,0,.18); will-change: transform; }
+.bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: rgba(255,255,255,.88); }
+
+/* ── 메인 화면 ── */
+.menu { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+  background: radial-gradient(ellipse at 50% 40%, rgba(20,30,50,.35), rgba(10,15,25,.75)); transition: opacity .45s; }
+.menu.hide { opacity: 0; pointer-events: none; }
+.mcard { width: min(360px, calc(100vw - 32px)); padding: 30px 28px 24px; border-radius: 22px; text-align: center;
+  background: rgba(255,255,255,.14); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 20px 60px rgba(0,0,0,.35); color: #fff; }
+.mcard h1 { font-size: 46px; font-weight: 900; letter-spacing: 4px; text-shadow: 0 4px 24px rgba(0,0,0,.35); }
+.mcard h1 span { color: #8fb3ff; }
+.mcard .sub { opacity: .8; margin: 6px 0 18px; font-size: 14px; }
+.mload { height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; margin: 0 6px 8px; }
+.mload i { display: block; height: 100%; width: 0; background: #8fb3ff; transition: width .3s; }
+.mload.done { display: none; }
+.mmsg { font-size: 12px; opacity: .75; min-height: 16px; margin-bottom: 14px; }
+.mbtn { display: block; width: 100%; margin-top: 10px; padding: 14px 0; border: 0; border-radius: 14px; cursor: pointer;
+  font: 800 17px/1 system-ui, "Noto Sans KR", sans-serif; color: #fff; background: rgba(255,255,255,.18); transition: transform .12s, background .2s; }
+.mbtn:hover { background: rgba(255,255,255,.28); }
+.mbtn:active { transform: scale(.97); }
+.mbtn.primary { background: #4c6ef5; }
+.mbtn.primary:hover { background: #5c7cfa; }
+.mbtn:disabled { opacity: .45; cursor: default; }
+
+/* ── 설정 ── */
+.settings { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(10,15,25,.45); }
+.settings[hidden] { display: none; }
+.scard { width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; padding: 22px 22px 18px; border-radius: 20px;
+  background: rgba(250,252,255,.94); color: #1d2430; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.scard h2 { font-size: 20px; margin-bottom: 12px; }
+.srow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 2px; border-bottom: 1px solid rgba(30,40,60,.08); font-size: 14px; font-weight: 600; }
+.srow small { font-weight: 500; opacity: .6; }
+.srow input[type=checkbox] { width: 20px; height: 20px; accent-color: #4c6ef5; }
+.srow select, .srow input[type=range] { accent-color: #4c6ef5; font: 600 13px system-ui, sans-serif; }
+.sbtns { display: flex; gap: 10px; margin-top: 8px; }
+.sbtns .mbtn { color: #1d2430; background: rgba(30,40,60,.08); }
+.sbtns .mbtn.primary { color: #fff; background: #4c6ef5; }
+
+/* ── 정리된 HUD 버튼 ── */
+.gear { position: absolute; right: 18px; top: 140px; pointer-events: auto; width: 40px; height: 40px; border: 0; border-radius: 12px;
+  font-size: 20px; background: rgba(255,255,255,.55); cursor: pointer; }
+.skills { position: absolute; right: 18px; bottom: 18px; display: flex; gap: 8px; pointer-events: auto; }
+.skills button { width: 54px; height: 54px; border: 0; border-radius: 14px; cursor: pointer; background: rgba(255,255,255,.55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font: 700 11px/1.1 system-ui, "Noto Sans KR", sans-serif; color: #1d2430; }
+.skills button b { display: block; font-size: 17px; margin-bottom: 2px; }
+.skills button.nuke { background: rgba(255,210,60,.7); }
+.skills button:active { transform: scale(.94); }
+body.touch .skills, body.touch .gear { display: none; }
+body.touch .gear.touchgear { display: block; top: 52px; left: 12px; right: auto; }
+.mute, .start { display: none !important; }

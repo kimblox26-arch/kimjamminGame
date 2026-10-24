@@ -32,7 +32,7 @@ function roadQ(x, z) {
 }
 
 // 상자 여러 개 → 한 지오메트리 (part 속성, 정점 색)
-function boxes(list) {
+export function boxes(list) {
   const geos = [];
   for (const b of list) {
     const g = new THREE.BoxGeometry(b[0], b[1], b[2]);
@@ -294,9 +294,12 @@ export class Life {
   setEco(eco, init) {
     this.eco = eco;
     this.R = eco ? 260 : 420;
-    this.maxP = eco ? 110 : 320;
-    this.maxC = eco ? 40 : 110;
+    // 실제 도로망이 있으면 사람·차는 town.js 가 맡음
+    this.maxP = this.town ? 0 : eco ? 110 : 320;
+    this.maxC = this.town ? 0 : eco ? 40 : 110;
+    if (this.town) this.town.setEco(eco);
   }
+  setTown(t) { this.town = t; this.setEco(this.eco); }
 
   _hAt(x, z) { const T = this.game.terrain; return T ? T.heightAt(x, z) : 0; }
   _water(x, z) { const T = this.game.terrain; return T && T.waterLevelAt(x, z) > T.heightAt(x, z) + 0.3; }
@@ -371,6 +374,7 @@ export class Life {
   // ───────── 바깥에서 부르는 사건 ─────────
   /** 폭발 (절대 좌표): R 안은 날아감 (세기 power m/s 정도), 3R 안 사람은 도망 */
   blast(x, y, z, R, power = 20) {
+    if (this.town) this.town.blast(x, y, z, R, power);
     for (const o of this.people) if (o.alive) {
       const d = Math.hypot(o.x - x, o.y - y, o.z - z);
       if (d < R) this._fling(o, x, y, z, power * (1 - d / R) + 4, d);
@@ -385,11 +389,13 @@ export class Life {
   }
   /** 사람만 놀라 도망 (칼질·빔 등) */
   panic(x, z, R) {
+    if (this.town) this.town.panic(x, z, R);
     for (const o of this.people) if (o.alive && o.st !== 'fly' && o.st !== 'down' && Math.hypot(o.x - x, o.z - z) < R) this._panic(o, x, z);
     for (const o of this.cars) if (o.alive && o.st === 'drive' && Math.hypot(o.x - x, o.z - z) < R * 0.7) { o.st = 'stop'; o.t = 0; }
   }
   /** 핵 충격파: 중심 (x,z) 에서 front 까지 지나간 곳 — vap 안은 증발, 그 밖은 압력 (R5/d)^1.4 에 비례해 날아감 */
   shock(id, x, gy, z, front, vap, R5, Rmax) {
+    if (this.town) this.town.shock(id, x, gy, z, front, vap, R5, Rmax);
     const hit = (o, car) => {
       if (!o.alive || o.shock === id) return;
       const d = Math.hypot(o.x - x, o.z - z);
@@ -720,6 +726,7 @@ export class Life {
   }
 
   reset() {
+    if (this.town) this.town.reset();
     for (const o of this.people) o.alive = false;
     for (const o of this.cars) o.alive = false;
     for (const o of this.boats) o.alive = false;

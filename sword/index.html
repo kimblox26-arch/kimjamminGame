@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>SKY BLADE — 비행 테스트</title>
-<meta name="description" content="로블록스 스타일 하얀 캐릭터로 하늘을 나는 검 게임 비행 프로토타입">
+<title>SKY BLADE</title>
+<meta name="description" content="실제 서울 위를 검을 들고 나는 게임">
 <link rel="stylesheet" href="./style.css">
 <script type="importmap">
 {
@@ -33,14 +33,18 @@
     <div class="row"><b id="h-modes"></b></div>
   </div>
   <div class="perf"><span id="h-fps">0 FPS</span> <span id="h-res" class="dim"></span></div>
-  <button id="btn-mute" class="mute" title="소리 (M)">🔊</button>
-  <button id="btn-eco" class="mute eco" title="최적화 모드 (O)">⚡</button>
-  <button id="btn-view" class="mute view" title="1인칭 / 3인칭 (V)">👁</button>
-  <button id="btn-nuke" class="mute nuke" title="핵 발사 (N)">☢</button>
+  <button id="btn-set" class="gear" title="설정 (Esc)">⚙</button>
+  <div id="skills" class="skills">
+    <button data-k="KeyJ" title="베기 (J)"><b>J</b>베기</button>
+    <button data-k="KeyL" title="검기 (L)"><b>L</b>검기</button>
+    <button data-k="KeyK" title="빔 (K 꾹)"><b>K</b>빔</button>
+    <button data-k="KeyN" class="nuke" title="핵미사일 (N)"><b>N</b>핵</button>
+    <button data-k="KeyV" title="시점 (V)"><b>V</b>시점</button>
+  </div>
   <div id="stam" class="stam full"><span>STAMINA</span><div class="track"><i id="stam-fill"></i></div></div>
 </div>
 
-<div id="help" class="help">
+<div id="help" class="help hide">
   <h3>조작</h3>
   <ul>
     <li><kbd>W A S D</kbd> 이동 · <kbd>마우스</kbd> 시점 (클릭하면 고정) · <kbd>V</kbd> 1인칭/3인칭</li>
@@ -59,15 +63,35 @@
     <li><kbd>X</kbd> 속도 고정 · <kbd>T</kbd> 목표 천체 바꾸기 · <kbd>G</kbd> 목표로 자동 항법</li>
     <li>우주에서는 관성 비행 (중력만 작용) · <kbd>Z</kbd> 역추진 제동</li>
     <li><b>게임패드</b>: 왼쪽 스틱 이동 · 오른쪽 스틱 시점 · A 점프 · X 비행 · RT 부스트 · LT 느리게 · RB 베기 · LB 검기 · B 빔 · 십자 좌/우 롤 · Y 공중제비</li>
-    <li><kbd>휠</kbd> 줌 · <kbd>M</kbd> 소리 · <kbd>P</kbd> FPS 제한 (60/30/없음) · <kbd>O</kbd> 최적화 모드 · <kbd>H</kbd> 도움말</li>
+    <li><kbd>휠</kbd> 줌 · <kbd>Esc</kbd> 설정 · <kbd>M</kbd> 소리 · <kbd>P</kbd> FPS 제한 · <kbd>O</kbd> 최적화 모드 · <kbd>H</kbd> 조작법</li>
   </ul>
 </div>
 
-<div id="start" class="start">
-  <div class="card">
+<!-- 메인 화면 -->
+<div id="menu" class="menu">
+  <div class="mcard">
     <h1>SKY <span>BLADE</span></h1>
-    <p>비행 프로토타입</p>
-    <p class="tap">화면을 누르거나 아무 키나 눌러 시작</p>
+    <p class="sub">실제 서울 · 실제 지형 · 실제 건물</p>
+    <div id="m-load" class="mload"><i id="m-bar"></i></div>
+    <p id="m-msg" class="mmsg">불러오는 중…</p>
+    <button id="m-start" class="mbtn primary" disabled>시작</button>
+    <button id="m-set" class="mbtn">설정</button>
+  </div>
+</div>
+
+<!-- 설정 -->
+<div id="settings" class="settings" hidden>
+  <div class="scard">
+    <h2>설정</h2>
+    <label class="srow"><span>최적화 모드 <small>(발열·배터리 절약)</small></span><input type="checkbox" id="s-eco"></label>
+    <label class="srow"><span>프레임 제한</span><select id="s-fps"><option value="0">60 FPS</option><option value="1">30 FPS</option><option value="2">제한 없음</option></select></label>
+    <label class="srow"><span>소리</span><input type="checkbox" id="s-sound" checked></label>
+    <label class="srow"><span>1인칭 시점</span><input type="checkbox" id="s-fp"></label>
+    <label class="srow"><span>마우스 감도</span><input type="range" id="s-sens" min="0.3" max="2.5" step="0.1" value="1"></label>
+    <label class="srow"><span>사람들의 생각 말풍선</span><input type="checkbox" id="s-bubbles" checked></label>
+    <label class="srow"><span>산 이름 표시</span><input type="checkbox" id="s-peaks" checked></label>
+    <label class="srow"><span>조작법 보기</span><input type="checkbox" id="s-help"></label>
+    <div class="sbtns"><button id="s-menu" class="mbtn">메인 화면</button><button id="s-close" class="mbtn primary">닫기</button></div>
   </div>
 </div>
 

@@ -1030,7 +1030,7 @@ if (pW > 0.01) {
 float tAbsZ = vTW.z + tOriginZ;
 float tRealOn = step(abs(tAbsX), tRealHalf) * step(abs(tAbsZ), tRealHalf);
 if (uW > 0.01 && tRealOn > 0.5) {
-  vec3 conc = vec3(0.235, 0.228, 0.215) * (0.82 + 0.3 * n2.r) * (0.9 + 0.2 * n3.g * nearF);
+  vec3 conc = vec3(0.145, 0.14, 0.132) * (0.8 + 0.35 * n2.r) * (0.88 + 0.24 * n3.g * nearF);
   vec3 asph = vec3(0.075, 0.075, 0.08) * (0.85 + 0.3 * n2.g);
   float pk = smoothstep(0.4, 0.62, n1.b * 0.7 + n2.a * 0.3);
   vec3 gr = mix(conc, asph, pk * 0.7);

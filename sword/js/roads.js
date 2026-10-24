@@ -55,17 +55,17 @@ const ROAD_FS = /* glsl */`
     // 보도: 보도블록 (붉은 회색 엇갈림) + 연석
     vec2 b = vec2(ac * 5.0, s * 2.5 + floor(ac * 5.0) * 0.5);
     float tone = rH(floor(b));
-    col = mix(vec3(0.26, 0.2, 0.18), vec3(0.3, 0.29, 0.27), step(0.35, tone)) * (0.85 + 0.25 * nz);
+    col = mix(vec3(0.17, 0.125, 0.11), vec3(0.19, 0.185, 0.175), step(0.35, tone)) * (0.85 + 0.25 * nz);
     vec2 g = abs(fract(b) - 0.5);
     col *= 1.0 - 0.25 * near * rBand(min(g.x / 5.0, g.y / 2.5), 0.012, fw);
     float curb = rBand(aa - hw, 0.22, fwA);
-    col = mix(col, vec3(0.42, 0.41, 0.39) * (0.9 + 0.2 * nz), curb);
+    col = mix(col, vec3(0.28, 0.275, 0.26) * (0.9 + 0.2 * nz), curb);
     // 시각장애인 유도 블록 (노란 줄)
     col = mix(col, vec3(0.5, 0.36, 0.03), rBand(abs(aa - hw - sw * 0.55), 0.15, fwA) * step(0.5, fract(s / 30.0)) * 0.9);
   } else if (cls > 8.5) {
     if (cls < 10.5) {        // 보행광장 · 보도
       vec2 b = vec2(ac * 4.0, s * 4.0);
-      col = mix(vec3(0.27, 0.25, 0.23), vec3(0.22, 0.2, 0.19), step(0.5, rH(floor(b)))) * (0.85 + 0.3 * nz);
+      col = mix(vec3(0.17, 0.158, 0.145), vec3(0.14, 0.128, 0.12), step(0.5, rH(floor(b)))) * (0.85 + 0.3 * nz);
       vec2 g = abs(fract(b) - 0.5);
       col *= 1.0 - 0.2 * near * rBand(min(g.x, g.y) / 4.0, 0.01, fw);
     } else if (cls < 11.5 || cls > 13.5) {   // 오솔길 · 농로: 흙
