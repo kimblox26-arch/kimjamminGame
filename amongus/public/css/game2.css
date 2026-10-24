@@ -585,3 +585,9 @@
 .plates2.c3.res .pl2 .nm{margin-top:2px}
 .plates2.c3 .chip{width:28px}.plates2.c3 .chip svg{width:38px;height:27px}
 .skiparea2 .svotes .chip svg{width:48px;height:34px}
+
+/* 대기실 AI 봇 추가/빼기 */
+.lobpanel2 .botrow{display:flex;align-items:center;gap:8px;margin-top:8px}
+.lobpanel2 .botrow span{flex:1;color:#aaa;font-size:17px}.lobpanel2 .botrow b{color:#fff;font-size:20px}
+.lobpanel2 .botrow button{width:54px;height:38px;border-radius:8px;font-size:26px;font-weight:800;line-height:1;background:#2fe3c4;color:#0b2a24;border:3px solid #9ff5e6}
+.lobpanel2 .botrow button:disabled{opacity:.35}

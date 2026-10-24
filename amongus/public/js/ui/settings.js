@@ -1,6 +1,6 @@
 // 설정: 일반 / 그래픽 / 데이터 (게임 방 안에서는 데이터 탭이 사라짐)
 // 창 위 테두리에 크루원이 걸터앉아 있음 → 10번 누르면 숨은 mod 비밀번호 입력창
-import { $, $$, h, modal, toast, sfx, settings, saveSettings, updateMusicVolume, profile, device, me, net, confirmBox } from '../core.js';
+import { $, $$, h, modal, toast, sfx, settings, saveSettings, updateMusicVolume, profile, device, me, net, confirmBox, store } from '../core.js';
 import { COLORS } from '../shared/data.js';
 import { crewSVG } from './crew.js';
 import { screens, app } from './nav.js';
@@ -68,10 +68,10 @@ async function action(k) {
     const a = h(`<a download="amongus-data.json" href="${URL.createObjectURL(blob)}"></a>`); a.click();
   }
   if (k === 'wipe' && await confirmBox('이 기기에 저장된 설정, 꾸미기, 통계, 로그인 정보가 모두 지워집니다.\n계속할까요?', '삭제')) {
-    Object.keys(localStorage).filter(x => x.startsWith('au_')).forEach(x => localStorage.removeItem(x));
+    store.keys().filter(x => x.startsWith('au_')).forEach(x => store.del(x));
     location.reload();
   }
-  if (k === 'delacc' && await confirmBox('계정을 영구 삭제할까요?', '삭제')) { net.send({ t: 'deleteAccount' }); device.token = ''; localStorage.setItem('au_device', JSON.stringify(device)); }
+  if (k === 'delacc' && await confirmBox('계정을 영구 삭제할까요?', '삭제')) { net.send({ t: 'deleteAccount' }); device.token = ''; store.set('au_device', JSON.stringify(device)); }
 }
 
 // ---------- 걸터앉은 크루원 (숨은 mod 입구) ----------

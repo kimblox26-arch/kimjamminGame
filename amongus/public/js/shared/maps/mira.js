@@ -53,7 +53,7 @@ const st = {
   hand1: P(0.7, 14.8), hand2: P(4.2, 14.8), o2k_green: P(17.86, 24.37), o2k_hall: P(4.09, -0.85), lights: P(14.8, 20.8),
   comms_k1: P(14.93, 4.9), comms_k2: P(13.2, 19.35),
   // 장비
-  admin: P(21.02, 19.1), doorlog: P(16.22, 4.9), laptop: P(26.65, 2.9),
+  admin: P(21.3, 18.9), doorlog: P(16.22, 4.9), laptop: P(26.65, 2.9),
 };
 
 const vents = {
@@ -73,7 +73,7 @@ const transports = [{ id: 'decon', kind: 'decon', name: '소독실', a: P(6.1, 1
 const props = [
   Rect('longTable', 23.36, 0.93, 24.72, 3.81, { block: true }), Rect('longTable', 26.22, 0.93, 27.58, 3.81, { block: true }),
   Rect('vending', 27.0, 5.0, 28.75, 5.63, { block: true }),
-  Rect('mapTable', 19.95, 18.1, 21.95, 19.75, { block: true }),
+  Rect('mapTable', 20.4, 18.1, 22.2, 19.6, { block: true }),
   Rect('desk', 8.13, 10.61, 10.53, 11.48, { block: true, color: '#e6e9ec' }), Rect('desk', 10.6, 10.5, 12.0, 12.6, { block: true, color: '#e6e9ec' }),
   Rect('reactorCore', 1.75, 11.81, 3.22, 12.9, { block: true }),
   Rect('bed', 13.9, 0.9, 15.2, 1.6), Rect('bed', 15.7, 0.9, 17.0, 1.6), Rect('bed', 14.4, -1.6, 15.9, -0.9),

@@ -1,9 +1,10 @@
 // 방(로비) 관리 + 메시지 분배. 게임 규칙은 game.js, 역할 능력은 roles.js, mod 메뉴는 mod.js
 import { sanitizeSettings, defaultSettings, applyPreset, buildQuick, COLORS, SETTINGS, HNS_SETTINGS, fmtSetting, PRESETS, CUSTOM,
-  REGIONS, MAPS, clamp } from '../public/js/shared/data.js';
+  REGIONS, MAPS, clamp, ITEMS, randomName } from '../public/js/shared/data.js';
 import { ROLE_DEFS, ROLE_ORDER } from '../public/js/shared/roles.js';
 import { LOBBY, getMap, spawnAt } from '../public/js/shared/maps/index.js';
 import * as GM from './game.js';
+import * as BOTS from './bots.js';
 
 export const rooms = new Map();
 export const MIN = Math.max(1, +process.env.MIN_PLAYERS || 4);
@@ -135,6 +136,24 @@ export function kick(r, t, ban) {
   send(t, { t: 'kicked', ban: !!ban });
 }
 
+// ---------- AI 봇 ----------
+let botN = 0;
+const pickItem = k => { const free = ITEMS[k].filter(x => x[3] !== 'code'); return Math.random() < 0.55 ? free[Math.floor(Math.random() * free.length)][0] : 'none'; };
+export function addBots(r, n) {
+  const names = new Set([...r.players.values()].map(p => p.name));
+  for (let i = 0; i < n && r.players.size < Math.max(r.settings.maxPlayers, 1); i++) {
+    let name = randomName();
+    for (let k = 0; k < 10 && names.has(name); k++) name = randomName();
+    names.add(name);
+    const b = { id: `a${++botN}`, bot: true, ai: true, name, status: 'pink', look: cleanLook({ color: 0, hat: pickItem('hat'), visor: pickItem('visor'), skin: pickItem('skin') }), dir: 1, mv: 0, x: 0, y: 0, lvl: 1 + Math.floor(Math.random() * 60), room: r };
+    b.look.color = freeColor(r, b, Math.floor(Math.random() * COLORS.length));
+    const sp = lobbySpot(r, r.players.size); b.x = sp.x; b.y = sp.y;
+    r.players.set(b.id, b);
+    bc(r, { t: 'chat', sys: true, text: `${b.name}님이 게임에 참가했습니다.` });
+  }
+  bcRoom(r);
+}
+
 // ---------- 메시지 ----------
 export function onMessage(c, m) {
   const r = c.room;
@@ -151,10 +170,15 @@ export function onMessage(c, m) {
     case 'privacy': if (host && r.mode === 'online') { r.isPublic = !!m.v; bcRoom(r); } return;
     case 'kick': {
       const t = r.players.get(m.id);
-      if (host && !g && t && t !== c && !t.bot) kick(r, t, !!m.ban);
+      if (host && !g && t && t !== c && (!t.bot || t.ai)) kick(r, t, !!m.ban);
       return;
     }
     case 'start': if (host && !g && !r.countdown) countdown(r, c); return;
+    case 'bot': // AI 봇 추가/빼기 (방장, 대기실에서만)
+      if (!host || g || r.countdown || r.mode === 'practice') return;
+      if (m.a === 'add') { if (r.players.size >= r.settings.maxPlayers && !c.mod) return err(c, '게임이 가득 찼습니다.'); addBots(r, 1); }
+      else if (m.a === 'remove') { const b = [...r.players.values()].reverse().find(p => p.ai); if (b) kick(r, b); }
+      return;
     default: if (g) GM.onMsg(c, m);
   }
 }
@@ -331,7 +355,7 @@ setInterval(() => {
   for (const r of [...rooms.values()]) {
     try {
       const g = r.game;
-      if (g) GM.tick(g, dt);
+      if (g) { GM.tick(g, dt); BOTS.tick(g, dt); } else BOTS.lobbyTick(r, dt);
       if (r.rainbow && t - r.lastLook >= 250) { r.lastLook = t; rainbowTick(r); }
       if (!humans(r).length) continue;
       const g2 = r.game;

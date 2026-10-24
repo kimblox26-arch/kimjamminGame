@@ -199,7 +199,7 @@ function lobbyView() {
 }
 function renderLobby() {
   if (!S || S.game || !G.hud) return;
-  const hud = G.hud, r = S.room, s = r.settings, host = P(r.host), mine = r.host === S.you, n = r.players.length;
+  const hud = G.hud, r = S.room, s = r.settings, host = P(r.host), mine = r.host === S.you, n = r.players.length, nb = r.players.filter(p => p.bot).length;
   const pv = r.mode === 'local' ? '로컬' : r.mode === 'practice' ? '연습' : r.isPublic ? '공개' : '비공개';
   const lp = $('.lobpanel2', hud);
   if (!lp) return;
@@ -211,7 +211,11 @@ function renderLobby() {
     <div class="kv"><span>용량</span><b>${crewSVG({ color: 0 }, { noPet: true })}<span style="color:${n >= s.maxPlayers ? '#f33' : '#fff'}">${n}/${s.maxPlayers}</span></b>
     <span>프리셋</span><b class="pre">${esc(s.preset || '핵심 설정')}</b><span>개인 정보 보호</span><b class="priv ${mine && r.mode === 'online' ? 'click' : ''}">${pv}</b>
     <span>게임 유형</span><b>${s.gameType === 'hns' ? '숨바꼭질' : '클래식'}</b></div>
-    <div class="l">게임 설정</div><div class="two"><button class="ed" ${mine ? '' : 'disabled'}>편집</button><button class="vw">보기</button></div>`;
+    <div class="l">게임 설정</div><div class="two"><button class="ed" ${mine ? '' : 'disabled'}>편집</button><button class="vw">보기</button></div>
+    ${mine && r.mode !== 'practice' ? `<div class="botrow"><span>AI 봇 <b>${nb}</b>명</span><button class="bm" title="봇 빼기" ${nb ? '' : 'disabled'}>−</button><button class="bp" title="봇 추가" ${n >= s.maxPlayers ? 'disabled' : ''}>+</button></div>` : ''}`;
+  const bm = $('.bm', lp), bp = $('.bp', lp);
+  if (bm) bm.onclick = () => { sfx('click'); net.send({ t: 'bot', a: 'remove' }); };
+  if (bp) bp.onclick = () => { sfx('click'); net.send({ t: 'bot', a: 'add' }); };
   $('.ed', lp).onclick = () => { sfx('click'); editSettings(true); };
   $('.vw', lp).onclick = () => { sfx('click'); editSettings(false); };
   $('.priv', lp).onclick = () => { if (mine && r.mode === 'online') { sfx('click'); net.send({ t: 'privacy', v: !r.isPublic }); } };

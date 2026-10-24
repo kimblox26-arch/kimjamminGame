@@ -51,7 +51,7 @@ function killReach(g) {
 
 // ---------- 시작 ----------
 const newState = (g, p, role) => ({
-  id: p.id, bot: !!p.bot, name: p.name, color: p.look?.color ?? 0, role, team: roleTeam(role), alive: true, left: false, cds: {},
+  id: p.id, bot: !!p.bot, ai: !!p.ai, name: p.name, color: p.look?.color ?? 0, role, team: roleTeam(role), alive: true, left: false, cds: {},
   vent: null, ventEnd: 0, ventUses: 0, shield: 0, shieldBy: null, shift: null, shiftEnd: 0, vanish: 0, track: null,
   vitalsOpen: false, vitalsConsole: false, vitalsNext: 0, doorlogOpen: false, battery: 0, tasks: [], meetingsLeft: cnt(g.s.emergencyMeetings),
   trans: null, picking: false, cases: [], activeCase: null, wheel: null, judgeUsed: false, judgeUnlocked: false, deathPos: null, stat: {},
@@ -120,7 +120,7 @@ function assignTasks(g) {
 export function taskBar(g) {
   let total = 0, done = 0;
   for (const st of g.st.values()) {
-    if (st.left || st.bot || st.team !== 'crew') continue;
+    if (st.left || (st.bot && !st.ai) || st.team !== 'crew') continue;
     for (const t of st.tasks) { total++; if (t.step >= t.st.length) done++; }
   }
   return { total, done };
@@ -358,7 +358,7 @@ function meetingTick(g, t) {
   if (M.stage === 'discuss' && t >= M.voteAt) {
     M.stage = 'vote';
     g.bc({ t: 'voting', ms: ms(M.voteEnd - t) });
-    for (const st of g.st.values()) if (st.bot && st.alive) castVote(g, g.P(st.id), 'skip');
+    for (const st of g.st.values()) if (st.bot && !st.ai && st.alive) castVote(g, g.P(st.id), 'skip');
     maybeTally(g);
   } else if (M.stage === 'vote' && t >= M.voteEnd) tally(g);
   else if (M.stage === 'result' && t >= M.ejectAt) eject(g);

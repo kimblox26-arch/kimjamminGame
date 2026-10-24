@@ -29,17 +29,23 @@ export function confirmBox(msg, yes = '확인', no = '취소') {
   });
 }
 
-// ---------- 저장소 ----------
-const load = (k, d) => { try { return { ...d, ...JSON.parse(localStorage.getItem(k)) }; } catch { return { ...d }; } };
+// ---------- 저장소 (막혀 있거나 비어 있어도 게임은 돌아가야 함) ----------
+export const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* 저장 불가 */ } },
+  del(k) { try { localStorage.removeItem(k); } catch { /* 저장 불가 */ } },
+  keys() { try { return Object.keys(localStorage); } catch { return []; } },
+};
+const load = (k, d) => { try { return { ...d, ...JSON.parse(store.get(k)) }; } catch { return { ...d }; } };
 const DEF_SETTINGS = { music: 0.5, sfx: 0.8, joySize: 1, control: 'joystick', censor: true, invites: true, streamer: false, colorblind: false,
   resolution: 1, fps: 60, lighting: true, bgAnim: true, ads: false, analytics: true, lang: 'ko' };
 export const settings = load('au_settings', DEF_SETTINGS);
-export const saveSettings = () => localStorage.setItem('au_settings', JSON.stringify(settings));
+export const saveSettings = () => store.set('au_settings', JSON.stringify(settings));
 
 // 기기 정보 (생일/토큰/게스트 이름)
 export const device = load('au_device', { birth: '', token: '', guestName: '', chose: false, region: 'as' });
 if (!device.guestName) device.guestName = randomName();
-export const saveDevice = () => localStorage.setItem('au_device', JSON.stringify(device));
+export const saveDevice = () => store.set('au_device', JSON.stringify(device));
 saveDevice();
 
 const DEF_PROFILE = () => ({ look: { color: 0, hat: 'none', visor: 'none', skin: 'none', pet: 'none', plate: 'none' }, owned: [], beans: 100, xp: 0, level: 1,
@@ -54,7 +60,7 @@ export function useProfile(key) {
   profile.look = { ...DEF_PROFILE().look, ...profile.look };
 }
 useProfile('guest');
-export const saveProfile = () => localStorage.setItem(profileKey, JSON.stringify(profile));
+export const saveProfile = () => store.set(profileKey, JSON.stringify(profile));
 export function addXp(n) {
   profile.xp += n;
   while (profile.xp >= 100 + profile.level * 20) { profile.xp -= 100 + profile.level * 20; profile.level++; }
@@ -74,8 +80,10 @@ export const net = {
   on(t, fn) { if (!handlers.has(t)) handlers.set(t, new Set()); handlers.get(t).add(fn); return () => handlers.get(t).delete(fn); },
   emit(t, m) { handlers.get(t)?.forEach(f => f(m)); },
   send(m) { if (ws?.readyState === 1) ws.send(JSON.stringify(m)); },
+  // 브라우저 전용 빌드: 서버 로직이 이 페이지 안에서 돌아감 (globalThis.AU_LOCAL)
+  local: !!globalThis.AU_LOCAL,
   connect() {
-    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    ws = globalThis.AU_LOCAL ? globalThis.AU_LOCAL.connect() : new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     ws.onopen = () => {
       net.open = true; retry = 0;
       net.send({ t: 'hello', token: device.token, birth: device.birth, guestName: device.guestName, look: profile.look, lvl: profile.level });
