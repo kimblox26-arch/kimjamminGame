@@ -254,7 +254,7 @@ export class Town {
     }
   }
 
-  setEco(eco) { this.eco = eco; this.R = eco ? 260 : 420; this.maxP = eco ? 120 : 340; this.maxC = eco ? 60 : 190; this.maxT = eco ? 4 : 9; }
+  setEco(eco, k = 1) { this.eco = eco; this.R = eco ? 260 : 420; this.maxP = Math.round((eco ? 120 : 340) * k); this.maxC = Math.round((eco ? 60 : 190) * k); this.maxT = Math.max(2, Math.round((eco ? 6 : 12) * k)); }
 
   _h(x, z) { return this.game.heightAt(x, z); }
 

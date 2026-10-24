@@ -297,7 +297,7 @@ export class Life {
     // 실제 도로망이 있으면 사람·차는 town.js 가 맡음
     this.maxP = this.town ? 0 : eco ? 110 : 320;
     this.maxC = this.town ? 0 : eco ? 40 : 110;
-    if (this.town) this.town.setEco(eco);
+    if (this.town) this.town.setEco(eco, this.lowHeat ? 0.5 : 1);
   }
   setTown(t) { this.town = t; this.setEco(this.eco); }
 

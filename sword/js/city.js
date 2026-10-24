@@ -47,12 +47,14 @@ const FRAG_PARS = /* glsl */`
 uniform sampler2D uDigits;
 uniform vec4 uHoleA[16];   // 구멍 캡슐: 입구 (렌더 좌표) + 반지름
 uniform vec4 uHoleB[16];   // 출구
+uniform float uHoleN;
 varying vec3 vWPos;
 float fGlass = 0.0;
 // 가장 가까운 구멍까지 거리 / 반지름 (< 0 이면 구멍 안)
 float holeN(vec3 p) {
   float m = 1e9;
   for (int i = 0; i < 16; i++) {
+    if (float(i) >= uHoleN) break;
     vec4 A = uHoleA[i];
     if (A.w <= 0.0) continue;
     vec3 ab = uHoleB[i].xyz - A.xyz;
@@ -258,7 +260,7 @@ function makeDigitAtlas() {
 }
 
 // 구멍 유니폼 (모든 파사드 재질이 공유)
-const HOLE_U = { A: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) }, B: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) } };
+const HOLE_U = { A: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) }, B: { value: Array.from({ length: 16 }, () => new THREE.Vector4()) }, N: { value: 0 } };
 // 구멍 안쪽 (터널): 부서진 콘크리트 + 층 슬래브 띠 + 철근 점
 function tunnelMat() {
   const m = new THREE.MeshStandardMaterial({ color: 0x8a8580, roughness: 0.95, side: THREE.BackSide });
@@ -287,7 +289,7 @@ function makeFacadeMaterial(digits, envMap) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.0, envMap, envMapIntensity: 1.0 });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uDigits = { value: digits };
-    sh.uniforms.uHoleA = HOLE_U.A; sh.uniforms.uHoleB = HOLE_U.B;
+    sh.uniforms.uHoleA = HOLE_U.A; sh.uniforms.uHoleB = HOLE_U.B; sh.uniforms.uHoleN = HOLE_U.N;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\n' + VERT_PARS)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + VERT_MAIN);
@@ -679,6 +681,8 @@ export class City {
     for (const t of this.tiles) {
       t.mesh.position.set(t.ox - origin.x, -origin.y, t.oz - origin.z);
       if (t.near) t.mesh.visible = Math.abs(t.ox - camAbs.x) < R + 400 && Math.abs(t.oz - camAbs.z) < R + 400 && camAbs.y - t.maxY < R;
+      else if (this.farR) t.mesh.visible = Math.hypot(t.ox - camAbs.x, t.oz - camAbs.z) < this.farR + 2200;
+      else t.mesh.visible = true;
     }
     for (const L of this.landmarks) L.mesh.position.set(L.ax - origin.x, L.ay - origin.y, L.az - origin.z);
     this._holesUpdate(camAbs);
@@ -761,6 +765,7 @@ export class City {
     }
     list.sort((p, q) => p.a.distanceToSquared(camAbs) - q.a.distanceToSquared(camAbs));
     const A = HOLE_U.A.value, B = HOLE_U.B.value;
+    HOLE_U.N.value = Math.min(16, list.length);
     for (let k = 0; k < 16; k++) {
       const H = list[k];
       if (!H) { A[k].w = 0; continue; }

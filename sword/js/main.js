@@ -234,8 +234,19 @@ let capIdx = 0;
 const store = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* 무시 */ } } };
 // 최적화 모드: 해상도↓, 그림자·블룸·MSAA 끔, 나무 반경↓ (모바일은 기본 켬)
 let eco = store.get('skyblade.eco') !== null ? store.get('skyblade.eco') === '1' : isMobile;
+// 저발열 모드: 최적화 모드 + 30 FPS + 해상도 0.75 + 사람·차 절반 + 먼 건물 5 km + 풀 없음 + 지형 워커 1개 + 가만히 있으면 15 FPS
+let lowHeat = store.get('skyblade.lowheat') !== null ? store.get('skyblade.lowheat') === '1' : isMobile;
+function applyLowHeat(show) {
+  if (lowHeat) { eco = true; capIdx = 1; }
+  life.lowHeat = lowHeat;
+  terrain.workerLimit = lowHeat ? 1 : 99;
+  city.farR = lowHeat ? 5000 : 0;
+  applyEco(false);
+  store.set('skyblade.lowheat', lowHeat ? '1' : '0');
+  if (show) toast(lowHeat ? '저발열 모드 켬 (30 FPS · 화질↓)' : '저발열 모드 끔');
+}
 function applyEco(show) {
-  maxPR = eco ? Math.min(devicePixelRatio || 1, 1) : MAX_PR_FULL;
+  maxPR = lowHeat ? Math.min(devicePixelRatio || 1, 0.75) : eco ? Math.min(devicePixelRatio || 1, 1) : MAX_PR_FULL;
   pixelRatio = Math.min(pixelRatio, maxPR);
   if (!eco) pixelRatio = maxPR;
   world.sun.castShadow = !eco;
@@ -243,11 +254,12 @@ function applyEco(show) {
   post.bloom.enabled = !eco;
   post._samplesCap = eco ? 0 : undefined;
   post._samples = -1;
-  trees.setRadius(eco ? 380 : (quality === 'low' ? 520 : 900));
+  trees.setRadius(lowHeat ? 260 : eco ? 380 : (quality === 'low' ? 520 : 900));
   life.setEco(eco);
   ground.setLow(eco);
-  city.nearR = eco ? 1500 : 3000;
-  if (roads) { roads.R = eco ? 1100 : 2000; terrain.uniforms.tRoadR.value = roads.R; }
+  ground.enabled = !lowHeat;
+  city.nearR = lowHeat ? 900 : eco ? 1500 : 3000;
+  if (roads) { roads.R = lowHeat ? 750 : eco ? 1100 : 2000; terrain.uniforms.tRoadR.value = roads.R; }
   water.setDetail && water.setDetail(eco);
   resize();
   store.set('skyblade.eco', eco ? '1' : '0');
@@ -268,6 +280,7 @@ const S = JSON.parse(store.get('skyblade.settings') || '{}');
 const saveS = () => store.set('skyblade.settings', JSON.stringify(S));
 function syncSettings() {
   $('s-eco').checked = eco;
+  $('s-low').checked = lowHeat;
   $('s-fps').value = String(capIdx);
   $('s-sound').checked = !audio.muted;
   $('s-fp').checked = rig.firstPerson;
@@ -295,6 +308,7 @@ $('btn-set').addEventListener('click', openSettings);
 $('s-close').addEventListener('click', closeSettings);
 $('s-menu').addEventListener('click', () => { $('settings').hidden = true; $('menu').style.display = ''; $('menu').classList.remove('hide'); input.enabled = false; });
 $('s-eco').addEventListener('change', (e) => { eco = e.target.checked; applyEco(true); });
+$('s-low').addEventListener('change', (e) => { lowHeat = e.target.checked; applyLowHeat(true); syncSettings(); });
 $('s-fps').addEventListener('change', (e) => { capIdx = +e.target.value; S.fps = capIdx; saveS(); });
 $('s-sound').addEventListener('change', (e) => { audio.muted = !e.target.checked; S.muted = audio.muted; saveS(); });
 $('s-fp').addEventListener('change', (e) => { if (e.target.checked !== rig.firstPerson) toggleView(); });
@@ -336,6 +350,12 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 applyEco(false);
+if (lowHeat) applyLowHeat(false);
+// 배터리가 적고 충전 중이 아니면 저발열 모드로 자동 전환
+if (navigator.getBattery) navigator.getBattery().then((b) => {
+  const chk = () => { if (!b.charging && b.level < 0.3 && !lowHeat) { lowHeat = true; applyLowHeat(false); toast('배터리가 적어 저발열 모드로 전환'); } };
+  b.addEventListener('levelchange', chk); b.addEventListener('chargingchange', chk); chk();
+}).catch(() => {});
 
 // ── HUD ──
 const hud = {
@@ -422,6 +442,7 @@ function updateHud(dt, fps) {
 
 // ── 루프 ──
 let last = performance.now();
+let idleT = 0;
 let nextFrameT = 0;
 let acc = 0;
 let fpsFrames = 0, fpsTime = 0, fps = 0;
@@ -469,7 +490,9 @@ function frame(now) {
   if (!measured) { last = now; return; }
 
   // 프레임 제한 (기본 60): 다음 프레임 예정 시각 전이면 건너뜀. 주사율이 배수(120/240)면 고르게, 90/144Hz 도 평균 60
-  const cap = CAPS[capIdx];
+  let cap = CAPS[capIdx];
+  // 저발열: 2초 넘게 가만히 있으면 15 FPS
+  if (lowHeat && cap && idleT > 2) cap = 15;
   if (cap && !dbg.paused && refreshEst > cap * 1.1) {
     const iv = 1000 / cap, slack = 500 / refreshEst;
     if (now < nextFrameT - slack) return;
@@ -485,6 +508,7 @@ function frame(now) {
   if (hitStopT > 0) { hitStopT -= dt; timeScale = hitStopScale; } else timeScale += (1 - timeScale) * (1 - Math.exp(-20 * dt));
 
   input.poll(dt);
+  { const I = input.state; idleT = (player.speed < 0.3 && !I.moveX && !I.moveY && !I.lookDX && !I.lookDY && !I.up && !I.down && !I.beam && !input.edges.size) ? idleT + dt : 0; }
   if (input.consume('view')) toggleView();
   if (input.consume('nuke')) fireNuke();
   let simDt = dt * timeScale;

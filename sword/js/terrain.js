@@ -1569,9 +1569,10 @@ export class Terrain {
     let inflight = 0;
     if (this._workers.length) {
       let k = 0;
+      const nW = Math.min(this._workers.length, this.workerLimit || 99);
       for (let w = 0; w < this._workers.length; w++) {
         const rec = this._workers[w];
-        while (rec.busy < 2 && k < req.length) {
+        while (w < nW && rec.busy < 2 && k < req.length) {
           const nd = req[k++];
           if (nd.state !== 0) continue;
           nd.state = 1;

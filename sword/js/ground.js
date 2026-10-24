@@ -90,6 +90,7 @@ transformed.xz += vec2(0.07, 0.04) * sway * transformed.y * transformed.y * 6.0;
   update(dt, camAbs, show) {
     this.uTime.value += dt;
     this.group.position.set(-origin.x, -origin.y, -origin.z);
+    if (this.enabled === false) { this.group.visible = false; return; }
     const agl = camAbs.y - this.o.sample(camAbs.x, camAbs.z).h;
     this.group.visible = show && agl < 400;
     if (!this.group.visible) return;
