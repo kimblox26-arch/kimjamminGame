@@ -2749,7 +2749,7 @@ FX.prototype.nukeBlast = function (pos, Rf, Rb, hb = 0) {
   H.r = 1.4; H.g = 1.42; H.b = 1.5; H.a = 0.55; H.fres = 2.4; H.add = 0.3; H.noise = 0.9; H.apow = 1.4;
   this.shells.spawn(H);
   // 지면을 덮는 먼지 해일 (기둥 아래 치마)
-  this._groundBurstAt(x, gy, z, Math.round(70 * this.q) + 10, Rf * 0.4, Rf * 1.2, 90, 220, Rf * 0.35, Rf * 1.1, 12, 30);
+  this._groundBurstAt(x, gy, z, Math.round(70 * this.q) + 10, Rf * 0.4, Rf * 1.2, 50, 120, Rf * 0.35, Rf * 1.0, 10, 22);
   // 파편
   const nD = this.quality === 'high' ? 90 : 35;
   for (let i = 0; i < nD; i++) {

@@ -30,20 +30,26 @@ float vn(vec3 x) {
 float fbm(vec3 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.07 + 3.1; a *= 0.5; } return s; }`;
 
 // 불덩이 → 버섯 갓. uHeat: 1 (하얗게 빛남) → 0 (식은 연기), uCap: 0 (구) → 1 (납작한 갓, 아래가 말려 올라감)
+//  표면은 뭉게뭉게 (여러 크기의 부푼 덩어리) + 덩어리 사이 골은 그늘 → 실제 버섯구름처럼
 const BALL_VS = /* glsl */`
 uniform float uTime, uCap, uRough;
 varying vec3 vN, vP, vW;
-varying float vNz;
+varying float vNz, vB;
 ${NOISE}
+float billow(vec3 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * (1.0 - abs(2.0 * vn(p) - 1.0)); p = p * 2.1 + 1.3; a *= 0.5; } return s; }
 void main() {
   vec3 p = position;
-  float n = fbm(p * 2.6 + vec3(0.0, -uTime * 0.25, 0.0));
-  vNz = n;
-  // 갓: 위로 납작, 아래쪽 가장자리가 위로 말림 (도넛처럼)
+  // 도넛처럼 말려 도는 흐름 (갓 가장자리에서 위로 올라가 안쪽으로)
+  vec3 q = p * 3.2 + vec3(0.0, -uTime * 0.12, 0.0);
+  float n = fbm(q);
+  float b = billow(p * 5.0 + vec3(uTime * 0.02, -uTime * 0.08, 0.0));
+  vNz = n; vB = b;
   float r = length(p.xz);
-  p.y *= mix(1.0, 0.62, uCap);
-  p.y += uCap * 0.38 * smoothstep(0.2, 1.0, 1.0 - r) * step(p.y, 0.0) * 1.2;
-  p += normal * (n - 0.5) * uRough;
+  p.y *= mix(1.0, 0.6, uCap);
+  // 갓 아랫면 가운데는 기둥이 빨려 들어가며 오목
+  p.y += uCap * 0.45 * smoothstep(0.65, 0.0, r) * step(p.y, 0.0);
+  p.xz *= 1.0 + uCap * 0.15 * smoothstep(-0.2, 0.3, -abs(position.y));
+  p += normal * ((n - 0.5) * uRough + (b - 0.55) * uRough * 0.9);
   vP = position;
   vN = normalize(mat3(modelMatrix) * normal);
   vec4 w = modelMatrix * vec4(p, 1.0);
@@ -54,38 +60,45 @@ const BALL_FS = /* glsl */`
 uniform float uTime, uHeat, uA;
 uniform vec3 uSun;
 varying vec3 vN, vP, vW;
-varying float vNz;
+varying float vNz, vB;
 ${NOISE}
 vec3 fire(float T) {
   // 흑체 근사: 흰빛 → 노랑 → 주황 → 검붉음
-  vec3 c = mix(vec3(0.35, 0.05, 0.01), vec3(1.6, 0.45, 0.08), smoothstep(0.1, 0.35, T));
-  c = mix(c, vec3(3.2, 1.9, 0.6), smoothstep(0.35, 0.65, T));
-  c = mix(c, vec3(9.0, 8.0, 6.5), smoothstep(0.65, 0.95, T));
+  vec3 c = mix(vec3(0.3, 0.04, 0.01), vec3(1.7, 0.42, 0.06), smoothstep(0.08, 0.32, T));
+  c = mix(c, vec3(3.4, 1.9, 0.55), smoothstep(0.32, 0.62, T));
+  c = mix(c, vec3(9.0, 8.0, 6.5), smoothstep(0.62, 0.95, T));
   return c;
 }
 void main() {
   vec3 n = normalize(vN);
   vec3 v = normalize(cameraPosition - vW);
   float mu = max(dot(n, v), 0.0);
-  float t2 = fbm(vP * 6.0 + vec3(0.0, -uTime * 0.6, uTime * 0.2));
-  float T = uHeat * (0.55 + 0.6 * vNz + 0.35 * t2) * (0.75 + 0.25 * mu);
+  float d1 = fbm(vP * 7.0 + vec3(0.0, -uTime * 0.5, uTime * 0.15));
+  // 덩어리 사이 골 (그늘) / 덩어리 머리 (밝음)
+  float lump = smoothstep(0.25, 0.85, vB);
+  float T = uHeat * (0.45 + 0.55 * lump + 0.45 * d1) * (0.7 + 0.3 * mu);
+  float soot = smoothstep(0.45, 0.7, fbm(vP * 3.5 + vec3(uTime * 0.05, -uTime * 0.35, 0.0)));
   vec3 hot = fire(clamp(T, 0.0, 1.0)) * (uHeat > 0.8 ? 1.0 + (uHeat - 0.8) * 20.0 : 1.0);
-  // 식은 연기: 해에 비친 쪽은 밝은 회갈색, 그늘은 어둡게, 밑면은 남은 열로 붉게
-  float lit = 0.32 + 0.85 * max(dot(n, uSun), 0.0);
-  vec3 smoke = vec3(0.62, 0.55, 0.5) * lit * (0.55 + 0.7 * vNz) + vec3(1.4, 0.35, 0.08) * max(-n.y, 0.0) * uHeat * 2.0;
-  vec3 col = mix(smoke, hot, smoothstep(0.08, 0.35, uHeat));
-  float a = uA * mix(smoothstep(0.0, 0.35, mu + vNz * 0.4), 1.0, smoothstep(0.2, 0.5, uHeat));
+  hot *= mix(1.2, 0.15, soot * smoothstep(0.85, 0.3, uHeat));
+  // 식은 연기: 해 쪽은 밝은 회갈색, 그늘·골은 짙은 갈색, 밑면은 남은 열로 붉게
+  float lit = max(dot(n, uSun), 0.0);
+  float ao = mix(0.35, 1.0, lump) * (0.7 + 0.5 * d1);
+  vec3 smoke = mix(vec3(0.16, 0.13, 0.115), vec3(0.78, 0.7, 0.62), clamp(lit * 0.9 + 0.15, 0.0, 1.0)) * ao;
+  smoke = mix(smoke, vec3(0.42, 0.33, 0.27) * ao, 0.3);
+  smoke += vec3(1.6, 0.4, 0.08) * max(-n.y, 0.0) * smoothstep(0.02, 0.3, uHeat) * 1.5 * (0.4 + lump);
+  vec3 col = mix(smoke, hot, smoothstep(0.1, 0.32, uHeat));
+  float a = uA * mix(smoothstep(0.0, 0.3, mu + (vB - 0.4) * 0.8), 1.0, smoothstep(0.04, 0.2, uHeat));
   gl_FragColor = vec4(col, a);
 }`;
-// 기둥: 위로 빨려 올라가는 연기 (아래쪽은 먼지 치마)
+// 기둥: 위로 빨려 올라가는 흙먼지·연기 (아래쪽은 먼지 치마)
 const STEM_VS = /* glsl */`
 uniform float uTime;
 varying vec3 vP, vW, vN;
 ${NOISE}
 void main() {
   vec3 p = position;
-  float n = fbm(vec3(p.x * 3.0, p.y * 6.0 - uTime * 0.5, p.z * 3.0));
-  p.xz *= 0.8 + 0.5 * n;
+  float n = fbm(vec3(p.x * 3.0, p.y * 7.0 - uTime * 0.6, p.z * 3.0));
+  p.xz *= 0.75 + 0.55 * n;
   vP = position;
   vN = normalize(mat3(modelMatrix) * vec3(normal.x, 0.0, normal.z));
   vec4 w = modelMatrix * vec4(p, 1.0);
@@ -101,11 +114,11 @@ void main() {
   vec3 n = normalize(vN);
   vec3 v = normalize(cameraPosition - vW);
   float mu = abs(dot(n, v));
-  float s = fbm(vec3(vP.x * 4.0, vP.y * 9.0 - uTime * 0.7, vP.z * 4.0));
-  float lit = 0.35 + 0.8 * max(dot(n, uSun), 0.0);
-  vec3 col = mix(vec3(0.5, 0.42, 0.36), vec3(0.7, 0.64, 0.58), s) * lit;
+  float s = fbm(vec3(vP.x * 5.0, vP.y * 12.0 - uTime * 0.8, vP.z * 5.0));
+  float lit = 0.3 + 0.8 * max(dot(n, uSun), 0.0);
+  vec3 col = mix(vec3(0.22, 0.17, 0.13), vec3(0.62, 0.54, 0.46), s) * lit;
   col += vec3(1.5, 0.4, 0.08) * uHeat * smoothstep(0.6, 1.0, vP.y) * 1.5;
-  float a = uA * smoothstep(0.05, 0.45, mu) * (0.55 + 0.6 * s) * smoothstep(1.0, 0.92, vP.y);
+  float a = uA * smoothstep(0.0, 0.5, mu) * (0.45 + 0.7 * s) * smoothstep(1.0, 0.9, vP.y);
   gl_FragColor = vec4(col, a);
 }`;
 
@@ -237,7 +250,7 @@ export class Nukes {
     const sg = new THREE.CylinderGeometry(1, 1, 1, 40, 24, true); sg.translate(0, 0.5, 0);
     // 아래로 갈수록 넓게 (먼지 치마)
     const ps = sg.attributes.position;
-    for (let i = 0; i < ps.count; i++) { const y = ps.getY(i), w = 1 + 2.2 * Math.pow(1 - y, 6); ps.setX(i, ps.getX(i) * w); ps.setZ(i, ps.getZ(i) * w); }
+    for (let i = 0; i < ps.count; i++) { const y = ps.getY(i), w = 1 + 1.6 * Math.pow(1 - y, 9); ps.setX(i, ps.getX(i) * w); ps.setZ(i, ps.getZ(i) * w); }
     sg.computeVertexNormals();
     B.stem = new THREE.Mesh(sg, new THREE.ShaderMaterial({ vertexShader: STEM_VS, fragmentShader: STEM_FS, uniforms: su, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }));
     B.stem.frustumCulled = false; B.stem.renderOrder = 4;
@@ -297,7 +310,7 @@ export class Nukes {
           _c.subVectors(pa, _b).setY(0).normalize();
           P.vel.addScaledVector(_c, k); P.vel.y += k * 0.25;
           if (P.mode === 'ground') P.mode = 'air';
-          if (d < R_FIRE * 1.5 && G.toast) G.toast('불덩이 속 — 표면 온도 수천만 °C');
+          if (d < R_FIRE * 1.5 && G.toast) G.toast('불덩이에 휩싸임 — 수백만 °C');
         }
       }
     }
@@ -331,18 +344,18 @@ export class Nukes {
       const t = B.t;
       // 불덩이: 1 초에 최대 반지름, 수 초 동안 하얗게 → 식으며 떠올라 갓이 됨
       const rise = H_TOP * (1 - Math.exp(-Math.pow(t / 45, 1.3)));
-      const heat = t < 0.15 ? 1 : Math.exp(-(t - 0.15) / 3.2);
+      const heat = t < 0.15 ? 1 : Math.exp(-(t - 0.15) / 5.5);
       const rCap = R_FIRE * Math.min(1, Math.pow(t / 0.9 + 0.02, 0.4)) + 0.32 * rise;
       const cap = clamp((t - 2) / 10, 0, 1);
       const cy = B.gy + Math.max(R_FIRE * 0.6, Math.max(0, B.p.y - B.gy)) + rise;
       B.ball.position.set(B.p.x - origin.x, cy - origin.y, B.p.z - origin.z);
       B.ball.scale.set(rCap, rCap, rCap);
       const u = B.u;
-      u.uTime.value = t; u.uHeat.value = heat; u.uCap.value = cap; u.uRough.value = 0.1 + 0.15 * cap;
+      u.uTime.value = t; u.uHeat.value = heat; u.uCap.value = cap; u.uRough.value = 0.12 + 0.16 * cap;
       u.uA.value = t < 100 ? 1 : 1 - (t - 100) / 50;
       // 기둥: 지면 → 갓 밑
       const sh = Math.max(1, cy - rCap * 0.4 - B.gy);
-      const sr = Math.max(10, rCap * 0.22);
+      const sr = Math.max(10, rCap * 0.17);
       B.stem.position.set(B.p.x - origin.x, B.gy - origin.y, B.p.z - origin.z);
       B.stem.scale.set(sr, sh, sr);
       B.su.uTime.value = t; B.su.uHeat.value = heat;

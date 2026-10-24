@@ -1056,18 +1056,23 @@ export class Player {
     return out.applyQuaternion(_q1.invert()).normalize();
   }
 
-  // 건물 충돌: 빠르면 뚫고 지나가며 파괴, 느리면 튕기거나 미끄러짐
+  // 건물 충돌: 빠르면 뚫고 지나가며 파괴 (한 스텝에 여러 채도 연달아), 느리면 튕기거나 미끄러짐
   buildingCollide(dt) {
     const Ci = this.game.city;
     if (!Ci || this.mode === 'hero' || this.mode === 'launch') return;
     const ox = origin.x, oy = origin.y, oz = origin.z;
-    if (!Ci.segmentHit(this.prevPos.x + ox, this.prevPos.y + oy, this.prevPos.z + oz, this.pos.x + ox, this.pos.y + oy, this.pos.z + oz, _hit)) return;
+    let ax = this.prevPos.x + ox, ay = this.prevPos.y + oy, az = this.prevPos.z + oz;
+    const bx = this.pos.x + ox, by = this.pos.y + oy, bz = this.pos.z + oz;
+    for (let pass = 0; pass < 8; pass++) {
+    if (!Ci.segmentHit(ax, ay, az, bx, by, bz, _hit)) return;
     const n = _v1.set(_hit.nx, _hit.ny, _hit.nz);
     if (n.y > 0.7) return;   // 옥상 위는 지면 처리에서
     const hx = _hit.x - ox, hy = _hit.y - oy, hz = _hit.z - oz;
     const speed = this.speed;
     const vn = -this.vel.dot(n);
-    if (this.mode === 'fly' && speed > 110 && vn > 40) {
+    // 부스트 중이면 더 느려도 뚫음
+    const pierceV = this.sprint ? 55 : 95;
+    if (this.mode === 'fly' && speed > pierceV && vn > pierceV * 0.35) {
       // 관통: 맞은 높이에 구멍이 나고, 큰 건물은 윗부분이 날아가는 쪽으로 기울며 무너짐 (작은 건물은 산산조각)
       const E = 0.5 * MASS * speed * speed;
       const W = this.game.wreck, id = _hit.id;
@@ -1085,16 +1090,21 @@ export class Player {
           _N.set(_v2.z, 0, -_v2.x).multiplyScalar(0.18 * k);
           W.cut(id, _hit.y - 3, _v1, _N);
         } else W.blast(id, _hit.x, _hit.y, _hit.z, _v2.x, _v2.y, _v2.z, k);
-        if (fx.sparks) fx.sparks(_v3, _v2, 50, 0.9, Math.min(80, speed * 0.2), 2.0, 1.7, 1.3, 0.08);
+        // 뚫린 구멍: 들어간 쪽 파편 + 뒤로 뿜어지는 유리·콘크리트
+        if (fx.sparks) { fx.sparks(_v3, _v2, 70, 0.9, Math.min(90, speed * 0.25), 2.0, 1.7, 1.3, 0.08); fx.sparks(_v3, _v1.copy(_v2).negate(), 30, 0.6, 30, 1.6, 1.7, 1.9, 0.05); }
         if (fx.dustCloud) fx.dustCloud(hx, hy, hz, 10 + 4 * k, 4);
-        fx.land(_v3, 1);
-        n.set(_hit.nx, _hit.ny, _hit.nz);
+        if (pass === 0) fx.land(_v3, 1);
       }
-      this.vel.multiplyScalar(speed > 2000 ? 0.97 : 0.85);
+      // 한 채 뚫을 때마다 조금씩 느려짐 (부스트 중이면 덜)
+      this.vel.multiplyScalar(speed > 2000 ? 0.99 : this.sprint ? 0.96 : 0.92);
       this.game.hooks.shake(clamp(0.3 + speed / 3000, 0, 1));
       this.game.audio.play('heroLand', clamp(speed / 1500, 0.3, 1));
-      this.game.hitStop(0.05, 0.1);
-      return;
+      if (pass === 0 && speed < 1500) this.game.hitStop(0.04, 0.15);
+      // 같은 스텝에서 그 뒤 건물로 이어서
+      const L = Math.hypot(bx - _hit.x, by - _hit.y, bz - _hit.z);
+      if (L < 0.8) return;
+      ax = _hit.x + (bx - _hit.x) / L * 0.6; ay = _hit.y + (by - _hit.y) / L * 0.6; az = _hit.z + (bz - _hit.z) / L * 0.6;
+      continue;
     }
     // 벽: 밀어내고 법선 방향 속도 제거 (빠르면 튕김)
     this.pos.set(hx + n.x * 0.5, this.pos.y, hz + n.z * 0.5);
@@ -1105,6 +1115,8 @@ export class Player {
       this.game.audio.play('land', clamp(vn / 40, 0.2, 1));
       this.game.hooks.shake(clamp(vn / 60, 0.1, 0.6));
       this.anim.kickArms(-vn * 0.1, vn * 0.15);
+    }
+    return;
     }
   }
 

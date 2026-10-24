@@ -128,6 +128,13 @@ const blade = new Blade(scene, game, player);
 const cape = new Cape(scene, player.avatar);
 game.player = player; game.trees = trees;
 const nukes = new Nukes(scene, game);
+// 구름을 뚫으면 찢긴 수증기가 진행 방향으로 끌려가며 흩어짐
+world.onCloudPunch = (x, y, z, r) => {
+  const v = player.vel;
+  for (let i = 0; i < 4; i++) fx.puff({ x: x + (Math.random() - 0.5) * r, y: y + (Math.random() - 0.5) * r * 0.6, z: z + (Math.random() - 0.5) * r,
+    vx: v.x * 0.08 + (Math.random() - 0.5) * 20, vy: (Math.random() - 0.5) * 8, vz: v.z * 0.08 + (Math.random() - 0.5) * 20,
+    life: 6 + Math.random() * 5, s0: r * 0.5, s1: r * 1.1, a: 0.6, r0: 1, g0: 1, b0: 1.02, r1: 1, g1: 1, b1: 1.02, fin: 0.05, drag: 0.6, rotv: (Math.random() - 0.5) * 0.3 }, 'smoke');
+};
 // 핵 발사: 칼(가슴) 위에서 조준점 (카메라 시선이 처음 닿는 건물/땅, 없으면 3 km 앞) 으로
 function fireNuke() {
   if (player.hidden || earthGone || player.mode === 'dig') return;

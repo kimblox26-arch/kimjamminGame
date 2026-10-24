@@ -597,10 +597,10 @@ export class Blade {
     const ax = P.pos.x + origin.x, az = P.pos.z + origin.z;
     const T = this.game.terrain, gy = T ? T.heightAt(ax, az) : P.pos.y + origin.y - 1;
     _v.set(P.pos.x, gy - origin.y + 0.3, P.pos.z);
-    if (fx.impact) fx.impact(_v, 3e6, _e.set(0, 1, 0));
+    if (fx.impact) fx.impact(_v, 1.2e6, _e.set(0, 1, 0));
     if (fx.energyBurst) fx.energyBurst(_v, 3.5, 1.0, 1.4, 2.6, true);
     if (fx.dustCloud) fx.dustCloud(ax, gy, az, 18, 6);
-    H.shake(1); H.flash(0.35); H.fovKick(9); H.shockwave && H.shockwave(_v, 0.6);
+    H.shake(1); H.flash(0.2); H.fovKick(9); H.shockwave && H.shockwave(_v, 0.6);
     this.game.audio.play('clang', 1);
     this.game.hitStop(0.12, 0.03);
     if (!C || !W) return;

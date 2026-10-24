@@ -3,6 +3,7 @@
 // 무한 흰 바닥(안티앨리어싱 격자 + 그림자 + 구름 그림자), 태양 DirectionalLight + HemisphereLight.
 // 모든 커스텀 셰이더는 선형 HDR 을 출력한다 (톤매핑/sRGB 는 OutputPass 담당).
 import * as THREE from 'three';
+import { origin } from './frame.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
@@ -1028,7 +1029,7 @@ ${lights}`;
     const fu = this.floorUniforms;
     fu.uCamLocal.value.set(cx - px, cy, cz - pz);
     const dX = p.wind.x * elapsed, dZ = p.wind.z * elapsed;
-    fu.uCloudShadowOff.value.set(wrap01(px - dX, P), wrap01(pz - dZ, P));
+    fu.uCloudShadowOff.value.set(wrap01(px + origin.x - dX, P), wrap01(pz + origin.z - dZ, P));
     fu.uGridMinor.value.z = p.gridMinor * (1 - 0.85 * smooth(110, 380, this.camSpeed));
     fu.uGridMajor.value.z = p.gridMajor * (1 - 0.6 * smooth(700, 1600, this.camSpeed));
     fu.uCloudShadowAmt.value = p.cloudShadow;
@@ -1040,7 +1041,10 @@ ${lights}`;
     this.sun.shadow.autoUpdate = fu.uShadowAmt.value > 0.001;
 
     // 구름
-    this._updateClouds(cx, cy, cz, fx, fy, fz, elapsed, dX, dZ);
+    // 구름은 절대 좌표에 고정 (원점 이동과 무관)
+    const ax = cx + origin.x, ay = cy + origin.y, az = cz + origin.z;
+    this._punchClouds(focus, cx, cy, cz, ax, ay, az, elapsed);
+    this._updateClouds(ax, ay, az, fx, fy, fz, elapsed, dX, dZ);
 
     // 플레이어 위치의 구름 그림자 → 태양광 세기 (바닥은 자체 구름 그림자 맵으로 보정)
     const vis = this._sunVisAt(focus.x - cx, focus.y - cy, focus.z - cz);
@@ -1085,6 +1089,45 @@ ${lights}`;
     }
   }
 
+  // 구름 뚫기: 플레이어가 빠르게 지나간 구름 덩어리는 찢겨 구멍이 나고 (흩어지는 수증기), 45 초에 걸쳐 다시 메워짐
+  _punchClouds(focus, cx, cy, cz, ax, ay, az, elapsed) {
+    const n = this.puffCount;
+    if (!this.pHole) { this.pHole = new Float32Array(n).fill(1); this._pf = new THREE.Vector3().copy(focus); this._pel = elapsed; this._holes = 0; }
+    const H = this.pHole, dt = Math.max(0, Math.min(0.5, elapsed - this._pel));
+    this._pel = elapsed;
+    if (this._holes > 0) {
+      let k = 0;
+      for (let i = 0; i < n; i++) if (H[i] < 1) { H[i] = Math.min(1, H[i] + dt / 45); k++; }
+      this._holes = k;
+    }
+    const pf = this._pf, step = focus.distanceTo(pf);
+    const mx = (focus.x + pf.x) * 0.5 - cx, my = (focus.y + pf.y) * 0.5 - cy, mz = (focus.z + pf.z) * 0.5 - cz;
+    // 선분 (지난 프레임 → 지금) 의 반 길이 벡터
+    const hx = (focus.x - pf.x) * 0.5, hy = (focus.y - pf.y) * 0.5, hz = (focus.z - pf.z) * 0.5;
+    pf.copy(focus);
+    // 순간이동·원점 이동 (한 프레임에 600 m 넘게) 은 뚫은 것으로 치지 않음
+    if (dt <= 0 || step < 0.3 || step > 600) return;
+    const hh = hx * hx + hy * hy + hz * hz;
+    const P = this.cloudPeriod, cls = this.clusters, off = this.pOff, R = this.pR;
+    const dX = this.params.wind.x * elapsed, dZ = this.params.wind.z * elapsed;
+    for (let k = 0; k < cls.length; k++) {
+      const c = cls[k];
+      // 이 구름 덩어리 근처일 때만 퍼프 검사
+      const rx = wrapHalf(c.x + dX - ax, P) - mx, ry = c.y - ay - my, rz = wrapHalf(c.z + dZ - az, P) - mz;
+      if (Math.abs(rx) > c.bound * 1.6 + step || ry > c.H * 1.5 + step || ry < -c.H * 1.5 - step || Math.abs(rz) > c.bound * 1.6 + step) continue;
+      for (let i = c.start; i < c.start + c.count; i++) {
+        const x = rx + off[i * 3], y = ry + off[i * 3 + 1], z = rz + off[i * 3 + 2];
+        // 퍼프 중심에서 선분까지 거리
+        const t = Math.max(-1, Math.min(1, (x * hx + y * hy + z * hz) / hh));
+        const ex = x - hx * t, ey = y - hy * t, ez = z - hz * t, lim = R[i] * 0.8;
+        if (ex * ex + ey * ey + ez * ez > lim * lim || H[i] < 0.3) continue;
+        H[i] = 0;
+        this._holes++;
+        if (this.onCloudPunch) this.onCloudPunch(x + mx + cx, y + my + cy, z + mz + cz, R[i]);
+      }
+    }
+  }
+
   _updateClouds(cx, cy, cz, fx, fy, fz, elapsed, dX, dZ) {
     const P = this.cloudPeriod, half = P * 0.5;
     const f0 = half * 0.68, f1 = half * 0.97;
@@ -1118,9 +1161,10 @@ ${lights}`;
       const c = cls[this.pCl[i]];
       const o = w * 16;
       D[o] = c.rx + off[i * 3]; D[o + 1] = c.ry + off[i * 3 + 1]; D[o + 2] = c.rz + off[i * 3 + 2];
-      D[o + 3] = R[i] * (1 + 0.035 * Math.sin(elapsed * 0.07 + this.pSeed[i] * 6.283));
+      const hole = this.pHole ? this.pHole[i] : 1;
+      D[o + 3] = R[i] * (1 + 0.035 * Math.sin(elapsed * 0.07 + this.pSeed[i] * 6.283)) * (0.55 + 0.45 * hole);
       D[o + 4] = B[i * 4]; D[o + 5] = B[i * 4 + 1]; D[o + 6] = B[i * 4 + 2]; D[o + 7] = B[i * 4 + 3];
-      D[o + 8] = c.ry; D[o + 9] = c.H; D[o + 10] = this.pOp[i] * c.fade; D[o + 11] = this.pSeed[i];
+      D[o + 8] = c.ry; D[o + 9] = c.H; D[o + 10] = this.pOp[i] * c.fade * hole * hole; D[o + 11] = this.pSeed[i];
       D[o + 12] = this.pN[i * 3]; D[o + 13] = this.pN[i * 3 + 1]; D[o + 14] = this.pN[i * 3 + 2];
       w++;
     }
