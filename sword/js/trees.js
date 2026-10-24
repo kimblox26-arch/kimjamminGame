@@ -163,6 +163,16 @@ export class Trees {
       const ht = coni ? 9 + 13 * r2 : 7 + 9 * r2;
       out.push(x, h0 - 0.3, z, ht, hash(ix * n + i, iz * n + j, 6) * 6.283, coni ? 0 : 1);
     }
+    // 실제 가로수 + 간선도로 보도 가로수 (roads.js)
+    if (this.extra) {
+      const e = this.extra(ix * TILE, iz * TILE, TILE);
+      for (let q = 0; q < e.length; q += 4) {
+        const x = e[q], z = e[q + 1];
+        const h0 = terrainSample(x, z).h;
+        if (this.footprint && this.footprint(x, z) > h0 + 0.5) continue;
+        out.push(x, h0 - 0.2, z, e[q + 2], hash(Math.round(x * 3), Math.round(z * 3), 6) * 6.283, e[q + 3] ? 1 : 0);
+      }
+    }
     return { c: new Float32Array(out), n: out.length / 6 };
   }
 

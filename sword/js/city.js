@@ -209,7 +209,8 @@ export class City {
   constructor(renderer, scene, opts = {}) {
     this.scene = scene;
     this.low = opts.quality === 'low';
-    this.max = this.low ? 14000 : 42000;
+    this.real = opts.buildings || null;
+    this.max = this.real ? this.real.n + (opts.extraBoxes ? opts.extraBoxes.length : 0) + 400 : this.low ? 14000 : 42000;
     // 건물 데이터 (절대 좌표)
     const M = this.max + 64;
     this.n = 0;
@@ -235,9 +236,16 @@ export class City {
     this.material = makeFacadeMaterial(this.digits, this.envMap);
 
     const t0 = performance.now();
-    this._generate();
-    this._placeLandmarks();
-    this._placeBridges();
+    if (this.real) {
+      this._loadReal(this.real);
+      this.real = true;
+      // 다리·고가 상판/난간/교각 (roads.js 가 실제 도로에서 계산)
+      for (const b of opts.extraBoxes || []) this._add(...b);
+    } else {
+      this._generate();
+      this._placeLandmarks();
+      this._placeBridges();
+    }
     this._buildTiles();
     this.genMs = performance.now() - t0;
     this._m = new THREE.Matrix4();
@@ -368,6 +376,32 @@ export class City {
     }
   }
 
+  // ── 실제 서울 건물 (seoul.js loadBuildings) ──
+  _loadReal(B) {
+    const n = B.n;
+    for (let i = 0; i < n; i++) {
+      const w = B.w[i] * 0.1, d = B.d[i] * 0.1, h = B.h[i] * 0.1, rot = B.yaw[i] / 65535 * Math.PI;
+      const sd = B.seed[i] / 255, k = B.kind[i];
+      const type = k === 0 ? T_APT : k === 1 ? T_OFFICE : T_LOW;
+      const num = type === T_APT ? 101 + Math.floor(sd * 12) : 0;
+      const tint = type === T_OFFICE ? sd * 0.9 : (sd * 7.31) % 1;
+      const mh = B.minH[i] * 0.1;
+      if (mh > 0.5) {
+        // 위로 띄운 부분 (구름다리·필로티 위층)
+        const g = Math.min(heightAt(B.x[i], B.z[i]), heightAt(B.x[i] + 3, B.z[i] + 3));
+        this._add(type, B.x[i], B.z[i], w, d, h - mh, rot, sd, num, tint, g + mh);
+      } else this._add(type, B.x[i], B.z[i], w, d, h, rot, sd, num, tint);
+    }
+    // 랜드마크: 롯데월드타워는 가늘어지는 실제 모양으로, N서울타워, 63빌딩 금빛 유리
+    const tallest = (x, z, r) => { let b = -1; for (let i = 0; i < this.n; i++) if (Math.abs(this.bx[i] - x) < r && Math.abs(this.bz[i] - z) < r && (b < 0 || this.bh[i] > this.bh[b])) b = i; return b; };
+    let lt = tallest(10981, 5997, 90);
+    if (lt >= 0 && this.bh[lt] > 300) { this.alive[lt] = 0; this._lotte(this.bx[lt], this.bz[lt], 0); }
+    else this._lotte(10981, 5997, 40);
+    this._seoulTower(899, 1701);
+    const sx = tallest(-3325, 5192, 70);
+    if (sx >= 0) this.btint[sx] = 1.0;
+  }
+
   // 주변에서 조건을 만족하는 지점 찾기
   _find(x, z, R, step, score) {
     let best = null, bs = -Infinity;
@@ -403,8 +437,8 @@ export class City {
     for (let i = 0; i < this.n; i++) if (this.alive[i] && Math.hypot(this.bx[i] - x, this.bz[i] - z) < r + Math.hypot(this.bw[i], this.bd[i]) / 2) this.alive[i] = 0;
   }
 
-  _lotte(x, z) {
-    this._clearAround(x, z, 90);
+  _lotte(x, z, clear = 90) {
+    if (clear > 0) this._clearAround(x, z, clear);
     const y0 = heightAt(x, z) - 2;
     // 둥근 모서리 사각 단면이 위로 갈수록 좁아지는 형태 (16각 원기둥을 사각으로 눌러 근사)
     const H = 555, segH = 40;
@@ -484,9 +518,12 @@ export class City {
     const tiles = new Map();
     for (let i = 0; i < this.n; i++) {
       if (!this.alive[i] || this.btype[i] === T_LANDMARK) { this.btile[i] = -1; continue; }
-      const k = Math.floor(this.bx[i] / TILE) * 1000 + Math.floor(this.bz[i] / TILE);
+      // 실제 서울: 높은 건물(30 m+)은 3 km 타일 (멀리서도 보이는 스카이라인), 나머지는 750 m 타일 (가까이서만)
+      const tall = !this.real || this.bh[i] >= 30;
+      const T = !this.real ? TILE : tall ? 3000 : 750;
+      const k = (tall ? 0 : 1e9) + Math.floor(this.bx[i] / T) * 100000 + Math.floor(this.bz[i] / T);
       let t = tiles.get(k);
-      if (!t) { t = { ids: [], ox: Math.floor(this.bx[i] / TILE) * TILE + TILE / 2, oz: Math.floor(this.bz[i] / TILE) * TILE + TILE / 2 }; tiles.set(k, t); }
+      if (!t) { t = { ids: [], ox: Math.floor(this.bx[i] / T) * T + T / 2, oz: Math.floor(this.bz[i] / T) * T + T / 2, near: !tall }; tiles.set(k, t); }
       t.ids.push(i);
     }
     const geo = unitBox();
@@ -517,6 +554,7 @@ export class City {
       mesh.computeBoundingSphere();
       mesh.computeBoundingBox();
       t.mesh = mesh;
+      t.maxY = maxY;
       t.orig = new Float32Array(mesh.instanceMatrix.array);   // 복원용
       this.tiles.push(t);
       this.group.add(mesh);
@@ -527,7 +565,11 @@ export class City {
 
   update(dt, camera, camAbs) {
     // 플로팅 원점: 타일/랜드마크 위치 = 절대 - origin
-    for (const t of this.tiles) t.mesh.position.set(t.ox - origin.x, -origin.y, t.oz - origin.z);
+    const R = this.nearR || 3000;
+    for (const t of this.tiles) {
+      t.mesh.position.set(t.ox - origin.x, -origin.y, t.oz - origin.z);
+      if (t.near) t.mesh.visible = Math.abs(t.ox - camAbs.x) < R + 400 && Math.abs(t.oz - camAbs.z) < R + 400 && camAbs.y - t.maxY < R;
+    }
     for (const L of this.landmarks) L.mesh.position.set(L.ax - origin.x, L.ay - origin.y, L.az - origin.z);
     // 아주 높이 올라가면 도시를 숨김 (지구 원반이 대신)
     this.group.visible = camAbs.y < 120000;

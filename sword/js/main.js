@@ -18,6 +18,8 @@ import { Trees } from './trees.js';
 import { Wreck } from './wreck.js';
 import * as geoMod from './geo.js';
 import { loadGeo } from './geo.js';
+import { loadSeoul, loadBuildings, loadLines, loadPoints } from './seoul.js';
+import { Roads } from './roads.js';
 import { Blade } from './blade.js';
 import { Underground, layerName } from './underground.js';
 import { Cape } from './cape.js';
@@ -57,10 +59,31 @@ const sunDir = SUN_DIR.clone();
 const world = new World(renderer, scene, { quality, sunDir });
 // 실제 지구 데이터 (먼 곳 지형·해안선). 없으면 절차적 지형만
 const geo = await loadGeo('./assets/');
-const terrain = new Terrain(renderer, scene, { quality, sunDir, geo });
-const city = new City(renderer, scene, { quality, sunDir });
+// 실제 서울: 고도·물·토지 격자 → 지형, 건물 → 도시, 도로·철도·시설 → 도로
+const loadMsg = (m) => { const e = document.querySelector('#start .tap'); if (e) e.textContent = m; };
+const bootT = { t0: performance.now() };
+window.__boot = bootT;
+loadMsg('실제 서울 지형 불러오는 중…');
+const seoul = await loadSeoul('./assets/seoul/');
+bootT.grid = performance.now() - bootT.t0;
+const terrain = new Terrain(renderer, scene, { quality, sunDir, geo, real: seoul && seoul.terrain });
+let roads = null, buildings = null;
+if (seoul) {
+  try {
+    loadMsg('건물·도로 불러오는 중…');
+    const [b, r, rl, pts] = await Promise.all([loadBuildings(seoul.base), loadLines(seoul.base, 'roads'), loadLines(seoul.base, 'rails'), loadPoints(seoul.base)]);
+    buildings = b;
+    bootT.fetch = performance.now() - bootT.t0;
+    roads = new Roads(scene, { roads: r, rails: rl, points: pts }, { heightAt: (x, z) => terrainMod.heightAt(x, z), waterLevelAt: (x, z) => terrainMod.waterLevelAt(x, z) }, { quality });
+  } catch (e) { console.warn('[seoul] 건물/도로 실패', e); }
+}
+bootT.roads = performance.now() - bootT.t0;
+loadMsg('도시 짓는 중…');
+const city = new City(renderer, scene, { quality, sunDir, buildings, extraBoxes: roads ? roads.bridgeBoxes : null });
+bootT.city = performance.now() - bootT.t0;
 const water = new Water(renderer, scene, { quality, envMap: city.envMap });
 const trees = new Trees(renderer, scene, { quality, envMap: city.envMap, footprint: (x, z) => city.roofAt(x, z) });
+if (roads) trees.extra = (x, z, s) => roads.streetTrees(x, z, s);
 const space = new Space(renderer, { quality });
 world.params.sunIntensity = 2.75;
 world.params.hemiIntensity = 1.05;
@@ -152,7 +175,14 @@ player.blade = blade;
 // 스폰: 한강 북쪽 둔치 공원
 function spawn() {
   if (origin.lengthSq() > 0) rebase(-origin.x, -origin.y, -origin.z);
-  player.pos.set(0, terrainMod.heightAt(0, 0) + 1.0, 0);
+  // 서울광장 근처, 건물·물이 아닌 곳
+  let sx = 0, sz = 95;
+  search: for (let r = 0; r < 400; r += 6) for (let a = 0; a < 16; a++) {
+    const x = Math.cos(a * Math.PI / 8) * r, z = 95 + Math.sin(a * Math.PI / 8) * r, g = terrainMod.heightAt(x, z);
+    if (city.roofAt(x, z) < g + 0.5 && terrainMod.waterLevelAt(x, z) < g) { sx = x; sz = z; break search; }
+  }
+  player.pos.set(sx, terrainMod.heightAt(sx, sz) + 1.0, sz);
+  rig.yaw = 0;
   player.prevPos.copy(player.pos);
   player.vel.set(0, 0, 0);
   player.mode = 'ground';
@@ -206,6 +236,8 @@ function applyEco(show) {
   post._samples = -1;
   trees.setRadius(eco ? 380 : (quality === 'low' ? 520 : 900));
   life.setEco(eco);
+  city.nearR = eco ? 1500 : 3000;
+  if (roads) { roads.R = eco ? 1100 : 2000; terrain.uniforms.tRoadR.value = roads.R; }
   water.setDetail && water.setDetail(eco);
   resize();
   store.set('skyblade.eco', eco ? '1' : '0');
@@ -425,6 +457,7 @@ function frame(now) {
   world.update(dt, elapsed.t, camera, player.renderPos, wAbs);
   terrain.update(dt, camera, wAbs);
   city.update(dt, camera, wAbs);
+  if (roads) roads.update(dt, wAbs, elapsed.t);
   wreck.update(dbg.paused ? dt : dt * timeScale, camAbs);
   if (!water.ready && (terrain.stats.draws > 30 || elapsed.t > 8)) water.ready = true;
   water.update(dt, camera, wAbs);
@@ -478,7 +511,7 @@ function frame(now) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show'); }
 }
 requestAnimationFrame(frame);
-window.__game = { life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
+window.__game = { roads, seoul, life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;

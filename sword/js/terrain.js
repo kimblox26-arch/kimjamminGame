@@ -270,8 +270,96 @@ function terrainCore() {
     S.sea = m > 0.5 ? 1 : 0;
     return h;
   }
+
+  // ===== 실제 서울 (seoul.js): 15 m 고도 격자 + 분류·수심, 바깥 100 m 격자 =====
+  let REAL = null;
+  function setReal(r) { REAL = r; }
+  const RCW = new Float64Array(10);       // 분류 가중치 (4 이웃 쌍선형)
+  let RH = 0, RWW = 0, RLV = -1e9;
+  function cr(t) {                       // Catmull-Rom 가중치
+    const t2 = t * t, t3 = t2 * t;
+    CRW[0] = -0.5 * t3 + t2 - 0.5 * t; CRW[1] = 1.5 * t3 - 2.5 * t2 + 1; CRW[2] = -1.5 * t3 + 2 * t2 + 0.5 * t; CRW[3] = 0.5 * t3 - 0.5 * t2;
+  }
+  const CRW = new Float64Array(4), CRX = new Float64Array(4);
+  function sampleGrid(G, x, z, full) {
+    const n = G.n, fx = (x + G.half) / G.step - 0.5, fz = (z + G.half) / G.step - 0.5;
+    const i0 = Math.floor(fx), j0 = Math.floor(fz);
+    if (i0 < 1 || j0 < 1 || i0 >= n - 2 || j0 >= n - 2) return false;
+    const tx = fx - i0, tz = fz - j0;
+    const H = G.h, CW = G.cw;
+    // 높이: 쌍삼차 (15 m 격자의 각진 면이 안 보이게)
+    cr(tx); CRX[0] = CRW[0]; CRX[1] = CRW[1]; CRX[2] = CRW[2]; CRX[3] = CRW[3];
+    cr(tz);
+    let h = 0;
+    for (let b = 0; b < 4; b++) {
+      const o = (j0 - 1 + b) * n + i0 - 1;
+      h += CRW[b] * (H[o] * CRX[0] + H[o + 1] * CRX[1] + H[o + 2] * CRX[2] + H[o + 3] * CRX[3]);
+    }
+    RH = h * 0.1;
+    // 물: 4 이웃 중 물 칸 비율과 그 수위
+    const k = j0 * n + i0;
+    const w00 = (1 - tx) * (1 - tz), w10 = tx * (1 - tz), w01 = (1 - tx) * tz, w11 = tx * tz;
+    let ww = 0, lv = 0;
+    RCW.fill(0);
+    for (let q = 0; q < 4; q++) {
+      const idx = q === 0 ? k : q === 1 ? k + 1 : q === 2 ? k + n : k + n + 1;
+      const w = q === 0 ? w00 : q === 1 ? w10 : q === 2 ? w01 : w11;
+      const c = CW[idx] & 15;
+      if (c === 6) { ww += w; lv += (H[idx] * 0.1 + (CW[idx] >> 4) * 0.05) * w; }
+      RCW[c] += w;
+    }
+    RWW = ww; RLV = ww > 0 ? lv / ww : -1e9;
+    return true;
+  }
+  const SR = { h: 0, level: 0, urban: 0, forest: 0, park: 0, rock: 0, edge: 0, floor: 0, relief: 0, sea: 0 };
+  function realFill(x, z, full) {
+    let h = RH;
+    const nat = 1 - RCW[1] - RCW[7] - RCW[6];
+    // 자연 지면의 잔 굴곡 (15 m 격자보다 작은 기복)
+    if (nat > 0.05) h += ((noise(x * (1 / 41), z * (1 / 41)) - 0.5) * 1.1 + (noise(x * (1 / 11), z * (1 / 11)) - 0.5) * 0.3) * nat;
+    S.h = h; S.floor = h; S.relief = 0;
+    // 도로 비율은 '강가 거리' 채널에 음수로 실어 보냄 (실제 지역에선 강가 거리를 안 씀) → 먼 곳 도로망을 지형 색으로
+    S.edge = RCW[7] > 0.02 ? -1000 - RCW[7] * 1000 : 1e4;
+    S.level = RWW > 0.5 ? Math.max(RLV, h + 0.3) : -1e9;
+    if (full) {
+      S.urban = RCW[1] + RCW[7];
+      S.forest = RCW[2] + RCW[8] * 0.25;
+      S.park = RCW[3] + RCW[0] * 0.85 + RCW[8] * 0.6;
+      S.rock = RCW[5] + RCW[9] * 0.6;
+      S.sea = RWW > 0.5 && RLV < 0.6 ? 1 : 0;
+    }
+    return h;
+  }
+  // 실제 데이터 범위 안이면 S 를 채우고 true (core ↔ outer 는 1.5 km 띠에서 섞음)
+  function evalReal(x, z, full) {
+    const C = REAL.core, O = REAL.outer;
+    const m = Math.max(Math.abs(x), Math.abs(z));
+    const tc = sstep(C.half - 1800, C.half - 300, m);
+    if (tc < 1 && sampleGrid(C, x, z, full)) {
+      realFill(x, z, full);
+      if (tc <= 0) return true;
+      Object.assign(SR, S);
+      if (!sampleGrid(O, x, z, full)) return true;
+      realFill(x, z, full);
+      S.h = lerp(SR.h, S.h, tc); S.floor = S.h;
+      S.level = tc < 0.5 ? SR.level : S.level;
+      if (full) { S.urban = lerp(SR.urban, S.urban, tc); S.forest = lerp(SR.forest, S.forest, tc); S.park = lerp(SR.park, S.park, tc); S.rock = lerp(SR.rock, S.rock, tc); S.sea = tc < 0.5 ? SR.sea : S.sea; }
+      return true;
+    }
+    const to = sstep(O.half - 4000, O.half - 400, m);
+    if (to >= 1 || !sampleGrid(O, x, z, full)) return false;
+    realFill(x, z, full);
+    if (to <= 0 || !GEO) return true;
+    Object.assign(SR, S);
+    evalGeo(x, z, full);
+    S.h = lerp(SR.h, S.h, to); S.floor = lerp(SR.floor, S.floor, to);
+    S.level = to < 0.5 ? SR.level : S.level; S.edge = 1e4;
+    if (full) { S.urban = lerp(SR.urban, S.urban, to); S.forest = lerp(SR.forest, S.forest, to); S.park = lerp(SR.park, S.park, to); S.rock = lerp(SR.rock, S.rock, to); S.sea = to < 0.5 ? SR.sea : S.sea; }
+    return true;
+  }
   const SL = { h: 0, level: 0, urban: 0, forest: 0, park: 0, rock: 0, edge: 0, floor: 0, relief: 0, sea: 0 };
   function evalTerrain(x, z, full) {
+    if (REAL && evalReal(x, z, full)) return S.h;
     if (!GEO) return evalLocal(x, z, full);
     const d = Math.sqrt(x * x + z * z);
     if (d <= BL0) return evalLocal(x, z, full);
@@ -485,6 +573,11 @@ function terrainCore() {
   // ---------- 도로망 (셰이더와 같은 식) : 1 = 도로 위 ----------
   const TP = 6.283185307179586 / 65536;
   function roadAt(x, z) {
+    if (REAL) {
+      const G = Math.max(Math.abs(x), Math.abs(z)) < REAL.core.half - 30 ? REAL.core : REAL.outer;
+      const i = Math.floor((x + G.half) / G.step), j = Math.floor((z + G.half) / G.step);
+      if (i >= 0 && j >= 0 && i < G.n && j < G.n) return (G.cw[j * G.n + i] & 15) === 7 ? 1 : 0;
+    }
     evalTerrain(x, z, true);
     const u = S.urban;
     if (u < 0.2) return 0;
@@ -642,7 +735,7 @@ function terrainCore() {
     return idx;
   }
 
-  return { heightAt, waterLevelAt, urbanAt, sample, roadAt, genChunk, buildIndex, evalTerrain, S, noise, setGeo };
+  return { heightAt, waterLevelAt, urbanAt, sample, roadAt, genChunk, buildIndex, evalTerrain, S, noise, setGeo, setReal, real: () => REAL };
 }
 /*CORE-END*/
 
@@ -802,6 +895,9 @@ uniform float tTime;
 uniform vec3 tFade;
 uniform float tShadowAmt;
 uniform float tOriginX;
+uniform float tOriginZ;
+uniform float tRealHalf;
+uniform float tRoadR;
 varying vec4 vTAttr;
 varying vec4 vTMisc;
 varying vec3 vTW;
@@ -930,6 +1026,23 @@ if (pW > 0.01) {
   tRough = mix(tRough, 0.93, pW);
 }
 
+// --- 실제 서울: 도시 바닥 (보도·마당·주차장). 도로·건물은 따로 그림 ---
+float tAbsZ = vTW.z + tOriginZ;
+float tRealOn = step(abs(tAbsX), tRealHalf) * step(abs(tAbsZ), tRealHalf);
+if (uW > 0.01 && tRealOn > 0.5) {
+  vec3 conc = vec3(0.235, 0.228, 0.215) * (0.82 + 0.3 * n2.r) * (0.9 + 0.2 * n3.g * nearF);
+  vec3 asph = vec3(0.075, 0.075, 0.08) * (0.85 + 0.3 * n2.g);
+  float pk = smoothstep(0.4, 0.62, n1.b * 0.7 + n2.a * 0.3);
+  vec3 gr = mix(conc, asph, pk * 0.7);
+  vec2 tl = abs(fract(P / 0.6) - 0.5);
+  gr *= 1.0 - 0.2 * tBand(min(tl.x, tl.y), 0.025, fw) * nearF * (1.0 - pk);
+  gr = mix(gr, vec3(0.05, 0.075, 0.03) * (0.8 + 0.4 * n3.g), smoothstep(0.72, 0.8, n1.a * 0.6 + n2.b * 0.4) * 0.8);   // 화단·잔디 조각
+  float roadW = tEdge < -900.0 ? clamp((-tEdge - 1000.0) / 1000.0, 0.0, 1.0) : 0.0;
+  float farR = smoothstep(tRoadR * 0.8, tRoadR, length(vTW.xz - cameraPosition.xz));
+  gr = mix(gr, vec3(0.05, 0.05, 0.055) * (0.9 + 0.2 * n2.g), roadW * farR);
+  alb = mix(alb, gr, uW);
+  tRough = mix(tRough, 0.86, uW);
+} else
 // --- 도시: 휘어진 격자 도로망 (간선 512 m, 집산 128 m) + 필지 ---
 if (uW > 0.01) {
   float u = vTAttr.x;
@@ -1152,6 +1265,9 @@ export class Terrain {
     this.uniforms = {
       tOriginMod: { value: new THREE.Vector2() },
       tOriginX: { value: 0 },
+      tOriginZ: { value: 0 },
+      tRealHalf: { value: opts.real ? opts.real.outer.half - 300 : 0 },
+      tRoadR: { value: 2000 },
       tLeaf: { value: this.leaf },
       tMorphK: { value: new THREE.Vector2() },
       tInv2R: { value: 1 / R2 },
@@ -1192,6 +1308,11 @@ export class Terrain {
       CORE.setGeo(opts.geo);
       for (const rec of this._workers) rec.w.postMessage({ geo: opts.geo });
     }
+    // 실제 서울 (지형 격자): 메인과 워커 모두에
+    if (opts.real) {
+      CORE.setReal(opts.real);
+      for (const rec of this._workers) rec.w.postMessage({ real: opts.real });
+    }
     this._syncBufs = null;
 
     // 최상위 청크 3×3 은 바로 생성 (구멍 방지)
@@ -1213,6 +1334,7 @@ export class Terrain {
       '  const d = e.data;\n' +
       '  if (d.recycle) { pool.push(d.recycle); return; }\n' +
       '  if (d.geo) { core.setGeo(d.geo); return; }\n' +
+      '  if (d.real) { core.setReal(d.real); return; }\n' +
       '  const r = core.genChunk(d.level, d.ix, d.iz, d.N, d.leaf, d.sx, d.sy, d.sz, pool.pop());\n' +
       '  self.postMessage({ key: d.key, r }, [r.pos.buffer, r.n.buffer, r.nc.buffer, r.attr.buffer, r.data.buffer]);\n' +
       '};\n';
@@ -1472,6 +1594,7 @@ export class Terrain {
     const o = frame.origin;
     U.tOriginMod.value.set(((o.x % 65536) + 65536) % 65536, ((o.z % 65536) + 65536) % 65536);
     U.tOriginX.value = o.x;
+    U.tOriginZ.value = o.z;
     U.tCamAlt.value = alt;
     U.tTime.value = this._time;
     const K = P.lodK;

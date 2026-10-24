@@ -188,7 +188,7 @@ export class Water {
     const snap = (v) => Math.round(v / (MC * 8)) * MC * 8;
     const cx = snap(camAbs.x), cz = snap(camAbs.z);
     if (!this.maskJob && (!this.maskAbs || Math.abs(this.maskAbs.cx - cx) > 1 || Math.abs(this.maskAbs.cz - cz) > 1)) {
-      this.maskJob = { cx, cz, x0: cx - half, z0: cz - half, row: 0 };
+      this.maskJob = { cx, cz, x0: cx - half, z0: cz - half, row: 0, level: this.level };
     }
     const J = this.maskJob;
     if (J) {
@@ -198,7 +198,9 @@ export class Water {
         const z = J.z0 + (J.row + 0.5) * MC;
         for (let i = 0; i < MS; i++) {
           const x = J.x0 + (i + 0.5) * MC;
-          W[J.row * MS + i] = waterLevelAt(x, z) > -1e9 ? 255 : 0;
+          // 이 수면 높이와 같은 물만 (산속 저수지·하천은 지형 셰이더가 물로 칠함)
+          const wl = waterLevelAt(x, z);
+          W[J.row * MS + i] = wl > -1e9 && Math.abs(wl - J.level) < 1.5 ? 255 : 0;
         }
       }
       if (J.row >= MS) {
@@ -251,15 +253,18 @@ export class Water {
     // 근처 물 높이 탐색 (몇 프레임마다, 카메라 주변 8방향)
     if (--this._probe <= 0) {
       this._probe = 10;
+      // 주변에서 가장 낮은 물 (= 큰 강·바다) 을 고름. 작은 하천·저수지는 지형 셰이더가 물로 칠함
       let lv = waterLevelAt(camAbs.x, camAbs.z), found = lv > -1e9;
-      for (let i = 0; i < 8 && !found; i++) {
-        const a = i * Math.PI / 4;
-        for (const r of [400, 1500, 4000]) {
+      if (!found) lv = 1e9;
+      for (let i = 0; i < 16; i++) {
+        const a = i * Math.PI / 8;
+        for (const r of [250, 700, 1500, 3000, 5000]) {
           const w = waterLevelAt(camAbs.x + Math.cos(a) * r, camAbs.z + Math.sin(a) * r);
-          if (w > -1e9) { lv = w; found = true; break; }
+          if (w > -1e9 && w < lv) { lv = w; found = true; }
         }
       }
       this.found = found;
+      if (found && Math.abs(lv - this.level) > 0.5) this.maskAbs = null;   // 다른 물 → 마스크 새로
       if (found) this.level = lv;
     }
     const alt = camAbs.y - this.level;
