@@ -599,8 +599,8 @@
     const p = await readDoc('players/' + acc);
     return p.nick ? p : null;
   }
-  const miniOf = u => { const m = (u.mini = u.mini || {}); m.pts = m.pts || 0; m.up = m.up || {}; m.best = m.best || { sec: 0, kills: 0, pts: 0 }; m.runs = m.runs || 0; return m; };
-  const miniView = m => ({ pts: m.pts, up: { size: m.up.size || 0, spin: m.up.spin || 0, hp: m.up.hp || 0, slow: m.up.slow || 0 }, best: m.best, runs: m.runs });
+  const miniOf = u => { const m = (u.mini = u.mini || {}); delete m.pts; delete m.up; m.best = m.best && m.best.lv ? m.best : { sec: 0, kills: 0, lv: 1 }; m.runs = m.runs || 0; return m; };
+  const miniView = m => ({ best: m.best, runs: m.runs });
   const mediaOf = d => (d && picOk(d.d, PIC_MAX.bn) ? { k: d.k, d: d.d, n: d.n || 1, fps: d.fps || 8, cols: d.cols || d.n || 1, v: d.v || 0 } : null);
   async function dropMedia(acc, slot) {
     const jobs = [];
@@ -2233,26 +2233,15 @@
     // ---------- 🗺️ 모험 모드 · 📊 실력 지도 ----------
     // ---------- ⚔️ 미니게임: 검의 회오리 (포인트 · 업그레이드는 계정에 저장) ----------
     'GET /api/mini': async t => miniView(miniOf(needLogin(t).u)),
-    'POST /api/mini/end': async (t, q, b) => { // 한 판 끝: 얻은 포인트를 통장에 (시간 · 처치 수에 비해 너무 많으면 잘라낸다)
+    'POST /api/mini/end': async (t, q, b) => { // 한 판 끝: 최고 기록 (버틴 시간 → 처치 수 순서)
       const u = needLogin(t).u, m = miniOf(u);
-      const sec = Math.max(0, Math.min(3600, Math.floor(Number(b.sec) || 0))), kills = Math.max(0, Math.min(99999, Math.floor(Number(b.kills) || 0)));
-      const pts = Math.max(0, Math.min(Math.floor(Number(b.pts) || 0), sec * 12 + 20, kills * 40));
-      m.pts += pts; m.runs++;
+      const sec = Math.max(0, Math.min(3600, Math.floor(Number(b.sec) || 0))), kills = Math.max(0, Math.min(sec * 30 + 50, Math.floor(Number(b.kills) || 0)));
+      const lv = Math.max(1, Math.min(S.MINI_MAXLV, Math.floor(Number(b.lv) || 1), 1 + Math.floor(kills / 3)));
+      m.runs++;
       const rec = sec > m.best.sec || (sec === m.best.sec && kills > m.best.kills);
-      if (rec) m.best = { sec, kills, pts };
+      if (rec) m.best = { sec, kills, lv };
       save();
-      return Object.assign(miniView(m), { got: pts, record: rec });
-    },
-    'POST /api/mini/buy': async (t, q, b) => { // 별 하나 더 (포인트로)
-      const u = needLogin(t).u, m = miniOf(u), key = String(b.key || '');
-      if (!S.MINI_UP[key]) fail('없는 업그레이드예요.');
-      const star = m.up[key] || 0;
-      if (star >= 3) fail('이미 별 3개예요!');
-      const cost = S.MINI_COST[star];
-      if (m.pts < cost) fail(`포인트가 ${cost - m.pts} 모자라요.`);
-      m.pts -= cost; m.up[key] = star + 1;
-      save();
-      return miniView(m);
+      return Object.assign(miniView(m), { record: rec });
     },
     'GET /api/adv': async t => ({ prog: needLogin(t).u.adv || {} }),
     'POST /api/adv/clear': async (t, q, b) => {
