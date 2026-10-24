@@ -164,7 +164,19 @@ body.touch .perf { top: 12px; left: 12px; }
 .skills button b { display: block; font-size: 17px; margin-bottom: 2px; }
 .skills button.nuke { background: rgba(255,210,60,.7); }
 .skills button:active { transform: scale(.94); }
-body.touch .skills, body.touch .gear { display: none; }
-body.touch .gear.touchgear { display: block; top: 52px; left: 12px; right: auto; }
+body.touch .skills { display: none; }
+body.touch .gear { top: 44px; left: 12px; right: auto; }
+.gear.travel { top: 188px; }
+body.touch .gear.travel { top: 44px; left: 58px; }
+.tsub { font-size: 14px; margin: 16px 0 8px; }
+.tsub small { font-weight: 500; opacity: .6; margin-left: 6px; }
+.tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.tbody { padding: 10px 6px; border: 0; border-radius: 12px; cursor: pointer; background: rgba(30,40,60,.08); color: #1d2430; text-align: center; }
+.tbody b { display: block; font-size: 14px; }
+.tbody small { display: block; font-size: 11px; opacity: .6; margin-top: 2px; }
+.tbody:hover { background: rgba(76,110,245,.16); }
+.tbody.here { outline: 2px solid #4c6ef5; }
+.tbody.gone { background: rgba(220,70,40,.14); }
+.tbody.gone small { color: #c03; opacity: 1; }
 .mute, .start { display: none !important; }
 .credit { margin-top: 12px; font-size: 10.5px; line-height: 1.5; opacity: .55; }

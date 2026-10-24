@@ -132,6 +132,8 @@ export class Player {
     this.groundY = 0;
     this.moonGone = false;
     this.gone = new Set();     // 파괴된 천체
+    this.onPlanet = null;      // 다른 천체 표면에 있으면 그 id (지역 좌표 = 그 천체의 착륙 지점 기준)
+    this.gScale = 1; this.atm = 0;
     this.speedLock = 0;        // 속도 고정 (m/s, 0 = 해제)
     this.autopilot = false;    // 목표 천체로 자동 항법
     this.targetIdx = 0;        // TARGETS 인덱스
@@ -295,18 +297,20 @@ export class Player {
 
     if (this.hidden) { this.vel.set(0, 0, 0); this.snapshot(this.snapCur); return; }
     // 지구가 부서졌으면 땅도 공기도 없음: 계속 우주 비행
-    const noEarth = this.gone.has('earth');
+    const noEarth = this.gone.has('earth') && !this.onPlanet;
     if (noEarth && this.mode !== 'fly') { this.mode = 'fly'; this.trick = null; }
     // 적분: 대기권 위에서는 행성 좌표로 적분해 실제 3D 궤적(지구 중심 기준)을 따름
     this.prevPos.copy(this.pos);
-    if (this.mode === 'fly' && (this.pos.y + origin.y > ATMO_TOP || noEarth)) this.integratePlanet(dt);
+    if (this.mode === 'fly' && !this.onPlanet && (this.pos.y + origin.y > ATMO_TOP || noEarth)) this.integratePlanet(dt);
     else this.pos.addScaledVector(this.vel, dt);
     this.pos.addScaledVector(this.dash, dt);
     this.dash.multiplyScalar(Math.exp(-5.5 * dt));
     this.speed = this.vel.length();
     const absY = this.pos.y + origin.y;
-    this.inSpace = absY > ATMO_TOP || noEarth;
-    this.dens = noEarth ? 0 : airDensity(absY);
+    this.inSpace = !this.onPlanet && (absY > ATMO_TOP || noEarth);
+    this.dens = this.onPlanet ? this.atm * Math.exp(-Math.max(0, absY) / 11000) : noEarth ? 0 : airDensity(absY);
+    // 천체 표면에서 높이 올라가면 우주로
+    if (this.onPlanet && absY > (this.atm > 0.5 ? 150000 : 40000) && this.game.leavePlanet) { this.game.leavePlanet(true); this.snapshot(this.snapCur); return; }
     // 마하는 공기가 있을 때만 의미가 있음
     // 유효 마하: 공기가 옅으면 같은 속도라도 충격파/가열이 약함 (진공에서는 0)
     this.mach = this.speed / SOUND_SPEED * clamp(Math.sqrt(this.dens) * 8, 0, 1);
@@ -314,7 +318,7 @@ export class Player {
     // 건물 / 지면 처리
     if (this.mode === 'dig') this.digCollide(dt);
     else if (!noEarth) {
-      this.buildingCollide(dt);
+      if (!this.onPlanet) this.buildingCollide(dt);
       if (this.hidden) { this.snapshot(this.snapCur); return; }
       this.groundCollide(dt);
       if (this.hidden) { this.snapshot(this.snapCur); return; }
@@ -322,7 +326,7 @@ export class Player {
 
     // 가속도 (고유 가속도: 자유낙하 중엔 0)
     _v3.subVectors(this.vel, this.prevVel).divideScalar(dt);
-    if (this.mode === 'air') _v3.y += GRAVITY;
+    if (this.mode === 'air') _v3.y += GRAVITY * this.gScale;
     _v3.clampLength(0, 400);
     this.accel.lerp(_v3, 1 - Math.exp(-18 * dt));
 
@@ -452,7 +456,7 @@ export class Player {
       const k = Math.exp(-0.6 * dt);
       this.vel.x *= k; this.vel.z *= k;
     }
-    this.vel.y = Math.max(this.vel.y - GRAVITY * dt, -75);
+    this.vel.y = Math.max(this.vel.y - GRAVITY * this.gScale * dt, -75 * Math.max(1, Math.sqrt(this.gScale)));
     this.coyote -= dt;
 
     if (this.jumpBuffer > 0 && this.coyote > 0) { this.jumpBuffer = 0; this.jump(12.2, 1); return; }
@@ -708,7 +712,7 @@ export class Player {
   // 땅속: 지구 중심을 지나면 반대편(대척점)으로, 지표 위로 나오면 분출
   digCollide(dt) {
     const ax = this.pos.x + origin.x, ay = this.pos.y + origin.y, az = this.pos.z + origin.z;
-    if (R_EARTH + ay < 0) {
+    if (!this.onPlanet && R_EARTH + ay < 0) {
       // 행성 좌표는 직선으로 이어짐: 새 위치의 지역 좌표로 다시 표현
       flatToPlanet(ax, ay, az, _P0);
       localToPlanetQuat(ax, az, _q1);
@@ -1012,8 +1016,15 @@ export class Player {
         this.game.planetImpact(b.id, this, _v3);
         return false;
       }
-      // 표면: 안쪽으로 파고드는 속도만 없애고 표면을 따라 미끄러짐 → 그 천체 위를 날아다닐 수 있음
       P1.lerpVectors(P0, P1, t);
+      // 착륙할 수 있는 천체면 그 표면(지역 지형)으로 들어감
+      if (this.game.enterPlanet && this.game.canLand && this.game.canLand(b.id)) {
+        _v3.subVectors(P1, b.pos).normalize();
+        this.autopilot = false; this.speedLock = 0;
+        this.game.enterPlanet(b.id, _v3, _Vp);
+        return true;
+      }
+      // 표면: 안쪽으로 파고드는 속도만 없애고 표면을 따라 미끄러짐 → 그 천체 위를 날아다닐 수 있음
       _v3.subVectors(P1, b.pos).normalize();                 // 표면 법선
       P1.copy(b.pos).addScaledVector(_v3, b.radius + 4);
       const vn = _Vp.dot(_v3);

@@ -86,6 +86,8 @@ transformed.xz += vec2(0.07, 0.04) * sway * transformed.y * transformed.y * 6.0;
   }
 
   setLow(low) { this.low = low; this.gAt = null; this.rAt = null; }
+  /** 표본 함수 교체 (다른 천체 표면) */
+  setSource(o) { this.o = o; this.gAt = null; this.rAt = null; }
 
   update(dt, camAbs, show) {
     this.uTime.value += dt;
@@ -168,7 +170,8 @@ transformed.xz += vec2(0.07, 0.04) * sway * transformed.y * transformed.y * 6.0;
       Q.setFromEuler(this._e.set((hash(i, j, 75) - 0.5) * 0.5, hash(i, j, 76) * 6.283, (hash(i, j, 77) - 0.5) * 0.5));
       this.rocks.setMatrixAt(n, M.compose(P.set(x, S2.h - big * 0.25, z), Q, Sc.set(big, big * (0.6 + hash(i, j, 78) * 0.5), big * (0.8 + hash(i, j, 79) * 0.4))));
       const t = 0.85 + hash(i, j, 80) * 0.3;
-      col.setRGB(0.42 * t, 0.4 * t, 0.37 * t);
+      if (this.o.rockCol) col.setRGB(this.o.rockCol[0] * t, this.o.rockCol[1] * t, this.o.rockCol[2] * t);
+      else col.setRGB(0.42 * t, 0.4 * t, 0.37 * t);
       if (S.forest > 0.5) col.lerp(this._c.clone().setRGB(0.2, 0.24, 0.14), 0.35);   // 이끼
       this.rocks.setColorAt(n, col);
       n++;

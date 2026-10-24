@@ -28,7 +28,8 @@ import { Underground, layerName } from './underground.js';
 import { Cape } from './cape.js';
 import { Nukes } from './nuke.js';
 import { Life } from './life.js';
-import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY } from './frame.js';
+import { PlanetSurface, SURF } from './planet.js';
+import { origin, rebase, onRebase, flatToPlanet, planetToFlat, localToPlanetQuat, airDensity, ATMO_TOP, SUN_DIR, C_LIGHT, BODY, SUN, ECLIPTIC } from './frame.js';
 import { TARGETS } from './player.js';
 
 const SIM_HZ = 120;
@@ -88,7 +89,8 @@ bootT.city = performance.now() - bootT.t0;
 const water = new Water(renderer, scene, { quality, envMap: city.envMap });
 const trees = new Trees(renderer, scene, { quality, envMap: city.envMap, footprint: (x, z) => city.roofAt(x, z) });
 if (roads) trees.extra = (x, z, s) => roads.streetTrees(x, z, s);
-const ground = new GroundDetail(scene, { quality, sample: (x, z) => terrainMod.terrainSample(x, z), roofAt: (x, z) => city.roofAt(x, z), road: (x, z) => terrainMod.roadAt(x, z) });
+const groundEarth = { quality, sample: (x, z) => terrainMod.terrainSample(x, z), roofAt: (x, z) => city.roofAt(x, z), road: (x, z) => terrainMod.roadAt(x, z) };
+const ground = new GroundDetail(scene, groundEarth);
 const peaks = seoul ? new PeakLabels(scene, seoul.peaks, (x, z) => terrainMod.heightAt(x, z)) : null;
 const space = new Space(renderer, { quality });
 world.params.sunIntensity = 2.75;
@@ -103,8 +105,9 @@ rig.groundAt = (x, z) => {
   if (rig.underground) return -Infinity;   // 땅속을 파고드는 중엔 카메라도 땅속으로
   const ax = x + origin.x, az = z + origin.z;
   // 수영 중엔 카메라도 물속으로 들어갈 수 있음
-  const wl = rig.inWater ? -Infinity : terrainMod.waterLevelAt(ax, az);
-  return Math.max(terrainMod.heightAt(ax, az), wl, city.roofAt(ax, az)) - origin.y;
+  const T = game.terrain;
+  const wl = rig.inWater ? -Infinity : T.waterLevelAt(ax, az);
+  return Math.max(T.heightAt(ax, az), wl, onPlanet ? -Infinity : city.roofAt(ax, az)) - origin.y;
 };
 
 let timeScale = 1, hitStopT = 0, hitStopScale = 1;
@@ -126,12 +129,14 @@ const cosmic = new Cosmic(space, hooks, { quality });
 const wreck = new Wreck(city, scene, { fx, audio, hooks, terrainH: (x, z) => terrainMod.heightAt(x, z) });
 const under = new Underground(scene);
 const _qP = new THREE.Quaternion(), _dP = new THREE.Vector3(), _pAbs = new THREE.Vector3();
-let earthGone = false, cineMode = false;
+let earthGone = false, cineMode = false, onPlanet = null;
+const lastGone = [];
 const game = {
   fx, audio, hooks, cosmic, city, wreck, toast: (m) => toast(m),
   terrain: terrainMod, envMap: city.envMap, water,
   // 절대 좌표 (x,y,z) 반경 r 안의 건물 → 잔해
   smashAt(x, y, z, r) {
+    if (onPlanet) return;
     const boxes = city.destroy(x, y, z, r);
     if (boxes && boxes.length) fx.debrisBoxes(boxes);
   },
@@ -148,7 +153,8 @@ const game = {
     if (star) cosmic.supernova(name); else cosmic.explode(name, _dP);
     // 연출 없이 그 자리에서 바로 부서짐. 플레이어는 계속 조종 (지구가 사라지면 땅·바다·하늘도 사라지고 우주에 남음)
     if (name === 'earth') { earthGone = true; pl.mode = 'fly'; }
-    $('reset').hidden = false;
+    lastGone.push(name);
+    updateRestoreBtn();
     toast(name === 'earth' ? '지구 파괴!' : star ? `${BODY[name].name} 초신성 폭발!` : `${BODY[name].name} 파괴!`);
   },
 };
@@ -173,7 +179,7 @@ world.onCloudPunch = (x, y, z, r) => {
 };
 // 핵 발사: 칼(가슴) 위에서 조준점 (카메라 시선이 처음 닿는 건물/땅, 없으면 3 km 앞) 으로
 function fireNuke() {
-  if (player.hidden || earthGone || player.mode === 'dig') return;
+  if (player.hidden || (earthGone && !onPlanet) || player.mode === 'dig') return;
   blade._aim(rig);
   const from = new THREE.Vector3(player.pos.x + origin.x, player.pos.y + origin.y + 2.5, player.pos.z + origin.z);
   nukes.launch(from, blade.aimAbs, player.vel);
@@ -182,6 +188,7 @@ $('btn-nuke')?.addEventListener('click', fireNuke);
 player.blade = blade;
 // 스폰: 한강 북쪽 둔치 공원
 function spawn() {
+  if (onPlanet) leavePlanet(false);
   if (origin.lengthSq() > 0) rebase(-origin.x, -origin.y, -origin.z);
   // 서울광장 근처, 건물·물이 아닌 곳
   let sx = 0, sz = 95;
@@ -204,6 +211,8 @@ function spawn() {
 }
 spawn();
 function resetWorld() {
+  if (onPlanet) leavePlanet(false);
+  lastGone.length = 0;
   cosmic.reset();
   wreck.reset();
   blade.reset(); nukes.reset(); life.reset();
@@ -216,7 +225,200 @@ function resetWorld() {
   rig.first = true;
   toast('지구 복원');
 }
-$('reset')?.addEventListener('click', resetWorld);
+
+// ── 파괴된 천체 하나만 복원 (그 자리에 그대로, 플레이어는 이동하지 않음) ──
+function restoreBody(id) {
+  if (!player.gone.has(id)) return;
+  player.gone.delete(id);
+  const k = lastGone.lastIndexOf(id); if (k >= 0) lastGone.splice(k, 1);
+  if (id === 'moon') player.moonGone = false;
+  if (cosmic.active && cosmic.body === id) cosmic.reset(false);
+  space.setBodyVisible(id, true);
+  const sb = space.bodies[id];
+  if (sb && sb.group) sb.group.scale.setScalar(1);
+  if (id === 'sun' && space.sunUniforms) space.sunUniforms.uI.value = 1;
+  if (id === 'earth') {
+    earthGone = false; cineMode = false; post.setSpaceOnly(false);
+    // 다시 생긴 지구 속에 갇히지 않게: 땅속이면 대기권 위로
+    const ay = player.pos.y + origin.y;
+    if (!onPlanet && ay < ATMO_TOP) { player.pos.y = ATMO_TOP + 2000 - origin.y; player.prevPos.copy(player.pos); player.mode = 'fly'; }
+  }
+  toast(`${BODY[id] ? BODY[id].name : id} 복원`);
+  updateRestoreBtn();
+  if (!$('travel').hidden) buildTravel();
+}
+function updateRestoreBtn() {
+  const b = $('reset');
+  while (lastGone.length && !player.gone.has(lastGone[lastGone.length - 1])) lastGone.pop();
+  for (const id of player.gone) if (!lastGone.includes(id)) lastGone.unshift(id);
+  if (!lastGone.length) { b.hidden = true; return; }
+  const id = lastGone[lastGone.length - 1];
+  b.textContent = `${BODY[id] ? BODY[id].name : id} 복원 (Enter)` + (lastGone.length > 1 ? ` · 파괴된 천체 ${lastGone.length}개` : '');
+  b.hidden = false;
+}
+function restoreLast() { if (lastGone.length) restoreBody(lastGone[lastGone.length - 1]); else updateRestoreBtn(); }
+$('reset')?.addEventListener('click', restoreLast);
+
+// ── 다른 천체 표면 ──
+const planet = new PlanetSurface(scene, { quality });
+const planetTerrain = { heightAt: (x, z) => planet.heightAt(x, z), waterLevelAt: () => -Infinity, roadAt: () => 0 };
+// 표면 위에서는 서울 건물과 부딪히지 않음 (도시 API 를 흉내 내는 빈 객체)
+const noCity = new Proxy({ holes: [], roofAt: () => -Infinity, inHole: () => false, segmentHit: () => null, addHole: () => null, destroy: () => [] },
+  { get: (t, k) => (k in t ? t[k] : () => null) });
+const _earthSun = new THREE.Vector3(), _earthFog = new THREE.Color(), _plP = new THREE.Vector3(), _plL = new THREE.Vector3(), _plV = new THREE.Vector3();
+const _plF = new THREE.Vector3(), _plQ = new THREE.Quaternion(), _plCam = new THREE.PerspectiveCamera(), _sunL = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+function setSunDir(v) {
+  world.sunDir.copy(v);
+  if (world._lightRight) { world._lightRight.crossVectors(_up, v).normalize(); world._lightUp.crossVectors(v, world._lightRight).normalize(); }
+}
+function canLand(id) { return !!SURF[id] && !player.gone.has(id); }
+// 지역 좌표 (x, y, z) → 행성 좌표 (m)
+function planetPoint(S, L, out) {
+  return out.set(L.x, 0, L.z).applyQuaternion(S.q).addScaledVector(S.n, S.b.radius + (planet.h0 || 0) + L.y).add(S.b.pos);
+}
+function enterPlanet(id, nP, vP) {
+  const b = BODY[id], I = SURF[id];
+  if (!b || !I) return;
+  if (onPlanet) leavePlanet(false);
+  const EU = ECLIPTIC.u, EV = ECLIPTIC.v, EN = ECLIPTIC.n;
+  let lat = I.lat * Math.PI / 180, lon = I.lon * Math.PI / 180;
+  let n;
+  if (nP) {
+    n = nP.clone().normalize();
+    lat = Math.asin(Math.max(-1, Math.min(1, n.dot(EN)))); lon = Math.atan2(n.dot(EV), n.dot(EU));
+  } else {
+    // 이동 버튼: 해가 40° 높이에 뜬 낮 쪽 지점에 내림 (지도 무늬는 그 천체의 실제 지점)
+    const s = new THREE.Vector3().subVectors(SUN.pos, b.pos).normalize();
+    const ax = new THREE.Vector3().crossVectors(s, EN);
+    if (ax.lengthSq() < 1e-8) ax.copy(EU);
+    n = s.clone().applyAxisAngle(ax.normalize(), 50 * Math.PI / 180);
+  }
+  const east = new THREE.Vector3().crossVectors(EN, n);
+  if (east.lengthSq() < 1e-8) east.copy(EU);
+  east.normalize();
+  const south = new THREE.Vector3().crossVectors(east, n);
+  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(east, n, south));
+  onPlanet = { id, b, I, n, q, qi: q.clone().invert() };
+  if (origin.lengthSq() > 0) rebase(-origin.x, -origin.y, -origin.z);
+  _earthSun.copy(world.sunDir);
+  if (scene.fog) _earthFog.copy(scene.fog.color);
+  planet.enter(id, b, lat * 180 / Math.PI, lon * 180 / Math.PI);
+  game.terrain = planetTerrain; game.city = noCity;
+  ground.setSource({ quality, sample: (x, z) => planet.sample(x, z), rockCol: (I.rock || [0.5, 0.5, 0.5]).map((v) => Math.pow(v, 2.2) * 1.6) });
+  player.onPlanet = id; player.gScale = I.g / 9.81; player.atm = I.atm;
+  const y0 = I.gas ? 300 : planet.heightAt(0, 0) + 25;
+  player.pos.set(0, y0, 0); player.prevPos.copy(player.pos);
+  if (vP) player.vel.copy(vP).applyQuaternion(onPlanet.qi).clampLength(0, 120); else player.vel.set(0, 0, 0);
+  player.mode = vP || I.gas ? 'fly' : 'air';
+  player.hidden = false; player.speedLock = 0; player.autopilot = false; player.trick = null;
+  player.avatar.root.visible = true;
+  player.snapshot(player.snapCur); player.copySnap(player.snapPrev, player.snapCur);
+  cineMode = false; post.setSpaceOnly(false);
+  rig.first = true;
+  // 지도 텍스처가 늦게 오면 지형이 바뀌므로 땅속에 묻히지 않게
+  planet.ready.then(() => {
+    if (!onPlanet || onPlanet.id !== id) return;
+    const g = planet.heightAt(player.pos.x + origin.x, player.pos.z + origin.z) - origin.y;
+    if (player.pos.y < g + 1) { player.pos.y = g + 20; player.prevPos.copy(player.pos); }
+  });
+  toast(`${b.name} 표면 — 중력 ${I.g} m/s²` + (I.gas ? ' · 단단한 표면이 없는 구름 바다' : '') + (I.note ? ` · ${I.note}` : '') + ' · 높이 오르면 우주로');
+}
+function leavePlanet(toSpace) {
+  const S = onPlanet;
+  if (!S) return;
+  _plL.set(player.pos.x + origin.x, Math.max(player.pos.y + origin.y, 0), player.pos.z + origin.z);
+  planetPoint(S, _plL, _plP);
+  _plV.copy(player.vel).applyQuaternion(S.q);
+  onPlanet = null;
+  planet.leave();
+  game.terrain = terrainMod; game.city = city;
+  ground.setSource(groundEarth);
+  player.onPlanet = null; player.gScale = 1; player.atm = 0;
+  setSunDir(_earthSun);
+  if (scene.fog) scene.fog.color.copy(_earthFog);
+  world.sun.color.copy(world.sunColor);
+  if (toSpace) {
+    planetToFlat(_plP.x, _plP.y, _plP.z, _plF);
+    localToPlanetQuat(_plF.x, _plF.z, _plQ);
+    rebase(Math.round(_plF.x - origin.x), Math.round(_plF.y - origin.y), Math.round(_plF.z - origin.z));
+    player.pos.set(_plF.x - origin.x, _plF.y - origin.y, _plF.z - origin.z);
+    player.prevPos.copy(player.pos);
+    player.vel.copy(_plV).applyQuaternion(_plQ.invert());
+    player.mode = 'fly';
+    player.snapshot(player.snapCur); player.copySnap(player.snapPrev, player.snapCur);
+    rig.first = true;
+    toast(`${S.b.name}을(를) 떠나 우주로`);
+  }
+}
+game.enterPlanet = enterPlanet; game.leavePlanet = leavePlanet; game.canLand = canLand;
+// 표면에서 본 하늘: 우주 장면 카메라를 그 천체 위 지점으로, 조명/안개도 그 천체에 맞춤
+function planetSky(dt) {
+  const S = onPlanet, I = S.I;
+  _plL.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
+  planetPoint(S, _plL, _plP);
+  _sunL.subVectors(SUN.pos, _plP).normalize().applyQuaternion(S.qi);
+  setSunDir(_sunL);
+  planetToFlat(_plP.x, _plP.y, _plP.z, _plF);
+  localToPlanetQuat(_plF.x, _plF.z, _plQ);
+  _plCam.quaternion.copy(_plQ.invert()).multiply(S.q).multiply(camera.quaternion);
+  _plCam.fov = camera.fov; _plCam.aspect = camera.aspect;
+  space.update(dt, _plCam, _plF, 5e8);
+  // 빛: 해가 지평선 아래면 밤
+  const day = Math.min(1, Math.max(0, (_sunL.y + 0.04) / 0.14));
+  world.sun.intensity *= I.light * day * 0.75;
+  world.sun.color.setRGB(1, 0.97, 0.92);
+  world.sun.shadow.autoUpdate = day > 0.01;
+  const atm = Math.min(1, I.atm);
+  world.hemi.intensity = (0.1 + 0.9 * atm) * (0.25 + 0.75 * day) * Math.max(0.35, I.light) * 1.6;
+  if (I.sky) world.hemi.color.setRGB(...I.sky); else world.hemi.color.setRGB(0.6, 0.62, 0.7);
+  const rk = I.rock || [0.5, 0.5, 0.5];
+  world.hemi.groundColor.setRGB(rk[0], rk[1], rk[2]);
+  if (scene.fog) {
+    const under = I.gas ? Math.max(0, -_plL.y) : 0;
+    if (I.fog) { scene.fog.color.setRGB(...I.hor.map((v) => Math.pow(v, 2.2) * 0.6)).multiplyScalar((0.15 + 0.85 * day) * (I.gas ? Math.exp(-under / 900) : 1)); scene.fog.density = (1 / I.fog) * (1 + under / 120); }
+    else scene.fog.density = 0;
+  }
+  planet.update(dt, _plL, _sunL);
+}
+// ── 이동 패널: 서울로 가기 / 다른 천체로 이동 / 파괴된 천체 복원 ──
+const TRAVEL = ['moon', 'mercury', 'venus', 'mars', 'jupiter', 'io', 'europa', 'ganymede', 'callisto', 'saturn', 'titan', 'uranus', 'neptune', 'pluto'];
+function buildTravel() {
+  const L = $('t-list'); L.textContent = '';
+  for (const id of TRAVEL) {
+    const b = BODY[id]; if (!b) continue;
+    const gone = player.gone.has(id);
+    const bt = document.createElement('button');
+    bt.className = 'tbody' + (gone ? ' gone' : '') + (onPlanet && onPlanet.id === id ? ' here' : '');
+    bt.innerHTML = `<b>${b.name}</b><small>${gone ? '파괴됨 · 눌러서 복원' : SURF[id].gas ? '구름 바다' : '중력 ' + SURF[id].g}</small>`;
+    bt.addEventListener('click', () => { if (gone) restoreBody(id); else { closeTravel(); enterPlanet(id); } });
+    L.appendChild(bt);
+  }
+  const G = $('t-gone'); G.textContent = '';
+  const goneList = [...player.gone];
+  $('t-gone-h').hidden = goneList.length === 0;
+  for (const id of goneList) {
+    const bt = document.createElement('button');
+    bt.className = 'tbody gone';
+    bt.innerHTML = `<b>${BODY[id] ? BODY[id].name : id}</b><small>복원</small>`;
+    bt.addEventListener('click', () => restoreBody(id));
+    G.appendChild(bt);
+  }
+}
+function openTravel() { buildTravel(); $('travel').hidden = false; input.enabled = false; if (document.exitPointerLock) document.exitPointerLock(); }
+function closeTravel() { $('travel').hidden = true; if ($('menu').classList.contains('hide')) input.enabled = true; }
+function goSeoul() {
+  closeTravel();
+  if (onPlanet) leavePlanet(false);
+  if (player.gone.has('earth')) restoreBody('earth');
+  blade.reset();
+  spawn();
+  rig.first = true;
+  toast('서울광장으로 이동');
+}
+$('btn-travel')?.addEventListener('click', openTravel);
+$('t-close')?.addEventListener('click', closeTravel);
+$('t-seoul')?.addEventListener('click', goSeoul);
 
 const ui = {
   joy: $('joy'), knob: $('knob'),
@@ -267,13 +469,14 @@ function applyEco(show) {
   if (show) toast(eco ? '최적화 모드 켬 (발열↓)' : '최적화 모드 끔 (고화질)');
 }
 input.onKey = (code, blocked) => {
-  if (code === 'Escape') { if (!$('settings').hidden) closeSettings(); else if ($('menu').classList.contains('hide')) openSettings(); return; }
+  if (code === 'Escape') { if (!$('travel').hidden) closeTravel(); else if (!$('settings').hidden) closeSettings(); else if ($('menu').classList.contains('hide')) openSettings(); return; }
   if (blocked) return;
   if (code === 'KeyM') { audio.muted = !audio.muted; toast(audio.muted ? '소리 끔' : '소리 켬'); }
   if (code === 'KeyH') $('help').classList.toggle('hide');
   if (code === 'KeyP') { capIdx = (capIdx + 1) % CAPS.length; toast(CAPS[capIdx] ? `FPS 제한: ${CAPS[capIdx]}` : 'FPS 제한: 없음 (모니터 주사율)'); }
   if (code === 'KeyO') { eco = !eco; applyEco(true); }
-  if (code === 'Enter' && player.gone.size > 0) resetWorld();
+  if (code === 'Enter' && player.gone.size > 0) restoreLast();
+  if (code === 'KeyY') openTravel();
 };
 // ── 메인 화면 · 설정 ──
 const S = JSON.parse(store.get('skyblade.settings') || '{}');
@@ -414,7 +617,7 @@ function updateHud(dt, fps) {
   hud.alt.textContent = altM < 10000 ? Math.max(0, altM).toFixed(0) + ' m' : Math.round(altM / 1000).toLocaleString() + ' km';
   hud.target.textContent = BODY[TARGETS[player.targetIdx]].name + ' ' + fmtDist(player.targetDistNow || 0);
   hud.modes.textContent = (player.speedLock > 0 ? '속도 고정 ' : '') + (player.autopilot ? '자동 항법 ' : '') + (player.coasting ? '관성 비행' : '');
-  hud.layer.textContent = altM < 12000 ? '대류권' : altM < 50000 ? '성층권' : altM < 80000 ? '중간권' : altM < ATMO_TOP ? '열권' : altM < 3e7 ? '지구 궤도' : '우주';
+  hud.layer.textContent = onPlanet ? onPlanet.b.name + (onPlanet.I.gas ? ' 구름층' : ' 표면') : altM < 12000 ? '대류권' : altM < 50000 ? '성층권' : altM < 80000 ? '중간권' : altM < ATMO_TOP ? '열권' : altM < 3e7 ? '지구 궤도' : '우주';
   if (player.mode === 'dig') {
     const d = Math.max(0, player.depth || 0);
     hud.alt.textContent = '-' + (d < 10000 ? d.toFixed(0) + ' m' : Math.round(d / 1000).toLocaleString() + ' km');
@@ -542,7 +745,8 @@ function frame(now) {
   camAbs.set(camera.position.x + origin.x, camera.position.y + origin.y, camera.position.z + origin.z);
   world.focusAGL = player.agl + 1;
   // 지구가 부서졌으면 땅·도시·바다·하늘을 모두 '아주 높은 곳'처럼 숨김
-  const wAbs = earthGone ? _wAbs.set(camAbs.x, 5e8, camAbs.z) : camAbs;
+  const hideEarth = earthGone || !!onPlanet;
+  const wAbs = hideEarth ? _wAbs.set(camAbs.x, 5e8, camAbs.z) : camAbs;
   { const _t0 = PROF ? performance.now() : 0;
   world.update(dt, elapsed.t, camera, player.renderPos, wAbs);
   if (PROF) PROF['world'] = (PROF['world'] || 0) + performance.now() - _t0; }
@@ -555,27 +759,28 @@ function frame(now) {
   { const _t0 = PROF ? performance.now() : 0;
   if (roads) roads.update(dt, wAbs, elapsed.t);
   if (PROF) PROF['roads'] = (PROF['roads'] || 0) + performance.now() - _t0; }
-  if (peaks) peaks.update(dt, wAbs, !earthGone && camAbs.y < 30000);
-  ground.update(dt, wAbs, !earthGone && player.mode !== 'dig');
+  if (peaks) peaks.update(dt, wAbs, !hideEarth && camAbs.y < 30000);
+  ground.update(dt, onPlanet ? camAbs : wAbs, (onPlanet ? !onPlanet.I.gas : !hideEarth) && player.mode !== 'dig');
   wreck.update(dbg.paused ? dt : dt * timeScale, camAbs);
   if (!water.ready && (terrain.stats.draws > 30 || elapsed.t > 8)) water.ready = true;
   { const _t0 = PROF ? performance.now() : 0;
   water.update(dt, camera, wAbs);
   if (PROF) PROF['water'] = (PROF['water'] || 0) + performance.now() - _t0; }
   { const _t0 = PROF ? performance.now() : 0;
-  trees.update(dt, camera, wAbs, earthGone ? 1e9 : camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
+  trees.update(dt, camera, wAbs, hideEarth ? 1e9 : camAbs.y - terrainMod.heightAt(camAbs.x, camAbs.z));
   if (PROF) PROF['trees'] = (PROF['trees'] || 0) + performance.now() - _t0; }
-  space.update(dt, camera, camAbs, earthGone ? 5e8 : camAbs.y);
+  if (onPlanet) planetSky(dt);
+  else space.update(dt, camera, camAbs, earthGone ? 5e8 : camAbs.y);
   // 땅속: 카메라를 감싼 암석/맨틀/핵 껍질, 햇빛은 거의 닿지 않음
-  const camDepth = player.mode === 'dig' && !earthGone ? terrainMod.heightAt(camAbs.x, camAbs.z) - camAbs.y : 0;
+  const camDepth = player.mode === 'dig' && (!earthGone || onPlanet) ? game.terrain.heightAt(camAbs.x, camAbs.z) - camAbs.y : 0;
   under.update(dt, camera, camAbs, camDepth, player.vel);
   if (camDepth > 0.3) { world.sun.intensity *= 0.06; world.hemi.intensity *= 0.25; }
   cosmic.update(dt, camAbs);
   nukes.update(dbg.paused ? dt : dt * timeScale, camAbs);
   _pAbs.set(player.renderPos.x + origin.x, player.renderPos.y + origin.y, player.renderPos.z + origin.z);
-  life.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, !earthGone && !player.hidden);
+  life.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, !hideEarth && !player.hidden);
   { const _t0 = PROF ? performance.now() : 0;
-  if (town) town.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, { flying: player.mode === 'fly', sword: blade.drawn, camera }, !earthGone && !player.hidden);
+  if (town) town.update(dbg.paused ? dt : dt * timeScale, camAbs, _pAbs, player.vel, { flying: player.mode === 'fly', sword: blade.drawn, camera }, !hideEarth && !player.hidden);
   if (PROF) PROF['town'] = (PROF['town'] || 0) + performance.now() - _t0; }
   { const _t0 = PROF ? performance.now() : 0;
   fx.update(dt * Math.max(timeScale, 0.15), player.ctx);
@@ -590,7 +795,7 @@ function frame(now) {
   P.chroma = Math.min(1, P.speed * 0.8 + flash * 0.5);
   P.vignette = 0.28 + P.speed * 0.35;
   // 물속 화면 (카메라가 수면 아래)
-  const cwl = earthGone || player.mode === 'dig' ? -Infinity : terrainMod.waterLevelAt(camAbs.x, camAbs.z);
+  const cwl = hideEarth || player.mode === 'dig' ? -Infinity : terrainMod.waterLevelAt(camAbs.x, camAbs.z);
   P.under = Math.min(1, Math.max(0, (cwl - camAbs.y) * 3));
   flash = Math.max(0, flash - dt * 2.6);
   P.flash = flash;
@@ -627,7 +832,7 @@ $('m-start').disabled = false;
 requestAnimationFrame(frame);
 window.__THREE = THREE;
 let PROF = null;
-window.__game = { town, roads, seoul, life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
+window.__game = { planet, enterPlanet, leavePlanet, restoreBody, goSeoul, town, roads, seoul, life, nukes, cape, player, rig, input, fx, world, post, audio, renderer, camera, scene, dbg, terrain, city, space, cosmic, water, trees, wreck, blade, origin, resetWorld };
 window.__origin = origin;
 window.__frame = frameMod;
 window.__targets = TARGETS;

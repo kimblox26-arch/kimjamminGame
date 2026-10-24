@@ -34,6 +34,7 @@
   </div>
   <div class="perf"><span id="h-fps">0 FPS</span> <span id="h-res" class="dim"></span></div>
   <button id="btn-set" class="gear" title="설정 (Esc)">⚙</button>
+  <button id="btn-travel" class="gear travel" title="이동 (Y): 서울로 가기 · 다른 천체 · 복원">🌍</button>
   <div id="skills" class="skills">
     <button data-k="KeyJ" title="베기 (J)"><b>J</b>베기</button>
     <button data-k="KeyL" title="검기 (L)"><b>L</b>검기</button>
@@ -97,9 +98,22 @@
   </div>
 </div>
 
+<!-- 이동 -->
+<div id="travel" class="settings" hidden>
+  <div class="scard">
+    <h2>이동</h2>
+    <button id="t-seoul" class="mbtn primary">🏙 서울로 가기</button>
+    <h3 class="tsub">다른 천체로 이동 <small>표면에 내려 걷고 날 수 있음</small></h3>
+    <div id="t-list" class="tgrid"></div>
+    <h3 class="tsub" id="t-gone-h" hidden>파괴된 천체 복원 <small>그 천체만 복원 · 지금 자리 그대로</small></h3>
+    <div id="t-gone" class="tgrid"></div>
+    <div class="sbtns"><button id="t-close" class="mbtn primary">닫기</button></div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 <div id="tmark" class="tmark" hidden><i></i><span></span></div>
-<button id="reset" class="reset" hidden>지구 복원 (Enter)</button>
+<button id="reset" class="reset" hidden>복원 (Enter)</button>
 
 <!-- 터치 조작 -->
 <div id="touch">
