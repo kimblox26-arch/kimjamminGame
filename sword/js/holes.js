@@ -89,6 +89,7 @@ float vn3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
     const H = { ax, ay, az, bx, by, bz, r, mesh: g, top, mat };
     this.list.push(H);
     if (this.list.length > MAX) this._drop(this.list.shift());
+    if (this.onAdd) this.onAdd(H);
     return H;
   }
   _drop(H) { this.group.remove(H.mesh); H.mat.dispose(); }

@@ -104,6 +104,7 @@ transformed.xz += vec2(0.07, 0.04) * sway * transformed.y * transformed.y * 6.0;
     if (S.level > S.h - 0.2) return false;
     if (this.o.road && this.o.road(x, z)) return false;
     if (this.o.roofAt && this.o.roofAt(x, z) > S.h + 0.3) return false;
+    if (this.o.hole && this.o.hole(x, z, S.h)) return false;
     return true;
   }
 

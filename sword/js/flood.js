@@ -68,7 +68,7 @@ float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 void main() {
   #include <logdepthbuf_fragment>
   float w = vn(vWorld.xz * 0.08 + vec2(uTime * 0.4, uTime * 0.25)) * 0.6 + vn(vWorld.xz * 0.3 - uTime * 0.6) * 0.4;
-  float sp = pow(w, 6.0) * 0.6;
+  float sp = pow(w, 6.0) * 0.35;
   vec3 c = uCol * (0.75 + 0.35 * w) + vec3(sp);
   gl_FragColor = vec4(c, 0.88);
   #include <tonemapping_fragment>
@@ -117,7 +117,7 @@ export class Flood {
       const wave = new THREE.Mesh(wg, new THREE.ShaderMaterial({ vertexShader: WAVE_VS, fragmentShader: WAVE_FS, uniforms: wu, fog: true, side: THREE.DoubleSide }));
       wave.frustumCulled = false; wave.visible = false; wave.renderOrder = -4;
       const fu = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-        uC: { value: new THREE.Vector2() }, uR: { value: 0 }, uY: { value: 0 }, uTime: { value: 0 }, uCol: { value: new THREE.Color(0x3a4a3a) }, uSun: { value: this.sunDir } }]);
+        uC: { value: new THREE.Vector2() }, uR: { value: 0 }, uY: { value: 0 }, uTime: { value: 0 }, uCol: { value: new THREE.Color(0x4a4a3a) }, uSun: { value: this.sunDir } }]);
       const flood = new THREE.Mesh(fg, new THREE.ShaderMaterial({ vertexShader: FLOOD_VS, fragmentShader: FLOOD_FS, uniforms: fu, fog: true, transparent: true, depthWrite: false }));
       flood.frustumCulled = false; flood.visible = false; flood.renderOrder = -3;
       scene.add(wave, flood);

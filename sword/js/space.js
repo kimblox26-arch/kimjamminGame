@@ -433,6 +433,9 @@ void main() {
   if (r < 1.24 || r > 2.27) discard;
   float t = (r - 1.24) / 1.03;
   float dens = 0.55 + 0.45 * sin(r * 90.0) * sin(r * 37.0) + 0.3 * vnoise(vec3(r * 300.0, 0.0, 0.0));
+  // 멀리서 가는 띠가 화소보다 촘촘해지면 평균값으로 (깜빡이는 줄무늬 방지)
+  float fw = fwidth(r);
+  dens = mix(dens, 0.55, clamp(fw * 90.0 / 3.14, 0.0, 1.0) * 0.7 + clamp(fw * 300.0 / 3.14, 0.0, 1.0) * 0.3);
   dens *= 1.0 - smoothstep(1.95, 2.03, r) * (1.0 - smoothstep(2.03, 2.05, r)) * 0.9;   // 카시니 간극
   dens *= smoothstep(1.24, 1.32, r) * (1.0 - smoothstep(2.2, 2.27, r));
   dens = clamp(dens, 0.0, 1.0);

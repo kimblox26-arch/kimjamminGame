@@ -92,7 +92,7 @@ bootT.city = performance.now() - bootT.t0;
 const water = new Water(renderer, scene, { quality, envMap: city.envMap });
 const trees = new Trees(renderer, scene, { quality, envMap: city.envMap, footprint: (x, z) => city.roofAt(x, z) });
 if (roads) trees.extra = (x, z, s) => roads.streetTrees(x, z, s);
-const groundEarth = { quality, sample: (x, z) => terrainMod.terrainSample(x, z), roofAt: (x, z) => city.roofAt(x, z), road: (x, z) => terrainMod.roadAt(x, z) };
+const groundEarth = { quality, sample: (x, z) => terrainMod.terrainSample(x, z), roofAt: (x, z) => city.roofAt(x, z), road: (x, z) => terrainMod.roadAt(x, z), hole: (x, z, h) => holes.list.length > 0 && holes.inside(x, h - 0.2, z, 0.4) };
 const ground = new GroundDetail(scene, groundEarth);
 const peaks = seoul ? new PeakLabels(scene, seoul.peaks, (x, z) => terrainMod.heightAt(x, z)) : null;
 const space = new Space(renderer, { quality });
@@ -132,6 +132,8 @@ const cosmic = new Cosmic(space, hooks, { quality });
 // 해일·침수: 원래 물 높이에 침수 수위를 더한 지형 (물리·카메라·사람이 같이 씀)
 const flood = new Flood(scene, { quality, sunDir: world.sunDir });
 const holes = new GroundHoles(scene, (x, z) => terrainMod.heightAt(x, z));
+// 새 구멍이 생기면 그 자리 풀·돌을 다시 깜
+holes.onAdd = () => { ground.gAt = null; ground.rAt = null; };
 const earthT = {
   heightAt: (x, z) => terrainMod.heightAt(x, z),
   waterLevelAt: (x, z) => { const w = terrainMod.waterLevelAt(x, z); return flood.active ? flood.levelAt(x, z, w) : w; },
