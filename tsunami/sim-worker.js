@@ -1,6 +1,8 @@
 // 쓰나미 전파 계산 (Web Worker)
 //  1) 바다: 진원에서 출발한 파면을 다익스트라로 전파. 속도 = √(g·수심) (천수파 속도)
 //  2) 육지: 해안에 도달한 파고에서 시작해 내륙으로 갈수록 수위가 깎이며 낮은 땅을 따라 범람
+// 영상 재현용 옵션: seaSpeed 를 주면 바다는 고정 속도, landSpeed 를 주면 육지는 수심 30 m 기준 속도에
+// √(수심/30) 을 곱한 속도(¼~2배로 제한), decayLength 를 주면 거리 감쇠를 지수형 exp(-r/L) 로 계산한다.
 // 결과는 셀마다 [해발, 도달시각(s), 수위(m) 또는 바다 파고, 바다여부] 를 담은 Float32Array.
 
 const G = 9.81;
@@ -43,7 +45,7 @@ class Heap {
 }
 
 self.onmessage = (e) => {
-  const { width: W, height: H, lat0, lat1, lon0, lon1, elev, epicenter, waveHeight, distanceDecay, inlandDecay } = e.data;
+  const { width: W, height: H, lat0, lat1, lon0, lon1, elev, epicenter, waveHeight, distanceDecay, inlandDecay, seaSpeed, landSpeed, decayRadius, decayLength } = e.data;
   const N = W * H;
   const dLat = (lat1 - lat0) / H, dLon = (lon1 - lon0) / W;
   const mPerDeg = 111320;
@@ -66,24 +68,26 @@ self.onmessage = (e) => {
     if (heap.topKey > time[i]) continue;
     sea[i] = 1;
     const r = (i / W) | 0, c = i - r * W;
-    const vi = Math.sqrt(G * Math.max(5, -elev[i]));
+    const vi = seaSpeed || Math.sqrt(G * Math.max(5, -elev[i]));
     for (let k = 0; k < 8; k++) {
       const cc = c + DX[k], rr = r + DY[k];
       if (cc < 0 || rr < 0 || cc >= W || rr >= H) continue;
       const j = rr * W + cc;
       if (elev[j] > 0) continue;
       const step = Math.hypot(DX[k] * dxRow[r], DY[k] * dy);
-      const v = 0.5 * (vi + Math.sqrt(G * Math.max(5, -elev[j])));
-      const t = time[i] + step / v;
-      if (t < time[j]) { time[j] = t; dist[j] = dist[i] + step; heap.push(j, time[j]); }  // 키는 Float32 로 저장된 값 그대로
+      const v = seaSpeed || 0.5 * (vi + Math.sqrt(G * Math.max(5, -elev[j])));
+      // Float32 배열과 비교하므로 후보값도 Float32 로 맞춰야 반올림 오차로 같은 셀을 끝없이 갱신하지 않는다
+      const t = Math.fround(time[i] + step / v);
+      if (t < time[j]) { time[j] = t; dist[j] = dist[i] + step; heap.push(j, t); }
     }
   }
 
-  // 거리 감쇠: 원형 확산으로 파고가 √(R0/(R0+r)) 비율로 줄어든다 (R0 = 50 km)
-  const R0 = 50000;
-  const amp = (i) => distanceDecay ? waveHeight * Math.sqrt(R0 / (R0 + dist[i])) : waveHeight;
+  // 거리 감쇠: 원형 확산으로 파고가 √(R0/(R0+r)) 비율로 줄어든다 (기본 R0 = 50 km)
+  const R0 = decayRadius || 50000;
+  const amp = (i) => !distanceDecay ? waveHeight
+    : decayLength ? waveHeight * Math.exp(-dist[i] / decayLength) : waveHeight * Math.sqrt(R0 / (R0 + dist[i]));
 
-  // ── 2) 육지 범람: 수위가 높은 곳부터 처리하는 우선순위 범람 (최대 힙 = 키에 음수) ──
+  // ── 2) 육지 수위: 수위가 높은 곳부터 처리하는 우선순위 범람 (최대 힙 = 키에 음수) ──
   const land = new Heap(1 << 16);
   for (let i = 0; i < N; i++) {
     if (!sea[i]) continue;
@@ -99,20 +103,39 @@ self.onmessage = (e) => {
     const i = land.pop();
     if (-land.topKey < level[i]) continue;
     const r = (i / W) | 0, c = i - r * W;
-    const depth = sea[i] ? level[i] : level[i] - elev[i];
-    // 범람 흐름 속도: 얕을수록 느려짐 (마찰 고려해 천수파 속도의 절반, 2~25 m/s)
-    const v = Math.min(25, Math.max(2, 0.5 * Math.sqrt(G * Math.max(0, depth))));
     for (let k = 0; k < 8; k++) {
       const cc = c + DX[k], rr = r + DY[k];
       if (cc < 0 || rr < 0 || cc >= W || rr >= H) continue;
       const j = rr * W + cc;
       if (sea[j]) continue;
-      const step = Math.hypot(DX[k] * dxRow[r], DY[k] * dy);
-      const lv = level[i] - decayPerM * step;
+      const lv = Math.fround(level[i] - decayPerM * Math.hypot(DX[k] * dxRow[r], DY[k] * dy));
       if (lv <= level[j]) continue;
       level[j] = lv;
-      time[j] = time[i] + step / v;
-      if (lv > elev[j]) land.push(j, -level[j]);
+      if (lv > elev[j]) land.push(j, -lv);
+    }
+  }
+
+  // ── 3) 도달 시각: 해안에서 잠긴 땅을 따라 가장 빨리 닿는 경로 ──
+  // 범람 흐름 속도: 물이 얕을수록 느려짐 (물리 모드는 천수파 속도의 절반, 2~25 m/s)
+  const flowSpeed = (depth) => landSpeed ? landSpeed * Math.min(2, Math.max(0.25, Math.sqrt(depth / 30)))
+    : Math.min(25, Math.max(2, 0.5 * Math.sqrt(G * depth)));
+  const flow = new Heap(1 << 16);
+  for (let i = 0; i < N; i++) if (sea[i] && level[i] > -NEVER) flow.push(i, time[i]);
+  while (flow.n) {
+    const i = flow.pop();
+    if (flow.topKey > time[i]) continue;
+    const r = (i / W) | 0, c = i - r * W;
+    const di = sea[i] ? level[i] : level[i] - elev[i];
+    for (let k = 0; k < 8; k++) {
+      const cc = c + DX[k], rr = r + DY[k];
+      if (cc < 0 || rr < 0 || cc >= W || rr >= H) continue;
+      const j = rr * W + cc;
+      if (sea[j] || level[j] === -NEVER) continue;
+      const v = flowSpeed(Math.max(0, (di + Math.max(0, level[j] - elev[j])) / 2));
+      const t = Math.fround(time[i] + Math.hypot(DX[k] * dxRow[r], DY[k] * dy) / v);
+      if (t >= time[j]) continue;
+      time[j] = t;
+      if (level[j] > elev[j]) flow.push(j, t);
     }
   }
 

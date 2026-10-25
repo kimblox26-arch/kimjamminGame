@@ -4,16 +4,19 @@
 원본: AWS Terrain Tiles (Terrarium 인코딩, SRTM/GMTED/ETOPO1 등 공개 데이터)
 출력: data/korea_dem.bin.gz — 위경도 등간격 격자, 북→남 행 순서의 int16(리틀엔디언) 해발(m), gzip 압축
       data/korea_meta.json — 격자 범위 + 도시 좌표/해발
-사용: python3 tools/bake_dem.py   (tsunami/ 폴더에서 실행)
+사용: python3 tools/bake_dem.py [lab|video]   (tsunami/ 폴더에서 실행, 기본 lab)
+  lab   — 인터랙티브 실험실(lab.html)용 넓은 범위 저해상도 → data/korea_dem.bin.gz, korea_meta.json
+  video — 영상 재현(index.html)용 남한 화면 범위 고해상도 → data/korea_video.bin.gz, korea_video.json
 """
-import gzip, io, json, math, os, urllib.request
+import gzip, io, json, math, os, sys, urllib.request
 import numpy as np
 from PIL import Image
 
 URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
-LON0, LON1, LAT0, LAT1 = 124.0, 132.0, 32.8, 38.9
-W = 1200
-ZOOM = 9
+PRESETS = {
+    "lab": dict(bbox=(124.0, 132.0, 32.8, 38.9), width=1200, zoom=9, out="korea_dem", cities=True),
+    "video": dict(bbox=(125.6, 130.2, 32.5, 39.1), width=1440, zoom=10, out="korea_video", cities=False),
+}
 CITY_ZOOM = 13
 
 CITIES = [
@@ -50,7 +53,10 @@ def bilinear(img, px, py):
     return (img[y0, x0] * (1 - fx) * (1 - fy) + img[y0, x0 + 1] * fx * (1 - fy)
             + img[y0 + 1, x0] * (1 - fx) * fy + img[y0 + 1, x0 + 1] * fx * fy)
 
-def main():
+def main(preset):
+    cfg = PRESETS[preset]
+    LON0, LON1, LAT0, LAT1 = cfg["bbox"]
+    W, ZOOM = cfg["width"], cfg["zoom"]
     os.makedirs("data", exist_ok=True)
     dlon = (LON1 - LON0) / W
     dlat = dlon * math.cos(math.radians((LAT0 + LAT1) / 2))
@@ -72,11 +78,11 @@ def main():
     py = (py - ty0) * 256
     PX, PY = np.meshgrid(px, py)
     elev = np.rint(bilinear(mosaic, PX, PY)).clip(-12000, 12000).astype("<i2")
-    with gzip.open("data/korea_dem.bin.gz", "wb", compresslevel=9) as f:
+    with gzip.open(f"data/{cfg['out']}.bin.gz", "wb", compresslevel=9) as f:
         f.write(elev.tobytes())
 
     cities = []
-    for name, lat, lon in CITIES:
+    for name, lat, lon in (CITIES if cfg["cities"] else []):
         x, y = merc(lat, lon, CITY_ZOOM)
         t = tile(CITY_ZOOM, int(x), int(y))
         # 한 점이 언덕에 걸리지 않도록 반경 약 0.5 km 안의 중앙값을 도시 해발로 쓴다
@@ -88,10 +94,11 @@ def main():
 
     meta = {"width": W, "height": H, "lon0": LON0, "lon1": LON1, "lat0": LAT0, "lat1": LAT1,
             "source": "AWS Terrain Tiles (Terrarium) — SRTM, GMTED2010, ETOPO1 등",
-            "cities": cities}
-    with open("data/korea_meta.json", "w", encoding="utf-8") as f:
+            **({"cities": cities} if cfg["cities"] else {})}
+    meta_name = "korea_meta" if preset == "lab" else cfg["out"]
+    with open(f"data/{meta_name}.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
     print(f"done: {W}x{H}")
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1] if len(sys.argv) > 1 else "lab")

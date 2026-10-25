@@ -1,0 +1,9 @@
+{
+ "width": 1440,
+ "height": 2547,
+ "lon0": 125.6,
+ "lon1": 130.2,
+ "lat0": 32.5,
+ "lat1": 39.1,
+ "source": "AWS Terrain Tiles (Terrarium) — SRTM, GMTED2010, ETOPO1 등"
+}
