@@ -178,6 +178,8 @@ worker.onmessage = (e) => {
   if (queued) { queued = false; simulate(); return; }
   $('busy').classList.remove('show');
   state.sim = e.data;
+  // 침수가 끝난 뒤에도 파도가 바다 끝까지 퍼지는 모습을 다 보여주고 멈춘다
+  state.sim.tEnd = Math.max(e.data.tMax, e.data.tSea) * 1.1;
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, simTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, state.meta.width, state.meta.height, 0, gl.RGBA, gl.FLOAT, e.data.data);
@@ -261,7 +263,7 @@ function render() {
   gl.uniform2f(uni.uView, mapCanvas.width, mapCanvas.height);
   gl.uniform1f(uni.uTime, state.t);
   gl.uniform1f(uni.uHasSim, sim ? 1 : 0);
-  gl.uniform1f(uni.uPeriod, sim ? sim.tMax * 1.1 / 45 : 1);
+  gl.uniform1f(uni.uPeriod, sim ? sim.tEnd / 45 : 1);
   gl.uniform1f(uni.uWaveH, state.waveHeight);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   drawLabels();
@@ -272,7 +274,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (state.sim && state.playing) {
-    const end = state.sim.tMax * 1.1;
+    const end = state.sim.tEnd;
     state.t = Math.min(end, state.t + dt * state.speed * end / DURATION);
     if (state.t >= end) setPlaying(false);
     const { area, tMax } = state.sim;
@@ -304,7 +306,7 @@ $('inland').oninput = (e) => { state.inlandDecay = +e.target.value; $('inland-va
 $('inland').onchange = () => simulate();
 $('decay').onclick = () => { state.distanceDecay = !state.distanceDecay; $('decay').classList.toggle('on', state.distanceDecay); simulate(); };
 $('play').onclick = () => {
-  if (!state.playing && state.sim && state.t >= state.sim.tMax * 1.1) state.t = 0;
+  if (!state.playing && state.sim && state.t >= state.sim.tEnd) state.t = 0;
   setPlaying(!state.playing);
 };
 $('restart').onclick = restart;

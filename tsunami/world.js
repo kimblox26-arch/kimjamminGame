@@ -128,13 +128,23 @@ function syncMode() {
   const video = $('mode').value === 'video';
   $('video-fields').hidden = !video;
   $('physics-fields').hidden = video;
+  if (!sim.mode) fillSpeeds(video ? 'video' : 'physics');
   if (!video && !swe) msg('이 기기의 GPU 는 물리 계산을 지원하지 않아 영상식만 쓸 수 있습니다.');
 }
 $('mode').addEventListener('change', syncMode);
-document.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
-  $('sea-speed').value = b.dataset.v;
-  $('land-speed').value = Math.round(b.dataset.v * 0.375);
-}));
+$('inland').addEventListener('input', (e) => { $('inland-val').textContent = `${(+e.target.value).toFixed(1)} m/km`; });
+// 이동 속도: 영상식은 처음 만든 실험실처럼 전체를 30초에 보여주는 기준의 배수, 물리 계산은 실제 시간의 배수
+const SPEEDS = {
+  video: [['0.5', '×0.5'], ['1', '×1'], ['2', '×2'], ['4', '×4']],
+  physics: [['1', '×1'], ['10', '×10'], ['60', '×60'], ['300', '×300'], ['1800', '×1800'], ['0', '최대']],
+};
+let speedMode = null;
+function fillSpeeds(mode) {
+  if (speedMode === mode) return;
+  speedMode = mode;
+  $('speed').replaceChildren(...SPEEDS[mode].map(([v, t]) => new Option(t, v)));
+  $('speed').value = mode === 'video' ? '1' : '60';
+}
 
 let picking = false;
 function setPicking(on) {
@@ -474,6 +484,7 @@ async function start() {
     sim.setupArgs = { W: dom.W, H: dom.H, y0: dom.y0, dl: dom.dl, wrap: dom.wrap, bed, wet, source };
     sim.mode = 'physics';
     sim.kin = null;
+    fillSpeeds('physics');
     sim.dom = dom;
     sim.buildings = buildings;
     sim.places = gatherPlaces(dom);
@@ -499,23 +510,17 @@ async function startVideo(dom, bed, epiCell, h, buildings) {
   msg('쓰나미 경로 계산 중…');
   const cellSize = new Float32Array(dom.H);
   for (let j = 0; j < dom.H; j++) cellSize[j] = cellAt(dom, j + 0.5);
-  const seaV = Math.max(0.1, +$('sea-speed').value || 800) / 3.6, landV = Math.max(0.1, +$('land-speed').value || 300) / 3.6;
   const res = await runKinematic({
     width: dom.W, height: dom.H, lat0: 0, lat1: 1, lon0: 0, lon1: 1, cellSize, elev: bed,
-    epicenter: epiCell[1] * dom.W + epiCell[0], waveHeight: h, distanceDecay: $('decay').checked,
-    decayLength: 600000, inlandDecay: 0.0012 * h, seaSpeed: seaV, landSpeed: landV,
+    epicenter: epiCell[1] * dom.W + epiCell[0], waveHeight: h, distanceDecay: $('decay').checked, inlandDecay: +$('inland').value,
   });
   kin.upload(dom.W, dom.H, res.data);
   let runup = 0;
   for (let k = 0; k < dom.W * dom.H; k++) if (!res.data[4 * k + 3] && res.data[4 * k + 2] > res.data[4 * k]) runup = Math.max(runup, res.data[4 * k]);
-  // 고리 두께: 화면 대각선의 1/120 (최소 셀 3개)을 파가 지나가는 시간
-  const ringM = Math.max(3 * dom.cell, Math.hypot(dom.W, dom.H) * dom.cell / 120);
-  // 진원 경도는 격자 서쪽 경계 기준으로 맞춘다 (날짜변경선 너머 영역 대비)
-  let epiLon = sim.epicenter.lon;
-  while (epiLon < dom.west) epiLon += 360;
-  while (epiLon >= dom.west + 360) epiLon -= 360;
-  sim.kin = { data: res.data, tMax: res.tMax, area: res.area, t: 0, ring: ringM / seaV, runup, speed: seaV,
-    grid: { y0: dom.y0, dl: dom.dl, west: dom.west * D2R }, epi: [sim.epicenter.lat * D2R, epiLon * D2R] };
+  // 침수가 일찍 끝나도 파도가 화면 안 바다 끝까지 퍼진 뒤에 멈춘다
+  const end = Math.max(res.tMax, res.tSea) * 1.1;
+  sim.kin = { data: res.data, tMax: res.tMax, area: res.area, t: 0, end, runup, amp: h };
+  fillSpeeds('video');
   sim.mode = 'video';
   sim.setupArgs = null;
   sim.dom = dom;
@@ -575,7 +580,7 @@ $('start').addEventListener('click', start);
 $('reset').addEventListener('click', () => { if (active()) { reset(); news('[가상] 같은 조건으로 다시 시작합니다', true); } });
 $('pause').addEventListener('click', () => {
   if (!active()) return;
-  if (sim.mode === 'video' && !sim.running && sim.kin.t >= sim.kin.tMax * 1.1) { reset(); return; }
+  if (sim.mode === 'video' && !sim.running && sim.kin.t >= sim.kin.end) { reset(); return; }
   sim.running = !sim.running;
   $('pause').textContent = sim.running ? '⏸' : '▶';
 });
@@ -741,14 +746,14 @@ function frame(now) {
   const fdt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (sim.mode === 'video' && sim.kin) {
-    const k = sim.kin, end = k.tMax * 1.1;
-    const rate = +$('speed').value || end / 15;           // 최대: 약 15초 안에 끝까지
+    const k = sim.kin, end = k.end;
+    const rate = end / 30 * (+$('speed').value || 1);      // ×1 이면 처음부터 끝까지 30초
     if (sim.running) {
       k.t = Math.min(end, k.t + fdt * rate);
       if (k.t >= end) { sim.running = false; $('pause').textContent = '▶'; }
       videoEvents(now);
     }
-    kin.render({ t: k.t, ring: k.ring, fade: Math.max(1, k.tMax * 0.6), fill: rate * 0.5, foam: rate * 0.9, grid: k.grid, epi: k.epi, speed: k.speed });
+    kin.render({ t: k.t, period: end / 30, waveH: k.amp });
     if (now > nextInfo) {
       nextInfo = now + (optimize ? 1000 : 500);
       const bins = k.area.length - 1, a = k.area[Math.min(bins, Math.max(0, Math.floor(k.t / k.tMax * bins)))];

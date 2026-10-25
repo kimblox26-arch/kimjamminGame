@@ -61,6 +61,8 @@ self.onmessage = (e) => {
   const level = new Float32Array(N).fill(-NEVER);
   const sea = new Uint8Array(N);
   const DX = [-1, 0, 1, -1, 1, -1, 0, 1], DY = [-1, -1, -1, 0, 0, 1, 1, 1];
+  // 바다 전파는 이웃 16칸(체스 나이트 이동 포함)을 써서, 파면이 팔각형이 아니라 둥글게 퍼지게 한다
+  const SX = [...DX, 1, 2, 2, 1, -1, -2, -2, -1], SY = [...DY, 2, 1, -1, -2, -2, -1, 1, 2];
 
   // ── 1) 바다 전파 ──
   const heap = new Heap(1 << 16);
@@ -72,12 +74,16 @@ self.onmessage = (e) => {
     sea[i] = 1;
     const r = (i / W) | 0, c = i - r * W;
     const vi = seaSpeed || Math.sqrt(G * Math.max(5, -elev[i]));
-    for (let k = 0; k < 8; k++) {
-      const cc = c + DX[k], rr = r + DY[k];
+    for (let k = 0; k < 16; k++) {
+      const cc = c + SX[k], rr = r + SY[k];
       if (cc < 0 || rr < 0 || cc >= W || rr >= H) continue;
       const j = rr * W + cc;
       if (elev[j] > 0) continue;
-      const step = Math.hypot(DX[k] * dxRow[r], DY[k] * dyRow[r]);
+      if (k >= 8) {   // 나이트 이동은 지나가는 두 칸도 바다여야 한다 (육지를 건너뛰지 않게)
+        const ax = Math.abs(SX[k]) === 2 ? Math.sign(SX[k]) : 0, ay = Math.abs(SY[k]) === 2 ? Math.sign(SY[k]) : 0;
+        if (elev[(r + ay) * W + c + ax] > 0 || elev[(rr - ay) * W + cc - ax] > 0) continue;
+      }
+      const step = Math.hypot(SX[k] * dxRow[r], SY[k] * dyRow[r]);
       const v = seaSpeed || 0.5 * (vi + Math.sqrt(G * Math.max(5, -elev[j])));
       // Float32 배열과 비교하므로 후보값도 Float32 로 맞춰야 반올림 오차로 같은 셀을 끝없이 갱신하지 않는다
       const t = Math.fround(time[i] + step / v);
@@ -164,5 +170,6 @@ self.onmessage = (e) => {
   }
   for (let b = 1; b <= BINS; b++) area[b] += area[b - 1];
 
-  self.postMessage({ data: out, tMax, area }, [out.buffer, area.buffer]);
+  // tSea: 파도가 영역 안 바다 끝까지 가는 데 걸리는 시각 (침수가 일찍 끝나도 파도는 끝까지 보여주려고)
+  self.postMessage({ data: out, tMax, tSea: seaMax, area }, [out.buffer, area.buffer]);
 };

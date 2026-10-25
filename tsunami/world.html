@@ -162,18 +162,12 @@
   </div>
   <div id="video-fields">
     <div class="field">
-      <label for="sea-speed">바다 속도(km/h)</label>
-      <input id="sea-speed" type="number" min="1" max="1000000" step="any" value="800" class="grow">
-    </div>
-    <div class="chips">
-      <button data-v="100">100</button><button data-v="300">300</button><button data-v="800">800 (실제 먼바다)</button>
-      <button data-v="3000">3000</button><button data-v="20000">20000</button>
-    </div>
-    <div class="field">
-      <label for="land-speed">육지 속도(km/h)</label>
-      <input id="land-speed" type="number" min="1" max="1000000" step="any" value="300" class="grow">
+      <label for="inland">내륙 감쇠</label>
+      <input id="inland" type="range" min="0" max="3" step="0.1" value="1" class="grow">
+      <b id="inland-val">1.0 m/km</b>
     </div>
     <div class="field"><label><input id="decay" type="checkbox" checked> 멀어질수록 파도가 약해짐</label></div>
+    <p class="note">바다에서는 깊은 곳일수록 빠르게(√(g·수심)) 퍼지고, 해안에 닿은 물은 내륙으로 1 km 갈 때마다 정한 만큼 낮아지며 낮은 땅을 덮습니다. 이동 속도는 아래 ×0.5~×4 로 바꿉니다.</p>
   </div>
   <div id="physics-fields" hidden>
   <div class="field">
@@ -264,7 +258,7 @@
     <button id="start" class="primary">TSUNAMI!</button>
     <button id="pause" aria-label="일시정지">⏸</button>
     <button id="reset" aria-label="같은 조건으로 다시">↺</button>
-    <select id="speed" aria-label="재생 속도">
+    <select id="speed" aria-label="이동 속도">
       <option value="1">×1</option>
       <option value="10">×10</option>
       <option value="60" selected>×60</option>
