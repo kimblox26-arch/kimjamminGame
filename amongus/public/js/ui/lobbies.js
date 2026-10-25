@@ -115,7 +115,6 @@ screens.create = (mode = 'online', gameType = 'classic') => {
     if (art._m !== s.map) { art._m = s.map; art.innerHTML = cardArt(s.map); }
     $$('.ttabs button', el).forEach(b => b.classList.toggle('on', b.dataset.t === tab));
     const o = $('.opts', el);
-    const child = me.status !== 'green';
     o.innerHTML = tab === '일반' ? `
       <div class="orow"><span class="lab">게임 유형</span>${opt(s.gameType === 'classic', '클래식', 'data-gt="classic" style="width:220px"')}${opt(s.gameType === 'hns', '숨바꼭질', 'data-gt="hns" style="width:220px"')}</div>
       <div class="orow"><span class="lab">맵</span>${MAPS.map(m => `<button class="mapb ${s.map === m.id ? 'on' : ''}" data-map="${m.id}" title="${m.name}">${mapIcon(m.id)}<i class="chk"></i></button>`).join('')}</div>
@@ -124,7 +123,6 @@ screens.create = (mode = 'online', gameType = 'classic') => {
       <div class="orow"><span class="lab">${mode === 'online' ? '지역' : '공개 범위'}</span>${mode === 'online' ? regionSel(device.region) : '<span style="font-size:22px;color:#aaa">같은 와이파이에 연결된 사람만 볼 수 있어요</span>'}</div>
       <div class="orow"><span class="lab">역할</span>${opt(s.roles, '켬', 'data-roles="1"')}${opt(!s.roles, '끔', 'data-roles="0"')}</div>`
       : `<div class="orow"><span class="lab">채팅 유형</span>${opt(s.chatType === 'free', '자유 채팅', 'data-ct="free" style="width:220px"')}${opt(s.chatType === 'quick', '빠른 채팅', 'data-ct="quick" style="width:220px"')}</div>
-      ${child ? '<p style="margin-left:162px;color:#29e9d5;font-size:19px">핑크불/청록불 계정은 어떤 로비에서든 빠른 채팅만 쓸 수 있어요.</p>' : ''}
       <div class="orow" style="align-items:flex-start"><span class="lab">채팅 언어</span><div class="langs">${CHAT_LANGS.map((l, i) => opt(s.chatLang === i, l, `data-lang="${i}"`)).join('')}</div></div>`;
     $('.region', o)?.addEventListener('change', e => { device.region = e.target.value; saveDevice(); });
   };

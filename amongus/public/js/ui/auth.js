@@ -26,7 +26,7 @@ export function ageCheck() {
       if (v == null) return;
       val[k] = +v; b.textContent = lists[k][1].find(x => String(x[0]) === v)[1]; b.classList.add('set');
     });
-    $('.q', m.el).onclick = () => modal(`<p class="cb-msg" style="text-align:center">나이에 맞는 안전한 플레이 환경을 위해 생일을 확인합니다.\n만 14세 미만은 <b style="color:#29e9d5">청록불</b> 계정이 되어\n빠른 채팅만 사용할 수 있고, 온라인 플레이에는 보호자 이메일 인증이 필요합니다.</p>`, { cls: 'small' });
+    $('.q', m.el).onclick = () => modal(`<p class="cb-msg" style="text-align:center">나이에 맞는 안전한 플레이 환경을 위해 생일을 확인합니다.\n만 14세 미만은 <b style="color:#29e9d5">청록불</b> 계정이 되어\n온라인 플레이에 보호자 이메일 인증이 필요합니다.</p>`, { cls: 'small' });
     $('.sub', m.el).onclick = () => {
       sfx('click');
       const { m: mo, d, y } = val, dt = new Date(y, mo - 1, d);
@@ -42,7 +42,7 @@ export function signIn() {
     const child = isChildBirth(device.birth);
     const m = modal(`<div style="width:760px;text-align:center"><h2>AMONG US 계정</h2>
       <p style="font-size:22px;color:#bbb">계정으로 로그인하면 <b style="color:#3f3">초록불</b>이 켜지고 자유 채팅·이름 변경·친구 기능을 쓸 수 있어요.<br>
-      게스트는 <b style="color:#ff5ed1">핑크불</b>, 만 14세 미만은 <b style="color:#29e9d5">청록불</b>이며 빠른 채팅만 쓸 수 있습니다.</p>
+      게스트는 <b style="color:#ff5ed1">핑크불</b>, 만 14세 미만은 <b style="color:#29e9d5">청록불</b>이며 이름 변경과 친구 기능을 쓸 수 없습니다.</p>
       <div class="row-c" style="flex-direction:column;align-items:center;gap:14px"><button class="obtn" data-a="login" style="width:420px">로그인</button>
       <button class="obtn" data-a="reg" style="width:420px">계정 만들기</button><button class="obtn" data-a="guest" style="width:420px">게스트로 플레이</button></div>
       ${child ? '<p style="color:#29e9d5;font-size:20px">만 14세 미만: 계정을 만들면 보호자 이메일로 인증 메일이 발송됩니다.</p>' : ''}</div>`, { close: false });
@@ -86,8 +86,8 @@ export function authForm(register) {
 // 계정 관리 (내 계정 → 계정 관리)
 screens.accountManage = () => {
   const a = me.account;
-  const st = { green: ['초록불', '#3f3', '로그인한 계정 · 모든 기능 사용 가능'], pink: ['핑크불', '#ff5ed1', '게스트 계정 · 빠른 채팅만 가능, 이름 변경 불가'],
-    teal: ['청록불', '#29e9d5', '만 14세 미만 · 빠른 채팅만 가능, 온라인은 보호자 인증 필요'], off: ['연결 안 됨', '#888', ''] }[me.status];
+  const st = { green: ['초록불', '#3f3', '로그인한 계정 · 모든 기능 사용 가능'], pink: ['핑크불', '#ff5ed1', '게스트 계정 · 이름 변경·친구 불가'],
+    teal: ['청록불', '#29e9d5', '만 14세 미만 · 이름 변경·친구 불가, 온라인은 보호자 인증 필요'], off: ['연결 안 됨', '#888', ''] }[me.status];
   const m = modal(`<h2>계정 관리</h2><div style="width:760px;font-size:24px;line-height:1.9">
     <div>상태: <b style="color:${st[1]}">● ${st[0]}</b> <span style="color:#aaa;font-size:20px">${st[2]}</span></div>
     <div>계정: ${a ? esc(a.email) : '게스트 (로그인하지 않음)'}</div><div>생일: ${esc(a?.birth || device.birth)}</div>

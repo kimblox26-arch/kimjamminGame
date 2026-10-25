@@ -88,7 +88,7 @@ const mapIdOf = v => (typeof v === 'string' ? v : v?.id) || null;
 const normTasks = list => (list || []).map(t => ({ ...t, st: t.st || t.stations || [], step: t.step || 0 }));
 // 내 입력이 움직이는 대상 (mod 조종 중이면 그 사람)
 const ctlId = () => (S?.possessing && (scene.players.has(S.possessing) || S.room?.players.some(p => p.id === S.possessing)) ? S.possessing : S?.you);
-const canFree = () => me.status === 'green' && S.room.settings.chatType !== 'quick';
+const canFree = () => S.room.settings.chatType !== 'quick';
 
 // ---------- 방 입장/퇴장 ----------
 net.on('joined', m => {
@@ -1173,7 +1173,7 @@ function openChat() {
   S.unread = 0;
   const free = canFree();
   const el = h(`<div class="chat2"><button class="xbtn">✕</button><div class="chead">${S.game && !alive() ? '유령 채팅 — 살아있는 플레이어에게는 보이지 않습니다' : S.meeting ? '회의 채팅' : '로비 채팅'}</div><div class="msgs"></div><div class="bar">
-    ${free ? '<input maxlength="100" placeholder="여기에 입력하세요">' : `<span class="nofree">${me.status === 'green' ? '이 로비는 빠른 채팅 전용입니다.' : me.status === 'teal' ? '만 14세 미만 계정은 빠른 채팅만 사용할 수 있어요.' : '게스트 계정은 빠른 채팅만 사용할 수 있어요.'}</span>`}
+    ${free ? '<input maxlength="100" placeholder="여기에 입력하세요">' : '<span class="nofree">이 로비는 빠른 채팅 전용입니다.</span>'}
     <button class="qbtn">빠른 채팅</button>${free ? '<button class="send">보내기</button>' : ''}</div></div>`);
   stage().append(el);
   const box = $('.msgs', el);

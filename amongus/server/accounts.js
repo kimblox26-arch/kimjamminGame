@@ -118,7 +118,7 @@ export function sendParentMail(acc, baseUrl) {
   const link = `${baseUrl}/verify?token=${acc.verifyToken}`;
   return sendMail(acc.parentEmail, '[AMONG US] 자녀 계정 보호자 인증 요청',
     `안녕하세요.\n\n자녀(생년월일 ${acc.birth})가 AMONG US 계정을 만들었습니다.\n` +
-    `아래 링크를 눌러 보호자 인증을 완료하면 온라인 플레이가 허용됩니다.\n(만 14세 미만 계정은 빠른 채팅만 사용할 수 있습니다.)\n\n${link}\n\n` +
+    `아래 링크를 눌러 보호자 인증을 완료하면 온라인 플레이가 허용됩니다.\n\n${link}\n\n` +
     `요청한 적이 없다면 이 메일을 무시하세요.`);
 }
 export function verifyParent(token) {

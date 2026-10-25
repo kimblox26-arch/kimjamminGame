@@ -200,7 +200,7 @@ function onMove(r, c, m) {
   who.x = x; who.y = y; who.dir = m.d ? 1 : 0; who.mv = m.m ? 1 : 0;
 }
 
-// 채팅: 자유 채팅은 초록불 + 자유 채팅 로비만, 살아있으면 회의 중에만, 유령 채팅은 유령끼리만
+// 채팅: 누구나 자유 채팅 가능(방장이 빠른 채팅 전용으로 정한 로비 제외), 살아있으면 회의 중에만, 유령 채팅은 유령끼리만
 function chat(c, r, m) {
   const g = r.game, st = g?.st.get(c.id);
   const ghost = !!g && (!st || !st.alive);
@@ -211,7 +211,6 @@ function chat(c, r, m) {
     const map = g ? g.map : getMap(r.settings.map);
     text = buildQuick(m.q, [...r.players.values()].map(p => p.name), map.roomNames || []);
   } else {
-    if (c.status !== 'green') return err(c, c.status === 'teal' ? '만 14세 미만 계정은 빠른 채팅만 쓸 수 있습니다.' : '게스트 계정은 빠른 채팅만 쓸 수 있습니다.');
     if (r.settings.chatType !== 'free') return err(c, '이 로비는 빠른 채팅 전용입니다.');
     text = String(m.text || '').replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
   }

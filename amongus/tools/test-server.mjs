@@ -229,8 +229,9 @@ T['처치·신고·회의·투표·추방'] = async () => {
     ok(mt.emergency && mt.caller === D.id, '긴급회의 정보');
     C.send({ t: 'chat', q: { c: 0, i: 0 } }); // 회의 중 빠른 채팅
     await B.wait('chat', m => m.id === C.id && m.text === '안녕!');
-    C.send({ t: 'chat', text: '자유 채팅' }); // 게스트(핑크)는 자유 채팅 불가
-    await C.wait('err', m => /빠른 채팅/.test(m.msg));
+    await sleep(550);
+    C.send({ t: 'chat', text: '자유 채팅' }); // 게스트(핑크)도 자유 채팅 가능
+    await B.wait('chat', m => m.id === C.id && m.text === '자유 채팅' && !m.quick);
     const r1 = await vote(S, { 0: C.id, 1: C.id, 2: B.id, 3: B.id });
     ok(r1.tie && !r1.ejected, '동점이어야 함');
     const e1 = await B.wait('eject', () => true, 8000);
@@ -706,7 +707,7 @@ T['연습 모드'] = async () => {
   }
 };
 
-// 채팅 권한: 초록불 계정 + 자유 채팅 로비만 자유 채팅
+// 채팅 권한: 누구나 자유 채팅 (빠른 채팅 전용 로비만 제외)
 T['채팅 권한'] = async () => {
   const G = await new Cli('GREEN').connect();
   G.send({ t: 'hello', birth: '1990-01-01' });
@@ -722,7 +723,7 @@ T['채팅 권한'] = async () => {
   G.send({ t: 'chat', text: '안녕하세요' });
   await H.wait('chat', m => m.id === G.id && m.text === '안녕하세요');
   H.send({ t: 'chat', text: 'hi' });
-  await H.wait('err', m => /게스트/.test(m.msg));
+  await G.wait('chat', m => m.id === H.id && m.text === 'hi' && !m.quick); // 게스트(핑크불)도 자유 채팅
   await sleep(550);
   H.send({ t: 'chat', q: { c: 2, i: 0, r: 0 } });
   await G.wait('chat', m => m.id === H.id && m.quick);

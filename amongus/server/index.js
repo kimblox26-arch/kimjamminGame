@@ -24,7 +24,7 @@ const server = http.createServer((req, res) => {
     const acc = A.verifyParent(u.searchParams.get('token'));
     if (acc) for (const c of clients.values()) if (c.acc?.id === acc.id) { c.verified = true; send(c, { t: 'account', account: A.publicAcc(acc) }); }
     res.writeHead(acc ? 200 : 400, { 'content-type': 'text/html; charset=utf-8' });
-    return res.end(page('보호자 인증', acc ? `<h2>✅ 보호자 인증 완료</h2><p>${esc(acc.name)} 계정이 온라인에서 플레이할 수 있게 되었습니다.<br>(만 14세 미만 계정은 계속 빠른 채팅만 사용할 수 있습니다.)</p>`
+    return res.end(page('보호자 인증', acc ? `<h2>✅ 보호자 인증 완료</h2><p>${esc(acc.name)} 계정이 온라인에서 플레이할 수 있게 되었습니다.</p>`
       : '<h2>링크가 만료되었거나 올바르지 않습니다.</h2>'));
   }
   if (u.pathname === '/outbox') {
