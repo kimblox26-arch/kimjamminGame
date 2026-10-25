@@ -50,6 +50,7 @@
   .field .grow { flex: 1; min-width: 0; }
   .pop input[type=number], .pop select { background: rgba(0,0,0,.35); border: 1px solid var(--box-line); border-radius: 8px; padding: 7px 9px; min-height: 36px; }
   .pop input[type=range] { width: 100%; accent-color: #ffe01b; }
+  #video-fields, #physics-fields { display: flex; flex-direction: column; gap: 10px; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chips button, .list button { background: rgba(255,255,255,.08); border: 1px solid var(--box-line); border-radius: 8px; padding: 7px 11px; font-weight: 700; }
   .chips button:hover, .list button:hover { background: rgba(255,255,255,.16); }
@@ -144,6 +145,13 @@
 <section id="editor" class="pop box" hidden aria-label="쓰나미 만들기">
   <h2>쓰나미 만들기</h2>
   <div class="field">
+    <label for="mode">이동 방식</label>
+    <select id="mode" class="grow">
+      <option value="video" selected>영상식 — 고리가 퍼지고 땅을 덮음</option>
+      <option value="physics">물리 계산 — 천수방정식</option>
+    </select>
+  </div>
+  <div class="field">
     <label for="height">시작 파고(m)</label>
     <input id="height" type="number" min="0.1" max="20000" step="any" value="100" class="grow">
   </div>
@@ -152,6 +160,22 @@
     <button data-h="10">10 m</button><button data-h="50">50 m</button><button data-h="100">100 m</button>
     <button data-h="500">500 m</button><button data-h="1000">1000 m</button>
   </div>
+  <div id="video-fields">
+    <div class="field">
+      <label for="sea-speed">바다 속도(km/h)</label>
+      <input id="sea-speed" type="number" min="1" max="1000000" step="any" value="800" class="grow">
+    </div>
+    <div class="chips">
+      <button data-v="100">100</button><button data-v="300">300</button><button data-v="800">800 (실제 먼바다)</button>
+      <button data-v="3000">3000</button><button data-v="20000">20000</button>
+    </div>
+    <div class="field">
+      <label for="land-speed">육지 속도(km/h)</label>
+      <input id="land-speed" type="number" min="1" max="1000000" step="any" value="300" class="grow">
+    </div>
+    <div class="field"><label><input id="decay" type="checkbox" checked> 멀어질수록 파도가 약해짐</label></div>
+  </div>
+  <div id="physics-fields" hidden>
   <div class="field">
     <label for="source">파원</label>
     <select id="source" class="grow">
@@ -170,7 +194,8 @@
     <label for="period">파 주기(초)</label>
     <input id="period" type="number" min="5" max="7200" step="any" value="300" class="grow">
   </div>
-  <p class="note">진원은 아래 <b>📍 진원</b> 버튼을 누른 뒤 바다를 눌러 정합니다. 지금 화면 전체가 계산 영역이 됩니다.</p>
+  </div>
+  <p class="note">아래 <b>📍 진원</b>을 누르고 바다를 찍으면 그 자리에서 바로 쓰나미가 생깁니다. 지금 화면 전체가 계산 영역이 됩니다.</p>
 </section>
 
 <section id="settings" class="pop box" hidden aria-label="물리 설정">

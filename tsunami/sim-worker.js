@@ -45,13 +45,16 @@ class Heap {
 }
 
 self.onmessage = (e) => {
-  const { width: W, height: H, lat0, lat1, lon0, lon1, elev, epicenter, waveHeight, distanceDecay, inlandDecay, seaSpeed, landSpeed, decayRadius, decayLength } = e.data;
+  const { width: W, height: H, lat0, lat1, lon0, lon1, elev, epicenter, waveHeight, distanceDecay, inlandDecay, seaSpeed, landSpeed, decayRadius, decayLength, cellSize } = e.data;
   const N = W * H;
   const dLat = (lat1 - lat0) / H, dLon = (lon1 - lon0) / W;
   const mPerDeg = 111320;
-  const dy = dLat * mPerDeg;
-  const dxRow = new Float32Array(H);
-  for (let r = 0; r < H; r++) dxRow[r] = dLon * mPerDeg * Math.cos((lat1 - (r + 0.5) * dLat) * Math.PI / 180);
+  // cellSize(행별 정사각형 셀 한 변, m)를 주면 메르카토르 격자(세계 지도), 아니면 위경도 등간격 격자
+  const dxRow = new Float32Array(H), dyRow = new Float32Array(H);
+  for (let r = 0; r < H; r++) {
+    dxRow[r] = cellSize ? cellSize[r] : dLon * mPerDeg * Math.cos((lat1 - (r + 0.5) * dLat) * Math.PI / 180);
+    dyRow[r] = cellSize ? cellSize[r] : dLat * mPerDeg;
+  }
 
   const time = new Float32Array(N).fill(NEVER);
   const dist = new Float32Array(N);
@@ -74,7 +77,7 @@ self.onmessage = (e) => {
       if (cc < 0 || rr < 0 || cc >= W || rr >= H) continue;
       const j = rr * W + cc;
       if (elev[j] > 0) continue;
-      const step = Math.hypot(DX[k] * dxRow[r], DY[k] * dy);
+      const step = Math.hypot(DX[k] * dxRow[r], DY[k] * dyRow[r]);
       const v = seaSpeed || 0.5 * (vi + Math.sqrt(G * Math.max(5, -elev[j])));
       // Float32 배열과 비교하므로 후보값도 Float32 로 맞춰야 반올림 오차로 같은 셀을 끝없이 갱신하지 않는다
       const t = Math.fround(time[i] + step / v);
@@ -108,7 +111,7 @@ self.onmessage = (e) => {
       if (cc < 0 || rr < 0 || cc >= W || rr >= H) continue;
       const j = rr * W + cc;
       if (sea[j]) continue;
-      const lv = Math.fround(level[i] - decayPerM * Math.hypot(DX[k] * dxRow[r], DY[k] * dy));
+      const lv = Math.fround(level[i] - decayPerM * Math.hypot(DX[k] * dxRow[r], DY[k] * dyRow[r]));
       if (lv <= level[j]) continue;
       level[j] = lv;
       if (lv > elev[j]) land.push(j, -lv);
@@ -132,7 +135,7 @@ self.onmessage = (e) => {
       const j = rr * W + cc;
       if (sea[j] || level[j] === -NEVER) continue;
       const v = flowSpeed(Math.max(0, (di + Math.max(0, level[j] - elev[j])) / 2));
-      const t = Math.fround(time[i] + Math.hypot(DX[k] * dxRow[r], DY[k] * dy) / v);
+      const t = Math.fround(time[i] + Math.hypot(DX[k] * dxRow[r], DY[k] * dyRow[r]) / v);
       if (t >= time[j]) continue;
       time[j] = t;
       if (level[j] > elev[j]) flow.push(j, t);
@@ -157,7 +160,7 @@ self.onmessage = (e) => {
     if (sea[i] || level[i] <= elev[i]) continue;
     const r = (i / W) | 0;
     const b = Math.min(BINS, Math.ceil(time[i] / tMax * BINS));
-    area[b] += dxRow[r] * dy / 1e6;
+    area[b] += dxRow[r] * dyRow[r] / 1e6;
   }
   for (let b = 1; b <= BINS; b++) area[b] += area[b - 1];
 

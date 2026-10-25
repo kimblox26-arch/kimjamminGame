@@ -2,6 +2,7 @@
 // 지금 보이는 화면이 계산 영역이 되고, 그 범위의 지형·수심 타일과 (줌 13+) 건물 윤곽을 격자에 넣는다.
 
 import { ShallowWater } from './swe.js';
+import { KinematicView } from './kinematic.js';
 import { WORLD_CITIES } from './world-cities.js';
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
@@ -94,8 +95,14 @@ try { const v = localStorage.getItem(OPT_KEY); if (v !== null) optimize = v === 
 
 // ───────── 상태 ─────────
 let swe = null;
-try { swe = new ShallowWater($('sim')); } catch (e) { msg(e.message); $('start').disabled = true; }
-const sim = { running: false, dom: null, setupArgs: null, places: [], points: [], epicenter: null, nextSummary: 600, buildings: 0 };
+try { swe = new ShallowWater($('sim')); } catch (e) { swe = null; console.warn(e); }
+// 영상식 표시기: 물리 계산기와 같은 캔버스를 쓴다 (물리 계산이 안 되는 기기에서도 동작)
+let kin = null;
+try { kin = new KinematicView($('sim')); } catch (e) { msg(e.message); $('start').disabled = true; }
+const kinWorker = new Worker('./sim-worker.js');
+const runKinematic = (args) => new Promise((resolve) => { kinWorker.onmessage = (e) => resolve(e.data); kinWorker.postMessage(args); });
+const sim = { mode: null, running: false, dom: null, setupArgs: null, kin: null, places: [], points: [], epicenter: null, nextSummary: 600, buildings: 0 };
+const active = () => (sim.mode === 'video' ? !!sim.kin : !!sim.setupArgs);
 const epiEl = document.createElement('div');
 epiEl.className = 'epi';
 const epiMarker = new maplibregl.Marker({ element: epiEl });
@@ -117,6 +124,17 @@ function syncSource() {
   $('period-row').hidden = point;
 }
 $('source').addEventListener('change', syncSource);
+function syncMode() {
+  const video = $('mode').value === 'video';
+  $('video-fields').hidden = !video;
+  $('physics-fields').hidden = video;
+  if (!video && !swe) msg('이 기기의 GPU 는 물리 계산을 지원하지 않아 영상식만 쓸 수 있습니다.');
+}
+$('mode').addEventListener('change', syncMode);
+document.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', () => {
+  $('sea-speed').value = b.dataset.v;
+  $('land-speed').value = Math.round(b.dataset.v * 0.375);
+}));
 
 let picking = false;
 function setPicking(on) {
@@ -130,7 +148,7 @@ map.on('click', (e) => {
   if (!picking) return;
   setEpicenter(e.lngLat.lng, e.lngLat.lat);
   setPicking(false);
-  msg('진원을 정했습니다. TSUNAMI! 를 누르세요.');
+  start();
 });
 function setEpicenter(lon, lat) {
   sim.epicenter = { lon, lat };
@@ -358,7 +376,7 @@ function describe(lon, lat) {
 function news(text, big = false) {
   const li = document.createElement('li');
   if (big) li.className = 'big';
-  li.innerHTML = `<time>발생 후 ${clock(swe.t)}</time><span></span>`;
+  li.innerHTML = `<time>발생 후 ${clock(sim.mode === 'video' ? sim.kin.t : swe.t)}</time><span></span>`;
   li.lastChild.textContent = text;
   const list = $('news-list');
   list.prepend(li);
@@ -397,6 +415,9 @@ function updateNews() {
       if (stage > p.stage) { p.stage = stage; flood.push({ p, d: mx, stage }); }
     }
   });
+  reportNews(arrive, flood);
+}
+function reportNews(arrive, flood) {
   const report = (items, one, many) => {
     items.sort((a, b) => a.p.rank - b.p.rank);
     items.slice(0, 2).forEach((it) => one(it));
@@ -418,8 +439,10 @@ const SIDES = { W: 1, E: 2, S: 3, N: 4 };
 const SIDE_NAME = { W: '서쪽', E: '동쪽', S: '남쪽', N: '북쪽' };
 let building = false;
 async function start() {
-  if (!swe || building) return;
-  const h = +$('height').value, src = $('source').value;
+  if (building) return;
+  const video = $('mode').value === 'video';
+  if (!video && !swe) { msg('이 기기에서는 물리 계산을 할 수 없습니다. 이동 방식을 영상식으로 바꾸세요.'); return; }
+  const h = +$('height').value, src = video ? 'point' : $('source').value;
   if (!(h > 0)) { msg('파고를 0보다 큰 숫자로 입력하세요.'); return; }
   if (src === 'point' && !sim.epicenter) { msg('먼저 📍 진원을 누르고 바다 위를 눌러 진원을 정하세요.'); setPicking(true); return; }
   const dom = domainFromView(+$('res').value);
@@ -433,6 +456,7 @@ async function start() {
     const bed = await buildBed(dom, (t) => msg(t));
     const buildings = addBuildings(dom, bed);
     if (epiCell && bed[epiCell[1] * dom.W + epiCell[0]] >= 0) throw new Error('진원이 육지에 있습니다. 바다 위를 찍어 주세요.');
+    if (video) { await startVideo(dom, bed, epiCell, h, buildings); return; }
     const wet = wetMask(dom, bed, epiCell);
     if (src !== 'point') {
       const side = SIDES[src], edge = [];
@@ -448,6 +472,8 @@ async function start() {
       sigma: Math.max(1.5, (+$('radius').value || 30) * 1000 / 2 / cellAt(dom, epiCell[1] + 0.5)),
     };
     sim.setupArgs = { W: dom.W, H: dom.H, y0: dom.y0, dl: dom.dl, wrap: dom.wrap, bed, wet, source };
+    sim.mode = 'physics';
+    sim.kin = null;
     sim.dom = dom;
     sim.buildings = buildings;
     sim.places = gatherPlaces(dom);
@@ -468,9 +494,68 @@ async function start() {
     $('start').disabled = false;
   }
 }
+// 영상식: 바다는 정한 속도로 퍼지고, 해안에 닿은 파고가 내륙으로 갈수록 낮아지며 낮은 땅을 덮는다 (sim-worker.js)
+async function startVideo(dom, bed, epiCell, h, buildings) {
+  msg('쓰나미 경로 계산 중…');
+  const cellSize = new Float32Array(dom.H);
+  for (let j = 0; j < dom.H; j++) cellSize[j] = cellAt(dom, j + 0.5);
+  const seaV = Math.max(0.1, +$('sea-speed').value || 800) / 3.6, landV = Math.max(0.1, +$('land-speed').value || 300) / 3.6;
+  const res = await runKinematic({
+    width: dom.W, height: dom.H, lat0: 0, lat1: 1, lon0: 0, lon1: 1, cellSize, elev: bed,
+    epicenter: epiCell[1] * dom.W + epiCell[0], waveHeight: h, distanceDecay: $('decay').checked,
+    decayLength: 600000, inlandDecay: 0.0012 * h, seaSpeed: seaV, landSpeed: landV,
+  });
+  kin.upload(dom.W, dom.H, res.data);
+  let runup = 0;
+  for (let k = 0; k < dom.W * dom.H; k++) if (!res.data[4 * k + 3] && res.data[4 * k + 2] > res.data[4 * k]) runup = Math.max(runup, res.data[4 * k]);
+  // 고리 두께: 화면 대각선의 1/120 (최소 셀 3개)을 파가 지나가는 시간
+  const ringM = Math.max(3 * dom.cell, Math.hypot(dom.W, dom.H) * dom.cell / 120);
+  // 진원 경도는 격자 서쪽 경계 기준으로 맞춘다 (날짜변경선 너머 영역 대비)
+  let epiLon = sim.epicenter.lon;
+  while (epiLon < dom.west) epiLon += 360;
+  while (epiLon >= dom.west + 360) epiLon -= 360;
+  sim.kin = { data: res.data, tMax: res.tMax, area: res.area, t: 0, ring: ringM / seaV, runup, speed: seaV,
+    grid: { y0: dom.y0, dl: dom.dl, west: dom.west * D2R }, epi: [sim.epicenter.lat * D2R, epiLon * D2R] };
+  sim.mode = 'video';
+  sim.setupArgs = null;
+  sim.dom = dom;
+  sim.buildings = buildings;
+  sim.places = gatherPlaces(dom);
+  for (const p of sim.places) {
+    const k = p.j * dom.W + p.i, d = res.data;
+    Object.assign(p, { kBed: d[4 * k], kArr: d[4 * k + 1], kLevel: d[4 * k + 2], kSea: d[4 * k + 3] > 0.5 });
+  }
+  sim.points = [];
+  sim.byName = new Map(sim.places.map((p) => [p.name, p]));
+  showLayer(dom);
+  reset();
+  togglePop(null);
+  caption(`${fmtH(h)} m`);
+  news(`[가상] ${describe(sim.epicenter.lon, sim.epicenter.lat)} 해상에서 높이 ${h} m 쓰나미 발생`, true);
+  msg('');
+}
+// 영상식: 지금 시각까지 파도가 닿은 곳을 속보로
+function videoEvents(now) {
+  const t = sim.kin.t, arrive = [], flood = [];
+  for (const p of sim.places) {
+    if (p.arrived || !(p.kArr <= t)) continue;
+    p.arrived = true;
+    if (p.kSea) { p.sunkAt = now; arrive.push({ p, eta: p.kLevel, arr: p.kArr, sea: true }); continue; }
+    const d = p.kLevel - p.kBed;
+    if (d <= 0) continue;
+    p.sunkAt = now;
+    flood.push({ p, d, stage: d > 9 ? 3 : d > 3 ? 2 : 1 });
+  }
+  reportNews(arrive, flood);
+}
+
 function reset() {
-  if (!sim.setupArgs) return;
-  swe.setup(sim.setupArgs);
+  if (sim.mode === 'video') {
+    sim.kin.t = 0;
+  } else {
+    if (!sim.setupArgs) return;
+    swe.setup(sim.setupArgs);
+  }
   for (const p of sim.places) { p.arrived = false; p.stage = 0; p.sunkAt = 0; }
   sim.nextSummary = 1800;
   sim.summaryReal = 0;
@@ -487,9 +572,10 @@ function showLayer(dom) {
   map.addLayer({ id: 'tsunami', type: 'raster', source: 'tsunami', paint: { 'raster-fade-duration': 0, 'raster-resampling': 'linear' } }, before);
 }
 $('start').addEventListener('click', start);
-$('reset').addEventListener('click', () => { if (sim.setupArgs) { reset(); news('[가상] 같은 조건으로 다시 시작합니다', true); } });
+$('reset').addEventListener('click', () => { if (active()) { reset(); news('[가상] 같은 조건으로 다시 시작합니다', true); } });
 $('pause').addEventListener('click', () => {
-  if (!sim.setupArgs) return;
+  if (!active()) return;
+  if (sim.mode === 'video' && !sim.running && sim.kin.t >= sim.kin.tMax * 1.1) { reset(); return; }
   sim.running = !sim.running;
   $('pause').textContent = sim.running ? '⏸' : '▶';
 });
@@ -513,6 +599,7 @@ async function goPreset(key) {
   else map.flyTo({ center: p.center, zoom: p.zoom, duration: 1500 });
   if (!p.h) return;
   $('source').value = p.source; syncSource();
+  if (p.source !== 'point') { $('mode').value = 'physics'; syncMode(); }
   $('height').value = p.h; setHeight(p.h, false);
   if (p.radius) $('radius').value = p.radius;
   if (p.period) $('period').value = p.period;
@@ -653,7 +740,30 @@ function frame(now) {
   if (optimize && (odd = !odd)) { requestAnimationFrame(frame); return; }   // 최적화: 두 프레임에 한 번만 계산·그리기
   const fdt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  if (swe && sim.setupArgs) {
+  if (sim.mode === 'video' && sim.kin) {
+    const k = sim.kin, end = k.tMax * 1.1;
+    const rate = +$('speed').value || end / 15;           // 최대: 약 15초 안에 끝까지
+    if (sim.running) {
+      k.t = Math.min(end, k.t + fdt * rate);
+      if (k.t >= end) { sim.running = false; $('pause').textContent = '▶'; }
+      videoEvents(now);
+    }
+    kin.render({ t: k.t, ring: k.ring, fade: Math.max(1, k.tMax * 0.6), fill: rate * 0.5, foam: rate * 0.9, grid: k.grid, epi: k.epi, speed: k.speed });
+    if (now > nextInfo) {
+      nextInfo = now + (optimize ? 1000 : 500);
+      const bins = k.area.length - 1, a = k.area[Math.min(bins, Math.max(0, Math.floor(k.t / k.tMax * bins)))];
+      const area = `${a < 10 ? a.toFixed(2) : Math.round(a).toLocaleString()} km²`;
+      $('s-time').textContent = clock(k.t);
+      $('status').textContent = `${clock(k.t)}${a > 0.005 ? ` · 침수 ${area}` : ''}`;
+      $('s-rate').textContent = `×${Math.round(rate).toLocaleString()}`;
+      $('s-grid').textContent = `${kin.W}×${kin.H}`;
+      $('s-cell').textContent = meters(sim.dom.cell);
+      $('s-dt').textContent = '-';
+      $('s-bld').textContent = sim.buildings ? `${sim.buildings.toLocaleString()}채` : '-';
+      $('s-area').textContent = area;
+      $('s-run').textContent = k.runup > 0 ? `${k.runup.toFixed(1)} m` : '-';
+    }
+  } else if (swe && sim.setupArgs) {
     if (sim.running) {
       const budget = Math.max(1, Math.floor((optimize ? 1.25e7 : 2.5e7) / (swe.W * swe.H)));
       const speed = +$('speed').value;
@@ -697,3 +807,4 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 syncSource();
+syncMode();
