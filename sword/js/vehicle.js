@@ -128,8 +128,15 @@ export class Drive {
     const fx = Math.sin(V.h), fz = Math.cos(V.h);
     const nx = V.x + fx * V.sp * dt, nz = V.z + fz * V.sp * dt;
     // 땅·다리 위 높이, 벽 판정
-    const gy = T.heightAt(nx, nz);
-    const roof = C && C.roofAt ? C.roofAt(nx + fx * 2, nz + fz * 2) : -Infinity;
+    // 지하 도로(터널·램프) 안이면 그 노면, 아니면 지형
+    const RD = G.roads, cut = RD && RD.cutAt ? RD.cutAt(nx, nz, V.y) : null;
+    const gy = cut ? cut.y : T.heightAt(nx, nz);
+    const roof = cut ? -Infinity : C && C.roofAt ? C.roofAt(nx + fx * 2, nz + fz * 2) : -Infinity;
+    // 터널 벽: 벽 쪽 속도 성분을 없애고 긁힘
+    if (cut && Math.abs(cut.lat) > cut.w - 1.0) {
+      const vn = fx * cut.nx + fz * cut.nz;
+      if (vn * cut.lat > 0 && Math.abs(V.sp) > 4) { V.h += -Math.sign(cut.lat) * Math.sign(V.sp) * 0.04; V.sp *= 0.97; this.skid = 1; }
+    }
     if (roof > V.y + 1.6 && roof > gy + 1.6) {
       // 건물 벽
       if (Math.abs(V.sp) > 18) { this._crash(V, 'wall'); return; }
@@ -139,8 +146,39 @@ export class Drive {
     } else {
       V.x = nx; V.z = nz;
     }
-    const deck = C && C.roofAt ? C.roofAt(V.x, V.z) : -Infinity;
+    const deck = cut ? -Infinity : C && C.roofAt ? C.roofAt(V.x, V.z) : -Infinity;
     const surf = deck > gy && deck < V.y + 1.2 ? deck : gy;
+    // 다른 차와 충돌: 운동량 보존 (질량 승용 1.5 t, 버스 12 t), 반발 0.25, 세면 부서짐
+    const town = G.life && G.life.town;
+    if (town) {
+      const m1 = o.kind === 'bus' ? 12000 : 1500;
+      const vx1 = fx * V.sp, vz1 = fz * V.sp;
+      for (const q of town.cars) {
+        if (q === o || !q.alive || q.hidden || q.st === 'fly') continue;
+        const dx = q.x - V.x, dz = q.z - V.z, d = Math.hypot(dx, dz);
+        const rr = (o.kind === 'bus' ? 4.2 : 2.5) + (q.kind === 'bus' ? 4.2 : 2.4);
+        if (d > rr || Math.abs(q.y - V.y) > 3) continue;
+        // 두 차 길이 방향을 고려한 대략의 접촉: 옆으로는 가까워야 함
+        const qfx = Math.sin(q.h), qfz = Math.cos(q.h);
+        const side = Math.abs(dx * qfz - dz * qfx), along = Math.abs(dx * qfx + dz * qfz);
+        if (side > (q.kind === 'bus' ? 1.3 : 0.95) + 1.0 || along > (q.kind === 'bus' ? 5.6 : 2.4) + (o.kind === 'bus' ? 5.6 : 2.4) * 0.6) continue;
+        const nxn = dx / (d || 1), nzn = dz / (d || 1);
+        const m2 = q.kind === 'bus' ? 12000 : 1500;
+        const vx2 = qfx * (q.v || 0) * (q.dir === undefined ? 1 : 1), vz2 = qfz * (q.v || 0);
+        const vrel = (vx1 - vx2) * nxn + (vz1 - vz2) * nzn;          // 다가오는 속도
+        if (vrel <= 0) continue;
+        const jimp = (1 + 0.25) * vrel / (1 / m1 + 1 / m2);
+        // 내 차: 진행 방향 성분만 줄임
+        V.sp -= (jimp / m1) * (nxn * fx + nzn * fz);
+        // 상대 차: 밀려나거나 날아감
+        const dv = jimp / m2;
+        if (dv > 5) { town._fling(q, q.x - nxn, q.z - nzn, dv); q.vy = Math.min(q.vy, 1 + dv * 0.15); if (vrel > 12) town._wreck(q, vrel > 25); }
+        else { q.st = 'stop'; q.t = 0; q.x += nxn * dv * dt * 4; q.z += nzn * dv * dt * 4; }
+        G.hooks && G.hooks.shake(Math.min(1, vrel / 25));
+        if (G.audio && G.audio.city && G.camera) G.audio.city.event('crash', q.x, q.y + 1, q.z, G.camera, Math.min(1, vrel / 15));
+        if (vrel > 22 && o.kind !== 'bus') { this._crash(V, 'wall'); return; }
+      }
+    }
     if (V.y > surf + 0.25) {
       V.air = true;
       V.vy -= 9.81 * dt;

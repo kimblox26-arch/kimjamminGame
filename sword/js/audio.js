@@ -759,17 +759,38 @@ export class GameAudio {
   }
 
   // 발걸음: 아주 작은 탭
+  // 발소리: 바닥 재질 (this.surface: hard 보도·아스팔트, grass 풀·흙, tile 역 바닥, metal 계단·철판, water 물)
   _step(s, pan, t) {
-    const B = this._B, r = Math.random();
-    const v = this._v('step', t, 0.16, 0, clamp(pan + rand(-0.15, 0.15), -1, 1));
+    const B = this._B, r = Math.random(), surf = this.surface || 'hard';
+    const v = this._v('step', t, 0.25, 0, clamp(pan + rand(-0.15, 0.15), -1, 1));
+    if (surf === 'grass') {
+      // 풀 밟는 바스락: 긴 고역 소음, 둔한 쿵
+      const n = this._noise(v, B.white, t, 0.14, 1), bp = this._bq('bandpass', 2600 + 1500 * r, 0.6), g = this._g();
+      this._env(g.gain, t, 0.01, 0.22 * s, 0.09);
+      this._chain(n, bp, g, v.out);
+      const o = this._tone(v, 'sine', t, 0.1, 110 + 30 * r, 70, 0.05), og = this._g();
+      this._env(og.gain, t, 0.004, 0.1 * s, 0.05); this._chain(o, og, v.out);
+      return;
+    }
+    if (surf === 'water') {
+      const n = this._noise(v, B.pink, t, 0.2, 0.7), bp = this._bq('bandpass', 900 + 500 * r, 1.2), g = this._g();
+      this._env(g.gain, t, 0.008, 0.3 * s, 0.14); this._chain(n, bp, g, v.out);
+      return;
+    }
+    // 단단한 바닥: 뒤꿈치 '탁' + 앞꿈치, 타일·금속은 울림이 남음
+    const ring = surf === 'tile' ? 0.09 : surf === 'metal' ? 0.18 : 0;
     const n = this._noise(v, B.pink, t, 0.08, 1);
-    const lp = this._bq('lowpass', 900 + 800 * r, 0.8), hp = this._bq('highpass', 140, 0.7), g = this._g();
-    this._env(g.gain, t, 0.0015, 0.55 * s, 0.035 + 0.02 * r);
+    const lp = this._bq('lowpass', (surf === 'tile' ? 2600 : 900) + 800 * r, 0.8), hp = this._bq('highpass', 140, 0.7), g = this._g();
+    this._env(g.gain, t, 0.0015, 0.55 * s, 0.035 + 0.02 * r + ring * 0.3);
     this._chain(n, lp, hp, g, v.out);
     const o = this._tone(v, 'sine', t, 0.12, 150 + 60 * r, 80, 0.05);
     const og = this._g();
     this._env(og.gain, t, 0.002, 0.16 * s, 0.06);
     this._chain(o, og, v.out);
+    if (ring) {
+      const o2 = this._tone(v, surf === 'metal' ? 'triangle' : 'sine', t, ring + 0.05, surf === 'metal' ? 620 + 200 * r : 1900 + 400 * r, surf === 'metal' ? 600 : 1850, ring);
+      const g2 = this._g(); this._env(g2.gain, t, 0.002, (surf === 'metal' ? 0.07 : 0.03) * s, ring); this._chain(o2, g2, v.out);
+    }
   }
 
   // 점프: 부드러운 휙 + 발 구름 쿵

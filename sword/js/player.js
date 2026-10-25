@@ -182,6 +182,15 @@ export class Player {
       foot.getWorldPosition(_v3);
       _v3.y = this.groundY + 0.02;
       this.game.fx.step(_v3, strength);
+      // 바닥 재질: 역 안은 타일, 물가는 물, 풀밭·숲은 풀, 나머지는 단단한 바닥
+      const A = this.game.audio;
+      if (A) {
+        let surf = 'hard';
+        if (this.stFloor) surf = 'tile';
+        else if (this.waterY > -1e8 && this.pos.y - 1 < this.waterY + 0.3) surf = 'water';
+        else if (this.surfKind === 'ground' && this.game.terrain && this.game.terrain.sampleAt) { const S = this.game.terrain.sampleAt(this.pos.x + origin.x, this.pos.z + origin.z); if (S && (S.park + S.forest) > 0.5 && !(this.game.roads && this.game.roads.nearestRoad(this.pos.x + origin.x, this.pos.z + origin.z, 4, false))) surf = 'grass'; }
+        A.surface = surf;
+      }
       this.game.audio.play('step', strength * 0.6);
     };
 

@@ -364,7 +364,18 @@ export class Town {
     o.vy -= G * dt;
     const dr = Math.exp(-0.08 * dt * Math.hypot(o.vx, o.vy, o.vz));
     o.vx *= dr; o.vy *= dr; o.vz *= dr;
-    o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
+    const nx = o.x + o.vx * dt, nz = o.z + o.vz * dt;
+    // 건물 벽: 안으로 못 들어감 (튕겨 나옴, 벽에 부딪히면 크게 감속)
+    const C = this.game.city, roof = C && C.roofAt ? C.roofAt(nx, nz) : -Infinity;
+    if (roof > o.y + 0.6 && roof > this._h(nx, nz) + 1) {
+      const sp = Math.hypot(o.vx, o.vz);
+      if (Math.abs(this.game.city.roofAt(nx, o.z) - roof) < 1e-3) o.vx = -o.vx * 0.25; else o.vz = -o.vz * 0.25;
+      if (Math.abs(o.vx) * 4 > sp && Math.abs(o.vz) * 4 > sp) { o.vx *= -0.25; o.vz *= -0.25; }
+      o.wx *= 0.5; o.wz *= 0.5;
+      if (o.mood && sp > 18) o.dead = true;
+      if (!o.mood && sp > 15 && !o.broken) this._wreck(o, false);
+    } else { o.x = nx; o.z = nz; }
+    o.y += o.vy * dt;
     o.rx += o.wx * dt; o.rz += o.wz * dt;
     if (o.y <= gy) {
       o.y = gy;
@@ -437,7 +448,20 @@ export class Town {
         this._at(L, o.p, o.d, o); o.y = o.deckY !== null ? o.deckY : this._h(o.x, o.z);
       }
       o.t += dt;
-      if (o.st === 'fly') { if (this._physics(o, dt) && o.t > 0.5) { o.st = 'wreck'; o.t = 0; o.rx = Math.round(o.rx / Math.PI) * Math.PI; o.rz = Math.round(o.rz / Math.PI) * Math.PI; } continue; }
+      if (o.st === 'fly') {
+        // 날아가는 차가 다른 차에 부딪힘: 운동량을 나눔
+        const sp = Math.hypot(o.vx, o.vz);
+        if (sp > 4) for (const q of this.cars) {
+          if (q === o || !q.alive || q.hidden || q.st === 'fly' || q.st === 'player') continue;
+          const dx = q.x - o.x, dz = q.z - o.z;
+          if (Math.abs(dx) > 4 || Math.abs(dz) > 4 || Math.abs(q.y - o.y) > 2.5 || dx * dx + dz * dz > 10) continue;
+          const v2 = sp * 0.5;
+          this._fling(q, o.x, o.z, v2); o.vx *= 0.5; o.vz *= 0.5;
+          if (sp > 12) this._wreck(q, sp > 25);
+        }
+        if (this._physics(o, dt) && o.t > 0.5) { o.st = 'wreck'; o.t = 0; o.rx = Math.round(o.rx / Math.PI) * Math.PI; o.rz = Math.round(o.rz / Math.PI) * Math.PI; }
+        continue;
+      }
       if (o.st === 'player') continue;
       if (o.broken && o.burn > 0) {
         // 불타는 잔해: 연기
@@ -476,6 +500,11 @@ export class Town {
           if (q === o) continue;
           const dx = q.x - o.x, dz = q.z - o.z, ahead = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
           if (ahead > 0 && ahead < 20 && side < 1.8 && Math.cos(q.h - o.h) > 0.5) want = Math.min(want, Math.max(0, (ahead - (o.kind === 'bus' || q.kind === 'bus' ? 9 : 6.5)) * 0.8), q.v + 1);
+          // 교차로: 옆에서 들어오는 차가 앞을 막으면 양보 (서로 보면 번호가 큰 쪽만 양보 → 교착 없음)
+          else if (ahead > 0 && ahead < 9 && side < 2.6 && Math.cos(q.h - o.h) <= 0.5) {
+            const qx = o.x - q.x, qz = o.z - q.z, qa = qx * Math.sin(q.h) + qz * Math.cos(q.h), qs = Math.abs(qx * Math.cos(q.h) - qz * Math.sin(q.h));
+            if (!(qa > 0 && qa < 9 && qs < 2.6) || o.i > q.i) want = Math.min(want, Math.max(0, (ahead - 5) * 0.6));
+          }
         }
       }
       // 플레이어가 길에 서 있으면 멈춤 (빵빵)
@@ -529,6 +558,23 @@ export class Town {
     const L = this.roads.roads, R = this.R;
     let spawns = this.eco ? 3 : 6;
     const pSp = pv.length();
+    // 서로 비켜 걷기: 1.5 m 칸 해시 → 0.7 m 안에 다른 사람이 있으면 옆으로 비킴
+    const ph = this._ph || (this._ph = new Map());
+    ph.clear();
+    for (const o of this.people) if (o.alive && o.st === 'walk') { const k = Math.floor(o.x / 1.5) * 100000 + Math.floor(o.z / 1.5); let a = ph.get(k); if (!a) { a = []; ph.set(k, a); } a.push(o); }
+    for (const o of this.people) {
+      if (!o.alive || o.st !== 'walk') continue;
+      o.lo = (o.lo || 0) * Math.exp(-0.4 * dt);
+      const kx = Math.floor(o.x / 1.5), kz = Math.floor(o.z / 1.5);
+      for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+        const a = ph.get((kx + i) * 100000 + (kz + j));
+        if (a) for (const q of a) {
+          if (q === o) continue;
+          const d = Math.hypot(q.x - o.x, q.z - o.z);
+          if (d < 0.7) o.lo = clamp(o.lo + ((o.lo >= (q.lo || 0)) === (o.i > q.i) ? 1 : -1) * dt * 1.6, -0.8, 0.8);
+        }
+      }
+    }
     for (const o of this.people) {
       if (o.alive && Math.hypot(o.x - cam.x, o.z - cam.z) > R * 1.3 && o.st !== 'fly') o.alive = false;
       if (!o.alive) {
@@ -597,7 +643,7 @@ export class Town {
     this._at(L, o.p, o.d, o);
     const c = L.cls[o.p];
     // 보도 가운데 (건물까지 여유에 맞춤)
-    const off = this.roads.walkOff(o.p, o.d, o.side);
+    const off = this.roads.walkOff(o.p, o.d, o.side) + (o.lo || 0);
     const tx = o.tx * o.dir, tz = o.tz * o.dir;
     o.x += -o.tz * off; o.z += o.tx * off;
     o.h = Math.atan2(tx, tz);

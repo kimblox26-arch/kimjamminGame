@@ -141,6 +141,7 @@ const earthT = {
   heightAt: (x, z) => terrainMod.heightAt(x, z),
   waterLevelAt: (x, z) => { const w = terrainMod.waterLevelAt(x, z); return flood.active ? flood.levelAt(x, z, w) : w; },
   roadAt: (x, z) => terrainMod.roadAt(x, z),
+  sampleAt: (x, z) => terrainMod.terrainSample(x, z),
 };
 const wreck = new Wreck(city, scene, { fx, audio, hooks, terrainH: (x, z) => terrainMod.heightAt(x, z) });
 const under = new Underground(scene);
