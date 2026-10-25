@@ -146,10 +146,10 @@ void main() {
   o = vec4(Mo, No, 0., 0.);
 }`;
 
-// ── 화면용: 바다는 수면 높이(마루=흰색, 골=남색), 육지는 침수 깊이(파랑) / 또는 최대값 지도
+// ── 화면용 (영상 스타일): 바다는 파마루만 하얗게, 잠긴 땅은 바다색 반투명 + 밀려드는 물마루 거품 / 또는 최대값 지도
 const RENDER = HEAD + `
 uniform int uMode;
-uniform float uRef;
+uniform float uRef, uFoam;
 vec3 heat(float k) { return mix(mix(vec3(1., .95, .3), vec3(1., .45, .1), smoothstep(0., .5, k)), vec3(.75, 0., .15), smoothstep(.5, 1., k)); }
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
@@ -158,12 +158,16 @@ void main() {
   vec4 col = vec4(0.);
   float ln = log(1. + uRef / .02);
   if (uMode == 0) {
-    if (bed < 0. && s.x - bed > .01) {               // 물이 있는 바다 (마른 저지대는 아래 육지 쪽에서 처리)
-      float a = s.x, k = clamp(log(1. + abs(a) / .02) / ln, 0., 1.);
-      col = a > 0. ? vec4(mix(vec3(.55, .85, 1.), vec3(1.), k), k * .9) : vec4(.02, .08, .28, k * .45);
+    if (bed < 0. && s.x - bed > .01) {
+      float a = s.x, k = clamp(log(1. + max(a, 0.) / .02) / ln, 0., 1.);
+      col = vec4(vec3(.93, .97, 1.), k * .6);
     } else {
-      float d = s.x - bed;
-      if (d > .03) { float k = smoothstep(0., 6., d); col = vec4(mix(vec3(.4, .72, 1.), vec3(.04, .2, .62), k), .5 + .4 * k); }
+      float d = s.x - bed, since = uTime - s.w;
+      if (d > .03 && s.w >= 0.) {
+        vec3 water = vec3(.29, .494, .796);
+        col = vec4(water, (.74 + .16 * smoothstep(0., 80., d)) * smoothstep(0., uFoam * .5, since));
+        col = mix(col, vec4(.86, .94, 1., .9), (1. - smoothstep(0., uFoam, since)) * .6);
+      }
     }
   } else {
     float v = s.z, k = clamp(log(1. + max(v, 0.) / .02) / ln, 0., 1.);
@@ -334,11 +338,13 @@ export class ShallowWater {
     }
   }
 
-  render(mode, ref) {
+  // foam: 물이 막 들이닥친 곳을 하얗게 보여줄 시간(초, 계산 시간 기준)
+  render(mode, ref, foam = 30) {
     const gl = this.gl;
     this.#uniforms(this.progs.render);
     gl.uniform1i(this.progs.render.u.uMode, mode);
     gl.uniform1f(this.progs.render.u.uRef, ref);
+    gl.uniform1f(this.progs.render.u.uFoam, foam);
     this.#bind(this.s0, this.f0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.W, this.H);

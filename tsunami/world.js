@@ -14,68 +14,97 @@ const pad = (v) => String(Math.floor(v)).padStart(2, '0');
 const clock = (s) => `${pad(s / 3600)}:${pad(s / 60 % 60)}:${pad(s % 60)}`;
 const dur = (s) => s < 60 ? `${Math.round(s)}초` : s < 3600 ? `${Math.floor(s / 60)}분 ${pad(s % 60)}초` : `${Math.floor(s / 3600)}시간 ${pad(s / 60 % 60)}분`;
 const meters = (m) => m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${m.toFixed(m < 10 ? 1 : 0)} m`;
-const msg = (text) => { $('msg').textContent = text || ''; };
 
-// ───────── 지도 ─────────
-const FALLBACK_STYLE = {
-  version: 8,
-  sources: { dem: { type: 'raster-dem', tiles: [DEM_URL('{z}', '{x}', '{y}')], encoding: 'terrarium', tileSize: 256, maxzoom: 15 } },
-  layers: [
-    { id: 'bg', type: 'background', paint: { 'background-color': '#8aa7c2' } },
-    { id: 'hillshade', type: 'hillshade', source: 'dem', paint: { 'hillshade-exaggeration': 0.6 } },
-  ],
-};
+const toast = $('toast');
+let toastTimer;
+function msg(text) {
+  $('msg').textContent = text || '';
+  toast.classList.toggle('fade', !text);
+  clearTimeout(toastTimer);
+  if (text) toastTimer = setTimeout(() => toast.classList.add('fade'), 5000);
+}
+
+// ───────── 지도 (영상 스타일) ─────────
+// 바다는 평평한 파랑, 땅은 영상 프레임에서 뽑은 고도 색표 + 북서쪽 빛 음영. 도로·건물·지명은 OpenFreeMap 벡터 타일
+const SEA = '#4172bd';
+const RELIEF = [[0.5, '#21802c'], [15, '#21802c'], [45, '#2e9228'], [80, '#45a22a'], [125, '#64aa2b'], [175, '#81b02e'],
+  [250, '#9cb330'], [350, '#bab931'], [450, '#cab12b'], [575, '#d29923'], [725, '#d17818'], [900, '#cd5f14'],
+  [1100, '#c84c0f'], [1350, '#c5420e'], [1750, '#b73e18'], [2600, '#9c3a22'], [4000, '#8a5444'], [5500, '#efe9e4']];
+const DEM_SOURCE = { type: 'raster-dem', tiles: [DEM_URL('{z}', '{x}', '{y}')], encoding: 'terrarium', tileSize: 256, maxzoom: 15 };
+const reliefColor = ['interpolate', ['linear'], ['elevation'], -12000, SEA, 0.4, SEA, ...RELIEF.flat()];
+// 해저 지형 음영이 바다에 비치지 않게, 음영 위에 바다만 다시 덮는다
+const seaMask = ['interpolate', ['linear'], ['elevation'], -12000, SEA, 0.4, SEA, 0.5, 'rgba(65,114,189,0)'];
 let basemap = true;
-async function loadStyle() {
+async function buildStyle() {
+  const style = {
+    version: 8,
+    sources: { dem: DEM_SOURCE },
+    layers: [
+      { id: 'sea', type: 'background', paint: { 'background-color': SEA } },
+      { id: 'relief', type: 'color-relief', source: 'dem', paint: { 'color-relief-color': reliefColor } },
+      { id: 'hillshade', type: 'hillshade', source: 'dem', paint: {
+        'hillshade-exaggeration': 0.85, 'hillshade-illumination-direction': 315,
+        'hillshade-shadow-color': 'rgba(25, 20, 5, .75)', 'hillshade-highlight-color': 'rgba(255, 255, 230, .35)',
+        'hillshade-accent-color': 'rgba(30, 25, 10, .35)' } },
+      { id: 'sea-flat', type: 'color-relief', source: 'dem', paint: { 'color-relief-color': seaMask } },
+    ],
+  };
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(STYLE_URL, { signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) throw new Error(res.status);
-    return await res.json();
+    const base = await res.json();
+    const [name, src] = Object.entries(base.sources).find(([, v]) => v.type === 'vector');
+    Object.assign(style, { glyphs: base.glyphs, sprite: base.sprite });
+    style.sources.omt = src;
+    style.layers.push(
+      { id: 'water', type: 'fill', source: 'omt', 'source-layer': 'water', paint: { 'fill-color': SEA } },
+      { id: 'roads', type: 'line', source: 'omt', 'source-layer': 'transportation', minzoom: 12,
+        paint: { 'line-color': 'rgba(255,255,255,.55)', 'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 12, 0.4, 18, 7] } },
+      { id: 'buildings', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 14,
+        paint: { 'fill-extrusion-color': '#efe7d8', 'fill-extrusion-opacity': 0.92,
+          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 10], 'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0] } },
+      { id: 'countries', type: 'symbol', source: 'omt', 'source-layer': 'place', maxzoom: 6, filter: ['==', ['get', 'class'], 'country'],
+        layout: { 'text-field': ['coalesce', ['get', 'name:ko'], ['get', 'name']], 'text-font': ['Noto Sans Bold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 1, 11, 5, 17] },
+        paint: { 'text-color': '#fff', 'text-halo-color': 'rgba(0,0,0,.75)', 'text-halo-width': 1.6 } },
+    );
+    void name;
   } catch {
     basemap = false;
-    return FALLBACK_STYLE;
   }
+  return style;
 }
 
 const map = new maplibregl.Map({
-  container: 'map', style: await loadStyle(), center: [128, 35.5], zoom: 2.4, maxPitch: 70,
+  container: 'map', style: await buildStyle(), center: [127.6, 35.8], zoom: 5.6, maxPitch: 70,
   attributionControl: { compact: true },
 });
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 await new Promise((r) => map.once('load', r));
-const vectorSrc = Object.entries(map.getStyle().sources).find(([, s]) => s.type === 'vector')?.[0];
-
-if (basemap) {
-  // 지명은 한국어 이름이 있으면 한국어로
-  for (const l of map.getStyle().layers) {
-    const tf = l.type === 'symbol' && l.layout?.['text-field'];
-    if (tf && JSON.stringify(tf).includes('name')) map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name:ko'], ['get', 'name']]);
-  }
-  // 산과 해저 지형이 보이도록 음영 기복
-  map.addSource('dem', FALLBACK_STYLE.sources.dem);
-  const before = map.getStyle().layers.find((l) => ['line', 'symbol', 'fill-extrusion'].includes(l.type))?.id;
-  map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem',
-    paint: { 'hillshade-exaggeration': 0.3, 'hillshade-shadow-color': '#38463f' } }, before);
-} else {
-  msg('배경 지도(도로·건물·지명)를 불러오지 못해 지형 음영만 표시합니다. 인터넷 연결을 확인하세요.');
-}
+const vectorSrc = basemap ? 'omt' : null;
+if (!basemap) msg('도로·건물·지명 지도를 불러오지 못해 지형만 표시합니다. 인터넷 연결을 확인하세요.');
 
 // ───────── 상태 ─────────
 let swe = null;
 try { swe = new ShallowWater($('sim')); } catch (e) { msg(e.message); $('start').disabled = true; }
 const sim = { running: false, dom: null, setupArgs: null, places: [], points: [], epicenter: null, nextSummary: 600, buildings: 0 };
-const epiMarker = new maplibregl.Marker({ color: '#ff3b3b' });
+const epiEl = document.createElement('div');
+epiEl.className = 'epi';
+const epiMarker = new maplibregl.Marker({ element: epiEl });
 
 // ───────── 입력 ─────────
+const fmtH = (h) => +h.toPrecision(h < 10 ? 2 : 4);
 function setHeight(h, fromRange) {
   if (!(h > 0)) return;
   if (!fromRange) $('height-range').value = Math.log10(h);
-  else $('height').value = +h.toPrecision(3);
+  else $('height').value = fmtH(h);
+  $('height-label').textContent = `${fmtH(h).toLocaleString('en-US')} m / ${Math.round(h * 3.28084).toLocaleString('en-US')} ft`;
 }
+document.querySelectorAll('[data-h]').forEach((b) => b.addEventListener('click', () => { $('height').value = b.dataset.h; setHeight(+b.dataset.h, false); }));
 $('height').addEventListener('input', (e) => setHeight(+e.target.value, false));
 $('height-range').addEventListener('input', (e) => setHeight(10 ** +e.target.value, true));
 function syncSource() {
@@ -90,27 +119,40 @@ function setPicking(on) {
   picking = on;
   $('pick').classList.toggle('on', on);
   map.getCanvas().style.cursor = on ? 'crosshair' : '';
-  if (on) msg('지도에서 바다 위를 눌러 진원을 정하세요.');
+  if (on) { togglePop(null); msg('지도에서 바다 위를 눌러 진원을 정하세요.'); }
 }
 $('pick').addEventListener('click', () => setPicking(!picking));
 map.on('click', (e) => {
   if (!picking) return;
   setEpicenter(e.lngLat.lng, e.lngLat.lat);
   setPicking(false);
-  msg('진원을 정했습니다. ▶ 시작을 누르세요.');
+  msg('진원을 정했습니다. TSUNAMI! 를 누르세요.');
 });
 function setEpicenter(lon, lat) {
   sim.epicenter = { lon, lat };
   epiMarker.setLngLat([lon, lat]).addTo(map);
 }
 
-$('panel-toggle').addEventListener('click', () => $('panel').classList.toggle('closed'));
+const POPS = { 'height-box': 'editor', 'open-settings': 'settings', 'open-places': 'places' };
+function togglePop(id) {
+  for (const [btn, pop] of Object.entries(POPS)) {
+    const show = pop === id && $(pop).hidden;
+    $(pop).hidden = !show;
+    $(btn).setAttribute('aria-expanded', String(show));
+  }
+}
+for (const [btn, pop] of Object.entries(POPS)) $(btn).addEventListener('click', () => togglePop(pop));
+map.on('mousedown', () => togglePop(null));
+map.on('touchstart', () => togglePop(null));
 $('news-toggle').addEventListener('click', () => {
   const closed = $('news').classList.toggle('closed');
   $('news-toggle').textContent = closed ? '펼치기' : '접기';
   $('news-toggle').setAttribute('aria-expanded', String(!closed));
 });
-if (innerWidth <= 760) { $('panel').classList.add('closed'); $('res').value = '512'; }   // 휴대폰은 가볍게
+if (innerWidth <= 760) {   // 휴대폰은 가볍게, 속보는 접어서 지도를 가리지 않게
+  $('res').value = '512';
+  $('news-toggle').click();
+}
 
 // ───────── 계산 영역 = 지금 화면 ─────────
 function domainFromView(maxDim) {
@@ -344,6 +386,7 @@ function updateNews() {
   const arrive = [], flood = [];
   sim.places.forEach((p, k) => {
     const eta = r[4 * k], bed = r[4 * k + 1], mx = r[4 * k + 2], arr = r[4 * k + 3];
+    if (bed < 0 ? arr >= 0 : mx > 0.5) p.sunkAt ||= performance.now();
     if (arr >= 0 && !p.arrived) { p.arrived = true; arrive.push({ p, eta: bed < 0 ? Math.max(eta, mx) : eta - bed, arr, sea: bed < 0 }); }
     if (bed >= 0) {
       const stage = mx > 9 ? 3 : mx > 3 ? 2 : mx > 0.5 ? 1 : 0;
@@ -374,7 +417,7 @@ async function start() {
   if (!swe || building) return;
   const h = +$('height').value, src = $('source').value;
   if (!(h > 0)) { msg('파고를 0보다 큰 숫자로 입력하세요.'); return; }
-  if (src === 'point' && !sim.epicenter) { msg('먼저 📍 진원 찍기를 누르고 바다 위를 눌러 진원을 정하세요.'); setPicking(true); return; }
+  if (src === 'point' && !sim.epicenter) { msg('먼저 📍 진원을 누르고 바다 위를 눌러 진원을 정하세요.'); setPicking(true); return; }
   const dom = domainFromView(+$('res').value);
   const epiCell = src === 'point' ? toCell(dom, sim.epicenter.lon, sim.epicenter.lat) : null;
   if (src === 'point' && !epiCell) { msg('진원이 화면 밖에 있습니다. 진원이 보이도록 지도를 옮기거나 진원을 다시 찍으세요.'); return; }
@@ -405,8 +448,11 @@ async function start() {
     sim.buildings = buildings;
     sim.places = gatherPlaces(dom);
     sim.points = sim.places.map((p) => [p.i, p.j]);
+    sim.byName = new Map(sim.places.map((p) => [p.name, p]));
     showLayer(dom);
     reset();
+    togglePop(null);
+    caption(`${fmtH(h)} m`);
     news(src === 'point'
       ? `[가상] ${describe(sim.epicenter.lon, sim.epicenter.lat)} 해상에서 높이 ${h} m 쓰나미 발생`
       : `[가상] ${SIDE_NAME[src]} 먼바다에서 높이 ${h} m 파도가 밀려오고 있습니다`, true);
@@ -421,10 +467,11 @@ async function start() {
 function reset() {
   if (!sim.setupArgs) return;
   swe.setup(sim.setupArgs);
-  for (const p of sim.places) { p.arrived = false; p.stage = 0; }
-  sim.nextSummary = 600;
+  for (const p of sim.places) { p.arrived = false; p.stage = 0; p.sunkAt = 0; }
+  sim.nextSummary = 1800;
+  sim.summaryReal = 0;
   sim.running = true;
-  $('pause').textContent = '⏸ 일시정지';
+  $('pause').textContent = '⏸';
   $('news-list').replaceChildren();
 }
 function showLayer(dom) {
@@ -432,7 +479,7 @@ function showLayer(dom) {
   const src = map.getSource('tsunami');
   if (src) { src.setCoordinates(coords); return; }
   map.addSource('tsunami', { type: 'canvas', canvas: $('sim'), coordinates: coords, animate: true });
-  const before = map.getStyle().layers.find((l) => l.type === 'fill-extrusion' || l.type === 'symbol')?.id;
+  const before = map.getLayer('buildings') ? 'buildings' : map.getLayer('countries') ? 'countries' : undefined;
   map.addLayer({ id: 'tsunami', type: 'raster', source: 'tsunami', paint: { 'raster-fade-duration': 0, 'raster-resampling': 'linear' } }, before);
 }
 $('start').addEventListener('click', start);
@@ -440,12 +487,12 @@ $('reset').addEventListener('click', () => { if (sim.setupArgs) { reset(); news(
 $('pause').addEventListener('click', () => {
   if (!sim.setupArgs) return;
   sim.running = !sim.running;
-  $('pause').textContent = sim.running ? '⏸ 일시정지' : '▶ 계속';
+  $('pause').textContent = sim.running ? '⏸' : '▶';
 });
 
 // ───────── 예시 장소 ─────────
 const PRESETS = {
-  korea: { bounds: [[123.5, 32.2], [131.5, 38.9]], source: 'point', epi: [127.01, 33.28], h: 100, radius: 30 },
+  korea: { bounds: [[124.6, 32.6], [130.4, 38.7]], source: 'point', epi: [127.01, 33.28], h: 100, radius: 30 },
   haeundae: { center: [129.162, 35.156], zoom: 14.6, source: 'S', h: 30, period: 240 },
   tokyo: { center: [139.79, 35.625], zoom: 14.2, source: 'S', h: 20, period: 300 },
   tohoku: { bounds: [[129, 26], [158, 46]], source: 'point', epi: [142.86, 38.1], h: 10, radius: 80 },
@@ -453,9 +500,10 @@ const PRESETS = {
   chile: { bounds: [[110, -58], [295, 62]], source: 'point', epi: [285.5, -38], h: 15, radius: 150 },
   world: { center: [150, 15], zoom: 1.2 },
 };
-$('preset').addEventListener('change', async (e) => {
-  const p = PRESETS[e.target.value];
-  e.target.value = '';
+document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => goPreset(b.dataset.preset)));
+async function goPreset(key) {
+  const p = PRESETS[key];
+  togglePop(null);
   if (!p) return;
   if (p.bounds) map.fitBounds(p.bounds, { padding: 20, duration: 1500 });
   else map.flyTo({ center: p.center, zoom: p.zoom, duration: 1500 });
@@ -467,10 +515,117 @@ $('preset').addEventListener('change', async (e) => {
   if (p.epi) setEpicenter(...p.epi);
   await new Promise((r) => map.once('idle', r));
   start();
-});
+}
+
+// ───────── 큰 자막 (영상의 "500 m") ─────────
+function caption(text) {
+  const el = $('caption');
+  $('caption-text').textContent = text;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+}
+
+// ───────── 지명 라벨 (영상 스타일: 점 + "이름(해발m)", 잠기면 연파랑으로 가라앉음) ─────────
+const labelCanvas = $('labels'), lctx = labelCanvas.getContext('2d');
+let ldpr = 1;
+function sizeLabels() {
+  ldpr = Math.min(2, devicePixelRatio || 1);
+  labelCanvas.width = Math.round(innerWidth * ldpr);
+  labelCanvas.height = Math.round(innerHeight * ldpr);
+}
+sizeLabels();
+addEventListener('resize', sizeLabels);
+
+const LABEL_CLASS = { city: 0, town: 1, village: 2, suburb: 2, quarter: 3, neighbourhood: 3, hamlet: 4 };
+const elevCache = new Map();
+let labelItems = [];
+async function elevationAt(lon, lat, z) {
+  lon = ((lon + 180) % 360 + 360) % 360 - 180;
+  const n = 2 ** z, x = (lon + 180) / 360 * n, y = Math.min(n - 1e-6, Math.max(0, (Math.PI - mercY(lat)) / (2 * Math.PI) * n));
+  const t = await fetchTile(z, Math.floor(x) % n, Math.floor(y));
+  return t[Math.floor((y % 1) * 256) * 256 + Math.floor((x % 1) * 256)];
+}
+function refreshLabels() {
+  const z = map.getZoom();
+  const maxClass = z < 5 ? -1 : z < 7 ? 0 : z < 9 ? 1 : z < 11 ? 2 : z < 13 ? 3 : 4;
+  const items = new Map();
+  if (vectorSrc) {
+    for (const f of map.querySourceFeatures(vectorSrc, { sourceLayer: 'place' })) {
+      const p = f.properties, c = LABEL_CLASS[p.class];
+      if (c === undefined || c > maxClass || f.geometry.type !== 'Point') continue;
+      const name = p['name:ko'] || p.name;
+      if (name && !items.has(name)) items.set(name, { name, lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], rank: c * 100 + (p.rank ?? 50) });
+    }
+  }
+  if (z >= 2.5) for (const [name, lat, lon] of WORLD_CITIES) if (!items.has(name)) items.set(name, { name, lon, lat, rank: z < 5 ? 0 : 60 });
+  labelItems = [...items.values()].sort((a, b) => a.rank - b.rank).slice(0, 400);
+  const ez = Math.max(5, Math.min(11, Math.round(z) + 1));
+  for (const it of labelItems.slice(0, 160)) {
+    it.key = `${it.name}|${ez}`;
+    if (elevCache.has(it.key)) continue;
+    elevCache.set(it.key, null);
+    elevationAt(it.lon, it.lat, ez).then((e) => elevCache.set(it.key, Math.max(0, Math.round(e)))).catch(() => {});
+  }
+}
+let labelTimer;
+const scheduleLabels = () => { clearTimeout(labelTimer); labelTimer = setTimeout(refreshLabels, 250); };
+map.on('moveend', scheduleLabels);
+map.on('sourcedata', (e) => { if (e.sourceId === vectorSrc && e.isSourceLoaded) scheduleLabels(); });
+refreshLabels();
+
+function drawLabels(now) {
+  const W = innerWidth, H = innerHeight;
+  lctx.setTransform(ldpr, 0, 0, ldpr, 0, 0);
+  lctx.clearRect(0, 0, W, H);
+  const f = Math.max(12, Math.min(17, W * 0.034));
+  lctx.font = `500 ${f}px "Noto Sans", system-ui, sans-serif`;
+  lctx.textBaseline = 'middle';
+  lctx.lineJoin = 'round';
+  const placed = [];
+  for (const it of labelItems) {
+    if (placed.length >= 70) break;
+    const pt = map.project([it.lon, it.lat]);
+    if (pt.x < -60 || pt.y < -30 || pt.x > W + 60 || pt.y > H + 30) continue;
+    const elev = it.key ? elevCache.get(it.key) : null;
+    const text = elev != null ? `${it.name}(${elev}m)` : it.name;
+    const tw = lctx.measureText(text).width;
+    const tx = pt.x + f * 0.32, ty = pt.y + f * 0.7;
+    const box = [pt.x - 6, pt.y - 6, tx + tw + 4, ty + f * 0.6];
+    if (placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
+    placed.push(box);
+    const sp = sim.byName?.get(it.name);
+    const since = sp?.sunkAt ? (now - sp.sunkAt) / 1000 : -1;
+    const glow = since >= 0 ? Math.max(0, 1 - since / 1.2) : 0;           // 물이 닿는 순간 하얗게 빛나고
+    const sunk = since >= 0 ? Math.min(1, Math.max(0, (since - 0.6) / 0.8)) : 0;   // 잠기면 가라앉는다
+    const dot = () => { lctx.beginPath(); lctx.arc(pt.x, pt.y, f * 0.16, 0, Math.PI * 2); lctx.fill(); };
+    if (glow > 0) {
+      lctx.shadowColor = `rgba(255,255,255,${glow})`; lctx.shadowBlur = f * 0.6;
+      lctx.lineWidth = f * 0.22; lctx.strokeStyle = `rgba(255,255,255,${0.9 * glow})`;
+      lctx.strokeText(text, tx, ty);
+      lctx.shadowColor = 'transparent';
+    }
+    if (sunk < 1) {
+      lctx.globalAlpha = 1 - sunk;
+      lctx.fillStyle = '#fff';
+      dot();
+      lctx.shadowColor = 'rgba(0,0,0,.9)'; lctx.shadowBlur = f * 0.18;
+      lctx.lineWidth = f * 0.1; lctx.strokeStyle = 'rgba(0,0,0,.55)';
+      lctx.strokeText(text, tx, ty);
+      lctx.shadowColor = 'transparent';
+      lctx.fillText(text, tx, ty);
+      lctx.globalAlpha = 1;
+    }
+    if (sunk > 0) {
+      lctx.fillStyle = `rgba(188,211,245,${0.9 * sunk})`;
+      dot();
+      lctx.fillText(text, tx, ty);
+    }
+  }
+}
 
 // ───────── 루프 ─────────
-let last = performance.now(), backlog = 0, nextInfo = 0, rateT0 = 0, rateSim0 = 0;
+let last = performance.now(), backlog = 0, nextInfo = 0, rateT0 = 0, rateSim0 = 0, simRate = 60, lastSimT = 0;
 function frame(now) {
   const fdt = Math.min(0.1, (now - last) / 1000);
   last = now;
@@ -486,11 +641,15 @@ function frame(now) {
       }
       swe.step(n);
     }
-    swe.render(+$('view').value, Math.max(0.3, swe.amp));
+    // 실제로 나온 배속(계산 초/실제 초)으로, 물이 막 들이닥친 곳이 약 1초 동안 하얗게 보이도록
+    if (fdt > 0) simRate += ((sim.running ? Math.max(0, swe.t - lastSimT) / fdt : simRate) - simRate) * 0.1;
+    lastSimT = swe.t;
+    swe.render(+$('view').value, Math.max(0.3, swe.amp), Math.max(swe.dt * 5, simRate * 0.9));
     if (now > nextInfo) {
       nextInfo = now + 500;
       const s = swe.stats();
       $('s-time').textContent = clock(swe.t);
+      $('status').textContent = `${clock(swe.t)}${s.floodMax > 0.005 ? ` · 침수 ${s.floodMax < 10 ? s.floodMax.toFixed(2) : Math.round(s.floodMax).toLocaleString()} km²` : ''}`;
       $('s-rate').textContent = rateT0 ? `×${Math.round((swe.t - rateSim0) / ((now - rateT0) / 1000)).toLocaleString()}` : '-';
       rateT0 = now; rateSim0 = swe.t;
       $('s-grid').textContent = `${swe.W}×${swe.H}`;
@@ -501,13 +660,15 @@ function frame(now) {
       $('s-run').textContent = s.runup > 0 ? `${s.runup.toFixed(1)} m` : '-';
       if (sim.running) {
         updateNews();
-        if (swe.t > sim.nextSummary) {
-          sim.nextSummary += 600;
+        if (swe.t > sim.nextSummary && now > sim.summaryReal) {
+          sim.nextSummary = swe.t + 1800;
+          sim.summaryReal = now + 15000;
           if (s.floodMax > 0.01) news(`누적 침수 면적 ${s.floodMax.toFixed(1)} km², 가장 높이 올라온 물 해발 ${s.runup.toFixed(1)} m`);
         }
       }
     }
   }
+  drawLabels(now);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
