@@ -1,5 +1,7 @@
 // 한반도 쓰나미 시뮬레이터 — 지형 로드, WebGL2 렌더링, 조작 UI
 
+import { fetchElevation } from './dem.js';
+
 const $ = (id) => document.getElementById(id);
 const mapCanvas = $('map'), labelCanvas = $('labels');
 const ctx = labelCanvas.getContext('2d');
@@ -17,12 +19,10 @@ const SEA_COLOR = [0.247, 0.455, 0.784];
 
 // ───────── 데이터 로드 ─────────
 async function loadDem() {
-  const [meta, res] = await Promise.all([
+  const [meta, buf] = await Promise.all([
     fetch('./data/korea_meta.json').then((r) => r.json()),
-    fetch('./data/korea_dem.bin.gz'),
+    fetchElevation('korea_dem'),
   ]);
-  // 이미지 디코딩은 브라우저 색 보정으로 값이 틀어질 수 있어, int16 원시값을 gzip 으로 받아 직접 푼다
-  const buf = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   const raw = new DataView(buf);
   const elev = new Float32Array(meta.width * meta.height);
   for (let i = 0; i < elev.length; i++) elev[i] = raw.getInt16(2 * i, true);

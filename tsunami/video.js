@@ -1,6 +1,8 @@
 // "What If a Tsunami Hit South Korea? Three Wave Heights!" 스타일 재현
 // 타이틀 → 100 m → 500 m → 1000 m 순서로 자동 재생되는 세로(9:16) 지리 시뮬레이션.
 
+import { fetchElevation } from './dem.js';
+
 const $ = (id) => document.getElementById(id);
 const mapCanvas = $('map'), overlay = $('overlay');
 const ctx = overlay.getContext('2d');
@@ -61,11 +63,10 @@ function outsideSouthKorea(lat, lon) {
 
 // ───────── 지형 ─────────
 async function loadTerrain() {
-  const [meta, res] = await Promise.all([
+  const [meta, buf] = await Promise.all([
     fetch('./data/korea_video.json').then((r) => r.json()),
-    fetch('./data/korea_video.bin.gz'),
+    fetchElevation('korea_video'),
   ]);
-  const buf = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   const raw = new DataView(buf);
   const W = meta.width, H = meta.height - (meta.height % 2);   // 저해상도(1/2) 격자와 맞추려 짝수 행만
   const dLat = (meta.lat1 - meta.lat0) / meta.height;
