@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>쓰나미 월드</title>
+<meta name="description" content="세계 어디서든 진원과 파고를 정해 실제 지형·건물 위에서 쓰나미를 천수방정식으로 계산하는 시뮬레이터">
+<link rel="stylesheet" href="../vendor/maplibre/maplibre-gl.css">
+<style>
+  :root {
+    --panel: rgba(13, 22, 36, .9); --line: rgba(150, 190, 235, .22); --text: #eaf2ff; --muted: #9fb3cc;
+    --accent: #3fd0ff; --accent-ink: #062033; --alert: #ff3b3b; --ok: #6be3a4;
+    --ui: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1420; color: var(--text); font: 13px/1.4 var(--ui); }
+  #map { position: fixed; inset: 0; }
+  button, select, input { font: inherit; color: var(--text); }
+  button { background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; cursor: pointer; min-height: 34px; }
+  button:hover { background: rgba(255,255,255,.13); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+  button.on { background: #ffd23f; color: #1a1400; border-color: #ffd23f; font-weight: 700; }
+  select, input[type=number] { background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; min-height: 32px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  #panel { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px));
+    width: 318px; max-height: calc(100% - 78px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; backdrop-filter: blur(8px);
+    display: flex; flex-direction: column; gap: 10px; z-index: 3; }
+  #panel h1 { margin: 0; font-size: 17px; letter-spacing: .02em; display: flex; align-items: center; justify-content: space-between; }
+  #panel h1 small { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .group { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .group > b { font-size: 11px; color: var(--muted); letter-spacing: .08em; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .row label { color: var(--muted); min-width: 70px; }
+  .row .grow { flex: 1; min-width: 0; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; font-variant-numeric: tabular-nums; }
+  .stats div { display: flex; justify-content: space-between; gap: 6px; }
+  .stats span { color: var(--muted); }
+  #msg { font-size: 12px; color: #ffd27a; min-height: 1em; }
+
+  #panel-toggle { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px)); z-index: 4; display: none; background: var(--panel); }
+
+  #news { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(56px + env(safe-area-inset-right, 0px)); width: 300px;
+    max-height: calc(100% - 90px); overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; z-index: 3; }
+  #news header { position: sticky; top: 0; background: #121e30; padding: 10px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+  #news header b { flex: 1; }
+  .live { background: var(--alert); color: #fff; font-weight: 800; font-size: 11px; padding: 2px 6px; border-radius: 4px; letter-spacing: .06em; }
+  #news ol { list-style: none; margin: 0; padding: 0; }
+  #news li { padding: 9px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 2px; }
+  #news li time { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #news li.big { border-left: 3px solid var(--alert); }
+  #news .empty { padding: 14px 12px; color: var(--muted); }
+  #news.closed ol, #news.closed .empty { display: none; }
+
+  #ticker { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: stretch; height: calc(34px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px); background: #0d1626; border-top: 2px solid var(--alert); font-weight: 600; }
+  #ticker .live { display: flex; align-items: center; border-radius: 0; padding: 0 12px; padding-left: max(12px, env(safe-area-inset-left, 0px)); font-size: 12px; }
+  #ticker .track { flex: 1; overflow: hidden; position: relative; }
+  #ticker-text { position: absolute; white-space: nowrap; top: 50%; transform: translateY(-50%); left: 100%; }
+  #ticker-text.run { animation: tick linear forwards; }
+  @keyframes tick { from { left: 100%; transform: translate(0, -50%); } to { left: 0; transform: translate(-100%, -50%); } }
+  .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: calc(36px + env(safe-area-inset-bottom, 0px)); }
+
+  @media (max-width: 760px) {
+    #panel { width: auto; right: calc(10px + env(safe-area-inset-right, 0px)); top: auto; bottom: calc(44px + env(safe-area-inset-bottom, 0px)); max-height: 58%; }
+    #panel.closed { display: none; }
+    #panel-toggle { display: block; }
+    #news { left: calc(64px + env(safe-area-inset-left, 0px)); right: calc(52px + env(safe-area-inset-right, 0px)); width: auto; max-height: 40%; }
+  }
+  @media (prefers-reduced-motion: reduce) { #ticker-text.run { animation-duration: 0s !important; left: 8px; transform: translateY(-50%); } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<canvas id="sim" hidden></canvas>
+
+<button id="panel-toggle" aria-controls="panel">⚙ 설정</button>
+<aside id="panel">
+  <h1>🌊 쓰나미 월드 <small>천수방정식 GPU 계산</small></h1>
+
+  <div class="group">
+    <b>장소</b>
+    <div class="row">
+      <select id="preset" class="grow" aria-label="예시 장소">
+        <option value="">예시 장소로 이동…</option>
+        <option value="korea">한반도 · 제주 남동쪽 100 m (영상 재현)</option>
+        <option value="haeundae">부산 해운대 · 건물 단위 · 남쪽에서 30 m</option>
+        <option value="tokyo">도쿄만 · 건물 단위 · 남쪽에서 20 m</option>
+        <option value="tohoku">2011 동일본 대지진형 · 10 m</option>
+        <option value="sumatra">2004 인도양 쓰나미형 · 10 m</option>
+        <option value="chile">칠레 → 태평양 횡단 · 15 m</option>
+        <option value="world">세계 전체 보기</option>
+      </select>
+    </div>
+    <p class="hint">지도를 움직여 원하는 곳을 화면에 담으세요. <b>지금 보이는 화면 전체</b>가 계산 영역이 됩니다. 줌 14 이상이면 건물 하나하나가 물길을 막는 장애물로 들어갑니다.</p>
+  </div>
+
+  <div class="group">
+    <b>파도</b>
+    <div class="row">
+      <label for="height">파고(m)</label>
+      <input id="height" type="number" min="0.1" max="20000" step="any" value="100" class="grow">
+    </div>
+    <input id="height-range" type="range" min="-1" max="4.3" step="0.01" value="2" aria-label="파고 슬라이더 (로그 눈금)">
+    <div class="row">
+      <label for="source">파원</label>
+      <select id="source" class="grow">
+        <option value="point">진원 (해저 융기, 원형으로 퍼짐)</option>
+        <option value="S">남쪽 먼바다에서 밀려오는 파도</option>
+        <option value="N">북쪽 먼바다에서 밀려오는 파도</option>
+        <option value="W">서쪽 먼바다에서 밀려오는 파도</option>
+        <option value="E">동쪽 먼바다에서 밀려오는 파도</option>
+      </select>
+    </div>
+    <div class="row" id="radius-row">
+      <label for="radius">진원 반경(km)</label>
+      <input id="radius" type="number" min="0.05" max="1000" step="any" value="30" class="grow">
+      <button id="pick" title="지도를 눌러 진원 위치를 정합니다">📍 진원 찍기</button>
+    </div>
+    <div class="row" id="period-row" hidden>
+      <label for="period">파 주기(초)</label>
+      <input id="period" type="number" min="5" max="7200" step="any" value="300" class="grow">
+    </div>
+  </div>
+
+  <div class="group">
+    <b>물리</b>
+    <div class="row">
+      <label for="manning">바닥 마찰 n</label>
+      <input id="manning" type="number" min="0" max="0.2" step="0.005" value="0.025" class="grow">
+    </div>
+    <div class="row">
+      <label><input id="coriolis" type="checkbox" checked> 코리올리 힘(지구 자전)</label>
+    </div>
+    <div class="row">
+      <label for="res">격자 해상도</label>
+      <select id="res" class="grow">
+        <option value="512">512 (빠름·모바일)</option>
+        <option value="1024" selected>1024 (기본)</option>
+        <option value="2048">2048 (정밀·고성능 GPU)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="group">
+    <b>실행</b>
+    <div class="row">
+      <button id="start" class="primary grow">▶ 이 화면으로 시뮬레이션 시작</button>
+    </div>
+    <div class="row">
+      <button id="pause">⏸ 일시정지</button>
+      <button id="reset">↺ 다시</button>
+      <select id="speed" class="grow" aria-label="재생 속도">
+        <option value="1">실시간 ×1</option>
+        <option value="10">×10</option>
+        <option value="60" selected>×60 (1초=1분)</option>
+        <option value="300">×300</option>
+        <option value="1800">×1800</option>
+        <option value="0">최대 속도</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="view">표시</label>
+      <select id="view" class="grow">
+        <option value="0">현재 수면·침수</option>
+        <option value="1">최고 파고·최대 침수 깊이</option>
+      </select>
+    </div>
+    <div id="msg" role="status"></div>
+    <div class="stats">
+      <div><span>경과</span><b id="s-time">-</b></div>
+      <div><span>배속</span><b id="s-rate">-</b></div>
+      <div><span>격자</span><b id="s-grid">-</b></div>
+      <div><span>셀 크기</span><b id="s-cell">-</b></div>
+      <div><span>Δt</span><b id="s-dt">-</b></div>
+      <div><span>건물</span><b id="s-bld">-</b></div>
+      <div><span>침수 면적</span><b id="s-area">-</b></div>
+      <div><span>처오름</span><b id="s-run">-</b></div>
+    </div>
+  </div>
+  <p class="hint">지도: © OpenStreetMap 기여자, OpenFreeMap · 지형: AWS Terrain Tiles · 단순화한 모델로 실제 재난 예측이 아닙니다.</p>
+  <p class="hint"><a href="./index.html" style="color:var(--accent)">← 영상 재현</a> · <a href="./lab.html" style="color:var(--accent)">한반도 실험실</a></p>
+</aside>
+
+<section id="news" aria-label="가상 뉴스">
+  <header><span class="live">LIVE</span><b>가상 재난 속보</b><button id="news-toggle" aria-expanded="true">접기</button></header>
+  <p class="empty" id="news-empty">시뮬레이션을 시작하면 쓰나미가 지나가는 곳의 소식이 여기에 올라옵니다.</p>
+  <ol id="news-list"></ol>
+</section>
+
+<div id="ticker" aria-hidden="true"><span class="live">가상 속보</span><div class="track"><span id="ticker-text">시뮬레이션 대기 중 · 지도를 움직여 장소를 고르고 파고를 정하세요</span></div></div>
+
+<script src="../vendor/maplibre/maplibre-gl.js"></script>
+<script type="module" src="./world.js"></script>
+</body>
+</html>
