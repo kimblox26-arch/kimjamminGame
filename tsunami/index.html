@@ -14,6 +14,7 @@
   #controls { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 8px;
     transition: opacity .4s; font: 600 14px "Noto Sans", system-ui, sans-serif; }
   #controls.hide { opacity: 0; pointer-events: none; }
+  #controls button.on { background: #2e9228; border-color: #fff; }
   #controls button, #controls a { color: #fff; background: rgba(15, 25, 45, .75); border: 1px solid rgba(255,255,255,.25);
     border-radius: 20px; padding: 8px 14px; font: inherit; cursor: pointer; text-decoration: none; white-space: nowrap; }
   #loading { position: fixed; inset: 0; display: grid; place-items: center; color: #fff;
@@ -27,6 +28,7 @@
 <div id="controls" class="hide">
   <button id="play">⏸</button>
   <button id="replay">↺ 처음부터</button>
+  <button id="opt" aria-pressed="false" title="느린 기기에서 가볍게 실행">⚡ 최적화</button>
   <a href="./lab.html">🔬 직접 해보기</a>
   <a href="./world.html">🌍 세계 지도</a>
 </div>

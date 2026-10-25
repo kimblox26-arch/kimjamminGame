@@ -72,6 +72,7 @@
   #buttons button:hover { border-color: rgba(255,255,255,.7); }
   #buttons button.primary { background: #ffe01b; color: #111; border-color: #111; font: 900 15px var(--title); letter-spacing: .02em; box-shadow: 0 3px 0 #111; }
   #buttons button.on { background: var(--alert); border-color: #fff; }
+  #buttons #optimize.on { background: #2e9228; border-color: #fff; }
   #buttons select { background: var(--box); border: 1px solid var(--box-line); border-radius: 10px; padding: 0 10px; font-weight: 700; min-height: 42px; }
   #toast { position: fixed; z-index: 5; left: 50%; top: calc(86px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); padding: 8px 14px; max-width: calc(100% - 24px);
     text-align: center; font-weight: 700; transition: opacity .3s; }
@@ -182,6 +183,7 @@
   <div class="field">
     <label for="res">격자 해상도</label>
     <select id="res" class="grow">
+      <option value="256">256 (가장 가벼움)</option>
       <option value="512">512 (빠름·모바일)</option>
       <option value="1024" selected>1024 (기본)</option>
       <option value="2048">2048 (정밀·고성능 GPU)</option>
@@ -247,6 +249,7 @@
     </select>
     <button id="open-places" aria-controls="places" aria-expanded="false">🗺 장소</button>
     <button id="open-settings" aria-controls="settings" aria-expanded="false">⚙</button>
+    <button id="optimize" aria-pressed="false" title="느린 휴대폰·컴퓨터용으로 가볍게 실행">⚡ 최적화</button>
   </div>
 </div>
 

@@ -88,6 +88,10 @@ await new Promise((r) => map.once('load', r));
 const vectorSrc = basemap ? 'omt' : null;
 if (!basemap) msg('도로·건물·지명 지도를 불러오지 못해 지형만 표시합니다. 인터넷 연결을 확인하세요.');
 
+const OPT_KEY = 'tsunami-optimize';
+let optimize = matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency || 8) <= 4 || (navigator.deviceMemory || 8) <= 4;
+try { const v = localStorage.getItem(OPT_KEY); if (v !== null) optimize = v === '1'; } catch { /* 저장소를 못 쓰면 기기 판단대로 */ }
+
 // ───────── 상태 ─────────
 let swe = null;
 try { swe = new ShallowWater($('sim')); } catch (e) { msg(e.message); $('start').disabled = true; }
@@ -530,7 +534,7 @@ function caption(text) {
 const labelCanvas = $('labels'), lctx = labelCanvas.getContext('2d');
 let ldpr = 1;
 function sizeLabels() {
-  ldpr = Math.min(2, devicePixelRatio || 1);
+  ldpr = optimize ? 1 : Math.min(2, devicePixelRatio || 1);
   labelCanvas.width = Math.round(innerWidth * ldpr);
   labelCanvas.height = Math.round(innerHeight * ldpr);
 }
@@ -584,7 +588,7 @@ function drawLabels(now) {
   lctx.lineJoin = 'round';
   const placed = [];
   for (const it of labelItems) {
-    if (placed.length >= 70) break;
+    if (placed.length >= (optimize ? 35 : 70)) break;
     const pt = map.project([it.lon, it.lat]);
     if (pt.x < -60 || pt.y < -30 || pt.x > W + 60 || pt.y > H + 30) continue;
     const elev = it.key ? elevCache.get(it.key) : null;
@@ -624,14 +628,34 @@ function drawLabels(now) {
   }
 }
 
+// ───────── 최적화 모드 ─────────
+// 느린 휴대폰·컴퓨터용: 화면 해상도 1배, 계산 격자 512 이하, 30fps, 한 프레임 계산량 절반, 3D 건물 끔, 라벨 절반.
+// 처음에는 터치 기기나 코어·메모리가 적은 기기면 자동으로 켜고, 직접 바꾸면 그 선택을 기억한다.
+function applyOptimize(announce) {
+  $('optimize').classList.toggle('on', optimize);
+  $('optimize').setAttribute('aria-pressed', String(optimize));
+  map.setPixelRatio(optimize ? 1 : Math.min(2, devicePixelRatio || 1));
+  if (map.getLayer('buildings')) map.setLayoutProperty('buildings', 'visibility', optimize ? 'none' : 'visible');
+  sizeLabels();
+  if (optimize && +$('res').value > 512) $('res').value = '512';
+  if (announce) msg(optimize ? '최적화 모드: 화면 해상도 1배 · 격자 512 이하 · 30fps · 3D 건물 끔' : '최적화 모드를 껐습니다');
+}
+$('optimize').addEventListener('click', () => {
+  optimize = !optimize;
+  try { localStorage.setItem(OPT_KEY, optimize ? '1' : '0'); } catch { /* 저장 못 해도 이번 화면에는 적용 */ }
+  applyOptimize(true);
+});
+applyOptimize(false);
+
 // ───────── 루프 ─────────
-let last = performance.now(), backlog = 0, nextInfo = 0, rateT0 = 0, rateSim0 = 0, simRate = 60, lastSimT = 0;
+let last = performance.now(), backlog = 0, nextInfo = 0, rateT0 = 0, rateSim0 = 0, simRate = 60, lastSimT = 0, odd = false;
 function frame(now) {
+  if (optimize && (odd = !odd)) { requestAnimationFrame(frame); return; }   // 최적화: 두 프레임에 한 번만 계산·그리기
   const fdt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (swe && sim.setupArgs) {
     if (sim.running) {
-      const budget = Math.max(1, Math.floor(2.5e7 / (swe.W * swe.H)));
+      const budget = Math.max(1, Math.floor((optimize ? 1.25e7 : 2.5e7) / (swe.W * swe.H)));
       const speed = +$('speed').value;
       let n = budget;
       if (speed) {
@@ -646,7 +670,7 @@ function frame(now) {
     lastSimT = swe.t;
     swe.render(+$('view').value, Math.max(0.3, swe.amp), Math.max(swe.dt * 5, simRate * 0.9));
     if (now > nextInfo) {
-      nextInfo = now + 500;
+      nextInfo = now + (optimize ? 1000 : 500);
       const s = swe.stats();
       $('s-time').textContent = clock(swe.t);
       $('status').textContent = `${clock(swe.t)}${s.floodMax > 0.005 ? ` · 침수 ${s.floodMax < 10 ? s.floodMax.toFixed(2) : Math.round(s.floodMax).toLocaleString()} km²` : ''}`;

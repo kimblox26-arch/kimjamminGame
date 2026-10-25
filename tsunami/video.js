@@ -246,8 +246,12 @@ function initGL(hi, lo, results) {
 
 // ───────── 화면 배치 ─────────
 let dpr = 1, vw = 0, vh = 0, stage = { x: 0, y: 0, w: 1, h: 1 };
+// 최적화 모드(세계 지도와 같은 설정을 공유): 화면 해상도를 1배로 낮춰 GPU 부담을 줄인다
+const OPT_KEY = 'tsunami-optimize';
+let optimize = matchMedia('(pointer: coarse)').matches || (navigator.hardwareConcurrency || 8) <= 4;
+try { const v = localStorage.getItem(OPT_KEY); if (v !== null) optimize = v === '1'; } catch { /* 저장소를 못 쓰면 기기 판단대로 */ }
 function resize() {
-  dpr = Math.min(2, devicePixelRatio || 1);
+  dpr = optimize ? 1 : Math.min(2, devicePixelRatio || 1);
   vw = innerWidth; vh = innerHeight;
   for (const c of [mapCanvas, overlay]) { c.width = Math.round(vw * dpr); c.height = Math.round(vh * dpr); }
   gl.viewport(0, 0, mapCanvas.width, mapCanvas.height);
@@ -421,6 +425,16 @@ function showControls() {
 }
 $('play').onclick = (e) => { e.stopPropagation(); if (clock >= TOTAL) clock = 0; setPlaying(!playing); showControls(); };
 $('replay').onclick = (e) => { e.stopPropagation(); clock = 0; setPlaying(true); showControls(); };
+const syncOpt = () => { $('opt').classList.toggle('on', optimize); $('opt').setAttribute('aria-pressed', String(optimize)); };
+$('opt').onclick = (e) => {
+  e.stopPropagation();
+  optimize = !optimize;
+  try { localStorage.setItem(OPT_KEY, optimize ? '1' : '0'); } catch { /* 이번 화면에만 적용 */ }
+  syncOpt();
+  resize();
+  showControls();
+};
+syncOpt();
 overlay.style.pointerEvents = 'none';
 mapCanvas.addEventListener('click', () => { if (clock >= TOTAL) clock = 0; setPlaying(!playing); showControls(); });
 addEventListener('pointermove', showControls);
