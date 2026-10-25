@@ -3,7 +3,7 @@
 //  - Terrain : CPU 쿼드트리 LOD 청크 (웹 워커에서 생성 → 충돌 == 화면), 지구 곡률, 대기 원근, 사실적 재질, 물
 import * as THREE from 'three';
 import * as frame from './frame.js';
-import { GH_U, GH_GLSL } from './holes.js';
+import { GH_U, GH_GLSL, CUT_U, CUT_GLSL } from './holes.js';
 
 /* =====================================================================================
  *  지형 코어 — 순수 함수 (import 없음). 메인 스레드와 워커가 같은 소스를 실행해 결과가 비트 단위로 같다.
@@ -1198,7 +1198,7 @@ function makeTerrainMaterial(uniforms) {
   mat.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
   mat.onBeforeCompile = (sh) => {
     for (const k in uniforms) sh.uniforms[k] = uniforms[k];
-    Object.assign(sh.uniforms, GH_U);
+    Object.assign(sh.uniforms, GH_U, CUT_U);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\n' + T_VERT_PARS)
       .replace('#include <beginnormal_vertex>', T_VERT_NORMAL)
@@ -1208,8 +1208,8 @@ function makeTerrainMaterial(uniforms) {
     lights = lights.replace(/getShadow\( directionalShadowMap\[ i \],([^;]*)\) : 1\.0;/, 'mix( 1.0, getShadow( directionalShadowMap[ i ],$1), tShadowAmt ) : 1.0;');
     if (lights.indexOf('tSun') < 0) console.warn('[Terrain] light chunk patch failed');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + T_FRAG_PARS + GH_GLSL)
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uGHN > 0.5 && gHole(vTW)) discard;')
+      .replace('#include <common>', '#include <common>\n' + T_FRAG_PARS + GH_GLSL + CUT_GLSL)
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif ((uGHN > 0.5 && gHole(vTW)) || gCut(vTW)) discard;')
       .replace('#include <color_fragment>', T_FRAG_MATERIAL)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = 0.0;')

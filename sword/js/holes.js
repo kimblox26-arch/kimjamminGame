@@ -26,6 +26,27 @@ bool gHole(vec3 p) {
   return false;
 }`;
 
+// 지하 도로(터널·지하차도·램프)가 지나는 공간: 카메라 주변 마스크 (roads.js 가 채움)
+//  칸마다 (노면 높이, 위 한계) − 기준 높이. 그 사이의 지형 조각은 버림 → 갱구·깎은 길이 열림
+export const CUT_U = {
+  tCut: { value: null },
+  tCutT: { value: new THREE.Vector4(0, 0, 1, 0) },   // 마스크 왼쪽 위 (렌더 x, z), 1/크기, 기준 높이 (렌더 y)
+  tCutOn: { value: 0 },
+};
+export const CUT_GLSL = /* glsl */`
+uniform sampler2D tCut;
+uniform vec4 tCutT;
+uniform float tCutOn;
+bool gCut(vec3 p) {
+  if (tCutOn < 0.5) return false;
+  vec2 uv = (p.xz - tCutT.xy) * tCutT.z;
+  if (uv.x <= 0.0 || uv.y <= 0.0 || uv.x >= 1.0 || uv.y >= 1.0) return false;
+  vec2 c = texture2D(tCut, uv).rg;
+  if (c.r > 20000.0) return false;
+  float y = p.y - tCutT.w;
+  return y > c.r - 0.6 && y < c.g;
+}`;
+
 const MAX = 96;
 const _q = new THREE.Quaternion(), _y = new THREE.Vector3(0, 1, 0), _d = new THREE.Vector3();
 

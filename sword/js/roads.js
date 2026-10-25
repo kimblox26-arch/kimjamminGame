@@ -5,10 +5,13 @@
 //  - 가로등(실제 위치 + 간선도로 30 m 간격), 신호등(실제 위치, 불이 바뀜), 횡단보도(실제 위치), 버스정류장, 벤치, 송전탑, 지하철역 입구(역 이름)
 //  - 가로수: 실제 나무 + 간선도로 보도 9 m 간격 (trees.js 에 넘김)
 //  - 자동차·사람이 다닐 도로 그래프 (노드 = Overture 커넥터)
+//  - 도로 폭은 실제 건물 사이 여유(clr.py 표본)에 맞춰 줄임 → 도로·보도가 건물을 파고들지 않음
+//  - 지하 도로(터널·지하차도·진입 램프): 양끝 지면 높이와 덮개 깊이로 단면을 계산하고, 경사는 10% 이하로 다듬음
+//    터널은 벽·천장·조명·갱문, 램프는 옹벽이 있는 깎은 길. 지형은 그 공간만큼 셰이더에서 파냄 (CUT_U 마스크)
 import * as THREE from 'three';
 import { origin } from './frame.js';
 import { T_BRIDGE } from './city.js';
-import { GH_U, GH_GLSL } from './holes.js';
+import { GH_U, GH_GLSL, CUT_U, CUT_GLSL } from './holes.js';
 
 const TILE = 300;
 const SEG_MAX = 50;                          // 긴 직선은 이 길이로 잘라 둠 (타일 소속·지형 따라가기)
@@ -16,6 +19,10 @@ const SEG_MAX = 50;                          // 긴 직선은 이 길이로 잘�
 const SIDEWALK = [0, 3.0, 3.5, 3.0, 2.5, 1.2, 0, 0.8, 0, 0, 0, 0, 0, 0, 0];
 const ONEWAY = [1, 1, 1, 0, 0, 0, 0, 0, 0];   // 간선은 OSM 에서 대개 상하행이 따로 그려짐
 const CAR = (c) => c <= 8;
+const TUN_H = 6.0;        // 터널 안 높이 (노면 → 천장)
+const GRADE = 0.1;        // 지하 도로 최대 경사
+const COVER = 7.5;        // 지하차도 덮개 (노면 → 지표)
+const CUT_N = 1024, CUT_CELL = 1.5;
 const _v = new THREE.Vector3();
 
 // ───────── 노면 셰이더 ─────────
@@ -121,13 +128,16 @@ const ROAD_FS = /* glsl */`
 }
 `;
 function roadMaterial(offset) {
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -offset });
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -offset, side: THREE.DoubleSide });
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, GH_U);
+    Object.assign(sh.uniforms, GH_U, CUT_U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + ROAD_VS + '\nvarying vec3 vRW;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRd = aRd; vRk = aRk; vRW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + ROAD_FS_PARS + 'float fRoadRough = 0.9;\nvarying vec3 vRW;\n' + GH_GLSL)
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uGHN > 0.5 && gHole(vRW)) discard;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRd = aRd; vRk = aRk; vRW = (modelMatrix * vec4(transformed, 1.0)).xyz;')
+      // 멀리서는 지형 LOD 가 거칠어 도로가 묻힐 수 있음 → 화면 위치는 그대로, 깊이만 카메라 쪽으로 (거리의 0.25%)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+{ float dc = -mvPosition.z; if (dc > 1.0) { mvPosition.xyz *= (dc - (0.03 + dc * 0.0025)) / dc; gl_Position = projectionMatrix * mvPosition; } }`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + ROAD_FS_PARS + 'float fRoadRough = 0.9;\nvarying vec3 vRW;\n' + GH_GLSL + CUT_GLSL)
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif ((uGHN > 0.5 && gHole(vRW)) || (vRk.z < 7.5 && gCut(vRW))) discard;')
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + ROAD_FS)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = fRoadRough;');
   };
@@ -240,9 +250,22 @@ export class Roads {
           gl_FragColor = vec4(c * on, 1.0); }`,
     });
     this.lightGeo = new THREE.CircleGeometry(0.13, 10);
+    // 터널·옹벽 (정점 색), 터널 조명 (스스로 빛남)
+    this.tunMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
+    this.tunLightMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.0, 2.5, 1.7) });
     this.tiles = new Map();
     this._prepare(data);
+    // 지형 파내기 마스크: 카메라 주변 CUT_N² 칸 (칸 CUT_CELL m), 칸마다 (노면 높이, 위 한계) − 기준 높이 (반정밀도)
+    this.cutData = new Uint16Array(CUT_N * CUT_N * 2);
+    this.cutTex = new THREE.DataTexture(this.cutData, CUT_N, CUT_N, THREE.RGFormat, THREE.HalfFloatType);
+    this.cutTex.magFilter = this.cutTex.minFilter = THREE.NearestFilter;
+    this.cutTex.needsUpdate = true;
+    CUT_U.tCut.value = this.cutTex;
+    this.cutAt0 = null;
+    this.cutBoxes = new Set();      // 그 밖의 파낼 곳 (지하철역 계단 등): 회전 상자 { cx, cz, ax, az, hl, hw, y0, y1, top }
   }
+  addCut(c) { this.cutBoxes.add(c); this.cutAt0 = null; }
+  removeCut(c) { this.cutBoxes.delete(c); this.cutAt0 = null; }
 
   /** 신호 위상 (life.js 와 같게): 0 빨강, 1 노랑, 2 초록 — 위상은 신호등마다 */
   signalState(ph, time) { const t = ((time + ph) % 60 + 60) % 60; return t < 27 ? 2 : t < 30 ? 1 : 0; }
@@ -290,6 +313,7 @@ export class Roads {
       if (lv >= 1 && (rail || L.cls[i] <= 7)) return 1;                 // 고가 (건물 안 층 보도는 제외)
       return 0;
     };
+    R.flags0 = R.flags.slice();
     const decks = (L, rail) => {
       const kind = new Int8Array(L.n);
       const byNode = new Map();
@@ -323,6 +347,7 @@ export class Roads {
         ng++;
         this._deckGroup(L, members, abut, rail);
       }
+      if (!rail) this._underground(L, kind, byNode);
     };
     decks(R, false);
     if (D.rails) decks(D.rails, true);
@@ -335,6 +360,18 @@ export class Roads {
     }
     if (D.rails) { const L = D.rails; for (let i = 0; i < L.n; i++) for (let k = L.start[i]; k < L.start[i + 1] - 1; k++) add(tk((L.pts[k * 2] + L.pts[k * 2 + 2]) / 2, (L.pts[k * 2 + 1] + L.pts[k * 2 + 3]) / 2)).rsegs.push(i, k); }
     if (D.points) { const P = D.points; for (let i = 0; i < P.n; i++) add(tk(P.x[i], P.z[i])).pts.push(i); }
+    // 지하 도로 선분 색인 (100 m 칸, 벽까지 포함한 상자가 걸치는 칸 모두)
+    this.uIdx = new Map();
+    for (const [i, U] of this.under) {
+      const w = U.w;
+      for (let k = R.start[i]; k < R.start[i + 1] - 1; k++) {
+        const ax = R.pts[k * 2], az = R.pts[k * 2 + 1], bx = R.pts[k * 2 + 2], bz = R.pts[k * 2 + 3];
+        for (let gz = Math.floor((Math.min(az, bz) - w) / 100); gz <= Math.floor((Math.max(az, bz) + w) / 100); gz++)
+          for (let gx = Math.floor((Math.min(ax, bx) - w) / 100); gx <= Math.floor((Math.max(ax, bx) + w) / 100); gx++) {
+            const key = gx * 100000 + gz; let a = this.uIdx.get(key); if (!a) { a = []; this.uIdx.set(key, a); } a.push(i, k);
+          }
+      }
+    }
     // 6) 그래프: 노드 → 이어진 조각들 (차도)
     this.adj = new Map();
     for (let i = 0; i < R.n; i++) {
@@ -342,6 +379,235 @@ export class Roads {
       for (const nd of [R.na[i], R.nb[i]]) { let a = this.adj.get(nd); if (!a) { a = []; this.adj.set(nd, a); } a.push(i); }
     }
     this.tk = tk;
+  }
+
+  // 지하 도로 묶음마다: 지면과 만나는 끝(갱구) 높이에서 출발, 덮인 곳은 지표 아래 COVER m, 경사 GRADE 이하
+  _underground(L, kind, byNode) {
+    const T = this.game;
+    this.under = new Map();
+    this.portals = [];
+    const grp = new Int32Array(L.n).fill(-1);
+    for (let i0 = 0; i0 < L.n; i0++) {
+      if (kind[i0] !== -1 || grp[i0] >= 0) continue;
+      const members = [], ports = [];
+      const q = [i0]; grp[i0] = i0;
+      while (q.length) {
+        const c = q.pop(); members.push(c);
+        for (const [nd, end] of [[L.na[c], L.start[c]], [L.nb[c], L.start[c + 1] - 1]]) {
+          let open = false;
+          for (const o of byNode.get(nd)) {
+            if (o === c) continue;
+            if (kind[o] === -1) { if (grp[o] < 0) { grp[o] = i0; q.push(o); } } else open = true;
+          }
+          if (open) { const x = L.pts[end * 2], z = L.pts[end * 2 + 1]; ports.push(x, z, T.heightAt(x, z)); }
+        }
+      }
+      // 평지 지하차도: 덮인 구간 위 지형이 갱구보다 별로 높지 않으면, 이어진 지상 차도를 진입 램프로 끌어들여 미리 내려가게 함
+      const covered = members.filter((i) => L.flags0[i] & 2);
+      if (covered.length && ports.length) {
+        let hi = -1e9, pmax = -1e9;
+        for (const i of covered) for (let k = L.start[i]; k < L.start[i + 1]; k++) hi = Math.max(hi, T.heightAt(L.pts[k * 2], L.pts[k * 2 + 1]));
+        for (let j = 0; j < ports.length; j += 3) pmax = Math.max(pmax, ports[j + 2]);
+        if (hi - pmax < 4) {
+          ports.length = 0;
+          const inG = new Set(members);
+          const grow = [];
+          for (const c of members) for (const nd of [L.na[c], L.nb[c]]) for (const o of byNode.get(nd)) if (!inG.has(o) && kind[o] === 0 && L.cls[o] <= 7 && L.level[o] >= 0) grow.push([o, nd, 0]);
+          while (grow.length) {
+            const [o, from, acc] = grow.pop();
+            if (inG.has(o)) continue;
+            inG.add(o); members.push(o); kind[o] = -1; L.flags[o] |= 2; grp[o] = i0;
+            const far = L.na[o] === from ? L.nb[o] : L.na[o];
+            const tot = acc + L.len[o];
+            const nxt = byNode.get(far).filter((q) => q !== o && kind[q] === 0 && L.cls[q] <= 7);
+            // 교차로(가지 2개 이상)에서는 멈춤, 80 m 모이면 멈춤
+            if (tot < 80 && nxt.length === 1) grow.push([nxt[0], far, tot]);
+            else { const e = L.na[o] === far ? L.start[o] : L.start[o + 1] - 1; ports.push(L.pts[e * 2], L.pts[e * 2 + 1], T.heightAt(L.pts[e * 2], L.pts[e * 2 + 1])); }
+          }
+          if (!ports.length) for (const i of covered) { const e = L.start[i]; ports.push(L.pts[e * 2], L.pts[e * 2 + 1], T.heightAt(L.pts[e * 2], L.pts[e * 2 + 1])); }
+        }
+      }
+      const np = ports.length / 3;
+      const Hs = new Map();
+      for (const i of members) {
+        const a = L.start[i], n = L.start[i + 1] - a;
+        const cov = (L.flags0[i] & 2) !== 0;
+        const H = new Float32Array(n);
+        for (let k = 0; k < n; k++) {
+          const x = L.pts[(a + k) * 2], z = L.pts[(a + k) * 2 + 1];
+          let ws = 0, hs = 0, dmin = 1e9;
+          for (let j = 0; j < np; j++) {
+            const d = Math.hypot(x - ports[j * 3], z - ports[j * 3 + 1]);
+            dmin = Math.min(dmin, d);
+            const w = 1 / (d * d + 1); ws += w; hs += ports[j * 3 + 2] * w;
+          }
+          const ter = T.heightAt(x, z);
+          const base = np ? hs / ws : ter - COVER;
+          H[k] = Math.min(base, ter - (cov ? Math.min(COVER, GRADE * dmin) : 0));
+        }
+        Hs.set(i, H);
+      }
+      // 경사 제한 (높은 쪽을 낮춤): 조각 안 앞뒤 + 노드에서 이어진 끝끼리, 바뀌지 않을 때까지
+      for (let it = 0; it < 80; it++) {
+        let ch = false;
+        for (const i of members) {
+          const a = L.start[i], H = Hs.get(i), n = H.length;
+          for (let k = 1; k < n; k++) {
+            const d = Math.hypot(L.pts[(a + k) * 2] - L.pts[(a + k - 1) * 2], L.pts[(a + k) * 2 + 1] - L.pts[(a + k - 1) * 2 + 1]);
+            if (H[k] > H[k - 1] + GRADE * d + 1e-3) { H[k] = H[k - 1] + GRADE * d; ch = true; }
+          }
+          for (let k = n - 2; k >= 0; k--) {
+            const d = Math.hypot(L.pts[(a + k) * 2] - L.pts[(a + k + 1) * 2], L.pts[(a + k) * 2 + 1] - L.pts[(a + k + 1) * 2 + 1]);
+            if (H[k] > H[k + 1] + GRADE * d + 1e-3) { H[k] = H[k + 1] + GRADE * d; ch = true; }
+          }
+        }
+        const byN = new Map();
+        for (const i of members) {
+          const H = Hs.get(i);
+          for (const [nd, v] of [[L.na[i], H[0]], [L.nb[i], H[H.length - 1]]]) byN.set(nd, Math.min(byN.has(nd) ? byN.get(nd) : 1e9, v));
+        }
+        for (const i of members) {
+          const H = Hs.get(i), m0 = byN.get(L.na[i]), m1 = byN.get(L.nb[i]);
+          if (H[0] > m0 + 1e-3) { H[0] = m0; ch = true; }
+          if (H[H.length - 1] > m1 + 1e-3) { H[H.length - 1] = m1; ch = true; }
+        }
+        if (!ch) break;
+      }
+      for (const i of members) {
+        const H = Hs.get(i), cov = (L.flags0[i] & 2) !== 0;
+        this.deck.set(i, H);
+        const hw = L.width[i] / 2;
+        this.under.set(i, { cov, hw, sw: CAR(L.cls[i]) ? 0.9 : 0, w: hw + (CAR(L.cls[i]) ? 0.9 : 0) + 0.35 });
+        // 갱문: 덮인 조각 끝이 지면 쪽(덮이지 않은 조각·지상 도로)과 만나는 곳
+        if (!cov) continue;
+        for (const [nd, k, sgn] of [[L.na[i], L.start[i], 1], [L.nb[i], L.start[i + 1] - 1, -1]]) {
+          let opn = false;
+          for (const o of byNode.get(nd)) if (o !== i && !(kind[o] === -1 && (L.flags0[o] & 2))) opn = true;
+          if (!opn) continue;
+          const k2 = k + sgn;
+          const x = L.pts[k * 2], z = L.pts[k * 2 + 1], dx = L.pts[k2 * 2] - x, dz = L.pts[k2 * 2 + 1] - z, dl = Math.hypot(dx, dz) || 1;
+          // 바깥쪽 방향 (터널 안 → 밖)
+          this.portals.push({ i, x, z, y: sgn > 0 ? H[0] : H[H.length - 1], ox: -dx / dl, oz: -dz / dl, w: hw + 0.9 + 0.35 });
+        }
+      }
+    }
+  }
+
+  // 조각 i 의 거리 s 에서 side (0 왼쪽 = 법선 +, 1 오른쪽) 로 건물까지 여유 (m), 자료 없으면 99
+  avail(i, s, side) {
+    const c = this.roads.clr;
+    if (!c) return 99;
+    const a = c.start[i], m = c.start[i + 1] - a;
+    if (m <= 0) return 99;
+    const f = Math.min(m - 1, Math.max(0, s / c.step)), j = Math.floor(f), j2 = Math.min(m - 1, j + 1);
+    const v = Math.min(c.av[(a + j) * 2 + side], c.av[(a + j2) * 2 + side]);
+    return v === 255 ? 99 : v * 0.25;
+  }
+  // 차도 반폭·보도 폭 (한쪽): 건물까지 여유에 맞춤
+  edges(i, s, side) {
+    const R = this.roads, c = R.cls[i], hw = R.width[i] / 2, sw = SIDEWALK[c] || 0;
+    if (this.deck.has(i) && !this.under.has(i)) return [hw, sw];
+    const U = this.under.get(i);
+    if (U) return [hw, U.sw];
+    const av = this.avail(i, s, side);
+    const rw = Math.max(Math.min(hw, av), CAR(c) ? Math.min(hw, 2.2) : 0);
+    let w2 = Math.min(sw, Math.max(0, av - rw));
+    if (w2 < 0.7) w2 = 0;
+    return [rw, w2];
+  }
+  // 사람이 걸을 가로 위치 (조각 i, 거리 s, side ±1)
+  walkOff(i, s, side) {
+    const R = this.roads, c = R.cls[i];
+    if (c >= 9) return side * Math.min(R.width[i] * 0.25, 0.9);
+    const [rw, sw] = this.edges(i, s, side > 0 ? 0 : 1);
+    return side * (sw >= 0.7 ? rw + sw * 0.55 : Math.max(0.5, rw - 0.6));
+  }
+
+  /** 절대 (x,z) 에서 높이 y 근처의 지하 도로 공간: { y 노면, top 천장(열린 길은 ∞), lat 가로, w 벽, cx, cz, nx, nz } 또는 null */
+  cutAt(x, z, y) {
+    const list = this.uIdx && this.uIdx.get(Math.floor(x / 100) * 100000 + Math.floor(z / 100));
+    if (!list) return null;
+    const R = this.roads, O = this._cutO || (this._cutO = {});
+    let best = -1, by = -1e9;
+    for (let q = 0; q < list.length; q += 2) {
+      const i = list[q], k = list[q + 1], U = this.under.get(i);
+      const ax = R.pts[k * 2], az = R.pts[k * 2 + 1], bx = R.pts[k * 2 + 2], bz = R.pts[k * 2 + 3];
+      const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1;
+      const t = ((x - ax) * dx + (z - az) * dz) / l2;
+      if (t < -0.02 || t > 1.02) continue;
+      const tc = Math.max(0, Math.min(1, t)), l = Math.sqrt(l2);
+      const lat = ((x - ax) * -dz + (z - az) * dx) / l;
+      if (Math.abs(lat) > U.w) continue;
+      const H = this.deck.get(i), kk = k - R.start[i];
+      const yr = H[kk] + (H[kk + 1] - H[kk]) * tc;
+      const top = U.cov ? yr + TUN_H : Infinity;
+      if (y < yr - 2 || y > top + 0.5) continue;
+      if (yr > by) { by = yr; best = q; O.y = yr + 0.04; O.top = top; O.lat = lat; O.w = U.w; O.cx = ax + dx * tc; O.cz = az + dz * tc; O.nx = -dz / l; O.nz = dx / l; O.cov = U.cov; }
+    }
+    return best >= 0 ? O : null;
+  }
+
+  // 지형 파내기 마스크 갱신 (카메라가 가운데서 300 m 넘게 벗어나면 다시 그림)
+  _cutMask(camAbs) {
+    const half = CUT_N * CUT_CELL / 2, snap = 192;
+    const cx = Math.round(camAbs.x / snap) * snap, cz = Math.round(camAbs.z / snap) * snap;
+    const C = this.cutAt0;
+    if (!C || Math.abs(C.cx - cx) > 300 || Math.abs(C.cz - cz) > 300) {
+      const x0 = cx - half, z0 = cz - half;
+      const base = Math.round(this.game.heightAt(cx, cz));
+      const D = this.cutData, EMPTY = THREE.DataUtils.toHalfFloat(30000);
+      D.fill(EMPTY);
+      const Rv = new Float32Array(CUT_N * CUT_N).fill(30000), Tv = new Float32Array(CUT_N * CUT_N).fill(-30000);
+      const R = this.roads, seen = new Set();
+      for (let gz = Math.floor(z0 / 100); gz <= Math.floor((z0 + 2 * half) / 100); gz++)
+        for (let gx = Math.floor(x0 / 100); gx <= Math.floor((x0 + 2 * half) / 100); gx++) {
+          const list = this.uIdx.get(gx * 100000 + gz);
+          if (!list) continue;
+          for (let q = 0; q < list.length; q += 2) {
+            const i = list[q], k = list[q + 1], key = k;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const U = this.under.get(i), H = this.deck.get(i), kk = k - R.start[i];
+            const ax = R.pts[k * 2], az = R.pts[k * 2 + 1], bx = R.pts[k * 2 + 2], bz = R.pts[k * 2 + 3];
+            const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz || 1, l = Math.sqrt(l2);
+            const w = Math.max(0.8, U.w - 0.9);     // 벽 안쪽까지만 (울퉁불퉁한 칸 경계가 벽 뒤로 새지 않게)
+            const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - w - x0) / CUT_CELL)), i1 = Math.min(CUT_N - 1, Math.ceil((Math.max(ax, bx) + w - x0) / CUT_CELL));
+            const j0 = Math.max(0, Math.floor((Math.min(az, bz) - w - z0) / CUT_CELL)), j1 = Math.min(CUT_N - 1, Math.ceil((Math.max(az, bz) + w - z0) / CUT_CELL));
+            for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
+              const px = x0 + (ii + 0.5) * CUT_CELL, pz = z0 + (j + 0.5) * CUT_CELL;
+              const t = ((px - ax) * dx + (pz - az) * dz) / l2;
+              if (t < -0.02 || t > 1.02) continue;
+              const lat = Math.abs(((px - ax) * -dz + (pz - az) * dx) / l);
+              if (lat > w) continue;
+              const tc = Math.max(0, Math.min(1, t));
+              const yr = H[kk] + (H[kk + 1] - H[kk]) * tc - base;
+              const top = U.cov ? yr + TUN_H + 0.2 : 30000;
+              const o = j * CUT_N + ii;
+              if (yr < Rv[o]) Rv[o] = yr;
+              if (top > Tv[o]) Tv[o] = top;
+            }
+          }
+        }
+      for (const c of this.cutBoxes) {
+        const r = c.hl + c.hw;
+        const i0 = Math.max(0, Math.floor((c.cx - r - x0) / CUT_CELL)), i1 = Math.min(CUT_N - 1, Math.ceil((c.cx + r - x0) / CUT_CELL));
+        const j0 = Math.max(0, Math.floor((c.cz - r - z0) / CUT_CELL)), j1 = Math.min(CUT_N - 1, Math.ceil((c.cz + r - z0) / CUT_CELL));
+        for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
+          const px = x0 + (ii + 0.5) * CUT_CELL - c.cx, pz = z0 + (j + 0.5) * CUT_CELL - c.cz;
+          const a = px * c.ax + pz * c.az, b = px * -c.az + pz * c.ax;
+          if (Math.abs(a) > c.hl || Math.abs(b) > c.hw) continue;
+          const yr = c.y0 + (c.y1 - c.y0) * (a / c.hl * 0.5 + 0.5) - base, o = j * CUT_N + ii;
+          if (yr < Rv[o]) Rv[o] = yr;
+          Tv[o] = Math.max(Tv[o], Math.min(c.top - base, 30000));
+        }
+      }
+      for (let o = 0; o < CUT_N * CUT_N; o++) if (Rv[o] < 29999) { D[o * 2] = THREE.DataUtils.toHalfFloat(Rv[o]); D[o * 2 + 1] = THREE.DataUtils.toHalfFloat(Math.min(Tv[o], 30000)); }
+      this.cutTex.needsUpdate = true;
+      this.cutAt0 = { cx, cz, x0, z0, base };
+    }
+    const M = this.cutAt0;
+    CUT_U.tCutT.value.set(M.x0 - origin.x, M.z0 - origin.z, 1 / (CUT_N * CUT_CELL), M.base - origin.y);
+    CUT_U.tCutOn.value = 1;
   }
 
   _deckGroup(L, members, abut, rail) {
@@ -419,7 +685,8 @@ export class Roads {
     this.sigUni.uTime.value = time;
     const show = camAbs.y - this.game.heightAt(camAbs.x, camAbs.z) < 3500;
     this.group.visible = show;
-    if (!show) return;
+    if (!show) { CUT_U.tCutOn.value = 0; return; }
+    this._cutMask(camAbs);
     const R = this.R;
     const cx = Math.floor(camAbs.x / TILE), cz = Math.floor(camAbs.z / TILE), r = Math.ceil(R / TILE);
     // 필요 없는 타일 버림
@@ -453,10 +720,25 @@ export class Roads {
     if (!E) return t;
     const R = this.roads;
     const B = [this._buf(), this._buf(), this._buf()];       // 0 보도·보행로, 1 생활도로, 2 간선
+    const W = { p: [], c: [], idx: [] }, Lt = { p: [], idx: [] };   // 터널·옹벽, 터널 조명
+    const wallQuad = (A, C, offA, offC, yA0, yA1, yC0, yC1, col) => {
+      const b = W.p.length / 3;
+      W.p.push(A.x + A.nx * offA - ox, yA0, A.z + A.nz * offA - oz, A.x + A.nx * offA - ox, yA1, A.z + A.nz * offA - oz,
+        C.x + C.nx * offC - ox, yC0, C.z + C.nz * offC - oz, C.x + C.nx * offC - ox, yC1, C.z + C.nz * offC - oz);
+      for (let q = 0; q < 4; q++) W.c.push(col[0], col[1], col[2]);
+      W.idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+    };
+    const flatQuad = (buf, A, C, a0, a1, yA, yC, col) => {
+      const b = buf.p.length / 3;
+      buf.p.push(A.x + A.nx * a0 - ox, yA, A.z + A.nz * a0 - oz, A.x + A.nx * a1 - ox, yA, A.z + A.nz * a1 - oz,
+        C.x + C.nx * a0 - ox, yC, C.z + C.nz * a0 - oz, C.x + C.nx * a1 - ox, yC, C.z + C.nz * a1 - oz);
+      if (col) for (let q = 0; q < 4; q++) buf.c.push(col[0], col[1], col[2]);
+      buf.idx.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+    };
     const ribbon = (L, i, k, rail) => {
       const cls = rail ? 100 + L.cls[i] : L.cls[i];
       const hw = rail ? 1.6 : L.width[i] / 2;
-      const sw = rail ? 0 : SIDEWALK[L.cls[i]] || 0;
+      const U = rail ? null : this.under.get(i);
       const a = L.start[i], b = L.start[i + 1];
       const P = L.pts;
       // 이 선분 (k → k+1) 의 양 끝 법선 (마이터)
@@ -484,36 +766,67 @@ export class Roads {
       const Ltot = L.len[i];
       const da = rail ? 1 : this.deg[L.na[i]], db = rail ? 1 : this.deg[L.nb[i]];
       let e0 = 0, e1 = 0;
-      if (k === a && da > 1) e0 = Math.min(hw * 0.5, 3);
-      if (k + 1 === b - 1 && db > 1) e1 = Math.min(hw * 0.5, 3);
+      if (k === a && da > 1 && !U) e0 = Math.min(hw * 0.5, 3);
+      if (k + 1 === b - 1 && db > 1 && !U) e1 = Math.min(hw * 0.5, 3);
       x0 -= dx / dl * e0; z0 -= dz / dl * e0; x1 += dx / dl * e1; z1 += dz / dl * e1;
       const H0 = this._y(L, i, k, x0, z0, hw, rail), H1 = this._y(L, i, k + 1, x1, z1, hw, rail);
       const deck = this.deck.has((rail ? 1e7 : 0) + i);
-      const fl = (da > 2 ? 1 : 0) | (db > 2 ? 2 : 0) | (deck ? 4 : 0);
+      const fl = (da > 2 ? 1 : 0) | (db > 2 ? 2 : 0) | (deck && !U ? 4 : 0) | (U ? 8 : 0);
       const lanes = Math.max(1, Math.round(L.width[i] / 3.3));
-      const steps = Math.max(1, Math.ceil((dl + e0 + e1) / (deck ? 25 : 6)));
+      const steps = Math.max(1, Math.ceil((dl + e0 + e1) / (deck && !U ? 25 : 6)));
       const layer = rail ? 1 : cls >= 9 ? 0 : cls >= 5 ? 1 : 2;
-      const info = [cls, sw, fl, lanes];
       let prev = null;
       for (let st = 0; st <= steps; st++) {
         const u = st / steps;
         const x = x0 + (x1 - x0) * u, z = z0 + (z1 - z0) * u;
-        let nx = n0x + (n1x - n0x) * u, nz = n0z + (n1z - n0z) * u;
+        const nx = n0x + (n1x - n0x) * u, nz = n0z + (n1z - n0z) * u;
+        const s = s0 - e0 + (dl + e0 + e1) * u;
+        // 건물까지 여유에 맞춘 양쪽 차도·보도 폭
+        let rl = hw, rr = hw, wl = 0, wr = 0;
+        if (!rail) { [rl, wl] = this.edges(i, s, 0); [rr, wr] = this.edges(i, s, 1); }
         let y;
         if (deck) y = H0 + (H1 - H0) * u;
         else {
-          // 가로 경사: 가운데와 양 끝 중 높은 곳에 맞춤 (지형이 뚫고 나오지 않게)
+          // 가로 경사: 가운데와 양 끝(보도 끝까지) 중 높은 곳에 맞춤 (지형이 뚫고 나오지 않게)
           const gh = this.game.heightAt;
-          y = Math.max(gh(x, z), gh(x + nx * hw, z + nz * hw), gh(x - nx * hw, z - nz * hw)) + 0.07;
+          y = Math.max(gh(x, z), gh(x + nx * (rl + wl), z + nz * (rl + wl)), gh(x - nx * (rr + wr), z - nz * (rr + wr))) + 0.07;
         }
-        const s = s0 - e0 + (dl + e0 + e1) * u;
-        const cur = { x, z, y, nx, nz, s };
+        const cur = { x, z, y, nx, nz, s, rl, rr, wl, wr };
         if (prev) {
-          this._quad(B[layer], ox, oz, prev, cur, -hw, hw, 0, Ltot, hw, info);
-          if (sw > 0) {
-            const bw = B[0];
-            this._quad(bw, ox, oz, prev, cur, hw, hw + sw, 0.15, Ltot, hw, info);
-            this._quad(bw, ox, oz, prev, cur, -hw - sw, -hw, 0.15, Ltot, hw, info);
+          const info = [cls, Math.max(prev.wl, prev.wr, cur.wl, cur.wr), fl, lanes];
+          if (prev.rl + prev.rr > 0.3 || cur.rl + cur.rr > 0.3) this._quad(B[layer], ox, oz, prev, cur, -prev.rr, prev.rl, -cur.rr, cur.rl, 0, Ltot, hw, info);
+          const bw = B[0];
+          // 보도: 셰이더가 '차도 반폭' 바깥을 보도로 칠하므로 반폭 자리에 그쪽 차도 끝을 넘김
+          if (prev.wl > 0 && cur.wl > 0) this._quad(bw, ox, oz, prev, cur, prev.rl, prev.rl + prev.wl, cur.rl, cur.rl + cur.wl, 0.15, Ltot, Math.min(prev.rl, cur.rl), info);
+          if (prev.wr > 0 && cur.wr > 0) this._quad(bw, ox, oz, prev, cur, -prev.rr - prev.wr, -prev.rr, -cur.rr - cur.wr, -cur.rr, 0.15, Ltot, Math.min(prev.rr, cur.rr), info);
+          // 비탈: 도로·보도 바깥 끝이 땅보다 뜨면 옆면(옹벽)으로 땅까지 막음
+          if (!deck && !rail) {
+            const gh = this.game.heightAt;
+            for (const sd of [1, -1]) {
+              const oA = sd > 0 ? prev.rl + prev.wl : -(prev.rr + prev.wr), oC = sd > 0 ? cur.rl + cur.wl : -(cur.rr + cur.wr);
+              const lift = (sd > 0 ? prev.wl : prev.wr) > 0 ? 0.15 : 0;
+              const gA = gh(prev.x + prev.nx * oA, prev.z + prev.nz * oA), gC = gh(cur.x + cur.nx * oC, cur.z + cur.nz * oC);
+              if (prev.y + lift - gA > 0.15 || cur.y + lift - gC > 0.15) this._skirt(bw, ox, oz, prev, cur, oA, oC, lift, gA - 0.3, gC - 0.3, Ltot, Math.abs(oA) - 0.3, info);
+            }
+          }
+          if (U) {
+            // 지하 도로: 양옆 벽 (터널은 천장까지, 깎은 길은 지표까지 옹벽) + 천장 + 조명
+            const w = U.w, gh = this.game.heightAt;
+            for (const sd of [-1, 1]) {
+              if (U.cov) {
+                wallQuad(prev, cur, sd * w, sd * w, prev.y - 0.1, prev.y + 2.6, cur.y - 0.1, cur.y + 2.6, [0.62, 0.6, 0.55]);
+                wallQuad(prev, cur, sd * w, sd * w, prev.y + 2.6, prev.y + TUN_H, cur.y + 2.6, cur.y + TUN_H, [0.3, 0.3, 0.31]);
+              } else {
+                const tA = gh(prev.x + prev.nx * sd * w, prev.z + prev.nz * sd * w) + 0.25, tC = gh(cur.x + cur.nx * sd * w, cur.z + cur.nz * sd * w) + 0.25;
+                if (tA - prev.y > 0.35 || tC - cur.y > 0.35) wallQuad(prev, cur, sd * w, sd * w, prev.y - 0.1, Math.max(tA, prev.y + 0.3), cur.y - 0.1, Math.max(tC, cur.y + 0.3), [0.45, 0.44, 0.41]);
+              }
+            }
+            if (U.cov) {
+              flatQuad(W, prev, cur, -w, w, prev.y + TUN_H, cur.y + TUN_H, [0.18, 0.18, 0.19]);
+              // 조명: 천장 양쪽 줄 (6 m 마다 2 m)
+              const m = { x: prev.x + (cur.x - prev.x) * 0.33, z: prev.z + (cur.z - prev.z) * 0.33, nx: prev.nx, nz: prev.nz };
+              for (const sd of [-1, 1]) flatQuad(Lt, prev, m, sd * w * 0.62 - 0.18, sd * w * 0.62 + 0.18, prev.y + TUN_H - 0.08, prev.y + (cur.y - prev.y) * 0.33 + TUN_H - 0.08, null);
+            }
           }
         }
         prev = cur;
@@ -521,7 +834,7 @@ export class Roads {
     };
     for (let q = 0; q < E.segs.length; q += 2) {
       const i = E.segs[q], k = E.segs[q + 1];
-      if (R.flags[i] & 2) continue;
+      if ((R.flags[i] & 2) && !this.under.has(i)) continue;
       ribbon(R, i, k, false);
     }
     const RL = this.rails;
@@ -529,6 +842,21 @@ export class Roads {
       const i = E.rsegs[q], k = E.rsegs[q + 1];
       if (RL.flags[i] & 2) continue;
       ribbon(RL, i, k, true);
+    }
+    // 갱문: 터널 입구 위·옆을 덮는 콘크리트 벽 (지표까지)
+    for (const Pt of this.portals) {
+      if (Math.floor(Pt.x / TILE) !== ix || Math.floor(Pt.z / TILE) !== iz) continue;
+      const gx = this.game.heightAt(Pt.x + Pt.ox * 3, Pt.z + Pt.oz * 3);
+      const top = Math.max(gx + 1.5, Pt.y + TUN_H + 2.5), wide = Pt.w + 5;
+      const nx = -Pt.oz, nz = Pt.ox;
+      const A = { x: Pt.x - Pt.ox * 0.4, z: Pt.z - Pt.oz * 0.4, nx, nz }, C = { x: Pt.x + Pt.ox * 0.6, z: Pt.z + Pt.oz * 0.6, nx, nz };
+      // 앞면 (입구 위 + 양옆), 윗면
+      for (const [a0, a1, y0] of [[-wide, wide, Pt.y + TUN_H], [-wide, -Pt.w, Pt.y - 0.2], [Pt.w, wide, Pt.y - 0.2]]) {
+        const b = W.p.length / 3;
+        for (const [aa, yy] of [[a0, y0], [a1, y0], [a0, top], [a1, top]]) { W.p.push(C.x + nx * aa - ox, yy, C.z + nz * aa - oz); W.c.push(0.55, 0.54, 0.5); }
+        W.idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+      }
+      flatQuad(W, A, C, -wide, wide, top, top, [0.5, 0.49, 0.46]);
     }
     for (let l = 0; l < 3; l++) {
       const geo = this._geo(B[l]);
@@ -538,19 +866,44 @@ export class Roads {
       m.renderOrder = -30 + l;
       g.add(m);
     }
+    if (W.idx.length) {
+      const g2 = new THREE.BufferGeometry();
+      g2.setAttribute('position', new THREE.Float32BufferAttribute(W.p, 3));
+      g2.setAttribute('color', new THREE.Float32BufferAttribute(W.c, 3));
+      g2.setIndex(W.idx);
+      g2.computeVertexNormals();
+      const m = new THREE.Mesh(g2, this.tunMat); m.receiveShadow = true; m.castShadow = true;
+      g.add(m);
+    }
+    if (Lt.idx.length) {
+      const g3 = new THREE.BufferGeometry();
+      g3.setAttribute('position', new THREE.Float32BufferAttribute(Lt.p, 3));
+      g3.setIndex(Lt.idx);
+      g.add(new THREE.Mesh(g3, this.tunLightMat));
+    }
     this._props(t, E);
     return t;
   }
 
   _buf() { return { p: [], n: [], rd: [], rk: [], idx: [] }; }
-  _quad(b, ox, oz, A, C, a0, a1, lift, Ltot, hw, info) {
+  _quad(b, ox, oz, A, C, a0, a1, c0, c1, lift, Ltot, hw, info) {
     const base = b.p.length / 3;
-    for (const [P, ac] of [[A, a0], [A, a1], [C, a0], [C, a1]]) {
+    for (const [P, ac] of [[A, a0], [A, a1], [C, c0], [C, c1]]) {
       b.p.push(P.x + P.nx * ac - ox, P.y + lift, P.z + P.nz * ac - oz);
       b.rd.push(ac, P.s, Ltot, hw);
       b.rk.push(info[0], info[1], info[2], info[3]);
     }
     b.idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+  }
+  // 세로 옆면 (리본 끝에서 땅까지)
+  _skirt(b, ox, oz, A, C, oA, oC, lift, yA, yC, Ltot, hw, info) {
+    const base = b.p.length / 3;
+    for (const [P, ac, y] of [[A, oA, A.y + lift], [A, oA, Math.min(yA, A.y)], [C, oC, C.y + lift], [C, oC, Math.min(yC, C.y)]]) {
+      b.p.push(P.x + P.nx * ac - ox, y, P.z + P.nz * ac - oz);
+      b.rd.push(ac, P.s, Ltot, hw);
+      b.rk.push(info[0], Math.max(info[1], 1), info[2], info[3]);
+    }
+    b.idx.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
   }
   _geo(b) {
     if (!b.idx.length) return null;
@@ -562,7 +915,7 @@ export class Roads {
     g.computeVertexNormals();
     // 아래를 향한 법선은 위로 (리본 감김 방향 섞임 대비)
     const n = g.attributes.normal;
-    for (let i = 0; i < n.count; i++) if (n.getY(i) < 0) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
+    for (let i = 0; i < n.count; i++) if (n.getY(i) < -0.2) n.setXYZ(i, -n.getX(i), -n.getY(i), -n.getZ(i));
     return g;
   }
 
@@ -610,7 +963,11 @@ export class Roads {
         const H = this.deck.get(i);
         const y = H ? H[k - R.start[i]] + (H[k + 1 - R.start[i]] - H[k - R.start[i]]) * (s / dl) : this.game.heightAt(x, z);
         for (const side of c <= 1 ? [1] : [-1, 1]) {
-          const px = x - dz * off * side, pz = z + dx * off * side;
+          // 보도가 있는 쪽만, 차도 끝에서 0.6 m (건물 때문에 좁으면 생략)
+          const [rw, sw] = this.edges(i, s0 + s, side > 0 ? 0 : 1);
+          if (!this.deck.has(i) && sw < 1.2 && c > 1) continue;
+          const o2 = this.deck.has(i) ? off : rw + Math.min(0.6, Math.max(0.3, sw - 0.4));
+          const px = x - dz * o2 * side, pz = z + dx * o2 * side;
           put('lamp', px, pz, y, Math.atan2(dz * side, -dx * side) + Math.PI / 2);
         }
       }
@@ -628,7 +985,6 @@ export class Roads {
       else if (k === 4) put('bench', x, z, y, face);
       else if (k === 5) put('tower', x, z, y, (P.x[pi] * 0.013) % 6.28);
       else if (k === 6 || k === 7) {
-        put('station', x, z, y, face);
         const nm = P.names[P.nameIx[pi]];
         if (nm) { const s = label(nm + (k === 6 ? '역' === nm.slice(-1) ? '' : '역' : '')); s.position.set(x - t.ox, y + 6.5, z - t.oz); t.group.add(s); }
       } else if (k === 2 && nr) {
@@ -727,7 +1083,11 @@ export class Roads {
           if (sa < 14 || R.len[i] - sa < 14) continue;
           const x = ax + dx * s, z = az + dz * s;
           for (const side of [-1, 1]) {
-            const px = x - dz * off * side, pz = z + dx * off * side;
+            // 보도 폭이 2 m 넘는 쪽에만
+            const [rw, sw] = this.edges(i, sa, side > 0 ? 0 : 1);
+            if (sw < 2) continue;
+            const o2 = rw + Math.max(1.1, sw * 0.45);
+            const px = x - dz * o2 * side, pz = z + dx * o2 * side;
             if (inside(px, pz)) out.push(px, pz, 7.5 + ((px * 0.71 + pz * 0.37) % 1 + 1) % 1 * 4, 1);
           }
         }

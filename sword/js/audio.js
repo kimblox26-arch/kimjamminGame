@@ -3,6 +3,8 @@
 //  원샷: jump, takeoff, land, heroLand, roll, flip, boost, sonicBoom, brake, step, dash
 //  체인: sfx/amb → pre → DynamicsCompressor → 소프트 클리퍼 → master(음소거) → destination  (+ 공용 야외 리버브 센드)
 //  AudioContext 가 없거나 막혀 있어도 절대 throw 하지 않는다.
+//  도시 소리 (차·전동차·사람·경적·충돌·역)는 cityaudio.js
+import { CityAudio } from './cityaudio.js';
 
 const MAX_VOICES = 16;          // 동시 원샷 보이스 상한
 const UPDATE_DT = 1 / 60;       // 연속 파라미터 갱신 주기 (오토메이션 이벤트 수 제한)
@@ -411,6 +413,7 @@ export class GameAudio {
     this.revIn.connect(rev); rev.connect(revOut); revOut.connect(pre);
 
     this._buildLayers();
+    try { this.city = new CityAudio(this); } catch (e) { console.warn('[audio] 도시 소리 없음', e); }
   }
 
   _buildLayers() {

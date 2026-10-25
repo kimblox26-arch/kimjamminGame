@@ -122,6 +122,7 @@ export class Drive {
       V.h += yawRate * dt;
       // 너무 급하게 꺾으면 전복
       const lat = Math.abs(V.sp * yawRate);
+      this.thr = Math.max(0, thr); this.skid = clamp((lat / latMax - 0.75) * 3, 0, 1);
       if (lat > (o.kind === 'bus' ? 7.5 : 12.5) && Math.abs(V.sp) > 25) { this._crash(V, 'roll'); return; }
     }
     const fx = Math.sin(V.h), fz = Math.cos(V.h);

@@ -6,7 +6,7 @@
 //  - 지하철·기차: 철도 그래프를 달리고 지하 구간에선 땅속으로 (보이지 않음), 지상·고가·다리에선 보임
 import * as THREE from 'three';
 import { origin } from './frame.js';
-import { boxes } from './life.js';
+import { personGeo, sedanGeo, suvGeo, taxiGeo, busGeo, railCarGeo, vehicleMat } from './models.js';
 
 const G = 9.81;
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -18,21 +18,7 @@ const _e = new THREE.Euler(), Y = new THREE.Vector3(0, 1, 0), _v = new THREE.Vec
 const VMAX = [25, 22, 16, 14, 11, 8, 5, 8, 5];
 const SIDE = [0, 3.0, 3.5, 3.0, 2.5, 1.2, 0, 0.8, 0, 0, 0, 0, 0, 0, 0];
 
-// ───────── 사람: 몸 + 얼굴 (표정은 셰이더) ─────────
-//  part: 0 몸통, 1 머리, 2/3 다리, 4/5 팔, 6 머리카락, 7/8 신발 (다리와 함께), 9/10 손 (팔과 함께), 11 가방
-function personGeo() {
-  return boxes([
-    [0.34, 0.52, 0.2, 0, 1.12, 0, 0],
-    [0.08, 0.06, 0.08, 0, 1.4, 0, 1],
-    [0.19, 0.22, 0.2, 0, 1.55, 0.005, 1],
-    [0.2, 0.07, 0.21, 0, 1.68, -0.005, 6], [0.2, 0.16, 0.05, 0, 1.6, -0.09, 6],
-    [0.13, 0.8, 0.15, -0.09, 0.44, 0, 2], [0.13, 0.8, 0.15, 0.09, 0.44, 0, 3],
-    [0.12, 0.08, 0.24, -0.09, 0.04, 0.03, 7], [0.12, 0.08, 0.24, 0.09, 0.04, 0.03, 8],
-    [0.09, 0.58, 0.11, -0.225, 1.08, 0, 4], [0.09, 0.58, 0.11, 0.225, 1.08, 0, 5],
-    [0.08, 0.1, 0.09, -0.225, 0.75, 0, 9], [0.08, 0.1, 0.09, 0.225, 0.75, 0, 10],
-    [0.26, 0.32, 0.1, 0, 1.15, -0.15, 11],
-  ]);
-}
+// ───────── 사람: 몸 + 얼굴 (표정은 셰이더), 모형은 models.js ─────────
 const P_COMMON = /* glsl */`
 attribute float aPart;
 attribute vec4 iAnim;     // 걸음 위상, 팔다리 흔들림, 팔 (0 보통, 1 만세·도망, 2 사진, 3 주먹), 시드
@@ -74,18 +60,24 @@ function personMat() {
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 vObj = position; vObjN = normal; vPart = aPart; vMood = iMood;
 { float pv; float a = limbAng(pv); transformed.y -= pv; transformed = rotX(transformed, a); transformed.y += pv; }
+// 사람마다: 긴 머리 / 치마 / 가방 있음·없음
+bool longHair = fract(iAnim.w * 3.71) < 0.4;
+bool skirt = fract(iAnim.w * 9.13) < 0.22;
+bool hasBag = fract(iAnim.w * 5.3) < 0.55;
+if ((aPart > 11.5 && aPart < 12.5 && !longHair) || (aPart > 12.5 && !skirt) || (aPart > 10.5 && aPart < 11.5 && !hasBag)) transformed = vec3(0.0, 1.0, 0.0);
 float sk = fract(iAnim.w * 7.31);
 vec3 skin = mix(vec3(0.78, 0.58, 0.45), vec3(0.5, 0.33, 0.22), sk * sk);
 vec3 hair = mix(vec3(0.025, 0.02, 0.018), vec3(0.3, 0.18, 0.08), step(0.82, fract(iAnim.w * 13.7)));
 vec3 bag = fract(iAnim.w * 5.3) < 0.5 ? vec3(0.05) : iPants * 0.7;
-vPC = aPart < 0.5 ? iShirt : aPart < 1.5 ? skin : aPart < 3.5 ? iPants : aPart < 5.5 ? iShirt : aPart < 6.5 ? hair : aPart < 8.5 ? vec3(0.04) : aPart < 10.5 ? skin : bag;`);
+vec3 legs = skirt ? mix(skin, vec3(0.06), 0.45) : iPants;
+vPC = aPart < 0.5 ? iShirt : aPart < 1.5 ? skin : aPart < 2.25 ? legs : aPart < 2.75 ? iPants : aPart < 3.5 ? legs : aPart < 5.5 ? iShirt : aPart < 6.5 ? hair : aPart < 8.5 ? vec3(0.04) : aPart < 10.5 ? skin : aPart < 11.5 ? bag : aPart < 12.5 ? hair : iPants;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPC; varying vec3 vObj; varying vec3 vObjN; varying float vPart; varying vec4 vMood;')
       .replace('#include <color_fragment>', `#include <color_fragment>
 diffuseColor.rgb = vPC;
 // 얼굴 (머리 앞면): 눈·눈썹·입 — 기쁨은 웃는 입, 두려움·놀람은 벌린 입, 화남은 찌푸린 눈썹
-if (vPart > 0.5 && vPart < 1.5 && vObjN.z > 0.5 && vObj.y > 1.44) {
-  vec2 f = vec2(vObj.x, vObj.y - 1.55);
+if (vPart > 0.5 && vPart < 1.5 && vObjN.z > 0.55 && vObj.y > 1.47) {
+  vec2 f = vec2(vObj.x, vObj.y - 1.56);
   float joy = vMood.x, fear = vMood.y, ang = vMood.z, sur = vMood.w;
   float eyeR = 0.014 + 0.008 * max(fear, sur);
   float eye = step(length(vec2(abs(f.x) - 0.045, f.y - 0.02)), eyeR);
@@ -102,35 +94,18 @@ if (vPart > 0.5 && vPart < 1.5 && vObjN.z > 0.5 && vObj.y > 1.44) {
   return m;
 }
 
-// ───────── 차 ─────────
-function sedanGeo() {
-  return boxes([
-    [1.8, 0.72, 4.5, 0, 0.6, 0, 0, 0xffffff], [1.64, 0.58, 2.4, 0, 1.25, -0.2, 0, 0x1d242b], [1.66, 0.07, 2.2, 0, 1.57, -0.25, 0, 0xffffff],
-    [0.26, 0.62, 0.62, -0.83, 0.31, 1.4, 0, 0x101010], [0.26, 0.62, 0.62, 0.83, 0.31, 1.4, 0, 0x101010],
-    [0.26, 0.62, 0.62, -0.83, 0.31, -1.4, 0, 0x101010], [0.26, 0.62, 0.62, 0.83, 0.31, -1.4, 0, 0x101010],
-    [1.5, 0.14, 0.05, 0, 0.75, 2.26, 0, 0xfff6dc], [1.6, 0.12, 0.05, 0, 0.82, -2.26, 0, 0xb00808],
-  ]);
-}
-function busGeo() {
-  return boxes([
-    [2.5, 2.6, 11.0, 0, 1.75, 0, 0, 0xffffff], [2.52, 1.05, 10.2, 0, 2.15, 0.2, 0, 0x1b2127], [2.3, 0.9, 0.06, 0, 2.2, 5.52, 0, 0x1b2127],
-    [0.3, 0.95, 0.95, -1.1, 0.48, 3.4, 0, 0x101010], [0.3, 0.95, 0.95, 1.1, 0.48, 3.4, 0, 0x101010],
-    [0.3, 0.95, 0.95, -1.1, 0.48, -3.0, 0, 0x101010], [0.3, 0.95, 0.95, 1.1, 0.48, -3.0, 0, 0x101010],
-    [2.0, 0.3, 0.05, 0, 3.0, 5.52, 0, 0xffb020],
-  ]);
-}
-function taxiGeo() {
-  const g = sedanGeo();
-  return g;
-}
+// ───────── 차 (모형은 models.js) ─────────
 const CAR_COLORS = [0xf2f2f2, 0xf2f2f2, 0xeeeeee, 0x15161a, 0x15161a, 0x9aa0a6, 0x9aa0a6, 0x7a7f86, 0x2b4a7a, 0x8a1c1c, 0xd8c8a0];
 const BUS_COLORS = [0x1f5fb5, 0x1f5fb5, 0x2e9e4a, 0x2e9e4a, 0xd03030, 0xe8b018];
-// ───────── 전동차 (지하철/전철) ─────────
-function trainGeo() {
-  return boxes([
-    [3.1, 3.4, 19.5, 0, 2.05, 0, 0, 0xc9ccd0], [3.12, 1.0, 18.6, 0, 2.6, 0, 0, 0x1a2026], [3.13, 0.3, 19.4, 0, 1.55, 0, 0, 0xffffff],
-    [2.6, 0.5, 19.0, 0, 0.3, 0, 0, 0x2a2a2a],
-  ]);
+// 노선 색 (서울 수도권 전철)
+const LINE_COL = { 1: 0x0052a4, 2: 0x00a84d, 3: 0xef7c1c, 4: 0x00a5de, 5: 0x996cac, 6: 0xcd7c2f, 7: 0x747f00, 8: 0xe6186c, 9: 0xbdb092 };
+const _white = new THREE.Color(1, 1, 1);
+function lineColor(name, cls) {
+  name = name || '';
+  const m = name.match(/(\d)\s*호선/);
+  let c = m ? LINE_COL[+m[1]] : null;
+  if (!c) c = /신분당/.test(name) ? 0xd4003b : /경의|중앙/.test(name) ? 0x77c4a3 : /공항/.test(name) ? 0x0090d2 : /분당|수인/.test(name) ? 0xfabe00 : /경춘/.test(name) ? 0x0c8e72 : /우이|신림/.test(name) ? 0xb0ce18 : cls === 0 ? 0x00a84d : 0x1f5fb5;
+  return new THREE.Color(c);
 }
 
 // ───────── 생각 (말풍선 문장) ─────────
@@ -215,28 +190,27 @@ export class Town {
         vx: 0, vy: 0, vz: 0, rx: 0, rz: 0, wx: 0, wz: 0, shock: -1, sense: Math.random() * 0.5 });
     }
     const mkCars = (geo, n, colors) => {
-      const m = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.5, roughness: 0.35 }), n);
+      const m = new THREE.InstancedMesh(geo, this.vMat || (this.vMat = vehicleMat()), n);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.castShadow = true; m.frustumCulled = false; m.count = 0;
       m.setColorAt(0, new THREE.Color(1, 1, 1));
       scene.add(m);
       return { mesh: m, colors };
     };
-    this.kinds = { car: mkCars(sedanGeo(), 160, CAR_COLORS), taxi: mkCars(taxiGeo(), 40, [0xf08a1e, 0xf2f2f2]), bus: mkCars(busGeo(), 30, BUS_COLORS) };
+    this.kinds = { car: mkCars(sedanGeo(), 120, CAR_COLORS), suv: mkCars(suvGeo(), 80, CAR_COLORS), taxi: mkCars(taxiGeo(), 40, [0xf08a1e, 0xf2f2f2, 0xe8e8e8]), bus: mkCars(busGeo(), 30, BUS_COLORS) };
     this.cars = [];
     for (let i = 0; i < 200; i++) {
-      const r = Math.random(), kind = r < 0.08 ? 'bus' : r < 0.22 ? 'taxi' : 'car';
+      const r = Math.random(), kind = r < 0.08 ? 'bus' : r < 0.2 ? 'taxi' : r < 0.48 ? 'suv' : 'car';
       this.cars.push({ alive: false, i, kind, col: new THREE.Color(pick(this.kinds[kind].colors)), p: 0, d: 0, dir: 1, lane: 0, x: 0, y: 0, z: 0, h: 0, v: 0, vmax: 10, st: 'drive', t: 0,
         vx: 0, vy: 0, vz: 0, rx: 0, rz: 0, wx: 0, wz: 0, shock: -1, hidden: false });
     }
     // 전동차
-    this.tMesh = { sub: null, rail: null };
-    for (const [k, stripe] of [['sub', 0x2fa84f], ['rail', 0x1f5fb5]]) {
-      const g = trainGeo();
-      // 색띠 칸만 노선 색으로 (정점 색이 흰색인 곳)
-      const c = g.attributes.color, col = new THREE.Color(stripe);
-      for (let j = 0; j < c.count; j++) if (c.getX(j) > 0.99 && c.getY(j) > 0.99) c.setXYZ(j, col.r, col.g, col.b);
-      const m = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.6, roughness: 0.35 }), 120);
+    // 칸: 가운데 칸 / 운전실 칸 (띠 색 = 노선 색, 인스턴스 색)
+    this.tMesh = {};
+    const tMat = vehicleMat(0.7, 0.3);
+    for (const [k, cab] of [['mid', false], ['cab', true]]) {
+      const m = new THREE.InstancedMesh(railCarGeo(cab), tMat, 160);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.castShadow = true; m.frustumCulled = false; m.count = 0;
+      m.setColorAt(0, new THREE.Color(1, 1, 1));
       scene.add(m);
       this.tMesh[k] = m;
     }
@@ -273,7 +247,7 @@ export class Town {
     o.tx = (x1 - x0) / l; o.tz = (z1 - z0) / l;
     const H = this.roads.deck.get((rail ? 1e7 : 0) + i);
     o.deckY = H ? H[k - a] + (H[k + 1 - a] - H[k - a]) * u : null;
-    o.tunnel = (L.flags[i] & 2) !== 0;
+    o.tunnel = (L.flags[i] & 2) !== 0 && !(H && !rail);       // 도로 터널은 단면이 있어 보임 (철도 지하 구간만 숨김)
     return o;
   }
 
@@ -337,10 +311,11 @@ export class Town {
     o.wx = rnd(-8, 8); o.wz = rnd(-8, 8);
     if (o.st !== 'fly') { o.rx = 0; o.rz = 0; }
     o.st = 'fly'; o.t = 0;
-    if (o.mood) { if (o.dead) this._die(o); else { o.mood[1] = 1; this._say(o, pick(SAY.hit), 3); } }
+    if (o.mood) { if (o.dead) this._die(o); else { o.mood[1] = 1; this._say(o, pick(SAY.hit), 3); if (Math.random() < 0.6) this._sfx('scream', o, 0.8); } }
   }
   // 죽음: 그 자리에 쓰러져 다시 일어나지 않음, 주변 사람들은 겁에 질려 달아남
   _die(o) {
+    if (!o.dead || o.tt > 0) this._sfx('scream', o, 1);
     o.dead = true; o.tt = 0; o.thought = '';
     o.mood[0] = 0; o.mood[1] = 0; o.mood[2] = 0; o.mood[3] = 0; o.mood[4] = 0;
     this.event('blast', o.x, o.z, 90, 1);
@@ -349,6 +324,7 @@ export class Town {
   _wreck(o, boom) {
     if (o.broken) return;
     o.broken = true; o.burn = boom ? 40 : 15;
+    this._sfx('crash', o, 1); if (boom) this._sfx('boom', o, 1.2);
     o.col = o.col.clone().multiplyScalar(0.18);
     if (o.st !== 'fly') { o.st = 'wreck'; o.t = 0; }
     const fx = this.game.fx;
@@ -380,6 +356,8 @@ export class Town {
     return n;
   }
   _say(o, text, dur = 4) { o.thought = text; o.tt = dur; }
+  // 소리 사건 (cityaudio.js)
+  _sfx(type, o, k = 1) { const A = this.game.audio; if (A && A.city && this.cam) A.city.event(type, o.x, o.y + 1, o.z, this.cam, k); }
 
   _physics(o, dt) {
     const gy = this._h(o.x, o.z);
@@ -400,11 +378,12 @@ export class Town {
   // ───────── 매 프레임 ─────────
   update(dt, cam, pa, pv, info, show) {
     this.time += dt;
+    this.cam = info.camera;
     const agl = cam.y - this._h(cam.x, cam.z);
     const near = show && agl < 2500;
     this.pMesh.visible = near;
     for (const k in this.kinds) this.kinds[k].mesh.visible = near;
-    this.tMesh.sub.visible = this.tMesh.rail.visible = show && agl < 6000;
+    this.tMesh.mid.visible = this.tMesh.cab.visible = show && agl < 6000;
     if (dt > 0 && show) {
       if (near) { this._stepCars(dt, cam, pa, pv); this._stepPeople(dt, cam, pa, pv, info); }
       this._stepTrains(dt, cam);
@@ -500,8 +479,14 @@ export class Town {
         }
       }
       // 플레이어가 길에 서 있으면 멈춤 (빵빵)
-      { const dx = pa.x - o.x, dz = pa.z - o.z, ahead = dx * fx + dz * fz; if (ahead > 0 && ahead < 14 && Math.abs(dx * fz - dz * fx) < 1.8 && Math.abs(pa.y - o.y) < 3) want = 0; }
+      { const dx = pa.x - o.x, dz = pa.z - o.z, ahead = dx * fx + dz * fz;
+        if (ahead > 0 && ahead < 14 && Math.abs(dx * fz - dz * fx) < 1.8 && Math.abs(pa.y - o.y) < 3) {
+          want = 0; o.blockT = (o.blockT || 0) + dt;
+          if (o.blockT > 1.2 && this.time > (o.hornAt || 0)) { o.hornAt = this.time + 3 + Math.random() * 4; this._sfx('horn', o, 1); }
+        } else o.blockT = 0; }
+      const v0 = o.v;
       o.v += clamp(want - o.v, -6 * dt, 2.2 * dt);
+      if (o.kind === 'bus' && v0 > 0.4 && o.v <= 0.4) this._sfx('brake', o, 0.8);
       o.d += o.v * dt * o.dir;
       // 노드 넘어가기
       if (o.d > len || o.d < 0) {
@@ -526,6 +511,9 @@ export class Town {
       let off;
       if (C2 <= 2) { const n = Math.max(1, Math.round(HW * 2 / 3.3)), w = HW * 2 / n; off = (o.lane + 0.5) * w - HW; }
       else { const n = Math.max(1, Math.floor(HW / 3.2)), w = HW / n; off = (o.lane + 0.5) * w; if (HW < 3) off = HW * 0.45; }
+      // 건물 때문에 좁아진 곳: 차 폭(반 1.1 m)이 차도 안에 들도록
+      { const side = (off > 0) === (o.dir > 0) ? 0 : 1, rw = this.roads.edges(o.p, o.d, side)[0];
+        const lim = Math.max(0, rw - 1.1); if (Math.abs(off) > lim) off = Math.sign(off) * lim; }
       o.x += -tz * off; o.z += tx * off;
       const ty = o.deckY !== null ? o.deckY : this._h(o.x, o.z);
       o.y += (ty - o.y) * Math.min(1, dt * 8);
@@ -607,8 +595,9 @@ export class Town {
 
   _place(o, L) {
     this._at(L, o.p, o.d, o);
-    const c = L.cls[o.p], hw = L.width[o.p] / 2;
-    const off = c >= 9 ? (o.side * Math.min(hw * 0.5, 0.9)) : (hw + Math.max(0.9, SIDE[c] * 0.55)) * o.side;
+    const c = L.cls[o.p];
+    // 보도 가운데 (건물까지 여유에 맞춤)
+    const off = this.roads.walkOff(o.p, o.d, o.side);
     const tx = o.tx * o.dir, tz = o.tz * o.dir;
     o.x += -o.tz * off; o.z += o.tx * off;
     o.h = Math.atan2(tx, tz);
@@ -681,7 +670,8 @@ export class Town {
           if (sc > bs) { bs = sc; best = i; }
         }
         if (best < 0) continue;
-        T.alive = true; T.derailed = false; T.cars = null; T.player = false; T.p = best; T.d = 0; T.dir = 1; T.v = rnd(16, 22); T.kind = RL.cls[best] === 0 ? 'sub' : 'rail'; T.n = T.kind === 'sub' ? 8 : 6; T.hist.length = 0;
+        T.alive = true; T.derailed = false; T.cars = null; T.player = false; T.p = best; T.d = 0; T.dir = 1; T.v = rnd(16, 22);
+        T.color = lineColor(RL.names && RL.names[RL.nameIx[best]], RL.cls[best]); T.kind = RL.cls[best] === 0 ? 'sub' : 'rail'; T.n = T.kind === 'sub' ? 8 : 6; T.hist.length = 0;
         // 미리 열차 길이만큼 달려 둠 (뒤 칸 자리 기록)
         for (let s = 0; s < T.n * 20.5 + 10; s += 2) this._trainStep(T, 2);
       }
@@ -820,7 +810,7 @@ export class Town {
       this.pMesh.count = n;
       this.pMesh.instanceMatrix.needsUpdate = true;
       for (const k in A) A[k].needsUpdate = true;
-      const cnt = { car: 0, taxi: 0, bus: 0 };
+      const cnt = { car: 0, suv: 0, taxi: 0, bus: 0 };
       for (const o of this.cars) {
         if (!o.alive || o.hidden) continue;
         const K = this.kinds[o.kind];
@@ -833,16 +823,17 @@ export class Town {
       }
       for (const k in this.kinds) { const m = this.kinds[k].mesh; m.count = cnt[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     }
-    // 전동차: 기록된 길을 따라 칸마다 배치
-    const tc = { sub: 0, rail: 0 };
+    // 전동차: 기록된 길을 따라 칸마다 배치 (맨 앞·맨 뒤는 운전실 칸)
+    const tc = { mid: 0, cab: 0 };
+    const put = (k, col) => { const M = this.tMesh[k]; if (tc[k] < 160) { M.setMatrixAt(tc[k], _m.compose(_p, _q, _s)); M.setColorAt(tc[k], col); tc[k]++; } };
     for (const T of this.trains) {
+      const col = T.color || _white;
       if (T.alive && T.derailed && T.cars) {
-        const M = this.tMesh[T.kind];
-        for (const c of T.cars) {
-          _q.setFromAxisAngle(Y, c.h).premultiply(_q2.setFromEuler(_e.set(c.rx, 0, c.rz)));
+        T.cars.forEach((c, j) => {
+          _q.setFromAxisAngle(Y, c.h + (j === T.cars.length - 1 && j > 0 ? Math.PI : 0)).premultiply(_q2.setFromEuler(_e.set(c.rx, 0, c.rz)));
           _p.set(c.x - origin.x, c.y - origin.y, c.z - origin.z);
-          if (tc[T.kind] < 120) M.setMatrixAt(tc[T.kind]++, _m.compose(_p, _q, _s));
-        }
+          put(j === 0 || j === T.cars.length - 1 ? 'cab' : 'mid', col);
+        });
         continue;
       }
       if (!T.alive || T.hist.length < 2) continue;
@@ -856,13 +847,13 @@ export class Town {
         const u = clamp((sc - a[3]) / Math.max(b[3] - a[3], 1e-3), 0, 1);
         if (a[4] && b[4]) continue;                                           // 터널 속
         const x = a[0] + (b[0] - a[0]) * u, y = a[1] + (b[1] - a[1]) * u, z = a[2] + (b[2] - a[2]) * u;
-        _q.setFromAxisAngle(Y, Math.atan2(b[0] - a[0], b[2] - a[2]));
+        const last = j === T.n - 1;
+        _q.setFromAxisAngle(Y, Math.atan2(b[0] - a[0], b[2] - a[2]) + (last ? Math.PI : 0));
         _p.set(x - origin.x, y - origin.y, z - origin.z);
-        const M = this.tMesh[T.kind];
-        if (tc[T.kind] < 120) M.setMatrixAt(tc[T.kind]++, _m.compose(_p, _q, _s));
+        put(j === 0 || last ? 'cab' : 'mid', col);
       }
     }
-    for (const k in this.tMesh) { this.tMesh[k].count = tc[k]; this.tMesh[k].instanceMatrix.needsUpdate = true; }
+    for (const k in this.tMesh) { const M = this.tMesh[k]; M.count = tc[k]; M.instanceMatrix.needsUpdate = true; if (M.instanceColor) M.instanceColor.needsUpdate = true; }
   }
 
   // 가장 가까운 사람들의 생각을 말풍선으로

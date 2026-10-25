@@ -8,7 +8,7 @@
 //    cw : Uint16 = 분류(하위 4비트) | 수심(상위 12비트, 0.05 m) — 수위 = 바닥 + 수심
 //         분류 0 풀밭, 1 도시, 2 숲, 3 공원·잔디, 4 농경지, 5 바위, 6 물, 7 도로, 8 습지, 9 모래
 //  건물: 회전 박스 (중심, 폭, 깊이, 높이, 방향, 종류, 시드, 띄운 높이)
-//  도로·철도: 조각 (분류, 플래그 1 다리 2 터널 4 램프 8 공사중, 층, 폭, 시작/끝 노드, 점 목록)
+//  도로·철도: 조각 (분류, 플래그 1 다리 2 터널 4 램프 8 공사중, 층, 폭, 시작/끝 노드, 점 목록) + 도로 여유 폭 표본
 //  시설 점: 0 가로등, 1 신호등, 2 횡단보도, 3 버스정류장, 4 벤치, 5 송전탑, 6 지하철역, 7 기차역, 8 가로수
 
 async function bytes(url) {
@@ -89,9 +89,18 @@ export async function loadLines(base, name) {
     ax += dv.getInt32(o, true); az += dv.getInt32(o + 4, true); o += 8;
     pts[k * 2] = ax * 0.1; pts[k * 2 + 1] = az * 0.1;
   }
+  // 도로 여유 폭 (tools/seoul/clr.py): 6 m 표본마다 왼쪽/오른쪽으로 건물까지 남은 거리 (0.25 m 단위, 255 = 넉넉함)
+  let clr = null;
+  if (buf.byteLength >= o + 4 && dv.getUint32(o, true) === 0x31524c43) {
+    o += 4;
+    const cnt = new Uint16Array(buf.slice(o, o + n * 2)); o += n * 2;
+    const cs = new Uint32Array(n + 1);
+    for (let i = 0; i < n; i++) cs[i + 1] = cs[i] + cnt[i];
+    clr = { step: 6, start: cs, av: new Uint8Array(buf, o, cs[n] * 2) };
+  }
   let names = [];
   try { names = await (await fetch(base + name + '_names.json')).json(); } catch (e) { /* 이름 없음 */ }
-  return { n, cls, flags, level, width, na, nb, start, pts, nameIx, names };
+  return { n, cls, flags, level, width, na, nb, start, pts, nameIx, names, clr };
 }
 
 /** 시설 점 */

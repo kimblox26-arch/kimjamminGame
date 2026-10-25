@@ -335,6 +335,11 @@ export class Player {
       if (this.hidden) { this.snapshot(this.snapCur); return; }
       // 굴 벽 밖으로는 못 나감
       if (this.game.holes) this.inTunnel = this.game.holes.constrain(this, this.game.terrain.heightAt(this.pos.x + origin.x, this.pos.z + origin.z)) && this.game.holes.inTunnel;
+      // 지하 도로: 옆 벽·천장
+      if (this.cut) this.cutConstrain(this.cut);
+      // 지하철역 안: 벽·천장
+      const ST = this.game.stations;
+      if (ST && !this.onPlanet && ST.constrain(this, this.game.terrain.heightAt(this.pos.x + origin.x, this.pos.z + origin.z))) this.inTunnel = true;
     }
 
     // 가속도 (고유 가속도: 자유낙하 중엔 0)
@@ -663,6 +668,23 @@ export class Player {
     return this.pos.y + cy - ext;
   }
 
+  // 지하 도로 벽·천장 밖으로 못 나감 (cutAt 결과 c, 절대 좌표)
+  cutConstrain(c) {
+    const ax = this.pos.x + origin.x, az = this.pos.z + origin.z;
+    const lat = (ax - c.cx) * c.nx + (az - c.cz) * c.nz, lim = c.w - 0.45;
+    if (Math.abs(lat) > lim) {
+      const d = Math.sign(lat) * (Math.abs(lat) - lim);
+      this.pos.x -= c.nx * d; this.pos.z -= c.nz * d;
+      const vn = this.vel.x * c.nx + this.vel.z * c.nz;
+      if (vn * lat > 0) { this.vel.x -= c.nx * vn; this.vel.z -= c.nz * vn; }
+    }
+    if (c.cov) {
+      const ceil = c.top - origin.y - 0.6;
+      if (this.pos.y > ceil) { this.pos.y = ceil; if (this.vel.y > 0) this.vel.y = 0; }
+      this.inTunnel = true;
+    }
+  }
+
   // 렌더 좌표 (rx, rz) 아래 밟을 수 있는 표면 높이 (렌더 y): 지형 / 물 / 건물 옥상 중 가장 높은 것
   surfaceAt(rx, rz) {
     const ax = rx + origin.x, az = rz + origin.z;
@@ -672,11 +694,21 @@ export class Player {
     const GH = this.game.holes;
     this.holeFloor = false;
     if (GH && GH.list.length) { const f = GH.floorAt(ax, this.pos.y + origin.y - RIG.pivotY, az, h); if (f !== null) { h = f; this.holeFloor = true; } }
+    // 지하 도로 (터널·지하차도·깎은 길): 그 공간 안이면 노면이 바닥
+    const RD = this.game.roads;
+    this.cut = null;
+    if (RD && RD.cutAt && !this.onPlanet) { const c = RD.cutAt(ax, az, this.pos.y + origin.y - RIG.pivotY); if (c && c.y < h + 0.6) { h = c.y; this.cut = c; } }
+    // 지하철역 (계단·통로·대합실·승강장)
+    const ST = this.game.stations;
+    this.stFloor = null;
+    if (ST && ST.vols.length && !this.onPlanet) { const f = ST.floorAt(ax, az, this.pos.y + origin.y - RIG.pivotY); if (f && f.y < h + 0.6) { h = f.y; this.stFloor = f; } }
     if (Ci) {
       const r = Ci.roofAt(ax, az);
       // 뚫린 구멍 속을 지나는 중이면 지붕을 땅으로 치지 않음
       const py = this.pos.y + origin.y;
-      if (r > h && !(r > py + 1 && Ci.inHole && Ci.holes.length && Ci.inHole(ax, py, az, 1.0))) { h = r; kind = 'roof'; }
+      // 땅속 공간(지하 도로·역·굴)에 있으면 머리 위 건물 지붕은 무시
+      const under = (this.stFloor || this.cut || this.holeFloor) && r > py + 0.5;
+      if (r > h && !under && !(r > py + 1 && Ci.inHole && Ci.holes.length && Ci.inHole(ax, py, az, 1.0))) { h = r; kind = 'roof'; }
     }
     // 물은 밟을 수 없음: 수면 높이만 따로 (없으면 -Infinity)
     const w = T ? T.waterLevelAt(ax, az) : -Infinity;
