@@ -6,6 +6,7 @@ import { SHOTS } from './shots.mjs';
 
 const [outDir, ...names] = process.argv.slice(2);
 const PREVIEW = !!process.env.PREVIEW;
+const NEED = process.env.NEED ? JSON.parse(process.env.NEED) : {};
 const rt = fs.readFileSync(new URL('./rt.js', import.meta.url), 'utf8');
 
 const { browser, page } = await openGame();
@@ -23,15 +24,22 @@ for (const name of names) {
   const WARM = 3;
   let dt = 1 / 30;
   for (let i = -WARM; i < s.frames; i++) {
-    const save = i >= 0 && (!PREVIEW || i % 3 === 0);
-    const res = await page.evaluate(([i, n, dt, save]) => {
+    if (NEED[name] && i > NEED[name][1]) break;
+    const rg = NEED[name];
+    const draw = i < 0 || !rg || (i >= rg[0] - 2 && i <= rg[1]);
+    const save = i >= 0 && draw && (!rg || i >= rg[0]) && (!PREVIEW || i % 3 === 0);
+    const res = await page.evaluate(([i, n, dt, save, draw]) => {
       const nd = window.__upd(Math.max(0, i), n);
       const vt = window.__vt;
-      vt.t += (i < 0 ? 1 / 1000 : dt) * 1000;
+      const d = i < 0 ? 1 / 1000 : dt;
+      vt.t += d * 1000;
+      const g = window.__FREEFREELY__;
+      if (!draw) { g._updateFlight(d); window.__camHook(); return { nd, url: null }; }
+      g._lastNow = vt.t - d * 1000;
       const cb = vt.cb; vt.cb = null;
       if (cb) cb();
       return { nd, url: save ? document.getElementById('gl').toDataURL('image/jpeg', 0.95) : null };
-    }, [i, s.frames, dt, save]);
+    }, [i, s.frames, dt, save, draw]);
     if (i >= 0) dt = res.nd || 1 / 30;
     if (res.url) fs.writeFileSync(path.join(dir, String(i).padStart(4, '0') + '.jpg'), Buffer.from(res.url.split(',')[1], 'base64'));
   }

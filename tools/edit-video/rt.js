@@ -82,7 +82,10 @@
     m.lookAt(c.pos, c.look, up);
     cam.quaternion.setFromRotationMatrix(m);
     if (c.roll) cam.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), c.roll));
-    if (c.fov && cam.fov !== c.fov) { cam.fov = c.fov; cam.updateProjectionMatrix(); }
+    let fov = c.fov;
+    // 세로 화면: 가로 화각을 원래(가로 화면)의 세로 화각에 맞춘다
+    if (fov && cam.aspect < 1) fov = 2 * Math.atan(Math.tan(fov * Math.PI / 360) / cam.aspect) * 180 / Math.PI;
+    if (fov && cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
   };
   RT.ready = true;
 })();

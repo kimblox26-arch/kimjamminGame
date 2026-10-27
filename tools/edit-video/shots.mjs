@@ -28,6 +28,7 @@ export const SHOTS = {
       const { V, g } = RT; const p = RT.pos(); const t = g.controller.telemetry;
       if (t.tas > 72) { RT.ctl.hold = true; RT.ctl.tp = 0.26; RT.ctl.tr = 0; }
       if (!t.onGround && g.controller.gearTarget > 0.5 && p.y > 40) g.controller.toggleGear();
+      if (RT.meta.pass === undefined && p.x > RT.camAnchor.x) RT.meta.pass = i;
       RT.cam = { pos: RT.camAnchor, look: V(p.x + 4, p.y + 1.5, p.z), fov: 42 };
       const d = Math.abs(p.x - RT.camAnchor.x);
       return d < 25 ? 1 / 70 : d < 60 ? 1 / 50 : 1 / 30;

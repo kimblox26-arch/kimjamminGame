@@ -35,3 +35,22 @@ python3 sfx.py final music.wav mix.wav
 python3 edit.py final | ffmpeg -f rawvideo -pix_fmt rgb24 -s 1280x720 -r 30 -i - -i mix.wav \
   -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p -c:a aac -b:a 256k -shortest out.mp4
 ```
+
+## TikTok 세로 에딧 (`media/freefreely_tiktok_edit.mp4`)
+
+720x1280 · 16.6초 · 120BPM. 음악은 slowed 점프스타일 느낌의 **오리지널 합성 트랙**입니다(`tiktok_music.py`).
+세로 화면에서는 `rt.js` 가 화각을 자동 보정하고, `NEED` 로 필요한 프레임 구간만 렌더합니다.
+
+```bash
+NEED='{"runway":[0,72],"takeoff":[0,95],"climb":[0,60],"strafe_kill":[10,108],"flyby":[38,86],"cockpit_roll":[8,44],"flares":[4,56],"roll":[3,38],"crash":[44,100],"outro":[0,62]}'
+W=720 H=1280 NEED="$NEED" node render.mjs tt takeoff strafe_kill flyby roll runway climb cockpit_roll flares crash outro
+python3 tiktok_music.py tiktok.wav
+python3 tiktok.py tt | ffmpeg -f rawvideo -pix_fmt rgb24 -s 720x1280 -r 30 -i - -i tiktok.wav \
+  -c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -c:a aac -b:a 256k -shortest out.mp4
+```
+
+원하는 곡으로 바꾸려면(곡 사용 권한은 직접 확인) 영상의 오디오만 교체하면 됩니다. 컷은 120BPM(0.5초) 격자에 맞춰져 있습니다.
+
+```bash
+ffmpeg -i media/freefreely_tiktok_edit.mp4 -ss <곡 시작초> -i song.mp3 -map 0:v -map 1:a -c:v copy -c:a aac -shortest my_edit.mp4
+```
