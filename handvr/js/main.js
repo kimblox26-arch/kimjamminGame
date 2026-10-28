@@ -17,8 +17,11 @@ const $ = s => document.querySelector(s);
 const clamp = THREE.MathUtils.clamp;
 
 // ───────── 설정 ─────────
-const settings = { gestureMove: true, body: false, swap: false, preview: true, tone: 'auto', quality: 'high' };
+const settings = { moveMode: 'pos', moveHand: 'L', body: false, swap: false, preview: true, tone: 'auto', quality: 'high' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('handvr') || '{}')); } catch { /* 저장소 없음 */ }
+// 예전 설정(손 제스처 켜기/끄기) → 이동 방식
+if (settings.gestureMove !== undefined) { if (settings.gestureMove === false) settings.moveMode = 'off'; delete settings.gestureMove; }
+const MOVE_NAME = { pos: '손 위치', gesture: '손가락 모양', off: '손으로 이동 안 함' };
 const save = () => { try { localStorage.setItem('handvr', JSON.stringify(settings)); } catch { /* 무시 */ } };
 
 // ───────── 렌더러 / 장면 ─────────
@@ -96,7 +99,8 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (!playing) return;
   switch (e.code) {
-    case 'KeyG': settings.gestureMove = !settings.gestureMove; toast(`손 제스처 이동 ${settings.gestureMove ? '켜짐' : '꺼짐'}`); save(); break;
+    case 'KeyG': setMoveMode({ pos: 'gesture', gesture: 'off', off: 'pos' }[settings.moveMode]); toast(`이동 방식: ${MOVE_NAME[settings.moveMode]}`); break;
+    case 'KeyM': setMoveHand(settings.moveHand === 'L' ? 'R' : 'L'); toast(`이동 손: ${settings.moveHand === 'L' ? '왼손' : '오른손'}`); break;
     case 'KeyB': toggleBody(); break;
     case 'KeyK': recalibrateDepth(); body.recalibrate(); for (const h of Object.values(hands)) h.profile.clear(); scanToasted = {}; toast('기준 자세·손 거리·손 스캔을 다시 합니다 — 손을 펴서 보여주세요', 3000); break;
     case 'KeyQ': settings.quality = settings.quality === 'high' ? 'normal' : 'high'; save(); applyQuality(); toast(`화질: ${settings.quality === 'high' ? '고품질' : '보통(빠름)'}`); break;
@@ -131,10 +135,28 @@ addEventListener('resize', () => {
 });
 
 // ───────── 시작 화면 ─────────
-const optGesture = $('#opt-gesture'), optBody = $('#opt-body');
-optGesture.checked = settings.gestureMove;
+const optBody = $('#opt-body');
 optBody.checked = settings.body;
-optGesture.onchange = () => { settings.gestureMove = optGesture.checked; save(); };
+// 이동 방식 / 이동 손 선택 버튼
+const MOVE_DESC = {
+  pos: '이동 손을 위로 = 앞, 아래로 = 뒤, 옆으로 = 회전. 손 모양은 상관없어요',
+  gesture: '☝️ 전진 · ✌️ 후진 · ✊ 조이스틱 · 👍 점프',
+  off: '키보드·마우스(또는 몸 추적)로만 이동',
+};
+function setMoveMode(v) {
+  settings.moveMode = v; save();
+  document.querySelectorAll('#move-mode button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $('#move-desc').textContent = MOVE_DESC[v];
+  $('#move-hand-row').classList.toggle('hidden', v !== 'pos');
+  pad.state = 'idle';
+}
+function setMoveHand(v) {
+  settings.moveHand = v; save();
+  document.querySelectorAll('#move-hand button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  pad.state = 'idle';
+}
+document.querySelectorAll('#move-mode button').forEach(b => { b.onclick = () => setMoveMode(b.dataset.v); });
+document.querySelectorAll('#move-hand button').forEach(b => { b.onclick = () => setMoveHand(b.dataset.v); });
 optBody.onchange = () => { settings.body = optBody.checked; save(); };
 for (const [name, hex] of [['auto', null], ...Object.entries(SKIN_TONES)]) {
   const b = document.createElement('button');
@@ -241,7 +263,53 @@ const lostMs = () => clamp(tracker.interval * 3, 220, 1500);
 const dz = (v, dead = 0.18) => Math.sign(v) * clamp((Math.abs(v) - dead) / (1 - dead), 0, 1);
 
 // 키보드 + 손 제스처 + 몸 추적 → 이동 입력
-function gatherInput() {
+// ── 손 위치 조이스틱: 이동 손을 잠깐 멈추면 그 자리가 기준점. 위 = 앞, 아래 = 뒤, 옆 = 회전
+const PAD_DEAD = 0.05, PAD_FULL = 0.2; // 카메라 화면 높이 대비 (5% 안은 정지, 20% 이상이면 최고 속도)
+const pad = { state: 'idle', cx: 0, cy: 0, x: 0, y: 0, still: 0, u: 0, v: 0 };
+function posMove(inp, dt) {
+  const h = hands[settings.moveHand];
+  if (!camMode || !h.visible || h.holding || h.pulling) { pad.state = 'idle'; pad.u = pad.v = 0; return; }
+  // 손바닥 중심 (거울 화면 기준, 카메라 화면 높이를 1로)
+  const vid = tracker.video, asp = vid.videoWidth / vid.videoHeight || 1.6;
+  let mx = 0, my = 0;
+  for (const i of [0, 5, 9, 13, 17]) { mx += h.img[i].x; my += h.img[i].y; }
+  const tx = (1 - mx / 5) * asp, ty = -my / 5;
+  if (pad.state === 'idle') { pad.state = 'arming'; pad.still = 0; pad.x = tx; pad.y = ty; }
+  const k = 1 - Math.exp(-dt * 14), ox = pad.x, oy = pad.y;
+  pad.x += (tx - pad.x) * k; pad.y += (ty - pad.y) * k;
+  const speed = Math.hypot(pad.x - ox, pad.y - oy) / Math.max(dt, 1e-3);
+  if (pad.state === 'arming') {
+    pad.still = speed < 0.25 ? pad.still + dt : 0;
+    pad.u = pad.v = 0;
+    h.action = '이동 기준 잡는 중… 손을 잠깐 멈추세요';
+    if (pad.still > 0.4) { pad.cx = pad.x; pad.cy = pad.y; pad.state = 'active'; }
+    return;
+  }
+  const u = pad.x - pad.cx, v = pad.y - pad.cy;
+  if (Math.hypot(u, v) < PAD_DEAD) { // 가만히 있으면 기준점이 천천히 손을 따라와서 자세가 바뀌어도 멈춰 있게
+    const a = Math.min(1, dt * 0.3);
+    pad.cx += (pad.x - pad.cx) * a; pad.cy += (pad.y - pad.cy) * a;
+  }
+  const f = x => Math.sign(x) * clamp((Math.abs(x) - PAD_DEAD) / (PAD_FULL - PAD_DEAD), 0, 1);
+  pad.u = clamp(u / PAD_FULL, -1, 1); pad.v = clamp(v / PAD_FULL, -1, 1);
+  const fw = f(v), tn = f(u);
+  inp.forward += fw;
+  inp.turn += tn;
+  h.action = fw > 0 ? '앞으로' : fw < 0 ? '뒤로' : '';
+  if (tn) h.action += (h.action ? ' · ' : '') + (tn > 0 ? '오른쪽으로 돌기' : '왼쪽으로 돌기');
+  h.action ||= '이동 손 (위=앞 · 아래=뒤 · 옆=회전)';
+}
+
+function updatePad() {
+  const el = $('#movepad'), show = playing && camMode && settings.moveMode === 'pos';
+  el.classList.toggle('hidden', !show);
+  if (!show) return;
+  el.dataset.state = pad.state;
+  $('#movepad .dot').style.transform = `translate(calc(-50% + ${pad.u * 42}px), calc(-50% + ${-pad.v * 42}px))`;
+  $('#movepad .pl').textContent = pad.state === 'active' ? `${settings.moveHand === 'L' ? '왼손' : '오른손'}으로 이동` : `${settings.moveHand === 'L' ? '왼손' : '오른손'}을 보여주세요`;
+}
+
+function gatherInput(dt) {
   const k = c => (keys[c] ? 1 : 0);
   const inp = {
     forward: k('KeyW') + k('ArrowUp') - k('KeyS') - k('ArrowDown'),
@@ -255,11 +323,12 @@ function gatherInput() {
   for (const s of ['L', 'R']) {
     const h = hands[s];
     h.action = '';
-    if (!h.visible || !settings.gestureMove) { h.joy = null; h.lastG = h.gesture; continue; }
+    if (!h.visible || settings.moveMode === 'off') { h.joy = null; h.lastG = h.gesture; continue; }
     const g = h.gesture;
     if (h.holding) h.action = '잡는 중 — 손을 펴면 던지기';
     else if (h.pulling) h.action = '끌어오는 중…';
-    if (g === 'fist' && !h.holding && !h.pulling) {
+    const gestureMode = settings.moveMode === 'gesture';
+    if (gestureMode && g === 'fist' && !h.holding && !h.pulling) {
       if (!h.joy) h.joy = h.palmCam.clone();
       const dx = h.palmCam.x - h.joy.x, dy = h.palmCam.y - h.joy.y, dzv = h.palmCam.z - h.joy.z;
       if (s === 'L') {
@@ -272,7 +341,7 @@ function gatherInput() {
         h.action = '시점 조이스틱 (좌우·위아래)';
       }
     } else h.joy = null;
-    if (g === 'point' || g === 'victory') {
+    if (gestureMode && (g === 'point' || g === 'victory')) {
       // 손가락 기울기(거울 화면 기준)로 회전
       const vid = tracker.video;
       const vx = -(h.img[8].x - h.img[5].x) * vid.videoWidth, vy = -(h.img[8].y - h.img[5].y) * vid.videoHeight;
@@ -285,7 +354,8 @@ function gatherInput() {
     if (g === 'thumbsUp') h.action = '점프';
     h.lastG = g;
   }
-  if (settings.gestureMove && hands.L.gesture === 'point' && hands.R.gesture === 'point') {
+  if (settings.moveMode === 'pos') posMove(inp, dt);
+  if (settings.moveMode === 'gesture' && hands.L.gesture === 'point' && hands.R.gesture === 'point') {
     inp.run = true; hands.L.action = hands.R.action = '달리기!';
   }
   if (settings.body && tracker.poseOn && body.base) {
@@ -371,7 +441,7 @@ function updateHud(now) {
   const parts = [];
   if (camMode) {
     const n = (hands.L.visible ? 1 : 0) + (hands.R.visible ? 1 : 0);
-    parts.push(`손 ${n}개 인식`, `제스처 이동 ${settings.gestureMove ? 'ON' : 'OFF'}`, `몸 추적 ${settings.body ? 'ON' : 'OFF'}`, `추적 ${tracker.rate}fps`);
+    parts.push(`손 ${n}개 인식`, `이동: ${MOVE_NAME[settings.moveMode]}${settings.moveMode === 'pos' ? `(${settings.moveHand === 'L' ? '왼손' : '오른손'})` : ''}`, `몸 추적 ${settings.body ? 'ON' : 'OFF'}`, `추적 ${tracker.rate}fps`);
   } else parts.push('키보드 모드');
   parts.push(`화면 ${fps}fps`);
   $('#status').textContent = parts.join(' · ');
@@ -418,7 +488,7 @@ function frame(now) {
   last = now;
 
   if (playing && camMode && tracker.update(now)) onTracking(now);
-  const inp = playing ? gatherInput() : { forward: 0, strafe: 0, turn: 0, pitch: 0 };
+  const inp = playing ? gatherInput(dt) : { forward: 0, strafe: 0, turn: 0, pitch: 0 };
   player.update(dt, inp);
 
   for (const s of ['L', 'R']) {
@@ -431,10 +501,13 @@ function frame(now) {
   physics.step(dt, handColliders());
   world.update(dt, player.pos);
   updateJoyMarks();
+  updatePad();
   if (playing) updateHud(now);
   if (settings.quality === 'high') composer.render(); else renderer.render(scene, camera);
 }
+setMoveMode(settings.moveMode);
+setMoveHand(settings.moveHand);
 requestAnimationFrame(frame);
 
 // 디버그용
-window.__handvr = { hands, get meshes() { return meshes; }, tracker, player, physics, settings, body, scanner, scene, renderer, bloom };
+window.__handvr = { pad, hands, get meshes() { return meshes; }, tracker, player, physics, settings, body, scanner, scene, renderer, bloom };

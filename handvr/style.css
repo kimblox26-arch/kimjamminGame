@@ -24,6 +24,20 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 .opt span { display: flex; flex-direction: column; }
 .opt small { color: #5a7394; font-size: 12px; margin-top: 2px; }
 .opt.tone { cursor: default; justify-content: space-between; }
+.opt.stack { flex-direction: column; align-items: stretch; cursor: default; gap: 8px; }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg button { flex: 1 1 auto; padding: 8px 10px; border-radius: 10px; border: 1px solid #c9dbf2; background: #fff; color: #17406f;
+  font-weight: 700; font-size: 13px; cursor: pointer; }
+.seg button.on { background: #2f8cff; border-color: #2f8cff; color: #fff; }
+#movepad { position: absolute; left: calc(12px + env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  width: 120px; height: 138px; border-radius: 18px; }
+#movepad .ring, #movepad .dead, #movepad .dot { position: absolute; left: 60px; top: 58px; border-radius: 50%; transform: translate(-50%, -50%); }
+#movepad .ring { width: 96px; height: 96px; border: 2px solid rgba(47, 140, 255, 0.35); }
+#movepad .dead { width: 24px; height: 24px; background: rgba(47, 140, 255, 0.15); }
+#movepad .dot { width: 22px; height: 22px; background: #2f8cff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
+#movepad[data-state="arming"] .dot { background: #ffb020; }
+#movepad[data-state="idle"] .dot { background: #9aa7b8; }
+#movepad .pl { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 11px; font-weight: 700; color: #234; }
 #tones { display: flex; gap: 8px; }
 #tones button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; cursor: pointer;
   box-shadow: 0 0 0 1px #b9cbe2; }
