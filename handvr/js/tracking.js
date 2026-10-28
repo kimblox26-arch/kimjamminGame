@@ -1,4 +1,4 @@
-// 웹캠 + MediaPipe(손/몸 랜드마크)
+// 웹캠 + MediaPipe 손 랜드마크
 // 기본은 Web Worker 에서 인식(화면 렌더링이 끊기지 않음). 워커가 안 되는 브라우저는 메인 스레드에서 인식.
 // 라이브러리·모델은 CDN 에서 받는다. (?mp=…&models=… 로 로컬 경로, ?worker=0 으로 워커 끄기)
 const MP_VERSION = '0.10.21';
@@ -7,8 +7,6 @@ const MP_BASE = new URL(q.get('mp') || `https://cdn.jsdelivr.net/npm/@mediapipe/
 const MODELS = q.get('models');
 const HAND_URL = MODELS ? new URL(`${MODELS}/hand_landmarker.task`, location.href).href
   : 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
-const POSE_URL = MODELS ? new URL(`${MODELS}/pose_landmarker_lite.task`, location.href).href
-  : 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const DELEGATES = q.get('delegate') === 'cpu' ? ['CPU'] : ['GPU', 'CPU'];
 export const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 
@@ -16,21 +14,14 @@ const HAND_OPTS = {
   runningMode: 'VIDEO', numHands: 2,
   minHandDetectionConfidence: 0.5, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5,
 };
-const POSE_OPTS = {
-  runningMode: 'VIDEO', numPoses: 1,
-  minPoseDetectionConfidence: 0.5, minPosePresenceConfidence: 0.5, minTrackingConfidence: 0.5,
-};
 
 export class Tracker {
   constructor(video) {
     this.video = video;
     this.hands = null;      // 메인 스레드 모드
-    this.pose = null;
     this.worker = null;     // 워커 모드
     this.workerReady = false;
-    this.poseOn = false;
     this.handResult = null;
-    this.poseResult = null;
     this.lastTime = -1;
     this.frame = 0;
     this.rate = 0;
@@ -78,8 +69,7 @@ export class Tracker {
     await ready;
     w.onmessage = ({ data }) => {
       if (data.type === 'result') { this.pending = data; this.busy = false; }
-      else if (data.type === 'poseReady') this._poseReady?.();
-      else if (data.type === 'error') { this.busy = false; if (data.where === 'pose') this._poseFail?.(new Error(data.message)); else console.warn('[HandVR] 인식 오류', data.message); }
+      else if (data.type === 'error') { this.busy = false; console.warn('[HandVR] 인식 오류', data.message); }
     };
     this.workerReady = true;
   }
@@ -104,22 +94,6 @@ export class Tracker {
     this.hands = await create(mod.HandLandmarker, fileset, { ...HAND_OPTS, baseOptions: { modelAssetPath: HAND_URL } }, d => { this.delegate = d; });
   }
 
-  async loadPose() {
-    if (this.workerReady) {
-      if (this._poseLoaded) return;
-      await new Promise((resolve, reject) => {
-        this._poseReady = resolve; this._poseFail = reject;
-        this.worker.postMessage({ type: 'pose', poseUrl: POSE_URL, delegates: DELEGATES });
-      });
-      this._poseLoaded = true;
-      this.pose = true;
-      return;
-    }
-    if (this.pose) return;
-    const { mod, fileset } = await this.vision();
-    this.pose = await create(mod.PoseLandmarker, fileset, { ...POSE_OPTS, baseOptions: { modelAssetPath: POSE_URL } }, () => {});
-  }
-
   stat(now) {
     this.frame++;
     if (this._lastNow) this.interval += (Math.min(1000, now - this._lastNow) - this.interval) * 0.25;
@@ -136,7 +110,6 @@ export class Tracker {
       let fresh = false;
       if (this.pending) {
         this.handResult = this.pending.hand;
-        if (this.pending.pose) this.poseResult = this.pending.pose;
         this.pending = null;
         this.stat(now);
         fresh = true;
@@ -146,7 +119,7 @@ export class Tracker {
         this.lastTime = v.currentTime;
         this.busy = true;
         const w = Math.min(640, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth);
-        const send = bmp => this.worker.postMessage({ type: 'frame', bitmap: bmp, t: performance.now(), pose: this.poseOn && (this.frame & 1) === 0 }, [bmp]);
+        const send = bmp => this.worker.postMessage({ type: 'frame', bitmap: bmp, t: performance.now() }, [bmp]);
         createImageBitmap(v, { resizeWidth: w, resizeHeight: h, resizeQuality: 'low' })
           .catch(() => createImageBitmap(v))
           .then(send)
@@ -157,8 +130,6 @@ export class Tracker {
     if (v.currentTime === this.lastTime) return false;
     this.lastTime = v.currentTime;
     this.handResult = this.hands.detectForVideo(v, now);
-    // 몸 추적은 격 프레임으로 (부하 절반)
-    if (this.poseOn && this.pose && (this.frame & 1) === 0) this.poseResult = this.pose.detectForVideo(v, now);
     this.stat(now);
     return true;
   }

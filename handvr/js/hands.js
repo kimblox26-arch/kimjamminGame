@@ -47,13 +47,7 @@ export class HandState {
     this.local = vec21();   // 손 모양 (m, 플레이어 기준 축, 중지 MCP 원점)
     this.target = vec21();  // 카메라(눈) 공간 목표 관절 위치
     this.joints = vec21();  // 화면 표시용(보간된) 관절 위치
-    this.world = vec21();   // 월드 좌표
-    this.prevWorld = vec21();
-    this.vel = vec21();     // 월드 속도
     this.palmCam = new THREE.Vector3();
-    this.palmWorld = new THREE.Vector3();
-    this.palmVel = new THREE.Vector3();
-    this.palmNormal = new THREE.Vector3(); // 손바닥이 향하는 방향 (월드)
     this.posFilter = new VecFilter(1.2, 3.0, 0.7);
     this.shapeFilters = Array.from({ length: 21 }, () => new VecFilter(2.2, 12));
     this.gesture = 'none';
@@ -61,10 +55,6 @@ export class HandState {
     this.candN = 0;
     this.pinching = false;
     this.pinchD = 1;
-    this.holding = null; // 잡고 있는 물체
-    this.pulling = null; // 끌어오는 물체
-    this.joy = null;     // 주먹 조이스틱 기준점
-    this.action = '';
     this.profile = new HandProfile(side); // 손 스캔 결과 (굵기·손바닥·손목·피부색·소매)
     this.scanTick = 0;
   }
@@ -152,37 +142,16 @@ export class HandState {
     if (g !== this.gesture && this.candN >= need) { this.gesture = g; this.gestureSince = now; }
   }
 
-  // 매 렌더 프레임: 30fps 추적 결과를 부드럽게 보간 + 월드 좌표/속도 계산
-  updateDisplay(dt, camera, now, lostMs) {
+  // 매 렌더 프레임: 추적 결과(초당 20~30번)를 화면 프레임에 맞춰 부드럽게 보간
+  updateDisplay(dt, now, lostMs) {
     if (this.visible && now - this.lastSeen > lostMs) {
       this.visible = false;
       this.gesture = 'none';
-      this.joy = null;
     }
     if (!this.visible) return;
     const k = this.snap ? 1 : 1 - Math.exp(-dt * 24);
     for (let i = 0; i < 21; i++) this.joints[i].lerp(this.target[i], k);
-    const m = camera.matrixWorld;
-    _c.set(0, 0, 0);
-    for (let i = 0; i < 21; i++) {
-      const p = this.world[i].copy(this.joints[i]).applyMatrix4(m);
-      if (this.snap || dt <= 0) this.vel[i].set(0, 0, 0);
-      else this.vel[i].subVectors(p, this.prevWorld[i]).divideScalar(dt).clampLength(0, 10);
-      this.prevWorld[i].copy(p);
-    }
-    this.palmWorld.copy(this.world[0]).add(this.world[5]).add(this.world[9]).add(this.world[13]).add(this.world[17]).multiplyScalar(0.2);
-    _c.copy(this.vel[0]).add(this.vel[5]).add(this.vel[9]).add(this.vel[17]).multiplyScalar(0.25);
-    this.palmVel.lerp(_c, this.snap ? 1 : 1 - Math.exp(-dt * 14));
-    _a.subVectors(this.world[5], this.world[0]);
-    _b.subVectors(this.world[17], this.world[0]);
-    this.palmNormal.crossVectors(_a, _b).normalize().multiplyScalar(this.sign);
     this.snap = false;
-  }
-
-  // 잡기 지점 (월드): 집기 = 엄지·검지 끝 사이, 주먹 = 손바닥 앞
-  grabPoint(out) {
-    if (this.gesture === 'pinch') return out.copy(this.world[4]).add(this.world[8]).multiplyScalar(0.5);
-    return out.copy(this.palmWorld).addScaledVector(this.palmNormal, 0.045);
   }
 }
 
