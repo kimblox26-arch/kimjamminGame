@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HAND VR — 손으로 하는 웹 VR</title>
+<meta name="description" content="웹캠이 내 손과 몸을 인식해 게임 속 손이 그대로 움직이는 VR 스타일 웹 게임">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/three.module.min.js",
+    "three/addons/": "../vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<video id="cam" playsinline muted autoplay></video>
+
+<!-- ───────── 시작 화면 ───────── -->
+<section id="start" class="screen">
+  <div class="card">
+    <h1 class="brand">HAND<span>VR</span></h1>
+    <p class="sub">웹캠이 내 손을 인식해서, 게임 속 손이 똑같이 움직여요</p>
+
+    <div class="opts">
+      <label class="opt"><input type="checkbox" id="opt-gesture" checked>
+        <span><b>손 제스처로 이동</b><small>☝️ 전진 · ✌️ 후진 · ✊ 조이스틱 · 👍 점프</small></span></label>
+      <label class="opt"><input type="checkbox" id="opt-body">
+        <span><b>몸 추적으로 이동</b><small>상체를 앞/뒤/옆으로 기울여 이동·회전, 실제 점프·앉기</small></span></label>
+      <div class="opt tone">
+        <span><b>피부 톤</b><small>자동 = 카메라로 내 피부색 그대로</small></span>
+        <div id="tones"></div>
+      </div>
+    </div>
+
+    <p class="scan-tip">✋ 시작하면 <b>손가락을 벌리고 손바닥을 카메라로 2~3초</b> 보여주세요.<br>손가락 굵기·피부색·소매 색을 스캔하고, 손 크기와 마디 길이 비율을 맞춰서 게임 속 손을 내 손에 가깝게 만들어요.</p>
+    <button id="btn-start" class="btn primary">📷 카메라 켜고 시작</button>
+    <button id="btn-kb" class="btn">⌨️ 카메라 없이 시작 (키보드·마우스)</button>
+    <div id="load-msg" class="msg"></div>
+    <p class="note">카메라 영상은 이 컴퓨터 안에서만 처리되고 어디에도 전송되지 않아요.</p>
+  </div>
+</section>
+
+<!-- ───────── 게임 HUD ───────── -->
+<div id="hud" class="hidden">
+  <div id="status" class="glass"></div>
+  <div id="chips">
+    <div class="chip glass" id="chip-L"><b>왼손</b><span class="g">—</span><span class="a"></span></div>
+    <div class="chip glass" id="chip-R"><b>오른손</b><span class="g">—</span><span class="a"></span></div>
+    <div class="chip glass hidden" id="chip-B"><b>몸</b><span class="g">—</span><span class="a"></span></div>
+  </div>
+  <div id="toast"></div>
+  <div id="preview-box" class="glass"><canvas id="preview" width="320" height="180"></canvas><div class="pv-label">카메라 (거울 화면)</div></div>
+  <button id="help-btn" class="glass">? 조작법 (H)</button>
+
+  <div id="help" class="glass hidden">
+    <h2>조작법</h2>
+    <div class="cols">
+      <div>
+        <h3>🖐 손 (카메라)</h3>
+        <table>
+          <tr><td>☝️ 검지만 펴기</td><td>앞으로 걷기 · 손가락을 좌/우로 기울이면 그쪽으로 회전</td></tr>
+          <tr><td>☝️☝️ 양손 검지</td><td>달리기</td></tr>
+          <tr><td>✌️ 브이</td><td>뒤로 걷기</td></tr>
+          <tr><td>✊ 왼손 주먹</td><td>이동 조이스틱: 쥔 위치에서 앞으로 밀기/당기기/좌우</td></tr>
+          <tr><td>✊ 오른손 주먹</td><td>시점 조이스틱: 좌우 = 회전, 위아래 = 위/아래 보기</td></tr>
+          <tr><td>👍 엄지척</td><td>점프</td></tr>
+          <tr><td>🤏 집기 / 공 옆에서 주먹</td><td>잡기 → 손을 펴면 던지기</td></tr>
+          <tr><td>🤏 멀리 있는 공에 집기</td><td>공을 손으로 끌어오기</td></tr>
+          <tr><td>🖐 손바닥·손가락</td><td>공·풍선을 직접 밀고 치기</td></tr>
+        </table>
+      </div>
+      <div>
+        <h3>🧍 몸 (B 키로 켜기)</h3>
+        <table>
+          <tr><td>카메라 쪽으로 숙이기</td><td>앞으로</td></tr>
+          <tr><td>뒤로 물러나기</td><td>뒤로</td></tr>
+          <tr><td>몸을 좌/우로 기울이기</td><td>그쪽으로 회전</td></tr>
+          <tr><td>실제로 점프</td><td>점프</td></tr>
+          <tr><td>몸 낮추기</td><td>웅크리기</td></tr>
+        </table>
+        <h3>⌨️ 키보드 · 마우스</h3>
+        <table>
+          <tr><td>W A S D / 방향키</td><td>이동 · ←→ 회전</td></tr>
+          <tr><td>마우스 (화면 클릭)</td><td>둘러보기</td></tr>
+          <tr><td>Space / Shift / C</td><td>점프 / 달리기 / 웅크리기</td></tr>
+          <tr><td>G / B</td><td>제스처 이동 / 몸 추적 켜고 끄기</td></tr>
+          <tr><td>K</td><td>기준 자세·손 거리·손 스캔 다시 하기</td></tr>
+          <tr><td>Q</td><td>화질: 고품질 ↔ 보통(빠름)</td></tr>
+          <tr><td>X</td><td>왼손·오른손 바꾸기 (손이 뒤집혀 보이면)</td></tr>
+          <tr><td>V / R / H</td><td>카메라 화면 / 물체 리셋 / 도움말</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
