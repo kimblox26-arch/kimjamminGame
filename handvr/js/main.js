@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createWorld } from './world.js';
-import { Tracker } from './tracking.js';
-import { HandState, assignHands, BONES, GESTURE_LABEL, recalibrateDepth } from './hands.js';
+import { Tracker, IS_MOBILE } from './tracking.js';
+import { HandState, HandAssigner, BONES, GESTURE_LABEL, recalibrateDepth } from './hands.js';
 import { loadHandRigs, SKIN_TONES, setSkinTone, setSkinFromCamera, setSleeve } from './hand-rig.js';
 import { HandScanner } from './scan.js';
 import { WEBCAM_HFOV } from './hands.js';
@@ -17,10 +17,12 @@ const $ = s => document.querySelector(s);
 const clamp = THREE.MathUtils.clamp;
 
 // ───────── 설정 ─────────
-const settings = { moveMode: 'pos', moveHand: 'L', body: false, swap: false, preview: true, tone: 'auto', quality: 'high' };
+const settings = { moveMode: 'pos', moveHand: 'L', body: false, swap: false, preview: true, tone: 'auto', quality: 'auto' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('handvr') || '{}')); } catch { /* 저장소 없음 */ }
 // 예전 설정(손 제스처 켜기/끄기) → 이동 방식
 if (settings.gestureMove !== undefined) { if (settings.gestureMove === false) settings.moveMode = 'off'; delete settings.gestureMove; }
+// 예전 기본값 '고품질'로 저장된 화질은 한 번 '자동'으로 바꿔 준다 (폰에서 너무 무거웠음)
+if (!settings.v2) { if (settings.quality === 'high') settings.quality = 'auto'; settings.v2 = true; }
 const MOVE_NAME = { pos: '손 위치', gesture: '손가락 모양', off: '손으로 이동 안 함' };
 const save = () => { try { localStorage.setItem('handvr', JSON.stringify(settings)); } catch { /* 무시 */ } };
 
@@ -53,23 +55,46 @@ const rigsReady = loadHandRigs().then(r => {
 });
 rigsReady.catch(e => { console.error(e); msg('손 3D 모델을 불러오지 못했어요: ' + (e.message || e), true); });
 const scanner = new HandScanner(WEBCAM_HFOV);
+const assigner = new HandAssigner();
 
-// ───────── 화질: 고품질 = MSAA + 블룸(해·반짝임) + 4096 그림자 ─────────
+// ───────── 화질: 자동(기기 성능에 맞춰 단계 조절) / 고품질 / 보통 ─────────
+// 단계: 해상도 배율, 후처리(MSAA+블룸), 그림자 해상도·범위
+const LEVELS = [
+  { pr: 0.7, post: false, shadow: [1024, 5] },
+  { pr: 0.85, post: false, shadow: [2048, 6] },
+  { pr: 1.0, post: false, shadow: [2048, 5] },
+  { pr: 1.25, post: true, shadow: [4096, 4.5] },
+  { pr: 1.5, post: true, shadow: [4096, 4.5] },
+];
+const QUALITY_NAME = { auto: '자동', high: '고품질', normal: '보통(빠름)' };
+let qLevel = IS_MOBILE ? 1 : 3;
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.55, 3.0);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 function applyQuality() {
-  const high = settings.quality === 'high';
-  const pr = Math.min(devicePixelRatio, high ? 1.5 : 1.25);
+  if (settings.quality === 'high') qLevel = 4;
+  else if (settings.quality === 'normal') qLevel = 2;
+  const L = LEVELS[qLevel], pr = Math.min(devicePixelRatio, L.pr);
   renderer.setPixelRatio(pr);
   renderer.setSize(innerWidth, innerHeight);
-  composer.setPixelRatio(pr);
-  composer.setSize(innerWidth, innerHeight);
-  world.setShadowQuality(high);
+  if (L.post) { composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); }
+  world.setShadowQuality(...L.shadow);
 }
 applyQuality();
+// 자동: 1.5초마다 평균 프레임을 보고 느리면 한 단계 내리고, 오래 여유 있으면 한 단계 올린다
+const auto = { t: 0, frames: 0, last: 0, downAt: -1e9 };
+function autoQuality(now) {
+  if (settings.quality !== 'auto') return;
+  auto.frames++;
+  if (!auto.t) auto.t = now;
+  if (now - auto.t < 1500) return;
+  const fps = auto.frames * 1000 / (now - auto.t);
+  auto.t = now; auto.frames = 0;
+  if (fps < 45 && qLevel > 0) { qLevel--; auto.downAt = now; auto.last = now; applyQuality(); }
+  else if (fps > 58 && qLevel < LEVELS.length - 1 && now - auto.last > 5000 && now - auto.downAt > 15000) { qLevel++; auto.last = now; applyQuality(); }
+}
 
 // 주먹 조이스틱 표시 (기준점 고리 + 현재 손까지 선)
 const joyMarks = {};
@@ -103,7 +128,7 @@ addEventListener('keydown', e => {
     case 'KeyM': setMoveHand(settings.moveHand === 'L' ? 'R' : 'L'); toast(`이동 손: ${settings.moveHand === 'L' ? '왼손' : '오른손'}`); break;
     case 'KeyB': toggleBody(); break;
     case 'KeyK': recalibrateDepth(); body.recalibrate(); for (const h of Object.values(hands)) h.profile.clear(); scanToasted = {}; toast('기준 자세·손 거리·손 스캔을 다시 합니다 — 손을 펴서 보여주세요', 3000); break;
-    case 'KeyQ': settings.quality = settings.quality === 'high' ? 'normal' : 'high'; save(); applyQuality(); toast(`화질: ${settings.quality === 'high' ? '고품질' : '보통(빠름)'}`); break;
+    case 'KeyQ': settings.quality = { auto: 'high', high: 'normal', normal: 'auto' }[settings.quality] ?? 'auto'; save(); applyQuality(); toast(`화질: ${QUALITY_NAME[settings.quality]}`); break;
     case 'KeyX': settings.swap = !settings.swap; toast('왼손 ↔ 오른손 바꿈'); save(); break;
     case 'KeyV': settings.preview = !settings.preview; save(); break;
     case 'KeyR': physics.reset(); toast('물체 리셋'); break;
@@ -249,7 +274,7 @@ function onTracking(now) {
   const v = tracker.video, res = tracker.handResult;
   view.tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   view.tanH = view.tanV * camera.aspect;
-  const slot = assignHands(res, settings.swap);
+  const slot = assigner.assign(res, settings.swap, hands, now, lostMs());
   const fr = { W: v.videoWidth, H: v.videoHeight, view, now, lostMs: lostMs(), scanner, video: v, stamp: tracker.frame };
   for (const s of ['L', 'R']) {
     const i = slot[s];
@@ -441,9 +466,9 @@ function updateHud(now) {
   const parts = [];
   if (camMode) {
     const n = (hands.L.visible ? 1 : 0) + (hands.R.visible ? 1 : 0);
-    parts.push(`손 ${n}개 인식`, `이동: ${MOVE_NAME[settings.moveMode]}${settings.moveMode === 'pos' ? `(${settings.moveHand === 'L' ? '왼손' : '오른손'})` : ''}`, `몸 추적 ${settings.body ? 'ON' : 'OFF'}`, `추적 ${tracker.rate}fps`);
+    parts.push(`손 ${n}개 인식`, `이동: ${MOVE_NAME[settings.moveMode]}${settings.moveMode === 'pos' ? `(${settings.moveHand === 'L' ? '왼손' : '오른손'})` : ''}`, `몸 추적 ${settings.body ? 'ON' : 'OFF'}`, `추적 ${tracker.rate}fps(${tracker.mode})`);
   } else parts.push('키보드 모드');
-  parts.push(`화면 ${fps}fps`);
+  parts.push(`화면 ${fps}fps`, `화질 ${QUALITY_NAME[settings.quality] ?? '자동'}${settings.quality === 'auto' ? ` ${qLevel + 1}/5` : ''}`);
   $('#status').textContent = parts.join(' · ');
   if (camMode) for (const s of ['L', 'R']) {
     const h = hands[s], chip = $('#chip-' + s);
@@ -503,7 +528,8 @@ function frame(now) {
   updateJoyMarks();
   updatePad();
   if (playing) updateHud(now);
-  if (settings.quality === 'high') composer.render(); else renderer.render(scene, camera);
+  autoQuality(now);
+  if (LEVELS[qLevel].post) composer.render(); else renderer.render(scene, camera);
 }
 setMoveMode(settings.moveMode);
 setMoveHand(settings.moveHand);

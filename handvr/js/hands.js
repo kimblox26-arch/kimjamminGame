@@ -194,27 +194,48 @@ function chirality(wl) {
 }
 
 // MediaPipe 결과를 왼손/오른손 슬롯에 배정.
-// 웹캠 원본 영상(좌우 반전 없음)에서 MediaPipe 의 Left/Right 는 실제 손과 일치한다. (테스트 이미지로 확인)
-export function assignHands(res, swap) {
-  const out = { L: -1, R: -1 };
-  const lms = res?.landmarks || [];
-  const hd = res?.handedness || res?.handednesses || [];
-  const flip = s => (s === 'L' ? 'R' : 'L');
-  const cand = lms.map((lm, i) => {
-    const c = hd[i]?.[0];
-    const det = chirality(res.worldLandmarks[i]);
-    let side = c ? (c.categoryName === 'Right' ? 'R' : 'L') : (det > 0 ? 'R' : 'L');
-    if (swap) side = flip(side);
-    return { i, side, det };
-  });
-  if (cand.length === 2 && cand[0].side === cand[1].side) {
-    // 둘 다 같은 손으로 나오면 3D 모양으로 결정
-    const [a, b] = cand[0].det > cand[1].det ? cand : [cand[1], cand[0]];
-    a.side = swap ? 'L' : 'R';
-    b.side = flip(a.side);
+// MediaPipe 의 Left/Right 라벨은 손을 돌리거나 손등이 보일 때 가끔 뒤집힌다. 뒤집힌 프레임을 그대로 쓰면
+// 손바닥 방향이 반대로 계산돼 굽힌 손가락이 펴진 것처럼 보이므로,
+//   ① 라벨(신뢰도 가중) + 3D 모양(엄지가 손바닥 쪽)으로 '오른손 증거'를 만들고
+//   ② 직전 프레임 위치와 가까운 손은 같은 손으로 이어 가며, 증거가 계속 반대일 때만 바꾼다.
+export class HandAssigner {
+  constructor() { this.slot = { L: { x: 0, y: 0, ev: 0 }, R: { x: 0, y: 0, ev: 0 } }; }
+
+  assign(res, swap, hands, now, lostMs) {
+    const out = { L: -1, R: -1 };
+    const lms = res?.landmarks || [];
+    const hd = res?.handedness || res?.handednesses || [];
+    const cand = lms.map((lm, i) => {
+      const c = hd[i]?.[0];
+      const det = chirality(res.worldLandmarks[i]);
+      let e = (c ? (c.categoryName === 'Right' ? 1 : -1) * c.score : 0) + Math.sign(det) * Math.min(1, Math.abs(det) / 0.06);
+      if (swap) e = -e;
+      return { i, e, x: lm[9].x, y: lm[9].y };
+    });
+    const live = s => hands[s].visible && now - hands[s].lastSeen < lostMs;
+    const dist = (c, s) => Math.hypot(c.x - this.slot[s].x, c.y - this.slot[s].y);
+    const other = s => (s === 'L' ? 'R' : 'L');
+    if (cand.length === 1) {
+      const c = cand[0];
+      let side = ['L', 'R'].find(s => live(s) && dist(c, s) < 0.25) ?? null;
+      if (side) {
+        const sl = this.slot[side];
+        sl.ev = sl.ev * 0.85 + (side === 'R' ? c.e : -c.e) * 0.15; // 이 슬롯이 맞다는 증거 (평균)
+        if (sl.ev < -0.6) { side = other(side); this.slot[side].ev = 0.6; }
+      } else {
+        side = c.e >= 0 ? 'R' : 'L';
+        this.slot[side].ev = Math.abs(c.e) / 2;
+      }
+      out[side] = c.i;
+    } else if (cand.length >= 2) {
+      const [a, b] = cand;
+      const score = (r, l) => (r.e - l.e) - (live('R') ? dist(r, 'R') * 4 : 0) - (live('L') ? dist(l, 'L') * 4 : 0);
+      if (score(a, b) >= score(b, a)) { out.R = a.i; out.L = b.i; } else { out.R = b.i; out.L = a.i; }
+      for (const s of ['L', 'R']) { const c = cand.find(x => x.i === out[s]); this.slot[s].ev = this.slot[s].ev * 0.85 + (s === 'R' ? c.e : -c.e) * 0.15; }
+    }
+    for (const s of ['L', 'R']) if (out[s] >= 0) { const c = cand.find(x => x.i === out[s]); this.slot[s].x = c.x; this.slot[s].y = c.y; }
+    return out;
   }
-  for (const c of cand) if (out[c.side] < 0) out[c.side] = c.i;
-  return out;
 }
 
 export const GESTURE_LABEL = {
