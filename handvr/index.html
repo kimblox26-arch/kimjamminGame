@@ -32,11 +32,12 @@
       <label class="opt"><input type="checkbox" id="opt-body">
         <span><b>몸 추적으로 이동</b><small>상체를 앞/뒤/옆으로 기울여 이동·회전, 실제 점프·앉기</small></span></label>
       <div class="opt tone">
-        <span><b>피부 톤</b></span>
+        <span><b>피부 톤</b><small>자동 = 카메라로 내 피부색 그대로</small></span>
         <div id="tones"></div>
       </div>
     </div>
 
+    <p class="scan-tip">✋ 시작하면 <b>손가락을 벌리고 손바닥을 카메라로 2~3초</b> 보여주세요.<br>손가락 굵기·피부색·소매 색을 스캔하고, 손 크기와 마디 길이 비율을 맞춰서 게임 속 손을 내 손에 가깝게 만들어요.</p>
     <button id="btn-start" class="btn primary">📷 카메라 켜고 시작</button>
     <button id="btn-kb" class="btn">⌨️ 카메라 없이 시작 (키보드·마우스)</button>
     <div id="load-msg" class="msg"></div>
@@ -88,7 +89,8 @@
           <tr><td>마우스 (화면 클릭)</td><td>둘러보기</td></tr>
           <tr><td>Space / Shift / C</td><td>점프 / 달리기 / 웅크리기</td></tr>
           <tr><td>G / B</td><td>제스처 이동 / 몸 추적 켜고 끄기</td></tr>
-          <tr><td>K</td><td>기준 자세·손 거리 다시 맞추기</td></tr>
+          <tr><td>K</td><td>기준 자세·손 거리·손 스캔 다시 하기</td></tr>
+          <tr><td>Q</td><td>화질: 고품질 ↔ 보통(빠름)</td></tr>
           <tr><td>X</td><td>왼손·오른손 바꾸기 (손이 뒤집혀 보이면)</td></tr>
           <tr><td>V / R / H</td><td>카메라 화면 / 물체 리셋 / 도움말</td></tr>
         </table>

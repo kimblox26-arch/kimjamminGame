@@ -1,11 +1,12 @@
 // 손 추적 결과 → 게임 좌표 변환, 필터링, 제스처 인식
 import * as THREE from 'three';
+import { HandProfile } from './scan.js';
 
 export const FINGERS = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]];
 export const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
   [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
 
-const WEBCAM_HFOV = THREE.MathUtils.degToRad(62); // 일반 노트북 웹캠 수평 화각
+export const WEBCAM_HFOV = THREE.MathUtils.degToRad(62); // 일반 노트북 웹캠 수평 화각
 const SCREEN_GAIN = 1.08;   // 카메라 화면 가장자리 = 게임 시야 가장자리
 const Y_OFFSET = -0.05;     // 손을 살짝 아래에
 const EYE_REACH = 0.32;     // 기준 자세에서 손이 눈앞 몇 m 에 오는가
@@ -64,9 +65,13 @@ export class HandState {
     this.pulling = null; // 끌어오는 물체
     this.joy = null;     // 주먹 조이스틱 기준점
     this.action = '';
+    this.profile = new HandProfile(side); // 손 스캔 결과 (굵기·손바닥·손목·피부색·소매)
+    this.scanTick = 0;
   }
 
-  ingest(lm, wl, W, H, view, now, lostMs) {
+  // fr: { W, H, view, now, lostMs, scanner, video, stamp }
+  ingest(lm, wl, fr) {
+    const { W, H, view, now, lostMs } = fr;
     const reappear = !this.visible || now - this.lastSeen > lostMs;
     const dt = reappear ? 1 / 30 : Math.max(1 / 120, (now - this.lastT) / 1000);
     this.lastT = now;
@@ -103,13 +108,18 @@ export class HandState {
     _a.set(nx * view.tanH * d, ny * view.tanV * d + Y_OFFSET, -d);
     this.palmCam.copy(this.posFilter.apply(_a, dt));
 
-    // ── 손 모양: 카메라 좌표(x 오른쪽, y 아래, z 멀어짐) → 플레이어 시점 (x→-x, y→-y, z→z) : 회전이라 손의 좌우(키랄성) 유지
+    // ── 손 모양: MediaPipe 3D 관절(미터 단위, 손 모양 사전지식이 들어간 추정)을 그대로 사용
+    //    → 카메라 각도가 바뀌어도 뼈 길이·비율이 일정하게 유지된다.
+    //    카메라 좌표(x 오른쪽, y 아래, z 멀어짐) → 플레이어 시점 (x→-x, y→-y, z→z) : 회전이라 손의 좌우(키랄성) 유지
+    const depth = i => Z + (wl[i].z - wl[9].z);
     for (let i = 0; i < 21; i++) {
       _b.set(-(wl[i].x - wl[9].x), -(wl[i].y - wl[9].y), wl[i].z - wl[9].z);
       this.local[i].copy(this.shapeFilters[i].apply(_b, dt));
       this.target[i].copy(this.palmCam).add(this.local[i]);
     }
     this.classify(now);
+    // 손 스캔 (아직 안 끝났을 때만, 2프레임에 한 번)
+    if (fr.scanner && !this.profile.done && (this.scanTick++ & 1) === 0) fr.scanner.observe(this, lm, depth, fr.video, fr.stamp);
   }
 
   classify(now) {

@@ -57,14 +57,38 @@ export function createWorld(scene, renderer) {
   sky.renderOrder = -10;
   scene.add(sky);
 
+  // ── 환경광(반사): 하늘 + 하얀 바닥을 큐브맵으로 구워서 피부·손톱·공에 하늘이 비치게
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  // 직접광(햇빛·하늘빛)과 겹치므로 반사용 하늘은 어둡게 (밝으면 화면이 뿌옇게 뜬다)
+  const envSky = sky.material.clone();
+  for (const k of ['zenith', 'horizon', 'ground']) envSky.uniforms[k].value.multiplyScalar(0.38);
+  envScene.add(new THREE.Mesh(sky.geometry, envSky));
+  const envFloor = new THREE.Mesh(new THREE.CircleGeometry(1400, 48), new THREE.MeshBasicMaterial({ color: 0x9a9da2 }));
+  envFloor.rotation.x = -Math.PI / 2;
+  envFloor.position.y = -1.5;
+  envScene.add(envFloor);
+  scene.environment = pmrem.fromScene(envScene, 0, 0.1, 3000).texture;
+  pmrem.dispose();
+
   // ── 빛: 하늘빛 + 햇빛(그림자)
-  const hemi = new THREE.HemisphereLight(0xd4e8ff, 0xffffff, 1.9);
+  const hemi = new THREE.HemisphereLight(0xd4e8ff, 0xffffff, 1.05);
   const sun = new THREE.DirectionalLight(0xfff2de, 3.3);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7, near: 1, far: 90 });
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.015;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 90;
+  // 그림자 품질: 고품질이면 주변 4.5m 를 4096 해상도로 (손가락 그림자까지 또렷하게)
+  const setShadowQuality = high => {
+    const big = high && renderer.capabilities.maxTextureSize >= 4096;
+    const size = big ? 4096 : 2048, ext = high ? 4.5 : 7;
+    sun.shadow.mapSize.set(size, size);
+    Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.shadow.bias = -0.0002;
+    sun.shadow.normalBias = high ? 0.004 : 0.012;
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  };
+  setShadowQuality(true);
   scene.add(hemi, sun, sun.target);
 
   // ── 하얀 바닥 (거리감용 아주 옅은 격자)
@@ -107,6 +131,7 @@ export function createWorld(scene, renderer) {
   scene.add(clouds);
 
   return {
+    setShadowQuality,
     update(dt, playerPos) {
       sky.position.copy(playerPos);
       clouds.position.set(playerPos.x, 0, playerPos.z);

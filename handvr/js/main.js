@@ -2,7 +2,13 @@ import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { Tracker } from './tracking.js';
 import { HandState, assignHands, BONES, GESTURE_LABEL, recalibrateDepth } from './hands.js';
-import { HandMesh, SKIN_TONES } from './hand-model.js';
+import { loadHandRigs, SKIN_TONES, setSkinTone, setSkinFromCamera, setSleeve } from './hand-rig.js';
+import { HandScanner } from './scan.js';
+import { WEBCAM_HFOV } from './hands.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js';
 import { Physics } from './physics.js';
 import { BodyControl } from './body.js';
@@ -11,17 +17,16 @@ const $ = s => document.querySelector(s);
 const clamp = THREE.MathUtils.clamp;
 
 // ───────── 설정 ─────────
-const settings = { gestureMove: true, body: false, swap: false, preview: true, tone: 'medium' };
+const settings = { gestureMove: true, body: false, swap: false, preview: true, tone: 'auto', quality: 'high' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('handvr') || '{}')); } catch { /* 저장소 없음 */ }
 const save = () => { try { localStorage.setItem('handvr', JSON.stringify(settings)); } catch { /* 무시 */ } };
 
 // ───────── 렌더러 / 장면 ─────────
 const renderer = new THREE.WebGLRenderer({ canvas: $('#gl'), antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -34,8 +39,34 @@ const physics = new Physics(scene);
 player.obstacles = physics.boxes;
 
 const hands = { L: new HandState('L'), R: new HandState('R') };
-const meshes = { L: new HandMesh('L', settings.tone), R: new HandMesh('R', settings.tone) };
-camera.add(meshes.L.group, meshes.R.group);
+// 리깅된 3D 손 모델 (불러오기 끝나면 카메라에 붙임)
+let meshes = null;
+const rigsReady = loadHandRigs().then(r => {
+  meshes = r;
+  camera.add(r.L.group, r.R.group);
+  setSkinTone(settings.tone === 'auto' ? 'medium' : settings.tone);
+  lastSkinKey = '';
+  return r;
+});
+rigsReady.catch(e => { console.error(e); msg('손 3D 모델을 불러오지 못했어요: ' + (e.message || e), true); });
+const scanner = new HandScanner(WEBCAM_HFOV);
+
+// ───────── 화질: 고품질 = MSAA + 블룸(해·반짝임) + 4096 그림자 ─────────
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.55, 3.0);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+function applyQuality() {
+  const high = settings.quality === 'high';
+  const pr = Math.min(devicePixelRatio, high ? 1.5 : 1.25);
+  renderer.setPixelRatio(pr);
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setPixelRatio(pr);
+  composer.setSize(innerWidth, innerHeight);
+  world.setShadowQuality(high);
+}
+applyQuality();
 
 // 주먹 조이스틱 표시 (기준점 고리 + 현재 손까지 선)
 const joyMarks = {};
@@ -67,7 +98,8 @@ addEventListener('keydown', e => {
   switch (e.code) {
     case 'KeyG': settings.gestureMove = !settings.gestureMove; toast(`손 제스처 이동 ${settings.gestureMove ? '켜짐' : '꺼짐'}`); save(); break;
     case 'KeyB': toggleBody(); break;
-    case 'KeyK': recalibrateDepth(); body.recalibrate(); toast('기준 자세·손 거리를 다시 맞춥니다'); break;
+    case 'KeyK': recalibrateDepth(); body.recalibrate(); for (const h of Object.values(hands)) h.profile.clear(); scanToasted = {}; toast('기준 자세·손 거리·손 스캔을 다시 합니다 — 손을 펴서 보여주세요', 3000); break;
+    case 'KeyQ': settings.quality = settings.quality === 'high' ? 'normal' : 'high'; save(); applyQuality(); toast(`화질: ${settings.quality === 'high' ? '고품질' : '보통(빠름)'}`); break;
     case 'KeyX': settings.swap = !settings.swap; toast('왼손 ↔ 오른손 바꿈'); save(); break;
     case 'KeyV': settings.preview = !settings.preview; save(); break;
     case 'KeyR': physics.reset(); toast('물체 리셋'); break;
@@ -95,7 +127,7 @@ $('#help-btn').addEventListener('click', () => $('#help').classList.toggle('hidd
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  applyQuality();
 });
 
 // ───────── 시작 화면 ─────────
@@ -104,14 +136,15 @@ optGesture.checked = settings.gestureMove;
 optBody.checked = settings.body;
 optGesture.onchange = () => { settings.gestureMove = optGesture.checked; save(); };
 optBody.onchange = () => { settings.body = optBody.checked; save(); };
-for (const [name, hex] of Object.entries(SKIN_TONES)) {
+for (const [name, hex] of [['auto', null], ...Object.entries(SKIN_TONES)]) {
   const b = document.createElement('button');
-  b.style.background = '#' + hex.toString(16).padStart(6, '0');
-  b.title = name;
+  if (hex === null) { b.className = 'auto'; b.textContent = '📷 자동'; b.title = '카메라로 내 피부색 그대로'; }
+  else { b.style.background = '#' + hex.toString(16).padStart(6, '0'); b.title = name; }
   b.classList.toggle('on', name === settings.tone);
   b.onclick = () => {
     settings.tone = name; save();
-    for (const m of Object.values(meshes)) m.setTone(name);
+    lastSkinKey = '';
+    if (name !== 'auto') setSkinTone(name);
     document.querySelectorAll('#tones button').forEach(x => x.classList.toggle('on', x === b));
   };
   $('#tones').append(b);
@@ -133,6 +166,8 @@ $('#btn-start').onclick = async () => {
       console.error(e);
       throw new Error('AI 모델을 불러오지 못했어요. 인터넷 연결을 확인해 주세요. (' + (e.message || e) + ')');
     }
+    msg('손 3D 모델 준비 중…');
+    try { await rigsReady; } catch (e) { throw new Error('손 3D 모델을 불러오지 못했어요: ' + (e.message || e)); }
     camMode = true;
     enterPlay();
     toast('손을 카메라 앞에 보여주세요 🖐', 3500);
@@ -193,9 +228,10 @@ function onTracking(now) {
   view.tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   view.tanH = view.tanV * camera.aspect;
   const slot = assignHands(res, settings.swap);
+  const fr = { W: v.videoWidth, H: v.videoHeight, view, now, lostMs: lostMs(), scanner, video: v, stamp: tracker.frame };
   for (const s of ['L', 'R']) {
     const i = slot[s];
-    if (i >= 0) hands[s].ingest(res.landmarks[i], res.worldLandmarks[i], v.videoWidth, v.videoHeight, view, now, lostMs());
+    if (i >= 0) hands[s].ingest(res.landmarks[i], res.worldLandmarks[i], fr);
   }
   if (settings.body && tracker.poseOn) body.update(tracker.poseResult?.landmarks?.[0], v.videoWidth / v.videoHeight, now);
   drawPreview();
@@ -312,6 +348,19 @@ function drawPreview() {
   }
 }
 
+// ───────── 스캔 결과 → 피부색·소매 ─────────
+let scanToasted = {}, lastSkinKey = '';
+function applyProfiles() {
+  const profs = [hands.R.profile, hands.L.profile];
+  const withSkin = profs.filter(p => p.skin).sort((a, b) => (b.done ? 1 : 0) - (a.done ? 1 : 0));
+  if (settings.tone === 'auto' && withSkin.length) {
+    const c = withSkin[0].skin, key = c.map(v => Math.round(v / 4)).join(',');
+    if (key !== lastSkinKey) { lastSkinKey = key; setSkinFromCamera(c); }
+  }
+  const sl = profs.find(p => p.sleeve && !p.sleeve.bare)?.sleeve ?? null;
+  setSleeve(sl);
+}
+
 // ───────── HUD ─────────
 let hudT = 0, fpsN = 0, fps = 0, fpsT = 0;
 function updateHud(now) {
@@ -329,9 +378,15 @@ function updateHud(now) {
   if (camMode) for (const s of ['L', 'R']) {
     const h = hands[s], chip = $('#chip-' + s);
     chip.querySelector('.g').textContent = h.visible ? GESTURE_LABEL[h.gesture] : '안 보임';
-    chip.querySelector('.a').textContent = h.action;
+    const scan = h.profile.done ? '' : `🔍 손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로 `;
+    chip.querySelector('.a').textContent = h.action || (h.visible ? scan : '');
     chip.style.opacity = h.visible ? 1 : 0.55;
+    if (h.profile.done && !scanToasted[s]) {
+      scanToasted[s] = true;
+      if (h.profile.samples && Object.keys(h.profile.samples).length) toast(`${s === 'L' ? '왼손' : '오른손'} 스캔 완료! 굵기·손톱·피부색을 내 손에 맞췄어요 ✋`, 2500);
+    }
   }
+  applyProfiles();
   const bc = $('#chip-B');
   bc.classList.toggle('hidden', !(camMode && settings.body));
   if (camMode && settings.body) {
@@ -369,8 +424,7 @@ function frame(now) {
   for (const s of ['L', 'R']) {
     const h = hands[s];
     h.updateDisplay(dt, camera, now, lostMs());
-    meshes[s].group.visible = h.visible;
-    if (h.visible) meshes[s].update(h.joints, h.sign);
+    meshes?.[s].update(h.joints, h.local, dt, h.profile, h.visible);
   }
   camera.getWorldPosition(camPos);
   physics.updateHands(Object.values(hands), camPos);
@@ -378,9 +432,9 @@ function frame(now) {
   world.update(dt, player.pos);
   updateJoyMarks();
   if (playing) updateHud(now);
-  renderer.render(scene, camera);
+  if (settings.quality === 'high') composer.render(); else renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
 
 // 디버그용
-window.__handvr = { hands, meshes, tracker, player, physics, settings, body };
+window.__handvr = { hands, get meshes() { return meshes; }, tracker, player, physics, settings, body, scanner, scene, renderer, bloom };
