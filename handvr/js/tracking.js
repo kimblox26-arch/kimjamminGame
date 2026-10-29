@@ -65,7 +65,7 @@ export class Tracker {
 
   // ── 워커
   async startWorker() {
-    const w = new Worker(new URL('./track-worker.js', import.meta.url), { type: 'module' });
+    const w = new Worker(new URL('./track-worker.js' + new URL(import.meta.url).search, import.meta.url), { type: 'module' });
     this.worker = w;
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('워커 응답 없음')), 30000);

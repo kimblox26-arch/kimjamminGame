@@ -5,12 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>HAND VR — 손으로 하는 웹 VR</title>
 <meta name="description" content="웹캠이 내 손을 인식해 화면 속 3D 손이 그대로 움직이는 웹 VR">
-<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./style.css?v=20261029b">
+<!-- 업데이트하면 v 값을 바꿔서, 브라우저에 남은 옛 파일 대신 새 파일을 받게 한다 -->
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
-    "three/addons/": "../vendor/three/addons/"
+    "three/addons/": "../vendor/three/addons/",
+    "./js/finger-pose.js": "./js/finger-pose.js?v=20261029b",
+    "./js/hand-rig.js": "./js/hand-rig.js?v=20261029b",
+    "./js/hands.js": "./js/hands.js?v=20261029b",
+    "./js/scan.js": "./js/scan.js?v=20261029b",
+    "./js/skin.js": "./js/skin.js?v=20261029b",
+    "./js/tracking.js": "./js/tracking.js?v=20261029b",
+    "./js/world.js": "./js/world.js?v=20261029b"
   }
 }
 </script>
@@ -77,6 +85,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js"></script>
+<script type="module" src="./js/main.js?v=20261029b"></script>
 </body>
 </html>
