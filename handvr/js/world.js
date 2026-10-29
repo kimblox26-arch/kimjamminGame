@@ -77,10 +77,11 @@ export function createWorld(scene, renderer) {
   sun.castShadow = true;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 90;
-  // 그림자 품질: 고품질이면 주변 4.5m 를 4096 해상도로 (손가락 그림자까지 또렷하게)
-  const setShadowQuality = high => {
-    const big = high && renderer.capabilities.maxTextureSize >= 4096;
-    const size = big ? 4096 : 2048, ext = high ? 4.5 : 7;
+  // 그림자 품질: size 해상도로 주변 ext m 범위 (고품질이면 4096 / 4.5m → 손가락 그림자까지 또렷하게)
+  const setShadowQuality = (size, ext) => {
+    size = Math.min(size, renderer.capabilities.maxTextureSize);
+    if (sun.shadow.mapSize.x === size && sun.shadow.camera.right === ext && sun.shadow.map) return;
+    const high = size >= 4096;
     sun.shadow.mapSize.set(size, size);
     Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext });
     sun.shadow.camera.updateProjectionMatrix();
@@ -88,7 +89,7 @@ export function createWorld(scene, renderer) {
     sun.shadow.normalBias = high ? 0.004 : 0.012;
     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   };
-  setShadowQuality(true);
+  setShadowQuality(2048, 6);
   scene.add(hemi, sun, sun.target);
 
   // ── 하얀 바닥 (거리감용 아주 옅은 격자)
