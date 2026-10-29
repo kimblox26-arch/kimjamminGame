@@ -43,8 +43,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 
 /* ── HUD ── */
 #hud { position: fixed; inset: 0; pointer-events: none; }
-#status { position: absolute; left: 12px; top: 12px; padding: 7px 12px; font-size: 13px; color: #1d3a5f; }
-#chips { position: absolute; left: 12px; top: 50px; display: flex; flex-direction: column; gap: 6px; }
+#chips { position: absolute; left: 12px; top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; max-width: calc(100% - 270px); }
+#status { padding: 7px 12px; font-size: 13px; color: #1d3a5f; }
 .chip { display: flex; gap: 8px; align-items: baseline; padding: 6px 12px; font-size: 14px; min-width: 210px; }
 .chip b { color: #0f3b78; min-width: 42px; }
 .chip .g { font-weight: 700; }
@@ -55,7 +55,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 #preview-box { position: absolute; right: 12px; bottom: 12px; padding: 6px; }
 #preview { display: block; width: 256px; height: auto; border-radius: 10px; background: #000; }
 .pv-label { font-size: 11px; color: #456; text-align: center; margin-top: 3px; }
-#help-btn { position: absolute; right: 12px; top: 12px; padding: 7px 12px; font-size: 13px; cursor: pointer; pointer-events: auto; color: #17406f; }
+#top-btns { position: absolute; right: 12px; top: 12px; display: flex; gap: 8px; }
+#top-btns button { padding: 7px 12px; font-size: 13px; cursor: pointer; pointer-events: auto; color: #17406f; }
 #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(860px, calc(100% - 32px));
   max-height: calc(100% - 32px); overflow: auto; padding: 18px 22px; pointer-events: auto; background: rgba(255, 255, 255, 0.9); }
 #help h2 { margin: 0 0 8px; color: #0f3b78; }
@@ -69,4 +70,18 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
   #help .cols { grid-template-columns: 1fr; }
   #preview { width: 160px; }
   .chip { min-width: 0; font-size: 12px; }
+  #chips { top: 54px; max-width: calc(100% - 24px); }
+}
+/* 휴대폰 가로 화면: 글자·창을 작게 해서 게임 화면을 넓게 */
+@media (orientation: landscape) and (max-height: 520px) {
+  #chips { top: 8px; left: 8px; gap: 4px; max-width: calc(100% - 250px); }
+  #status, .chip { font-size: 11px; padding: 4px 9px; }
+  .chip { min-width: 0; }
+  #top-btns { top: 8px; right: 8px; }
+  #top-btns button { font-size: 12px; padding: 5px 10px; }
+  #preview-box { right: 8px; bottom: 8px; padding: 4px; }
+  #preview { width: 150px; }
+  .card { padding: 16px 18px 12px; }
+  .brand { font-size: 32px; }
+  .scan-tip { display: none; }
 }

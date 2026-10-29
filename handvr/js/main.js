@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { Tracker, IS_MOBILE } from './tracking.js';
 import { HandState, HandAssigner, BONES, WEBCAM_HFOV, recalibrateDepth } from './hands.js';
-import { loadHandRigs, SKIN_TONES, setSkinTone, setSkinFromCamera, setSleeve } from './hand-rig.js';
+import { loadHandRigs, SKIN_TONES, setSkinTone, setSkinFromCamera } from './hand-rig.js';
 import { HandScanner } from './scan.js';
 import { FINGER_NAME, STATE_NAME } from './finger-pose.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -108,9 +108,25 @@ addEventListener('keydown', e => {
 });
 $('#help-btn').addEventListener('click', () => $('#help').classList.toggle('hidden'));
 
-addEventListener('resize', () => {
+// ───────── 가로 화면: 전체 화면 + 가로 고정 (지원하는 브라우저에서, 안 되면 돌려 달라고 안내) ─────────
+async function goLandscape() {
+  try { if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch { /* 지원 안 함 */ }
+  try { await screen.orientation.lock('landscape'); } catch { /* 지원 안 함 (아이폰 등) */ }
+  if (innerWidth < innerHeight) toast('휴대폰을 가로로 돌려 주세요 (화면 자동 회전 켜기)', 3500);
+}
+$('#land-btn').addEventListener('click', () => {
+  if (document.fullscreenElement) { try { screen.orientation.unlock(); } catch { /* 무시 */ } document.exitFullscreen().catch(() => {}); }
+  else goLandscape();
+});
+// 가로로 넓은 화면은 시야각을 조금 좁혀서 손이 작고 늘어져 보이지 않게
+function fitCamera() {
   camera.aspect = innerWidth / innerHeight;
+  camera.fov = camera.aspect > 1.05 ? 56 : 70;
   camera.updateProjectionMatrix();
+}
+fitCamera();
+addEventListener('resize', () => {
+  fitCamera();
   applyQuality();
 });
 
@@ -131,9 +147,12 @@ for (const [name, hex] of [['auto', null], ...Object.entries(SKIN_TONES)]) {
 
 const msg = (text, err = false) => { const m = $('#load-msg'); m.textContent = text; m.classList.toggle('err', err); };
 
-$('#btn-start').onclick = async () => {
+$('#btn-start').onclick = () => start();
+$('#btn-land').onclick = () => { goLandscape(); start(); };
+async function start() {
   const btn = $('#btn-start');
-  btn.disabled = true;
+  if (btn.disabled) return;
+  btn.disabled = $('#btn-land').disabled = true;
   try {
     msg('카메라 권한을 요청하는 중… (브라우저 창에서 "허용"을 눌러주세요)');
     try { await tracker.startCamera(); } catch (e) { throw new Error(cameraError(e)); }
@@ -152,9 +171,9 @@ $('#btn-start').onclick = async () => {
   } catch (e) {
     msg(e.message, true);
   } finally {
-    btn.disabled = false;
+    btn.disabled = $('#btn-land').disabled = false;
   }
-};
+}
 
 function cameraError(e) {
   if (!window.isSecureContext) return '카메라는 https 또는 http://localhost 주소에서만 쓸 수 있어요. (README의 실행 방법 참고)';
@@ -240,7 +259,7 @@ function drawPreview() {
   }
 }
 
-// ───────── 스캔 결과 → 피부색·소매 ─────────
+// ───────── 스캔 결과 → 피부색 ─────────
 let scanToasted = {};
 function applyProfiles() {
   const profs = [hands.R.profile, hands.L.profile];
@@ -249,8 +268,6 @@ function applyProfiles() {
     const c = withSkin[0].skin, key = c.map(v => Math.round(v / 4)).join(',');
     if (key !== lastSkinKey) { lastSkinKey = key; setSkinFromCamera(c); }
   }
-  const sl = profs.find(p => p.sleeve && !p.sleeve.bare)?.sleeve ?? null;
-  setSleeve(sl);
 }
 
 // ───────── HUD ─────────
@@ -277,7 +294,7 @@ function updateHud(now) {
     chip.style.opacity = h.visible ? 1 : 0.55;
     if (h.profile.done && !scanToasted[s]) {
       scanToasted[s] = true;
-      if (Object.keys(h.profile.samples).length) toast(`${s === 'L' ? '왼손' : '오른손'} 스캔 완료! 굵기·손톱·피부색을 내 손에 맞췄어요 ✋`, 2500);
+      if (Object.keys(h.profile.samples).length) toast(`${s === 'L' ? '왼손' : '오른손'} 스캔 완료! 손가락 굵기·피부색을 내 손에 맞췄어요 ✋`, 2500);
     }
   }
   applyProfiles();
