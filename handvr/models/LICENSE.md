@@ -1,24 +1,10 @@
-손 3D 모델 (hand-left.glb, hand-right.glb)
-출처: @webxr-input-profiles/assets 1.0.19 — dist/profiles/generic-hand (https://github.com/immersive-web/webxr-input-profiles)
+# 손·팔 3D 모델 (arm.glb, arm-color.jpg, arm-normal.jpg, arm-orm.jpg)
 
-MIT License
+"Hand and arm - Zbrush sculpt" by Andy Woodhead (https://sketchfab.com/Andywoodhead) is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+Source: https://sketchfab.com/3d-models/hand-and-arm-zbrush-sculpt-75640a16ffe04ed38464100c8dde65a5.
+Changes: Cleaned up (centered, grounded, renamed), converted to GLB/FBX/OBJ/BLEND. Distributed by AiZity (https://aizity.com).
 
-Copyright (c) 2019 Amazon
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished
-to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice (including the next
-paragraph) shall be included in all copies or substantial portions of the
-Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
-OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
-OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+이 프로젝트에서 바꾼 것:
+- FBX 를 GLB(위치·법선·UV, 같은 정점 합침)로 변환, 텍스처를 JPG 로 다시 저장 (거칠기·AO 는 arm-orm.jpg 의 G·R 채널)
+- 뼈대와 스킨 가중치는 게임이 실행될 때 `js/hand-rig.js` 가 계산 (손 관절 위치는 모델을 여러 방향에서 렌더링해 손 인식 AI 로 찾은 값)
+- 오른팔은 이 왼팔 모델을 좌우로 뒤집어서 사용
