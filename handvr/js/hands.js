@@ -1,6 +1,7 @@
 // 손 추적 결과 → 게임 좌표 변환, 필터링, 제스처 인식
 import * as THREE from 'three';
 import { HandProfile } from './scan.js';
+import { FingerPose } from './finger-pose.js';
 
 export const FINGERS = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]];
 export const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
@@ -44,6 +45,7 @@ export class HandState {
     this.lastT = 0;
     this.snap = true;
     this.img = Array.from({ length: 21 }, () => ({ x: 0, y: 0 })); // 원본 카메라 정규화 좌표
+    this.img2 = Array.from({ length: 21 }, () => ({ x: 0, y: 0 })); // 같은 좌표, 픽셀 단위
     this.local = vec21();   // 손 모양 (m, 플레이어 기준 축, 중지 MCP 원점)
     this.target = vec21();  // 카메라(눈) 공간 목표 관절 위치
     this.joints = vec21();  // 화면 표시용(보간된) 관절 위치
@@ -57,6 +59,9 @@ export class HandState {
     this.pinchD = 1;
     this.profile = new HandProfile(side); // 손 스캔 결과 (굵기·손바닥·손목·피부색·소매)
     this.scanTick = 0;
+    this.fingerPose = new FingerPose(); // 손가락 펴짐/접힘 판단
+    this.pose = null;                    // 판단 결과 (손 모델이 씀)
+    this.elbow = null;                   // 팔꿈치 쪽 방향 (몸 인식, 없으면 null)
   }
 
   // fr: { W, H, view, now, lostMs, scanner, video, stamp }
@@ -71,6 +76,7 @@ export class HandState {
       for (const f of this.shapeFilters) f.reset();
       this.snap = true;
       this.cand = 'none'; this.candN = 0; this.pinching = false;
+      this.fingerPose.reset();
     }
     this.visible = true;
     for (let i = 0; i < 21; i++) { this.img[i].x = lm[i].x; this.img[i].y = lm[i].y; }
@@ -108,6 +114,8 @@ export class HandState {
       this.target[i].copy(this.palmCam).add(this.local[i]);
     }
     this.classify(now);
+    for (let i = 0; i < 21; i++) { this.img2[i].x = lm[i].x * W; this.img2[i].y = lm[i].y * H; }
+    this.pose = this.fingerPose.update(this.local, this.sign, now, this.img2);
     // 손 스캔 (아직 안 끝났을 때만, 2프레임에 한 번)
     if (fr.scanner && !this.profile.done && (this.scanTick++ & 1) === 0) fr.scanner.observe(this, lm, depth, fr.video, fr.stamp);
   }
@@ -179,8 +187,12 @@ export class HandAssigner {
       const det = chirality(res.worldLandmarks[i]);
       let e = (c ? (c.categoryName === 'Right' ? 1 : -1) * c.score : 0) + Math.sign(det) * Math.min(1, Math.abs(det) / 0.06);
       if (swap) e = -e;
-      return { i, e, x: lm[9].x, y: lm[9].y };
+      return { i, e, x: lm[9].x, y: lm[9].y, size: Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y) };
     });
+    if (cand.length === 2) {
+      const [p, q] = cand;
+      if (Math.hypot(p.x - q.x, p.y - q.y) < Math.max(p.size, q.size) * 0.6) cand.splice(Math.abs(p.e) >= Math.abs(q.e) ? 1 : 0, 1);
+    }
     const live = s => hands[s].visible && now - hands[s].lastSeen < lostMs;
     const dist = (c, s) => Math.hypot(c.x - this.slot[s].x, c.y - this.slot[s].y);
     const other = s => (s === 'L' ? 'R' : 'L');
@@ -201,6 +213,11 @@ export class HandAssigner {
       const score = (r, l) => (r.e - l.e) - (live('R') ? dist(r, 'R') * 4 : 0) - (live('L') ? dist(l, 'L') * 4 : 0);
       if (score(a, b) >= score(b, a)) { out.R = a.i; out.L = b.i; } else { out.R = b.i; out.L = a.i; }
       for (const s of ['L', 'R']) { const c = cand.find(x => x.i === out[s]); this.slot[s].ev = this.slot[s].ev * 0.85 + (s === 'R' ? c.e : -c.e) * 0.15; }
+    }
+    // 한 손이 다른 칸으로 옮겨 갔으면 예전 칸은 바로 숨긴다 (같은 손이 두 개로 보이지 않게)
+    for (const s of ['L', 'R']) {
+      if (out[s] >= 0 || !live(s)) continue;
+      if (cand.some(c => (out.L === c.i || out.R === c.i) && dist(c, s) < 0.15)) hands[s].lastSeen = -1e9;
     }
     for (const s of ['L', 'R']) if (out[s] >= 0) { const c = cand.find(x => x.i === out[s]); this.slot[s].x = c.x; this.slot[s].y = c.y; }
     return out;

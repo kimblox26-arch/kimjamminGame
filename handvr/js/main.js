@@ -2,9 +2,10 @@
 import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { Tracker, IS_MOBILE } from './tracking.js';
-import { HandState, HandAssigner, BONES, GESTURE_LABEL, WEBCAM_HFOV, recalibrateDepth } from './hands.js';
+import { HandState, HandAssigner, BONES, WEBCAM_HFOV, recalibrateDepth } from './hands.js';
 import { loadHandRigs, SKIN_TONES, setSkinTone, setSkinFromCamera, setSleeve } from './hand-rig.js';
 import { HandScanner } from './scan.js';
+import { FINGER_NAME, STATE_NAME } from './finger-pose.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -141,6 +142,7 @@ $('#btn-start').onclick = async () => {
       console.error(e);
       throw new Error('AI 모델을 불러오지 못했어요. 인터넷 연결을 확인해 주세요. (' + (e.message || e) + ')');
     }
+    tracker.loadPose().catch(e => console.warn('[HandVR] 몸 인식(팔꿈치) 없이 진행', e)); // 뒤에서 불러옴
     msg('손 3D 모델 준비 중…');
     try { await rigsReady; } catch (e) { throw new Error('손 3D 모델을 불러오지 못했어요: ' + (e.message || e)); }
     playing = true;
@@ -173,7 +175,7 @@ function toast(text, ms = 1800) {
 
 // ───────── 추적 결과 처리 ─────────
 const view = { tanV: 1, tanH: 1 };
-const lostMs = () => clamp(tracker.interval * 3, 220, 1500);
+const lostMs = () => clamp(tracker.interval * 2.5, 200, 600);
 function onTracking(now) {
   const v = tracker.video, res = tracker.handResult;
   view.tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
@@ -184,7 +186,29 @@ function onTracking(now) {
     const i = slot[s];
     if (i >= 0) hands[s].ingest(res.landmarks[i], res.worldLandmarks[i], fr);
   }
+  updateElbows(now);
   drawPreview();
+}
+
+// 팔꿈치: 몸 인식의 손목 중 이 손의 손목(카메라 영상 위치)과 가장 가까운 쪽 팔을 골라
+// 손목→팔꿈치 3D 방향(미터)을 손과 같은 축으로 바꿔 쓴다. 팔꿈치가 화면 밖이면 없음(null)
+function updateElbows(now) {
+  const pr = tracker.poseResult, lm = pr?.landmarks?.[0], wl = pr?.worldLandmarks?.[0];
+  for (const s of ['L', 'R']) {
+    const h = hands[s];
+    if (h.elbow && now - h.elbow.t > 500) h.elbow = null;
+    if (!h.visible || !lm || !wl || now - pr.t > 400) continue;
+    let best = null, bd = 0.12;
+    for (const [w, e] of [[15, 13], [16, 14]]) {
+      const d = Math.hypot(lm[w].x - h.img[0].x, lm[w].y - h.img[0].y);
+      if (d < bd && (lm[e].visibility ?? 1) > 0.5) { bd = d; best = [w, e]; }
+    }
+    if (!best) continue;
+    const [w, e] = best;
+    const dir = new THREE.Vector3(-(wl[e].x - wl[w].x), -(wl[e].y - wl[w].y), wl[e].z - wl[w].z);
+    const len = dir.length();
+    if (len > 0.12) h.elbow = { dir: dir.divideScalar(len), len, t: now };
+  }
 }
 
 // ───────── 카메라 미리보기 (거울 화면 + 인식된 뼈대) ─────────
@@ -243,9 +267,13 @@ function updateHud(now) {
   ].join(' · ');
   for (const s of ['L', 'R']) {
     const h = hands[s], chip = $('#chip-' + s);
-    chip.querySelector('.g').textContent = h.visible ? GESTURE_LABEL[h.gesture] : '안 보임';
+    // 손가락마다 판단한 상태 (펴짐 / 반쯤 / 접힘)
+    const st = h.visible && h.pose ? [h.pose.thumb.state, ...h.pose.fingers.slice(1).map(f => f.state)] : null;
+    const group = k => FINGER_NAME.filter((_, i) => st[i] === k).join('·');
+    chip.querySelector('.g').textContent = !st ? '안 보임'
+      : ['ext', 'half', 'fold'].filter(k => st.includes(k)).map(k => `${STATE_NAME[k]} ${group(k)}`).join('  ');
     chip.querySelector('.a').textContent = h.visible && !h.profile.done
-      ? `🔍 손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : '';
+      ? `🔍 손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : (h.elbow ? '팔꿈치 인식됨' : '');
     chip.style.opacity = h.visible ? 1 : 0.55;
     if (h.profile.done && !scanToasted[s]) {
       scanToasted[s] = true;
@@ -265,7 +293,7 @@ function frame(now) {
   for (const s of ['L', 'R']) {
     const h = hands[s];
     h.updateDisplay(dt, now, lostMs());
-    meshes?.[s].update(h.joints, h.local, dt, h.profile, h.visible);
+    meshes?.[s].update(h.joints, h.local, h.pose, h.elbow, dt, h.profile, h.visible);
   }
   world.update(dt, STAND);
   if (playing) updateHud(now);

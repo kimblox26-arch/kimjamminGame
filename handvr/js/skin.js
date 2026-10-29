@@ -140,6 +140,15 @@ float palmLines() {
   float dm = min( min( heart, head ), life ) * palmLen, dw = wrist * palmLen;
   return exp( -dm * dm / 1.0e-6 ) * 0.00034 + exp( -dw * dw / 6.0e-7 ) * 0.00015;
 }
+// 손등 힘줄 4줄: 손목 가운데에서 부채꼴로 퍼져 각 손가락 뿌리 마디로 (볼록한 띠)
+float tendons() {
+  vec3 q = vBind - palmO;
+  vec2 p = vec2( dot( q, palmX ), dot( q, palmY ) );
+  float d = min( min( segD( p, vec2( 0.62, 0.1 ), vec2( 0.95, 0.97 ) ), segD( p, vec2( 0.53, 0.1 ), vec2( 0.67, 0.99 ) ) ),
+                 min( segD( p, vec2( 0.45, 0.1 ), vec2( 0.37, 0.97 ) ), segD( p, vec2( 0.38, 0.12 ), vec2( 0.07, 0.93 ) ) ) ) * palmLen;
+  float fade = smoothstep( 0.08, 0.3, p.y ) * ( 1.0 - smoothstep( 0.9, 1.05, p.y ) );
+  return exp( -d * d / 5.0e-6 ) * 0.0004 * fade;
+}
 float skHash( vec3 p ) { p = fract( p * 0.3183099 + 0.1 ); p *= 17.0; return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) ); }
 float skNoise( vec3 x ) {
   vec3 i = floor( x ), f = fract( x ); f = f * f * ( 3.0 - 2.0 * f );
@@ -160,11 +169,12 @@ float skinHeight() {
   float wob = skNoise( vBind * 700.0 );
   for ( int k = 0; k < 3; k++ ) {
     float a = vKn.x - ws[ k ];
-    h += vKn.y * ww[ k ] * exp( -a * a / 1.1e-5 ) * sin( a * 3000.0 + wob * 2.5 ) * ( 0.4 + 0.6 * wob ) * 0.00006 * mid;
+    h += vKn.y * ww[ k ] * exp( -a * a / 1.3e-5 ) * sin( a * 3000.0 + wob * 2.5 ) * ( 0.4 + 0.6 * wob ) * 0.0001 * mid;
     float b = vKn.x - cs[ k ];
     h -= vKn.z * cw[ k ] * exp( -b * b / 2.4e-6 ) * 0.00026 * mid;
   }
   h -= vPalmW * palmLines() * mid;
+  h += vKn.w * tendons() * mid;
   return h;
 }
 vec3 skinPerturb( vec3 pos, vec3 n, vec2 dH, float fd ) {

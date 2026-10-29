@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { makeSkin, nailTexture, fabricNormal } from './skin.js';
 import { FINGERS } from './hands.js';
+import { measureAngles, palmBasis, thumbHinge } from './finger-pose.js';
 
 export const SKIN_TONES = { light: 0xf3cbb0, medium: 0xdca47f, tan: 0xb87b53, deep: 0x7b4a2f };
 
@@ -26,11 +27,7 @@ const CHAIN = FN.map((n, f) => (f === 0
 const META = FN.slice(1).map(n => `${n}-metacarpal`);
 const DEG = Math.PI / 180;
 // 관절 각도 범위 (라디안)
-const LIM = {
-  mcpFlex: [-30 * DEG, 98 * DEG], mcpAbd: 22 * DEG, abdGap: 2 * DEG,
-  pip: [-8 * DEG, 112 * DEG], dip: [-12 * DEG, 88 * DEG],
-  thumbCmc: 55 * DEG, thumbMcp: 75 * DEG, thumbIp: 95 * DEG,
-};
+const LIM = { thumbCmc: 55 * DEG }; // 엄지 뿌리가 모델 기본 방향에서 벌어질 수 있는 최대 각
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -164,19 +161,20 @@ class HandRig {
     this.MbT = this.Mb.clone().transpose();
     this.backB = this.Ub.clone().negate();
 
-    // 뼈별 바인드 방향·옆 방향·길이
+    // 뼈별 바인드 방향·길이
     this.seg = {};
     CHAIN.forEach(ch => ch.slice(0, 3).forEach((n, k) => {
       const D = V().subVectors(P[ch[k + 1]], P[n]);
       const len = D.length(); D.normalize();
-      const S = perp(this.Lb.clone(), D);
-      this.seg[n] = { D, S, len, MT: basis(new THREE.Matrix4(), D, S).transpose() };
+      this.seg[n] = { D, len };
     }));
-    // 뿌리 관절의 원래 벌림 각 (손바닥 좌표계)
-    const Upb = perp(this.Ub.clone(), this.Fb), Lthb = V().crossVectors(Upb, this.Fb);
-    if (Lthb.dot(this.Lb) < 0) Lthb.negate();
-    this.abd0 = CHAIN.map(ch => Math.asin(clamp(this.seg[ch[0]].D.dot(Lthb), -1, 1)));
     this.size0 = this.palmSize(n => P[n]);
+    // 손가락 판단 각도의 기준(모델 바인드 포즈의 각도). 같은 방식으로 재야 차이만큼만 굽힌다
+    const IDX = ['wrist'];
+    CHAIN.forEach((ch, f) => ch.forEach((n, k) => { IDX[FINGERS[f][k]] = n; }));
+    this.Bb = palmBasis(P.wrist, P[IDX[5]], P[IDX[9]], P[IDX[17]], this.sign);
+    this.abAxis = V().crossVectors(this.Bb.F, this.Bb.L).normalize(); // +회전 = 엄지 쪽으로 벌림
+    this.bindAng = measureAngles(i => P[IDX[i]], this.Bb);
 
     // 메시: 세분화 + 피부 속성
     const geo = toGeometry(loopSubdivide(weldSkinned(src.geometry)));
@@ -273,7 +271,11 @@ class HandRig {
     }
     geo.setAttribute('thin', new THREE.BufferAttribute(thin, 1));
     const palmW = new Float32Array(n);
-    for (let i = 0; i < n; i++) { nr.fromBufferAttribute(N, i); palmW[i] = Math.pow(clamp(nr.dot(this.Ub), 0, 1), 1.5) * clamp(1 - thin[i] + 0.2, 0, 1); }
+    for (let i = 0; i < n; i++) {
+      nr.fromBufferAttribute(N, i);
+      palmW[i] = Math.pow(clamp(nr.dot(this.Ub), 0, 1), 1.5) * clamp(1 - thin[i] + 0.2, 0, 1);
+      kn[i * 4 + 3] = Math.pow(clamp(-nr.dot(this.Ub), 0, 1), 1.5) * clamp(1 - thin[i] + 0.2, 0, 1); // 손등 (힘줄)
+    }
     geo.setAttribute('palmW', new THREE.BufferAttribute(palmW, 1));
     // 손금 좌표: x = 새끼 뿌리(0) → 검지 뿌리(1), y = 손목(0) → 중지 뿌리(1)
     const pk = BP['pinky-finger-phalanx-proximal'], ix = BP['index-finger-phalanx-proximal'];
@@ -397,6 +399,7 @@ class HandRig {
     this.wristR = { x: wx || 0.028, z: wz || 0.02 };
     const prof = [];
     for (let k = 0; k <= 24; k++) { const y = k / 24 * 0.34; prof.push(new THREE.Vector2(1 + 0.3 * smooth(0, 0.24, y) - 0.04 * smooth(0.26, 0.34, y), y)); }
+    for (let k = 1; k <= 6; k++) { const a = k / 6 * Math.PI / 2; prof.push(new THREE.Vector2(1.26 * Math.cos(a), 0.34 + 0.03 * Math.sin(a))); } // 팔꿈치 쪽 둥근 끝
     this.armMat = makeSkin({ detail: true });
     this.arm = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), this.armMat);
     FABRIC ??= fabricNormal();
@@ -410,14 +413,15 @@ class HandRig {
 
   applySkin() {
     for (const m of [this.mat, this.armMat]) m.color.copy(skinColor);
-    this.nailMat.color.copy(skinColor).lerp(new THREE.Color(0xf0b8ae), 0.5);
+    this.nailMat.color.copy(skinColor).lerp(new THREE.Color(0xe9a79c), 0.5);
     this.refreshColors();
   }
 
-  // J: 화면용(부드럽게 보간된) 관절 21개 (카메라 공간), local: 3D 손 모양(필터됨), pr: 손 스캔 결과
-  update(J, local, dt, pr, visible) {
-    this.group.visible = visible;
-    if (!visible) { this.wasVisible = false; return; }
+  // J: 화면용 관절 21개(카메라 공간 — 손 위치와 손바닥 방향에 씀), local: 3D 손 모양(크기·마디 비율),
+  // pose: 손가락 판단 결과(finger-pose.js), elbow: 손목→팔꿈치 { dir, len } (카메라 공간, 모르면 null), pr: 손 스캔 결과
+  update(J, local, pose, elbow, dt, pr, visible) {
+    this.group.visible = visible && !!pose;
+    if (!this.group.visible) { this.wasVisible = false; return; }
     const snap = !this.wasVisible;
     this.wasVisible = true;
     const BP = this.bindP, BQ = this.bindQ, Q = this.Q, Pt = this.Pt;
@@ -447,90 +451,52 @@ class HandRig {
       }
       const g = cnt ? clamp(sum / cnt, 0.85, 1.2) : 1;
       this.girth[f] += (g - this.girth[f]) * (snap ? 1 : 1 - Math.exp(-dt * 2));
-      const pv = this.nailPivots[f];
-      pv.scale.set(this.girth[f], 1, this.girth[f]);
+      this.nailPivots[f].scale.set(this.girth[f], 1, this.girth[f]);
     }
 
-    // ① 손바닥 회전
+    // ① 손바닥: 위치는 손목, 방향은 손바닥 좌표계 (카메라 관절)
     const Ft = V().subVectors(J[9], J[0]).normalize();
     const Lt = perp(V().subVectors(J[5], J[17]), Ft);
-    const Mt = basis(new THREE.Matrix4(), Ft, Lt);
-    const Rp = new THREE.Quaternion().setFromRotationMatrix(_m1.multiplyMatrices(Mt, this.MbT));
-    const Ut = V().crossVectors(_a.subVectors(J[5], J[0]), _b.subVectors(J[17], J[0])).normalize().multiplyScalar(this.sign);
-    const Up = perp(Ut.clone(), Ft);
-    const Lth = V().crossVectors(Up, Ft);
-    if (Lth.dot(Lt) < 0) Lth.negate();
-    const flexAxis = V().crossVectors(Ft, Up); // 이 축으로 +회전 = 손바닥 쪽으로 굽힘
+    const Rp = new THREE.Quaternion().setFromRotationMatrix(_m1.multiplyMatrices(basis(_m2, Ft, Lt), this.MbT));
 
+    // ② 손가락: 판단한 관절 각도만큼 모델 바인드 포즈를 굽힌다 (바인드 공간에서 계산 → 손바닥 회전으로 옮김)
+    //    뼈 길이는 그대로라 늘어나지 않고, 굽힘은 항상 손바닥 쪽 경첩 축이라 꼬이거나 옆으로 꺾이지 않는다
+    const B = this.Bb, A0 = this.bindAng, Qbs = {}, Pbs = {};
+    const rot = (axis, deg) => new THREE.Quaternion().setFromAxisAngle(axis, deg * DEG);
+    const chain = (f, qs) => {
+      const ch = CHAIN[f];
+      Pbs[ch[0]] = BP[ch[0]].clone();
+      for (let k = 0; k < 3; k++) {
+        Qbs[ch[k]] = qs[k].clone().multiply(BQ[ch[k]]);
+        Pbs[ch[k + 1]] = Pbs[ch[k]].clone().addScaledVector(this.seg[ch[k]].D.clone().applyQuaternion(qs[k]), this.seg[ch[k]].len * this.ratio[f][k]);
+      }
+      Qbs[ch[3]] = Qbs[ch[2]];
+    };
+    for (let f = 1; f < 5; f++) {
+      const fp = pose.fingers[f], f0 = A0.fingers[f];
+      const qa = rot(this.abAxis, fp.a - f0.a);
+      const cm = fp.m - f0.m, cp = cm + fp.p - f0.p, cd = cp + fp.d - f0.d;
+      chain(f, [cm, cp, cd].map(c => qa.clone().multiply(rot(B.H, c))));
+    }
+    {
+      const tp = pose.thumb, t0 = A0.thumb, base = this.seg[CHAIN[0][0]].D;
+      const dir = V().addScaledVector(B.F, tp.dir.x).addScaledVector(B.L, tp.dir.y).addScaledVector(B.U, tp.dir.z).normalize();
+      cone(dir, base, LIM.thumbCmc);
+      const qc = new THREE.Quaternion().setFromUnitVectors(base, dir);
+      const hT = thumbHinge(dir, B);
+      const c1 = tp.t1 - t0.t1, c2 = c1 + tp.t2 - t0.t2;
+      chain(0, [qc, rot(hT, c1).multiply(qc), rot(hT, c2).multiply(qc)]);
+    }
+
+    // ③ 카메라 공간으로 옮기기
+    const toCam = (n, p) => Pt[n].copy(p).sub(BP.wrist).applyQuaternion(Rp).multiplyScalar(s).add(J[0]);
     Pt.wrist.copy(J[0]);
     Q.wrist.copy(Rp).multiply(BQ.wrist);
-    const rigid = n => Pt[n].copy(BP[n]).sub(BP.wrist).applyQuaternion(Rp).multiplyScalar(s).add(J[0]);
-    for (const n of META) { rigid(n); Q[n].copy(Rp).multiply(BQ[n]); }
-    rigid('thumb-metacarpal');
-    for (let f = 1; f < 5; f++) rigid(CHAIN[f][0]);
+    for (const n of META) { toCam(n, BP[n]); Q[n].copy(Rp).multiply(BQ[n]); }
+    for (const n in Qbs) { toCam(n, Pbs[n]); Q[n].copy(Rp).multiply(Qbs[n]); }
 
-    // 목표 방향 (카메라 관절)
-    const dir = (f, k) => V().subVectors(J[FINGERS[f][k + 1]], J[FINGERS[f][k]]).normalize();
-
-    // ② 네 손가락 뿌리 관절: 굽힘/벌림 범위 + 이웃 손가락 순서 유지(겹침 방지)
-    const flex = [], abd = [];
-    for (let f = 1; f < 5; f++) {
-      const D = dir(f, 0);
-      flex[f] = clamp(Math.atan2(D.dot(Up), D.dot(Ft)), ...LIM.mcpFlex);
-      abd[f] = clamp(Math.asin(clamp(D.dot(Lth), -1, 1)), this.abd0[f] - LIM.mcpAbd, this.abd0[f] + LIM.mcpAbd);
-    }
-    for (let pass = 0; pass < 2; pass++) for (let f = 1; f < 4; f++) {
-      if (abd[f + 1] > abd[f] - LIM.abdGap) { const mid = (abd[f] + abd[f + 1]) / 2; abd[f] = mid + LIM.abdGap / 2; abd[f + 1] = mid - LIM.abdGap / 2; }
-    }
-
-    const aim = (n, D, Sref) => {
-      const sg = this.seg[n];
-      const S = perp(Sref.clone(), D);
-      if (S.lengthSq() < 0.5) S.copy(perp(V().copy(sg.S).applyQuaternion(Rp), D));
-      const R = _m1.multiplyMatrices(basis(_m2, D, S), sg.MT);
-      Q[n].setFromRotationMatrix(R).multiply(BQ[n]);
-      return S;
-    };
-    const place = (f, k, D) => { const n = CHAIN[f][k], nx = CHAIN[f][k + 1]; Pt[nx].copy(Pt[n]).addScaledVector(D, this.seg[n].len * s * this.ratio[f][k]); };
-
-    for (let f = 1; f < 5; f++) {
-      const ch = CHAIN[f];
-      const D1 = V().copy(Ft).multiplyScalar(Math.cos(flex[f])).addScaledVector(Up, Math.sin(flex[f])).multiplyScalar(Math.cos(abd[f])).addScaledVector(Lth, Math.sin(abd[f])).normalize();
-      const H = aim(ch[0], D1, V().copy(this.seg[ch[0]].S).applyQuaternion(Rp));
-      place(f, 0, D1);
-      // ③ 둘째·셋째 마디: 굽힘 축(H)으로만, 각도 범위 제한
-      const fs = Math.sign(H.dot(flexAxis)) || 1;
-      const Hf = H.clone().multiplyScalar(fs);
-      let Dp = D1;
-      for (let k = 1; k < 3; k++) {
-        const D = perp(dir(f, k), H);
-        let ang = D.lengthSq() > 0.5 ? Math.atan2(_a.crossVectors(Dp, D).dot(Hf), Dp.dot(D)) : 0;
-        ang = clamp(ang, ...(k === 1 ? LIM.pip : LIM.dip));
-        const Dk = V().copy(Dp).applyAxisAngle(Hf, ang);
-        aim(ch[k], Dk, H);
-        place(f, k, Dk);
-        Dp = Dk;
-      }
-      Q[ch[3]].copy(Q[ch[2]]);
-    }
-
-    // ④ 엄지: 원뿔 범위 제한 (뿌리는 손바닥 기준, 나머지는 이전 마디 기준)
-    {
-      const ch = CHAIN[0];
-      let Dp = cone(dir(0, 0), V().copy(this.seg[ch[0]].D).applyQuaternion(Rp), LIM.thumbCmc);
-      let S = aim(ch[0], Dp, V().copy(this.seg[ch[0]].S).applyQuaternion(Rp));
-      place(0, 0, Dp);
-      for (let k = 1; k < 3; k++) {
-        const D = cone(dir(0, k), Dp, k === 1 ? LIM.thumbMcp : LIM.thumbIp);
-        S = aim(ch[k], D, S);
-        place(0, k, D);
-        Dp = D;
-      }
-      Q[ch[3]].copy(Q[ch[2]]);
-    }
-
-    // ⑤ 뼈에 적용 (부드럽게)
-    const k = snap ? 1 : 1 - Math.exp(-dt * 36);
+    // ④ 뼈에 적용 (부드럽게)
+    const k = snap ? 1 : 1 - Math.exp(-dt * 30);
     for (const n in this.bone) {
       const b = this.bone[n];
       b.position.lerp(Pt[n], k);
@@ -538,18 +504,22 @@ class HandRig {
       b.scale.setScalar(s);
     }
 
-    // 팔뚝: 손목에서 팔꿈치 쪽으로 (손 방향 + 몸 쪽 아래 방향 섞기)
+    // ⑤ 팔뚝: 몸 인식으로 찾은 팔꿈치 방향(있으면), 없으면 손 방향 + 몸 쪽 아래 방향으로 추정
     const sd = this.side === 'R' ? 1 : -1;
-    const armDir = V().set(sd * 0.28, -0.72, 0.62).normalize().multiplyScalar(0.55).addScaledVector(Ft, -0.45).normalize();
+    const guess = V().set(sd * 0.28, -0.72, 0.62).normalize().multiplyScalar(0.55).addScaledVector(Ft, -0.45).normalize();
+    const target = elbow?.dir ?? guess;
+    this.armDir = snap || !this.armDir ? target.clone() : this.armDir.lerp(target, 1 - Math.exp(-dt * 8)).normalize();
+    this.armLen = elbow ? clamp(elbow.len, 0.2, 0.34) : 0.3;
+    const armDir = this.armDir;
     const ax = perp(Lt.clone(), armDir), az = V().crossVectors(ax, armDir);
     const base = V().copy(this.bone.wrist.position).addScaledVector(Ft, 0.012 * s);
     const rx = this.wristR.x * s * 0.985, rz = this.wristR.z * s * 0.985;
     const bare = !!pr?.sleeve?.bare;
-    this.place(this.arm, base, ax, armDir, az, rx, bare ? 1.6 : 1, rz);
+    this.place(this.arm, base, ax, armDir, az, rx, (this.armLen + 0.012) / 0.34, rz);
     this.sleeve.visible = this.cuff.visible = !bare;
     if (!bare) {
       const sp = V().copy(base).addScaledVector(armDir, 0.14);
-      this.place(this.sleeve, sp, ax, armDir, az, rx * 1.7, 0.3, rz * 1.75);
+      this.place(this.sleeve, sp, ax, armDir, az, rx * 1.7, this.armLen - 0.12 + 0.15, rz * 1.75);
       this.place(this.cuff, sp, ax, az.clone().negate(), armDir, rx * 1.7, rz * 1.75, rx * 1.7);
     }
   }

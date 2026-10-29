@@ -1,4 +1,4 @@
-// 웹캠 + MediaPipe 손 랜드마크
+// 웹캠 + MediaPipe 손 랜드마크 (+ 팔꿈치 위치용 몸 랜드마크)
 // 기본은 Web Worker 에서 인식(화면 렌더링이 끊기지 않음). 워커가 안 되는 브라우저는 메인 스레드에서 인식.
 // 라이브러리·모델은 CDN 에서 받는다. (?mp=…&models=… 로 로컬 경로, ?worker=0 으로 워커 끄기)
 const MP_VERSION = '0.10.21';
@@ -8,6 +8,12 @@ const MODELS = q.get('models');
 const HAND_URL = MODELS ? new URL(`${MODELS}/hand_landmarker.task`, location.href).href
   : 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
 const DELEGATES = q.get('delegate') === 'cpu' ? ['CPU'] : ['GPU', 'CPU'];
+const POSE_URL = MODELS ? new URL(`${MODELS}/pose_landmarker_lite.task`, location.href).href
+  : 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const POSE_OPTS = {
+  runningMode: 'VIDEO', numPoses: 1,
+  minPoseDetectionConfidence: 0.5, minPosePresenceConfidence: 0.5, minTrackingConfidence: 0.5,
+};
 export const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 
 const HAND_OPTS = {
@@ -22,6 +28,10 @@ export class Tracker {
     this.worker = null;     // 워커 모드
     this.workerReady = false;
     this.handResult = null;
+    this.pose = null;        // 몸 인식 (팔꿈치) — 메인 스레드 모드
+    this.poseLoaded = false; // 워커 모드에서 몸 인식 준비됨
+    this.poseResult = null;  // { landmarks, worldLandmarks, t }
+    this.sent = 0;
     this.lastTime = -1;
     this.frame = 0;
     this.rate = 0;
@@ -69,7 +79,8 @@ export class Tracker {
     await ready;
     w.onmessage = ({ data }) => {
       if (data.type === 'result') { this.pending = data; this.busy = false; }
-      else if (data.type === 'error') { this.busy = false; console.warn('[HandVR] 인식 오류', data.message); }
+      else if (data.type === 'poseReady') { this.poseLoaded = true; }
+      else if (data.type === 'error') { if (data.where !== 'pose') this.busy = false; console.warn('[HandVR] 인식 오류', data.message); }
     };
     this.workerReady = true;
   }
@@ -94,6 +105,13 @@ export class Tracker {
     this.hands = await create(mod.HandLandmarker, fileset, { ...HAND_OPTS, baseOptions: { modelAssetPath: HAND_URL } }, d => { this.delegate = d; });
   }
 
+  // 팔꿈치 위치용 몸 인식 (손 인식이 준비된 뒤 뒤에서 불러옴, 실패해도 손은 그대로 동작)
+  async loadPose() {
+    if (this.workerReady) { this.worker.postMessage({ type: 'pose', poseUrl: POSE_URL, delegates: DELEGATES }); return; }
+    const { mod, fileset } = await this.vision();
+    this.pose = await create(mod.PoseLandmarker, fileset, { ...POSE_OPTS, baseOptions: { modelAssetPath: POSE_URL } }, () => {});
+  }
+
   stat(now) {
     this.frame++;
     if (this._lastNow) this.interval += (Math.min(1000, now - this._lastNow) - this.interval) * 0.25;
@@ -110,6 +128,7 @@ export class Tracker {
       let fresh = false;
       if (this.pending) {
         this.handResult = this.pending.hand;
+        if (this.pending.pose) this.poseResult = { ...this.pending.pose, t: now };
         this.pending = null;
         this.stat(now);
         fresh = true;
@@ -119,7 +138,8 @@ export class Tracker {
         this.lastTime = v.currentTime;
         this.busy = true;
         const w = Math.min(640, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth);
-        const send = bmp => this.worker.postMessage({ type: 'frame', bitmap: bmp, t: performance.now() }, [bmp]);
+        const pose = this.poseLoaded && this.sent++ % 2 === 0; // 몸 인식은 격 프레임
+        const send = bmp => this.worker.postMessage({ type: 'frame', bitmap: bmp, t: performance.now(), pose }, [bmp]);
         createImageBitmap(v, { resizeWidth: w, resizeHeight: h, resizeQuality: 'low' })
           .catch(() => createImageBitmap(v))
           .then(send)
@@ -130,6 +150,10 @@ export class Tracker {
     if (v.currentTime === this.lastTime) return false;
     this.lastTime = v.currentTime;
     this.handResult = this.hands.detectForVideo(v, now);
+    if (this.pose && this.frame % 2 === 0) {
+      const p = this.pose.detectForVideo(v, now);
+      this.poseResult = { landmarks: p.landmarks, worldLandmarks: p.worldLandmarks, t: now };
+    }
     this.stat(now);
     return true;
   }
