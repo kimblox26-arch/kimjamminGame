@@ -13,6 +13,8 @@ index.html 을 로컬 웹서버로 열면 바로 실행됩니다.
 > 파일을 더블클릭(`file://`)하면 ES 모듈 보안 정책 때문에 실행되지 않습니다. 반드시 웹서버로 여세요.
 > 필요 라이브러리(three.js)는 `vendor/` 에 포함되어 있어 **인터넷 없이도 동작**합니다.
 
+> **BLOCK HUNT** — 활·총으로 감정을 가진 NPC를 쓰러뜨리는 1인칭 웹 게임은 [`blockhunt/`](blockhunt/README.md) 에 있습니다. (`http://localhost:8080/blockhunt/`)
+
 > 🖐 **새 게임: HAND VR** — 웹캠으로 내 손을 인식해 게임 속 손을 그대로 움직이는 VR 스타일 게임은 [`handvr/`](handvr/README.md) 에 있습니다. (`http://localhost:8080/handvr/`)
 
 ---

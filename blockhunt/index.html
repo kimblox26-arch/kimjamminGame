@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>BLOCK HUNT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css?v=20261030b">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/three.module.min.js",
+    "three/addons/": "../vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+<div id="look"></div>
+<div id="dmg"></div>
+
+<div id="topbar">
+  <button id="btn-menu" class="tb" data-icon="menu"></button>
+  <button id="btn-chat" class="tb on" data-icon="chat"></button>
+</div>
+<div id="chat">
+  <div id="chat-log"></div>
+  <form id="chat-form" autocomplete="off"><input id="chat-input" maxlength="100" placeholder='채팅하려면 여기를 누르거나 "/" 키를 누르세요'></form>
+</div>
+
+<div id="health" class="hidden"><div id="hp-fill"></div></div>
+<div id="board"><div class="row">플레이어</div></div>
+
+<div id="cursor"></div>
+<div id="hotbar"></div>
+
+<div id="stick"><div id="knob"></div></div>
+<button id="t-jump" data-icon="jump"></button>
+
+<div id="menu" class="hidden">
+  <div class="panel">
+    <button id="m-resume" class="mb blue">계속하기</button>
+    <button id="m-reset" class="mb">캐릭터 초기화</button>
+    <div class="set">
+      <label>소리 크기 <input type="range" id="s-vol" min="0" max="1" step="0.05"></label>
+      <label>카메라 감도 <input type="range" id="s-sens" min="0.3" max="2.5" step="0.05"></label>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js?v=20261030b"></script>
+</body>
+</html>
