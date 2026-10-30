@@ -3305,7 +3305,6 @@
       ['event', '🏟️', '전국 대항전', ev.on ? '지금 진행 중!' : `${daysLeft(ev.start)}일 뒤 토요일 시작`, ev.on],
       ['eco', '💰', '곳간', '땅이 코인을 만들어요', false],
       ['market', '🏪', '장터', '아이템 사고팔기', false],
-      ['mini', '🗡️', '검의 회오리', '미니게임 · 괴물을 물리쳐요', false],
     ];
     $('#hubGrid').innerHTML = cards.map(([id, ic, name, sub, hot]) => `<button type="button" class="hub-item h-${id}${hot ? ' hot' : ''}" data-hub="${id}"><span class="hi">${ic}</span><b>${name}</b><small>${esc(sub)}</small></button>`).join('');
   }
@@ -3664,19 +3663,13 @@
     $('#skBody').innerHTML = list.length ? skillRows(list, t => myTopic[t]) : '<p class="muted">이 학기에는 단원 정보가 없어요.</p>';
   }
 
-  // 🗡️ 미니게임 '검의 회오리' (mini.js)
-  function openMini() {
-    if (!window.MLEMini) return toast('미니게임을 불러오지 못했어요.', 'err');
-    window.MLEMini.open({ api, toast, S, nick: me && me.profile ? me.profile.nickname : '나' });
-  }
-
   function initChallenge() {
     $('#btnHub').onclick = openHub;
     $('#hubGrid').onclick = e => {
       const b = e.target.closest('[data-hub]');
       if (!b) return;
       closeM('hubModal');
-      ({ season: openSeason, rank: openRanked, adv: openAdv, event: openEvent, eco: openEco, market: openMarket, mini: openMini })[b.dataset.hub]();
+      ({ season: openSeason, rank: openRanked, adv: openAdv, event: openEvent, eco: openEco, market: openMarket })[b.dataset.hub]();
     };
     $('#snTabs').onclick = e => { const t = e.target.closest('[data-sn]'); if (t) { snTab = t.dataset.sn; renderSeason(); } };
     $('#snBody').onclick = async e => {
