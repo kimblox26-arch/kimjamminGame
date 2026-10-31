@@ -18,7 +18,7 @@ export const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPh
 
 const HAND_OPTS = {
   runningMode: 'VIDEO', numHands: 2,
-  minHandDetectionConfidence: 0.5, minHandPresenceConfidence: 0.5, minTrackingConfidence: 0.5,
+  minHandDetectionConfidence: 0.5, minHandPresenceConfidence: 0.4, minTrackingConfidence: 0.4, // 빠르게 움직여도 덜 놓치게
 };
 
 export class Tracker {
