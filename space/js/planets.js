@@ -70,11 +70,8 @@ export const PLANETS = [
   },
 ];
 
-import { spreadCoef } from './sim.js';
-
 export const EARTH_MASS = 5.9722e24;
 const MAT_INDEX = { iron: 0, rock: 1, ice: 2, gas: 3 };
-const BASE_COUNT = 450; // 지구 하나를 이루는 구슬 수
 
 export function searchPlanets(q) {
   q = q.trim().toLowerCase();
@@ -82,112 +79,91 @@ export function searchPlanets(q) {
   return PLANETS.filter((p) => p.ko.includes(q) || p.en.toLowerCase().includes(q) || p.id.includes(q));
 }
 
-export function marbleCount(def) {
-  return Math.round(BASE_COUNT * Math.pow(def.radius / 6371, 0.35));
-}
-
-// 반지름 R 원판을 구슬 N개로 무작위로 채운다.
-// 같은 크기 구슬을 줄 맞춰 쌓으면 결정처럼 단단해져 실제 행성(유체에 가까움)보다 잘 안 부서지므로
-// 크기가 다른 두 종류 구슬을 섞어 엉성하게 쌓는다.
-function packDisk(R, N) {
-  const PHI = 0.8; // 원판 면적 중 구슬이 차지하는 비율
-  const rel = [];
-  let sum = 0;
-  for (let i = 0; i < N; i++) { const v = Math.random() < 0.5 ? 1 : 1.3; rel.push(v); sum += v * v; }
-  const scale = R * Math.sqrt(PHI / sum);
-  const rad = rel.map((v) => v * scale);
-  const px = new Float64Array(N), py = new Float64Array(N);
+// 반지름 R 공을 같은 크기 구슬 N개로 무작위로 채운다
+function packBall(R, N) {
+  const PHI = 0.58; // 공 부피 중 구슬이 차지하는 비율
+  const r = R * Math.cbrt(PHI / N);
+  const px = new Float64Array(N), py = new Float64Array(N), pz = new Float64Array(N);
   for (let i = 0; i < N; i++) {
-    const d = Math.sqrt(Math.random()) * (R - rad[i]), t = Math.random() * 2 * Math.PI;
-    px[i] = d * Math.cos(t); py[i] = d * Math.sin(t);
+    const d = Math.cbrt(Math.random()) * (R - r);
+    const u = Math.random() * 2 - 1, t = Math.random() * 2 * Math.PI, s = Math.sqrt(1 - u * u);
+    px[i] = d * s * Math.cos(t); py[i] = d * u; pz[i] = d * s * Math.sin(t);
   }
   // 겹친 구슬을 밀어내며 고르게 편다
-  const cell = 2 * 1.3 * scale, GS = Math.ceil((2 * R) / cell) + 1;
-  const head = new Int32Array(GS * GS), nxt = new Int32Array(N);
+  const cell = 2 * r, GS = Math.ceil((2 * R) / cell) + 1;
+  const head = new Int32Array(GS * GS * GS), nxt = new Int32Array(N);
   const cellOf = (v) => Math.min(GS - 1, Math.max(0, Math.floor((v + R) / cell)));
-  for (let it = 0; it < 120; it++) {
+  const r2 = 4 * r * r;
+  for (let it = 0; it < 80; it++) {
     head.fill(-1);
-    for (let i = 0; i < N; i++) { const c = cellOf(py[i]) * GS + cellOf(px[i]); nxt[i] = head[c]; head[c] = i; }
     for (let i = 0; i < N; i++) {
-      const cx = cellOf(px[i]), cy = cellOf(py[i]);
-      for (let gy = Math.max(0, cy - 1); gy <= Math.min(GS - 1, cy + 1); gy++) {
-        for (let gx = Math.max(0, cx - 1); gx <= Math.min(GS - 1, cx + 1); gx++) {
-          for (let j = head[gy * GS + gx]; j >= 0; j = nxt[j]) {
-            if (j <= i) continue;
-            const dx = px[j] - px[i], dy = py[j] - py[i];
-            const d = Math.sqrt(dx * dx + dy * dy), rs = rad[i] + rad[j];
-            if (d >= rs || d < 1e-9) continue;
-            const k = (0.5 * (rs - d)) / d;
-            px[i] -= dx * k; py[i] -= dy * k; px[j] += dx * k; py[j] += dy * k;
+      const c = (cellOf(pz[i]) * GS + cellOf(py[i])) * GS + cellOf(px[i]);
+      nxt[i] = head[c]; head[c] = i;
+    }
+    for (let i = 0; i < N; i++) {
+      const cx = cellOf(px[i]), cy = cellOf(py[i]), cz = cellOf(pz[i]);
+      for (let gz = Math.max(0, cz - 1); gz <= Math.min(GS - 1, cz + 1); gz++) {
+        for (let gy = Math.max(0, cy - 1); gy <= Math.min(GS - 1, cy + 1); gy++) {
+          for (let gx = Math.max(0, cx - 1); gx <= Math.min(GS - 1, cx + 1); gx++) {
+            for (let j = head[(gz * GS + gy) * GS + gx]; j >= 0; j = nxt[j]) {
+              if (j <= i) continue;
+              const dx = px[j] - px[i], dy = py[j] - py[i], dz = pz[j] - pz[i];
+              const d2 = dx * dx + dy * dy + dz * dz;
+              if (d2 >= r2 || d2 < 1e-18) continue;
+              const d = Math.sqrt(d2), k = (0.5 * (2 * r - d)) / d;
+              px[i] -= dx * k; py[i] -= dy * k; pz[i] -= dz * k;
+              px[j] += dx * k; py[j] += dy * k; pz[j] += dz * k;
+            }
           }
         }
       }
     }
     for (let i = 0; i < N; i++) {
-      const d = Math.hypot(px[i], py[i]), lim = R - rad[i];
-      if (d > lim) { px[i] *= lim / d; py[i] *= lim / d; }
+      const d = Math.sqrt(px[i] * px[i] + py[i] * py[i] + pz[i] * pz[i]), lim = R - r;
+      if (d > lim) { const f = lim / d; px[i] *= f; py[i] *= f; pz[i] *= f; }
     }
   }
   const out = [];
-  for (let i = 0; i < N; i++) out.push({ x: px[i], y: py[i], r: rad[i] });
-  return out;
+  for (let i = 0; i < N; i++) out.push({ x: px[i], y: py[i], z: pz[i] });
+  return { r, pts: out };
 }
 
-// 행성을 구슬로 쪼개 시뮬레이션에 넣는다. colorId(hex) → 팔레트 번호
-export function spawnPlanet(sim, def, cx, cy, vx, vy, name, colorId) {
+// 행성을 같은 크기 구슬 count 개로 만들어 시뮬레이션에 넣는다. colorId(hex) → 팔레트 번호
+// 위쪽(+y)이 북쪽, 자전축은 y축
+export function spawnPlanet(sim, def, count, cx, cy, cz, vx, vy, vz, name, colorId) {
   const R = def.radius;
-  const N = marbleCount(def);
   const org = sim.bodies.length;
   sim.bodies.push({ name, def, mass: def.mass });
-  const pts = packDisk(R, N);
-  const rmax = pts.reduce((a, p) => Math.max(a, p.r), 0);
+  const { r, pts } = packBall(R, count);
 
-  // 재질·색을 정하는 층은 원판(적도 단면)에서의 위치로 정한다
+  // 층의 실제 평균 밀도 kg/km³
   const L = def.layers;
-  const layerOf = (d) => { for (let k = 0; k < L.length; k++) if (d <= L[k].to) return k; return L.length - 1; };
-  const parts = pts.map((p) => {
-    const d = Math.hypot(p.x, p.y) / R;
-    return { ...p, layer: layerOf(d), d };
-  });
-  // 층의 실제(3차원) 평균 밀도 kg/km³
   const layerRho = L.map((l, k) => {
     const from = k === 0 ? 0 : L[k - 1].to;
     const vol = (4 / 3) * Math.PI * R ** 3 * (l.to ** 3 - from ** 3);
     return (l.frac * def.mass) / vol;
   });
-  // 구슬 하나는 그 자리에서 행성을 위아래로 꿰뚫는 기둥을 나타낸다.
-  // 기둥이 지나는 층마다 (밀도 × 길이)를 더해 기둥 질량을 정하므로 가운데 구슬일수록, 핵을 지날수록 무겁다.
-  const chord = (u, lo, hi) => 2 * (Math.sqrt(Math.max(0, hi * hi - u * u)) - Math.sqrt(Math.max(0, lo * lo - u * u)));
-  let total = 0, area = 0;
-  for (const p of parts) {
-    let colMass = 0, len = 0;
-    for (let k = 0; k < L.length; k++) {
-      const c = chord(p.d, k === 0 ? 0 : L[k - 1].to, L[k].to);
-      colMass += layerRho[k] * c; len += c;
-    }
-    p.rho = len > 0 ? colMass / len : layerRho[L.length - 1]; // 기둥의 평균 밀도
-    p.m = Math.max(colMass, 1e-9) * p.r * p.r;
+  // 구슬이 놓인 층의 밀도로 질량을 정하고, 전체가 행성 질량이 되게 맞춘다
+  const layerOf = (d) => { for (let k = 0; k < L.length; k++) if (d <= L[k].to) return k; return L.length - 1; };
+  let total = 0;
+  for (const p of pts) {
+    p.d = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) / R;
+    p.layer = layerOf(p.d);
+    p.m = layerRho[p.layer];
     total += p.m;
-    area += p.r * p.r;
   }
-  for (const p of parts) p.m *= def.mass / total;
-  const R2 = area / 0.8;
-  let s1 = 0, s2 = 0;
-  for (const p of parts) { const q = p.x * p.x + p.y * p.y; s1 += p.m * q; s2 += p.m * Math.max(0, R2 - q); }
-  const spread = spreadCoef(s1, s2);
 
-  // 자전: 위에서 내려다본 화면 기준 반시계 = 순행
-  const w = (2 * Math.PI) / (def.rotH * 3600);
-  const surfaceFrom = 1 - 2 * rmax / R;
-  for (const p of parts) {
+  const w = (2 * Math.PI) / (def.rotH * 3600); // 음수면 역행 자전
+  const surfaceFrom = 1 - 2 * r / R;
+  for (const p of pts) {
     const layer = L[p.layer];
     const palette = def.surface && p.d >= surfaceFrom ? def.surface : layer.colors;
     const hex = palette[Math.floor(Math.random() * palette.length)];
     sim.add(
-      cx + p.x, cy + p.y,
-      vx + w * p.y, vy - w * p.x, -w,
-      p.m, p.r, p.rho, MAT_INDEX[layer.mat], colorId(hex), org,
-      spread * Math.max(0, R2 - p.x * p.x - p.y * p.y),
+      cx + p.x, cy + p.y, cz + p.z,
+      vx + w * p.z, vy, vz - w * p.x,
+      0, w, 0,
+      (p.m * def.mass) / total, r, layerRho[p.layer], MAT_INDEX[layer.mat], colorId(hex), org,
     );
   }
   return org;
