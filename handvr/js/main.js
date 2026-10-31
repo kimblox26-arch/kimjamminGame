@@ -34,6 +34,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.02, 3000);
 // 제자리: 눈높이 1.55m, 지평선과 해가 보이게 살짝만 아래를 본다
 const STAND = new THREE.Vector3(0, 0, 0);
+const shadowFocus = new THREE.Vector3(); // 그림자 중심: 눈앞 손 있는 곳
 camera.position.set(0, 1.55, 0);
 camera.rotation.set(-0.08, 0, 0);
 scene.add(camera);
@@ -60,11 +61,11 @@ let playing = false;
 // ───────── 화질: 자동(기기 성능에 맞춰 단계 조절) / 고품질 / 보통 ─────────
 // 단계: 해상도 배율, 후처리(MSAA+블룸), 그림자 해상도·범위
 const LEVELS = [
-  { pr: 0.7, post: false, shadow: [1024, 5] },
-  { pr: 0.85, post: false, shadow: [2048, 6] },
-  { pr: 1.0, post: false, shadow: [2048, 5] },
-  { pr: 1.25, post: true, shadow: [4096, 4.5] },
-  { pr: 1.5, post: true, shadow: [4096, 4.5] },
+  { pr: 0.85, post: false, shadow: [1024, 0.9] },
+  { pr: 1.0, post: false, shadow: [1024, 0.9] },
+  { pr: 1.25, post: false, shadow: [2048, 0.9] },
+  { pr: 1.5, post: true, shadow: [2048, 0.9] },
+  { pr: 2.0, post: true, shadow: [4096, 0.9] },
 ];
 const QUALITY_NAME = { auto: '자동', high: '고품질', normal: '보통(빠름)' };
 let qLevel = IS_MOBILE ? 1 : 3;
@@ -91,7 +92,7 @@ function autoQuality(now) {
   if (now - auto.t < 1500) return;
   const fps = auto.frames * 1000 / (now - auto.t);
   auto.t = now; auto.frames = 0;
-  if (fps < 45 && qLevel > 0) { qLevel--; auto.downAt = now; auto.last = now; applyQuality(); }
+  if (fps < 40 && qLevel > 0) { qLevel--; auto.downAt = now; auto.last = now; applyQuality(); }
   else if (fps > 58 && qLevel < LEVELS.length - 1 && now - auto.last > 5000 && now - auto.downAt > 15000) { qLevel++; auto.last = now; applyQuality(); }
 }
 
@@ -205,28 +206,42 @@ function onTracking(now) {
     const i = slot[s];
     if (i >= 0) hands[s].ingest(res.landmarks[i], res.worldLandmarks[i], fr);
   }
-  updateElbows(now);
+  updateArms(now, slot, fr);
   drawPreview();
 }
 
-// 팔꿈치: 몸 인식의 손목 중 이 손의 손목(카메라 영상 위치)과 가장 가까운 쪽 팔을 골라
-// 손목→팔꿈치 3D 방향(미터)을 손과 같은 축으로 바꿔 쓴다. 팔꿈치가 화면 밖이면 없음(null)
-function updateElbows(now) {
+// 팔: 몸 인식(PoseLandmarker)의 두 손목 중 이 손의 손목(카메라 영상 위치)과 가까운 쪽 팔을 골라
+// 손목→팔꿈치, 손목→어깨 3D 방향(m)을 손과 같은 축으로 바꿔 쓴다. 화면 밖이라 잘 안 보이는 관절은 null.
+// 손 인식이 잠깐 끊기면(빠른 움직임·흐림) 최대 BRIDGE_MS 동안 몸 인식 손목을 따라 손을 옮겨서 이어 간다.
+const BRIDGE_MS = 800;
+const ARMS = [[15, 13, 11], [16, 14, 12]]; // [손목, 팔꿈치, 어깨] 왼팔·오른팔
+function updateArms(now, slot, fr) {
   const pr = tracker.poseResult, lm = pr?.landmarks?.[0], wl = pr?.worldLandmarks?.[0];
+  const fresh = lm && wl && now - pr.t < 400;
   for (const s of ['L', 'R']) {
-    const h = hands[s];
-    if (h.elbow && now - h.elbow.t > 500) h.elbow = null;
-    if (!h.visible || !lm || !wl || now - pr.t > 400) continue;
+    const h = hands[s], seen = slot[s] >= 0;
+    if (h.arm && now - h.arm.t > 600) h.arm = null;
+    if (!seen && !h.visible) h.anchor = null;
+    if (!fresh || !(seen || h.anchor)) continue;
+    const ref = seen ? h.img[0] : h.anchor.cur;
     let best = null, bd = 0.12;
-    for (const [w, e] of [[15, 13], [16, 14]]) {
-      const d = Math.hypot(lm[w].x - h.img[0].x, lm[w].y - h.img[0].y);
-      if (d < bd && (lm[e].visibility ?? 1) > 0.5) { bd = d; best = [w, e]; }
+    for (const a of ARMS) {
+      const d = Math.hypot(lm[a[0]].x - ref.x, lm[a[0]].y - ref.y);
+      if (d < bd) { bd = d; best = a; }
     }
     if (!best) continue;
-    const [w, e] = best;
-    const dir = new THREE.Vector3(-(wl[e].x - wl[w].x), -(wl[e].y - wl[w].y), wl[e].z - wl[w].z);
-    const len = dir.length();
-    if (len > 0.12) h.elbow = { dir: dir.divideScalar(len), len, t: now };
+    const [w, e, sh] = best;
+    const vis = i => lm[i].visibility ?? 1;
+    const P = i => new THREE.Vector3(-wl[i].x, -wl[i].y, wl[i].z);
+    const toE = vis(e) > 0.5 ? P(e).sub(P(w)) : null, toS = vis(sh) > 0.5 ? P(sh).sub(P(w)) : null;
+    h.arm = { toE: toE && toE.length() > 0.12 ? toE : null, toS, t: now };
+    if (seen) h.anchor = { pose: { x: lm[w].x, y: lm[w].y }, cur: { x: lm[w].x, y: lm[w].y }, img9: { x: h.img[9].x, y: h.img[9].y } };
+    else if (h.visible && now - h.lastReal < BRIDGE_MS && vis(w) > 0.5) { // 화면 밖으로 나간 손은 따라가지 않음
+      const a = h.anchor, x9 = a.img9.x + lm[w].x - a.pose.x, y9 = a.img9.y + lm[w].y - a.pose.y;
+      a.cur.x = lm[w].x; a.cur.y = lm[w].y;
+      h.follow(x9, y9, fr);
+      assigner.slot[s].x = x9; assigner.slot[s].y = y9;
+    }
   }
 }
 
@@ -242,6 +257,17 @@ function drawPreview() {
   pctx.translate(W, 0); pctx.scale(-1, 1);
   pctx.drawImage(v, 0, 0, W, H);
   pctx.restore();
+  // 몸 인식으로 찾은 팔 (어깨-팔꿈치-손목)
+  const plm = tracker.poseResult?.landmarks?.[0];
+  if (plm && performance.now() - tracker.poseResult.t < 400) {
+    pctx.lineWidth = 4; pctx.strokeStyle = 'rgba(80,230,140,0.9)';
+    pctx.beginPath();
+    for (const a of ARMS) {
+      const pts = a.filter(i => (plm[i].visibility ?? 1) > 0.5).map(i => [(1 - plm[i].x) * W, plm[i].y * H]);
+      pts.forEach(([x, y], k) => (k ? pctx.lineTo(x, y) : pctx.moveTo(x, y)));
+    }
+    pctx.stroke();
+  }
   pctx.lineWidth = 2.5;
   for (const s of ['L', 'R']) {
     const h = hands[s];
@@ -290,7 +316,7 @@ function updateHud(now) {
     chip.querySelector('.g').textContent = !st ? '안 보임'
       : ['ext', 'half', 'fold'].filter(k => st.includes(k)).map(k => `${STATE_NAME[k]} ${group(k)}`).join('  ');
     chip.querySelector('.a').textContent = h.visible && !h.profile.done
-      ? `🔍 손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : (h.elbow ? '팔꿈치 인식됨' : '');
+      ? `🔍 손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : (h.bridging ? '손을 놓쳐서 팔로 이어 가는 중' : h.arm?.toE ? '팔 인식됨' : h.arm?.toS ? '어깨 인식됨' : '');
     chip.style.opacity = h.visible ? 1 : 0.55;
     if (h.profile.done && !scanToasted[s]) {
       scanToasted[s] = true;
@@ -310,9 +336,9 @@ function frame(now) {
   for (const s of ['L', 'R']) {
     const h = hands[s];
     h.updateDisplay(dt, now, lostMs());
-    meshes?.[s].update(h.joints, h.local, h.pose, h.elbow, dt, h.profile, h.visible);
+    meshes?.[s].update(h.joints, h.local, h.pose, h.arm, dt, h.profile, h.visible);
   }
-  world.update(dt, STAND);
+  world.update(dt, STAND, camera.localToWorld(shadowFocus.set(0, -0.15, -0.45)));
   if (playing) updateHud(now);
   autoQuality(now);
   if (LEVELS[qLevel].post) composer.render(); else renderer.render(scene, camera);

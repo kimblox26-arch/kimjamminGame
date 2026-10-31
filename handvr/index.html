@@ -5,20 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>HAND VR — 손으로 하는 웹 VR</title>
 <meta name="description" content="웹캠이 내 손을 인식해 화면 속 3D 손이 그대로 움직이는 웹 VR">
-<link rel="stylesheet" href="./style.css?v=20261029c">
+<link rel="stylesheet" href="./style.css?v=20261031a">
 <!-- 업데이트하면 v 값을 바꿔서, 브라우저에 남은 옛 파일 대신 새 파일을 받게 한다 -->
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
     "three/addons/": "../vendor/three/addons/",
-    "./js/finger-pose.js": "./js/finger-pose.js?v=20261029c",
-    "./js/hand-rig.js": "./js/hand-rig.js?v=20261029c",
-    "./js/hands.js": "./js/hands.js?v=20261029c",
-    "./js/scan.js": "./js/scan.js?v=20261029c",
-    "./js/skin.js": "./js/skin.js?v=20261029c",
-    "./js/tracking.js": "./js/tracking.js?v=20261029c",
-    "./js/world.js": "./js/world.js?v=20261029c"
+    "./js/finger-pose.js": "./js/finger-pose.js?v=20261031a",
+    "./js/hand-rig.js": "./js/hand-rig.js?v=20261031a",
+    "./js/hands.js": "./js/hands.js?v=20261031a",
+    "./js/scan.js": "./js/scan.js?v=20261031a",
+    "./js/skin.js": "./js/skin.js?v=20261031a",
+    "./js/tracking.js": "./js/tracking.js?v=20261031a",
+    "./js/world.js": "./js/world.js?v=20261031a"
   }
 }
 </script>
@@ -68,7 +68,7 @@
         <table>
           <tr><td>손을 카메라 앞에 보여주기</td><td>화면 속 3D 손이 내 손을 그대로 따라 움직여요 (제자리)</td></tr>
           <tr><td>손가락 굽히기·펴기</td><td>손가락마다 펴짐/반쯤/접힘을 판단해서 그 모양으로 (왼쪽 위 표시)</td></tr>
-          <tr><td>팔 움직이기</td><td>손목·팔뚝·팔꿈치가 같이 움직여요 (팔꿈치가 보이면 그 방향으로)</td></tr>
+          <tr><td>팔 움직이기</td><td>팔꿈치·어깨까지 카메라에 보이면 화면 속 팔이 같은 자세로 (미리보기에 초록 선)</td></tr>
           <tr><td>손가락 벌리고 손바닥 보여주기</td><td>처음 2~3초 손 스캔 — 손가락 굵기·피부색을 맞춰요</td></tr>
           <tr><td>카메라에서 40~60cm</td><td>손 전체가 화면에 들어오게, 밝은 곳에서</td></tr>
         </table>
@@ -88,6 +88,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261029c"></script>
+<script type="module" src="./js/main.js?v=20261031a"></script>
 </body>
 </html>

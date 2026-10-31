@@ -75,18 +75,19 @@ export function createWorld(scene, renderer) {
   const hemi = new THREE.HemisphereLight(0xd4e8ff, 0xffffff, 1.05);
   const sun = new THREE.DirectionalLight(0xfff2de, 3.3);
   sun.castShadow = true;
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 90;
-  // 그림자 품질: size 해상도로 주변 ext m 범위 (고품질이면 4096 / 4.5m → 손가락 그림자까지 또렷하게)
+  // 그림자: 손 주변(focus)만 좁고 얕게 그려서 손가락이 손바닥에 드리우는 그림자까지 또렷하게.
+  // 깊이 범위(해 → 바닥)를 짧게 잡아야 깊이 정밀도가 높아 그림자가 살에서 뜨지 않는다
+  sun.shadow.camera.near = 2;
+  sun.shadow.camera.far = 9;
+  // 그림자 품질: size 해상도로 주변 ext m 범위
   const setShadowQuality = (size, ext) => {
     size = Math.min(size, renderer.capabilities.maxTextureSize);
     if (sun.shadow.mapSize.x === size && sun.shadow.camera.right === ext && sun.shadow.map) return;
-    const high = size >= 4096;
     sun.shadow.mapSize.set(size, size);
     Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext });
     sun.shadow.camera.updateProjectionMatrix();
-    sun.shadow.bias = -0.0002;
-    sun.shadow.normalBias = high ? 0.004 : 0.012;
+    sun.shadow.bias = -0.0001;
+    sun.shadow.normalBias = (2 * ext / size) * 1.5; // 그림자 한 칸 크기에 맞춰 (손가락 그림자가 떠 보이지 않게)
     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   };
   setShadowQuality(2048, 6);
@@ -133,12 +134,13 @@ export function createWorld(scene, renderer) {
 
   return {
     setShadowQuality,
-    update(dt, playerPos) {
+    // focus: 그림자를 또렷하게 그릴 중심 (손이 있는 곳). 좁은 범위만 그리니 손가락 그림자까지 선명하다
+    update(dt, playerPos, focus = playerPos) {
       sky.position.copy(playerPos);
       clouds.position.set(playerPos.x, 0, playerPos.z);
       clouds.rotation.y += dt * 0.0035; // 천천히 흘러가는 구름
-      sun.target.position.copy(playerPos);
-      sun.position.copy(playerPos).addScaledVector(SUN_DIR, 40);
+      sun.target.position.copy(focus);
+      sun.position.copy(focus).addScaledVector(SUN_DIR, 4);
     },
   };
 }

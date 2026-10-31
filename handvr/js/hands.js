@@ -61,7 +61,11 @@ export class HandState {
     this.scanTick = 0;
     this.fingerPose = new FingerPose(); // 손가락 펴짐/접힘 판단
     this.pose = null;                    // 판단 결과 (손 모델이 씀)
-    this.elbow = null;                   // 팔꿈치 쪽 방향 (몸 인식, 없으면 null)
+    this.arm = null;     // 몸 인식으로 찾은 팔 { toE: 손목→팔꿈치, toS: 손목→어깨, t } (카메라 공간 m)
+    this.anchor = null;  // 손을 마지막으로 인식한 순간의 몸 인식 손목 위치 (손을 잠깐 놓쳤을 때 이어 가기용)
+    this.lastReal = -1e9;
+    this.lastD = 0.45;
+    this.bridging = false;
   }
 
   // fr: { W, H, view, now, lostMs, scanner, video, stamp }
@@ -70,7 +74,8 @@ export class HandState {
     const reappear = !this.visible || now - this.lastSeen > lostMs;
     const dt = reappear ? 1 / 30 : Math.max(1 / 120, (now - this.lastT) / 1000);
     this.lastT = now;
-    this.lastSeen = now;
+    this.lastSeen = this.lastReal = now;
+    this.bridging = false;
     if (reappear) {
       this.posFilter.reset();
       for (const f of this.shapeFilters) f.reset();
@@ -97,6 +102,7 @@ export class HandState {
       if (DEPTH.samples.length >= 45) DEPTH.calibrated = true;
     }
     const d = THREE.MathUtils.clamp(DEPTH.userDist - Z, 0.13, 0.9);
+    this.lastD = d;
 
     // ── 화면 위치: 카메라 영상을 거울처럼 뒤집어 게임 시야에 매핑
     const nx = -(lm[9].x - 0.5) * 2 * SCREEN_GAIN;
@@ -148,6 +154,19 @@ export class HandState {
     if (g === this.cand) this.candN++; else { this.cand = g; this.candN = 1; }
     const need = (g === 'pinch' || this.gesture === 'pinch') ? 2 : 3;
     if (g !== this.gesture && this.candN >= need) { this.gesture = g; this.gestureSince = now; }
+  }
+
+  // 손 인식이 잠깐 끊겼을 때: 몸 인식 손목이 움직인 만큼 손(마지막 모양 그대로)을 옮겨서 이어 간다.
+  // (x9, y9): 중지 뿌리가 있을 카메라 영상 위치(정규화). 빠르게 움직여 손이 흐려져도 화면 속 손이 멈추거나 사라지지 않게
+  follow(x9, y9, fr) {
+    const { view, now } = fr, d = this.lastD;
+    const dt = Math.max(1 / 120, (now - this.lastT) / 1000);
+    this.lastT = now;
+    this.lastSeen = now;
+    this.bridging = true;
+    _a.set(-(x9 - 0.5) * 2 * SCREEN_GAIN * view.tanH * d, -(y9 - 0.5) * 2 * SCREEN_GAIN * view.tanV * d + Y_OFFSET, -d);
+    this.palmCam.copy(this.posFilter.apply(_a, dt));
+    for (let i = 0; i < 21; i++) this.target[i].copy(this.palmCam).add(this.local[i]);
   }
 
   // 매 렌더 프레임: 추적 결과(초당 20~30번)를 화면 프레임에 맞춰 부드럽게 보간
