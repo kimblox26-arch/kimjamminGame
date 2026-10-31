@@ -51,6 +51,7 @@ addEventListener('resize', setupRender);
 
 // ───── 화면 전환 (열차가 지나가며 화면을 바꾼다) ─────
 let screen = 's-loading', busy = false;
+document.body.dataset.screen = screen;
 function show(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
   document.body.dataset.screen = screen = id;
