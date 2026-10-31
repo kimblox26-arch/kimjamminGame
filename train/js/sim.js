@@ -207,10 +207,15 @@ export class Sim {
   hint() {
     if (this.finished) return '운행 완료';
     const pw = this.spec.kind === 'diesel' ? this.engine : this.vcb;
-    if (!pw) return this.spec.kind === 'diesel' ? '엔진 시동: P 키' : this.pantoUp ? '주차단기 투입 중...' : '팬터그래프를 올리세요: P 키';
-    if (this.doors !== 'closed') return this.dwell < 4 ? '승객 승하차 중' : '출입문 닫기: C 키';
-    if (this.reverser === 0) return '역전기를 전진에 놓으세요: F 키';
-    if (Math.abs(this.v) < 0.05 && (this.two ? this.brake > 0 : this.handle < 0)) return this.two ? '제동을 풀고(D) 역행(W)하세요' : '핸들을 역행 쪽으로(W) 올리세요';
+    if (!pw) return this.spec.kind === 'diesel' ? '1. 팬터 버튼(P)으로 엔진 시동' : this.pantoUp ? '주차단기 투입 중… 잠시 기다리세요' : '1. 팬터 버튼(P)으로 팬터그래프 올리기';
+    if (this.doors !== 'closed') return this.dwell < 4 ? '승객 승하차 중… 잠시 기다리세요' : '2. 닫기 버튼(C)으로 출입문 닫기';
+    if (this.reverser === 0) return '3. 역전기 F 버튼으로 전진';
+    if (Math.abs(this.v) < 0.05) {
+      if (this.two && this.brake > 0) return `4. 제동 풀기 버튼(D)을 ${this.brake}번 눌러 제동을 0으로`;
+      if (this.two && this.power === 0) return '5. 역행 올림 버튼(W)으로 출발';
+      if (!this.two && this.handle < 0) return `4. 역행 버튼(W)을 ${-this.handle}번 눌러 핸들을 N으로`;
+      if (!this.two && this.handle === 0) return '5. 역행 버튼(W)을 한 번 더 눌러 출발';
+    }
     return '';
   }
 }

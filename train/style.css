@@ -172,10 +172,31 @@ body.desk-off #desk{opacity:0;pointer-events:none}
   #minimap{width:120px;height:120px}.tl{min-width:0;max-width:calc(100vw - 160px)}.next b{font-size:20px}
   #h-hint{top:150px;bottom:auto}
 }
-@media (max-width:520px){#c-speed{width:156px;height:156px}#c-lever{width:80px;height:170px}.lamps{grid-template-columns:repeat(3,1fr)}.tl{padding:8px 10px}.next b{font-size:17px}.next span{font-size:17px}}
+@media (max-width:520px){.tl{padding:8px 10px}.next b{font-size:17px}.next span{font-size:17px}}
 @media (max-width:1180px) and (min-width:901px){#c-press{display:none}}
 .build-screen{pointer-events:none}.build-screen header,.build-screen form{pointer-events:auto}
 @media (max-height:720px){.logo.big .logo-mark{width:60px;height:60px}.logo.big h1{font-size:34px}.logo{margin-bottom:14px}.mbtn{padding:9px 14px}.mbtn b{font-size:15px}.menu-nav{gap:7px}}
 .seg[hidden]{display:none}
 .map-legend{font-size:11px;max-height:38vh;opacity:.92}
 #gl{touch-action:none}
+
+/* 운전 버튼 이름: 넓은 화면 긴 이름, 좁은 화면 짧은 이름 */
+.drive-btns i{font-style:normal}.drive-btns .ls{display:none}
+/* 휴대폰: 계기판을 3줄로 압축 (핸들·운전버튼·속도계·역전기 / 표시등 / 버튼 한 줄) */
+@media (max-width:900px){
+  #desk{display:grid;grid-template-columns:84px 92px minmax(0,1fr) 46px;grid-template-areas:"lv dv sp rv" "lm lm lm lm" "bt bt bt bt";gap:6px;padding:6px;border-radius:14px;align-items:center}
+  .drive,.dash{display:contents}
+  #c-lever{grid-area:lv;width:84px;height:168px}
+  .drive-btns{grid-area:dv;width:92px;height:168px;gap:4px}
+  .drive-btns button{padding:0 6px;font-size:12px;gap:4px}.drive-btns button span{font-size:16px}
+  .drive-btns .lf,.drive-btns kbd{display:none}.drive-btns .ls{display:inline}
+  #c-speed{grid-area:sp;width:100%;max-width:168px;height:150px;justify-self:center}
+  .rev-wrap{grid-area:rv;flex-direction:column;gap:4px}.rev-wrap small{font-size:10px}
+  #rev{flex-direction:column;gap:4px}#rev button{width:44px;height:40px}
+  .lamps{grid-area:lm;grid-template-columns:repeat(6,1fr);gap:4px}
+  .lamp{padding:3px 4px;font-size:10px;gap:3px;justify-content:center}.lamp::before{width:7px;height:7px}
+  .btns{grid-area:bt;grid-template-columns:repeat(8,1fr);gap:4px}
+  .btns button{min-height:46px;font-size:10px;padding:4px 0;gap:1px}.btns button span{font-size:17px}
+  .stopwrap{top:42%;width:48px}#c-stop{width:48px;height:150px}
+}
+@media (max-width:520px){#c-speed{height:140px}.lamps{grid-template-columns:repeat(6,1fr)}.lamp i{font-size:9.5px}}

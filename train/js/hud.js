@@ -30,12 +30,13 @@ export class HUD {
     this.sim = sim; this.info = info; $('h-line').textContent = info.lineName; $('h-line').style.background = info.color; $('h-train').textContent = info.trainName;
     // 운전 버튼: 누르고 있으면 한 단씩 계속 움직인다
     const D = sim.two
-      ? [['up', '역행 올림', 'W', 'pw', () => sim.powerUp()], ['down', '역행 내림', 'S', 'pw', () => sim.powerDown()], ['up', '제동 걸기', 'E', 'br', () => sim.brakeUp()], ['down', '제동 풀기', 'D', 'br', () => sim.brakeDown()], ['stop', '비상', 'BS', 'eb', () => sim.emergency()]]
-      : [['up', '역행', 'W', 'pw', () => sim.powerUp()], ['neutral', '중립', 'N', 'nt', () => sim.neutral()], ['down', '제동', 'S', 'br', () => sim.powerDown()], ['stop', '비상', 'BS', 'eb', () => sim.emergency()]];
+      ? [['up', '역행 올림|역행', 'W', 'pw', () => sim.powerUp()], ['down', '역행 내림|역행', 'S', 'pw', () => sim.powerDown()], ['up', '제동 걸기|제동', 'E', 'br', () => sim.brakeUp()], ['down', '제동 풀기|제동', 'D', 'br', () => sim.brakeDown()], ['stop', '비상|비상', 'BS', 'eb', () => sim.emergency()]]
+      : [['up', '역행|역행', 'W', 'pw', () => sim.powerUp()], ['neutral', '중립|중립', 'N', 'nt', () => sim.neutral()], ['down', '제동|제동', 'S', 'br', () => sim.powerDown()], ['stop', '비상|비상', 'BS', 'eb', () => sim.emergency()]];
     const box = $('drive-btns'); box.innerHTML = '';
-    for (const [ic, label, key, cls, fn] of D) {
+    for (const [ic, labels, key, cls, fn] of D) {
+      const [label, short] = labels.split('|');
       const b = document.createElement('button'); b.className = cls; b.title = `${label === '비상' ? '비상제동' : label} (${key === 'BS' ? 'Backspace' : key})`;
-      b.innerHTML = `<span>${ICON[ic]}</span>${label}<kbd>${key}</kbd>`;
+      b.innerHTML = `<span>${ICON[ic]}</span><i class="lf">${label}</i><i class="ls">${short}</i><kbd>${key}</kbd>`;
       let t = 0; const stop = () => { clearTimeout(t); t = 0; };
       b.addEventListener('pointerdown', e => { e.preventDefault(); fn(); stop(); if (cls !== 'eb') { const rep = () => { fn(); t = setTimeout(rep, 220); }; t = setTimeout(rep, 450); } });
       for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
@@ -58,7 +59,9 @@ export class HUD {
     this.msgT -= dt;
     if (!this.speed.clientWidth) return;
     this.acc = (this.acc || 0) + dt; if (this.acc < 1 / 30) return; this.acc = 0; if (this.msgT < 0 && this.msgT > -1) $('h-msg').className = 'toast';
-    this.drawLever(sim); this.drawSpeed(sim, extra); this.drawPress(sim);
+    if (this.lever.clientWidth) this.drawLever(sim);
+    this.drawSpeed(sim, extra);
+    if (this.press.clientWidth) this.drawPress(sim);
     // 표시등
     const lamp = (id, on, cls = '') => { const el = $(id); el.className = 'lamp ' + (on ? 'on ' + cls : ''); };
     lamp('l-door', sim.doors === 'closed', 'g'); lamp('l-panto', sim.spec.kind === 'diesel' ? sim.engine : sim.panto > 0.98, 'g');
@@ -82,7 +85,7 @@ export class HUD {
     // 정차 위치 막대
     const show = st && d < 350 && d > -15 && !sim.finished;
     this.stopbar.parentElement.style.opacity = show ? 1 : 0;
-    if (show) this.drawStop(d);
+    if (show && this.stopbar.clientWidth) this.drawStop(d);
   }
 
   drawLever(s) {
