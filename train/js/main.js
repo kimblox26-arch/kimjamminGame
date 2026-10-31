@@ -113,20 +113,21 @@ const demo = { focus: new THREE.Vector3() };
 function startDemo() {
   const L = net.byId.s2, st = L.stations.find(s => s.name === '잠실나루');
   const spec = TRAINS.find(t => t.id === 'metro');
-  demo.line = L; demo.s = st.s - 900; demo.model = new TrainModel({ ...spec, cars: L.cars }, L.color); demo.model.setPanto(1);
-  world.scene.add(demo.model.group); demo.ang = 0.6;
+  demo.line = L; demo.s0 = st.s - 1500; demo.s1 = st.s + 700; demo.s = demo.s0 + 700;
+  demo.model = new TrainModel({ ...spec, cars: L.cars }, L.color); demo.model.setPanto(1);
+  world.scene.add(demo.model.group);
+  const T = L.at(st.s - 250), nx = -Math.sin(T.hd), nz = Math.cos(T.hd);
+  demo.target = new THREE.Vector3(T.x, T.y + 6, T.z);
+  const cx = T.x + nx * 170 - Math.cos(T.hd) * 120, cz = T.z + nz * 170 - Math.sin(T.hd) * 120;
+  demo.cam = new THREE.Vector3(cx, Math.max(terrain.height(cx, cz), T.y) + 32, cz);
   updateDemo(0);
 }
 function updateDemo(dt) {
-  const L = demo.line; demo.s = (demo.s + dt * 15) % L.length;
+  const L = demo.line; demo.s += dt * 15; if (demo.s > demo.s1) demo.s = demo.s0;
   const lat = -L.cfg.gap / 2, o = world.origin;
   demo.model.place(L, demo.s, 1, lat, o, demo.s / 0.43);
-  const P = L.at(demo.s - 90);
-  demo.focus.set(P.x, P.y, P.z);
-  demo.ang += dt * 0.05;
-  const r = 140, x = P.x + Math.cos(demo.ang) * r, z = P.z + Math.sin(demo.ang) * r;
-  const gy = Math.max(terrain.height(x, z), P.y) + 40;
-  camera.position.set(x - o.x, gy, z - o.y); camera.lookAt(P.x - o.x, P.y + 5, P.z - o.y);
+  demo.focus.copy(demo.target);
+  camera.position.set(demo.cam.x - o.x, demo.cam.y, demo.cam.z - o.y); camera.lookAt(demo.target.x - o.x, demo.target.y, demo.target.z - o.y);
   demo.model.setInterior(world.night * 0.9);
 }
 
@@ -238,7 +239,7 @@ function buildBuilder() {
   canvas.addEventListener('pointerdown', e => { if (screen === 's-build') drag = [e.clientX, e.clientY]; else if (screen === 's-game') look.drag = [e.clientX, e.clientY]; });
   addEventListener('pointermove', e => {
     if (drag) { studio.yaw -= (e.clientX - drag[0]) * 0.006; studio.pitch = clamp(studio.pitch + (e.clientY - drag[1]) * 0.004, 0.02, 1.2); drag = [e.clientX, e.clientY]; }
-    if (look.drag) { look.yaw -= (e.clientX - look.drag[0]) * 0.004; look.pitch = clamp(look.pitch - (e.clientY - look.drag[1]) * 0.003, -0.6, 0.5); look.drag = [e.clientX, e.clientY]; }
+    if (look.drag) { look.yaw -= (e.clientX - look.drag[0]) * 0.005; look.pitch = clamp(look.pitch - (e.clientY - look.drag[1]) * 0.004, -0.8, 0.6); look.drag = [e.clientX, e.clientY]; }
   });
   addEventListener('pointerup', () => { drag = null; look.drag = null; });
   canvas.addEventListener('wheel', e => { if (screen === 's-build') studio.dist = clamp(studio.dist * Math.exp(e.deltaY * 0.001), 20, 260); else if (screen === 's-game') look.zoom = clamp(look.zoom * Math.exp(e.deltaY * 0.001), 0.3, 4); }, { passive: true });
@@ -289,7 +290,7 @@ function onScreen(id) {
 // ───── 운행 ─────
 let game = null;
 const look = { yaw: 0, pitch: -0.04, zoom: 1, drag: null };
-const VIEWS = ['cab', 'chase', 'orbit', 'side'], VIEW_NAMES = { cab: '운전석', chase: '추적', orbit: '자유 시점', side: '선로변' };
+const VIEWS = ['cab', 'chase', 'orbit', 'side'], VIEW_NAMES = { cab: '운전석', chase: '추적', orbit: '자유', side: '선로변' };
 function startRun() {
   const L = sel.line; if (sel.a === sel.b && !L.loop) return hud.msg('출발역과 도착역을 다르게 고르세요', true);
   let spec = { ...sel.train }; if (!spec.cars) spec.cars = L.cars;
@@ -325,14 +326,14 @@ document.querySelector('[data-go="s-map"]').addEventListener('click', () => back
 const act = {
   open: () => game.sim.openDoors(), close: () => game.sim.closeDoors(), panto: () => game.sim.togglePanto(),
   light: () => { game.sim.headlight = !game.sim.headlight; sound.click(); },
-  view: () => { game.view = VIEWS[(VIEWS.indexOf(game.view) + 1) % VIEWS.length]; game.side = null; hud.msg(VIEW_NAMES[game.view] + ' 시점'); },
+  view: () => { game.view = VIEWS[(VIEWS.indexOf(game.view) + 1) % VIEWS.length]; game.side = null; look.yaw = 0; look.pitch = game.view === 'cab' ? -0.04 : 0; look.zoom = 1; hud.msg(VIEW_NAMES[game.view] + ' 시점'); },
   map: () => { backFromMap = 's-game'; go('s-map'); }, pause: () => pause(!game.paused),
 };
 document.querySelectorAll('[data-act]').forEach(b => {
   if (b.dataset.act === 'horn') {
     const on = v => { if (game) game.sim.horn = v; b.classList.toggle('hold', v); };
     b.addEventListener('pointerdown', () => on(true)); b.addEventListener('pointerup', () => on(false)); b.addEventListener('pointerleave', () => on(false));
-  } else b.onclick = () => { if (game) act[b.dataset.act](); };
+  } else b.onclick = () => { b.blur(); if (game) act[b.dataset.act](); };
 });
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
@@ -340,6 +341,7 @@ addEventListener('keydown', e => {
   if (screen !== 's-game' || !game) return;
   const s = game.sim, k = e.code;
   if (k === 'Escape') return pause(!game.paused);
+  if (k === 'Space' || k === 'Enter') { e.preventDefault(); document.activeElement?.blur?.(); }
   if (game.paused) return;
   if (e.repeat && !['KeyW', 'KeyS', 'KeyE', 'KeyD', 'ArrowUp', 'ArrowDown'].includes(k)) return;
   const m = {
@@ -405,12 +407,12 @@ function updateCamera(dt) {
     const mid = L.at(sim.s - sim.dir * model.length * 0.3);
     const tgt = new THREE.Vector3(mid.x - o.x, mid.y + 2.5, mid.z - o.y);
     if (game.view === 'chase') {
-      const back = L.at(sim.s - sim.dir * 38 * look.zoom), sd = sim.lat < 0 ? -1 : 1;
-      const want = new THREE.Vector3(back.x - o.x - Math.sin(back.hd) * 10 * sd, back.y + 7 * look.zoom, back.z - o.y + Math.cos(back.hd) * 10 * sd);
-      game.chase.lerp(want, game.chase.lengthSq() ? Math.min(1, dt * 3) : 1); camera.position.copy(game.chase);
-      camera.lookAt(F.x - o.x + fwd.x * 25, F.y + 2, F.z - o.y + fwd.z * 25);
+      const sd = sim.lat < 0 ? -1 : 1, r = 40 * look.zoom, a = Math.atan2(-fwd.z, -fwd.x) - 0.26 * sd - look.yaw, hgt = Math.max(2, (7 - look.pitch * 40) * look.zoom);
+      const c = new THREE.Vector3(F.x - o.x, F.y + 2, F.z - o.y);
+      camera.position.set(c.x + Math.cos(a) * r, c.y + hgt, c.z + Math.sin(a) * r);
+      camera.lookAt(c.x - Math.cos(a) * 25, c.y, c.z - Math.sin(a) * 25);
     } else if (game.view === 'orbit') {
-      const r = 60 * look.zoom, a = look.yaw + Math.atan2(fwd.z, fwd.x) + Math.PI, p = 0.35 - look.pitch;
+      const r = 60 * look.zoom, a = -look.yaw + Math.atan2(fwd.z, fwd.x) + Math.PI, p = clamp(0.35 - look.pitch, 0.03, 1.4);
       camera.position.set(tgt.x + Math.cos(a) * Math.cos(p) * r, tgt.y + Math.sin(p) * r, tgt.z + Math.sin(a) * Math.cos(p) * r);
       camera.lookAt(tgt);
     } else {
@@ -421,6 +423,7 @@ function updateCamera(dt) {
       }
       camera.position.set(game.side.x - o.x, game.side.y, game.side.z - o.y);
       const front = L.at(sim.s - sim.dir * 15); camera.lookAt(front.x - o.x, front.y + 2, front.z - o.y);
+      camera.rotateY(look.yaw); camera.rotateX(look.pitch);
     }
     const gh = terrain.height(camera.position.x + o.x, camera.position.z + o.y) + 1.5;
     if (camera.position.y < gh && !sim.inTunnel) camera.position.y = gh;
@@ -439,7 +442,7 @@ function frame(now) {
     const c = studio.cam; c.aspect = innerWidth / innerHeight; c.updateProjectionMatrix();
     const tx = innerWidth > 900 ? -previewModel.length * 0.12 : 0;
     c.position.set(Math.cos(studio.yaw) * Math.cos(studio.pitch) * studio.dist + tx, Math.sin(studio.pitch) * studio.dist + 2, Math.sin(studio.yaw) * Math.cos(studio.pitch) * studio.dist);
-    c.lookAt(tx, 2, 0); studio.yaw += dt * 0.08;
+    c.lookAt(tx, 2, 0);
     renderer.render(studio.scene, c); return;
   }
   let focus = demo.focus;

@@ -1,5 +1,6 @@
 // 운전석 계기판: 주간제어기(핸들), 속도계(ATC), 압력계, 표시등, 안내
 import { clamp } from './geo.js';
+import { ICON } from './icons.js';
 
 const $ = id => document.getElementById(id);
 function fit(cv) {
@@ -25,7 +26,28 @@ export class HUD {
     this.lever.addEventListener('pointermove', e => { if (drag) act(e); });
     this.lever.addEventListener('pointerup', () => drag = false);
   }
-  bind(sim, info) { this.sim = sim; this.info = info; $('h-line').textContent = info.lineName; $('h-line').style.background = info.color; $('h-train').textContent = info.trainName; }
+  bind(sim, info) {
+    this.sim = sim; this.info = info; $('h-line').textContent = info.lineName; $('h-line').style.background = info.color; $('h-train').textContent = info.trainName;
+    // 운전 버튼: 누르고 있으면 한 단씩 계속 움직인다
+    const D = sim.two
+      ? [['up', '역행 올림', 'W', 'pw', () => sim.powerUp()], ['down', '역행 내림', 'S', 'pw', () => sim.powerDown()], ['up', '제동 걸기', 'E', 'br', () => sim.brakeUp()], ['down', '제동 풀기', 'D', 'br', () => sim.brakeDown()], ['stop', '비상', 'BS', 'eb', () => sim.emergency()]]
+      : [['up', '역행', 'W', 'pw', () => sim.powerUp()], ['neutral', '중립', 'N', 'nt', () => sim.neutral()], ['down', '제동', 'S', 'br', () => sim.powerDown()], ['stop', '비상', 'BS', 'eb', () => sim.emergency()]];
+    const box = $('drive-btns'); box.innerHTML = '';
+    for (const [ic, label, key, cls, fn] of D) {
+      const b = document.createElement('button'); b.className = cls; b.title = `${label === '비상' ? '비상제동' : label} (${key === 'BS' ? 'Backspace' : key})`;
+      b.innerHTML = `<span>${ICON[ic]}</span>${label}<kbd>${key}</kbd>`;
+      let t = 0; const stop = () => { clearTimeout(t); t = 0; };
+      b.addEventListener('pointerdown', e => { e.preventDefault(); fn(); stop(); if (cls !== 'eb') { const rep = () => { fn(); t = setTimeout(rep, 220); }; t = setTimeout(rep, 450); } });
+      for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+      box.appendChild(b);
+    }
+    // 역전기: 눌러서 바로 선택
+    const rev = $('rev'); rev.innerHTML = '';
+    this.revBtns = ['R', 'N', 'F'].map((k, i) => {
+      const b = document.createElement('button'); b.textContent = k; b.title = ['후진', '중립', '전진'][i];
+      b.addEventListener('pointerdown', e => { e.preventDefault(); sim.setReverser(i - 1); }); rev.appendChild(b); return b;
+    });
+  }
   rows(h) {
     const s = this.sim, n = s.two ? Math.max(s.NP + 1, s.NB + 2) : s.NP + s.NB + 2;
     const top = 26, step = (h - top - 14) / (n - 1); return { n, top, step };
@@ -45,7 +67,7 @@ export class HUD {
     $('l-panto').querySelector('i').textContent = sim.spec.kind === 'diesel' ? '엔진' : '팬터';
     $('l-vcb').querySelector('i').textContent = sim.spec.kind === 'diesel' ? '발전' : '주차단';
     $('l-atc').querySelector('i').textContent = sim.sys;
-    $('rev').innerHTML = ['R', 'N', 'F'].map((k, i) => `<b class="${sim.reverser === i - 1 ? 'on' : ''}">${k}</b>`).join('');
+    this.revBtns.forEach((b, i) => b.classList.toggle('on', sim.reverser === i - 1));
     // 운행 정보
     const st = sim.nextSt, d = st ? sim.dist(sim.stopOf(st)) : 0;
     $('h-next').textContent = sim.finished ? '운행 완료' : st ? st.name : '-';

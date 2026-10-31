@@ -22,6 +22,10 @@ export const ICON = {
   moon: S('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
   chip: S('<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>'),
   locate: S('<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'),
+  up: S('<path d="M6 15l6-6 6 6"/>'),
+  down: S('<path d="M6 9l6 6 6-6"/>'),
+  neutral: S('<path d="M5 12h14"/>'),
+  stop: S('<circle cx="12" cy="12" r="9"/><path d="M8 8l8 8M16 8l-8 8"/>'),
   flag: S('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
 };
 // 메뉴 전환 애니메이션에 쓰는 열차 그림

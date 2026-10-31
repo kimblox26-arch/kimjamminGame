@@ -61,6 +61,7 @@ export class Sim {
   setBrake(b) { if (this.two) { this.brake = clamp(Math.round(b), 0, this.NB + 1); if (this.brake) this.power = 0; } }
   revFwd() { if (Math.abs(this.v) > 0.1) return this.emit('msg', '정차 중에만 역전기를 바꿀 수 있습니다'); this.reverser = Math.min(1, this.reverser + 1); this.emit('clunk'); }
   revBack() { if (Math.abs(this.v) > 0.1) return this.emit('msg', '정차 중에만 역전기를 바꿀 수 있습니다'); this.reverser = Math.max(-1, this.reverser - 1); this.emit('clunk'); }
+  setReverser(v) { if (v === this.reverser) return; if (Math.abs(this.v) > 0.1) return this.emit('msg', '정차 중에만 역전기를 바꿀 수 있습니다'); this.reverser = v; this.emit('clunk'); }
   togglePanto() {
     if (this.spec.kind === 'diesel') { this.engine = !this.engine; this.emit(this.engine ? 'engineStart' : 'engineStop'); return; }
     this.pantoUp = !this.pantoUp; if (!this.pantoUp) this.vcb = false; else this.vcbT = 0; this.emit('panto', this.pantoUp);
