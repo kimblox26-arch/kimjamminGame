@@ -1,0 +1,42 @@
+// 실제 열차 제원 (대략값). 가속·감속은 km/h/s, 출력은 kW, 질량은 t
+// nose: tgv(KTX) / sancheon / eum / cheongryong / itx / loco / diesel / metro
+export const TRAINS = [
+  { id: 'ktx1', name: 'KTX', sub: 'KTX-I · 동력집중식', kind: 'hsr', nose: 'tgv', cars: 20, carLen: 18.7, leadLen: 22.5, maxKmh: 305, powerKw: 13560, mass: 760, accel: 1.6, decel: 2.7, eb: 4.3,
+    control: 'two', notches: 8, brakes: 7, body: '#f2f4f6', stripe: '#1f5aa6', stripe2: '#8fa3b8', powerCars: [0, 19], panto: [0, 19], doors: 1, voltage: '25kV 60Hz',
+    desc: '2004년 개통한 한국 최초의 고속열차. 앞뒤 동력차가 객차 18량을 끌고 밀어 최고 300 km/h로 달립니다.' },
+  { id: 'ktx-sancheon', name: 'KTX-산천', sub: '동력집중식 · 국산 고속열차', kind: 'hsr', nose: 'sancheon', cars: 10, carLen: 19, leadLen: 22.7, maxKmh: 305, powerKw: 8800, mass: 434, accel: 1.8, decel: 2.8, eb: 4.3,
+    control: 'two', notches: 8, brakes: 7, body: '#f4f5f7', stripe: '#0b5ca8', stripe2: '#3fa0d8', powerCars: [0, 9], panto: [0, 9], doors: 1, voltage: '25kV 60Hz',
+    desc: '산천어를 닮은 앞모습의 국산 고속열차. 10량 편성이며 두 편성을 이어 20량으로도 운행합니다.' },
+  { id: 'ktx-cheongryong', name: 'KTX-청룡', sub: 'EMU-320 · 동력분산식', kind: 'hsr', nose: 'cheongryong', cars: 8, carLen: 22.5, leadLen: 25, maxKmh: 320, powerKw: 9840, mass: 430, accel: 2.2, decel: 3.0, eb: 4.5,
+    control: 'two', notches: 8, brakes: 7, body: '#f5f6f8', stripe: '#163f8f', stripe2: '#00a7c8', powerCars: 'all', panto: [2, 5], doors: 1, voltage: '25kV 60Hz',
+    desc: '2024년 데뷔한 최신 동력분산식 고속열차. 모든 차량 아래 모터가 있어 가속이 빠릅니다.' },
+  { id: 'ktx-eum', name: 'KTX-이음', sub: 'EMU-260 · 동력분산식', kind: 'hsr', nose: 'eum', cars: 6, carLen: 22.5, leadLen: 24, maxKmh: 260, powerKw: 6600, mass: 320, accel: 2.3, decel: 3.0, eb: 4.5,
+    control: 'two', notches: 8, brakes: 7, body: '#f5f6f8', stripe: '#0d4f9c', stripe2: '#00a0c6', powerCars: 'all', panto: [1, 4], doors: 1, voltage: '25kV 60Hz',
+    desc: '중앙선·강릉선·동해선을 달리는 6량 동력분산식 준고속열차.' },
+  { id: 'srt', name: 'SRT', sub: '수서고속철도', kind: 'hsr', nose: 'sancheon', cars: 10, carLen: 19, leadLen: 22.7, maxKmh: 305, powerKw: 8800, mass: 434, accel: 1.8, decel: 2.8, eb: 4.3,
+    control: 'two', notches: 8, brakes: 7, body: '#e9e8ee', stripe: '#5b2a86', stripe2: '#7d7a86', powerCars: [0, 9], panto: [0, 9], doors: 1, voltage: '25kV 60Hz',
+    desc: '수서역에서 출발하는 보라색 고속열차. 산천 계열 차량입니다.' },
+  { id: 'itx-saemaeul', name: 'ITX-새마을', sub: 'EMU-150 · 간선형 전동차', kind: 'emu', nose: 'itx', cars: 6, carLen: 23, leadLen: 23.5, maxKmh: 150, powerKw: 3300, mass: 290, accel: 2.0, decel: 3.0, eb: 4.5,
+    control: 'two', notches: 8, brakes: 7, body: '#f2f2f2', stripe: '#c8102e', stripe2: '#3a3a3a', powerCars: 'all', panto: [1, 4], doors: 1, voltage: '25kV 60Hz',
+    desc: '새마을호를 대체한 간선형 전동차. 경부선·호남선·장항선을 달립니다.' },
+  { id: 'itx-maeum', name: 'ITX-마음', sub: 'EMU-150', kind: 'emu', nose: 'itx', cars: 6, carLen: 23, leadLen: 23.5, maxKmh: 150, powerKw: 3600, mass: 290, accel: 2.1, decel: 3.0, eb: 4.5,
+    control: 'two', notches: 8, brakes: 7, body: '#f4f4f2', stripe: '#00897b', stripe2: '#f2a900', powerCars: 'all', panto: [1, 4], doors: 1, voltage: '25kV 60Hz',
+    desc: '2021년 도입된 간선형 전동차. 무궁화호를 대체하고 있습니다.' },
+  { id: 'itx-cheongchun', name: 'ITX-청춘', sub: '2층 객차 간선형 전동차', kind: 'emu', nose: 'itx', cars: 8, carLen: 23, leadLen: 23.5, maxKmh: 180, powerKw: 4400, mass: 380, accel: 2.0, decel: 3.0, eb: 4.5,
+    control: 'two', notches: 8, brakes: 7, body: '#f5f5f5', stripe: '#0068b7', stripe2: '#8dc63f', powerCars: 'all', panto: [1, 6], doors: 1, deck: [3, 4], voltage: '25kV 60Hz',
+    desc: '용산·청량리와 춘천을 잇는 열차. 가운데 2량은 2층 객차입니다.' },
+  { id: 'mugunghwa', name: '무궁화호', sub: '7600호대 디젤기관차 + 객차', kind: 'diesel', nose: 'diesel', cars: 6, carLen: 23.5, leadLen: 21, maxKmh: 150, powerKw: 2460, mass: 400, accel: 1.1, decel: 2.4, eb: 3.8,
+    control: 'two', notches: 8, brakes: 7, body: '#eef0f2', stripe: '#d6222f', stripe2: '#1d3e7a', loco: '#1d3e7a', powerCars: [0], panto: [], doors: 1, voltage: '디젤 전기식',
+    desc: '디젤기관차가 객차를 끄는 일반열차. 시동부터 노치 조작까지 기관차의 느낌을 살렸습니다.' },
+  { id: 'metro-korail', name: '광역전동차', sub: '수도권 1호선 · 직류/교류 겸용', kind: 'metro', nose: 'metro', cars: 10, carLen: 19.5, leadLen: 19.5, maxKmh: 110, powerKw: 4400, mass: 360, accel: 2.5, decel: 3.5, eb: 4.5,
+    control: 'one', notches: 4, brakes: 7, body: '#d5d8da', stripe: '#0052a4', stripe2: '#0052a4', powerCars: 'all', panto: [2, 7], doors: 4, voltage: 'DC1500V / AC25kV',
+    desc: '스테인리스 차체의 수도권 광역전동차. 서울 도심 지하와 지상 구간을 함께 달립니다.' },
+  { id: 'metro', name: '도시철도 전동차', sub: '노선 색 띠 · 스테인리스 차체', kind: 'metro', nose: 'metro', cars: 0, carLen: 19.5, leadLen: 19.5, maxKmh: 100, powerKw: 3200, mass: 300, accel: 3.0, decel: 3.5, eb: 4.5,
+    control: 'one', notches: 4, brakes: 7, body: '#d9dcde', stripe: 'line', stripe2: 'line', powerCars: 'all', panto: [1, 4, 7], doors: 4, voltage: 'DC1500V',
+    desc: '선택한 노선의 색 띠를 두른 지하철 전동차. 편성 수는 노선에 맞춰집니다.' },
+];
+
+export const NOSES = [
+  ['tgv', '유선형 롱노즈 (KTX)'], ['sancheon', '유선형 산천형'], ['cheongryong', '유선형 청룡형'], ['eum', '유선형 이음형'],
+  ['itx', '간선형 둥근 앞모습'], ['metro', '지하철 평면형'], ['loco', '전기기관차형'], ['diesel', '디젤기관차형'],
+];
