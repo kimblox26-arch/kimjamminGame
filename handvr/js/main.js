@@ -4,6 +4,7 @@ import { createWorld } from './world.js';
 import { Tracker, IS_MOBILE } from './tracking.js';
 import { HandState, HandAssigner, BONES, WEBCAM_HFOV, recalibrateDepth } from './hands.js';
 import { loadHandRigs, SKIN_TONES, setSkinTone, setSkinFromCamera } from './hand-rig.js';
+import { FrameFX } from './frame-fx.js';
 import { HandScanner } from './scan.js';
 import { FINGER_NAME, STATE_NAME } from './finger-pose.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -105,9 +106,24 @@ addEventListener('keydown', e => {
     case 'KeyX': settings.swap = !settings.swap; toast('왼손 ↔ 오른손 바꿈'); save(); break;
     case 'KeyV': settings.preview = !settings.preview; save(); break;
     case 'KeyH': $('#help').classList.toggle('hidden'); break;
+    case 'KeyF': fx?.next(); break;
+    case 'KeyC': setAR(!ar); break;
   }
 });
 $('#help-btn').addEventListener('click', () => $('#help').classList.toggle('hidden'));
+
+// ───────── 손가락 틀 필터 (양손 엄지·검지로 사각 틀) / AR 화면 ─────────
+let fx = null, ar = false;
+const screenSize = new THREE.Vector2();
+function setAR(on) {
+  ar = on;
+  world.setVisible(!on);
+  fx?.setAR(on);
+  $('#ar-btn').classList.toggle('on', on);
+  toast(on ? '📷 AR: 카메라 화면 — 양손으로 사각 틀을 만들어 보세요' : '🌤 게임 화면', 2500);
+}
+$('#fx-btn').addEventListener('click', () => fx?.next());
+$('#ar-btn').addEventListener('click', () => setAR(!ar));
 
 // ───────── 가로 화면: 전체 화면 + 가로 고정 (지원하는 브라우저에서, 안 되면 돌려 달라고 안내) ─────────
 async function goLandscape() {
@@ -165,6 +181,7 @@ async function start() {
     tracker.loadPose().catch(e => console.warn('[HandVR] 몸 인식(팔꿈치) 없이 진행', e)); // 뒤에서 불러옴
     msg('손 3D 모델 준비 중…');
     try { await rigsReady; } catch (e) { throw new Error('손 3D 모델을 불러오지 못했어요: ' + (e.message || e)); }
+    fx ??= new FrameFX(tracker.video, camera, scene, name => toast(`필터: ${name}`));
     playing = true;
     $('#start').classList.add('hidden');
     $('#hud').classList.remove('hidden');
@@ -337,6 +354,10 @@ function frame(now) {
     const h = hands[s];
     h.updateDisplay(dt, now, lostMs());
     meshes?.[s].update(h.joints, h.local, h.pose, h.arm, dt, h.profile, h.visible);
+  }
+  if (fx) {
+    fx.update(dt, now, hands, meshes, renderer.getSize(screenSize));
+    if (ar && meshes) meshes.L.group.visible = meshes.R.group.visible = false; // AR: 진짜 손이 보이니 3D 손은 숨김
   }
   world.update(dt, STAND, camera.localToWorld(shadowFocus.set(0, -0.15, -0.45)));
   if (playing) updateHud(now);

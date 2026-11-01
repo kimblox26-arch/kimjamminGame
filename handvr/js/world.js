@@ -134,6 +134,8 @@ export function createWorld(scene, renderer) {
 
   return {
     setShadowQuality,
+    // 하늘·바닥·구름 보이기/숨기기 (AR 화면에서는 카메라 영상이 배경)
+    setVisible(v) { sky.visible = floor.visible = clouds.visible = v; },
     // focus: 그림자를 또렷하게 그릴 중심 (손이 있는 곳). 좁은 범위만 그리니 손가락 그림자까지 선명하다
     update(dt, playerPos, focus = playerPos) {
       sky.position.copy(playerPos);
