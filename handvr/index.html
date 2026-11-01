@@ -5,20 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>HAND VR — 손으로 하는 웹 VR</title>
 <meta name="description" content="웹캠이 내 손을 인식해 화면 속 3D 손이 그대로 움직이는 웹 VR">
-<link rel="stylesheet" href="./style.css?v=20261031a">
+<link rel="stylesheet" href="./style.css?v=20261101a">
 <!-- 업데이트하면 v 값을 바꿔서, 브라우저에 남은 옛 파일 대신 새 파일을 받게 한다 -->
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
     "three/addons/": "../vendor/three/addons/",
-    "./js/finger-pose.js": "./js/finger-pose.js?v=20261031a",
-    "./js/hand-rig.js": "./js/hand-rig.js?v=20261031a",
-    "./js/hands.js": "./js/hands.js?v=20261031a",
-    "./js/scan.js": "./js/scan.js?v=20261031a",
-    "./js/skin.js": "./js/skin.js?v=20261031a",
-    "./js/tracking.js": "./js/tracking.js?v=20261031a",
-    "./js/world.js": "./js/world.js?v=20261031a"
+    "./js/finger-pose.js": "./js/finger-pose.js?v=20261101a",
+    "./js/frame-fx.js": "./js/frame-fx.js?v=20261101a",
+    "./js/hand-rig.js": "./js/hand-rig.js?v=20261101a",
+    "./js/hands.js": "./js/hands.js?v=20261101a",
+    "./js/scan.js": "./js/scan.js?v=20261101a",
+    "./js/skin.js": "./js/skin.js?v=20261101a",
+    "./js/tracking.js": "./js/tracking.js?v=20261101a",
+    "./js/world.js": "./js/world.js?v=20261101a"
   }
 }
 </script>
@@ -58,7 +59,7 @@
   </div>
   <div id="toast"></div>
   <div id="preview-box" class="glass"><canvas id="preview" width="320" height="180"></canvas><div class="pv-label">카메라 (거울 화면)</div></div>
-  <div id="top-btns"><button id="land-btn" class="glass">↔ 가로 화면</button><button id="help-btn" class="glass">? 도움말 (H)</button></div>
+  <div id="top-btns"><button id="fx-btn" class="glass" title="필터 바꾸기 (F)">🎨 필터</button><button id="ar-btn" class="glass" title="카메라 화면으로 (C)">📷 AR</button><button id="land-btn" class="glass">↔ 가로</button><button id="help-btn" class="glass">? 도움말 (H)</button></div>
 
   <div id="help" class="glass hidden">
     <h2>도움말</h2>
@@ -68,6 +69,7 @@
         <table>
           <tr><td>손을 카메라 앞에 보여주기</td><td>화면 속 3D 손이 내 손을 그대로 따라 움직여요 (제자리)</td></tr>
           <tr><td>손가락 굽히기·펴기</td><td>손가락마다 펴짐/반쯤/접힘을 판단해서 그 모양으로 (왼쪽 위 표시)</td></tr>
+          <tr><td>양손 엄지·검지로 사각 틀</td><td>엄지·검지만 펴고 'ㄱ'·'ㄴ' 모양으로 틀을 만들면 틀 안에 카메라 영상이 필터로 (열화상·야간 투시경·엑스레이·만화·픽셀·무지개). 틀을 다시 만들 때마다 다음 필터</td></tr>
           <tr><td>팔 움직이기</td><td>팔꿈치·어깨까지 카메라에 보이면 화면 속 팔이 같은 자세로 (미리보기에 초록 선)</td></tr>
           <tr><td>손가락 벌리고 손바닥 보여주기</td><td>처음 2~3초 손 스캔 — 손가락 굵기·피부색을 맞춰요</td></tr>
           <tr><td>카메라에서 40~60cm</td><td>손 전체가 화면에 들어오게, 밝은 곳에서</td></tr>
@@ -80,6 +82,8 @@
           <tr><td>X</td><td>왼손·오른손 바꾸기 (손이 뒤집혀 보이면)</td></tr>
           <tr><td>Q</td><td>화질: 자동(기기 성능에 맞춤) → 고품질 → 보통(빠름)</td></tr>
           <tr><td>V / H</td><td>카메라 화면 / 도움말</td></tr>
+          <tr><td>F / 🎨 필터</td><td>틀 안 필터 바꾸기</td></tr>
+          <tr><td>C / 📷 AR</td><td>AR 화면: 카메라 영상을 화면 가득, 손가락 틀 안만 필터</td></tr>
           <tr><td>↔ 가로 화면</td><td>휴대폰: 전체 화면 + 가로 고정 (아이폰은 직접 가로로 돌리기)</td></tr>
         </table>
       </div>
@@ -88,6 +92,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261031a"></script>
+<script type="module" src="./js/main.js?v=20261101a"></script>
 </body>
 </html>

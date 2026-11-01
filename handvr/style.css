@@ -55,7 +55,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 #preview-box { position: absolute; right: 12px; bottom: 12px; padding: 6px; }
 #preview { display: block; width: 256px; height: auto; border-radius: 10px; background: #000; }
 .pv-label { font-size: 11px; color: #456; text-align: center; margin-top: 3px; }
-#top-btns { position: absolute; right: 12px; top: 12px; display: flex; gap: 8px; }
+#top-btns { position: absolute; right: 12px; top: 12px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+#top-btns button.on { background: rgba(47, 140, 255, 0.85); color: #fff; }
 #top-btns button { padding: 7px 12px; font-size: 13px; cursor: pointer; pointer-events: auto; color: #17406f; }
 #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(860px, calc(100% - 32px));
   max-height: calc(100% - 32px); overflow: auto; padding: 18px 22px; pointer-events: auto; background: rgba(255, 255, 255, 0.9); }
