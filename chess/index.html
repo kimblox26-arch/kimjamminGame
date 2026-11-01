@@ -7,73 +7,39 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="app">
+<svg class="defs" aria-hidden="true">
+  <defs>
+    <linearGradient id="gw" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#ece3d3"/>
+      <stop offset="1" stop-color="#c4b49c"/>
+    </linearGradient>
+    <linearGradient id="gb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6e655c"/>
+      <stop offset="0.5" stop-color="#3a332d"/>
+      <stop offset="1" stop-color="#17130f"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<main class="stage">
   <div class="frame">
     <div class="board" id="board">
       <div class="layer squares" id="squares"></div>
+      <div class="layer shade"></div>
       <div class="layer marks" id="marks"></div>
       <div class="layer pieces" id="pieces"></div>
-    </div>
-    <div class="promo" id="promo" hidden>
-      <div class="promo-box">
-        <p>승급할 기물을 고르세요</p>
-        <div class="promo-list" id="promoList"></div>
+      <div class="layer promo" id="promo" hidden></div>
+      <div class="layer end" id="end" hidden>
+        <div class="end-card">
+          <strong id="endTitle"></strong>
+          <span id="endText"></span>
+          <small>눌러서 다시 시작</small>
+        </div>
       </div>
     </div>
   </div>
-
-  <aside class="panel">
-    <header class="brand">
-      <span class="brand-mark" id="brandMark"></span>
-      <h1>CHESS</h1>
-    </header>
-
-    <div class="players" id="players">
-      <div class="player" id="pBlack"><span class="pi"></span><span class="pname">흑</span><span class="dot"></span></div>
-      <div class="player" id="pWhite"><span class="pi"></span><span class="pname">백</span><span class="dot"></span></div>
-    </div>
-
-    <div class="status" id="status"></div>
-
-    <div class="moves">
-      <div class="moves-head">기보</div>
-      <ol id="moveList"></ol>
-    </div>
-
-    <div class="controls">
-      <button class="btn" id="btnNew" type="button">
-        <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
-        <span>새 게임</span>
-      </button>
-      <button class="btn" id="btnUndo" type="button">
-        <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
-        <span>무르기</span>
-      </button>
-      <button class="btn" id="btnFlip" type="button">
-        <svg viewBox="0 0 24 24"><path d="M7 20V4"/><path d="m3 8 4-4 4 4"/><path d="M17 4v16"/><path d="m13 16 4 4 4-4"/></svg>
-        <span>뒤집기</span>
-      </button>
-    </div>
-  </aside>
-</div>
-
-<div class="overlay" id="result" hidden>
-  <div class="dialog">
-    <div class="dialog-mark" id="resultMark"></div>
-    <h2 id="resultTitle"></h2>
-    <p id="resultText"></p>
-    <div class="dialog-actions">
-      <button class="btn" id="btnResultNew" type="button">
-        <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
-        <span>새 게임</span>
-      </button>
-      <button class="btn" id="btnResultClose" type="button">
-        <svg viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></svg>
-        <span>닫기</span>
-      </button>
-    </div>
-  </div>
-</div>
+</main>
 
 <script src="js/pieces.js"></script>
 <script src="js/engine.js"></script>
