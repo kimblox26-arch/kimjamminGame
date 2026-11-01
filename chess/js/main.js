@@ -33,10 +33,7 @@
     for (let vr = 0; vr < 8; vr++) {
       for (let vc = 0; vc < 8; vc++) {
         const r = flipped ? 7 - vr : vr, c = flipped ? 7 - vc : vc;
-        html += `<div class="sq ${(r + c) % 2 ? 'd' : 'l'}">`;
-        if (vc === 0) html += `<span class="coord rank">${8 - r}</span>`;
-        if (vr === 7) html += `<span class="coord file">${'abcdefgh'[c]}</span>`;
-        html += '</div>';
+        html += `<div class="sq ${(r + c) % 2 ? 'd' : 'l'}"></div>`;
       }
     }
     squaresEl.innerHTML = html;
@@ -46,12 +43,10 @@
     const el = document.createElement('div');
     el.className = 'piece';
     el.innerHTML =
-      `<div class="shadow"></div><div class="body">${pieceSVG(p.type, p.color)}` +
-      `<div class="hand l">${handSVG(p.color)}</div><div class="hand r">${handSVG(p.color)}</div></div>`;
+      `<div class="shadow"></div><div class="body">${pieceSVG(p.type, p.color)}</div>`;
     el.style.transform = translate(s);
     el.body = el.querySelector('.body');
     el.shadow = el.querySelector('.shadow');
-    el.hands = [...el.querySelectorAll('.hand')];
     piecesEl.appendChild(el);
     els.set(p.id, el);
     return el;
@@ -91,14 +86,14 @@
   }
 
   // ---------- 애니메이션 ----------
-  // 기물이 몸을 옆으로 비틀며 살짝 떠서 이동하고, 내려앉을 때 눌렸다 펴진다
+  // 기물이 몸을 옆으로 비틀며 판 위를 미끄러지듯 이동하고, 내려앉을 때 눌렸다 펴진다
   function travel(el, from, to, delay = 0) {
     const [r0, c0] = screenPos(from), [r1, c1] = screenPos(to);
     const dist = Math.hypot(r1 - r0, c1 - c0);
     const dur = Math.round(Math.min(640, 340 + dist * 42));
     const tail = 160;
     const dir = Math.sign(c1 - c0) || (c0 < 4 ? -1 : 1);
-    const lean = dir * 13, twist = -dir * 40;
+    const lean = dir * 12, twist = -dir * 38;
     const a = dur / (dur + tail);
     const opts = { duration: dur + tail, delay, easing: 'ease-in-out', fill: 'backwards' };
 
@@ -108,89 +103,71 @@
       { duration: dur, delay, easing: 'cubic-bezier(.45,.05,.3,1)', fill: 'backwards' });
     el.body.animate([
       { offset: 0, transform: pose() },
-      { offset: a * 0.2, transform: pose(-9, twist * 0.6, lean * 0.5, 1.06) },
-      { offset: a * 0.55, transform: pose(-16, twist, lean, 1.12) },
-      { offset: a * 0.85, transform: pose(-5, -twist * 0.3, -lean * 0.35, 1.05) },
-      { offset: a, transform: pose(0, 0, 0, 1.08, 0.88) },
-      { offset: a + (1 - a) * 0.5, transform: pose(0, 0, 0, 0.97, 1.04) },
+      { offset: a * 0.2, transform: pose(-4, twist * 0.6, lean * 0.5, 1.04) },
+      { offset: a * 0.55, transform: pose(-8, twist, lean, 1.08) },
+      { offset: a * 0.85, transform: pose(-3, -twist * 0.3, -lean * 0.35, 1.03) },
+      { offset: a, transform: pose(0, 0, 0, 1.07, 0.9) },
+      { offset: a + (1 - a) * 0.5, transform: pose(0, 0, 0, 0.98, 1.03) },
       { offset: 1, transform: pose() },
     ], opts);
     el.shadow.animate([
-      { offset: 0, transform: 'scale(1)', opacity: 1 },
-      { offset: a * 0.55, transform: 'scale(.7)', opacity: 0.45 },
-      { offset: a, transform: 'scale(1.05)', opacity: 1 },
-      { offset: 1, transform: 'scale(1)', opacity: 1 },
+      { offset: 0, transform: 'scale(1)', opacity: 0 },
+      { offset: a * 0.55, transform: 'scale(.8)', opacity: 0.45 },
+      { offset: a, transform: 'scale(1)', opacity: 0 },
+      { offset: 1, opacity: 0 },
     ], opts);
-    el.hands.forEach((h, i) => {
-      const side = i ? 1 : -1;
-      h.animate([
-        { offset: 0, transform: 'translate(0, 0) scale(0)' },
-        { offset: a * 0.18, transform: `translate(${side * 40}%, -10%) scale(1.15)` },
-        { offset: a * 0.36, transform: `translate(${side * 34}%, ${-side * 30}%) scale(1)` },
-        { offset: a * 0.56, transform: `translate(${side * 34}%, ${side * 30}%) scale(1)` },
-        { offset: a * 0.76, transform: `translate(${side * 34}%, ${-side * 30}%) scale(1)` },
-        { offset: a, transform: `translate(${side * 22}%, 0) scale(.9)` },
-        { offset: 1, transform: 'translate(0, 0) scale(0)' },
-      ], { duration: dur + tail, delay, easing: 'ease-in-out' });
-    });
     later(() => { el.style.zIndex = ''; }, delay + dur + tail);
 
-    Sound.tock(delay, { gain: 0.16, pitch: 1.3 }); // 들어 올릴 때
-    Sound.slide(delay, dur);                      // 옮기는 동안
-    Sound.tock(delay + dur, { gain: 0.95 });       // 내려놓을 때
+    Sound.scrape(delay, dur * 0.95);          // 나무 긁는 소리
+    Sound.knock(delay + dur, { gain: 1 });    // 나무 치는 소리
     return { land: delay + dur, end: delay + dur + tail, dir };
   }
 
-  // 잡은 기물을 손으로 들어 올려 판 밖으로 던진다
-  function throwAway(att, vic, s, dir, T) {
-    const [r, c] = screenPos(s);
-    const held = `${at(r - 0.45, c)} rotate(${-dir * 10}deg) scale(1.08)`;
-    vic.style.zIndex = 6;
-    vic.animate([
-      { transform: at(r, c) },
-      { offset: 0.6, transform: `${at(r - 0.52, c)} rotate(${-dir * 16}deg) scale(1.1)` },
-      { transform: held },
-    ], { duration: 230, delay: T - 100, easing: 'ease-out', fill: 'forwards' });
-    vic.shadow.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, delay: T - 100, fill: 'forwards' });
+  // 잡을 때: 부딪히는 순간 상대 기물을 툭 튕겨 판 밖으로 날려 보낸다
+  function flick(att, vic, s, from, T) {
+    const [r, c] = screenPos(s), [r0, c0] = screenPos(from);
+    let vx = c - c0, vy = r - r0;
+    const len = Math.hypot(vx, vy) || 1;
+    vx /= len;
+    vy /= len;
+    const exit = (p, v) => (v > 0 ? (8.6 - p) / v : v < 0 ? (p + 1.6) / -v : Infinity);
+    const dist = Math.min(exit(c, vx), exit(r, vy)) + 1.5;
+    const spin = (vx >= 0 ? 1 : -1) * (540 + Math.random() * 300);
+    const fly = Math.round(620 + dist * 35);
 
-    att.body.animate([
-      { transform: pose() },
-      { offset: 0.4, transform: pose(-3, dir * 25, -dir * 16, 1.02) },
-      { offset: 0.66, transform: pose(-6, -dir * 22, dir * 20, 1.06) },
-      { transform: pose() },
-    ], { duration: 480, delay: T + 40, easing: 'ease-in-out' });
-    att.hands.forEach((h, i) => {
-      const side = i ? 1 : -1;
-      h.animate([
-        { transform: `translate(${side * 40}%, 0) scale(1)` },
-        { offset: 0.3, transform: `translate(${side * 18}%, -150%) scale(1.12)` },
-        { offset: 0.55, transform: `translate(${side * 12 - dir * 40}%, -175%) scale(1.1)` },
-        { offset: 0.78, transform: `translate(${side * 22 + dir * 110}%, -50%) scale(1)` },
-        { transform: 'translate(0, 0) scale(0)' },
-      ], { duration: 660, delay: T - 100, easing: 'ease-in-out' });
-    });
-
-    const launch = T + 270, fly = 840;
-    const dist = (dir > 0 ? 8 - c : c + 1) + 2.2;
     const frames = [];
-    for (let i = 0; i <= 24; i++) {
-      const t = i / 24;
-      const x = c + dir * dist * t;
-      const y = r - 0.45 - 5.5 * t + 9.5 * t * t;
-      const sc = 1.08 + 0.4 * Math.sin(Math.PI * Math.min(1, t * 1.2));
+    for (let i = 0; i <= 28; i++) {
+      const t = i / 28;
+      const e = 1 - Math.pow(1 - t, 2.2);
+      const up = Math.sin(Math.PI * Math.min(1, t * 1.1));
       frames.push({
-        transform: `${at(y, x)} rotate(${-dir * 10 + dir * 720 * t}deg) scale(${sc.toFixed(3)})`,
-        opacity: t > 0.82 ? (1 - t) / 0.18 : 1,
+        transform: `${at(r + vy * dist * e - up * 0.6, c + vx * dist * e)} rotate(${(spin * e).toFixed(1)}deg) scale(${(1 + 0.35 * up).toFixed(3)})`,
+        opacity: t > 0.8 ? (1 - t) / 0.2 : 1,
       });
     }
-    vic.animate(frames, { duration: fly, delay: launch, easing: 'linear', fill: 'forwards' });
-    later(() => vic.remove(), launch + fly + 30);
+    vic.style.zIndex = 6;
+    vic.body.animate([
+      { transform: pose() },
+      { offset: 0.5, transform: pose(0, 0, 0, 0.88, 1.08) },
+      { transform: pose() },
+    ], { duration: 120, delay: T, easing: 'ease-out' });
+    vic.animate(frames, { duration: fly, delay: T, easing: 'linear', fill: 'forwards' });
+    vic.shadow.animate([
+      { transform: 'scale(1)', opacity: 0 },
+      { offset: 0.3, transform: 'scale(.6) translateY(120%)', opacity: 0.4 },
+      { transform: 'scale(.6) translateY(120%)', opacity: 0 },
+    ], { duration: fly, delay: T, fill: 'forwards' });
+    att.body.animate([
+      { transform: pose() },
+      { offset: 0.35, transform: pose(-2, 0, Math.sign(vx || 1) * 14, 1.05, 0.95) },
+      { transform: pose() },
+    ], { duration: 260, delay: T - 20, easing: 'ease-out' });
+    later(() => vic.remove(), T + fly + 30);
 
-    Sound.tock(T - 60, { gain: 0.35, pitch: 1.4 });          // 손으로 붙잡는 소리
-    Sound.whoosh(launch - 60, 460);                             // 던지는 바람 소리
-    Sound.tock(launch + fly * 0.86, { gain: 0.5, pitch: 0.8, muffle: true });   // 판 밖에 떨어짐
-    Sound.tock(launch + fly * 0.86 + 140, { gain: 0.2, pitch: 0.85, muffle: true });
-    return launch + fly;
+    Sound.knock(T, { gain: 0.8, pitch: 1.5 });                                   // 툭
+    Sound.knock(T + fly * 0.8, { gain: 0.4, pitch: 0.75, muffle: true });        // 판 밖에 떨어짐
+    Sound.knock(T + fly * 0.8 + 140, { gain: 0.16, pitch: 0.8, muffle: true });
+    return T + fly;
   }
 
   function promote(el, type, color) {
@@ -200,7 +177,7 @@
       { offset: 0.6, transform: pose(-6, 0, 0, 1.15) },
       { transform: pose() },
     ], { duration: 320, easing: 'ease-out' });
-    Sound.tock(0, { gain: 0.5, pitch: 1.3 });
+    Sound.knock(0, { gain: 0.5, pitch: 1.3 });
   }
 
   function animateMove(prev, m) {
@@ -213,7 +190,7 @@
       const victim = prev.board[m.capture];
       const vel = els.get(victim.id);
       els.delete(victim.id);
-      end = Math.max(end, throwAway(el, vel, m.capture, t.dir, t.land));
+      end = Math.max(end, flick(el, vel, m.capture, m.from, t.land - 70));
     }
     if (m.promo) {
       later(() => promote(el, m.promo, mover.color), t.land + 60);
@@ -234,8 +211,8 @@
     ], { duration: dur, delay, fill: 'backwards' });
     el.shadow.animate([
       { transform: 'scale(.2)', opacity: 0 },
-      { offset: 0.6, transform: 'scale(1.1)', opacity: 1 },
-      { transform: 'scale(1)', opacity: 1 },
+      { offset: 0.55, transform: 'scale(.8)', opacity: 0.4 },
+      { transform: 'scale(1)', opacity: 0 },
     ], { duration: dur, delay, easing: 'ease-in', fill: 'backwards' });
   }
 
@@ -248,7 +225,7 @@
     let end = 0;
     for (const g of groups) {
       for (const f of g.files) for (const r of g.ranks) dropIn(makePiece(state.board[r * 8 + f], r * 8 + f), g.d, dur);
-      Sound.tock(g.d + dur * 0.6, { gain: g.gain, pitch: g.pitch });
+      Sound.knock(g.d + dur * 0.6, { gain: g.gain, pitch: g.pitch });
       end = Math.max(end, g.d + dur);
     }
     return end;
