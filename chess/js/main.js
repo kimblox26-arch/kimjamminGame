@@ -123,7 +123,7 @@
   const at = (r, c) => `translate(${c * 100}%, ${r * 100}%)`;
   const translate = (s) => at(...screenPos(s));
   const pose = (y = 0, rz = 0, sx = 1, sy = sx) => `translateY(${y}%) rotate(${rz}deg) scale(${sx}, ${sy})`;
-  const spd = () => (auto ? 0.35 : 1); // 오토 모드에서는 빠르게
+  const spd = () => (auto ? 0.6 : 1); // 오토 모드에서는 조금 빠르게
 
   function later(fn, ms) {
     const t = token;
@@ -288,12 +288,20 @@
   const sqName = (s) => 'abcdefgh'[s & 7] + (8 - (s >> 3));
   const sqIndex = (n) => (8 - Number(n[1])) * 8 + 'abcdefgh'.indexOf(n[0]);
   // Stockfish: 백그라운드 워커에서 계산 (화면이 멈추지 않음)
-  const Strong = (() => {
+  function makeEngine(url) {
     let w = null, waiting = null, skip = 0, failed = false;
+    function fail() {
+      failed = true;
+      if (w) w.terminate();
+      w = null;
+      const cb = waiting;
+      waiting = null;
+      if (cb) cb(null);
+    }
     function start() {
       if (w || failed) return;
       try {
-        w = new Worker('vendor/stockfish.asm.js');
+        w = new Worker(url);
       } catch (e) {
         failed = true;
         return;
@@ -306,13 +314,7 @@
         waiting = null;
         if (cb) cb(line.split(' ')[1]);
       };
-      w.onerror = () => {
-        w = null;
-        failed = true;
-        const cb = waiting;
-        waiting = null;
-        if (cb) cb(null);
-      };
+      w.onerror = fail;
       w.postMessage('uci');
       w.postMessage('isready');
     }
@@ -323,25 +325,34 @@
       w.postMessage('setoption name Skill Level value ' + skill);
       w.postMessage('position startpos' + (moves.length ? ' moves ' + moves.join(' ') : ''));
       w.postMessage('go movetime ' + ms);
-      setTimeout(() => { if (waiting === cb) { waiting = null; cb(null); } }, ms + 5000);
+      // 응답이 없으면(불러오기 실패 등) 이 엔진은 더 쓰지 않는다
+      setTimeout(() => { if (waiting === cb) fail(); }, ms + 12000);
     }
     return { start, best, ok: () => !!w, newGame: () => { if (w) w.postMessage('ucinewgame'); } };
-  })();
+  }
+  const Strong = makeEngine('vendor/stockfish.asm.js');               // Stockfish 10: 난이도별 상대·추천
+  const Genius = makeEngine('vendor/stockfish-17.1-lite-single.js');  // Stockfish 17.1 NNUE: AI 오토 모드
   const uciMoves = () => played.map((m) => sqName(m.from) + sqName(m.to) + (m.promo || ''));
   const fromUci = (u) => u && u.length >= 4 && legal.find((x) =>
     x.from === sqIndex(u.slice(0, 2)) && x.to === sqIndex(u.slice(2, 4)) && (x.promo || '') === (u[4] || ''));
 
-  // 엔진에게 수를 받아 두기 (Stockfish 가 없으면 내장 엔진)
-  function engineMove(id, skill, ms, depth, random) {
-    Strong.best(uciMoves(), skill, ms, (u) => {
-      if (id !== turnSeq) return;
-      const m = fromUci(u);
-      if (m) { doMove(m); return; }
-      Brain.analyze(state, depth, ({ best, byFrom }) => {
+  // 엔진에게 수를 받아 두기: 앞의 엔진이 안 되면 다음 엔진, 마지막은 내장 엔진
+  function engineMove(id, engines, skill, ms, depth, random) {
+    const [eng, ...rest] = engines;
+    if (eng && eng.ok()) {
+      eng.best(uciMoves(), skill, ms, (u) => {
         if (id !== turnSeq) return;
-        const pool = random ? [...byFrom.values()].filter((x) => x.score >= best.score - random) : [best];
-        doMove(pool[Math.floor(Math.random() * pool.length)].move);
+        const m = fromUci(u);
+        if (m) doMove(m);
+        else engineMove(id, rest, skill, ms, depth, random);
       });
+      return;
+    }
+    if (eng) { engineMove(id, rest, skill, ms, depth, random); return; }
+    Brain.analyze(state, depth, ({ best, byFrom }) => {
+      if (id !== turnSeq) return;
+      const pool = random ? [...byFrom.values()].filter((x) => x.score >= best.score - random) : [best];
+      doMove(pool[Math.floor(Math.random() * pool.length)].move);
     });
   }
 
@@ -400,10 +411,11 @@
       showVeil();
     } else if (!humanSide(state.turn)) {
       busy = true;
-      if (auto && state.turn === me) engineMove(id, 20, 160, 4, 0);
+      // 오토 모드: 가장 강한 Stockfish 17.1 이 최고 실력으로 충분히 생각해서 둔다
+      if (auto && state.turn === me) engineMove(id, [Genius, Strong], 20, 1500, 4, 0);
       else {
         const L = LEVELS[prefs.level];
-        engineMove(id, L.skill, auto ? Math.min(L.ms, 150) : L.ms, L.depth, L.skill < 10 ? 40 : 0);
+        engineMove(id, [Strong], L.skill, auto ? Math.min(L.ms, 300) : L.ms, L.depth, L.skill < 10 ? 40 : 0);
       }
     } else {
       busy = false;
@@ -560,6 +572,7 @@
     if ($('pwInput').value === 'chess0101') {
       $('pwInput').blur();
       sheets.forEach((sh) => closeSheet(sh));
+      Genius.start(); // 큰 엔진을 미리 불러 둔다
       setTimeout(openAutoWin, 200);
     } else {
       $('pwErr').hidden = false;
@@ -633,6 +646,7 @@
   $('autoMin').addEventListener('click', minimize);
   toggle.addEventListener('click', () => {
     auto = !auto;
+    if (auto) Genius.start();
     toggle.classList.toggle('on', auto);
     bubble.classList.toggle('on', auto);
     toggle.setAttribute('aria-pressed', String(auto));
