@@ -1,6 +1,7 @@
 // 체스 규칙 엔진
 // 칸 번호: 0 = a8, 7 = h8, 56 = a1, 63 = h1  (행 r = s >> 3, 열 c = s & 7)
-const Chess = (() => {
+// ChessFactory 는 Web Worker 안에서도 그대로 다시 만들 수 있도록 함수로 둔다
+function ChessFactory() {
   const FILES = 'abcdefgh';
   const N_OFF = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
   const K_OFF = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
@@ -299,4 +300,25 @@ const Chess = (() => {
   }
 
   return { initial, legalMoves, apply, inCheck, kingSq, san, insufficient, key, analyze };
+}
+const Chess = ChessFactory();
+
+// 무거운 탐색(추천 수·예비 엔진)은 워커에서 돌려 화면과 타이머가 끊기지 않게 한다
+const Brain = (() => {
+  let w = null, seq = 0;
+  const jobs = new Map();
+  try {
+    const src = `const Chess = (${ChessFactory.toString()})();
+onmessage = (e) => { const { id, state, depth } = e.data; postMessage({ id, res: Chess.analyze(state, depth) }); };`;
+    w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    w.onmessage = (e) => { const cb = jobs.get(e.data.id); jobs.delete(e.data.id); if (cb) cb(e.data.res); };
+    w.onerror = () => { w = null; };
+  } catch (e) { w = null; }
+  function analyze(state, depth, cb) {
+    if (!w) { setTimeout(() => cb(Chess.analyze(state, depth)), 0); return; }
+    const id = ++seq;
+    jobs.set(id, cb);
+    w.postMessage({ id, state, depth });
+  }
+  return { analyze };
 })();

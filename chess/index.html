@@ -35,9 +35,9 @@
       <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
       <span data-t="play">플레이</span>
     </button>
-    <button class="mbtn ai" id="btnAi" type="button">
-      <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2.5v3.5M15 2.5v3.5M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></svg>
-      <span data-t="ai">AI 모드</span>
+    <button class="mbtn duo" id="btnDuo" type="button">
+      <svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.8 19.5c.6-3.3 2.9-5.2 5.7-5.2s5.1 1.9 5.7 5.2"/><path d="M14.6 14.3c.6-.2 1.2-.3 1.9-.3 2.4 0 4.2 1.6 4.7 4.6"/></svg>
+      <span data-t="duo">두 명이서</span>
     </button>
     <div class="menu-row">
       <button class="mbtn" id="btnSettings" type="button">
@@ -50,35 +50,79 @@
       </button>
     </div>
   </nav>
-
-  <div class="sheet" id="sheetSettings" hidden>
-    <div class="sheet-card">
-      <h2 data-t="settings">설정</h2>
-      <label class="opt"><span data-t="sound">소리</span><input type="checkbox" id="optSound" checked><i></i></label>
-      <label class="opt"><span data-t="hints">추천 표시</span><input type="checkbox" id="optHints" checked><i></i></label>
-      <button class="mbtn" type="button" data-close>
-        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
-        <span data-t="close">닫기</span>
-      </button>
-    </div>
-  </div>
-  <div class="sheet" id="sheetLang" hidden>
-    <div class="sheet-card">
-      <h2 data-t="language">언어</h2>
-      <button class="lang" type="button" data-lang="ko">한국어</button>
-      <button class="lang" type="button" data-lang="en">English</button>
-      <button class="mbtn" type="button" data-close>
-        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
-        <span data-t="close">닫기</span>
-      </button>
-    </div>
-  </div>
 </section>
+
+<!-- 창들 -->
+<div class="sheet" id="sheetLevel" hidden>
+  <div class="sheet-card">
+    <h2 data-t="difficulty">난이도</h2>
+    <div class="levels">
+      <button class="lvl" type="button" data-level="0" data-t="easy">쉬움</button>
+      <button class="lvl" type="button" data-level="1" data-t="normal">보통</button>
+      <button class="lvl" type="button" data-level="2" data-t="hard">어려움</button>
+      <button class="lvl" type="button" data-level="3" data-t="max">최강</button>
+    </div>
+    <button class="mbtn primary" id="btnStart" type="button">
+      <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+      <span data-t="start">시작</span>
+    </button>
+  </div>
+</div>
+<div class="sheet" id="sheetSettings" hidden>
+  <div class="sheet-card has-mascot">
+    <button class="mascot" id="mascot" type="button" aria-label="chess piece"></button>
+    <h2 data-t="settings">설정</h2>
+    <label class="opt"><span data-t="sound">소리</span><input type="checkbox" id="optSound" checked><i></i></label>
+    <label class="opt"><span data-t="hints">추천 표시</span><input type="checkbox" id="optHints" checked><i></i></label>
+    <button class="mbtn" type="button" data-close>
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      <span data-t="close">닫기</span>
+    </button>
+  </div>
+</div>
+<div class="sheet" id="sheetLang" hidden>
+  <div class="sheet-card">
+    <h2 data-t="language">언어</h2>
+    <button class="lang" type="button" data-lang="ko">한국어</button>
+    <button class="lang" type="button" data-lang="en">English</button>
+    <button class="mbtn" type="button" data-close>
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      <span data-t="close">닫기</span>
+    </button>
+  </div>
+</div>
+<div class="sheet top" id="sheetPw" hidden>
+  <form class="sheet-card" id="pwForm" autocomplete="off">
+    <h2 data-t="password">비밀번호</h2>
+    <input class="pw" id="pwInput" type="password" inputmode="text" autocapitalize="off" spellcheck="false">
+    <p class="pw-err" id="pwErr" hidden data-t="wrongPw">비밀번호가 틀렸어요</p>
+    <div class="menu-row">
+      <button class="mbtn" type="button" data-close>
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        <span data-t="close">닫기</span>
+      </button>
+      <button class="mbtn primary small" type="submit"><span data-t="confirm">확인</span></button>
+    </div>
+  </form>
+</div>
+
+<!-- AI 오토 모드 (비밀 창) -->
+<div class="float" id="autoWin" hidden>
+  <div class="float-head" id="autoHead">
+    <span>AI Auto Mode</span>
+    <button class="float-min" id="autoMin" type="button" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+  </div>
+  <div class="float-body">
+    <button class="auto-toggle" id="autoToggle" type="button" aria-pressed="false"><i></i><span id="autoState">OFF</span></button>
+    <p>Plays your side at full strength.</p>
+  </div>
+</div>
+<button class="float-bubble" id="autoBubble" type="button" hidden aria-label="AI Auto Mode"></button>
 
 <!-- 게임 화면 -->
 <section class="screen game" id="game" hidden>
   <div class="topbar">
-    <div class="topleft"><span class="timer" id="timer">00:00:00</span><span class="mode-tag" id="modeTag" hidden>AI</span></div>
+    <div class="topleft"><span class="timer" id="timer">00:00:00</span><span class="mode-tag" id="modeTag"></span></div>
     <button class="icon-btn" id="btnHome" type="button" aria-label="메인">
       <svg viewBox="0 0 24 24"><path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>
     </button>
