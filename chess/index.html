@@ -9,45 +9,90 @@
 <body>
 <svg class="defs" aria-hidden="true">
   <defs>
-    <linearGradient id="gw" x1="0" y1="0" x2="0.6" y2="1">
+    <linearGradient id="gw" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="0.55" stop-color="#f4f4f4"/>
-      <stop offset="1" stop-color="#cdcdcd"/>
+      <stop offset="0.58" stop-color="#f7f7f7"/>
+      <stop offset="1" stop-color="#d9d9d9"/>
     </linearGradient>
-    <linearGradient id="gb" x1="0" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#5e5e5e"/>
-      <stop offset="0.45" stop-color="#3c3c3c"/>
-      <stop offset="1" stop-color="#232323"/>
+    <linearGradient id="gb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5a5856"/>
+      <stop offset="0.58" stop-color="#4a4846"/>
+      <stop offset="1" stop-color="#383634"/>
     </linearGradient>
-    <radialGradient id="gws" cx="0.36" cy="0.32" r="0.75">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="0.6" stop-color="#ececec"/>
-      <stop offset="1" stop-color="#bdbdbd"/>
-    </radialGradient>
-    <radialGradient id="gbs" cx="0.36" cy="0.32" r="0.75">
-      <stop offset="0" stop-color="#6c6c6c"/>
-      <stop offset="0.55" stop-color="#3b3b3b"/>
-      <stop offset="1" stop-color="#1e1e1e"/>
-    </radialGradient>
   </defs>
 </svg>
 
-<main class="stage">
-  <div class="frame">
-    <div class="board" id="board">
-      <div class="layer squares" id="squares"></div>
-      <div class="layer marks" id="marks"></div>
-      <div class="layer pieces" id="pieces"></div>
-      <div class="layer promo" id="promo" hidden></div>
-      <div class="layer veil" id="veil">
-        <div class="veil-card">
-          <strong id="veilTitle">체스</strong>
-          <span id="veilText">판을 눌러 시작</span>
-        </div>
+<!-- 메인 화면 -->
+<section class="screen menu" id="menu">
+  <header class="brand">
+    <span class="brand-mark" id="brandMark"></span>
+    <h1 data-t="title">체스</h1>
+    <p data-t="subtitle">컴퓨터와 한 판</p>
+  </header>
+  <div class="showcase" id="showcase" aria-hidden="true"></div>
+  <nav class="menu-buttons">
+    <button class="mbtn primary" id="btnPlay" type="button">
+      <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+      <span data-t="play">플레이</span>
+    </button>
+    <div class="menu-row">
+      <button class="mbtn" id="btnSettings" type="button">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3 5.5 5.5"/><circle cx="12" cy="12" r="6.6"/></svg>
+        <span data-t="settings">설정</span>
+      </button>
+      <button class="mbtn" id="btnLang" type="button">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg>
+        <span data-t="language">언어</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="sheet" id="sheetSettings" hidden>
+    <div class="sheet-card">
+      <h2 data-t="settings">설정</h2>
+      <label class="opt"><span data-t="sound">소리</span><input type="checkbox" id="optSound" checked><i></i></label>
+      <label class="opt"><span data-t="hints">추천 표시</span><input type="checkbox" id="optHints" checked><i></i></label>
+      <button class="mbtn" type="button" data-close>
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        <span data-t="close">닫기</span>
+      </button>
+    </div>
+  </div>
+  <div class="sheet" id="sheetLang" hidden>
+    <div class="sheet-card">
+      <h2 data-t="language">언어</h2>
+      <button class="lang" type="button" data-lang="ko">한국어</button>
+      <button class="lang" type="button" data-lang="en">English</button>
+      <button class="mbtn" type="button" data-close>
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        <span data-t="close">닫기</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- 게임 화면 -->
+<section class="screen game" id="game" hidden>
+  <div class="topbar">
+    <span class="timer" id="timer">00:00:00</span>
+    <button class="icon-btn" id="btnHome" type="button" aria-label="메인">
+      <svg viewBox="0 0 24 24"><path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>
+    </button>
+  </div>
+  <div class="board" id="board">
+    <div class="layer squares" id="squares"></div>
+    <div class="layer marks" id="marks"></div>
+    <div class="layer pieces" id="pieces"></div>
+    <div class="layer promo" id="promo" hidden></div>
+    <div class="layer veil" id="veil" hidden>
+      <div class="veil-card">
+        <strong id="veilTitle"></strong>
+        <span id="veilText"></span>
+        <small data-t="toMenu">눌러서 메인으로</small>
       </div>
     </div>
   </div>
-</main>
+</section>
 
 <script src="js/pieces.js"></script>
 <script src="js/engine.js"></script>

@@ -15,7 +15,7 @@ index.html 을 로컬 웹서버로 열면 바로 실행됩니다.
 
 > 🖐 **새 게임: HAND VR** — 웹캠으로 내 손을 인식해 게임 속 손을 그대로 움직이는 VR 스타일 게임은 [`handvr/`](handvr/README.md) 에 있습니다. (`http://localhost:8080/handvr/`)
 
-> ♟ **체스** — 컴퓨터와 두는 흑백 체스(색 무작위, 추천 수 표시, 잡으면 튕겨 날리기)는 [`chess/`](chess/) 에 있습니다. (`http://localhost:8080/chess/`)
+> ♟ **체스** — 메인 화면이 있는 컴퓨터 대전 체스(색 무작위, 추천 수, 타이머, 한국어/영어)는 [`chess/`](chess/) 에 있습니다. (`http://localhost:8080/chess/`)
 
 ---
 
