@@ -125,6 +125,20 @@ button:active { transform: scale(0.94); }
   cursor: pointer;
 }
 .lvl.on { border-color: var(--go); background: #3d4a31; }
+.pace .lvl { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; }
+.pace .lvl svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 100%; padding: 4px; border-radius: 12px; background: #2b2926; }
+.seg button {
+  height: 36px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.seg button.on { background: var(--go); color: var(--ink); }
 
 /* 설정 창 위의 체스말 */
 .sheet-card.has-mascot { position: relative; padding-top: 44px; }

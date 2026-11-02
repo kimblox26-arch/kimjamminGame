@@ -23,7 +23,7 @@
     ko: {
       title: '체스', subtitle: '컴퓨터와 한 판', play: '플레이', duo: '두 명이서', settings: '설정', language: '언어',
       sound: '소리', hints: '추천 표시', close: '닫기', toMenu: '눌러서 메인으로', menu: '메인',
-      difficulty: '난이도', easy: '쉬움', normal: '보통', hard: '어려움', max: '최강', start: '시작',
+      think: '생각 모드', speed: '스피드 모드', difficulty: '난이도', easy: '쉬움', normal: '보통', hard: '어려움', max: '최강', start: '시작',
       password: '비밀번호', confirm: '확인', wrongPw: '비밀번호가 틀렸어요', twoP: '2인',
       checkmate: '체크메이트', stalemate: '스테일메이트', insufficient: '기물 부족', fifty: '50수 규칙',
       repetition: '3회 동일 국면', win: '승리', lose: '패배', draw: '무승부', whiteWins: '백 승리', blackWins: '흑 승리',
@@ -31,7 +31,7 @@
     en: {
       title: 'Chess', subtitle: 'A game against the computer', play: 'Play', duo: 'Two players', settings: 'Settings',
       language: 'Language', sound: 'Sound', hints: 'Move hints', close: 'Close', toMenu: 'Tap to return to the menu',
-      menu: 'Menu', difficulty: 'Difficulty', easy: 'Easy', normal: 'Normal', hard: 'Hard', max: 'Max', start: 'Start',
+      menu: 'Menu', think: 'Think mode', speed: 'Speed mode', difficulty: 'Difficulty', easy: 'Easy', normal: 'Normal', hard: 'Hard', max: 'Max', start: 'Start',
       password: 'Password', confirm: 'OK', wrongPw: 'Wrong password', twoP: '2P',
       checkmate: 'Checkmate', stalemate: 'Stalemate', insufficient: 'Insufficient material', fifty: '50-move rule',
       repetition: 'Threefold repetition', win: 'You win', lose: 'You lose', draw: 'Draw',
@@ -49,6 +49,7 @@
   const prefs = {
     sound: store.get('sound', true), hints: store.get('hints', true), lang: store.get('lang', 'ko'),
     level: Math.min(3, Math.max(0, Number(store.get('level', 1)) || 0)),
+    pace: store.get('pace', 'think') === 'speed' ? 'speed' : 'think',
   };
   if (!TEXT[prefs.lang]) prefs.lang = 'ko';
   const tr = (k) => TEXT[prefs.lang][k];
@@ -123,7 +124,7 @@
   const at = (r, c) => `translate(${c * 100}%, ${r * 100}%)`;
   const translate = (s) => at(...screenPos(s));
   const pose = (y = 0, rz = 0, sx = 1, sy = sx) => `translateY(${y}%) rotate(${rz}deg) scale(${sx}, ${sy})`;
-  const spd = () => (auto ? 0.6 : 1); // 오토 모드에서는 조금 빠르게
+  const spd = () => (prefs.pace === 'speed' ? 0.4 : 1); // 스피드 모드에서는 빠르게
 
   function later(fn, ms) {
     const t = token;
@@ -412,10 +413,11 @@
     } else if (!humanSide(state.turn)) {
       busy = true;
       // 오토 모드: 가장 강한 Stockfish 17.1 이 최고 실력으로 충분히 생각해서 둔다
-      if (auto && state.turn === me) engineMove(id, [Genius, Strong], 20, 1500, 4, 0);
+      // 생각 모드: 한 수에 2.5초 깊게 / 스피드 모드: 0.2초 만에
+      if (auto && state.turn === me) engineMove(id, [Genius, Strong], 20, prefs.pace === 'speed' ? 200 : 2500, 4, 0);
       else {
         const L = LEVELS[prefs.level];
-        engineMove(id, [Strong], L.skill, auto ? Math.min(L.ms, 300) : L.ms, L.depth, L.skill < 10 ? 40 : 0);
+        engineMove(id, [Strong], L.skill, prefs.pace === 'speed' ? Math.min(L.ms, 150) : L.ms, L.depth, L.skill < 10 ? 40 : 0);
       }
     } else {
       busy = false;
@@ -523,12 +525,24 @@
   let taps = 0;
 
   function markLevel() {
-    document.querySelectorAll('.lvl').forEach((b) => b.classList.toggle('on', Number(b.dataset.level) === prefs.level));
+    document.querySelectorAll('[data-level]').forEach((b) => b.classList.toggle('on', Number(b.dataset.level) === prefs.level));
   }
   $('btnPlay').addEventListener('click', () => openSheet(sheetLevel));
-  $('btnDuo').addEventListener('click', () => startGame('duo'));
+  $('btnDuo').addEventListener('click', () => openSheet($('sheetDuo')));
+  $('btnDuoStart').addEventListener('click', () => closeSheet($('sheetDuo'), () => startGame('duo')));
+  // 생각 모드 / 스피드 모드 (난이도 창과 오토 창이 같은 설정을 쓴다)
+  function markPace() {
+    document.querySelectorAll('[data-pace]').forEach((b) => b.classList.toggle('on', b.dataset.pace === prefs.pace));
+  }
+  document.querySelectorAll('[data-pace]').forEach((b) => b.addEventListener('click', () => {
+    prefs.pace = b.dataset.pace;
+    store.set('pace', prefs.pace);
+    markPace();
+    pop(b);
+  }));
+  markPace();
   $('btnStart').addEventListener('click', () => closeSheet(sheetLevel, () => startGame('ai')));
-  document.querySelectorAll('.lvl').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-level]').forEach((b) => b.addEventListener('click', () => {
     prefs.level = Number(b.dataset.level);
     store.set('level', prefs.level);
     markLevel();
@@ -683,21 +697,4 @@
   applyLang();
   timerReset();
 
-  function boot(data) {
-    if (data && data.color && data.moves && data.moves.length) {
-      mode = data.mode === 'duo' ? 'duo' : 'ai';
-      setModeTag();
-      Strong.start();
-      menuEl.hidden = true;
-      gameEl.hidden = false;
-      reset(data.color, data.moves);
-      state.board.forEach((p, s) => { if (p) makePiece(p, s); });
-      timerGo();
-      beginTurn();
-    }
-  }
-  const hot = window.claude && window.claude.hot;
-  if (hot && hot.snapshot) hot.snapshot(() => ({ color: me, mode, moves: gameEl.hidden ? [] : played }));
-  if (hot && hot.ready) hot.ready(boot);
-  else boot(hot && hot.data);
 })();
