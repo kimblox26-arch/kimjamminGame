@@ -71,12 +71,12 @@ const Sound = (() => {
     return d;
   }
 
-  // 나무 치는 소리
+  // 기물을 내려놓는 소리: 묵직한 "둑"
   function knock(ms, { gain = 1, pitch = 1, muffle = false } = {}) {
     if (!ready()) return;
     const t = at(ms);
     const j = pitch * (1 + (Math.random() - 0.5) * 0.05);
-    const mix = gainNode(gain);
+    const mix = gainNode(gain * 0.7);
     if (muffle) {
       const lp = filter('lowpass', 1300);
       mix.connect(lp);
@@ -86,23 +86,23 @@ const Sound = (() => {
     }
 
     // 나무 공진: [주파수, Q, 세기]
-    const ex = bufferSource(t, burst(2.5));
-    for (const [f, q, a] of [[520, 14, 70], [1240, 18, 62], [2150, 22, 40], [3300, 26, 24], [4800, 30, 10]]) {
+    const ex = bufferSource(t, burst(4));
+    for (const [f, q, a] of [[175, 8, 70], [410, 11, 62], [860, 15, 34], [1480, 19, 14], [2500, 23, 5]]) {
       ex.connect(filter('bandpass', f * j, q)).connect(gainNode(a)).connect(mix);
     }
     // 맞닿는 순간의 딱 소리
-    bufferSource(t, burst(1.2)).connect(filter("highpass", 2500)).connect(gainNode(0.5)).connect(mix);
+    bufferSource(t, burst(2)).connect(filter("bandpass", 1600, 1)).connect(gainNode(0.25)).connect(mix);
     // 판 전체가 울리는 낮은 소리
     const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(150 * j, t);
-    o.frequency.exponentialRampToValueAtTime(105 * j, t + 0.06);
+    o.frequency.setValueAtTime(125 * j, t);
+    o.frequency.exponentialRampToValueAtTime(78 * j, t + 0.09);
     const og = ctx.createGain();
     og.gain.setValueAtTime(0, t);
-    og.gain.linearRampToValueAtTime(0.18, t + 0.001);
-    og.gain.setTargetAtTime(0, t + 0.001, 0.022);
+    og.gain.linearRampToValueAtTime(0.5, t + 0.002);
+    og.gain.setTargetAtTime(0, t + 0.002, 0.04);
     o.connect(og).connect(mix);
     o.start(t);
-    o.stop(t + 0.2);
+    o.stop(t + 0.3);
   }
 
   return { init, knock, setOn: (v) => { on = v; } };

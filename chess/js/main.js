@@ -141,32 +141,32 @@
   }
 
   // ---------- 애니메이션 ----------
-  // 이동: 몸을 옆으로 살짝 비틀며 미끄러지고, 내려앉을 때 눌렸다 펴진다
+  // 이동: 살짝 들어 올려 진행 방향으로 기울며 미끄러지듯 옮기고, 멈출 때 관성으로 살짝 뒤로 기울었다가 내려놓는다
   function travel(el, from, to, delay = 0) {
     const [r0, c0] = screenPos(from), [r1, c1] = screenPos(to);
     const dist = Math.hypot(r1 - r0, c1 - c0);
-    const dur = Math.round(Math.min(600, 300 + dist * 40));
-    const tail = 150;
+    const dur = Math.round(Math.min(520, 260 + dist * 38));
+    const tail = 140;
     const dir = Math.sign(c1 - c0) || (c0 < 4 ? -1 : 1);
-    const lean = dir * 10, twist = -dir * 34;
+    const lean = dir * 6;
     const a = dur / (dur + tail);
 
     el.style.zIndex = 5;
     el.style.transform = at(r1, c1);
     el.animate([{ transform: at(r0, c0) }, { transform: at(r1, c1) }],
-      { duration: dur, delay, easing: 'cubic-bezier(.45,.05,.3,1)', fill: 'backwards' });
+      { duration: dur, delay, easing: 'cubic-bezier(.33,0,.2,1)', fill: 'backwards' });
     el.body.animate([
-      { offset: 0, transform: pose() },
-      { offset: a * 0.2, transform: pose(-3, twist * 0.6, lean * 0.5, 1.04) },
-      { offset: a * 0.55, transform: pose(-6, twist, lean, 1.07) },
-      { offset: a * 0.85, transform: pose(-2, -twist * 0.3, -lean * 0.35, 1.03) },
-      { offset: a, transform: pose(0, 0, 0, 1.06, 0.92) },
-      { offset: a + (1 - a) * 0.5, transform: pose(0, 0, 0, 0.98, 1.02) },
+      { offset: 0, transform: pose(), easing: 'ease-out' },
+      { offset: a * 0.25, transform: pose(-5, 0, lean * 0.6, 1.05), easing: 'ease-in-out' },
+      { offset: a * 0.6, transform: pose(-6, 0, lean * 0.3, 1.06), easing: 'ease-in-out' },
+      { offset: a * 0.92, transform: pose(-2, 0, -lean * 0.4, 1.02), easing: 'ease-in' },
+      { offset: a, transform: pose(0, 0, 0, 1.02, 0.97), easing: 'ease-out' },
+      { offset: a + (1 - a) * 0.55, transform: pose(0, 0, 0, 0.995, 1.005), easing: 'ease-in-out' },
       { offset: 1, transform: pose() },
-    ], { duration: dur + tail, delay, easing: 'ease-in-out', fill: 'backwards' });
+    ], { duration: dur + tail, delay, fill: 'backwards' });
     later(() => { el.style.zIndex = ''; }, delay + dur + tail);
 
-    Sound.knock(delay + dur); // 톡
+    Sound.knock(delay + dur); // 둑
     return { land: delay + dur, end: delay + dur + tail, dir };
   }
 
