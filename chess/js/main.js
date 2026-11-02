@@ -19,25 +19,7 @@
   ];
 
   // ---------- 설정 / 언어 ----------
-  const TEXT = {
-    ko: {
-      title: '체스', subtitle: '컴퓨터와 한 판', play: '플레이', duo: '두 명이서', settings: '설정', language: '언어',
-      sound: '소리', hints: '추천 표시', close: '닫기', toMenu: '눌러서 메인으로', menu: '메인',
-      think: '생각 모드', speed: '스피드 모드', difficulty: '난이도', easy: '쉬움', normal: '보통', hard: '어려움', max: '최강', start: '시작',
-      password: '비밀번호', confirm: '확인', wrongPw: '비밀번호가 틀렸어요', twoP: '2인',
-      checkmate: '체크메이트', stalemate: '스테일메이트', insufficient: '기물 부족', fifty: '50수 규칙',
-      repetition: '3회 동일 국면', win: '승리', lose: '패배', draw: '무승부', whiteWins: '백 승리', blackWins: '흑 승리',
-    },
-    en: {
-      title: 'Chess', subtitle: 'A game against the computer', play: 'Play', duo: 'Two players', settings: 'Settings',
-      language: 'Language', sound: 'Sound', hints: 'Move hints', close: 'Close', toMenu: 'Tap to return to the menu',
-      menu: 'Menu', think: 'Think mode', speed: 'Speed mode', difficulty: 'Difficulty', easy: 'Easy', normal: 'Normal', hard: 'Hard', max: 'Max', start: 'Start',
-      password: 'Password', confirm: 'OK', wrongPw: 'Wrong password', twoP: '2P',
-      checkmate: 'Checkmate', stalemate: 'Stalemate', insufficient: 'Insufficient material', fifty: '50-move rule',
-      repetition: 'Threefold repetition', win: 'You win', lose: 'You lose', draw: 'Draw',
-      whiteWins: 'White wins', blackWins: 'Black wins',
-    },
-  };
+  const TEXT = I18N.TEXT; // js/i18n.js
   const store = {
     get(k, d) {
       try { const v = localStorage.getItem('chess.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; }
@@ -55,7 +37,7 @@
   const tr = (k) => TEXT[prefs.lang][k];
 
   function applyLang() {
-    document.documentElement.lang = prefs.lang;
+    document.documentElement.lang = I18N.htmlLang[prefs.lang] || prefs.lang;
     document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = tr(el.dataset.t); });
     document.querySelectorAll('.lang').forEach((b) => b.classList.toggle('on', b.dataset.lang === prefs.lang));
     $('btnHome').setAttribute('aria-label', tr('menu'));
@@ -471,16 +453,39 @@
     reset(mode === 'duo' ? 'w' : Math.random() < 0.5 ? 'w' : 'b');
     timerReset();
     swap(menuEl, gameEl, () => {
-      later(() => { timerGo(); beginTurn(); }, setupBoard() + 60);
+      // 게임 화면의 시작 버튼을 눌러야 기물이 놓이고 게임이 시작된다
+      readyEl.hidden = false;
+      readyEl.firstElementChild.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1)' }],
+        { duration: 360, easing: EASE_POP });
     });
   }
+  const readyEl = $('ready');
+  $('btnGo').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (readyEl.hidden) return;
+    const a = readyEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
+    readyEl.firstElementChild.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.15)' }], { duration: 200 });
+    a.onfinish = () => {
+      readyEl.hidden = true;
+      a.cancel();
+      later(() => { timerGo(); beginTurn(); }, setupBoard() + 60);
+    };
+  });
 
   function showMenu() {
     token++;
     turnSeq++;
     busy = true;
     timerStop();
-    swap(gameEl, menuEl);
+    readyEl.hidden = true;
+    swap(gameEl, menuEl, introMenu);
+  }
+  // 메인 화면이 나타날 때 위에서부터 차례로 떠오른다
+  function introMenu() {
+    [...menuEl.querySelectorAll('.brand, .stage3d, .menu-buttons > *')].forEach((el, i) => {
+      el.animate([{ opacity: 0, transform: 'translateY(22px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 520, delay: 60 + i * 80, easing: 'cubic-bezier(.2,.9,.25,1)', fill: 'backwards' });
+    });
   }
 
   // ---------- 입력: 게임 ----------
@@ -555,6 +560,8 @@
       if (e.target === sh || e.target.closest('[data-close]')) closeSheet(sh);
     });
   });
+  $('langGrid').innerHTML = I18N.names.map(([code, name]) =>
+    `<button class="lang" type="button" data-lang="${code}">${name}</button>`).join('');
   document.querySelectorAll('.lang').forEach((b) => b.addEventListener('click', () => {
     prefs.lang = b.dataset.lang;
     store.set('lang', prefs.lang);
@@ -683,7 +690,8 @@
     for (let r = 0; r < 6; r++) {
       for (let c = 0; c < 6; c++) {
         const k = pcs[r + ',' + c];
-        html += `<div class="sq ${(r + c) % 2 ? 'd' : 'l'}">${k ? pieceSVG(k[0], k[1]) : ''}</div>`;
+        const sp = k ? `<span class="sp" style="animation-delay:${-((r * 6 + c) * 0.37).toFixed(2)}s">${pieceSVG(k[0], k[1])}</span>` : '';
+        html += `<div class="sq ${(r + c) % 2 ? 'd' : 'l'}">${sp}</div>`;
       }
     }
     $('showcase').innerHTML = html;
@@ -696,5 +704,6 @@
   markLevel();
   applyLang();
   timerReset();
+  introMenu();
 
 })();

@@ -52,36 +52,126 @@ button:focus-visible { outline: 3px solid var(--go); outline-offset: 2px; }
 
 /* ---------- 메인 화면 ---------- */
 .menu {
-  gap: clamp(14px, 3vh, 28px);
+  position: relative;
+  overflow: hidden;
+  gap: clamp(10px, 2.4vh, 24px);
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  background: radial-gradient(ellipse at 50% 35%, #3a3733, var(--bg-2) 75%);
+  background:
+    radial-gradient(ellipse 80% 45% at 50% 0%, rgba(235, 236, 208, 0.16), transparent 70%),
+    radial-gradient(ellipse 90% 50% at 50% 105%, rgba(129, 182, 76, 0.28), transparent 70%),
+    linear-gradient(180deg, #2b2926, #1d1c1a);
 }
-.brand { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
-.brand-mark {
-  width: 64px;
-  height: 64px;
-  padding: 8px;
-  border-radius: 50%;
-  background: var(--light);
-  box-shadow: 0 4px 0 #c9caae, 0 8px 18px rgba(0, 0, 0, 0.35);
+.menu > * { position: relative; }
+/* 천천히 흐르는 체크무늬 배경 */
+.menu-bg {
+  position: absolute !important;
+  inset: -60px;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.045) 0 25%, transparent 0 50%) 0 0 / 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse at 50% 40%, #000 20%, transparent 75%);
+  animation: drift 24s linear infinite;
 }
-.brand-mark svg { width: 100%; height: 100%; display: block; }
-.brand h1 { margin: 8px 0 0; font-size: clamp(30px, 8vw, 42px); font-weight: 900; letter-spacing: 0.06em; }
-.brand p { margin: 0; font-size: 15px; color: var(--ink-2); }
+@keyframes drift { to { transform: translate(56px, 56px); } }
 
+.brand { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.brand-mark {
+  width: 72px;
+  height: 72px;
+  padding: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff, var(--light) 60%, #cfd1ad);
+  box-shadow: 0 0 0 6px rgba(129, 182, 76, 0.22), 0 0 36px rgba(129, 182, 76, 0.45), 0 10px 20px rgba(0, 0, 0, 0.45);
+  animation: bob 3.2s ease-in-out infinite;
+}
+@keyframes bob { 50% { transform: translateY(-6px); } }
+.brand-mark svg { width: 100%; height: 100%; display: block; }
+.brand h1 {
+  margin: 10px 0 0;
+  font-size: clamp(40px, 11vw, 60px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.05;
+  background: linear-gradient(180deg, #ffffff 15%, var(--light) 55%, #a9c27f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.55));
+}
+.brand p { margin: 0; font-size: 15px; color: var(--ink-2); letter-spacing: 0.04em; }
+
+/* 기울어진 입체 체스판: 판은 천천히 좌우로 돌고, 기물은 서서 둥실거린다 */
+.stage3d {
+  --w: min(80vw, 38vh, 380px);
+  width: var(--w);
+  height: calc(var(--w) * 0.72);
+  display: grid;
+  place-items: center;
+  perspective: 900px;
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 60%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 60%, transparent 100%);
+}
 .showcase {
-  position: relative;
-  width: min(84vw, 40vh, 400px);
+  width: var(--w);
   aspect-ratio: 1;
   display: grid;
   grid-template: repeat(6, 1fr) / repeat(6, 1fr);
-  opacity: 0.9;
-  -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
-  mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+  transform-style: preserve-3d;
+  transform: rotateX(54deg) rotateZ(-8deg);
+  box-shadow: 0 0 0 6px #4b3b2c, 0 30px 60px rgba(0, 0, 0, 0.6);
+  animation: turn 14s ease-in-out infinite alternate;
 }
-.showcase .sq { position: relative; }
-.showcase .sq svg { position: absolute; inset: 6%; width: 88%; height: 88%; }
+@keyframes turn { to { transform: rotateX(54deg) rotateZ(8deg); } }
+.showcase .sq { position: relative; transform-style: preserve-3d; }
+.showcase .sp {
+  position: absolute;
+  left: 2%;
+  right: 2%;
+  bottom: 28%;
+  height: 120%;
+  transform-origin: 50% 100%;
+  transform: rotateX(-54deg);
+  animation: float 3s ease-in-out infinite;
+}
+@keyframes float { 50% { transform: rotateX(-54deg) translateY(-7%); } }
+.showcase .sp svg { width: 100%; height: 100%; display: block; }
+
+/* 큰 버튼 위를 지나가는 빛 */
+.mbtn.primary, .mbtn.duo { position: relative; overflow: hidden; }
+.mbtn.primary::after, .mbtn.duo::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: skewX(-20deg);
+  animation: shine 3.6s ease-in-out infinite;
+}
+.mbtn.duo::after { animation-delay: 1.8s; }
+@keyframes shine { 0%, 55% { left: -40%; } 85%, 100% { left: 130%; } }
+
+/* 언어 목록 */
+.lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 52vh; overflow-y: auto; }
+.lang-grid .lang { height: 48px; font-size: 16px; }
+
+/* 게임 화면 시작 버튼 */
+.ready {
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+}
+.start-big { width: min(64%, 280px); height: 76px; font-size: 26px; border-radius: 18px; }
+.start-big svg { width: 30px; height: 30px; }
+.start-big:not(:active) { animation: breathe 1.8s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.05); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-bg, .brand-mark, .showcase, .showcase .sp, .start-big, .mbtn::after { animation: none !important; }
+}
 
 .menu-buttons { width: min(100%, 380px); display: flex; flex-direction: column; gap: 14px; }
 .menu-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

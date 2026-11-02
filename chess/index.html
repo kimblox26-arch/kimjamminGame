@@ -24,12 +24,13 @@
 
 <!-- 메인 화면 -->
 <section class="screen menu" id="menu">
+  <div class="menu-bg" aria-hidden="true"></div>
   <header class="brand">
     <span class="brand-mark" id="brandMark"></span>
     <h1 data-t="title">체스</h1>
     <p data-t="subtitle">컴퓨터와 한 판</p>
   </header>
-  <div class="showcase" id="showcase" aria-hidden="true"></div>
+  <div class="stage3d" aria-hidden="true"><div class="showcase" id="showcase"></div></div>
   <nav class="menu-buttons">
     <button class="mbtn primary" id="btnPlay" type="button">
       <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
@@ -106,8 +107,7 @@
 <div class="sheet" id="sheetLang" hidden>
   <div class="sheet-card">
     <h2 data-t="language">언어</h2>
-    <button class="lang" type="button" data-lang="ko">한국어</button>
-    <button class="lang" type="button" data-lang="en">English</button>
+    <div class="lang-grid" id="langGrid"></div>
     <button class="mbtn" type="button" data-close>
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
       <span data-t="close">닫기</span>
@@ -159,6 +159,12 @@
     <div class="layer marks" id="marks"></div>
     <div class="layer pieces" id="pieces"></div>
     <div class="layer promo" id="promo" hidden></div>
+    <div class="layer ready" id="ready" hidden>
+      <button class="mbtn primary start-big" id="btnGo" type="button">
+        <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        <span data-t="start">시작</span>
+      </button>
+    </div>
     <div class="layer veil" id="veil" hidden>
       <div class="veil-card">
         <strong id="veilTitle"></strong>
@@ -172,6 +178,7 @@
 <script src="js/pieces.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/sound.js"></script>
+<script src="js/i18n.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
