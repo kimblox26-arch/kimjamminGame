@@ -8,18 +8,18 @@
   const els = new Map(); // 기물 id -> DOM
 
   let state, legal = [], keys = [], played = [], selected = null, over = null, hint = null, promoMoves = null;
-  let me = 'w', flipped = false, busy = true, token = 0;
+  let me = 'w', flipped = false, busy = true, token = 0, mode = 'normal';
 
   // ---------- 설정 / 언어 ----------
   const TEXT = {
     ko: {
-      title: '체스', subtitle: '컴퓨터와 한 판', play: '플레이', settings: '설정', language: '언어',
+      title: '체스', subtitle: '컴퓨터와 한 판', play: '플레이', ai: 'AI 모드', settings: '설정', language: '언어',
       sound: '소리', hints: '추천 표시', close: '닫기', toMenu: '눌러서 메인으로', menu: '메인',
       checkmate: '체크메이트', stalemate: '스테일메이트', insufficient: '기물 부족', fifty: '50수 규칙',
       repetition: '3회 동일 국면', win: '승리', lose: '패배', draw: '무승부',
     },
     en: {
-      title: 'Chess', subtitle: 'A game against the computer', play: 'Play', settings: 'Settings', language: 'Language',
+      title: 'Chess', subtitle: 'A game against the computer', play: 'Play', ai: 'AI mode', settings: 'Settings', language: 'Language',
       sound: 'Sound', hints: 'Move hints', close: 'Close', toMenu: 'Tap to return to the menu', menu: 'Menu',
       checkmate: 'Checkmate', stalemate: 'Stalemate', insufficient: 'Insufficient material', fifty: '50-move rule',
       repetition: 'Threefold repetition', win: 'You win', lose: 'You lose', draw: 'Draw',
@@ -233,6 +233,52 @@
     return end;
   }
 
+  // ---------- AI 모드: Stockfish (백그라운드 워커) ----------
+  const sqName = (s) => 'abcdefgh'[s & 7] + (8 - (s >> 3));
+  const sqIndex = (n) => (8 - Number(n[1])) * 8 + 'abcdefgh'.indexOf(n[0]);
+  const Strong = (() => {
+    let w = null, waiting = null, skip = 0;
+    function start() {
+      if (w) return;
+      try {
+        w = new Worker('vendor/stockfish.asm.js');
+      } catch (e) {
+        w = null;
+        return;
+      }
+      w.onmessage = (e) => {
+        const line = String(e.data);
+        if (!line.startsWith('bestmove')) return;
+        if (skip > 0) { skip--; return; }
+        const cb = waiting;
+        waiting = null;
+        if (cb) cb(line.split(' ')[1]);
+      };
+      w.onerror = () => {
+        w = null;
+        const cb = waiting;
+        waiting = null;
+        if (cb) cb(null);
+      };
+      w.postMessage('uci');
+      w.postMessage('setoption name Skill Level value 20');
+      w.postMessage('isready');
+    }
+    // 지금까지 둔 수 전체를 넘겨서(3회 반복도 알도록) 가장 좋은 수를 받는다
+    function best(moves, ms, cb) {
+      if (!w) { cb(null); return; }
+      if (waiting) { skip++; w.postMessage('stop'); }
+      waiting = cb;
+      w.postMessage('position startpos' + (moves.length ? ' moves ' + moves.join(' ') : ''));
+      w.postMessage('go movetime ' + ms);
+      setTimeout(() => { if (waiting === cb) { waiting = null; cb(null); } }, ms + 5000);
+    }
+    return { start, best, newGame: () => { if (w) w.postMessage('ucinewgame'); } };
+  })();
+  const uciMoves = () => played.map((m) => sqName(m.from) + sqName(m.to) + (m.promo || ''));
+  const fromUci = (u) => u && u.length >= 4 && legal.find((x) =>
+    x.from === sqIndex(u.slice(0, 2)) && x.to === sqIndex(u.slice(2, 4)) && (x.promo || '') === (u[4] || ''));
+
   // ---------- 진행 ----------
   function judge() {
     if (!legal.length) {
@@ -262,7 +308,19 @@
       timerStop();
       showVeil();
     } else if (state.turn === me) {
-      if (prefs.hints) hint = Chess.analyze(state, DEPTH);
+      if (prefs.hints) {
+        hint = Chess.analyze(state, DEPTH);
+        if (mode === 'ai') {
+          const t = token, n = played.length;
+          Strong.best(uciMoves(), 700, (u) => {
+            const m = t === token && n === played.length && hint && fromUci(u);
+            if (!m) return;
+            hint.best = { move: m, score: hint.best.score };
+            hint.byFrom.set(m.from, { move: m, score: hint.best.score });
+            renderMarks();
+          });
+        }
+      }
       busy = false;
       renderMarks();
     } else {
@@ -282,6 +340,14 @@
   }
 
   function computerMove() {
+    if (mode === 'ai') {
+      const t = token;
+      Strong.best(uciMoves(), 1500, (u) => {
+        if (t !== token) return;
+        doMove(fromUci(u) || Chess.analyze(state, 4).best.move);
+      });
+      return;
+    }
     const { best, byFrom } = Chess.analyze(state, DEPTH);
     const close = [...byFrom.values()].filter((x) => x.score >= best.score - 8);
     doMove(close[Math.floor(Math.random() * close.length)].move);
@@ -310,7 +376,10 @@
     veilEl.hidden = true;
   }
 
-  function startGame() {
+  function startGame(m) {
+    mode = m;
+    $('modeTag').hidden = mode !== 'ai';
+    if (mode === 'ai') { Strong.start(); Strong.newGame(); }
     Sound.init();
     token++;
     busy = true;
@@ -366,7 +435,8 @@
 
   // ---------- 입력: 메인 화면 ----------
   document.addEventListener('pointerdown', Sound.init);
-  $('btnPlay').addEventListener('click', startGame);
+  $('btnPlay').addEventListener('click', () => startGame('normal'));
+  $('btnAi').addEventListener('click', () => startGame('ai'));
   $('btnSettings').addEventListener('click', () => { $('sheetSettings').hidden = false; });
   $('btnLang').addEventListener('click', () => { $('sheetLang').hidden = false; });
   document.querySelectorAll('.sheet').forEach((sh) => {
@@ -410,6 +480,9 @@
 
   function boot(data) {
     if (data && data.color && data.moves && data.moves.length) {
+      mode = data.mode === 'ai' ? 'ai' : 'normal';
+      $('modeTag').hidden = mode !== 'ai';
+      if (mode === 'ai') Strong.start();
       menuEl.hidden = true;
       gameEl.hidden = false;
       reset(data.color, data.moves);
@@ -419,7 +492,7 @@
     }
   }
   const hot = window.claude && window.claude.hot;
-  if (hot && hot.snapshot) hot.snapshot(() => ({ color: me, moves: gameEl.hidden ? [] : played }));
+  if (hot && hot.snapshot) hot.snapshot(() => ({ color: me, mode, moves: gameEl.hidden ? [] : played }));
   if (hot && hot.ready) hot.ready(boot);
   else boot(hot && hot.data);
 })();

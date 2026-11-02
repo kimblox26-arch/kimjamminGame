@@ -10,6 +10,8 @@
   --btn-edge: #2b2926;
   --go: #81b64c;
   --go-edge: #5a8a2e;
+  --ai: #2f7fb3;
+  --ai-edge: #1d5a84;
   --line-w: #707070;
   --line-b: #2a2928;
   --sel: rgba(255, 255, 51, 0.5);
@@ -103,6 +105,17 @@ button:focus-visible { outline: 3px solid var(--go); outline-offset: 2px; }
 .mbtn.primary svg { width: 28px; height: 28px; fill: currentColor; stroke-width: 1.5; }
 .mbtn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--btn-edge); }
 .mbtn.primary:active { box-shadow: 0 2px 0 var(--go-edge); }
+.mbtn.ai { height: 60px; font-size: 19px; background: var(--ai); box-shadow: 0 5px 0 var(--ai-edge); }
+.mbtn.ai:active { box-shadow: 0 2px 0 var(--ai-edge); }
+.topleft { display: flex; align-items: center; gap: 10px; }
+.mode-tag {
+  padding: 3px 9px;
+  border-radius: 8px;
+  background: var(--ai);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
 
 .sheet {
   position: fixed;
