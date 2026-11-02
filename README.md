@@ -14,6 +14,7 @@ index.html 을 로컬 웹서버로 열면 바로 실행됩니다.
 > 필요 라이브러리(three.js)는 `vendor/` 에 포함되어 있어 **인터넷 없이도 동작**합니다.
 
 > 🖐 **새 게임: HAND VR** — 웹캠으로 내 손을 인식해 게임 속 손을 그대로 움직이는 VR 스타일 게임은 [`handvr/`](handvr/README.md) 에 있습니다. (`http://localhost:8080/handvr/`)
+> 같은 하얀 바닥에서 로블록스 베이컨 헤어 캐릭터로 걷고·날고·4단계 각성하는 **각성 모드**는 `http://localhost:8080/handvr/player.html` 입니다.
 
 ---
 

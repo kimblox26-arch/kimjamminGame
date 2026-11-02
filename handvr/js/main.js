@@ -120,7 +120,7 @@ function setAR(on) {
   world.setVisible(!on);
   fx?.setAR(on);
   $('#ar-btn').classList.toggle('on', on);
-  toast(on ? '📷 AR: 카메라 화면 — 양손으로 사각 틀을 만들어 보세요' : '🌤 게임 화면', 2500);
+  toast(on ? 'AR 화면이에요 — 양손으로 사각 틀을 만들어 보세요' : '게임 화면으로 돌아왔어요', 2500);
 }
 $('#fx-btn').addEventListener('click', () => fx?.next());
 $('#ar-btn').addEventListener('click', () => setAR(!ar));
@@ -150,7 +150,7 @@ addEventListener('resize', () => {
 // ───────── 시작 화면 ─────────
 for (const [name, hex] of [['auto', null], ...Object.entries(SKIN_TONES)]) {
   const b = document.createElement('button');
-  if (hex === null) { b.className = 'auto'; b.textContent = '📷 자동'; b.title = '카메라로 내 피부색 그대로'; }
+  if (hex === null) { b.className = 'auto'; b.textContent = '자동'; b.title = '카메라로 내 피부색 그대로'; }
   else { b.style.background = '#' + hex.toString(16).padStart(6, '0'); b.title = name; }
   b.classList.toggle('on', name === settings.tone);
   b.onclick = () => {
@@ -185,7 +185,7 @@ async function start() {
     playing = true;
     $('#start').classList.add('hidden');
     $('#hud').classList.remove('hidden');
-    toast('손을 카메라 앞에 보여주세요 🖐', 3500);
+    toast('손을 카메라 앞에 보여 주세요', 3500);
   } catch (e) {
     msg(e.message, true);
   } finally {
@@ -333,11 +333,11 @@ function updateHud(now) {
     chip.querySelector('.g').textContent = !st ? '안 보임'
       : ['ext', 'half', 'fold'].filter(k => st.includes(k)).map(k => `${STATE_NAME[k]} ${group(k)}`).join('  ');
     chip.querySelector('.a').textContent = h.visible && !h.profile.done
-      ? `🔍 손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : (h.bridging ? '손을 놓쳐서 팔로 이어 가는 중' : h.arm?.toE ? '팔 인식됨' : h.arm?.toS ? '어깨 인식됨' : '');
+      ? `손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : (h.bridging ? '손을 놓쳐서 팔로 이어 가는 중' : h.arm?.toE ? '팔 인식됨' : h.arm?.toS ? '어깨 인식됨' : '');
     chip.style.opacity = h.visible ? 1 : 0.55;
     if (h.profile.done && !scanToasted[s]) {
       scanToasted[s] = true;
-      if (Object.keys(h.profile.samples).length) toast(`${s === 'L' ? '왼손' : '오른손'} 스캔 완료! 손가락 굵기·피부색을 내 손에 맞췄어요 ✋`, 2500);
+      if (Object.keys(h.profile.samples).length) toast(`${s === 'L' ? '왼손' : '오른손'} 스캔 완료! 손가락 굵기·피부색을 내 손에 맞췄어요`, 2500);
     }
   }
   applyProfiles();

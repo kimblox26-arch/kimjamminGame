@@ -20,7 +20,8 @@ function gridTexture(renderer) {
   return t;
 }
 
-export function createWorld(scene, renderer) {
+// opts: 그림자 범위 { sunDist: 해까지 거리, near, far } — 손 화면은 좁게, 플레이어 화면은 넓게
+export function createWorld(scene, renderer, { sunDist = 4, near = 2, far = 9 } = {}) {
   scene.background = new THREE.Color(0xa9d3ff);
   scene.fog = new THREE.Fog(0xc4e0ff, 90, 700);
 
@@ -77,8 +78,8 @@ export function createWorld(scene, renderer) {
   sun.castShadow = true;
   // 그림자: 손 주변(focus)만 좁고 얕게 그려서 손가락이 손바닥에 드리우는 그림자까지 또렷하게.
   // 깊이 범위(해 → 바닥)를 짧게 잡아야 깊이 정밀도가 높아 그림자가 살에서 뜨지 않는다
-  sun.shadow.camera.near = 2;
-  sun.shadow.camera.far = 9;
+  sun.shadow.camera.near = near;
+  sun.shadow.camera.far = far;
   // 그림자 품질: size 해상도로 주변 ext m 범위
   const setShadowQuality = (size, ext) => {
     size = Math.min(size, renderer.capabilities.maxTextureSize);
@@ -142,7 +143,9 @@ export function createWorld(scene, renderer) {
       clouds.position.set(playerPos.x, 0, playerPos.z);
       clouds.rotation.y += dt * 0.0035; // 천천히 흘러가는 구름
       sun.target.position.copy(focus);
-      sun.position.copy(focus).addScaledVector(SUN_DIR, 4);
+      sun.position.copy(focus).addScaledVector(SUN_DIR, sunDist);
+      // 바닥은 4m 칸 단위로 따라와서 멀리 날아가도 끝이 없다 (칸에 맞춰 옮기니 격자가 미끄러지지 않음)
+      floor.position.set(Math.round(playerPos.x / 4) * 4, 0, Math.round(playerPos.z / 4) * 4);
     },
   };
 }

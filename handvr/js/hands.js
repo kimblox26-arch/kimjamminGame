@@ -244,6 +244,6 @@ export class HandAssigner {
 }
 
 export const GESTURE_LABEL = {
-  none: '—', relaxed: '✋ 기본', open: '🖐 손바닥', fist: '✊ 주먹', point: '☝️ 검지',
-  victory: '✌️ 브이', thumbsUp: '👍 엄지척', pinch: '🤏 집기',
+  none: '—', relaxed: '기본', open: '손바닥', fist: '주먹', point: '검지',
+  victory: '브이', thumbsUp: '엄지척', pinch: '집기',
 };

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>베이컨 각성</title>
+<meta name="description" content="하얀 바닥 위 로블록스 베이컨 헤어 플레이어 — 걷고, 날고, 4단계 각성">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Jua&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="./player.css?v=20261102a">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/three.module.min.js",
+    "three/addons/": "../vendor/three/addons/",
+    "./js/world.js": "./js/world.js?v=20261102a",
+    "./js/bacon.js": "./js/bacon.js?v=20261102a",
+    "./js/awaken.js": "./js/awaken.js?v=20261102a"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="flash"></div>
+
+<!-- 그림 아이콘 모음 (이모티콘 대신) -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="g-aura" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffbe0"/><stop offset=".45" stop-color="#ffd83d"/><stop offset="1" stop-color="#ff8a1f"/>
+    </linearGradient>
+    <linearGradient id="g-fly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#7cc4ff"/>
+    </linearGradient>
+    <symbol id="i-awaken" viewBox="0 0 48 48">
+      <path fill="url(#g-aura)" d="M6 44 9 35 5.5 31.5 11 27 7.5 21.5 14 18.5 11.5 11 18 12.5 19 5 24 9.5 27 2 29.5 10.5 35.5 7 34.5 14 41 13 37.5 20.5 42.5 23.5 37.5 28 41.5 33 38 36.5 42 44Z"/>
+      <path fill="#fff6c4" opacity=".7" d="M12 44 14 36 12 31 16.5 28 15 22 20 20 20.5 14 24.5 16.5 28 13 28.5 19.5 33 21 32 27 36 31 34 36 36 44Z"/>
+      <rect x="20.5" y="16.5" width="7" height="6.5" rx="1.6" fill="#f3c7a0"/>
+      <rect x="19" y="23.5" width="10" height="9" rx="1.2" fill="#2a2d36"/>
+      <rect x="15" y="23.5" width="3.6" height="8.5" rx="1.2" fill="#2a2d36" transform="rotate(18 17 24)"/>
+      <rect x="29.4" y="23.5" width="3.6" height="8.5" rx="1.2" fill="#2a2d36" transform="rotate(-18 31 24)"/>
+      <rect x="18.6" y="32.6" width="4.6" height="8.5" rx="1.2" fill="#3b5a8f" transform="rotate(12 21 33)"/>
+      <rect x="24.8" y="32.6" width="4.6" height="8.5" rx="1.2" fill="#3b5a8f" transform="rotate(-12 27 33)"/>
+      <path fill="#6b3b1d" d="M20 18.5c0-3 2-4.5 4-4.5s4.2 1.4 4.2 4.3c-1.2-1-2.4-1.3-4-1.1-1.7.2-2.9.4-4.2 1.3Z"/>
+    </symbol>
+    <symbol id="i-fly" viewBox="0 0 48 48">
+      <g transform="rotate(38 24 24)">
+        <path fill="url(#g-fly)" d="M24 3c6 7 9 16 9 27H15c0-11 3-20 9-27Z"/>
+        <path fill="none" stroke="#3f8fe0" stroke-width="2" stroke-linecap="round" opacity=".55" d="M18.5 22q5.5 3 11 0M17 28q7 3.5 14 0"/>
+        <path stroke="#ffffff" stroke-width="3" stroke-linecap="round" d="M18 35v9M24 35v11M30 35v9"/>
+      </g>
+    </symbol>
+    <symbol id="i-off" viewBox="0 0 48 48">
+      <path fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" d="M16 13.5a14 14 0 1 0 16 0"/>
+      <path stroke="#fff" stroke-width="4.5" stroke-linecap="round" d="M24 6v16"/>
+    </symbol>
+    <symbol id="i-up" viewBox="0 0 48 48"><path fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M12 29 24 17l12 12"/></symbol>
+    <symbol id="i-down" viewBox="0 0 48 48"><path fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M12 19l12 12 12-12"/></symbol>
+    <symbol id="i-boost" viewBox="0 0 48 48"><path fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" d="M11 13l11 11-11 11M25 13l11 11-11 11"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M9.3 9.4a2.8 2.8 0 1 1 3.9 2.6c-.8.4-1.2 1-1.2 1.9v.4"/><circle cx="12" cy="17.3" r="1.3" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<div id="ui">
+  <div id="top-left">
+    <a class="pill" href="./index.html"><svg><use href="#i-back"/></svg>손 VR 로</a>
+    <button class="pill" id="help-btn" tabindex="-1"><svg><use href="#i-help"/></svg>도움말</button>
+  </div>
+  <div id="info" class="pill"><span id="spd">0</span> km/h<span class="sep"></span>높이 <span id="alt">0</span> m</div>
+  <div id="banner"></div>
+  <div id="toast"></div>
+
+  <div id="bottom">
+    <div id="gauge">
+      <div class="pips"><i data-l="1"><b></b></i><i data-l="2"><b></b></i><i data-l="3"><b></b></i><i data-l="4"><b></b></i></div>
+      <div id="gauge-label">각성 전</div>
+    </div>
+    <div id="hotbar">
+      <button class="slot" data-slot="1" tabindex="-1"><span class="num">1</span><svg><use href="#i-awaken"/></svg><span class="lbl">각성</span></button>
+      <button class="slot" data-slot="2" tabindex="-1"><span class="num">2</span><svg><use href="#i-fly"/></svg><span class="lbl">비행</span></button>
+      <button class="slot" data-slot="3" tabindex="-1"><span class="num">3</span><svg><use href="#i-off"/></svg><span class="lbl">해제</span></button>
+    </div>
+  </div>
+
+  <div id="touch" class="hidden">
+    <div id="stick-zone"><div id="stick"><div id="knob"></div></div></div>
+    <button id="t-jump" class="tbtn big" tabindex="-1"><svg><use href="#i-up"/></svg></button>
+    <button id="t-down" class="tbtn hidden" tabindex="-1"><svg><use href="#i-down"/></svg></button>
+    <button id="t-boost" class="tbtn" tabindex="-1"><svg><use href="#i-boost"/></svg></button>
+  </div>
+
+  <div id="help" class="card">
+    <h2>베이컨 각성</h2>
+    <p class="lead">하얀 바닥 위에서 마음껏 걷고, 뛰고, 날아 보세요.<br>아래 칸의 <b>각성</b>을 누르면 기를 모으면서 조금씩 강해져요.</p>
+    <div class="rows">
+      <div><span class="k">W A S D</span><span class="k">방향키</span><p>카메라가 보는 쪽으로 걸어요</p></div>
+      <div><span class="k">Shift</span><p>달리기 · 날 때는 빠르게 날기</p></div>
+      <div><span class="k">Space</span><p>점프 · 공중에서 한 번 더 누르면 날아올라요</p></div>
+      <div><span class="k">F</span><span class="k">2</span><p>날기 켜고 끄기 · 날 때 Space 위로, Q 아래로</p></div>
+      <div><span class="k">1</span><p>각성 · 하양 → 파랑 → 노랑 → 빨강, 4단계까지 점점 강해져요. 모으는 중에 다시 누르면 그 단계에서 멈춰요</p></div>
+      <div><span class="k">3</span><p>각성 풀기</p></div>
+      <div><span class="k">마우스 끌기</span><span class="k">휠</span><p>카메라 돌리기 · 가까이/멀리</p></div>
+    </div>
+    <p class="tip">아주 빠르게 날면 앞쪽에 음속 원뿔이 생기고, 높은 곳에서 떨어지면 바닥이 갈라져요.<br>휴대폰에서는 왼쪽 아래를 끌어 움직이고, 화면 오른쪽을 끌어 카메라를 돌려요.</p>
+    <button id="help-close" class="go" tabindex="-1">시작하기</button>
+  </div>
+</div>
+
+<script type="module" src="./js/player-main.js?v=20261102a"></script>
+</body>
+</html>
