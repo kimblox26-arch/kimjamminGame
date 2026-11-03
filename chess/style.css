@@ -737,3 +737,91 @@ body { font-family: var(--body); }
 }
 .hide-zone svg { width: 26px; height: 26px; fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; }
 .hide-zone.hot { transform: scale(1.25); background: rgba(225, 60, 45, 0.85); }
+
+/* ================= 새 배경화면: 밤하늘 오로라 + 떠다니는 기물 ================= */
+body { background: #0d1210; }
+.wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(160deg, #15221b 0%, #0d1311 48%, #1b1813 100%);
+}
+.wallpaper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1.4px) 0 0 / 22px 22px,
+    radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(0, 0, 0, 0.55) 100%);
+}
+.orb {
+  position: absolute;
+  width: 75vmax;
+  height: 75vmax;
+  border-radius: 50%;
+  will-change: transform;
+}
+.o1 { left: -30vmax; top: -30vmax; background: radial-gradient(circle, rgba(129, 182, 76, 0.38), transparent 62%); animation: orb1 20s ease-in-out infinite alternate; }
+.o2 { right: -35vmax; top: 10vh; background: radial-gradient(circle, rgba(38, 198, 218, 0.24), transparent 62%); animation: orb2 26s ease-in-out infinite alternate; }
+.o3 { left: -10vmax; bottom: -45vmax; background: radial-gradient(circle, rgba(233, 196, 106, 0.2), transparent 62%); animation: orb3 30s ease-in-out infinite alternate; }
+@keyframes orb1 { to { transform: translate(22vmax, 16vmax) scale(1.15); } }
+@keyframes orb2 { to { transform: translate(-18vmax, 22vmax) scale(0.9); } }
+@keyframes orb3 { to { transform: translate(20vmax, -14vmax) scale(1.1); } }
+.ghost { position: absolute; opacity: 0.06; will-change: transform; }
+.ghost svg { width: 100%; height: 100%; display: block; }
+.ghost svg .o, .ghost svg .f { fill: #ffffff; stroke: #ffffff; }
+.ghost svg .ln, .ghost svg .ey { display: none; }
+.g1 { width: 46vmin; height: 46vmin; right: -10vmin; top: 4vh; animation: drift1 18s ease-in-out infinite alternate; }
+.g2 { width: 38vmin; height: 38vmin; left: -12vmin; top: 38vh; animation: drift2 22s ease-in-out infinite alternate; }
+.g3 { width: 30vmin; height: 30vmin; right: 4vmin; bottom: 6vh; animation: drift1 26s ease-in-out infinite alternate-reverse; }
+.g4 { width: 22vmin; height: 22vmin; left: 8vmin; top: 2vh; animation: drift2 20s ease-in-out infinite alternate-reverse; }
+.g5 { width: 26vmin; height: 26vmin; left: 30vw; bottom: -8vmin; animation: drift1 24s ease-in-out infinite alternate; }
+@keyframes drift1 { from { transform: translateY(0) rotate(-10deg); } to { transform: translateY(-6vh) rotate(8deg); } }
+@keyframes drift2 { from { transform: translateY(0) rotate(8deg); } to { transform: translateY(5vh) rotate(-12deg); } }
+.screen { position: relative; z-index: 1; }
+.menu { background: transparent; }
+.menu-bg { display: none; }
+
+/* ================= 영상 찍기 버튼 / 알림 ================= */
+.topright { display: flex; align-items: center; gap: 8px; }
+.icon-btn.rec { width: auto; min-width: 42px; padding: 0 11px; gap: 7px; display: flex; align-items: center; justify-content: center; }
+.rec i {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ff4d3d;
+  box-shadow: 0 0 0 3px rgba(255, 77, 61, 0.25);
+  transition: border-radius 0.2s, transform 0.2s;
+}
+.rec-time { font-family: var(--num); font-size: 13px; font-weight: 900; }
+.rec-time:empty { display: none; }
+.rec.on { background: rgba(255, 77, 61, 0.22); border-color: rgba(255, 77, 61, 0.6); }
+.rec.on i { border-radius: 4px; transform: scale(0.85); animation: recPulse 1.2s ease-in-out infinite; }
+@keyframes recPulse { 50% { box-shadow: 0 0 0 7px rgba(255, 77, 61, 0); } }
+.toast {
+  position: fixed;
+  z-index: 30;
+  left: 0;
+  right: 0;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin: 0 auto;
+  padding: 10px 18px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: rgba(30, 29, 27, 0.92);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* 숨긴 오토 모드 동그라미: 거의 투명 */
+.float-bubble { transition: opacity 0.3s; }
+.float-bubble.ghost { opacity: 0.12; box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .orb, .ghost, .rec.on i { animation: none !important; }
+}

@@ -1,7 +1,7 @@
 // 소리: 모두 WebAudio 로 실시간 합성
 // knock  = 나무 기물로 나무 판을 치는 소리 (짧은 충격 → 나무 공진 필터 뱅크 + 판 울림)
 const Sound = (() => {
-  let ctx = null, out = null, verb = null, on = true;
+  let ctx = null, out = null, verb = null, on = true, master = null, tap = null;
 
   function init() {
     if (ctx) {
@@ -18,6 +18,7 @@ const Sound = (() => {
     comp.threshold.value = -12;
     comp.ratio.value = 4;
     comp.connect(ctx.destination);
+    master = comp;
     out = ctx.createGain();
     out.connect(comp);
 
@@ -105,5 +106,16 @@ const Sound = (() => {
     o.stop(t + 0.3);
   }
 
-  return { init, knock, setOn: (v) => { on = v; } };
+  // 영상 녹화에 넣을 소리 줄기
+  function stream() {
+    init();
+    if (!ctx || !ctx.createMediaStreamDestination) return null;
+    if (!tap) {
+      tap = ctx.createMediaStreamDestination();
+      master.connect(tap);
+    }
+    return tap.stream;
+  }
+
+  return { init, knock, stream, setOn: (v) => { on = v; } };
 })();

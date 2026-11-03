@@ -41,6 +41,7 @@
     document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = tr(el.dataset.t); });
     document.querySelectorAll('.lang').forEach((b) => b.classList.toggle('on', b.dataset.lang === prefs.lang));
     $('btnHome').setAttribute('aria-label', tr('menu'));
+    $('btnRec').setAttribute('aria-label', tr('record'));
     setModeTag();
     renderBars(false);
     if (over && !veilEl.hidden) showVeil();
@@ -164,6 +165,7 @@
     el.innerHTML = `<div class="body">${pieceSVG(p.type, p.color)}</div>`;
     el.style.transform = translate(s);
     el.body = el.firstElementChild;
+    el.dataset.kind = p.color + p.type;
     piecesEl.appendChild(el);
     els.set(p.id, el);
     return el;
@@ -254,6 +256,7 @@
 
   function promote(el, type, color) {
     el.body.firstElementChild.outerHTML = pieceSVG(type, color);
+    el.dataset.kind = color + type;
     el.body.animate([{ transform: pose(0, 0, 0.75) }, { offset: 0.6, transform: pose(-4, 0, 1.1) }, { transform: pose() }],
       { duration: 300, easing: 'ease-out' });
   }
@@ -509,6 +512,7 @@
     turnSeq++;
     busy = true;
     timerStop();
+    stopRecording();
     readyEl.hidden = true;
     swap(gameEl, menuEl, introMenu);
   }
@@ -554,6 +558,67 @@
     renderMarks();
   });
   $('btnHome').addEventListener('click', showMenu);
+
+  // ---------- 영상 찍기 ----------
+  const btnRec = $('btnRec'), recTime = $('recTime');
+  let recStart = 0, recTick = 0, toastTimer = 0;
+  if (!GameRecorder.supported()) btnRec.hidden = true;
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.hidden = false;
+    t.animate([{ opacity: 0, transform: 'translateY(-12px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: EASE_POP });
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  }
+  async function saveVideo(file) {
+    if (!file) { toast(tr('recFailed')); return; }
+    const name = 'chess-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.' + file.ext;
+    if (window.claude && window.claude.use) {
+      const dl = await window.claude.use('downloads').catch(() => null);
+      if (!dl) { toast(tr('recFailed')); return; }
+      try {
+        await dl.save({ filename: name, data: file.blob });
+        toast(tr('recSaved'));
+      } catch (e) {
+        if (!e || e.code !== 'declined') toast(tr('recFailed'));
+      }
+      return;
+    }
+    // 저장소에서 직접 연 경우: 보통의 다운로드
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file.blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast(tr('recSaved'));
+  }
+  function setRecUI(on) {
+    btnRec.classList.toggle('on', on);
+    btnRec.setAttribute('aria-pressed', String(on));
+    clearInterval(recTick);
+    recTime.textContent = '';
+    if (on) {
+      recStart = performance.now();
+      recTick = setInterval(() => {
+        const s = Math.floor((performance.now() - recStart) / 1000);
+        recTime.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      }, 250);
+    }
+  }
+  async function stopRecording() {
+    if (!GameRecorder.isOn()) return;
+    setRecUI(false);
+    saveVideo(await GameRecorder.stop());
+  }
+  btnRec.addEventListener('click', () => {
+    Sound.init();
+    if (GameRecorder.isOn()) stopRecording();
+    else if (GameRecorder.start()) setRecUI(true);
+    else toast(tr('recFailed'));
+  });
 
   // ---------- 입력: 메인 화면 / 창 ----------
   document.addEventListener('pointerdown', Sound.init);
@@ -676,7 +741,7 @@
     if (!win.style.left) place(win, (window.innerWidth - win.offsetWidth) / 2, window.innerHeight * 0.18);
     win.animate([{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 340, easing: EASE_POP });
   }
-  function minimize() {
+  function minimize(ghost) {
     const a = win.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.25)' }],
       { duration: 220, easing: 'ease-in', fill: 'forwards' });
     a.onfinish = () => {
@@ -684,6 +749,7 @@
       a.cancel();
       bubble.hidden = false;
       place(bubble, win.offsetLeft, win.offsetTop);
+      bubble.classList.toggle('ghost', ghost === true);
       bubble.animate([{ transform: 'scale(0)' }, { transform: 'scale(1)' }], { duration: 320, easing: EASE_POP });
     };
   }
@@ -693,6 +759,7 @@
     a.onfinish = () => {
       a.cancel();
       bubble.hidden = true;
+      bubble.classList.remove('ghost');
       win.hidden = false;
       place(win, x, y);
       win.animate([{ opacity: 0, transform: 'scale(.25)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 360, easing: EASE_POP });
@@ -706,10 +773,10 @@
     const a = bubble.getBoundingClientRect(), z = zone.getBoundingClientRect();
     return Math.hypot(a.left + a.width / 2 - (z.left + z.width / 2), a.top + a.height / 2 - (z.top + z.height / 2)) < 56;
   };
-  function hideMod(el) {
-    const a = el.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0)' }],
-      { duration: 240, easing: 'ease-in', fill: 'forwards' });
-    a.onfinish = () => { el.hidden = true; a.cancel(); };
+  // 숨기기 = 동그라미가 거의 투명해진다. 투명한 동그라미를 누르면 창이 다시 열린다
+  function ghostBubble() {
+    bubble.classList.add('ghost');
+    bubble.animate([{ transform: 'scale(1.2)' }, { transform: 'scale(1)' }], { duration: 300, easing: EASE_POP });
   }
   draggable(bubble, bubble, expand, () => {
     if (zone.hidden) {
@@ -722,10 +789,10 @@
     zone.classList.remove('hot');
     const a = zone.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
     a.onfinish = () => { zone.hidden = true; a.cancel(); };
-    if (drop) hideMod(bubble);
+    if (drop) ghostBubble();
   });
-  $('autoHide').addEventListener('click', () => hideMod(win));
-  $('autoMin').addEventListener('click', minimize);
+  $('autoHide').addEventListener('click', () => minimize(true));
+  $('autoMin').addEventListener('click', () => minimize(false));
   toggle.addEventListener('click', () => {
     auto = !auto;
     if (auto) Genius.start();
@@ -760,6 +827,7 @@
 
   // ---------- 시작 ----------
   $('brandMark').innerHTML = pieceSVG('n', 'w');
+  document.querySelectorAll('.ghost[data-p]').forEach((g) => { g.innerHTML = pieceSVG(g.dataset.p, 'w'); });
   mascot.innerHTML = pieceSVG('k', 'w');
   buildShowcase();
   markLevel();
