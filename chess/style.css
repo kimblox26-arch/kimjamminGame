@@ -218,7 +218,7 @@ button:active { transform: scale(0.94); }
 .lvl.on { border-color: var(--go); background: #3d4a31; }
 .pace .lvl { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; }
 .pace .lvl svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 100%; padding: 4px; border-radius: 12px; background: #2b2926; }
+.seg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; width: 100%; padding: 4px; border-radius: 12px; background: #2b2926; }
 .seg button {
   height: 36px;
   border: 0;

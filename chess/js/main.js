@@ -31,7 +31,7 @@
   const prefs = {
     sound: store.get('sound', true), hints: store.get('hints', true), lang: store.get('lang', 'ko'),
     level: Math.min(3, Math.max(0, Number(store.get('level', 1)) || 0)),
-    pace: store.get('pace', 'think') === 'speed' ? 'speed' : 'think',
+    pace: ['think', 'speed', 'turbo'].includes(store.get('pace', 'think')) ? store.get('pace', 'think') : 'think',
   };
   if (!TEXT[prefs.lang]) prefs.lang = 'ko';
   const tr = (k) => TEXT[prefs.lang][k];
@@ -110,7 +110,14 @@
   const at = (r, c) => `translate(${c * 100}%, ${r * 100}%)`;
   const translate = (s) => at(...screenPos(s));
   const pose = (y = 0, rz = 0, sx = 1, sy = sx) => `translateY(${y}%) rotate(${rz}deg) scale(${sx}, ${sy})`;
-  const spd = () => (prefs.pace === 'speed' ? 0.4 : 1); // 스피드 모드에서는 빠르게
+  // 오토 모드의 빠르기: think = 깊게 생각, speed = 빠르게, turbo = 몇 초 만에 끝나는 초고속
+  const PACE = {
+    think: { anim: 1, mine: 2500, theirs: Infinity },
+    speed: { anim: 0.4, mine: 200, theirs: 150 },
+    turbo: { anim: 0.09, mine: 40, theirs: 20 },
+  };
+  const pace = () => PACE[auto ? prefs.pace : 'think'];
+  const spd = () => pace().anim;
 
   function later(fn, ms) {
     const t = token;
@@ -400,10 +407,10 @@
       busy = true;
       // 오토 모드: 가장 강한 Stockfish 17.1 이 최고 실력으로 충분히 생각해서 둔다
       // 생각 모드: 한 수에 2.5초 깊게 / 스피드 모드: 0.2초 만에
-      if (auto && state.turn === me) engineMove(id, [Genius, Strong], 20, prefs.pace === 'speed' ? 200 : 2500, 4, 0);
+      if (auto && state.turn === me) engineMove(id, [Genius, Strong], 20, pace().mine, 4, 0);
       else {
         const L = LEVELS[prefs.level];
-        engineMove(id, [Strong], L.skill, prefs.pace === 'speed' ? Math.min(L.ms, 150) : L.ms, L.depth, L.skill < 10 ? 40 : 0);
+        engineMove(id, [Strong], L.skill, Math.min(L.ms, pace().theirs), L.depth, L.skill < 10 ? 40 : 0);
       }
     } else {
       busy = false;
