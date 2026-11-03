@@ -15,6 +15,8 @@ index.html 을 로컬 웹서버로 열면 바로 실행됩니다.
 
 > 🖐 **새 게임: HAND VR** — 웹캠으로 내 손을 인식해 게임 속 손을 그대로 움직이는 VR 스타일 게임은 [`handvr/`](handvr/README.md) 에 있습니다. (`http://localhost:8080/handvr/`)
 
+> 🕷 **새 게임: SPIDER ARMS** — 로블록스 스타일 캐릭터가 등에 달린 기계 거미팔 4개로 벽타기·그래플·드론 사냥을 하는 3D 액션 게임은 [`spiderarm/`](spiderarm/) 에 있습니다. (`http://localhost:8080/spiderarm/`)
+
 ---
 
 ## 1. 무엇이 들어있나
