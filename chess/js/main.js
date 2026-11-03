@@ -84,7 +84,11 @@
   };
   function tick() {
     const txt = fmt(tAcc + (tRun ? performance.now() - tStart : 0));
-    if (txt !== tLast) { timerEl.textContent = txt; tLast = txt; }
+    if (txt !== tLast) {
+      // 숫자마다 같은 폭 칸에 넣어 글자가 흔들리지 않게 한다
+      timerEl.innerHTML = txt.split('').map((ch) => (ch === ':' ? '<i>:</i>' : `<b>${ch}</b>`)).join('');
+      tLast = txt;
+    }
     if (tRun) raf = requestAnimationFrame(tick);
   }
   function timerReset() { cancelAnimationFrame(raf); tRun = false; tAcc = 0; tick(); }
