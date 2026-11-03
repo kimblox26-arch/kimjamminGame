@@ -42,7 +42,26 @@
     document.querySelectorAll('.lang').forEach((b) => b.classList.toggle('on', b.dataset.lang === prefs.lang));
     $('btnHome').setAttribute('aria-label', tr('menu'));
     setModeTag();
+    renderBars(false);
     if (over && !veilEl.hidden) showVeil();
+  }
+  // 위·아래 막대: 각 쪽 이름과 남은 기물 수
+  function renderBars(animate) {
+    if (!state) return;
+    const top = flipped ? 'w' : 'b', bottom = flipped ? 'b' : 'w';
+    for (const [id, color] of [['barTop', top], ['barBottom', bottom]]) {
+      const bar = $(id);
+      const name = mode === 'duo' ? tr(color === 'w' ? 'white' : 'black') : tr(color === me ? 'you' : 'opponent');
+      const count = state.board.filter((p) => p && p.color === color).length;
+      if (bar.dataset.color !== color) { bar.querySelector('.pbar-pc').innerHTML = pieceSVG('k', color); bar.dataset.color = color; }
+      bar.querySelector('.pbar-name').textContent = name;
+      const b = bar.querySelector('.pbar-count b');
+      if (b.textContent !== String(count)) {
+        b.textContent = count;
+        if (animate) b.animate([{ transform: 'scale(1.6)', color: '#ff8a7a' }, { transform: 'scale(1)' }], { duration: 420, easing: EASE_POP });
+      }
+      bar.classList.toggle('turn', !over && state.turn === color);
+    }
   }
   const setModeTag = () => { $('modeTag').textContent = mode === 'duo' ? tr('twoP') : tr(LEVELS[prefs.level].key); };
 
@@ -399,6 +418,7 @@
     hint = null;
     selected = null;
     renderMarks();
+    renderBars(true);
     if (over) {
       busy = true;
       timerStop();
@@ -450,6 +470,7 @@
     renderPromo();
     marksEl.innerHTML = '';
     veilEl.hidden = true;
+    renderBars(false);
   }
 
   function startGame(m) {
@@ -538,7 +559,7 @@
   document.addEventListener('pointerdown', Sound.init);
   const sheets = [...document.querySelectorAll('.sheet')];
   const sheetLevel = $('sheetLevel'), sheetSettings = $('sheetSettings'), sheetLang = $('sheetLang'), sheetPw = $('sheetPw');
-  let taps = 0;
+  let taps = 0, unlocked = false;
 
   function markLevel() {
     document.querySelectorAll('[data-level]').forEach((b) => b.classList.toggle('on', Number(b.dataset.level) === prefs.level));
@@ -593,6 +614,7 @@
       { duration: 240, easing: EASE_POP });
     if (++taps >= 10) {
       taps = 0;
+      if (unlocked) { sheets.forEach((sh) => closeSheet(sh)); setTimeout(openAutoWin, 200); return; }
       $('pwInput').value = '';
       $('pwErr').hidden = true;
       openSheet(sheetPw);
@@ -604,6 +626,7 @@
     if ($('pwInput').value === 'chess0101') {
       $('pwInput').blur();
       sheets.forEach((sh) => closeSheet(sh));
+      unlocked = true;
       Genius.start(); // 큰 엔진을 미리 불러 둔다
       setTimeout(openAutoWin, 200);
     } else {
@@ -620,7 +643,7 @@
     el.style.top = Math.max(6, Math.min(window.innerHeight - el.offsetHeight - 6, y)) + 'px';
   }
   // 끌어서 옮기기 (거의 안 움직이고 떼면 누른 것으로 본다)
-  function draggable(handle, target, onTap) {
+  function draggable(handle, target, onTap, onDrag, onDrop) {
     let sx = 0, sy = 0, ox = 0, oy = 0, moved = false, down = false;
     handle.addEventListener('pointerdown', (e) => {
       if (e.target.closest('.float-min')) return;
@@ -638,12 +661,14 @@
       if (!moved && Math.hypot(dx, dy) < 6) return;
       moved = true;
       place(target, ox + dx, oy + dy);
+      if (onDrag) onDrag();
     });
     handle.addEventListener('pointerup', () => {
       if (down && !moved && onTap) onTap();
+      if (down && moved && onDrop) onDrop(false);
       down = false;
     });
-    handle.addEventListener('pointercancel', () => { down = false; });
+    handle.addEventListener('pointercancel', () => { if (down && moved && onDrop) onDrop(true); down = false; });
   }
   function openAutoWin() {
     bubble.hidden = true;
@@ -674,7 +699,32 @@
     };
   }
   draggable($('autoHead'), win);
-  draggable(bubble, bubble, expand);
+  // 숨기기: 동그라미를 끌면 아래에 X 가 나타나고, 거기에 놓으면 숨는다 (창의 눈 버튼으로도 숨김)
+  // 다시 보려면 설정 창의 체스말을 10번 누르면 된다 (한 번 연 뒤에는 비밀번호 없이)
+  const zone = $('hideZone');
+  const overZone = () => {
+    const a = bubble.getBoundingClientRect(), z = zone.getBoundingClientRect();
+    return Math.hypot(a.left + a.width / 2 - (z.left + z.width / 2), a.top + a.height / 2 - (z.top + z.height / 2)) < 56;
+  };
+  function hideMod(el) {
+    const a = el.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0)' }],
+      { duration: 240, easing: 'ease-in', fill: 'forwards' });
+    a.onfinish = () => { el.hidden = true; a.cancel(); };
+  }
+  draggable(bubble, bubble, expand, () => {
+    if (zone.hidden) {
+      zone.hidden = false;
+      zone.animate([{ opacity: 0, transform: 'translateY(30px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: EASE_POP });
+    }
+    zone.classList.toggle('hot', overZone());
+  }, (cancel) => {
+    const drop = !cancel && overZone();
+    zone.classList.remove('hot');
+    const a = zone.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
+    a.onfinish = () => { zone.hidden = true; a.cancel(); };
+    if (drop) hideMod(bubble);
+  });
+  $('autoHide').addEventListener('click', () => hideMod(win));
   $('autoMin').addEventListener('click', minimize);
   toggle.addEventListener('click', () => {
     auto = !auto;

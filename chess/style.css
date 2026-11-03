@@ -20,11 +20,12 @@
   --rec: rgba(38, 198, 218, 0.62);
   --check: rgba(225, 60, 45, 0.7);
   --topbar: 48px;
-  --board: min(100vw, calc(100vh - var(--topbar) - 24px), 760px);
+  --bar: 40px;
+  --board: min(100vw, calc(100vh - var(--topbar) - 2 * var(--bar) - 36px), 760px);
   color-scheme: dark;
 }
 @supports (height: 100dvh) {
-  :root { --board: min(100vw, calc(100dvh - var(--topbar) - 24px), 760px); }
+  :root { --board: min(100vw, calc(100dvh - var(--topbar) - 2 * var(--bar) - 36px), 760px); }
 }
 
 * { box-sizing: border-box; }
@@ -687,3 +688,52 @@ body { font-family: var(--body); }
 .auto-toggle.on { background: linear-gradient(180deg, var(--go-hi), var(--go-lo)); }
 .seg button { font-family: var(--num); font-size: 12px; letter-spacing: 0.06em; }
 .seg button.on { background: linear-gradient(180deg, var(--go-hi), var(--go-lo)); }
+
+/* 위·아래 막대: 이름과 남은 기물 수 */
+.pbar {
+  width: var(--board);
+  height: var(--bar);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+}
+.pbar-pc { width: 30px; height: 30px; flex: none; }
+.pbar-pc svg { width: 100%; height: 100%; display: block; }
+.pbar-name { font-weight: 900; font-size: 16px; color: var(--ink-2); transition: color 0.2s; }
+.pbar.turn .pbar-name { color: var(--ink); }
+.pbar.turn .pbar-pc { filter: drop-shadow(0 0 6px rgba(154, 208, 98, 0.8)); }
+.pbar-count {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+}
+.pbar-count small { font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.pbar-count b { display: inline-block; min-width: 2ch; font-family: var(--num); font-size: 17px; font-weight: 900; text-align: center; }
+
+/* 오토 모드 숨기기 */
+.float-tools { display: flex; gap: 6px; }
+.hide-zone {
+  position: fixed;
+  z-index: 19;
+  left: 50%;
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  width: 64px;
+  height: 64px;
+  margin-left: -32px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.75);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: transform 0.2s cubic-bezier(.3,1.6,.5,1), background-color 0.2s;
+}
+.hide-zone svg { width: 26px; height: 26px; fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; }
+.hide-zone.hot { transform: scale(1.25); background: rgba(225, 60, 45, 0.85); }

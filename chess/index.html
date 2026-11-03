@@ -123,7 +123,10 @@
 <div class="float" id="autoWin" hidden>
   <div class="float-head" id="autoHead">
     <span>AI Auto Mode</span>
-    <button class="float-min" id="autoMin" type="button" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+    <span class="float-tools">
+      <button class="float-min" id="autoHide" type="button" aria-label="Hide"><svg viewBox="0 0 24 24"><path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2M21 12s-3.5 6-9 6c-1.6 0-3-.5-4.2-1.2"/><path d="M4 20 20 4"/></svg></button>
+      <button class="float-min" id="autoMin" type="button" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+    </span>
   </div>
   <div class="float-body">
     <button class="auto-toggle" id="autoToggle" type="button" aria-pressed="false"><i></i><span id="autoState">OFF</span></button>
@@ -136,6 +139,7 @@
   </div>
 </div>
 <button class="float-bubble" id="autoBubble" type="button" hidden aria-label="AI Auto Mode"></button>
+<div class="hide-zone" id="hideZone" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></div>
 
 <!-- 게임 화면 -->
 <section class="screen game" id="game" hidden>
@@ -145,6 +149,7 @@
       <svg viewBox="0 0 24 24"><path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>
     </button>
   </div>
+  <div class="pbar" id="barTop"><span class="pbar-pc"></span><span class="pbar-name"></span><span class="pbar-count"><small data-t="pieces">기물</small><b>16</b></span></div>
   <div class="board" id="board">
     <div class="layer squares" id="squares"></div>
     <div class="layer marks" id="marks"></div>
@@ -164,6 +169,7 @@
       </div>
     </div>
   </div>
+  <div class="pbar" id="barBottom"><span class="pbar-pc"></span><span class="pbar-name"></span><span class="pbar-count"><small data-t="pieces">기물</small><b>16</b></span></div>
 </section>
 
 <script src="js/pieces.js"></script>
