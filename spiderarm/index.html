@@ -3,34 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SPIDER ARMS — 기계 거미팔 액션</title>
+<title>SPIDER ARMS</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
 <style>
-  :root { --c:#3ef0ff; --r:#ff3b5c; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  html,body { width:100%; height:100%; overflow:hidden; background:#05070d; font-family:Rajdhani,sans-serif; color:#e8f6ff; user-select:none; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#cfe3f8; font-family:Rajdhani,sans-serif; color:#0d2236; user-select:none; -webkit-user-select:none; touch-action:none; }
   canvas { display:block; }
-  #hud { position:fixed; inset:0; pointer-events:none; }
-  #hp { position:absolute; left:24px; bottom:24px; width:300px; }
-  #hp .lbl { font:700 14px Orbitron; letter-spacing:2px; color:var(--c); margin-bottom:6px; }
-  #hp .bar { height:14px; border:1px solid #3ef0ff88; background:#0a1824aa; transform:skewX(-18deg); overflow:hidden; }
-  #hp .fill { height:100%; width:100%; background:linear-gradient(90deg,#1fa3ff,#3ef0ff); box-shadow:0 0 12px var(--c); transition:width .2s; }
-  #score { position:absolute; right:28px; top:22px; text-align:right; font:800 34px Orbitron; text-shadow:0 0 14px #3ef0ffaa; }
-  #score small { display:block; font:600 13px Orbitron; color:#9fd8ea; letter-spacing:2px; }
-  #cross { position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px; border:2px solid #ffffff88; border-radius:50%; transition:.15s; }
-  #cross::after { content:''; position:absolute; left:50%; top:50%; width:4px; height:4px; margin:-2px; background:#fff; border-radius:50%; }
-  #cross.ok { border-color:var(--c); box-shadow:0 0 12px var(--c); transform:scale(1.15); }
-  #hint { position:absolute; left:50%; bottom:28px; transform:translateX(-50%); font:600 15px Rajdhani; color:#bfe9f5; opacity:.85; text-shadow:0 1px 4px #000; }
-  #dmg { position:fixed; inset:0; pointer-events:none; box-shadow:inset 0 0 160px #ff1a3c; opacity:0; transition:opacity .25s; }
   .ov { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:18px;
-        background:radial-gradient(ellipse at center,#0b1a2bdd,#02040acc); z-index:5; text-align:center; padding:16px; overflow-y:auto; }
-  .ov h1 { font:800 clamp(38px,8vw,84px) Orbitron; letter-spacing:6px; background:linear-gradient(180deg,#fff,#3ef0ff); -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(0 0 18px #3ef0ff88); }
-  .ov p { font-size:18px; color:#a9d6e6; max-width:560px; }
-  .keys { display:grid; grid-template-columns:auto auto; gap:6px 18px; font-size:16px; text-align:left; background:#0a1a28aa; border:1px solid #3ef0ff44; padding:14px 22px; border-radius:10px; }
-  .keys b { font-family:Orbitron; font-size:13px; color:var(--c); }
-  .btn { pointer-events:auto; font:800 20px Orbitron; letter-spacing:3px; padding:14px 46px; color:#03121a; background:var(--c); border:0; border-radius:6px; cursor:pointer; box-shadow:0 0 24px #3ef0ff99; }
-  .btn:hover { filter:brightness(1.15); }
+        background:#ffffffb0; backdrop-filter:blur(4px); z-index:5; text-align:center; padding:16px; overflow-y:auto; }
+  .ov h1 { font:800 clamp(38px,8vw,84px) Orbitron; letter-spacing:6px; color:#0d69ac; }
+  .keys { display:grid; grid-template-columns:auto auto; gap:6px 18px; font-size:16px; text-align:left; background:#ffffffcc; border:1px solid #0d69ac44; padding:14px 22px; border-radius:10px; }
+  .keys b { font-family:Orbitron; font-size:13px; color:#0d69ac; }
+  .btn { font:800 20px Orbitron; letter-spacing:3px; padding:14px 46px; color:#fff; background:#0d69ac; border:0; border-radius:8px; cursor:pointer; }
   .hidden { display:none !important; }
+  .touch-only { display:none; }
+  body.touch .touch-only { display:grid; }
+  body.touch .pc-only { display:none; }
+  #stick { position:fixed; width:120px; height:120px; margin:-60px 0 0 -60px; border-radius:50%; background:#0d69ac22; border:2px solid #0d69ac66; pointer-events:none; opacity:0; transition:opacity .15s; z-index:3; }
+  #stick.on { opacity:1; }
+  #knob { position:absolute; left:50%; top:50%; width:52px; height:52px; margin:-26px; border-radius:50%; background:#0d69acaa; }
+  #jumpBtn { position:fixed; right:28px; bottom:34px; width:84px; height:84px; border-radius:50%; background:#ffffffaa; border:2px solid #0d69ac88;
+             font:800 14px Orbitron; color:#0d69ac; display:none; align-items:center; justify-content:center; z-index:3; }
+  body.touch #jumpBtn { display:flex; }
+  #jumpBtn:active { background:#0d69ac; color:#fff; }
 </style>
 <script type="importmap">
 { "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
@@ -38,32 +33,24 @@
 </head>
 <body>
 <canvas id="gl"></canvas>
-<div id="hud">
-  <div id="hp"><div class="lbl">HULL INTEGRITY</div><div class="bar"><div class="fill" id="hpfill"></div></div></div>
-  <div id="score"><small>SCORE</small><span id="sc">0</span></div>
-  <div id="cross"></div>
-  <div id="hint">클릭: 거미팔 공격 · 우클릭: 거미팔 그래플 · 벽에 붙어 W: 벽타기</div>
-</div>
-<div id="dmg"></div>
+<div id="stick"><div id="knob"></div></div>
+<div id="jumpBtn">JUMP</div>
 
 <div class="ov" id="start">
   <h1>SPIDER ARMS</h1>
-  <p>등에 달린 4개의 기계 거미팔로 도시를 누비세요. 벽을 타고, 건물에 팔을 꽂아 날아다니며, 적 드론을 찔러 부수고 에너지 코어를 모으세요.</p>
-  <div class="keys">
+  <div class="keys pc-only">
     <b>WASD</b><span>이동</span>
     <b>SHIFT</b><span>달리기</span>
-    <b>SPACE</b><span>점프 (벽에서 벽점프)</span>
-    <b>마우스</b><span>카메라 회전 · 휠 줌</span>
-    <b>좌클릭 / F</b><span>거미팔 찌르기 공격</span>
-    <b>우클릭 / Q (누르고 있기)</b><span>거미팔 그래플 (조준한 곳으로 당기기)</span>
-    <b>벽 + W</b><span>거미팔로 벽 기어오르기</span>
+    <b>SPACE</b><span>점프</span>
+    <b>마우스 / 휠</b><span>카메라 회전 / 줌</span>
+  </div>
+  <div class="keys touch-only">
+    <b>왼쪽 화면 드래그</b><span>이동 (끝까지 밀면 달리기)</span>
+    <b>오른쪽 화면 드래그</b><span>카메라 회전</span>
+    <b>두 손가락 핀치</b><span>줌</span>
+    <b>JUMP 버튼</b><span>점프</span>
   </div>
   <button class="btn" id="play">플레이</button>
-</div>
-<div class="ov hidden" id="over">
-  <h1>SYSTEM DOWN</h1>
-  <p id="final"></p>
-  <button class="btn" id="again">다시 하기</button>
 </div>
 <script type="module" src="./main.js"></script>
 </body>
