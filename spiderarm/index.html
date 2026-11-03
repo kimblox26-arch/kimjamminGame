@@ -11,11 +11,12 @@
   canvas { display:block; }
   .stroke { text-shadow:0 3px 0 #0a2a4a, 2px 0 0 #0a2a4a, -2px 0 0 #0a2a4a, 0 -2px 0 #0a2a4a; }
   #pain { position:fixed; inset:0; pointer-events:none; opacity:0; z-index:2; background:radial-gradient(ellipse at center, transparent 30%, #a0001ad0 100%); }
-  #awakenBtn { position:fixed; left:50%; bottom:26px; transform:translateX(-50%); z-index:3; font:700 26px Fredoka; color:#fff; padding:12px 36px; border-radius:40px;
+  #awakenBtn, #attackBtn { position:fixed; right:24px; bottom:24px; z-index:3; font:700 26px Fredoka; color:#fff; padding:12px 36px; border-radius:40px;
                border:3px solid #fff; background:radial-gradient(circle,#ff4a6a,#7a0018); box-shadow:0 0 24px #ff2a4a, 0 0 60px #ff2a4a88; animation:pulse 1.1s infinite; cursor:pointer; }
-  #awakenBtn small { font-size:15px; opacity:.85; }
+  #attackBtn { background:radial-gradient(circle,#68727f,#1a1e25); box-shadow:0 0 18px #ff3b1f99; animation:none; }
+  #awakenBtn small, #attackBtn small { font-size:15px; opacity:.85; }
   @keyframes pulse { 50% { scale:1.07; box-shadow:0 0 36px #ff2a4a, 0 0 100px #ff2a4acc; } }
-  body.touch #awakenBtn { left:auto; right:20px; bottom:140px; transform:none; padding:16px 22px; }
+  body.touch #awakenBtn, body.touch #attackBtn { right:20px; bottom:140px; padding:16px 22px; }
   #toast { position:fixed; top:22%; left:50%; transform:translateX(-50%) scale(.6); font:700 clamp(30px,6vw,60px) Fredoka; color:#ffe14a; opacity:0; transition:.25s; z-index:2; white-space:nowrap; }
   #toast.on { opacity:1; transform:translateX(-50%) scale(1); }
   #fade { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity .2s; z-index:2; }
@@ -49,6 +50,7 @@
 <div id="stick"><div id="knob"></div></div>
 <div id="jumpBtn" class="stroke">JUMP</div>
 <button id="awakenBtn" class="stroke">각성 <small class="pc-only">(E)</small></button>
+<button id="attackBtn" class="stroke hidden">공격 <small class="pc-only">(클릭 / F)</small></button>
 
 <div class="ov" id="start">
   <h1 class="stroke">SPIDER ARMS</h1>
@@ -57,12 +59,14 @@
     <b>SHIFT</b><span>달리기</span>
     <b>SPACE</b><span>점프 / 벽에서 뛰어내리기</span>
     <b>E / 각성 버튼</b><span>등에서 거미다리 8개가 돋아남</span>
+    <b>클릭 / F</b><span>(각성 후) 다리로 찍기 공격 — 굴러오는 바위도 부숨</span>
     <b>벽 쪽으로 이동</b><span>(각성 후) 거미다리로 벽 기어오르기</span>
     <b>마우스 / 휠</b><span>카메라 회전 / 줌</span>
   </div>
   <div class="keys touch-only">
     <b>왼쪽 화면 드래그</b><span>이동 (끝까지 밀면 달리기)</span>
     <b>각성 버튼</b><span>등에서 거미다리 8개가 돋아남</span>
+    <b>공격 버튼</b><span>(각성 후) 다리로 찍기 공격 — 바위도 부숨</span>
     <b>벽 쪽으로 이동</b><span>(각성 후) 거미다리로 벽 기어오르기</span>
     <b>오른쪽 화면 드래그</b><span>카메라 회전</span>
     <b>두 손가락 핀치</b><span>줌</span>
