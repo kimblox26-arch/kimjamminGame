@@ -273,23 +273,24 @@ const zone = $('#stick-zone'), stick = $('#stick'), knob = $('#knob');
 let stickId = null, stickC = { x: 0, y: 0 };
 zone.addEventListener('pointerdown', e => {
   audio.init();
+  e.preventDefault(); e.stopPropagation();
   stickId = e.pointerId; zone.setPointerCapture(e.pointerId);
-  const r = zone.getBoundingClientRect();
-  stickC = { x: e.clientX, y: e.clientY };
-  stick.style.left = (e.clientX - r.left) + 'px'; stick.style.bottom = (r.bottom - e.clientY) + 'px';
+  const r = stick.getBoundingClientRect(); // 조이스틱은 제자리 — 가운데를 기준으로
+  stickC = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  moveStick(e);
 });
-zone.addEventListener('pointermove', e => {
+zone.addEventListener('pointermove', e => moveStick(e));
+function moveStick(e) {
   if (e.pointerId !== stickId) return;
   let dx = e.clientX - stickC.x, dy = e.clientY - stickC.y;
   const l = Math.hypot(dx, dy), R = 50;
   if (l > R) { dx *= R / l; dy *= R / l; }
   knob.style.transform = `translate(${dx}px, ${dy}px)`;
   touch.x = dx / R; touch.y = -dy / R;
-});
+}
 const stickEnd = e => {
   if (e.pointerId !== stickId) return;
   stickId = null; touch.x = touch.y = 0; knob.style.transform = '';
-  stick.style.left = ''; stick.style.bottom = '';
 };
 zone.addEventListener('pointerup', stickEnd);
 zone.addEventListener('pointercancel', stickEnd);
