@@ -96,7 +96,8 @@ const M = {
   shirt: new THREE.MeshStandardMaterial({ color: 0x0d69ac, roughness: 0.55 }),
   pants: new THREE.MeshStandardMaterial({ color: 0xa4bd47, roughness: 0.55 }),
   dark: new THREE.MeshStandardMaterial({ color: 0x1b1e24, metalness: 0.6, roughness: 0.4 }),
-  arm: new THREE.MeshStandardMaterial({ color: 0xffd21a, metalness: 0.25, roughness: 0.35 }),
+  arm: new THREE.MeshStandardMaterial({ color: 0xffc21a, metalness: 0.7, roughness: 0.22 }),
+  band: new THREE.MeshStandardMaterial({ color: 0x15171c, metalness: 0.9, roughness: 0.2 }),
   chrome: new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 1, roughness: 0.15 }),
   glow: new THREE.MeshBasicMaterial({ color: new THREE.Color(0x46f0ff).multiplyScalar(1.4), toneMapped: false }),
 };
@@ -196,6 +197,33 @@ function roundedBox(w, h, d, r = 0.12) {
   const g = new THREE.ExtrudeGeometry(s, { depth: d - 2 * r, bevelEnabled: true, bevelSize: r, bevelThickness: r, bevelSegments: 4, curveSegments: 4 });
   g.translate(0, 0, -(d - 2 * r) / 2); g.computeVertexNormals(); return g;
 }
+function drawFace(pain) {
+  const t = canvasTex(1024, 256, (g, w, h) => {
+    g.fillStyle = '#f5cd30'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#111'; g.strokeStyle = '#111'; g.lineCap = 'round'; g.lineJoin = 'round';
+    const cx = w / 2;
+    if (!pain) {
+      [-48, 48].forEach(dx => { g.beginPath(); g.ellipse(cx + dx, h * 0.38, 13, 26, 0, 0, Math.PI * 2); g.fill(); });
+      g.lineWidth = 11; g.beginPath(); g.arc(cx, h * 0.42, 78, Math.PI * 0.2, Math.PI * 0.8); g.stroke();
+      return;
+    }
+    // 고통: 질끈 감은 눈 > <, 찌푸린 눈썹, 비명 지르는 입, 식은땀
+    g.lineWidth = 10;
+    g.beginPath(); g.moveTo(cx - 78, h * 0.27); g.lineTo(cx - 36, h * 0.38); g.lineTo(cx - 78, h * 0.49); g.stroke();
+    g.beginPath(); g.moveTo(cx + 78, h * 0.27); g.lineTo(cx + 36, h * 0.38); g.lineTo(cx + 78, h * 0.49); g.stroke();
+    g.lineWidth = 9;
+    g.beginPath(); g.moveTo(cx - 88, h * 0.13); g.lineTo(cx - 30, h * 0.24); g.stroke();
+    g.beginPath(); g.moveTo(cx + 88, h * 0.13); g.lineTo(cx + 30, h * 0.24); g.stroke();
+    g.beginPath(); g.ellipse(cx, h * 0.72, 46, 40, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#fff'; g.fillRect(cx - 26, h * 0.72 - 31, 52, 10);
+    g.fillStyle = '#d4384a'; g.beginPath(); g.ellipse(cx, h * 0.72 + 22, 24, 11, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#7fd4ff';
+    [[cx - 125, h * 0.22], [cx + 120, h * 0.34], [cx - 112, h * 0.55]].forEach(([x, y]) => {
+      g.beginPath(); g.moveTo(x, y - 18); g.quadraticCurveTo(x + 12, y + 4, x, y + 10); g.quadraticCurveTo(x - 12, y + 4, x, y - 18); g.fill();
+    });
+  });
+  t.wrapS = THREE.ClampToEdgeWrapping; return t;
+}
 function buildCharacter() {
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
   const torso = new THREE.Mesh(roundedBox(2, 2, 1, 0.1), M.shirt); torso.position.y = 3; body.add(torso);
@@ -203,14 +231,11 @@ function buildCharacter() {
   for (let i = 0; i <= 6; i++) { const a = -Math.PI / 2 + (i / 6) * Math.PI / 2; prof.push(new THREE.Vector2(0.5 + Math.cos(a) * 0.14, -0.46 + Math.sin(a) * 0.14)); }
   for (let i = 0; i <= 6; i++) { const a = (i / 6) * Math.PI / 2; prof.push(new THREE.Vector2(0.5 + Math.cos(a) * 0.14, 0.46 + Math.sin(a) * 0.14)); }
   prof.push(new THREE.Vector2(0, 0.6));
-  const face = canvasTex(1024, 256, (g, w, h) => {
-    g.fillStyle = '#f5cd30'; g.fillRect(0, 0, w, h); g.fillStyle = '#111';
-    [-48, 48].forEach(dx => { g.beginPath(); g.ellipse(w / 2 + dx, h * 0.38, 13, 26, 0, 0, Math.PI * 2); g.fill(); });
-    g.lineWidth = 11; g.lineCap = 'round'; g.strokeStyle = '#111';
-    g.beginPath(); g.arc(w / 2, h * 0.42, 78, Math.PI * 0.2, Math.PI * 0.8); g.stroke();
-  });
-  face.wrapS = THREE.ClampToEdgeWrapping;
-  const head = new THREE.Mesh(new THREE.LatheGeometry(prof, 40, Math.PI), new THREE.MeshStandardMaterial({ map: face, roughness: 0.5 }));
+  const faceN = drawFace(false), faceP = drawFace(true);
+  const headMat = new THREE.MeshStandardMaterial({ map: faceN, roughness: 0.5 });
+  const hg = new THREE.LatheGeometry(prof, 40, Math.PI), hp = hg.attributes.position, hu = hg.attributes.uv;
+  for (let i = 0; i < hu.count; i++) hu.setY(i, (hp.getY(i) + 0.6) / 1.2); // 얼굴이 옆면(정면)에 오도록 높이 기준 UV
+  const head = new THREE.Mesh(hg, headMat);
   head.position.y = 4.62; body.add(head);
   const limb = (mat, px, py, oy) => {
     const p = new THREE.Group(); p.position.set(px, py, 0);
@@ -218,95 +243,127 @@ function buildCharacter() {
   };
   const armL = limb(M.skin, 1.5, 3.6, -0.6), armR = limb(M.skin, -1.5, 3.6, -0.6);
   const legL = limb(M.pants, 0.5, 2, -1), legR = limb(M.pants, -0.5, 2, -1);
-  // 백팩 (팔 장착 코어)
-  const pack = new THREE.Group(); pack.position.set(0, 3.1, -0.85); body.add(pack);
-  pack.add(new THREE.Mesh(roundedBox(1.9, 2.1, 0.8, 0.2), M.dark));
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.1, 10, 32), M.chrome); ring.position.z = -0.42; pack.add(ring);
+  // 각성 후 등에 돋아나는 코어
+  const pack = new THREE.Group(); pack.position.set(0, 3.15, -0.85); body.add(pack);
+  pack.add(new THREE.Mesh(roundedBox(1.9, 2.2, 0.8, 0.22), M.band));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.1, 10, 32), M.arm); ring.position.z = -0.42; pack.add(ring);
   const core = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), M.glow); core.position.z = -0.43; core.rotation.y = Math.PI; pack.add(core);
+  for (let i = 0; i < 3; i++) {
+    const sp = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.8, 6), M.chrome);
+    sp.position.set(0, 1.25 - i * 0.05, -0.3 - i * 0.25); sp.rotation.x = -0.5 - i * 0.2; pack.add(sp);
+  }
+  pack.visible = false; pack.scale.setScalar(0.001);
+  const backGlow = new THREE.PointLight(0xff2a2a, 0, 16, 2); backGlow.position.set(0, 3.2, -1.7); body.add(backGlow);
   shadowAll(root);
-  return { root, body, head, armL, armR, legL, legR };
+  return { root, body, head, armL, armR, legL, legR, pack, headMat, faceN, faceP, backGlow };
 }
 
-// ───────────────────────── 늘어나는 노란 마디 거미팔 ─────────────────────────
-const SEG = 40, REACH = 15;
+// ───────────────────────── 8개의 거미다리 ─────────────────────────
+const SEG = 34, REACH = 15, NLEG = 8, BAND_EVERY = 4, NB = Math.floor((SEG - 2) / BAND_EVERY) + 1;
 const ringGeo = (() => {
   const pts = [];
-  for (let i = 0; i <= 10; i++) { const a = i / 10; pts.push(new THREE.Vector2(0.34 + Math.sin(a * Math.PI) * 0.1, a - 0.5)); }
+  for (let i = 0; i <= 10; i++) { const a = i / 10; pts.push(new THREE.Vector2(0.32 + Math.sin(a * Math.PI) * 0.09, a - 0.5)); }
   return new THREE.LatheGeometry(pts, 14);
 })();
-const armInst = new THREE.InstancedMesh(ringGeo, M.arm, SEG * 4);
-armInst.castShadow = true; armInst.frustumCulled = false; scene.add(armInst);
+const mkInst = (geo, mat, n, shadow = true) => { const m = new THREE.InstancedMesh(geo, mat, n); m.castShadow = shadow; m.frustumCulled = false; scene.add(m); return m; };
+const armInst = mkInst(ringGeo, M.arm, SEG * NLEG);
+const bandInst = mkInst(new THREE.TorusGeometry(0.42, 0.09, 8, 18).rotateX(Math.PI / 2), M.band, NB * NLEG);
+const glowInst = mkInst(new THREE.TorusGeometry(0.44, 0.035, 6, 18).rotateX(Math.PI / 2), M.glow, NB * NLEG, false);
+const spikeInst = mkInst(new THREE.ConeGeometry(0.15, 0.75, 6).translate(0, 0.72, 0), M.chrome, NB * NLEG);
 function makeClaw() {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.6, 16).rotateX(Math.PI / 2).translate(0, 0, 0.3), M.dark); g.add(base);
-  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 16).rotateX(Math.PI / 2).translate(0, 0, 0.05), M.arm); g.add(cuff);
+  const add = (geo, mat) => { const m = new THREE.Mesh(geo, mat); g.add(m); return m; };
+  add(new THREE.CylinderGeometry(0.38, 0.5, 0.7, 16).rotateX(Math.PI / 2).translate(0, 0, 0.35), M.band);
+  add(new THREE.TorusGeometry(0.48, 0.08, 8, 20).translate(0, 0, 0.1), M.arm);
+  const core = add(new THREE.SphereGeometry(0.22, 12, 10), M.glow); core.position.z = 0.72;
   g.userData.prongs = [];
   for (let k = 0; k < 3; k++) {
-    const piv = new THREE.Group(); piv.position.z = 0.55; piv.rotation.z = k * Math.PI * 2 / 3; g.add(piv);
-    const f = new THREE.Group(); f.position.y = 0.28; piv.add(f);
-    f.add(new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.8).translate(0, 0, 0.4), M.dark));
-    const tip = new THREE.Group(); tip.position.z = 0.8; f.add(tip);
-    tip.add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.55).translate(0, 0, 0.27), M.dark));
-    tip.rotation.x = 0.9;
+    const piv = new THREE.Group(); piv.position.z = 0.6; piv.rotation.z = k * Math.PI * 2 / 3; g.add(piv);
+    const f = new THREE.Group(); f.position.y = 0.3; piv.add(f);
+    f.add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.9).translate(0, 0, 0.45), M.band));
+    const j = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), M.arm); j.position.z = 0.9; f.add(j);
+    const tip = new THREE.Group(); tip.position.z = 0.9; tip.rotation.x = 1.0; f.add(tip);
+    tip.add(new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.85, 6).rotateX(Math.PI / 2).translate(0, 0, 0.42), M.chrome));
     g.userData.prongs.push(f);
   }
   shadowAll(g); scene.add(g); return g;
 }
-function makeArm(side, front) {
+const ROOTS = [[0.5, 4.05, -1.25], [0.75, 3.55, -1.35], [0.75, 3.0, -1.35], [0.5, 2.5, -1.25]];
+const HOMES = [[5.0, 5.8], [6.6, 2.3], [6.6, -1.3], [5.2, -4.8]];
+function makeArm(side, k) {
+  const [rx, ry, rz] = ROOTS[k], [hx, hz] = HOMES[k];
+  const socket = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), M.chrome); socket.castShadow = true; scene.add(socket);
   return {
-    side, front, ph: Math.random() * 10,
-    root: V(side * 0.6, front ? 3.8 : 2.6, -1.3),
-    home: V(side * 5.5, 0, front ? 4.5 : -3.5),
-    tip: V(), n: UP.clone(), anchor: null, step: null, claw: makeClaw(), grip: 0,
-    socket: (() => { const s = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), M.dark); s.castShadow = true; scene.add(s); return s; })(),
+    side, k, gait: (k + (side > 0 ? 0 : 1)) % 2, ph: Math.random() * 10,
+    root: V(side * rx, ry, rz), home: V(side * hx, 0, hz),
+    tip: V(), n: UP.clone(), anchor: null, step: null, claw: makeClaw(), grip: 0, grow: 0, growT: 0, growD: 0, socket,
   };
 }
-const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = V(), _a = V(), _b = V(), _c = V();
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _s = V(), _a = V(), _b = V(), _c = V();
 const pts = Array.from({ length: SEG + 1 }, () => V());
 function bez(p0, p1, p2, p3, t, out) {
   const u = 1 - t;
   return out.set(0, 0, 0).addScaledVector(p0, u * u * u).addScaledVector(p1, 3 * u * u * t).addScaledVector(p2, 3 * u * t * t).addScaledVector(p3, t * t * t);
 }
 function drawArm(A, idx, rootW, t) {
+  const g = A.grow, gs = clamp(g, 0.001, 1);
   const sideW = V(A.side, 0, 0).applyQuaternion(char.root.quaternion);
   const backW = V(0, 0, -1).applyQuaternion(char.root.quaternion);
-  const d = rootW.distanceTo(A.tip);
+  const outUp = V().copy(sideW).add(UP).normalize();
+  const tipD = rootW.clone().lerp(A.tip, g);
+  const d = rootW.distanceTo(tipD);
   const loose = A.anchor ? 0.25 : 1;
   const w = V(Math.sin(t * 2.3 + A.ph), Math.sin(t * 1.7 + A.ph) * 0.6, Math.cos(t * 2.0 + A.ph)).multiplyScalar(0.5 * loose);
-  const p1 = rootW.clone().addScaledVector(UP, 2.2 + d * 0.28).addScaledVector(sideW, 1 + d * 0.15).addScaledVector(backW, 0.8).add(w);
-  const p2 = A.tip.clone().addScaledVector(A.n, 1.5 + d * 0.3).sub(w);
-  // 집게 방향 & 위치
-  const dir = _a.subVectors(A.tip, p2).normalize();
-  const clawBase = A.tip.clone().addScaledVector(dir, -1.15);
+  const rise = (1 - Math.min(1, g)) * 4; // 돋아날 때 위로 솟구침
+  const p1 = rootW.clone().addScaledVector(UP, 2.2 + d * 0.28 + rise).addScaledVector(sideW, 1 + d * 0.15).addScaledVector(backW, 0.8 + rise * 0.3).add(w);
+  const p2 = tipD.clone().addScaledVector(A.n, (1.5 + d * 0.3) * gs).sub(w);
+  const dir = _a.subVectors(tipD, p2).normalize().clone();
+  const clawBase = tipD.clone().addScaledVector(dir, -1.7 * gs);
   for (let i = 0; i <= SEG; i++) bez(rootW, p1, p2, clawBase, i / SEG, pts[i]);
+  const th0 = clamp(g * 1.4, 0.001, 1);
   for (let i = 0; i < SEG; i++) {
     const a = pts[i], b = pts[i + 1];
     _b.subVectors(b, a); const len = _b.length() || 0.001; _b.divideScalar(len);
     _q.setFromUnitVectors(UP, _b);
-    const th = 1 - (i / SEG) * 0.25;
+    const th = th0 * (0.95 - (i / SEG) * 0.35);
     _s.set(th, len * 1.25, th);
     _m.compose(_c.addVectors(a, b).multiplyScalar(0.5), _q, _s);
     armInst.setMatrixAt(idx * SEG + i, _m);
+    if (i % BAND_EVERY === 1) {
+      const bi = idx * NB + (i - 1) / BAND_EVERY;
+      _s.set(th, th, th);
+      _m.compose(a, _q, _s); bandInst.setMatrixAt(bi, _m);
+      _m.compose(_c.copy(a).addScaledVector(_b, 0.12 * th), _q, _s); glowInst.setMatrixAt(bi, _m);
+      _c.copy(outUp).addScaledVector(_b, -_b.dot(outUp)).normalize();
+      _q2.setFromUnitVectors(UP, _c);
+      const sp = th * (1 - (i / SEG) * 0.5); _s.set(sp, sp, sp);
+      _m.compose(a, _q2, _s); spikeInst.setMatrixAt(bi, _m);
+    }
   }
-  A.socket.position.copy(rootW);
-  A.claw.position.copy(clawBase); A.claw.lookAt(_c.copy(clawBase).add(dir));
-  const open = A.anchor ? 0.05 : A.step ? 0.75 : 0.45;
+  A.socket.position.copy(rootW); A.socket.scale.setScalar(gs);
+  A.claw.position.copy(clawBase); A.claw.lookAt(_c.copy(clawBase).add(dir)); A.claw.scale.setScalar(gs);
+  const open = A.anchor ? 0.05 : A.step ? 0.8 : 0.5;
   A.grip += (open - A.grip) * 0.25;
   A.claw.userData.prongs.forEach(f => f.rotation.x = -A.grip);
 }
 
 // ───────────────────────── 플레이어 ─────────────────────────
 const char = buildCharacter(); scene.add(char.root);
-const arms = [makeArm(1, true), makeArm(-1, true), makeArm(1, false), makeArm(-1, false)];
-const GAIT = [0, 1, 1, 0];
+const arms = [];
+for (let k = 0; k < 4; k++) for (const s of [1, -1]) arms.push(makeArm(s, k));
 const R = 1.1, GRAV = 62;
-const P = { pos: V(0, 0.4, 4), vel: V(), yaw: 0, onGround: true, walkPhase: 0, climbing: false, wallN: null, gs: null, cp: 0, noGrab: 0, finished: false, time: 0 };
+const P = { pos: V(0, 0.4, 4), vel: V(), yaw: 0, onGround: true, walkPhase: 0, climbing: false, wallN: null, gs: null, cp: 0, noGrab: 0, finished: false, awake: false, awakenT: -1 };
+function setLegsVisible(v) {
+  [armInst, bandInst, glowInst, spikeInst].forEach(m => m.visible = v);
+  arms.forEach(A => { A.claw.visible = v; A.socket.visible = v; });
+}
+setLegsVisible(false);
 
 // ───────────────────────── 입력 ─────────────────────────
 const keys = {}; let locked = false, started = false;
 let camYaw = Math.PI, camPitch = 0.32, camDist = 20;
 const touch = { mx: 0, my: 0, run: false, jump: false };
-addEventListener('keydown', e => { keys[e.code] = true; });
+addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyE') startAwaken(); });
 addEventListener('keyup', e => { keys[e.code] = false; });
 canvas.addEventListener('mousedown', () => { if (started && !TOUCH && !locked) canvas.requestPointerLock(); });
 document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
@@ -324,7 +381,7 @@ if (TOUCH) {
   addEventListener('touchstart', e => {
     if (!started) return;
     for (const t of e.changedTouches) {
-      if (t.target.closest && t.target.closest('#jumpBtn')) continue;
+      if (t.target.closest && t.target.closest('#jumpBtn, #awakenBtn')) continue;
       if (t.clientX < innerWidth * 0.45 && stickId === null) {
         stickId = t.identifier; cx = t.clientX; cy = t.clientY;
         stick.style.left = cx + 'px'; stick.style.top = cy + 'px'; stick.classList.add('on');
@@ -370,10 +427,110 @@ function tone(f0, f1, dur, vol, type = 'square') {
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
   o.start(t); o.stop(t + dur + 0.02);
 }
-const clank = () => tone(160, 60, 0.07, 0.04);
+const clank = () => tone(160, 60, 0.07, 0.03);
+function noise(dur, vol, freq = 800) {
+  if (!AC) return;
+  const n = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+  const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = buf; f.type = 'lowpass'; f.frequency.value = freq; g.gain.value = vol;
+  s.connect(f); f.connect(g); g.connect(AC.destination); s.start();
+}
+function scream(dur, f0, vol) { // 떨리는 비명 (합성)
+  if (!AC) return;
+  const t = AC.currentTime, f = AC.createBiquadFilter(), g = AC.createGain(), lfo = AC.createOscillator(), lg = AC.createGain();
+  f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 1.8; f.connect(g); g.connect(AC.destination);
+  lfo.frequency.value = 11; lg.gain.value = f0 * 0.08; lfo.connect(lg);
+  const oscs = [['sawtooth', 1], ['square', 1.012]].map(([type, m]) => {
+    const o = AC.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0 * m, t); o.frequency.linearRampToValueAtTime(f0 * 1.6 * m, t + dur * 0.35); o.frequency.linearRampToValueAtTime(f0 * 0.7 * m, t + dur);
+    lg.connect(o.frequency); o.connect(f); return o;
+  });
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.12);
+  g.gain.setValueAtTime(vol, t + dur * 0.75); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  [...oscs, lfo].forEach(o => { o.start(t); o.stop(t + dur + 0.05); });
+}
+
+// ───────────────────────── 이펙트 ─────────────────────────
+const parts = [];
+const partGeo = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+const partMats = [0x46f0ff, 0xffd21a, 0xff3a2a, 0xffffff].map(c => new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(1.4), toneMapped: false }));
+for (let i = 0; i < 260; i++) { const m = new THREE.Mesh(partGeo, partMats[0]); m.visible = false; scene.add(m); parts.push({ m, v: V(), life: 0, max: 1 }); }
+let partIdx = 0;
+function burst(pos, n, speed, mats, life = 0.8) {
+  for (let i = 0; i < n; i++) {
+    const p = parts[partIdx++ % parts.length];
+    p.m.material = partMats[mats[i % mats.length]]; p.m.position.copy(pos); p.m.visible = true;
+    p.v.set(rand(-1, 1), rand(-0.2, 1.3), rand(-1, 1)).normalize().multiplyScalar(speed * rand(0.4, 1));
+    p.life = p.max = life * rand(0.6, 1.2);
+  }
+}
+const shock = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.3, 48), new THREE.MeshBasicMaterial({ color: 0xbff8ff, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+shock.rotation.x = -Math.PI / 2; scene.add(shock);
+let shockT = -1;
+function updateFx(dt) {
+  for (const p of parts) {
+    if (!p.m.visible) continue;
+    p.life -= dt; if (p.life <= 0) { p.m.visible = false; continue; }
+    p.v.y -= 25 * dt; p.m.position.addScaledVector(p.v, dt);
+    p.m.scale.setScalar(p.life / p.max); p.m.rotation.x += dt * 9; p.m.rotation.y += dt * 7;
+  }
+  if (shockT >= 0) {
+    shockT += dt; const s = 1 + shockT * 45; shock.scale.set(s, s, 1);
+    shock.material.opacity = Math.max(0, 0.85 - shockT * 1.3);
+    if (shockT > 0.7) shockT = -1;
+  }
+}
+
+// ───────────────────────── 각성 ─────────────────────────
+const AW = { BURST: 2.0, END: 3.8 };
+const painEl = document.getElementById('pain'), awakenBtn = document.getElementById('awakenBtn');
+let shake = 0, beatT = 0;
+const backPos = () => char.root.localToWorld(V(0, 3.2, -1.5));
+function startAwaken() {
+  if (!started || P.awake || P.awakenT >= 0 || P.finished) return;
+  P.awakenT = 0; P.vel.x = P.vel.z = 0; P.climbing = false;
+  char.headMat.map = char.faceP;
+  char.backGlow.color.set(0xff2a2a);
+  awakenBtn.classList.add('hidden');
+  scream(1.9, 230, 0.1);
+}
+function updateAwaken(dt) {
+  if (P.awakenT < 0) return;
+  const t0 = P.awakenT; P.awakenT += dt; const t = P.awakenT;
+  if (t < AW.BURST) { // 고통
+    const k = t / AW.BURST;
+    shake = 0.06 + k * 0.4;
+    painEl.style.opacity = (0.3 + 0.5 * k) * (0.75 + 0.25 * Math.sin(t * 16));
+    char.backGlow.intensity = k * k * 90;
+    beatT -= dt; if (beatT <= 0) { tone(70, 38, 0.2, 0.3, 'sine'); beatT = 0.6 - k * 0.42; }
+    if (Math.random() < 0.2 + k) burst(backPos(), 1 + (k > 0.6 ? 1 : 0), 5, [2, 3, 1], 0.45);
+  }
+  if (t0 < AW.BURST && t >= AW.BURST) { // 등에서 다리가 터져 나옴
+    P.awake = true; setLegsVisible(true); char.pack.visible = true;
+    char.backGlow.color.set(0x46f0ff);
+    burst(backPos(), 110, 24, [0, 1, 2, 3], 1.0);
+    noise(1.0, 0.6, 1000); tone(95, 30, 0.7, 0.35, 'sawtooth'); scream(1.4, 400, 0.15);
+    shock.position.set(P.pos.x, P.pos.y + 0.15, P.pos.z); shockT = 0;
+    fadeEl.style.opacity = 0.85; setTimeout(() => fadeEl.style.opacity = 0, 90);
+    arms.forEach(A => {
+      A.tip.copy(char.root.localToWorld(A.home.clone())).setY(P.pos.y);
+      A.anchor = null; A.step = null; A.grow = 0; A.growT = 0; A.growD = (A.k * 2 + (A.side > 0 ? 0 : 1)) * 0.035;
+    });
+  }
+  if (t >= AW.BURST) { // 회복
+    const k = (t - AW.BURST) / (AW.END - AW.BURST);
+    painEl.style.opacity = Math.max(0, 0.8 - k * 1.3);
+    char.backGlow.intensity = Math.max(0, 120 * (1 - k * 1.8));
+    shake = Math.max(0, 1.3 - k * 2.6);
+    char.pack.scale.setScalar(Math.min(1, (t - AW.BURST) / 0.2));
+    if (k > 0.6) char.headMat.map = char.faceN;
+  }
+  if (t >= AW.END) { P.awakenT = -1; shake = 0; painEl.style.opacity = 0; char.headMat.map = char.faceN; toast('각성 완료!'); }
+}
 
 // ───────────────────────── UI ─────────────────────────
-const toastEl = document.getElementById('toast'), fadeEl = document.getElementById('fade'), timerEl = document.getElementById('timer');
+const toastEl = document.getElementById('toast'), fadeEl = document.getElementById('fade');
 let toastT = null;
 function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 1400); }
 function respawn() {
@@ -389,11 +546,12 @@ function updatePlayer(dt) {
   const fwdC = V(-Math.sin(camYaw), 0, -Math.cos(camYaw)), rightC = V(Math.cos(camYaw), 0, -Math.sin(camYaw));
   const f = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + touch.my;
   const r = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + touch.mx;
-  const wish = V().addScaledVector(fwdC, f).addScaledVector(rightC, r);
+  const hurting = P.awakenT >= 0;
+  const wish = hurting ? V() : V().addScaledVector(fwdC, f).addScaledVector(rightC, r);
   const mag = Math.min(1, wish.length()), moving = mag > 0.08;
   if (moving) wish.normalize().multiplyScalar(mag);
   const run = keys.ShiftLeft || keys.ShiftRight || touch.run;
-  const jump = keys.Space || touch.jump, jumpPress = jump && !P.jumpHeld; P.jumpHeld = jump;
+  const jump = !hurting && (keys.Space || touch.jump), jumpPress = jump && !P.jumpHeld; P.jumpHeld = jump;
   P.noGrab -= dt;
 
   // 벽 잡기 판정: 이동 방향 앞 벽 / 팔이 잡은 곳
@@ -401,7 +559,7 @@ function updatePlayer(dt) {
   const held = arms.filter(A => A.anchor).length;
   let wallAhead = null;
   if (moving) { const h = raycast(chest, wish.clone().normalize(), 4.5); if (h && Math.abs(h.normal.y) < 0.5) wallAhead = h; }
-  if (P.onGround && wallAhead && wallAhead.dist < 2.2 && P.noGrab <= 0) { P.climbing = true; P.onGround = false; P.vel.y = 6; }
+  if (P.awake && P.onGround && wallAhead && wallAhead.dist < 2.2 && P.noGrab <= 0) { P.climbing = true; P.onGround = false; P.vel.y = 6; }
   if (P.onGround || P.noGrab > 0) P.climbing = false;
   if (P.climbing && held === 0 && !arms.some(A => A.step)) P.climbing = false;
 
@@ -422,7 +580,7 @@ function updatePlayer(dt) {
     P.vel.y -= GRAV * dt;
     if (jumpPress && P.onGround) { P.vel.y = 25; P.onGround = false; tone(200, 400, 0.1, 0.05, 'triangle'); }
     // 공중에서 벽 근처면 팔로 붙기
-    if (!P.onGround && wallAhead && P.noGrab <= 0 && P.vel.y < 8) P.climbing = true;
+    if (P.awake && !P.onGround && wallAhead && P.noGrab <= 0 && P.vel.y < 8) P.climbing = true;
   }
 
   // 이동 + 충돌
@@ -503,16 +661,24 @@ function knock(n, s) {
 }
 function finish() {
   P.finished = true; toast('클리어!'); tone(523, 1046, 0.5, 0.08, 'sine');
-  document.getElementById('clearTime').textContent = `기록: ${P.time.toFixed(1)}초`;
   setTimeout(() => { document.getElementById('clear').classList.remove('hidden'); document.exitPointerLock(); }, 1200);
 }
 
 // ───────────────────────── 캐릭터 애니메이션 ─────────────────────────
-const anim = { aL: 0, aR: 0, lL: 0, lR: 0, azL: 0, azR: 0, lean: 0, bob: 0, t: 0 };
+const anim = { aL: 0, aR: 0, lL: 0, lR: 0, azL: 0, azR: 0, lean: 0, bob: 0, hx: 0, t: 0 };
 function animateCharacter(dt, hv) {
   anim.t += dt;
-  let aL = 0, aR = 0, lL = 0, lR = 0, azL = 0.05, azR = -0.05, lean = 0, bob = 0;
-  if (P.climbing) {
+  let aL = 0, aR = 0, lL = 0, lR = 0, azL = 0.05, azR = -0.05, lean = 0, bob = 0, hx = 0, jit = 0;
+  const at = P.awakenT;
+  if (at >= 0) {
+    if (at < AW.BURST) { // 몸을 웅크리고 가슴을 움켜쥠
+      const k = Math.min(1, at / 0.35); jit = 0.03 + (at / AW.BURST) * 0.13;
+      aL = aR = -1.35; azL = -0.85 * k; azR = 0.85 * k; lL = 0.35; lR = -0.2;
+      lean = 0.32 * k + Math.sin(at * 9) * 0.06; bob = -0.15 * k; hx = -0.2;
+    } else if (at < AW.BURST + 0.9) { // 등을 젖히며 비명
+      aL = aR = -0.5; azL = 1.6; azR = -1.6; lean = -0.3; lL = 0.25; lR = -0.25; bob = 0.2; hx = -0.5; jit = 0.07;
+    } else { aL = aR = -0.3; azL = 0.25; azR = -0.25; lean = 0.3; hx = 0.25; bob = -0.1; } // 숨 고르기
+  } else if (P.climbing) {
     const s = Math.sin(anim.t * 9);
     aL = -2.6 + s * 0.4; aR = -2.6 - s * 0.4; lL = -0.4 - s * 0.4; lR = -0.4 + s * 0.4; lean = 0.1;
   } else if (!P.onGround) {
@@ -525,33 +691,36 @@ function animateCharacter(dt, hv) {
   } else {
     const br = Math.sin(anim.t * 2); azL = 0.06 + br * 0.03; azR = -0.06 - br * 0.03; bob = br * 0.02;
   }
-  const k = damp(16, dt);
-  for (const [key, v] of Object.entries({ aL, aR, lL, lR, azL, azR, lean, bob })) anim[key] += (v - anim[key]) * k;
-  char.armL.rotation.set(anim.aL, 0, anim.azL); char.armR.rotation.set(anim.aR, 0, anim.azR);
+  const k = damp(at >= 0 ? 10 : 16, dt);
+  for (const [key, v] of Object.entries({ aL, aR, lL, lR, azL, azR, lean, bob, hx })) anim[key] += (v - anim[key]) * k;
+  const J = () => (Math.random() - 0.5) * 2 * jit;
+  char.armL.rotation.set(anim.aL + J(), 0, anim.azL + J()); char.armR.rotation.set(anim.aR + J(), 0, anim.azR + J());
   char.legL.rotation.x = anim.lL; char.legR.rotation.x = anim.lR;
-  char.body.rotation.x = anim.lean; char.body.position.y = anim.bob;
+  char.body.rotation.set(anim.lean + J() * 0.5, 0, J());
+  char.body.position.set(J() * 0.5, anim.bob, 0);
+  char.head.rotation.set(anim.hx + J(), J() * 1.5, J() * 1.5);
 }
 
-// ───────────────────────── 거미팔: 잡고 · 놓고 · 뻗기 ─────────────────────────
+// ───────────────────────── 거미다리: 잡고 · 놓고 · 뻗기 ─────────────────────────
+const easeOutBack = x => { const c1 = 2.2, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const CLIMB = [[4.5, 9, 6], [5.5, 6, 5], [5.5, 3, 3.5], [4.5, 0.5, 2.5]];
+const DANGLE = [[4.2, 2.6, 5], [5.4, 1.6, 2], [5.4, 0.6, -1], [4.4, -0.4, -4]];
 function updateArms(dt) {
+  if (!P.awake) return;
   const hv = P.vel.length();
   const stepping = [false, false];
-  arms.forEach((A, i) => { if (A.step) stepping[GAIT[i]] = true; });
+  arms.forEach(A => { if (A.step) stepping[A.gait] = true; });
   arms.forEach((A, i) => {
+    A.growT += dt; A.grow = easeOutBack(clamp((A.growT - A.growD) / 0.5, 0, 1));
     const rootW = char.root.localToWorld(A.root.clone());
     let desired = null;
-    if (P.noGrab <= 0 && (P.onGround || P.climbing)) {
+    if (A.grow > 0.3 && P.noGrab <= 0 && (P.onGround || P.climbing)) {
       let homeW;
-      if (P.climbing) {
-        // 벽 위쪽 / 진행 방향으로 팔을 뻗어 잡을 곳 찾기
-        const local = V(A.side * 4.5, A.front ? 8 : 1.5, A.front ? 6 : 3);
-        homeW = char.root.localToWorld(local).addScaledVector(P.vel, 0.25);
-      } else homeW = char.root.localToWorld(A.home.clone()).addScaledVector(P.vel, 0.15).setY(P.pos.y - 1);
-      const dir = homeW.sub(rootW).normalize();
-      const hit = raycast(rootW, dir, REACH);
-      if (hit) desired = hit;
-      else if (P.climbing) { // 옆벽 탐색
-        const side = V(A.side, A.front ? 0.6 : -0.2, 0.3).applyQuaternion(char.root.quaternion).normalize();
+      if (P.climbing) { const c = CLIMB[A.k]; homeW = char.root.localToWorld(V(A.side * c[0], c[1], c[2])).addScaledVector(P.vel, 0.25); }
+      else homeW = char.root.localToWorld(A.home.clone()).addScaledVector(P.vel, 0.15).setY(P.pos.y - 1);
+      desired = raycast(rootW, homeW.sub(rootW).normalize(), REACH);
+      if (!desired && P.climbing) { // 옆벽 탐색
+        const side = V(A.side, 0.8 - A.k * 0.35, 0.3).applyQuaternion(char.root.quaternion).normalize();
         desired = raycast(rootW, side, REACH);
       }
     }
@@ -565,22 +734,20 @@ function updateArms(dt) {
       const thr = (P.climbing ? 3.2 : 3) + hv * 0.1;
       const far = !A.anchor || A.anchor.p.distanceTo(desired.point) > thr;
       const over = A.anchor && A.anchor.p.distanceTo(rootW) > REACH;
-      if ((far && !stepping[1 - GAIT[i]]) || over) {
+      if ((far && !stepping[1 - A.gait]) || over) {
         A.step = { from: A.tip.clone(), to: desired.point.clone(), n: desired.normal.clone(), t: 0, dur: Math.max(0.1, 0.24 - hv * 0.004) };
-        stepping[GAIT[i]] = true;
+        stepping[A.gait] = true;
       } else if (A.anchor) { A.tip.copy(A.anchor.p); A.n.copy(A.anchor.n); }
     } else {
       A.anchor = null;
-      if (A.anchor === null && !desired) {
-        const sway = Math.sin(anim.t * 3 + i) * 0.8;
-        const dangle = char.root.localToWorld(V(A.side * (4.5 + sway), A.front ? 2 : -0.5, A.front ? 4.5 : -3.5));
-        A.tip.lerp(dangle, damp(7, dt)); A.n.lerp(UP, damp(5, dt)).normalize();
-      }
+      const c = DANGLE[A.k], sway = Math.sin(anim.t * 3 + i) * 0.8;
+      const dangle = char.root.localToWorld(V(A.side * (c[0] + sway), c[1], c[2]));
+      A.tip.lerp(dangle, damp(7, dt)); A.n.lerp(UP, damp(5, dt)).normalize();
     }
     if (A.anchor && A.anchor.p.distanceTo(rootW) > REACH * 1.15) A.anchor = null;
     drawArm(A, i, rootW, anim.t);
   });
-  armInst.instanceMatrix.needsUpdate = true;
+  [armInst, bandInst, glowInst, spikeInst].forEach(m => m.instanceMatrix.needsUpdate = true);
 }
 
 // ───────────────────────── 장애물 업데이트 ─────────────────────────
@@ -604,14 +771,23 @@ function updateObstacles(dt, t) {
 
 // ───────────────────────── 카메라 ─────────────────────────
 const camTarget = V(0, 4, 0);
+let cine = 0;
 function updateCamera(dt) {
   camTarget.lerp(_c.copy(P.pos).add(V(0, 4.5, 0)), damp(12, dt));
-  const dir = V(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
-  let dist = camDist;
-  const hit = raycast(camTarget, dir, camDist);
+  // 각성 중에는 얼굴이 보이도록 정면으로 카메라 회전
+  cine += ((P.awakenT >= 0 && P.awakenT < AW.END - 0.4 ? 1 : 0) - cine) * damp(3, dt);
+  let yaw = camYaw, pitch = camPitch, cd = camDist;
+  if (cine > 0.001) {
+    let dy = P.yaw + 0.55 - camYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    yaw += dy * cine; pitch += (0.12 - pitch) * cine; cd += (9.5 - cd) * cine;
+  }
+  const dir = V(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+  let dist = cd;
+  const hit = raycast(camTarget, dir, cd);
   if (hit) dist = Math.max(2, hit.dist - 0.6);
   camera.position.copy(camTarget).addScaledVector(dir, dist);
   camera.position.y = Math.max(camera.position.y, 0.5);
+  if (shake > 0) camera.position.add(V(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(shake * 0.45));
   camera.lookAt(camTarget.x, camTarget.y + 1.5, camTarget.z);
   sun.position.copy(P.pos).addScaledVector(SUN_DIR, 120); sun.target.position.copy(P.pos);
 }
@@ -621,25 +797,32 @@ function begin() {
   AC = AC || new (window.AudioContext || window.webkitAudioContext)();
   started = true; if (!TOUCH) canvas.requestPointerLock();
 }
+function resetLegs() {
+  P.awake = false; P.awakenT = -1; shake = 0; painEl.style.opacity = 0;
+  setLegsVisible(false); char.pack.visible = false; char.pack.scale.setScalar(0.001); char.backGlow.intensity = 0;
+  char.headMat.map = char.faceN; awakenBtn.classList.remove('hidden');
+  arms.forEach(A => { A.anchor = null; A.step = null; A.grow = 0; A.growT = 0; });
+}
 document.getElementById('play').onclick = () => { document.getElementById('start').classList.add('hidden'); begin(); };
 document.getElementById('again').onclick = () => {
   document.getElementById('clear').classList.add('hidden');
-  P.cp = 0; P.finished = false; P.time = 0; respawn(); begin();
+  P.cp = 0; P.finished = false; resetLegs(); respawn(); begin();
 };
+awakenBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); startAwaken(); });
 char.root.position.copy(P.pos); char.root.updateMatrixWorld(true);
-arms.forEach(A => { A.tip.copy(char.root.localToWorld(A.home.clone())).setY(P.pos.y); A.anchor = { p: A.tip.clone(), n: UP.clone() }; });
 
 const clock = new THREE.Clock();
 let T = 0;
 function loop() {
   const dt = Math.min(clock.getDelta(), 1 / 30); T += dt;
   updateObstacles(dt, T);
-  if (started) { updatePlayer(dt); if (!P.finished) P.time += dt; }
+  if (started) { updatePlayer(dt); updateAwaken(dt); }
   else { camYaw += dt * 0.12; char.root.updateMatrixWorld(true); animateCharacter(dt, 0); }
   updateArms(dt);
+  updateFx(dt);
   updateCamera(dt);
-  timerEl.textContent = P.time.toFixed(1);
   composer.render();
   requestAnimationFrame(loop);
 }
 loop();
+
