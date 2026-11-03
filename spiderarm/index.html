@@ -4,28 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>SPIDER ARMS</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
-  html,body { width:100%; height:100%; overflow:hidden; background:#cfe3f8; font-family:Rajdhani,sans-serif; color:#0d2236; user-select:none; -webkit-user-select:none; touch-action:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#7fb8f0; font-family:Fredoka,sans-serif; color:#fff; user-select:none; -webkit-user-select:none; touch-action:none; }
   canvas { display:block; }
+  .stroke { text-shadow:0 3px 0 #0a2a4a, 2px 0 0 #0a2a4a, -2px 0 0 #0a2a4a, 0 -2px 0 #0a2a4a; }
+  #timer { position:fixed; top:14px; left:50%; transform:translateX(-50%); font:700 30px Fredoka; z-index:2; }
+  #toast { position:fixed; top:22%; left:50%; transform:translateX(-50%) scale(.6); font:700 clamp(30px,6vw,60px) Fredoka; color:#ffe14a; opacity:0; transition:.25s; z-index:2; white-space:nowrap; }
+  #toast.on { opacity:1; transform:translateX(-50%) scale(1); }
+  #fade { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity .2s; z-index:2; }
   .ov { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:18px;
-        background:#ffffffb0; backdrop-filter:blur(4px); z-index:5; text-align:center; padding:16px; overflow-y:auto; }
-  .ov h1 { font:800 clamp(38px,8vw,84px) Orbitron; letter-spacing:6px; color:#0d69ac; }
-  .keys { display:grid; grid-template-columns:auto auto; gap:6px 18px; font-size:16px; text-align:left; background:#ffffffcc; border:1px solid #0d69ac44; padding:14px 22px; border-radius:10px; }
-  .keys b { font-family:Orbitron; font-size:13px; color:#0d69ac; }
-  .btn { font:800 20px Orbitron; letter-spacing:3px; padding:14px 46px; color:#fff; background:#0d69ac; border:0; border-radius:8px; cursor:pointer; }
+        background:#0b3b6a99; backdrop-filter:blur(3px); z-index:5; text-align:center; padding:16px; overflow-y:auto; }
+  .ov h1 { font:700 clamp(40px,9vw,90px) Fredoka; color:#ffd400; }
+  .keys { display:grid; grid-template-columns:auto auto; gap:6px 18px; font-size:17px; text-align:left; background:#ffffff22; border:2px solid #ffffff55; padding:14px 22px; border-radius:14px; }
+  .keys b { color:#ffd400; }
+  .btn { font:700 24px Fredoka; padding:12px 50px; color:#fff; background:linear-gradient(#5cd65c,#2e9e2e); border:3px solid #1d5e1d; border-radius:14px; cursor:pointer; box-shadow:0 5px 0 #1d5e1d; }
   .hidden { display:none !important; }
   .touch-only { display:none; }
   body.touch .touch-only { display:grid; }
   body.touch .pc-only { display:none; }
-  #stick { position:fixed; width:120px; height:120px; margin:-60px 0 0 -60px; border-radius:50%; background:#0d69ac22; border:2px solid #0d69ac66; pointer-events:none; opacity:0; transition:opacity .15s; z-index:3; }
+  #stick { position:fixed; width:120px; height:120px; margin:-60px 0 0 -60px; border-radius:50%; background:#ffffff33; border:3px solid #ffffff88; pointer-events:none; opacity:0; transition:opacity .15s; z-index:3; }
   #stick.on { opacity:1; }
-  #knob { position:absolute; left:50%; top:50%; width:52px; height:52px; margin:-26px; border-radius:50%; background:#0d69acaa; }
-  #jumpBtn { position:fixed; right:28px; bottom:34px; width:84px; height:84px; border-radius:50%; background:#ffffffaa; border:2px solid #0d69ac88;
-             font:800 14px Orbitron; color:#0d69ac; display:none; align-items:center; justify-content:center; z-index:3; }
+  #knob { position:absolute; left:50%; top:50%; width:52px; height:52px; margin:-26px; border-radius:50%; background:#ffffffcc; }
+  #jumpBtn { position:fixed; right:28px; bottom:34px; width:90px; height:90px; border-radius:50%; background:#ffffff44; border:3px solid #ffffffaa;
+             font:700 18px Fredoka; color:#fff; display:none; align-items:center; justify-content:center; z-index:3; }
   body.touch #jumpBtn { display:flex; }
-  #jumpBtn:active { background:#0d69ac; color:#fff; }
+  #jumpBtn:active { background:#ffffffaa; }
 </style>
 <script type="importmap">
 { "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
@@ -33,24 +38,34 @@
 </head>
 <body>
 <canvas id="gl"></canvas>
+<div id="timer" class="stroke">0.0</div>
+<div id="toast" class="stroke"></div>
+<div id="fade"></div>
 <div id="stick"><div id="knob"></div></div>
-<div id="jumpBtn">JUMP</div>
+<div id="jumpBtn" class="stroke">JUMP</div>
 
 <div class="ov" id="start">
-  <h1>SPIDER ARMS</h1>
+  <h1 class="stroke">SPIDER ARMS</h1>
   <div class="keys pc-only">
     <b>WASD</b><span>이동</span>
     <b>SHIFT</b><span>달리기</span>
-    <b>SPACE</b><span>점프</span>
+    <b>SPACE</b><span>점프 / 벽에서 뛰어내리기</span>
+    <b>벽 쪽으로 이동</b><span>거미팔로 벽 잡고 기어오르기</span>
     <b>마우스 / 휠</b><span>카메라 회전 / 줌</span>
   </div>
   <div class="keys touch-only">
     <b>왼쪽 화면 드래그</b><span>이동 (끝까지 밀면 달리기)</span>
+    <b>벽 쪽으로 이동</b><span>거미팔로 벽 기어오르기</span>
     <b>오른쪽 화면 드래그</b><span>카메라 회전</span>
     <b>두 손가락 핀치</b><span>줌</span>
     <b>JUMP 버튼</b><span>점프</span>
   </div>
   <button class="btn" id="play">플레이</button>
+</div>
+<div class="ov hidden" id="clear">
+  <h1 class="stroke">클리어!</h1>
+  <p class="stroke" id="clearTime" style="font-size:26px"></p>
+  <button class="btn" id="again">다시 하기</button>
 </div>
 <script type="module" src="./main.js"></script>
 </body>
