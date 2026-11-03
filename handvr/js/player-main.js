@@ -189,7 +189,7 @@ function updateAwaken(dt) {
   const L = LEVELS[A.level];
   fx.levelUp(A.level, P.pos, P.pos.y < 1.2);
   shake(0.3 + A.level * 0.15);
-  flashScreen(L.css, 0.22 + A.level * 0.08);
+  flashScreen(A.level === 4 ? '#ffffff' : L.css, A.level === 4 ? 0.95 : 0.22 + A.level * 0.08); // 4단계는 화면이 하얗게
   audio.boom(0.45 + A.level * 0.15);
   banner(L.name, L.css);
   if (A.level >= 4) { A.charging = false; fx.rocks.drop(); }
@@ -432,22 +432,23 @@ function frame(now) {
   bacon.update(dt, { speed: hs, vy: P.vel.y, grounded: P.grounded, flying: P.flying, fast, charging: A.charging,
     strain: A.charging ? sstep(0.55, 1, A.progress) : 0, level: A.level });
   // 머리카락: 3단계 금발, 4단계 붉게
-  const hk = [0, 0.12, 0.3, 1, 0.85][A.level];
+  const hk = [0, 0.1, 0.15, 0.2, 0.75][A.level]; // 4단계는 금빛 머리
   hair.k += (hk - hair.k) * (1 - Math.exp(-dt * 4));
-  hair.color.lerp(A.level === 3 ? new THREE.Color(1.0, 0.82, 0.25) : LEVELS[A.level].color, 1 - Math.exp(-dt * 4));
+  hair.color.lerp(LEVELS[A.level].color, 1 - Math.exp(-dt * 4));
   bacon.tintHair(hair.color, hair.k);
 
+  bacon.body.visible = fx.beam.k < 0.55; // 빛줄기가 되면 몸은 빛 속으로
   updateCamera(dt, sp);
   scene.updateMatrixWorld();
   fx.update(dt, { level: A.level, chargeK: A.progress, charging: A.charging, flying: P.flying, speed: sp, fast, vel: P.vel,
     grounded: P.grounded, pos: P.pos, camPos: camera.position });
 
   // 음속 돌파
-  if (P.flying && sp > 72 && boomArmed) {
+  if (P.flying && sp > 60 && boomArmed) { // 빛줄기가 되는 순간
     boomArmed = false;
     _c.copy(P.pos); _c.y += 0.95;
-    fx.sonicBoom(_c, _dir.copy(P.vel).normalize(), A.level ? LEVELS[A.level].color : new THREE.Color(0.8, 0.9, 1));
-    shake(0.4); flashScreen('#ffffff', 0.18); audio.boom(0.75);
+    fx.sonicBoom(_c, _dir.copy(P.vel).normalize());
+    shake(0.4); flashScreen('#ffffff', 0.45); audio.boom(0.75);
   }
   if (sp < 50) boomArmed = true;
 

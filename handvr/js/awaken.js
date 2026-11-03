@@ -1,13 +1,13 @@
-// 각성 효과: 몸을 감싸는 기(오라) · 불꽃 가시 · 번개 · 보호막 · 충격파 · 바닥 금·깨진 바닥판 · 돌 조각 · 먼지 · 음속 원뿔
+// 각성 효과: 빛 구 · 빛 구슬 · 솟는 반짝이 · 바닥 빛 · 빛 돔 · 충격파 · 바닥 금·깨진 바닥판 · 바닥 조각 · 먼지 · 빠르게 날 때 빛줄기
 import * as THREE from 'three';
 
-// 단계: 1 약한 하양 · 2 파랑 · 3 노랑 · 4 빨강
+// 단계 (영상처럼): 1 하늘빛 · 2 보랏빛 · 3 분홍빛 · 4 금빛
 export const LEVELS = [
-  { name: '각성 전', css: '#ffffff', color: new THREE.Color(1, 1, 1), power: 0, scale: 0.75 },
-  { name: '1단계 · 하얀 기운', css: '#f4f7ff', color: new THREE.Color(0.8, 0.88, 1.0), power: 0.5, scale: 0.82 },
-  { name: '2단계 · 파란 기운', css: '#5aa8ff', color: new THREE.Color(0.18, 0.55, 1.0), power: 0.8, scale: 0.97 },
-  { name: '3단계 · 노란 기운', css: '#ffd23a', color: new THREE.Color(1.0, 0.78, 0.12), power: 1.05, scale: 1.12 },
-  { name: '4단계 · 붉은 기운', css: '#ff4a3a', color: new THREE.Color(1.0, 0.13, 0.06), power: 1.3, scale: 1.3 },
+  { name: '각성 전', css: '#ffffff', color: new THREE.Color(1, 1, 1), scale: 0.8 },
+  { name: '1단계 · 하늘빛', css: '#5fe3ff', color: new THREE.Color(0.3, 0.95, 1.0), scale: 0.85 },
+  { name: '2단계 · 보랏빛', css: '#a07bff', color: new THREE.Color(0.6, 0.42, 1.0), scale: 1.0 },
+  { name: '3단계 · 분홍빛', css: '#ff74cf', color: new THREE.Color(1.0, 0.42, 0.82), scale: 1.15 },
+  { name: '4단계 · 금빛', css: '#ffd668', color: new THREE.Color(1.0, 0.8, 0.36), scale: 1.3 },
 ];
 
 const NOISE = /* glsl */`
@@ -26,303 +26,292 @@ const addMat = (o) => new THREE.ShaderMaterial({ transparent: true, depthWrite: 
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rnd = (a, b) => a + Math.random() * (b - a);
 
-// 기 껍질 모양: 발밑에서 부풀었다가 머리 위로 뾰족하게 (사진의 빨간 선처럼)
-const AURA_H = 2.9, AURA_R = 1.05;
-const shellR = t => AURA_R * Math.pow(Math.max(1 - t, 0), 0.72) * (0.62 + 0.38 * Math.min(1, t / 0.3));
-const SHELL_R_GLSL = `float shellR(float t){ return ${AURA_R.toFixed(3)} * pow(max(1.0 - t, 0.0), 0.72) * (0.62 + 0.38 * min(1.0, t / 0.3)); }`;
+const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+const WHITE = new THREE.Color(1, 1, 1);
 
-// ───────── 오라 ─────────
+// 둥근 빛 텍스처 (빛 구슬·가운데 빛·빛줄기 머리)
+let _glow;
+function glowTexture() {
+  if (_glow) return _glow;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.22, 'rgba(255,255,255,0.9)');
+  gr.addColorStop(0.5, 'rgba(255,255,255,0.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  _glow = new THREE.CanvasTexture(c); _glow.colorSpace = THREE.SRGBColorSpace;
+  return _glow;
+}
+const glowSprite = (o = {}) => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, ...o }));
+  s.frustumCulled = false;
+  return s;
+};
+const SPHERE_VS = `varying vec3 vN, vV, vL; void main(){ vec4 wp = modelMatrix * vec4(position, 1.0);
+  vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); vL = normalize(position); gl_Position = projectionMatrix * viewMatrix * wp; }`;
+
+// ───────── 기운 (영상처럼): 몸을 감싸는 빛 구 + 가로 빛줄기 + 둘레를 도는 빛 구슬 + 위로 솟는 반짝이 + 바닥 빛 ─────────
+const ORB_R = 1.25, ORB_Y = 1.0;
 class Aura {
-  constructor(parent) {
-    this.u = { uTime: { value: 0 }, uColor: { value: new THREE.Color(1, 1, 1) }, uAlpha: { value: 0 }, uPower: { value: 1 },
-      uActive: { value: 0 }, uGround: { value: 1 }, uScale: { value: 1 } };
-    this.group = new THREE.Group();
-    parent.add(this.group);
-    // 껍질 2겹
-    const pts = [];
-    for (let i = 0; i <= 40; i++) { const t = i / 40; pts.push(new THREE.Vector2(Math.max(shellR(t), 0.001), t * AURA_H)); }
-    const geo = new THREE.LatheGeometry(pts, 72);
-    const shellMat = (inner) => addMat({
-      side: THREE.DoubleSide, uniforms: { ...this.u, uInner: { value: inner } },
-      vertexShader: NOISE + `
-        uniform float uTime, uPower, uScale; varying vec3 vN, vV; varying vec2 vQ;
-        void main(){
-          vec3 p = position; float a = atan(p.z, p.x), h = uv.y;
-          float n = noise(vec3(a * 2.0, h * 3.0 - uTime * 2.6, uTime * 0.7));
-          float fl = noise(vec3(a * 5.0 + 3.0, h * 7.0 - uTime * 7.0, 1.0));
-          p.xz *= 1.0 + (n - 0.5) * 0.4 * uPower + fl * 0.14 * h;
-          p.y += (fl - 0.35) * 0.6 * h * h * uPower;
-          p *= uScale;
-          vec4 wp = modelMatrix * vec4(p, 1.0);
-          vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); vQ = vec2(a, h);
-          gl_Position = projectionMatrix * viewMatrix * wp;
-        }`,
-      fragmentShader: NOISE + `
-        uniform vec3 uColor; uniform float uTime, uAlpha, uInner; varying vec3 vN, vV; varying vec2 vQ;
+  constructor(local, flat) {
+    this.u = { uTime: { value: 0 }, uColor: { value: new THREE.Color(1, 1, 1) }, uAlpha: { value: 0 }, uActive: { value: 0 },
+      uGround: { value: 0 }, uScale: { value: 1 } };
+    // 빛 구
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(ORB_R, 64, 32), addMat({
+      uniforms: this.u, vertexShader: SPHERE_VS,
+      fragmentShader: NOISE + `uniform vec3 uColor; uniform float uTime, uAlpha; varying vec3 vN, vV, vL;
         void main(){
           float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
-          float a = vQ.x, h = vQ.y;
-          float s1 = fbm(vec3(a * 3.0, h * 2.4 - uTime * 3.4, uTime * 0.5));
-          float st = pow(noise(vec3(a * 15.0, h * 1.7 - uTime * 5.0, uInner * 7.0)), 3.0);
-          float edge = pow(f, 2.0);
-          float body = (0.03 + edge * 1.1) * (0.4 + s1) + st * 0.9 * (0.25 + edge);
-          float fade = smoothstep(0.0, 0.1, h) * (1.0 - 0.75 * smoothstep(0.7, 1.0, h));
-          float al = body * fade * uAlpha * (uInner > 0.5 ? 0.45 : 1.0);
-          vec3 col = mix(uColor, vec3(1.0), clamp(st * 0.35 + uInner * 0.1, 0.0, 1.0));
-          gl_FragColor = vec4(col * al * 0.8, min(al * 0.75, 0.85));` + OUT + `
+          float rim = pow(f, 2.2);
+          float sx = noise(vec3(vL.y * 13.0, (vL.x + vL.z) * 0.7 - uTime * 1.8, uTime * 0.25)); // 가로로 긴 빛줄기
+          float streak = smoothstep(0.6, 0.92, sx) * (1.0 - abs(vL.y) * 0.8);
+          float sw = fbm(vL * 2.5 + vec3(0.0, -uTime * 0.7, uTime * 0.2));
+          float a = (0.16 + rim * 1.05 + streak * 0.75 + sw * 0.18) * uAlpha;
+          vec3 col = mix(uColor, vec3(1.0), clamp(rim * 0.2 + streak * 0.7, 0.0, 1.0));
+          gl_FragColor = vec4(col * a * 1.05, min(a * 0.72, 0.92));` + OUT + `
         }`,
-    });
-    this.outer = new THREE.Mesh(geo, shellMat(0));
-    this.inner = new THREE.Mesh(geo, shellMat(1));
-    this.inner.scale.set(0.78, 0.86, 0.78);
-    this.outer.frustumCulled = this.inner.frustumCulled = false;
-    this.group.add(this.outer, this.inner);
-
-    // 불꽃 가시: 몸 둘레에서 솟아오르는 뾰족한 불꽃 + 발밑에서 바깥으로 튀는 불꽃 (GPU 에서 움직임 계산)
-    const NB = 230, NG = 70, N = NB + NG;
-    const quad = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
-    const g = new THREE.InstancedBufferGeometry();
+    }));
+    this.ball.position.y = ORB_Y; this.ball.frustumCulled = false;
+    local.add(this.ball);
+    // 가운데 밝은 빛 (캐릭터가 빛 속에 있는 것처럼)
+    this.core = glowSprite({ depthTest: false });
+    this.core.position.y = ORB_Y; this.core.renderOrder = 5;
+    local.add(this.core);
+    // 반짝이: 위로 솟는 것(0) + 구 둘레를 도는 빛 구슬(1) — 움직임은 GPU 에서
+    const NS = 150, NO = 7, N = NS + NO;
+    const quad = new THREE.PlaneGeometry(1, 1), g = new THREE.InstancedBufferGeometry();
     g.index = quad.index; g.attributes.position = quad.attributes.position; g.attributes.uv = quad.attributes.uv;
     const seed = new Float32Array(N * 4), kind = new Float32Array(N * 2);
     for (let i = 0; i < N; i++) {
       seed.set([Math.random() * Math.PI * 2, Math.random(), Math.random(), Math.random()], i * 4);
-      kind.set([i < NB ? 0 : 1, Math.random()], i * 2);
+      kind.set(i < NS ? [0, Math.random()] : [1, (i - NS) / NO * 0.9], i * 2);
     }
     g.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seed, 4));
     g.setAttribute('aKind', new THREE.InstancedBufferAttribute(kind, 2));
     g.instanceCount = N;
-    this.tongues = new THREE.Mesh(g, addMat({
-      side: THREE.DoubleSide, uniforms: this.u,
-      vertexShader: SHELL_R_GLSL + `
-        attribute vec4 aSeed; attribute vec2 aKind;
-        uniform float uTime, uActive, uGround, uScale, uAlpha, uPower; varying vec2 vQ; varying float vA;
+    this.motes = new THREE.Mesh(g, addMat({
+      uniforms: this.u,
+      vertexShader: `attribute vec4 aSeed; attribute vec2 aKind; uniform float uTime, uActive, uScale, uAlpha;
+        varying vec2 vUv; varying float vA, vK;
         void main(){
-          float life = 0.42 + aSeed.z * 0.5;
-          float age = fract(uTime / life + aSeed.y);
-          float on = step(aKind.y, uActive) * (aKind.x > 0.5 ? uGround : 1.0);
-          vec3 rad = vec3(cos(aSeed.x), 0.0, sin(aSeed.x));
-          vec3 base, dir; float len, wid;
+          vec3 c; float size, a;
           if (aKind.x < 0.5) {
-            float y = (aSeed.w * 1.7 + age * (1.0 + aSeed.z * 1.5)) * uScale;
-            float t = clamp(y / (${AURA_H.toFixed(2)} * uScale), 0.0, 1.0);
-            base = rad * shellR(t) * uScale * (0.7 + 0.25 * aSeed.y) + vec3(0.0, y, 0.0);
-            dir = normalize(vec3(0.0, 1.0, 0.0) - rad * (0.15 + t * 0.7));
-            len = (0.35 + aSeed.w * 0.55) * uScale * (0.6 + 0.5 * uPower);
-            wid = (0.08 + aSeed.z * 0.12) * uScale;
+            float life = 1.1 + aSeed.z * 1.4, age = fract(uTime / life + aSeed.y);
+            float r = (0.15 + aSeed.w * 1.1) * uScale * (1.0 + age * 0.6), ang = aSeed.x + age * 1.5;
+            c = vec3(cos(ang) * r, ${ORB_Y.toFixed(2)} + age * (5.0 + aSeed.z * 5.0) * uScale, sin(ang) * r);
+            size = (0.06 + aSeed.w * 0.1) * (0.6 + 0.4 * sin(uTime * 9.0 + aSeed.x * 7.0));
+            a = sin(age * 3.14159);
           } else {
-            base = rad * (0.3 + age * 1.1) * uScale + vec3(0.0, 0.02, 0.0);
-            dir = normalize(rad + vec3(0.0, 0.45 + aSeed.w * 0.7, 0.0));
-            len = (0.3 + aSeed.w * 0.5) * uScale * (0.6 + 0.5 * uPower);
-            wid = (0.1 + aSeed.z * 0.1) * uScale;
+            float ang = aSeed.x + uTime * (1.2 + aSeed.z * 1.2) * (aSeed.w > 0.5 ? 1.0 : -1.0);
+            float tilt = (aSeed.y - 0.5) * 1.6, r = ${ORB_R.toFixed(2)} * uScale * (1.1 + aSeed.w * 0.35);
+            c = vec3(cos(ang) * r, ${ORB_Y.toFixed(2)} + sin(ang) * r * tilt * 0.6 + sin(uTime * 2.0 + aSeed.x) * 0.25, sin(ang) * r);
+            size = 0.32 + aSeed.z * 0.18; a = 1.0;
           }
-          float grow = pow(sin(age * 3.14159), 0.6);
-          vec3 wb = (modelMatrix * vec4(base, 1.0)).xyz;
-          vec3 wd = normalize(mat3(modelMatrix) * dir);
-          vec3 side = normalize(cross(wd, normalize(cameraPosition - wb)));
-          vec3 wp = wb + wd * position.y * len * grow * on + side * position.x * wid * on;
-          vQ = vec2(position.x, position.y); vA = on * grow * uAlpha;
-          gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+          a *= step(aKind.y, uActive) * uAlpha;
+          vec4 mv = modelViewMatrix * vec4(c, 1.0);
+          mv.xy += position.xy * size * 2.0;
+          vUv = uv; vA = a; vK = aKind.x;
+          gl_Position = projectionMatrix * mv;
         }`,
-      fragmentShader: `
-        uniform vec3 uColor; varying vec2 vQ; varying float vA;
-        void main(){
-          float w = 0.5 * pow(1.0 - vQ.y, 1.25);
-          float m = 1.0 - smoothstep(w * 0.45, w, abs(vQ.x));
-          float core = 1.0 - smoothstep(0.0, w * 0.55, abs(vQ.x));
-          float a = m * vA * smoothstep(0.0, 0.15, vQ.y);
-          vec3 col = mix(uColor, vec3(1.0), core * 0.3 * (1.0 - vQ.y));
-          gl_FragColor = vec4(col * a * (0.75 + core * 0.5), a * 0.8);` + OUT + `
-        }`,
+      fragmentShader: `uniform vec3 uColor; varying vec2 vUv; varying float vA, vK;
+        void main(){ float d = length(vUv - 0.5) * 2.0; float a = exp(-d * d * 4.0) * vA;
+          vec3 col = mix(uColor, vec3(1.0), exp(-d * d * 14.0) * 0.8 + (1.0 - vK) * 0.3);
+          gl_FragColor = vec4(col * a * 1.6, a * 0.55);` + OUT + `}`,
     }));
-    this.tongues.frustumCulled = false;
-    this.group.add(this.tongues);
-
+    this.motes.frustumCulled = false;
+    flat.add(this.motes);
+    // 바닥 빛 (영상의 보랏빛 바닥처럼) + 테두리 빛 고리
+    this.floor = new THREE.Mesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, ...PREMUL, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+      uniforms: this.u,
+      vertexShader: `varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: NOISE + `uniform vec3 uColor; uniform float uTime, uAlpha, uGround; varying vec2 vP;
+        void main(){ float r = length(vP);
+          float fill = smoothstep(1.0, 0.0, r) * 0.55 * (0.75 + 0.5 * noise(vec3(vP * 4.0, uTime * 0.8)));
+          float ring = exp(-pow((r - 0.9 - 0.04 * sin(uTime * 3.0)) * 16.0, 2.0));
+          float a = (fill + ring * 0.9) * uAlpha * uGround;
+          gl_FragColor = vec4(mix(uColor, vec3(1.0), ring * 0.5) * a, a * 0.7);` + OUT + `}`,
+    }));
+    this.floor.frustumCulled = false;
+    flat.add(this.floor);
     this.light = new THREE.PointLight(0xffffff, 0, 9, 1.6);
-    this.light.position.y = 1.0;
-    parent.add(this.light); // 그룹을 숨겨도 빛 개수가 그대로여야 셰이더를 다시 만들지 않는다
+    this.light.position.y = ORB_Y;
+    local.add(this.light); // 빛은 숨기지 않는다 (빛 개수가 바뀌면 셰이더를 다시 만들어 끊김)
     this.k = 0; this.color = new THREE.Color(1, 1, 1);
   }
 
-  // k: 세기(0~1.5), color: 목표 색, active: 불꽃 개수 비율, ground: 발밑 불꽃(땅 위일 때)
-  update(dt, t, { k, color, active, ground, scale, power }) {
-    const e = 1 - Math.exp(-dt * 5);
+  update(dt, t, { k, color, active, scale, feetY }) {
+    const e = 1 - Math.exp(-dt * 5), u = this.u;
     this.k += (k - this.k) * e;
     this.color.lerp(color, 1 - Math.exp(-dt * 7));
-    const u = this.u;
-    u.uTime.value = t; u.uColor.value.copy(this.color);
-    u.uAlpha.value = this.k;
+    u.uTime.value = t; u.uColor.value.copy(this.color); u.uAlpha.value = this.k;
     u.uActive.value += (active - u.uActive.value) * e;
-    u.uGround.value += (ground - u.uGround.value) * (1 - Math.exp(-dt * 8));
     u.uScale.value += (scale - u.uScale.value) * e;
-    u.uPower.value += (power - u.uPower.value) * e;
-    this.group.visible = this.k > 0.005;
+    u.uGround.value = 1 - sstep(0, 3, feetY);
+    const s = u.uScale.value * (1 + 0.025 * Math.sin(t * 7));
+    this.ball.scale.setScalar(s);
+    this.core.scale.setScalar(1.7 * s);
+    this.core.material.color.copy(this.color).lerp(WHITE, 0.5);
+    this.core.material.opacity = this.k * 0.5;
+    this.floor.position.y = 0.012 - feetY;
+    this.floor.scale.setScalar(3.4 * s);
+    this.ball.visible = this.core.visible = this.motes.visible = this.floor.visible = this.k > 0.005;
     this.light.color.copy(this.color);
-    this.light.intensity = this.k * (3 + 1.2 * Math.sin(t * 23) * Math.sin(t * 7.3));
+    this.light.intensity = this.k * (3 + 1.2 * Math.sin(t * 13) * Math.sin(t * 5.3));
   }
 }
 
-// ───────── 번개 (3·4단계): 몸 주위에 튀는 지그재그 전기 ─────────
-class Lightning {
-  constructor(scene, local) {
-    this.local = local; this.max = 10; this.seg = 9; this.bolts = [];
-    const nq = this.max * this.seg;
+// ───────── 하늘에 떠 있는 빛 구슬 (각성하면 카메라 앞쪽 하늘에 줄지어) ─────────
+class SkyOrbs {
+  constructor(scene, n = 5) {
+    this.group = new THREE.Group(); scene.add(this.group);
+    this.list = Array.from({ length: n }, () => { const s = glowSprite(); this.group.add(s); return s; });
+    this.k = 0; this.ang = 0; this.color = new THREE.Color(1, 1, 1);
+  }
+  update(dt, t, k, pos, camPos, color) {
+    this.k += (k - this.k) * (1 - Math.exp(-dt * 2));
+    this.group.visible = this.k > 0.01;
+    if (!this.group.visible) return;
+    this.ang += wrapA(Math.atan2(pos.x - camPos.x, pos.z - camPos.z) - this.ang) * (1 - Math.exp(-dt * 1.5));
+    this.color.copy(color).lerp(WHITE, 0.55);
+    const n = this.list.length;
+    this.list.forEach((s, i) => {
+      const a = this.ang + (i - (n - 1) / 2) * 0.3;
+      s.position.set(pos.x + Math.sin(a) * 14, Math.max(pos.y, 0) + 7.5 + Math.sin(t * 1.3 + i * 1.7) * 0.35, pos.z + Math.cos(a) * 14);
+      s.scale.setScalar(2.0 + 0.15 * Math.sin(t * 2.1 + i));
+      s.material.color.copy(this.color);
+      s.material.opacity = this.k * 0.9;
+    });
+  }
+}
+
+// ───────── 빛줄기: 빠르게 날면 하얀 빛이 되어 꼬리를 끌며 날아감 (영상처럼) ─────────
+class LightBeam {
+  constructor(scene, N = 72) {
+    this.N = N; this.pts = [];
     const g = new THREE.BufferGeometry();
-    this.pos = new Float32Array(nq * 4 * 3);
-    const uv = new Float32Array(nq * 4 * 2), idx = [];
-    for (let q = 0; q < nq; q++) {
-      uv.set([0, 0, 0, 1, 1, 0, 1, 1], q * 8);
-      const b = q * 4; idx.push(b, b + 1, b + 2, b + 2, b + 1, b + 3);
-    }
+    this.pos = new Float32Array(N * 6); this.uv = new Float32Array(N * 4);
+    const idx = [];
+    for (let i = 0; i < N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('uv', new THREE.BufferAttribute(this.uv, 2).setUsage(THREE.DynamicDrawUsage));
     g.setIndex(idx);
-    this.u = { uColor: { value: new THREE.Color() } };
+    this.u = { uK: { value: 0 }, uColor: { value: new THREE.Color(1, 1, 1) } };
     this.mesh = new THREE.Mesh(g, addMat({
       side: THREE.DoubleSide, uniforms: this.u,
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform vec3 uColor; varying vec2 vUv;
-        void main(){ float d = abs(vUv.y * 2.0 - 1.0); float a = exp(-d * d * 7.0); vec3 c = mix(uColor, vec3(1.0), exp(-d * d * 30.0));
-          gl_FragColor = vec4(c * a * 2.2, a * 0.4);` + OUT + `}`,
+      fragmentShader: `uniform vec3 uColor; uniform float uK; varying vec2 vUv;
+        void main(){ float x = abs(vUv.x), t = vUv.y;
+          float core = exp(-x * x * 5.0), edge = smoothstep(1.0, 0.45, x);
+          float a = edge * pow(1.0 - t, 0.8) * uK;
+          vec3 col = mix(uColor, vec3(1.0), 0.7 + 0.3 * core) * (1.0 + core * 1.8 * (1.0 - t));
+          gl_FragColor = vec4(col * a, a * 0.85);` + OUT + `}`,
     }));
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
-    this.acc = 0;
-  }
-  spawn(scale) {
-    if (this.bolts.length >= this.max) this.bolts.shift();
-    const pts = [], a = Math.random() * Math.PI * 2, r = rnd(0.25, 0.6) * scale;
-    const p = new THREE.Vector3(Math.cos(a) * r, rnd(0.2, 1.9) * scale, Math.sin(a) * r), d = new THREE.Vector3(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).normalize();
-    for (let i = 0; i <= this.seg; i++) {
-      pts.push(p.clone());
-      d.add(new THREE.Vector3(rnd(-1.2, 1.2), rnd(-1.2, 1.2), rnd(-1.2, 1.2))).normalize();
-      p.addScaledVector(d, rnd(0.07, 0.17) * scale);
-    }
-    this.bolts.push({ pts, life: rnd(0.05, 0.13), w: rnd(0.018, 0.04) * scale });
-  }
-  update(dt, rate, scale, color, camPos) {
-    this.u.uColor.value.copy(color);
-    this.acc += dt * rate;
-    while (this.acc > 1) { this.acc -= 1; this.spawn(scale); }
-    this.bolts = this.bolts.filter(b => (b.life -= dt) > 0);
-    this.pos.fill(0);
-    const m = this.local.matrixWorld, A = new THREE.Vector3(), B = new THREE.Vector3(), s = new THREE.Vector3(), v = new THREE.Vector3();
-    let q = 0;
-    for (const b of this.bolts) {
-      for (let i = 0; i < this.seg; i++, q++) {
-        A.copy(b.pts[i]).applyMatrix4(m); B.copy(b.pts[i + 1]).applyMatrix4(m);
-        s.subVectors(B, A).cross(v.subVectors(camPos, A)).normalize().multiplyScalar(b.w);
-        this.pos.set([A.x - s.x, A.y - s.y, A.z - s.z, A.x + s.x, A.y + s.y, A.z + s.z, B.x - s.x, B.y - s.y, B.z - s.z, B.x + s.x, B.y + s.y, B.z + s.z], q * 12);
-      }
-    }
-    this.mesh.geometry.attributes.position.needsUpdate = true;
-    this.mesh.visible = this.bolts.length > 0;
-  }
-}
-
-// ───────── 보호막: 육각 무늬 에너지 막 (충격 때 물결, 빠르게 날면 앞쪽이 달아오름) ─────────
-class Shield {
-  constructor(parent) {
-    this.u = { uTime: { value: 0 }, uColor: { value: new THREE.Color() }, uAlpha: { value: 0 }, uHeat: { value: 0 },
-      uVel: { value: new THREE.Vector3(0, 0, 1) }, uHits: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 1, 0, -1)) } };
-    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 72, 40), addMat({
-      side: THREE.DoubleSide, uniforms: this.u,
-      vertexShader: `varying vec3 vN, vV, vL; varying vec2 vUv;
-        void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz);
-          vL = normalize(position); vUv = uv; gl_Position = projectionMatrix * viewMatrix * wp; }`,
-      fragmentShader: `uniform vec3 uColor, uVel; uniform float uTime, uAlpha, uHeat; uniform vec4 uHits[4];
-        varying vec3 vN, vV, vL; varying vec2 vUv;
-        float hexD(vec2 p){ p = abs(p); return max(dot(p, normalize(vec2(1.0, 1.732))), p.x); }
-        vec4 hexC(vec2 uv){ vec2 r = vec2(1.0, 1.732), h = r * 0.5; vec2 a = mod(uv, r) - h, b = mod(uv - h, r) - h;
-          vec2 gv = dot(a, a) < dot(b, b) ? a : b; return vec4(gv, uv - gv); }
-        void main(){
-          float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
-          vec4 hx = hexC(vec2(vUv.x * 30.0, vUv.y * 15.0));
-          float line = smoothstep(0.07, 0.0, 0.5 - hexD(hx.xy));
-          float cell = step(0.94, fract(sin(dot(hx.zw, vec2(12.9898, 78.233)) + floor(uTime * 5.0)) * 43758.5453));
-          float scan = exp(-pow((fract(vUv.y * 1.5 - uTime * 0.35) - 0.5) * 24.0, 2.0));
-          float rip = 0.0;
-          for (int i = 0; i < 4; i++) { vec4 h = uHits[i]; if (h.w >= 0.0 && h.w < 1.0) {
-            float d = acos(clamp(dot(vL, h.xyz), -1.0, 1.0)); rip += exp(-pow((d - h.w * 3.3) * 6.0, 2.0)) * (1.0 - h.w); } }
-          float heat = pow(max(dot(vL, uVel), 0.0), 5.0) * uHeat;
-          float a = (pow(f, 3.5) * 0.7 + line * (0.04 + f * 0.3) + cell * 0.04 + scan * 0.05 * (0.3 + line) + rip * (0.35 + line * 1.2)) * uAlpha + heat * (0.5 + line);
-          vec3 col = mix(uColor, vec3(1.0), 0.3 + rip * 0.4);
-          col = mix(col, vec3(1.0, 0.72, 0.42), clamp(heat * 1.3, 0.0, 1.0));
-          gl_FragColor = vec4(col * a * 0.8, min(a * 0.5, 0.8));` + OUT + `
-        }`,
-    }));
-    this.mesh.scale.set(1.45, 1.75, 1.45);
-    this.mesh.frustumCulled = false;
-    parent.add(this.mesh);
-    this.hitI = 0; this.k = 0; this.color = new THREE.Color(1, 1, 1);
-  }
-  hit(dirLocal) { const h = this.u.uHits.value[this.hitI++ % 4]; h.set(dirLocal.x, dirLocal.y, dirLocal.z, 0); }
-  update(dt, t, k, color, heat, velLocal) {
-    this.k += (k - this.k) * (1 - Math.exp(-dt * 4));
-    this.color.lerp(color, 1 - Math.exp(-dt * 6));
-    const u = this.u;
-    u.uTime.value = t; u.uColor.value.copy(this.color); u.uAlpha.value = this.k;
-    u.uHeat.value += (heat - u.uHeat.value) * (1 - Math.exp(-dt * 5));
-    u.uVel.value.copy(velLocal);
-    for (const h of u.uHits.value) if (h.w >= 0) { h.w += dt * 0.9; if (h.w >= 1) h.w = -1; }
-    this.mesh.visible = this.k > 0.005 || u.uHeat.value > 0.01;
-    const pulse = 1 + 0.015 * Math.sin(t * 3);
-    this.mesh.scale.set(1.45 * pulse, 1.75 * pulse, 1.45 * pulse);
-  }
-}
-
-// ───────── 음속 원뿔: 빠르게 날면 앞에 생기는 충격파 원뿔 + 앞쪽 빛 원반 ─────────
-class SonicCone {
-  constructor(scene) {
-    this.group = new THREE.Group();
-    scene.add(this.group);
-    this.u = { uTime: { value: 0 }, uK: { value: 0 }, uColor: { value: new THREE.Color(1, 1, 1) } };
-    const cone = (L, R, k0) => {
-      const pts = [];
-      for (let i = 0; i <= 30; i++) { const v = i / 30; pts.push(new THREE.Vector2(0.1 + R * Math.pow(v, 0.5), v * L)); }
-      const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 64), addMat({
-        side: THREE.DoubleSide, uniforms: { ...this.u, uMul: { value: k0 } },
-        vertexShader: `varying vec3 vN, vV; varying vec2 vUv;
-          void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); vUv = uv;
-            gl_Position = projectionMatrix * viewMatrix * wp; }`,
-        fragmentShader: NOISE + `uniform vec3 uColor; uniform float uTime, uK, uMul; varying vec3 vN, vV; varying vec2 vUv;
-          void main(){
-            float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
-            float v = vUv.y;
-            float rings = pow(0.5 + 0.5 * sin(v * 34.0 - uTime * 55.0), 5.0);
-            float n = noise(vec3(vUv.x * 12.0, v * 5.0 - uTime * 14.0, uTime * 2.0));
-            float a = (pow(f, 1.7) * 0.9 + 0.07 + rings * 0.45 * f) * pow(1.0 - v, 1.4) * (0.5 + 0.7 * n);
-            a += smoothstep(0.14, 0.0, v) * 1.4;
-            vec3 col = mix(uColor, vec3(1.0), 0.4 + 0.4 * rings);
-            gl_FragColor = vec4(col * a * uK * uMul * 0.7, min(a * uK * uMul * 0.55, 0.9));` + OUT + `
-          }`,
-      }));
-      m.frustumCulled = false;
-      return m;
-    };
-    this.group.add(cone(5.5, 1.9, 1.3), cone(9, 3.4, 0.55));
-    // 앞쪽 빛 원반 (공기를 밀어내는 면)
-    this.disc = new THREE.Mesh(new THREE.CircleGeometry(1.25, 48), addMat({
-      side: THREE.DoubleSide, uniforms: this.u,
-      vertexShader: `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: NOISE + `uniform vec3 uColor; uniform float uTime, uK; varying vec2 vP;
-        void main(){ float r = length(vP) / 1.25; float a = (exp(-r * r * 6.0) * 1.2 + smoothstep(1.0, 0.75, r) * smoothstep(0.55, 0.95, r) * 0.6)
-          * (0.7 + 0.5 * noise(vec3(atan(vP.y, vP.x) * 4.0, r * 3.0 - uTime * 9.0, 0.0)));
-          gl_FragColor = vec4(mix(uColor, vec3(1.0), 0.7) * a * uK * 0.8, a * uK * 0.35);` + OUT + `}`,
-    }));
-    this.disc.rotation.x = Math.PI / 2;
-    this.disc.position.y = 0.05;
-    this.disc.frustumCulled = false;
-    this.group.add(this.disc);
+    this.head = glowSprite({ depthTest: false, blending: THREE.NormalBlending }); // 하얗게 덮어서 캐릭터가 빛 속에 들어간 것처럼
+    this.head.renderOrder = 6;
+    scene.add(this.head);
     this.k = 0;
+    this._t = new THREE.Vector3(); this._s = new THREE.Vector3(); this._v = new THREE.Vector3();
   }
-  update(dt, t, k, center, dir, color) {
-    this.k += (k - this.k) * (1 - Math.exp(-dt * 6));
-    this.u.uTime.value = t; this.u.uK.value = this.k;
+  update(dt, t, k, center, vel, camPos, color) {
+    this.k += (k - this.k) * (1 - Math.exp(-dt * (k > this.k ? 6 : 3)));
+    const on = this.k > 0.01, sp = vel.length(), P = this.pts;
+    this.mesh.visible = this.head.visible = on;
+    // 지나온 자리 (가장 최근이 앞)
+    if (P.length < 2 || P[1].distanceTo(center) > 0.35) P.unshift(center.clone()); else P[0].copy(center);
+    const L = Math.min(34, 2 + sp * 0.22);
+    let acc = 0, n = 1;
+    while (n < P.length && n < this.N - 1) { acc += P[n].distanceTo(P[n - 1]); n++; if (acc > L) break; }
+    P.length = Math.min(P.length, n);
+    if (!on) return;
+    this.u.uK.value = this.k;
     this.u.uColor.value.lerp(color, 1 - Math.exp(-dt * 5));
-    this.group.visible = this.k > 0.01;
-    if (!this.group.visible) return;
-    this.group.position.copy(center).addScaledVector(dir, 1.35);
-    this.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().negate());
+    const arr = [center.clone().addScaledVector(sp > 0.1 ? this._v.copy(vel).divideScalar(sp) : this._v.set(0, 0, 0), 0.6), ...P];
+    const m = Math.min(arr.length, this.N);
+    let total = 0;
+    for (let i = 1; i < m; i++) total += arr[i].distanceTo(arr[i - 1]);
+    total = Math.max(total, 0.01);
+    let d = 0;
+    for (let i = 0; i < this.N; i++) {
+      const j = Math.min(i, m - 1), p = arr[j];
+      if (i > 0 && i < m) d += arr[i].distanceTo(arr[i - 1]);
+      const tt = Math.min(1, d / total);
+      this._t.subVectors(arr[Math.max(0, j - 1)], arr[Math.min(m - 1, j + 1)]);
+      if (this._t.lengthSq() < 1e-6) this._t.set(0, 0, 1);
+      this._s.crossVectors(this._t, this._v.subVectors(camPos, p)).normalize().multiplyScalar(0.95 * (1 - 0.3 * tt));
+      this.pos.set([p.x - this._s.x, p.y - this._s.y, p.z - this._s.z, p.x + this._s.x, p.y + this._s.y, p.z + this._s.z], i * 6);
+      this.uv.set([-1, tt, 1, tt], i * 4);
+    }
+    const g = this.mesh.geometry;
+    g.attributes.position.needsUpdate = g.attributes.uv.needsUpdate = true;
+    g.setDrawRange(0, Math.max(0, m - 1) * 6);
+    this.head.position.copy(center);
+    this.head.scale.setScalar(3.8 * (0.94 + 0.06 * Math.sin(t * 23)));
+    this.head.material.color.copy(this.u.uColor.value).lerp(WHITE, 0.8).multiplyScalar(1.6);
+    this.head.material.opacity = this.k;
+  }
+}
+
+// ───────── 단계가 오를 때 터지는 빛 돔 ─────────
+class Domes {
+  constructor(scene) { this.scene = scene; this.list = []; this.geo = new THREE.SphereGeometry(1, 48, 24); }
+  spawn(pos, maxR, dur, color, white = 0) {
+    const m = new THREE.Mesh(this.geo, addMat({
+      side: THREE.DoubleSide,
+      uniforms: { uColor: { value: color.clone() }, uA: { value: 0 }, uW: { value: white }, uTime: { value: 0 } },
+      vertexShader: SPHERE_VS,
+      fragmentShader: NOISE + `uniform vec3 uColor; uniform float uA, uW, uTime; varying vec3 vN, vV, vL;
+        void main(){ float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+          float n = fbm(vL * 3.0 + vec3(0.0, -uTime * 2.0, 0.0));
+          float a = (0.35 + pow(f, 2.0) * 0.9) * (0.7 + 0.6 * n) * uA;
+          vec3 col = mix(uColor, vec3(1.0), clamp(0.3 + uW + (1.0 - f) * 0.3, 0.0, 1.0));
+          gl_FragColor = vec4(col * a * 1.3, min(a * 0.8, 0.97));` + OUT + `}`,
+    }));
+    m.position.copy(pos); m.frustumCulled = false;
+    this.scene.add(m);
+    this.list.push({ m, t: 0, dur, maxR });
+  }
+  update(dt) {
+    this.list = this.list.filter(d => {
+      d.t += dt;
+      const p = Math.min(1, d.t / d.dur), U = d.m.material.uniforms;
+      d.m.scale.setScalar(Math.max(0.5, d.maxR * (1 - Math.pow(1 - p, 3))));
+      U.uA.value = Math.pow(1 - p, 1.6) * Math.min(1, d.t * 12);
+      U.uTime.value += dt;
+      if (p >= 1) { this.scene.remove(d.m); d.m.material.dispose(); return false; }
+      return true;
+    });
+  }
+}
+
+// ───────── 바닥이 그 단계 색으로 물들고 빛 고리가 퍼짐 ─────────
+class FloorGlows {
+  constructor(scene) { this.scene = scene; this.list = []; this.geo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2); }
+  spawn(x, z, R, dur, color) {
+    const m = new THREE.Mesh(this.geo, new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, ...PREMUL, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5,
+      uniforms: { uColor: { value: color.clone() }, uP: { value: 0 }, uTime: { value: 0 } },
+      vertexShader: `varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: NOISE + `uniform vec3 uColor; uniform float uP, uTime; varying vec2 vP;
+        void main(){ float r = length(vP), e = 1.0 - pow(1.0 - min(uP * 2.5, 1.0), 3.0);
+          float fill = smoothstep(e, e * 0.2, r) * (0.65 + 0.35 * noise(vec3(vP * 6.0, uTime)));
+          float ring = exp(-pow((r - e * 0.97) * 22.0, 2.0));
+          float a = (fill * 0.75 + ring * 1.2) * (1.0 - smoothstep(0.35, 1.0, uP));
+          gl_FragColor = vec4(mix(uColor, vec3(1.0), ring * 0.55) * a, min(a * 0.75, 0.9));` + OUT + `}`,
+    }));
+    m.position.set(x, 0.015, z); m.scale.setScalar(R); m.frustumCulled = false;
+    this.scene.add(m);
+    this.list.push({ m, t: 0, dur });
+  }
+  update(dt) {
+    this.list = this.list.filter(g => {
+      g.t += dt;
+      const U = g.m.material.uniforms;
+      U.uP.value = Math.min(1, g.t / g.dur); U.uTime.value = g.t;
+      if (g.t >= g.dur) { this.scene.remove(g.m); g.m.material.dispose(); return false; }
+      return true;
+    });
   }
 }
 
@@ -487,11 +476,11 @@ class Particles {
   }
 }
 
-// ───────── 돌 조각 (튀어 오르거나, 기 모을 때 둥실 떠오름) ─────────
+// ───────── 바닥 조각 (튀어 오르거나, 기 모을 때 둥실 떠오름) ─────────
 class Rocks {
   constructor(scene, max = 170) {
     this.max = max; this.list = [];
-    this.mesh = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0),
+    this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, 1.2, 1.2),
       new THREE.MeshStandardMaterial({ color: 0xe9ecf0, roughness: 0.9, flatShading: true }), max);
     this.mesh.castShadow = true; this.mesh.receiveShadow = true;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -533,7 +522,7 @@ class Rocks {
       }
       r.rot.x += r.spin.x * dt; r.rot.y += r.spin.y * dt; r.rot.z += r.spin.z * dt;
       const fade = Math.min(1, (r.life - r.age) / 0.6, r.age * 8);
-      this.s.set(r.size, r.size * 0.7, r.size * 0.9).multiplyScalar(Math.max(0.001, fade));
+      this.s.setScalar(r.size * Math.max(0.001, fade));
       this.mesh.setMatrixAt(i, this.m.compose(r.pos, this.q.setFromEuler(r.rot), this.s));
     });
     this.mesh.count = this.list.length;
@@ -650,18 +639,22 @@ class Cracks {
 }
 
 // ───────── 모두 묶기 ─────────
+const UP = new THREE.Vector3(0, 1, 0);
 export class AwakenFX {
   constructor(scene, character) {
     this.scene = scene; this.ch = character;
-    this.local = new THREE.Group();          // 캐릭터 기울기를 따라가는 효과 (발 = y 0)
+    this.local = new THREE.Group();          // 몸 기울기를 따라가는 효과 (발 = y 0)
     this.local.position.y = -character.tilt.position.y;
     character.tilt.add(this.local);
-    this.aura = new Aura(this.local);
-    this.shield = new Shield(character.tilt);
-    this.bolts = new Lightning(scene, this.local);
-    this.cone = new SonicCone(scene);
+    this.flat = new THREE.Group();           // 기울지 않는 효과 (위로 솟는 반짝이·바닥 빛)
+    character.root.add(this.flat);
+    this.aura = new Aura(this.local, this.flat);
+    this.orbs = new SkyOrbs(scene);
+    this.beam = new LightBeam(scene);
     this.lines = new SpeedLines(scene);
     this.waves = new Shockwaves(scene);
+    this.domes = new Domes(scene);
+    this.glows = new FloorGlows(scene);
     this.dust = new Particles(scene, 260, false);
     this.sparks = new Particles(scene, 260, true);
     this.rocks = new Rocks(scene);
@@ -671,36 +664,34 @@ export class AwakenFX {
     this.flashK = 0; this.t = 0; this.floatAcc = 0;
   }
 
-  // 단계가 오를 때: 큰 충격파, 바닥 금·깨진 판, 돌·먼지·불티
+  // 단계가 오를 때: 빛 돔이 터지고, 바닥이 물들고, 바닥 조각이 튀어 오름
   levelUp(level, pos, onGround) {
-    const L = LEVELS[level], c = L.color, size = [0, 3.4, 5.2, 7.4, 10.5][level];
+    const L = LEVELS[level], c = L.color, size = [0, 4, 6, 8.5, 12][level];
     const center = pos.clone().add(new THREE.Vector3(0, 1, 0));
+    this.domes.spawn(onGround ? new THREE.Vector3(pos.x, 0, pos.z) : center, size, 0.9 + level * 0.15, c, level === 4 ? 0.4 : 0);
+    if (level === 4) this.domes.spawn(center, size * 1.8, 1.7, WHITE, 1); // 마지막 단계는 하얗게 크게 터짐
     if (onGround) {
-      this.waves.spawn(new THREE.Vector3(pos.x, 0.03, pos.z), new THREE.Vector3(0, 1, 0), size * 1.6, 0.9 + level * 0.12, c, { dust: true, width: 0.35 + level * 0.12 });
-      this.waves.spawn(new THREE.Vector3(pos.x, 0.05, pos.z), new THREE.Vector3(0, 1, 0), size * 3, 1.5, c, { shell: false, alpha: 0.35, width: 0.6 });
-      this.cracks.spawn(pos.x, pos.z, size, c, level >= 2 ? 4 + level * 4 : 0);
-      for (let i = 0; i < 26 + level * 14; i++) {
+      this.glows.spawn(pos.x, pos.z, size * 1.5, 2.6, c);
+      this.waves.spawn(new THREE.Vector3(pos.x, 0.03, pos.z), UP, size * 1.7, 1.0 + level * 0.12, c, { dust: true, shell: false, width: 0.3 + level * 0.1 });
+      this.cracks.spawn(pos.x, pos.z, size * 0.85, c, level >= 2 ? 4 + level * 4 : 0);
+      for (let i = 0; i < 24 + level * 12; i++) {
         const a = rnd(0, 6.28), sp = rnd(4, 9) * (0.7 + level * 0.25);
         this.dust.add({ pos: new THREE.Vector3(pos.x + Math.cos(a) * 0.6, rnd(0.1, 0.4), pos.z + Math.sin(a) * 0.6),
           vel: new THREE.Vector3(Math.cos(a) * sp, rnd(0.3, 2.2), Math.sin(a) * sp), size: rnd(0.5, 1.1), grow: 2.5, life: rnd(1.0, 1.9),
-          alpha: 0.55, color: new THREE.Color(0xc4cad3), drag: 2.4 });
+          alpha: 0.5, color: new THREE.Color(0xc4cad3), drag: 2.4 });
       }
-      for (let i = 0; i < 8 + level * 7; i++) {
-        const a = rnd(0, 6.28), sp = rnd(3, 8) * (0.6 + level * 0.2);
-        this.rocks.add({ pos: new THREE.Vector3(pos.x + Math.cos(a) * rnd(0.3, size * 0.3), 0.1, pos.z + Math.sin(a) * rnd(0.3, size * 0.3)),
-          vel: new THREE.Vector3(Math.cos(a) * sp * 0.5, rnd(4, 9) * (0.7 + level * 0.15), Math.sin(a) * sp * 0.5), size: rnd(0.05, 0.16) * (0.8 + level * 0.15), life: rnd(3, 5) });
+      for (let i = 0; i < 10 + level * 8; i++) { // 바닥 조각(네모)
+        const a = rnd(0, 6.28), r = rnd(0.5, size * 0.35), sp = rnd(2, 6) * (0.6 + level * 0.2);
+        this.rocks.add({ pos: new THREE.Vector3(pos.x + Math.cos(a) * r, 0.1, pos.z + Math.sin(a) * r),
+          vel: new THREE.Vector3(Math.cos(a) * sp, rnd(5, 10) * (0.7 + level * 0.12), Math.sin(a) * sp), size: rnd(0.08, 0.2), life: rnd(3, 5) });
       }
-    } else {
-      this.waves.spawn(center, new THREE.Vector3(0, 1, 0), size * 1.5, 1.0, c, { width: 0.5 });
-    }
+    } else this.waves.spawn(center, UP, size * 1.5, 1.0, c, { width: 0.5 });
     this.rocks.blast(pos, 7 + level * 3);
     for (let i = 0; i < 40 + level * 20; i++) {
       const d = new THREE.Vector3(rnd(-1, 1), rnd(-0.2, 1), rnd(-1, 1)).normalize();
-      this.sparks.add({ pos: center.clone().addScaledVector(d, 0.4), vel: d.multiplyScalar(rnd(6, 16)), size: rnd(0.06, 0.14), grow: -0.5,
-        life: rnd(0.4, 0.9), alpha: 1, color: c.clone(), drag: 3, grav: 4 });
+      this.sparks.add({ pos: center.clone().addScaledVector(d, 0.4), vel: d.multiplyScalar(rnd(6, 16)), size: rnd(0.08, 0.18), grow: -0.5,
+        life: rnd(0.5, 1.0), alpha: 1, color: c.clone(), drag: 3, grav: 2 });
     }
-    this.shield.hit(new THREE.Vector3(0, -1, 0));
-    this.shield.hit(new THREE.Vector3(rnd(-1, 1), 0, rnd(-1, 1)).normalize());
     this.flash.position.copy(center); this.flash.color.copy(c); this.flashK = 1 + level * 0.5;
     this.ch.burst();
   }
@@ -708,7 +699,8 @@ export class AwakenFX {
   // 세게 착지: 크기는 충격 세기(0~1)
   impact(pos, k, color) {
     const size = 2.5 + k * 7;
-    this.waves.spawn(new THREE.Vector3(pos.x, 0.03, pos.z), new THREE.Vector3(0, 1, 0), size * 1.5, 0.8 + k * 0.5, color, { dust: true, width: 0.4 + k * 0.4 });
+    this.glows.spawn(pos.x, pos.z, size * 1.2, 1.6, color);
+    this.waves.spawn(new THREE.Vector3(pos.x, 0.03, pos.z), UP, size * 1.5, 0.8 + k * 0.5, color, { dust: true, width: 0.4 + k * 0.4 });
     this.cracks.spawn(pos.x, pos.z, size, color, k > 0.35 ? Math.round(4 + k * 12) : 0);
     for (let i = 0; i < 20 + k * 40; i++) {
       const a = rnd(0, 6.28), sp = rnd(3, 9) * (0.6 + k);
@@ -718,64 +710,48 @@ export class AwakenFX {
     for (let i = 0; i < 6 + k * 22; i++) {
       const a = rnd(0, 6.28);
       this.rocks.add({ pos: new THREE.Vector3(pos.x + Math.cos(a) * 0.4, 0.1, pos.z + Math.sin(a) * 0.4),
-        vel: new THREE.Vector3(Math.cos(a) * rnd(2, 6), rnd(4, 10) * (0.5 + k), Math.sin(a) * rnd(2, 6)), size: rnd(0.05, 0.15), life: rnd(3, 5) });
+        vel: new THREE.Vector3(Math.cos(a) * rnd(2, 6), rnd(4, 10) * (0.5 + k), Math.sin(a) * rnd(2, 6)), size: rnd(0.08, 0.2), life: rnd(3, 5) });
     }
-    this.shield.hit(new THREE.Vector3(0, -1, 0));
     this.flash.position.set(pos.x, 1, pos.z); this.flash.color.copy(color); this.flashK = 0.6 + k;
   }
 
-  // 음속 돌파: 진행 방향에 수직인 큰 고리
-  sonicBoom(pos, dir, color) {
-    this.waves.spawn(pos.clone().addScaledVector(dir, 1.5), dir, 14, 0.9, color, { width: 0.9 });
-    this.waves.spawn(pos.clone(), dir, 7, 0.6, new THREE.Color(1, 1, 1), { shell: false, width: 0.5 });
-    this.shield.hit(this.ch.tilt.worldToLocal(pos.clone().add(dir)).normalize());
+  // 빛줄기가 될 때: 하얗게 터지는 빛 + 진행 방향에 수직인 고리
+  sonicBoom(pos, dir) {
+    this.domes.spawn(pos, 6, 0.6, WHITE, 1);
+    this.waves.spawn(pos.clone().addScaledVector(dir, 1.5), dir, 14, 0.9, WHITE, { shell: false, width: 0.9 });
   }
 
-  // st: { level, chargeK (기 모으는 중 진행 0~1), charging, flying, speed, fast, vel, grounded, pos, camPos, chargeLevel }
+  // st: { level, chargeK, charging, flying, speed, vel, grounded, pos, camPos }
   update(dt, st) {
     this.t += dt;
     const t = this.t, L = LEVELS[st.level], next = LEVELS[Math.min(4, st.level + 1)];
-    // 오라: 기 모으는 중엔 다음 색 쪽으로 조금씩, 각성 전이라도 모으는 중이면 희미한 하얀 기운
-    const color = st.charging ? L.color.clone().lerp(next.color, st.chargeK * 0.35) : L.color;
-    let k = st.level ? 0.75 + 0.25 * L.power : 0;
-    if (st.charging) k = Math.max(k, 0.25 + st.chargeK * 0.6) * (1 + 0.35 * st.chargeK);
-    k *= 1 + st.fast * 0.25;
+    const color = st.charging ? L.color.clone().lerp(next.color, st.chargeK * 0.4) : L.color;
+    const beamK = st.flying ? sstep(40, 80, st.speed) : 0;
+    let k = st.level ? 0.7 + 0.08 * st.level : 0;
+    if (st.charging) k = Math.max(k, 0.3 + st.chargeK * 0.55) * (1 + 0.3 * st.chargeK);
     const lv = st.level + (st.charging ? st.chargeK : 0);
     this.aura.update(dt, t, {
-      k, color, active: Math.min(1, 0.2 + lv * 0.2), ground: st.grounded && !st.flying ? 1 : 0,
-      scale: (st.level ? L.scale : 0.75) * (st.charging ? 1 + 0.08 * st.chargeK : 1), power: Math.max(0.45, L.power) * (st.charging ? 1.15 : 1),
+      k: k * (1 - beamK), color, active: Math.min(1, 0.25 + lv * 0.19), feetY: st.pos.y,
+      scale: (st.level ? L.scale : 0.8) * (st.charging ? 1 + 0.12 * st.chargeK : 1),
     });
-    // 번개: 3단계부터 (2단계는 기 모을 때만 가끔)
-    const rate = st.level >= 3 ? (st.level === 4 ? 22 : 10) : (st.charging && st.level === 2 ? 4 * st.chargeK : 0);
-    this.bolts.update(dt, rate, st.level ? L.scale : 1, color, st.camPos);
-    // 보호막
-    const velLocal = st.vel.lengthSq() > 1 ? this.ch.tilt.worldToLocal(st.pos.clone().add(new THREE.Vector3(0, 1, 0)).add(st.vel.clone().normalize())).normalize() : new THREE.Vector3(0, 0, 1);
-    const coneK = st.flying ? sstep(42, 85, st.speed) : 0;
-    this.shield.update(dt, t, st.level ? 0.55 + 0.12 * st.level : (st.charging ? st.chargeK * 0.35 : 0), color, coneK * 1.2, velLocal);
-    // 음속 원뿔 + 바람 줄
-    const center = st.pos.clone().add(new THREE.Vector3(0, 0.95, 0));
-    const dir = st.vel.lengthSq() > 1 ? st.vel.clone().normalize() : new THREE.Vector3(0, 0, 1);
-    this.cone.update(dt, t, coneK, center, dir, st.level ? color : new THREE.Color(0.75, 0.88, 1));
+    this.orbs.update(dt, t, st.level ? 1 : 0, st.pos, st.camPos, color);
+    const center = st.pos.clone(); center.y += 0.95;
+    this.beam.update(dt, t, beamK, center, st.vel, st.camPos, st.level ? color : WHITE);
     this.lines.update(dt, st.flying ? sstep(25, 80, st.speed) * 0.8 : 0, center, st.vel);
-    // 기 모을 때: 돌이 둥실 떠오르고 먼지가 맴돈다
+    // 기 모을 때: 바닥 조각이 둥실 떠오르고 먼지가 맴돈다
     if (st.charging && st.pos.y < 1.5) {
       this.floatAcc += dt * (5 + st.level * 4 + st.chargeK * 8);
       while (this.floatAcc > 1) {
         this.floatAcc -= 1;
         const a = rnd(0, 6.28), r = rnd(0.9, 3.5);
         this.rocks.add({ pos: new THREE.Vector3(st.pos.x + Math.cos(a) * r, 0.05, st.pos.z + Math.sin(a) * r), vel: new THREE.Vector3(),
-          size: rnd(0.04, 0.13), life: 12, floating: true, lift: rnd(0.5, 1.4), top: rnd(0.8, 3.2) });
+          size: rnd(0.06, 0.16), life: 12, floating: true, lift: rnd(0.5, 1.4), top: rnd(0.8, 3.2) });
         if (Math.random() < 0.6) this.dust.add({ pos: new THREE.Vector3(st.pos.x + Math.cos(a) * r * 0.5, 0.1, st.pos.z + Math.sin(a) * r * 0.5),
           vel: new THREE.Vector3(Math.cos(a) * 2.5, 0.2, Math.sin(a) * 2.5), size: rnd(0.4, 0.8), grow: 1.5, life: 1.2, alpha: 0.35, color: new THREE.Color(0xd2d7de) });
       }
     }
-    // 불티 (각성 중 몸에서 계속)
-    if (st.level && Math.random() < dt * (6 + st.level * 8)) {
-      const a = rnd(0, 6.28);
-      this.sparks.add({ pos: st.pos.clone().add(new THREE.Vector3(Math.cos(a) * 0.5, rnd(0.2, 1.8), Math.sin(a) * 0.5)),
-        vel: new THREE.Vector3(Math.cos(a) * 0.6, rnd(1.5, 3.5), Math.sin(a) * 0.6), size: rnd(0.04, 0.08), life: rnd(0.4, 0.8), alpha: 1, color, drag: 1, grow: -0.6 });
-    }
-    this.waves.update(dt); this.dust.update(dt); this.sparks.update(dt); this.rocks.update(dt, t); this.cracks.update(dt);
+    this.waves.update(dt); this.domes.update(dt); this.glows.update(dt);
+    this.dust.update(dt); this.sparks.update(dt); this.rocks.update(dt, t); this.cracks.update(dt);
     this.flashK *= Math.exp(-dt * 7);
     this.flash.intensity = this.flashK * 9;
   }

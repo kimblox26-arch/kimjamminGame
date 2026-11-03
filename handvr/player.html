@@ -8,15 +8,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Jua&display=swap" media="print" onload="this.media='all'">
-<link rel="stylesheet" href="./player.css?v=20261102a">
+<link rel="stylesheet" href="./player.css?v=20261103a">
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
     "three/addons/": "../vendor/three/addons/",
-    "./js/world.js": "./js/world.js?v=20261102a",
-    "./js/bacon.js": "./js/bacon.js?v=20261102a",
-    "./js/awaken.js": "./js/awaken.js?v=20261102a"
+    "./js/world.js": "./js/world.js?v=20261103a",
+    "./js/bacon.js": "./js/bacon.js?v=20261103a",
+    "./js/awaken.js": "./js/awaken.js?v=20261103a"
   }
 }
 </script>
@@ -28,22 +28,24 @@
 <!-- 그림 아이콘 모음 (이모티콘 대신) -->
 <svg width="0" height="0" style="position:absolute">
   <defs>
-    <linearGradient id="g-aura" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fffbe0"/><stop offset=".45" stop-color="#ffd83d"/><stop offset="1" stop-color="#ff8a1f"/>
-    </linearGradient>
+    <radialGradient id="g-orb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#8eefff"/><stop offset="1" stop-color="#36b8f0"/>
+    </radialGradient>
     <linearGradient id="g-fly" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#7cc4ff"/>
     </linearGradient>
     <symbol id="i-awaken" viewBox="0 0 48 48">
-      <path fill="url(#g-aura)" d="M6 44 9 35 5.5 31.5 11 27 7.5 21.5 14 18.5 11.5 11 18 12.5 19 5 24 9.5 27 2 29.5 10.5 35.5 7 34.5 14 41 13 37.5 20.5 42.5 23.5 37.5 28 41.5 33 38 36.5 42 44Z"/>
-      <path fill="#fff6c4" opacity=".7" d="M12 44 14 36 12 31 16.5 28 15 22 20 20 20.5 14 24.5 16.5 28 13 28.5 19.5 33 21 32 27 36 31 34 36 36 44Z"/>
-      <rect x="20.5" y="16.5" width="7" height="6.5" rx="1.6" fill="#f3c7a0"/>
-      <rect x="19" y="23.5" width="10" height="9" rx="1.2" fill="#2a2d36"/>
-      <rect x="15" y="23.5" width="3.6" height="8.5" rx="1.2" fill="#2a2d36" transform="rotate(18 17 24)"/>
-      <rect x="29.4" y="23.5" width="3.6" height="8.5" rx="1.2" fill="#2a2d36" transform="rotate(-18 31 24)"/>
-      <rect x="18.6" y="32.6" width="4.6" height="8.5" rx="1.2" fill="#3b5a8f" transform="rotate(12 21 33)"/>
-      <rect x="24.8" y="32.6" width="4.6" height="8.5" rx="1.2" fill="#3b5a8f" transform="rotate(-12 27 33)"/>
-      <path fill="#6b3b1d" d="M20 18.5c0-3 2-4.5 4-4.5s4.2 1.4 4.2 4.3c-1.2-1-2.4-1.3-4-1.1-1.7.2-2.9.4-4.2 1.3Z"/>
+      <circle cx="24" cy="25" r="19" fill="url(#g-orb)"/>
+      <circle cx="24" cy="25" r="18" fill="none" stroke="#e9fdff" stroke-width="2" opacity=".85"/>
+      <path stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity=".75" d="M9 21h12M27 21h12M11 30h9M30 30h8"/>
+      <rect x="20.5" y="13.5" width="7" height="6.5" rx="1.6" fill="#f3c7a0"/>
+      <path fill="#6b3b1d" d="M20 15.5c0-3 2-4.5 4-4.5s4.2 1.4 4.2 4.3c-1.2-1-2.4-1.3-4-1.1-1.7.2-2.9.4-4.2 1.3Z"/>
+      <rect x="19" y="20.5" width="10" height="9" rx="1.2" fill="#2a2d36"/>
+      <rect x="15.4" y="20.5" width="3.4" height="8.5" rx="1.2" fill="#2a2d36"/>
+      <rect x="29.2" y="20.5" width="3.4" height="8.5" rx="1.2" fill="#2a2d36"/>
+      <rect x="19" y="29.6" width="4.6" height="8" rx="1.2" fill="#3b5a8f"/>
+      <rect x="24.4" y="29.6" width="4.6" height="8" rx="1.2" fill="#3b5a8f"/>
+      <circle cx="40" cy="12" r="3" fill="#ff9fdc"/><circle cx="8" cy="36" r="2.4" fill="#b99bff"/><circle cx="41" cy="38" r="2" fill="#ffe7a0"/>
     </symbol>
     <symbol id="i-fly" viewBox="0 0 48 48">
       <g transform="rotate(38 24 24)">
@@ -100,15 +102,15 @@
       <div><span class="k">Shift</span><p>달리기 · 날 때는 빠르게 날기</p></div>
       <div><span class="k">Space</span><p>점프 · 공중에서 한 번 더 누르면 날아올라요</p></div>
       <div><span class="k">F</span><span class="k">2</span><p>날기 켜고 끄기 · 날 때 Space 위로, Q 아래로</p></div>
-      <div><span class="k">1</span><p>각성 · 하양 → 파랑 → 노랑 → 빨강, 4단계까지 점점 강해져요. 모으는 중에 다시 누르면 그 단계에서 멈춰요</p></div>
+      <div><span class="k">1</span><p>각성 · 하늘빛 → 보랏빛 → 분홍빛 → 금빛, 4단계까지 점점 강해져요. 모으는 중에 다시 누르면 그 단계에서 멈춰요</p></div>
       <div><span class="k">3</span><p>각성 풀기</p></div>
       <div><span class="k">마우스 끌기</span><span class="k">휠</span><p>카메라 돌리기 · 가까이/멀리</p></div>
     </div>
-    <p class="tip">아주 빠르게 날면 앞쪽에 음속 원뿔이 생기고, 높은 곳에서 떨어지면 바닥이 갈라져요.<br>휴대폰에서는 왼쪽 아래를 끌어 움직이고, 화면 오른쪽을 끌어 카메라를 돌려요.</p>
+    <p class="tip">아주 빠르게 날면 하얀 빛줄기가 되어 날아가고, 높은 곳에서 떨어지면 바닥이 갈라져요.<br>휴대폰에서는 왼쪽 아래를 끌어 움직이고, 화면 오른쪽을 끌어 카메라를 돌려요.</p>
     <button id="help-close" class="go" tabindex="-1">시작하기</button>
   </div>
 </div>
 
-<script type="module" src="./js/player-main.js?v=20261102a"></script>
+<script type="module" src="./js/player-main.js?v=20261103a"></script>
 </body>
 </html>

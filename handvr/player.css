@@ -32,10 +32,10 @@ button { font: inherit; color: inherit; }
 .pips { display: flex; gap: 6px; }
 .pips i { position: relative; width: 40px; height: 9px; border-radius: 99px; background: rgba(24, 28, 36, 0.35); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
 .pips i b { position: absolute; inset: 0; width: 0%; border-radius: inherit; }
-.pips i[data-l="1"] b { background: linear-gradient(90deg, #dfe8ff, #ffffff); box-shadow: 0 0 10px #fff; }
-.pips i[data-l="2"] b { background: linear-gradient(90deg, #2a7cff, #7cc4ff); box-shadow: 0 0 10px #4aa0ff; }
-.pips i[data-l="3"] b { background: linear-gradient(90deg, #ffb31a, #ffe55c); box-shadow: 0 0 10px #ffd23a; }
-.pips i[data-l="4"] b { background: linear-gradient(90deg, #ff2a1a, #ff7a4a); box-shadow: 0 0 10px #ff4a3a; }
+.pips i[data-l="1"] b { background: linear-gradient(90deg, #36c8f5, #8eefff); box-shadow: 0 0 10px #5fe3ff; }
+.pips i[data-l="2"] b { background: linear-gradient(90deg, #7b55f0, #b99bff); box-shadow: 0 0 10px #a07bff; }
+.pips i[data-l="3"] b { background: linear-gradient(90deg, #f04fb4, #ff9fdc); box-shadow: 0 0 10px #ff74cf; }
+.pips i[data-l="4"] b { background: linear-gradient(90deg, #f5b73a, #ffe7a0); box-shadow: 0 0 10px #ffd668; }
 #gauge-label { font-family: var(--round); font-size: 15px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.45), 0 0 10px var(--lv); }
 
 #hotbar { display: flex; gap: 6px; pointer-events: auto; }
