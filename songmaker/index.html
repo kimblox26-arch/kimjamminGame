@@ -10,11 +10,11 @@
 <header id="top">
   <h1>KIM <b>송메이커</b></h1>
   <div class="tools">
-    <button id="undoBtn" title="되돌리기 (Ctrl+Z)">↶ <span>되돌리기</span></button>
-    <button id="clearBtn" title="모두 지우기">🗑 <span>지우기</span></button>
-    <button id="shareBtn" title="링크로 공유">🔗 <span>공유</span></button>
-    <button id="wavBtn" title="WAV 파일로 저장">⬇ <span>WAV</span></button>
-    <button id="midiBtn" title="MIDI 파일로 저장">⬇ <span>MIDI</span></button>
+    <button id="undoBtn" title="되돌리기 (Ctrl+Z)"><i data-ico="undo"></i><span>되돌리기</span></button>
+    <button id="clearBtn" title="모두 지우기"><i data-ico="trash"></i><span>지우기</span></button>
+    <button id="shareBtn" title="링크로 공유"><i data-ico="link"></i><span>공유</span></button>
+    <button id="wavBtn" title="WAV 파일로 저장"><i data-ico="down"></i><span>WAV</span></button>
+    <button id="midiBtn" title="MIDI 파일로 저장"><i data-ico="down"></i><span>MIDI</span></button>
   </div>
 </header>
 
@@ -25,30 +25,47 @@
 
 <footer id="bar">
   <button id="playBtn" class="play" title="재생 / 정지 (Space)" aria-label="재생"><svg viewBox="0 0 24 24"><path id="playIcon" d="M7 4l13 8-13 8z"/></svg></button>
-  <button id="instBtn" class="pick" title="악기 바꾸기"><i id="instIcon">🎹</i><small>악기</small><span id="instName">피아노</span></button>
-  <button id="percBtn" class="pick" title="타악기 바꾸기"><i id="percIcon">🥁</i><small>리듬</small><span id="percName">일렉트로닉</span></button>
+  <button id="instBtn" class="pick" title="악기 바꾸기"><i class="ico" id="instIcon"></i><small>악기</small><span id="instName">피아노</span></button>
+  <button id="percBtn" class="pick" title="타악기 바꾸기"><i class="ico" id="percIcon"></i><small>리듬</small><span id="percName">일렉트로닉</span></button>
   <label class="tempo">
     <small>템포</small>
     <input id="tempo" type="range" min="40" max="240" value="120">
     <output id="tempoVal">120</output>
   </label>
-  <button id="setBtn" class="pick" title="설정"><i>⚙</i><small>설정</small><span>격자</span></button>
+  <div class="step" title="곡 길이 (마디 수)">
+    <i class="ico" data-ico="len"></i>
+    <small>길이 (마디)</small>
+    <div class="spin">
+      <button data-k="bars" data-d="-1" aria-label="길이 줄이기"><i data-ico="minus"></i></button>
+      <input id="lenIn" type="number" min="1" max="64" inputmode="numeric">
+      <button data-k="bars" data-d="1" aria-label="길이 늘리기"><i data-ico="plus"></i></button>
+    </div>
+  </div>
+  <div class="step" title="음 높이 범위 (줄 수)">
+    <i class="ico" data-ico="height"></i>
+    <small>높이 (음 개수)</small>
+    <div class="spin">
+      <button data-k="rows" data-d="-1" aria-label="높이 줄이기"><i data-ico="minus"></i></button>
+      <input id="rowsIn" type="number" min="2" max="72" inputmode="numeric">
+      <button data-k="rows" data-d="1" aria-label="높이 늘리기"><i data-ico="plus"></i></button>
+    </div>
+  </div>
+  <button id="setBtn" class="pick" title="설정"><i class="ico" data-ico="sliders"></i><small>설정</small><span>음계·박자</span></button>
 </footer>
 
 <dialog id="settings">
   <form method="dialog">
     <h2>설정</h2>
-    <div class="row"><label>길이 (마디)</label><input name="bars" type="number" min="1" max="16"></div>
-    <div class="row"><label>마디당 박자</label><input name="beats" type="number" min="2" max="7"></div>
+    <div class="row"><label>길이 (마디)</label><input name="bars" type="number" min="1" max="64" required></div>
+    <div class="row"><label>높이 (음 개수)</label><input name="rows" type="number" min="2" max="72" required></div>
+    <div class="row"><label>마디당 박자</label><input name="beats" type="number" min="2" max="7" required></div>
     <div class="row"><label>박자 쪼개기</label>
       <select name="split"><option value="1">1</option><option value="2">2</option><option value="3">3 (셋잇단)</option><option value="4">4</option></select></div>
     <div class="row"><label>음계</label>
       <select name="scale"><option value="major">장조 (메이저)</option><option value="minor">단조 (마이너)</option><option value="pentatonic">5음계 (펜타토닉)</option><option value="chromatic">반음계 (크로매틱)</option></select></div>
     <div class="row"><label>시작 음</label><select name="root"></select></div>
     <div class="row"><label>시작 옥타브</label>
-      <select name="octave"><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-    <div class="row"><label>음역 (옥타브 수)</label>
-      <select name="octaves"><option>1</option><option>2</option><option>3</option></select></div>
+      <select name="octave"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
     <div class="btns">
       <button value="cancel" formnovalidate>취소</button>
       <button value="ok" class="ok">적용</button>
