@@ -33,6 +33,7 @@ const ICONS = {
   sliders: '<path d="M5 9h22M5 16h22M5 23h22"/><circle class="b" cx="11" cy="9" r="2.8"/><circle class="b" cx="21" cy="16" r="2.8"/><circle class="b" cx="14" cy="23" r="2.8"/>',
   len: '<path d="M5 16h22M10 11l-5 5 5 5M22 11l5 5-5 5M3 8v16M29 8v16"/>',
   height: '<path d="M16 5v22M11 10l5-5 5 5M11 22l5 5 5-5M8 3h16M8 29h16"/>',
+  mic: '<rect x="12" y="3" width="8" height="15" rx="4"/><path d="M7 14a9 9 0 0 0 18 0M16 23v6M11 29h10"/>',
   minus: '<path d="M8 16h16" stroke-width="3"/>',
   plus: '<path d="M8 16h16M16 8v16" stroke-width="3"/>',
 };
@@ -150,6 +151,51 @@ const INSTRUMENTS = [
     osc(b, 'square', f, t, end, lp, 0, 0.45); osc(b, 'sawtooth', f, t, end, lp, 9, 0.55);
   } },
 ];
+
+// 마이크로 녹음한 소리를 악기로 (가운데 줄 = 녹음한 그대로의 높이)
+let micBuf = null, micBase = 67, recording = false;
+const MIC_IDX = INSTRUMENTS.push({ name: '내 소리', icon: 'mic', gm: 0, play(b, f, t, d) {
+  if (!micBuf) return;
+  const s = b.ctx.createBufferSource(), rate = f / mtof(micBase);
+  s.buffer = micBuf; s.playbackRate.value = rate;
+  const g = vgain(b, 0.2), end = sustain(g, t, Math.min(d, micBuf.duration / rate), 0.9, 0.004, 0.2);
+  s.connect(g); s.start(t); s.stop(end);
+} }) - 1;
+const instCount = () => micBuf ? INSTRUMENTS.length : MIC_IDX;
+
+async function recordMic() {
+  if (recording) return;
+  audio();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (_) { toast('마이크를 쓸 수 없어요 (주소가 https 또는 localhost 여야 해요)'); return; }
+  if (playing) stop();
+  recording = true; $('#micBtn').classList.add('rec'); toast('녹음 중… 2초 동안 소리를 내 보세요');
+  const src = ac.createMediaStreamSource(stream), proc = ac.createScriptProcessor(4096, 1, 1), mute = ac.createGain(), chunks = [];
+  mute.gain.value = 0; src.connect(proc); proc.connect(mute); mute.connect(ac.destination);
+  proc.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  await new Promise(r => setTimeout(r, 2000));
+  proc.onaudioprocess = null; src.disconnect(); proc.disconnect(); mute.disconnect();
+  stream.getTracks().forEach(t => t.stop());
+  recording = false; $('#micBtn').classList.remove('rec');
+  const data = new Float32Array(chunks.reduce((a, c) => a + c.length, 0));
+  let o = 0, peak = 0; for (const c of chunks) { data.set(c, o); o += c.length; }
+  for (const v of data) peak = Math.max(peak, Math.abs(v));
+  if (peak < 0.02) { toast('소리가 너무 작아요. 다시 녹음해 보세요'); return; }
+  // 앞뒤 조용한 부분 자르고, 크기 맞추고, 끝을 부드럽게
+  const sr = ac.sampleRate, th = peak * 0.12;
+  let st = 0, en = data.length - 1;
+  while (st < en && Math.abs(data[st]) < th) st++;
+  while (en > st && Math.abs(data[en]) < th * 0.4) en--;
+  st = Math.max(0, st - (sr * 0.01 | 0));
+  const len = Math.min(en - st + 1, sr * 1.5 | 0), fade = Math.min(len >> 1, sr * 0.05 | 0);
+  const buf = ac.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = data[st + i] / peak * 0.9 * Math.min(1, i / 64, (len - i) / fade);
+  micBuf = buf; micBase = rowMidi(R >> 1);
+  S.inst = MIC_IDX; updateUI(); save();
+  INSTRUMENTS[MIC_IDX].play(bus, mtof(micBase), ac.currentTime + 0.05, 0.6);
+  toast('녹음 완료! 이제 칸을 찍으면 내 소리로 연주돼요');
+}
 
 function kick(b, t, len = 0.45, from = 150) {
   const g = vgain(b, 0.05); env(g, t, 0.9, len);
@@ -443,7 +489,7 @@ function unpack(str) {
       bars: clamp(v[0] | 0, 1, MAX_BARS), beats: clamp(v[1] | 0, 2, 7), split: clamp(v[2] | 0, 1, 4),
       scale: SCALE_KEYS[v[3]] || 'major', root: clamp(v[4] | 0, 0, 11), octave: clamp(v[5] | 0, 1, 6),
       tempo: clamp(v[7] | 0, 40, 240),
-      inst: clamp(v[8] | 0, 0, INSTRUMENTS.length - 1), perc: clamp(v[9] | 0, 0, KITS.length - 1),
+      inst: clamp(v[8] | 0, 0, instCount() - 1), perc: clamp(v[9] | 0, 0, KITS.length - 1),
     };
     // 옛 형식(10칸)은 7번째 값이 옥타브 수
     s.rows = clamp(v.length > 10 ? v[6] | 0 : scaleOf(s).length * clamp(v[6] | 0, 1, 3) + 1, 2, maxRowsOf(s));
@@ -471,7 +517,33 @@ async function share() {
 }
 
 /* ───────────── 내보내기 (WAV · MIDI) ───────────── */
-function download(blob, name) {
+// claude.ai 아티팩트 화면에서는 직접 내려받기가 막혀 있어 저장 기능(zip만 허용)을 사용
+let dlCap = null;
+if (window.claude && window.claude.use) window.claude.use('downloads').then(x => { dlCap = x; }).catch(() => {});
+function crc32(u8) {
+  let crc = -1;
+  for (let i = 0; i < u8.length; i++) { crc ^= u8[i]; for (let k = 0; k < 8; k++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1)); }
+  return (crc ^ -1) >>> 0;
+}
+function zipOne(name, u8) { // 압축 없이 파일 하나를 담는 zip
+  const nm = new TextEncoder().encode(name), n = u8.length, crc = crc32(u8);
+  const lh = new DataView(new ArrayBuffer(30)), cd = new DataView(new ArrayBuffer(46)), end = new DataView(new ArrayBuffer(22));
+  lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint32(14, crc, true);
+  lh.setUint32(18, n, true); lh.setUint32(22, n, true); lh.setUint16(26, nm.length, true);
+  cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint32(16, crc, true);
+  cd.setUint32(20, n, true); cd.setUint32(24, n, true); cd.setUint16(28, nm.length, true);
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, 1, true); end.setUint16(10, 1, true);
+  end.setUint32(12, 46 + nm.length, true); end.setUint32(16, 30 + nm.length + n, true);
+  return new Blob([lh, nm, u8, cd, nm, end], { type: 'application/zip' });
+}
+async function download(blob, name) {
+  if (dlCap) {
+    try {
+      await dlCap.save({ filename: name + '.zip', data: zipOne(name, new Uint8Array(await blob.arrayBuffer())) });
+      toast(name + ' 을(를) zip 으로 저장했어요');
+    } catch (e) { toast(e && e.code === 'declined' ? '저장을 취소했어요' : '이 화면에서는 저장할 수 없어요'); }
+    return;
+  }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -493,8 +565,8 @@ async function exportWav() {
   for (let i = 0, o = 44; i < n; i++) for (const s0 of [L[i], Rt[i]]) {
     const s = clamp(s0, -1, 1); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2;
   }
-  download(new Blob([ab], { type: 'audio/wav' }), 'kim-song.wav');
-  toast('WAV 저장 완료!');
+  await download(new Blob([ab], { type: 'audio/wav' }), 'kim-song.wav');
+  if (!dlCap) toast('WAV 저장 완료!');
 }
 function exportMidi() {
   const ppq = 480, st = ppq / S.split, ev = [], kit = KITS[S.perc];
@@ -513,7 +585,7 @@ function exportMidi() {
   const L = trk.length;
   const head = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, ppq >> 8, ppq & 255, 0x4d, 0x54, 0x72, 0x6b, L >>> 24, L >> 16 & 255, L >> 8 & 255, L & 255];
   download(new Blob([new Uint8Array([...head, ...trk])], { type: 'audio/midi' }), 'kim-song.mid');
-  toast('MIDI 저장 완료!');
+  if (!dlCap) toast('MIDI 저장 완료!');
 }
 
 /* ───────────── UI ───────────── */
@@ -550,7 +622,7 @@ $('#rowsIn').onchange = e => applySettings({ rows: +e.target.value });
 document.querySelectorAll('.spin input').forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); }));
 $('#playBtn').onclick = toggle;
 $('#instBtn').onclick = () => {
-  S.inst = (S.inst + 1) % INSTRUMENTS.length; updateUI(); save();
+  S.inst = (S.inst + 1) % instCount(); updateUI(); save();
   if (!playing) { const b = audio(), t = ac.currentTime + 0.01; INSTRUMENTS[S.inst].play(b, mtof(rowMidi(0) + 12), t, 0.4); }
 };
 $('#percBtn').onclick = () => {
@@ -565,6 +637,7 @@ $('#clearBtn').onclick = () => {
   pushUndo(); mel.fill(0); drm.fill(0); draw(); save(); toast('모두 지웠어요 (되돌리기 가능)');
 };
 $('#shareBtn').onclick = share;
+$('#micBtn').onclick = recordMic;
 $('#wavBtn').onclick = () => exportWav().catch(err => toast('WAV 저장 실패: ' + err.message));
 $('#midiBtn').onclick = exportMidi;
 
