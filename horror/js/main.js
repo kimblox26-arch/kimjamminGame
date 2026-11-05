@@ -1,7 +1,7 @@
-// 초록모자 CHAPTER 1 — 게임 진행 · 컷신 · HUD
+// 초록모자 CHAPTER 1 — 1인칭 진행 · 컷신 · HUD
 import * as THREE from 'three';
-import { World, CEIL, roomAt, cv, toTex, rnd } from './world.js';
-import { createNoob } from './noob.js';
+import { World, CEIL, roomAt, cv, toTex } from './world.js';
+import { createArms } from './noob.js';
 import { Monster } from './monster.js';
 import { Audio } from './audio.js';
 import { Input } from './input.js';
@@ -11,8 +11,10 @@ const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-const angLerp = (a, b, k) => { let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; return a + d * k; };
+const angLerp = (a, b, k) => { const d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; return a + d * k; };
+const yawTo = (dx, dz) => Math.atan2(-dx, -dz);       // 이 방향을 보는 카메라 yaw
 const SKIP = Symbol('skip');
+const EYE = 1.5;                                        // 눈높이 (뉴비 키 1.66m)
 
 /* ── 설정 저장 ── */
 const SKEY = 'greenhat-ch1';
@@ -28,18 +30,27 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 const scene = new THREE.Scene();
 const FOG = new THREE.Color(0x050304);
 scene.background = FOG.clone(); scene.fog = new THREE.FogExp2(0x050304, 0.075);
-const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 90);
+const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 90);
 const hemi = new THREE.HemisphereLight(0x5a6488, 0x1c0e0a, 0.5); scene.add(hemi);
-const fill = new THREE.PointLight(0xffd8b0, 0.9, 5, 2); scene.add(fill);
-const torch = new THREE.SpotLight(0xfff0d6, 110, 24, 0.44, 0.5, 1.15);
+const fill = new THREE.PointLight(0xffd8b0, 0.8, 5, 2); scene.add(fill);
+const torch = new THREE.SpotLight(0xfff0d6, 110, 24, 0.5, 0.5, 1.15);
 torch.shadow.camera.near = 0.15; torch.shadow.bias = -0.0006; torch.shadow.normalBias = 0.02;
 scene.add(torch, torch.target);
 const exitLight = new THREE.PointLight(0xfff6e8, 0, 30, 1.2); exitLight.position.set(14, 2, 24.6); scene.add(exitLight);
 let curScene = scene;
+// 1인칭 팔 (따로 그려서 벽에 파묻히지 않게)
+const vmScene = new THREE.Scene(), vmCam = new THREE.PerspectiveCamera(55, 1, 0.01, 5);
+vmScene.add(new THREE.HemisphereLight(0xa0a0b0, 0x2a1810, 1.1));
+const vmKey = new THREE.DirectionalLight(0xffe0c0, 0.9); vmKey.position.set(-1, 2, 1); vmScene.add(vmKey);
+const vmGlow = new THREE.PointLight(0xfff0d0, 0, 1.5, 2); vmGlow.position.set(0.3, -0.1, -0.7); vmScene.add(vmGlow);
+const arms = createArms(); vmScene.add(arms.root);
 
 function resize() {
   const w = innerWidth, h = innerHeight;
-  renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 1 ? 82 : 70; camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false);
+  G.baseFov = w / h < 1 ? 88 : 75;
+  camera.aspect = w / h; camera.fov = G.baseFov; camera.updateProjectionMatrix();
+  vmCam.aspect = w / h; vmCam.fov = w / h < 1 ? 70 : 55; vmCam.updateProjectionMatrix();
 }
 function applyQuality() {
   const pr = { low: 1, mid: Math.min(devicePixelRatio, 1.5), high: Math.min(devicePixelRatio, 2) }[SET.q] || 1;
@@ -54,15 +65,15 @@ addEventListener('resize', resize);
 /* ── 게임 상태 ── */
 const audio = new Audio(); audio.setVolume(SET.vol); audio.sens = SET.sens; audio.noVoice = !SET.voice;
 const input = new Input(document.body); input.sens = SET.look;
-let world, noob, monster, street, atlasTex;
+let world, monster, street, atlasTex;
 const G = {
   mode: 'loading', prevMode: 'play', time: 0, chaseTime: 0, busy: false, safe: true,
   hp: 100, st: 100, tired: false, torchOn: true, lastHurt: -99, caught: 0,
   inv: {}, used: {}, diaries: new Set(), clues: {}, code: [0, 0, 0, 0],
   player: { pos: new THREE.Vector3(), hidden: false, spot: null, running: false },
-  facing: 0, camYaw: 0, camPitch: -0.22, camDist: 3.3, hideYaw: 0, hidePitch: 0,
+  camYaw: 0, camPitch: 0, eyeH: EYE, roll: 0, hideYaw: 0, hidePitch: 0, walkPh: 0, speed: 0, baseFov: 75,
   micLevel: 0, micThreshold: 0.38, micHideThreshold: 0.2, micCool: 0,
-  shake: 0, animSpeed: 0, stepAcc: 0, lightT: 20, flash: 0, focus: null, camera,
+  shake: 0, lightT: 20, flash: 0, focus: null, camera, lookDX: 0, lookDY: 0,
 };
 
 /* ── 트윈 · 컷신 도구 ── */
@@ -75,6 +86,17 @@ function runTweens(dt) {
 }
 function black(v, d = 0) { const el = $('fx-black'); if (!d) { el.style.opacity = v; return Promise.resolve(); } const a = +el.style.opacity || 0; return tween(d, k => el.style.opacity = a + (v - a) * k); }
 function white(v, d = 0) { const el = $('fx-white'); if (!d) { el.style.opacity = v; return Promise.resolve(); } const a = +el.style.opacity || 0; return tween(d, k => el.style.opacity = a + (v - a) * k); }
+// 시점 이동: 위치 · 눈높이 · 방향을 함께 부드럽게
+function view(pos, eyeH, yaw, pitch, d, e = ease) {
+  const p0 = G.player.pos.clone(), h0 = G.eyeH, y0 = G.camYaw, q0 = G.camPitch;
+  return tween(d, k => {
+    const t = e(k);
+    if (pos) G.player.pos.lerpVectors(p0, pos, t);
+    if (eyeH != null) G.eyeH = h0 + (eyeH - h0) * t;
+    if (yaw != null) G.camYaw = angLerp(y0, yaw, t);
+    if (pitch != null) G.camPitch = q0 + (pitch - q0) * t;
+  });
+}
 let sub = { full: '', shown: 0, t: 0 };
 function say(name, text, dur = 2.6, gh = false) {
   $('sub-name').textContent = name || ''; sub = { full: text, shown: 0, t: dur };
@@ -103,7 +125,6 @@ function setLoad(p, t) { $('ld-fill').style.width = p + '%'; $('ld-text').textCo
 
 async function boot() {
   paintIcons();
-  // 필름 그레인
   { const [c, g] = cv(160); const d = g.createImageData(160, 160); for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } g.putImageData(d, 0, 0); $('fx-grain').style.backgroundImage = `url(${c.toDataURL()})`; }
   setLoad(12, '초록모자를 부르는 중...');
   const [atlasImg, fullImg] = await Promise.all([loadImg('assets/greenhat_atlas.png'), loadImg('assets/greenhat_full.png')]);
@@ -114,13 +135,11 @@ async function boot() {
   setLoad(78, '불을 켜는 중...'); await nextFrame();
   atlasTex = new THREE.Texture(atlasImg); atlasTex.needsUpdate = true;
   monster = new Monster(scene, atlasTex, world, audio);
-  noob = createNoob(); scene.add(noob.root);
   street = buildStreet();
   applyQuality();
   audio.onSubtitle = t => { if (G.mode === 'play' || G.mode === 'modal') say('초록모자', t, 2.2, true); };
   G.glints = world.inter.filter(i => i.glint).map(i => i.glint).concat(world.items.filter(i => i.glint).map(i => i.glint));
   setLoad(95, '준비 완료'); await nextFrame();
-  // 셰이더 미리 컴파일
   renderer.compile(scene, camera);
   $('loading').classList.add('hidden');
   toTitle();
@@ -136,8 +155,8 @@ function toTitle() {
   $('title').classList.remove('hidden');
   world.reset(); newRunState();
   monster.reset(new THREE.Vector3(11, 0, 16.4)); monster.enabled = false;
-  noob.root.visible = false; black(0); white(0);
-  renderer.toneMappingExposure = EXP(); scene.fog.color.copy(FOG); scene.background.copy(FOG); scene.fog.density = 0.075; exitLight.intensity = 0;
+  black(0); white(0); camera.rotation.z = 0;
+  renderer.toneMappingExposure = EXP(); scene.fog.color.copy(FOG); scene.background.copy(FOG); exitLight.intensity = 0;
   audio.chase(0, 0); G.titleT = 0;
 }
 function titleUpdate(dt) {
@@ -146,7 +165,6 @@ function titleUpdate(dt) {
   camera.lookAt(13.4 + Math.sin(t * 0.11) * 0.4, 1.35, 16.2);
   monster.dir.set(camera.position.x - monster.pos.x, 0, camera.position.z - monster.pos.z).normalize();
   monster.speed = 0; monster.animate(dt, G); monster.mat.emissiveIntensity = 0.22 + Math.sin(t * 2.3) * 0.05;
-  // 가끔 사라졌다 나타남
   monster.root.visible = !(t % 11 > 10.6);
   world.update(dt, camera.position, monster.pos);
   torch.intensity = 0; fill.intensity = 0;
@@ -157,7 +175,7 @@ $('m-settings').onclick = () => { audio.init(); openSettings(); };
 $('m-help').onclick = () => openModal('help');
 $('mic-yes').onclick = async () => { closeModal('micask'); await enableMic(true); beginGame(false); };
 $('mic-no').onclick = () => { closeModal('micask'); SET.mic = false; saveSet(); beginGame(false); };
-function goFull() { if (!isTouch) return; try { const d = document.documentElement; (d.requestFullscreen || d.webkitRequestFullscreen)?.call(d).catch?.(() => { }); screen.orientation?.lock?.('landscape').catch(() => { }); } catch (e) { } }
+function goFull() { if (!isTouch) return; try { const d = document.documentElement; (d.requestFullscreen || d.webkitRequestFullscreen)?.call(d)?.catch?.(() => { }); screen.orientation?.lock?.('landscape').catch(() => { }); } catch (e) { } }
 async function enableMic(on) {
   if (!on) { audio.stopMic(); SET.mic = false; saveSet(); updateMicUI(); return; }
   try { await audio.startMic(); SET.mic = true; }
@@ -174,7 +192,7 @@ async function beginGame(forceIntro) {
 
 /* ── 새 판 ── */
 function newRunState() {
-  Object.assign(G, { hp: 100, st: 100, tired: false, torchOn: true, lastHurt: -99, caught: 0, time: 0, chaseTime: 0, busy: false, inv: {}, used: {}, diaries: new Set(), clues: {}, focus: null, shake: 0, animSpeed: 0 });
+  Object.assign(G, { hp: 100, st: 100, tired: false, torchOn: true, lastHurt: -99, caught: 0, time: 0, chaseTime: 0, busy: false, inv: {}, used: {}, diaries: new Set(), clues: {}, focus: null, shake: 0, roll: 0, eyeH: EYE, speed: 0 });
   G.player.hidden = false; G.player.spot = null; G.player.running = false;
   do { G.code = [0, 0, 0, 0].map(() => Math.random() * 10 | 0); } while (new Set(G.code).size < 3);
   world && world.setCode(G.code);
@@ -183,13 +201,12 @@ function newRunState() {
 function newRun() {
   world.reset(); newRunState(); renderInv();
   monster.reset(new THREE.Vector3(25.2, 0, 21.2)); monster.timer = 12; monster.enabled = true;
-  noob.root.visible = true; noob.torchOn = true;
   for (const h of world.hides) h.doors.forEach(d => d.piv.visible = true);
   renderer.toneMappingExposure = EXP(); scene.fog.color.copy(FOG); scene.background.copy(FOG); exitLight.intensity = 0;
   $('fx-hide').className = 'fx'; $('hidden-tag').classList.remove('show', 'danger');
 }
 
-/* ── 프롤로그: 납치 ── */
+/* ── 프롤로그: 납치 (1인칭) ── */
 function buildStreet() {
   const s = new THREE.Scene(); s.background = new THREE.Color(0x04060b); s.fog = new THREE.FogExp2(0x04060b, 0.055);
   s.add(new THREE.HemisphereLight(0x50608a, 0x101018, 1.1));
@@ -202,6 +219,7 @@ function buildStreet() {
   for (let i = 0; i < 9; i++) {
     const h = 5 + Math.random() * 5, house = new THREE.Mesh(new THREE.BoxGeometry(7, h, 6), new THREE.MeshLambertMaterial({ color: 0x0c0c12 })); house.position.set(-36 + i * 9, h / 2, -9); s.add(house);
     if (Math.random() < 0.5) { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.1), new THREE.MeshBasicMaterial({ color: 0x6a5020 })); w.position.set(house.position.x + (Math.random() - 0.5) * 3, h * 0.6, -5.95); s.add(w); }
+    const h2 = 4 + Math.random() * 4, house2 = new THREE.Mesh(new THREE.BoxGeometry(7, h2, 6), house.material); house2.position.set(-36 + i * 9, h2 / 2, 17); s.add(house2);
   }
   const lamps = [];
   for (const x of [-14, 0, 14]) {
@@ -215,7 +233,7 @@ function buildStreet() {
   }
   const tex = atlasTex.clone(); tex.needsUpdate = true; tex.colorSpace = THREE.SRGBColorSpace; tex.repeat.set(1 / 8, 1 / 3);
   const PH = 2.75, PW = PH * 300 / 420, geo = new THREE.PlaneGeometry(PW, PH); geo.translate(0, PH / 2 - 0.04, 0);
-  const gh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.12 }));
+  const gh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.15 }));
   gh.visible = false; s.add(gh);
   const frame = (c, r) => tex.offset.set(c / 8, 1 - (r + 1) / 3);
   return { scene: s, lamps, gh, frame };
@@ -226,46 +244,45 @@ async function playIntro() {
   G.mode = 'cine'; G.safe = true; G.cineFn = null; skipFlag = false;
   $('hud').classList.add('hidden'); $('cine').classList.remove('hidden'); $('b-skip').classList.remove('hidden');
   black(1); audio.ambience(false, 0);
-  const pl = noob.root;
+  const pl = G.player;
   try {
     await cineText('어느 날 밤, 휴대폰이 울렸다.', 2.4);
     await phoneSeq();
-    // 골목길
-    curScene = street.scene; street.scene.add(pl); pl.visible = true; noob.torchOn = false; noob.pose = 'walk'; noob.snap();
-    pl.position.set(-11, 0.14, -1.3); pl.rotation.y = Math.PI / 2;
-    street.lamps.forEach(l => lampSet(l, 1)); street.gh.visible = false;
-    let camX = -10, lookBack = 0;
+    // 골목길 — 내 눈으로 걷는다
+    curScene = street.scene; street.lamps.forEach(l => lampSet(l, 1)); street.gh.visible = false;
+    pl.pos.set(-11, 0, -1.2); G.eyeH = EYE + 0.14; G.camYaw = -Math.PI / 2; G.camPitch = -0.06; G.roll = 0; G.speed = 0;
+    let lastStep = 0;
     G.cineFn = dt => {
-      camX += (pl.position.x - camX) * Math.min(1, dt * 2);
-      camera.position.set(camX + 1.4 - lookBack * 3, 1.45, 4.3); camera.lookAt(camX + 0.5 - lookBack * 4, 1.0, -1.3);
-      noob.update(dt, G.animSpeed, false);
+      G.walkPh += dt * G.speed * 2.6;
+      const st = Math.floor(G.walkPh / Math.PI); if (G.speed > 0.1 && st !== lastStep) { lastStep = st; audio.step('wood', false); }
+      firstPersonCam(dt);
       if (street.gh.visible) street.gh.rotation.y = Math.atan2(camera.position.x - street.gh.position.x, camera.position.z - street.gh.position.z);
     };
     black(0, 1.4);
-    G.animSpeed = 2.2;
+    G.speed = 2.0;
     say('나', '(초록모자? 모르는 사람이잖아... 그냥 무시하자.)', 3.2);
-    const walkTo = (x, d) => { const a = pl.position.x; return tween(d, k => pl.position.x = a + (x - a) * k); };
-    setTimeout(() => !skipFlag && audio.monsterStep({ x: pl.position.x - 9, z: -1 }, false), 2600);
-    setTimeout(() => !skipFlag && audio.monsterStep({ x: pl.position.x - 8, z: -1 }, false), 3200);
+    const walkTo = (x, d) => { const a = pl.pos.x; return tween(d, k => pl.pos.x = a + (x - a) * k); };
+    setTimeout(() => !skipFlag && G.mode === 'cine' && audio.monsterStep({ x: pl.pos.x - 8, z: -1 }, false), 2600);
+    setTimeout(() => !skipFlag && G.mode === 'cine' && audio.monsterStep({ x: pl.pos.x - 7, z: -1 }, false), 3200);
     await S(walkTo(-3, 4.4));
-    G.animSpeed = 0; say('나', '...누구 있어요?', 2.2);
-    await S(tween(0.6, k => pl.rotation.y = Math.PI / 2 + Math.PI * ease(k)));
-    await S(tween(0.8, k => lookBack = ease(k)));
-    await S(wait(1.4));
-    await S(tween(0.6, k => { lookBack = 1 - ease(k); pl.rotation.y = Math.PI * 1.5 - Math.PI * ease(k); }));
+    G.speed = 0; say('나', '...누구 있어요?', 2.2);
+    await S(view(null, null, Math.PI / 2, -0.02, 1.0));      // 뒤돌아본다
+    await S(wait(1.6));
+    await S(view(null, null, -Math.PI / 2, -0.06, 0.8));
     say('나', '기분 탓인가...', 1.8);
-    G.animSpeed = 2.0; await S(walkTo(0.6, 2.2)); G.animSpeed = 0;
+    G.speed = 2.0; await S(walkTo(0.4, 2.2)); G.speed = 0;
     // 가로등 깜빡 → 꺼짐 → 눈앞에
     const L = street.lamps[1];
     for (let i = 0; i < 6; i++) { lampSet(L, i % 2 ? 1 : 0.1); audio.light(); await S(wait(0.08 + Math.random() * 0.15)); }
-    lampSet(L, 0); street.lamps.forEach(l => lampSet(l, 0)); audio.light();
+    street.lamps.forEach(l => lampSet(l, 0)); audio.light();
     await S(wait(1.1));
-    street.gh.visible = true; street.gh.position.set(2.5, 0.14, -1.3); street.frame(2, 2);
-    street.lamps.forEach(l => lampSet(l, 1)); audio.stinger(); noob.pose = 'scared';
-    say('초록모자', '팔로우... 안 했지?', 2.6, true); audio.monsterVoice && !audio.noVoice && audio.monsterVoice('팔로우... 안 했지?', street.gh.position);
+    street.gh.visible = true; street.gh.position.set(2.4, 0.14, -1.25); street.frame(2, 2);
+    street.lamps.forEach(l => lampSet(l, 1)); audio.stinger(); G.shake = 0.3;
+    await S(view(null, null, null, 0.12, 0.4));            // 올려다본다
+    say('초록모자', '팔로우... 안 했지?', 2.6, true); audio.monsterVoice('팔로우... 안 했지?', street.gh.position);
     await S(wait(2.4));
-    street.frame(0, 2); audio.scream(street.gh.position);
-    await S(tween(0.35, k => { street.gh.position.x = 2.5 - 1.6 * k; street.frame(k < 0.5 ? 0 : 1, 2); camera.position.x -= 0.02; }));
+    audio.scream(street.gh.position); G.shake = 0.8;
+    await S(tween(0.4, k => { street.gh.position.x = 2.4 - 1.7 * ease(k); street.frame(k < 0.5 ? 0 : 1, 2); G.camPitch = 0.12 + k * 0.15; }));
     black(1); G.cineFn = null;
     await S(wait(0.8));
     say('', '[무언가에 질질 끌려가는 소리]', 3); audio.drag();
@@ -273,9 +290,8 @@ async function playIntro() {
     say('초록모자', '팔로우 안 한 사람... 한 명 더.', 2.8, true);
     await S(wait(2.8)); audio.slam(); await S(wait(1.3));
   } catch (e) { if (e !== SKIP) console.error(e); }
-  skipFlag = false; tweens.clear();
+  skipFlag = false; tweens.clear(); G.cineFn = null; G.speed = 0; G.shake = 0;
   $('phone').classList.add('hidden'); $('cine-text').classList.remove('show'); $('sub').className = '';
-  street.scene.remove(pl); scene.add(pl); noob.pose = 'idle'; G.animSpeed = 0;
   SET.seenIntro = true; saveSet();
   startRun(true);
 }
@@ -311,22 +327,23 @@ async function startRun(card) {
   G.mode = 'cine'; G.safe = true; curScene = scene; skipFlag = false;
   $('hud').classList.add('hidden'); $('cine').classList.remove('hidden'); $('b-skip').classList.remove('hidden');
   const pl = G.player;
-  noob.pose = 'lieBed'; noob.snap(); noob.torchOn = false; noob.root.visible = true;
-  pl.pos.set(2.6, 0, 2.05); G.facing = 0;
-  const cam0 = new THREE.Vector3(4.2, 2.1, 3.3);
-  G.cineFn = dt => { noob.root.position.copy(pl.pos); noob.root.rotation.y = G.facing; noob.update(dt, G.animSpeed, false); camera.position.copy(cam0); camera.lookAt(2.9, 0.8, 1.0); world.update(dt, camera.position, monster.pos); };
+  // 침대에 누워 천장을 보는 상태
+  pl.pos.set(2.6, 0, 0.75); G.eyeH = 0.95; G.camYaw = Math.PI; G.camPitch = 1.35; G.roll = 0.15;
+  G.cineFn = dt => { firstPersonCam(dt); world.update(dt, pl.pos, monster.pos); fill.position.set(pl.pos.x, 2, pl.pos.z); fill.intensity = 0.8; };
   black(1);
   try {
-    await S(black(0, 2.0));
-    say('나', '으... 머리야...', 2); await S(wait(1.8));
-    noob.pose = 'idle';
-    const a = pl.pos.clone(), b = new THREE.Vector3(4.05, 0, 1.75);
-    await S(tween(1.0, k => { pl.pos.lerpVectors(a, b, ease(k)); G.facing = Math.PI / 2 * ease(k); }));
-    say('나', '여긴... 어디지?', 2); await S(wait(1.9));
+    // 눈을 깜빡이며 뜬다
+    await S(black(0.35, 1.0)); await S(black(0.9, 0.5)); await S(black(0, 1.2));
+    say('나', '으... 머리야...', 2); await S(wait(1.6));
+    await S(Promise.all([view(new THREE.Vector3(2.6, 0, 1.3), 1.2, Math.PI, -0.15, 1.1), tween(1.1, k => G.roll = 0.15 * (1 - k))]));
+    await S(view(new THREE.Vector3(4.05, 0, 1.75), EYE, -Math.PI / 2 + 0.5, -0.05, 1.0));
+    say('나', '여긴... 어디지?', 2);
+    await S(view(null, null, -Math.PI / 2 - 0.6, 0, 1.2));
+    await S(view(null, null, -Math.PI / 2, -0.08, 0.8));
   } catch (e) { if (e !== SKIP) console.error(e); }
   skipFlag = false; tweens.clear(); black(0); $('sub').className = '';
-  pl.pos.set(4.05, 0, 1.75); G.facing = Math.PI / 2; G.camYaw = -Math.PI / 2; G.camPitch = -0.22;
-  noob.pose = 'walk'; noob.snap(); noob.torchOn = G.torchOn = true;
+  pl.pos.set(4.05, 0, 1.75); G.eyeH = EYE; G.camYaw = -Math.PI / 2; G.camPitch = -0.08; G.roll = 0;
+  G.torchOn = true;
   $('cine').classList.add('hidden'); $('hud').classList.remove('hidden'); updateButtons();
   G.mode = 'play'; G.safe = false; G.cineFn = null;
   if (card) { const c = $('card'); c.classList.remove('hidden'); c.style.animation = 'none'; void c.offsetWidth; c.style.animation = ''; setTimeout(() => c.classList.add('hidden'), 4200); }
@@ -342,13 +359,13 @@ async function startExit() {
   audio.chase(0, 0);
   const f = world.front, pl = G.player;
   f.col.on = false; f.outside.visible = true; f.crack.forEach(c => c.visible = false);
-  // 괴물이 너무 가까우면 멀리 보낸다
   if (monster.pos.distanceTo(pl.pos) < 6) monster.root.visible = false;
-  pl.pos.set(14, 0, 22.5); G.facing = 0; noob.torchOn = false; noob.root.visible = true; noob.pose = 'idle';
-  const c0 = camera.position.clone(), q0 = camera.quaternion.clone();
-  const c1 = new THREE.Vector3(15.4, 1.75, 20.4), tmp = new THREE.PerspectiveCamera(); tmp.position.copy(c1); tmp.lookAt(14, 1.4, 24); const q1 = tmp.quaternion.clone();
-  G.cineFn = dt => { noob.root.position.copy(pl.pos); noob.root.rotation.y = G.facing; noob.update(dt, G.animSpeed, false); world.update(dt, pl.pos, null); };
-  await tween(1.4, k => { camera.position.lerpVectors(c0, c1, ease(k)); camera.quaternion.slerpQuaternions(q0, q1, ease(k)); });
+  G.speed = 0;
+  G.cineFn = dt => { G.walkPh += dt * G.speed * 2.6; firstPersonCam(dt); world.update(dt, pl.pos, null); };
+  // 문 앞으로 시선을 옮긴다
+  G.speed = 1.2;
+  await view(new THREE.Vector3(14, 0, 22.7), EYE, Math.PI, 0.02, 1.4);
+  G.speed = 0;
   audio.door({ x: 14, y: 1.5, z: 24 }, true); audio.wind(true);
   const W = new THREE.Color(0xfff8ec);
   await tween(2.6, k => {
@@ -357,10 +374,10 @@ async function startExit() {
     exitLight.intensity = 40 * e; renderer.toneMappingExposure = EXP() + e * 1.6;
     scene.fog.color.copy(FOG).lerp(W, e * 0.8); scene.background.copy(scene.fog.color); white(e * 0.2);
   });
-  noob.pose = 'walk'; G.animSpeed = 2.2;
-  const a = pl.pos.clone(), b = new THREE.Vector3(14, 0, 25.4), cc = camera.position.clone();
-  await tween(3.0, k => { pl.pos.lerpVectors(a, b, k); camera.position.lerpVectors(cc, new THREE.Vector3(14.6, 1.7, 22.0), ease(k)); white(0.2 + 0.8 * clamp((k - 0.35) / 0.65, 0, 1)); renderer.toneMappingExposure = 2.8 + k * 2; });
-  G.animSpeed = 0; G.cineFn = null;
+  G.speed = 2.0;
+  const a = pl.pos.clone(), b = new THREE.Vector3(14, 0, 25.6);
+  await tween(3.0, k => { pl.pos.lerpVectors(a, b, k); G.camPitch = 0.02 + k * 0.12; white(0.2 + 0.8 * clamp((k - 0.3) / 0.7, 0, 1)); renderer.toneMappingExposure = EXP() + 1.6 + k * 2; });
+  G.speed = 0; G.cineFn = null;
   $('cine').classList.add('hidden');
   const tsec = Math.round(G.time), mm = (tsec / 60 | 0), ss = String(tsec % 60).padStart(2, '0');
   if (!SET.best || tsec < SET.best) SET.best = tsec; saveSet();
@@ -399,13 +416,16 @@ function interLabel(it) {
     default: return it.label || '살펴보기';
   }
 }
+// 화면 가운데(바라보는 방향)에 가까운 것을 고른다
 function findInter() {
-  const p = G.player.pos, fx = Math.sin(G.facing), fz = Math.cos(G.facing); let best = null, bs = 1e9;
+  const p = G.player.pos, fx = -Math.sin(G.camYaw), fz = -Math.cos(G.camYaw); let best = null, bs = 1e9;
   for (const it of world.inter) {
     if (it.kind === 'diary' && it.read) continue; if (it.kind === 'drawer' && it.opened) continue;
     const dx = it.pos.x - p.x, dz = it.pos.z - p.z, d = Math.hypot(dx, dz);
-    if (d > (it.r || 1.3)) continue;
-    const dot = d > 0.01 ? (dx * fx + dz * fz) / d : 1, s = d - dot * 0.6;
+    if (d > (it.r || 1.3) + 0.2) continue;
+    const dot = d > 0.01 ? (dx * fx + dz * fz) / d : 1;
+    if (dot < 0.45 && d > 0.6) continue;
+    const s = d * (1.6 - dot);
     if (s < bs) { bs = s; best = it; }
   }
   return best;
@@ -423,6 +443,7 @@ function updateHUD(dt) {
     btn.querySelector('i').innerHTML = pl.hidden ? ICONS.door : ICONS.hand;
     btn.querySelector('span').textContent = pl.hidden ? '나가기' : '조사';
     btn.classList.toggle('ready', key.startsWith('f:')); btn.classList.toggle('dim', key === 'none');
+    $('cross').className = key.startsWith('f:') ? 'on' : pl.hidden ? 'off' : '';
     const pr = $('prompt');
     if (key.startsWith('f:')) { pr.textContent = (isTouch ? '' : '[E] ') + key.slice(2); pr.classList.add('show'); }
     else if (pl.hidden) { pr.textContent = (isTouch ? '' : '[E] ') + '밖으로 나가기'; pr.classList.add('show'); }
@@ -435,7 +456,7 @@ function updateHUD(dt) {
 /* ── 상호작용 ── */
 input.on('interact', () => interact());
 input.on('run', () => { if (G.mode !== 'play') return; input.runToggle = !input.runToggle; updateButtons(); });
-input.on('torch', () => { if (G.mode !== 'play' || G.player.hidden) return; G.torchOn = !G.torchOn; noob.torchOn = G.torchOn; audio.light(); updateButtons(); });
+input.on('torch', () => { if (G.mode !== 'play' || G.player.hidden) return; G.torchOn = !G.torchOn; audio.light(); updateButtons(); });
 input.on('notes', () => { if (G.mode === 'play') openNotes(); else if (modalStack.at(-1) === 'notes') closeModal('notes'); });
 input.on('pause', () => { if (G.mode === 'play') openModal('pause'); else if (modalStack.length) closeModal(modalStack.at(-1)); });
 $('mic').addEventListener('click', () => { if (G.mode === 'play') openSettings(); });
@@ -448,6 +469,7 @@ async function interact() {
   if (G.mode !== 'play' || G.busy) return;
   if (G.player.hidden) return exitHide();
   const it = G.focus; if (!it) return;
+  if (it.kind !== 'hide') arms.reach();
   switch (it.kind) {
     case 'door': {
       const d = it.door;
@@ -465,7 +487,7 @@ async function interact() {
         if (it.glint) it.glint.visible = true;
         await wait(0.35);
         const k = it.item.key; it.mesh.visible = false; if (it.glint) it.glint.visible = false;
-        G.inv[k] = true; audio.pickup(); toast(`<b>${KEYS[k]}</b>를 얻었다!`); renderInv();
+        arms.reach(); G.inv[k] = true; audio.pickup(); toast(`<b>${KEYS[k]}</b>를 얻었다!`); renderInv();
       } else toast('비어 있다.');
       G.busy = false; break;
     }
@@ -490,82 +512,87 @@ async function interact() {
   }
 }
 
-/* ── 숨기 ── */
+/* ── 숨기 (1인칭) ── */
 function eyeOf(spot) {
   const o = spot.out;
   if (spot.type === 'bed') return spot.front.clone().addScaledVector(o, -0.68).setY(0.2);
   if (spot.type === 'cabinet') return spot.inside.clone().addScaledVector(o, 0.18).setY(0.52);
   return spot.inside.clone().addScaledVector(o, 0.14).setY(1.5);
 }
+const flat = v => new THREE.Vector3(v.x, 0, v.z);
 const setDoors = (spot, v) => spot.doors.forEach(d => d.piv.rotation.y = d.open * v);
 async function enterHide(spot) {
   const pl = G.player; G.busy = true; input.runToggle = false; updateButtons();
-  const start = pl.pos.clone(), f0 = G.facing, into = Math.atan2(-spot.out.x, -spot.out.z);
-  noob.pose = 'walk'; G.animSpeed = 2;
-  await tween(0.3, k => { pl.pos.lerpVectors(start, spot.front, k); G.facing = angLerp(f0, into, k); });
-  G.animSpeed = 0; audio.hide(spot.type); noise(2.5);
+  const outYaw = yawTo(spot.out.x, spot.out.z), inYaw = yawTo(-spot.out.x, -spot.out.z), eye = eyeOf(spot);
+  await view(spot.front, EYE, inYaw, -0.1, 0.35);
+  audio.hide(spot.type); noise(2.5);
   if (spot.type === 'bed') {
-    G.facing = Math.atan2(spot.out.x, spot.out.z); noob.pose = 'lie';
-    await wait(0.45);
-    const a = spot.front.clone(), b = spot.front.clone().addScaledVector(spot.out, -0.8);
-    await tween(0.65, k => pl.pos.lerpVectors(a, b, ease(k)));
+    await view(null, null, outYaw, 0, 0.4);              // 침대를 등지고
+    await view(null, 0.3, null, 0.25, 0.5);              // 바닥에 눕고
+    await view(flat(eye), eye.y, null, 0.05, 0.7);       // 침대 밑으로 밀고 들어간다
   } else {
     await tween(0.3, k => setDoors(spot, ease(k)));
-    if (spot.type === 'cabinet') noob.pose = 'crouch';
-    G.animSpeed = 1.5; const a = pl.pos.clone();
-    await tween(0.45, k => pl.pos.lerpVectors(a, spot.inside, ease(k)));
-    G.animSpeed = 0; const f1 = G.facing, f2 = Math.atan2(spot.out.x, spot.out.z);
-    await tween(0.25, k => G.facing = angLerp(f1, f2, k));
+    await view(flat(eye), spot.type === 'cabinet' ? eye.y : EYE, null, spot.type === 'cabinet' ? -0.2 : -0.05, 0.5);
+    await view(null, null, outYaw, -0.05, 0.35);         // 안에서 돌아선다
     await tween(0.3, k => setDoors(spot, 1 - ease(k)));
   }
   if (G.mode !== 'play' && G.mode !== 'modal') return;
-  pl.hidden = true; pl.spot = spot; noob.root.visible = false; spot.doors.forEach(d => d.piv.visible = false);
+  pl.hidden = true; pl.spot = spot; spot.doors.forEach(d => d.piv.visible = false);
+  G.eyeH = eye.y; pl.pos.copy(flat(eye));
   $('fx-hide').className = 'fx ' + spot.type; $('hidden-tag').classList.add('show');
-  G.hideYaw = 0; G.hidePitch = spot.type === 'bed' ? 0.05 : -0.08;
+  G.hideYaw = 0; G.hidePitch = G.camPitch;
   monster.sawHide = (monster.chasing && monster.seenT < 0.9 && monster.pos.distanceTo(pl.pos) < 12) ? spot : null;
   G.busy = false;
 }
 async function exitHide() {
   const pl = G.player, spot = pl.spot; G.busy = true; pl.hidden = false; pl.spot = null;
-  noob.root.visible = true; spot.doors.forEach(d => d.piv.visible = true);
+  spot.doors.forEach(d => d.piv.visible = true);
   $('fx-hide').className = 'fx'; $('hidden-tag').classList.remove('show', 'danger');
   audio.hide(spot.type); noise(2.5);
-  G.camYaw = Math.atan2(-spot.out.x, -spot.out.z); G.camPitch = -0.15;
-  if (spot.type === 'bed') { const a = pl.pos.clone(); await tween(0.6, k => pl.pos.lerpVectors(a, spot.front, ease(k))); noob.pose = 'walk'; await wait(0.3); }
-  else {
-    await tween(0.25, k => setDoors(spot, ease(k))); noob.pose = 'walk'; G.animSpeed = 1.5;
-    const a = pl.pos.clone(); await tween(0.4, k => pl.pos.lerpVectors(a, spot.front, ease(k)));
-    G.animSpeed = 0; await tween(0.3, k => setDoors(spot, 1 - ease(k)));
+  const outYaw = yawTo(spot.out.x, spot.out.z);
+  if (spot.type === 'bed') {
+    await view(spot.front, 0.3, outYaw, 0.1, 0.6);
+    await view(null, EYE, null, -0.05, 0.45);
+  } else {
+    await tween(0.25, k => setDoors(spot, ease(k)));
+    await view(spot.front, EYE, outYaw, -0.05, 0.45);
+    await tween(0.3, k => setDoors(spot, 1 - ease(k)));
   }
   G.busy = false;
 }
 G.onPulled = (spot, m) => {
-  const pl = G.player; pl.hidden = false; pl.spot = null; G.busy = false;
-  noob.root.visible = true; noob.pose = 'walk'; noob.snap(); spot.doors.forEach(d => { d.piv.visible = true; d.piv.rotation.y = d.open; });
-  pl.pos.copy(spot.front).addScaledVector(spot.out, 0.35); G.facing = Math.atan2(-spot.out.x, -spot.out.z);
+  const pl = G.player; pl.hidden = false; pl.spot = null; G.busy = false; tweens.clear();
+  spot.doors.forEach(d => { d.piv.visible = true; d.piv.rotation.y = d.open; });
+  pl.pos.copy(spot.front).addScaledVector(spot.out, 0.35); G.eyeH = EYE;
+  G.camYaw = yawTo(m.pos.x - pl.pos.x || -spot.out.x, m.pos.z - pl.pos.z || -spot.out.z); G.camPitch = 0.05; G.shake = 0.6;
   $('fx-hide').className = 'fx'; $('hidden-tag').classList.remove('show', 'danger');
-  G.camYaw = Math.atan2(spot.out.x, spot.out.z); G.camPitch = -0.1; G.shake = 0.6;
   audio.stinger(); toast('들켰다!!', 1.5);
   setTimeout(() => tween(0.3, k => setDoors(spot, 1 - k)), 1200);
 };
 G.onSpotted = () => { audio.stinger(); showHeard('들켰다! 도망쳐!'); G.chaseTime = 0; };
 G.onHit = m => {
   const pl = G.player;
-  G.hp = Math.max(0, G.hp - 34); G.caught++; G.lastHurt = G.time; noob.hurt(); audio.hit(); G.shake = 0.8;
+  G.hp = Math.max(0, G.hp - 34); G.caught++; G.lastHurt = G.time; arms.hurt(); audio.hit(); G.shake = 0.8;
   $('fx-dmg').style.opacity = 1; tween(0.6, k => $('fx-dmg').style.opacity = 1 - k);
   let dx = pl.pos.x - m.pos.x, dz = pl.pos.z - m.pos.z, d = Math.hypot(dx, dz);
-  if (d < 0.05) { dx = Math.sin(G.facing); dz = Math.cos(G.facing); d = 1; }
+  if (d < 0.05) { dx = Math.sin(G.camYaw); dz = Math.cos(G.camYaw); d = 1; }
   for (let i = 0; i < 8; i++) { pl.pos.x += dx / d * 0.16; pl.pos.z += dz / d * 0.16; world.collide(pl.pos, 0.3); }
+  G.camYaw = yawTo(m.pos.x - pl.pos.x, m.pos.z - pl.pos.z);   // 맞으면 괴물 쪽으로 고개가 돌아간다
   if (G.hp <= 0) die(); else toast(G.hp < 40 ? '피가 많이 난다... 한 번 더 맞으면 끝이야!' : '초록모자에게 공격당했다! 도망쳐!', 2);
 };
 function die() {
-  G.mode = 'dead'; monster.enabled = false; noob.pose = 'dead'; tweens.clear(); G.busy = false;
-  audio.jumpscare(); audio.chase(0, 0);
+  G.mode = 'dead'; monster.enabled = false; G.busy = false; tweens.clear(); audio.chase(0, 0);
   $('hud').classList.add('hidden');
+  // 1인칭으로 쓰러진다
+  tween(0.6, k => { G.eyeH = EYE - (EYE - 0.3) * ease(k); G.roll = 1.1 * ease(k); G.camPitch = 0.3 * k; });
   const lines = ['초록모자: "팔로우 했으면 됐잖아."', '초록모자: "이제 영원히 내 팔로워야."', '초록모자: "맞팔... 해줄 거지?"'];
   $('over-line').textContent = lines[Math.random() * lines.length | 0];
-  const o = $('over'); o.classList.remove('hidden', 'showbox', 'scare'); void o.offsetWidth; o.classList.add('scare');
-  setTimeout(() => o.classList.add('showbox'), 1500);
+  setTimeout(() => {
+    if (G.mode !== 'dead') return;
+    audio.jumpscare();
+    const o = $('over'); o.classList.remove('hidden', 'showbox', 'scare'); void o.offsetWidth; o.classList.add('scare');
+    setTimeout(() => o.classList.add('showbox'), 1500);
+  }, 700);
 }
 $('o-retry').onclick = () => { $('over').classList.add('hidden'); startRun(false); };
 $('o-title').onclick = () => toTitle();
@@ -596,9 +623,7 @@ function openNotes(tab) {
 
 /* ── 비밀번호 ── */
 let kpEntry = '';
-function openKeypad() {
-  kpEntry = ''; drawKp(); openModal('keypad');
-}
+function openKeypad() { kpEntry = ''; drawKp(); openModal('keypad'); }
 function drawKp(cls = '') { const s = $('kp-screen'); s.textContent = (kpEntry + '____').slice(0, 4).split('').join(' '); s.className = 'kp-screen ' + cls; }
 $('kp-grid').innerHTML = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'OK'].map(k => `<button data-k="${k}" class="${k === 'C' ? 'c' : k === 'OK' ? 'e' : ''}">${k === 'C' ? '지움' : k === 'OK' ? '확인' : k}</button>`).join('');
 addEventListener('keydown', e => {
@@ -641,76 +666,71 @@ $('p-restart').onclick = () => { closeModal('pause'); startRun(false); };
 $('p-title').onclick = () => toTitle();
 document.addEventListener('visibilitychange', () => { if (document.hidden && G.mode === 'play') openModal('pause'); });
 
+/* ── 1인칭 카메라 ── */
+const tmpV = new THREE.Vector3(), lookDir = new THREE.Vector3();
+function firstPersonCam(dt) {
+  const pl = G.player, sp = G.speed, run = pl.running;
+  const k = Math.min(1, sp / 2.5);
+  const bobY = (pl.hidden ? Math.sin(G.time * 1.6) * 0.008 : -Math.abs(Math.sin(G.walkPh)) * (run ? 0.07 : 0.04) * k);
+  const bobX = Math.cos(G.walkPh) * (run ? 0.035 : 0.02) * k;
+  const y = G.camYaw, p = G.camPitch;
+  lookDir.set(-Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p));
+  camera.position.set(pl.pos.x + Math.cos(y) * bobX, clamp(G.eyeH + bobY, 0.12, CEIL - 0.12), pl.pos.z - Math.sin(y) * bobX);
+  camera.lookAt(tmpV.copy(camera.position).add(lookDir));
+  camera.rotateZ(G.roll + Math.sin(G.walkPh) * 0.006 * k);
+  if (G.shake > 0) { G.shake -= dt; const s = G.shake * 0.1; camera.position.x += (Math.random() - 0.5) * s; camera.position.y += (Math.random() - 0.5) * s; camera.position.z += (Math.random() - 0.5) * s; }
+  const fov = G.baseFov + (run && sp > 3 ? 7 : 0);
+  if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
+}
+
 /* ── 플레이 업데이트 ── */
-const tmpV = new THREE.Vector3(), lookDir = new THREE.Vector3(), camTarget = new THREE.Vector3();
 function surfaceAt(p) {
   const r = roomAt(p.x, p.z); if (!r) return 'wood';
   if (r.id === 'hall' && Math.abs(p.z - 8.5) < 0.6) return 'rug';
   return r.fl === 'tileF' ? 'tile' : r.fl === 'marble' ? 'marble' : 'wood';
 }
+let lastStep = 0;
 function updatePlayer(dt) {
-  const pl = G.player; let sp = G.animSpeed, run = false;
+  const pl = G.player;
+  const [lx, ly] = input.takeLook(); G.lookDX = lx; G.lookDY = ly;
+  if (pl.hidden && !G.busy) {
+    G.hideYaw = clamp(G.hideYaw - lx, -0.85, 0.85); G.hidePitch = clamp(G.hidePitch - ly, -0.5, 0.4);
+    G.camYaw = yawTo(pl.spot.out.x, pl.spot.out.z) + G.hideYaw; G.camPitch = G.hidePitch;
+  } else if (!G.busy) { G.camYaw -= lx; G.camPitch = clamp(G.camPitch - ly, -1.35, 1.25); }
+  let sp = 0, run = false;
   if (!G.busy && !pl.hidden) {
     const mv = input.move();
     const fx = -Math.sin(G.camYaw), fz = -Math.cos(G.camYaw), rx = Math.cos(G.camYaw), rz = -Math.sin(G.camYaw);
     const mx = fx * mv.y + rx * mv.x, mz = fz * mv.y + rz * mv.x;
-    const want = input.running && mv.mag > 0.3 && !G.tired;
-    sp = (want ? 4.9 : 2.5) * mv.mag; run = want; pl.running = run;
-    if (mv.mag > 0.05) {
-      pl.pos.x += mx * sp * dt; pl.pos.z += mz * sp * dt; world.collide(pl.pos, 0.3);
-      G.facing = angLerp(G.facing, Math.atan2(mx, mz), Math.min(1, dt * 12));
-    } else if (G.torchOn) G.facing = angLerp(G.facing, Math.atan2(fx, fz), Math.min(1, dt * 4));
-    if (run && mv.mag > 0.3) { G.st -= 19 * dt; if (G.st <= 0) { G.st = 0; G.tired = true; input.runToggle = false; updateButtons(); toast('숨이 차다...', 1.5); } }
+    const want = input.running && mv.y > 0.3 && !G.tired;
+    sp = (want ? 4.9 : 2.5) * mv.mag; run = want;
+    if (mv.mag > 0.05) { pl.pos.x += mx * sp * dt; pl.pos.z += mz * sp * dt; world.collide(pl.pos, 0.3); }
+    if (run) { G.st -= 19 * dt; if (G.st <= 0) { G.st = 0; G.tired = true; input.runToggle = false; updateButtons(); toast('숨이 차다...', 1.5); } }
     else { G.st = Math.min(100, G.st + (mv.mag > 0.05 ? 11 : 18) * dt); if (G.tired && G.st > 35) G.tired = false; }
-    if (input.runToggle && mv.mag < 0.05) { /* 멈춰도 켜둔다 */ }
-    G.stepAcc += sp * dt;
-    if (G.stepAcc > (run ? 1.25 : 0.72)) { G.stepAcc = 0; const s = surfaceAt(pl.pos); audio.step(s, run); noise(run ? 9.5 : (s === 'rug' ? 1.2 : 2.2), 'step'); }
-  } else pl.running = false;
-  noob.root.position.copy(pl.pos); noob.root.rotation.y = G.facing; noob.update(dt, sp, run);
-  // 회복
+    G.walkPh += sp * dt * Math.PI / (run ? 1.25 : 0.72);
+    const st = Math.floor(G.walkPh / Math.PI);
+    if (sp > 0.2 && st !== lastStep) { lastStep = st; const s = surfaceAt(pl.pos); audio.step(s, run); noise(run ? 9.5 : (s === 'rug' ? 1.2 : 2.2), 'step'); }
+  } else if (G.busy) sp = 1.2;
+  pl.running = run; G.speed = sp;
   if (G.time - G.lastHurt > 8 && G.hp < 100) G.hp = Math.min(100, G.hp + 2.5 * dt);
-}
-function updateCamera(dt) {
-  const [lx, ly] = input.takeLook(), pl = G.player;
-  if (pl.hidden) {
-    const s = pl.spot; G.hideYaw = clamp(G.hideYaw - lx, -0.75, 0.75); G.hidePitch = clamp(G.hidePitch - ly, -0.45, 0.3);
-    const yaw = Math.atan2(-s.out.x, -s.out.z) + G.hideYaw, p = G.hidePitch;
-    const eye = eyeOf(s); camera.position.copy(eye);
-    lookDir.set(-Math.sin(yaw) * Math.cos(p), Math.sin(p), -Math.cos(yaw) * Math.cos(p));
-    camera.lookAt(tmpV.copy(eye).add(lookDir));
-    // 숨을 쉬는 듯한 흔들림
-    camera.position.y += Math.sin(G.time * 1.6) * 0.008;
-  } else {
-    G.camYaw -= lx; G.camPitch = clamp(G.camPitch - ly, -1.15, 0.6);
-    const y = G.camYaw, p = G.camPitch;
-    lookDir.set(-Math.sin(y) * Math.cos(p), Math.sin(p), -Math.cos(y) * Math.cos(p));
-    camTarget.set(pl.pos.x, 1.85, pl.pos.z);
-    const back = tmpV.copy(lookDir).negate();
-    let d = world.ray(camTarget, back, G.camDist + 0.2) - 0.2;
-    d = clamp(d, 0.25, G.camDist);
-    camera.position.copy(camTarget).addScaledVector(back, d);
-    camera.position.y = clamp(camera.position.y, 0.25, CEIL - 0.15);
-    camera.lookAt(tmpV.copy(camTarget).add(lookDir));
-    noob.root.visible = d > 0.55;
-  }
-  if (G.shake > 0) { G.shake -= dt; const s = G.shake * 0.12; camera.position.x += (Math.random() - 0.5) * s; camera.position.y += (Math.random() - 0.5) * s; camera.position.z += (Math.random() - 0.5) * s; }
 }
 function updateTorch() {
   const on = G.torchOn && !G.player.hidden && (G.mode === 'play' || G.mode === 'modal');
-  torch.intensity = on ? 110 : 0;
+  torch.intensity = on ? 110 : 0; vmGlow.intensity = on ? 0.6 : 0;
   if (on) {
-    noob.tip.getWorldPosition(torch.position);
     camera.getWorldDirection(tmpV);
+    // 오른손 높이에서 비춘다
+    torch.position.copy(camera.position).addScaledVector(tmpV, 0.3);
+    torch.position.x += Math.cos(G.camYaw) * 0.22; torch.position.z -= Math.sin(G.camYaw) * 0.22; torch.position.y -= 0.2;
     torch.target.position.copy(camera.position).addScaledVector(tmpV, 12);
   }
-  fill.position.set(G.player.pos.x, 2.0, G.player.pos.z); fill.intensity = G.player.hidden ? 0.15 : 0.9;
+  fill.position.set(G.player.pos.x, 2.0, G.player.pos.z); fill.intensity = G.player.hidden ? 0.15 : 0.8;
 }
 function playUpdate(dt) {
   G.time += dt;
   const pl = G.player;
-  G.focus = (G.busy || pl.hidden) ? null : findInter();
   updatePlayer(dt);
-  // 마이크
+  G.focus = (G.busy || pl.hidden) ? null : findInter();
   if (audio.mic) {
     const lv = audio.readMic(dt); G.micLevel = lv;
     const md = monster.pos.distanceTo(pl.pos);
@@ -721,10 +741,10 @@ function playUpdate(dt) {
   } else G.micLevel = 0;
   monster.update(dt, G);
   if (monster.chasing) G.chaseTime += dt;
-  updateCamera(dt);
+  firstPersonCam(dt);
   updateTorch();
+  arms.update(dt, { speed: G.speed, run: pl.running, torchOn: G.torchOn, lookDX: G.lookDX / Math.max(dt, 0.016) * 0.016, lookDY: G.lookDY / Math.max(dt, 0.016) * 0.016 });
   world.update(dt, pl.pos, monster.pos);
-  // 긴장감
   const md = monster.pos.distanceTo(pl.pos), near = clamp(1 - md / 12, 0, 1);
   audio.chase(monster.chasing ? 1 : monster.state === 'search' || monster.state === 'goCheck' ? 0.25 : 0, dt);
   if (near > 0.15 || monster.chasing) audio.heartbeat(70 + near * 70 + (monster.chasing ? 25 : 0), 0.2 + near * 0.6);
@@ -732,7 +752,6 @@ function playUpdate(dt) {
   $('fx-low').style.opacity = G.hp < 70 ? (1 - G.hp / 100) * (0.8 + Math.sin(G.time * 5) * 0.2) : 0;
   $('hidden-tag').classList.toggle('danger', pl.hidden && md < 4.5);
   audio.ambience(true, dt);
-  // 번개
   G.lightT -= dt;
   if (G.lightT <= 0) { G.lightT = 24 + Math.random() * 30; world.lightning = 0.55; G.flash = 0.5; audio.thunder(0.4 + Math.random() * 0.8); }
   G.flash = Math.max(0, G.flash - dt); hemi.intensity = 0.5 + (G.flash > 0.25 ? 0.9 : G.flash > 0.12 && G.flash < 0.18 ? 0.6 : 0);
@@ -742,6 +761,7 @@ function playUpdate(dt) {
 
 /* ── 메인 루프 ── */
 let last = performance.now();
+function micMeter(dt) { const lv = audio.readMic(dt); $('s-micfill').style.width = lv * 100 + '%'; $('s-miclabel').textContent = audio.mic ? (lv > G.micThreshold ? '초록모자가 들어요!' : '조용함') : '마이크 꺼짐'; }
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -751,13 +771,16 @@ function loop(now) {
     case 'title': titleUpdate(dt); break;
     case 'play': playUpdate(dt); break;
     case 'cine': if (G.cineFn) G.cineFn(dt); else if (curScene === scene) world.update(dt, camera.position, monster.pos); if (curScene === scene && monster.root.visible) monster.animate(dt, G); updateTorch(); break;
-    case 'dead': { G.time += dt; world.update(dt, G.player.pos, monster.pos); noob.update(dt, 0, false); monster.animate(dt, G); break; }
-    case 'modal': if (modalStack.includes('settings')) { const lv = audio.readMic(dt); $('s-micfill').style.width = lv * 100 + '%'; $('s-miclabel').textContent = audio.mic ? (lv > G.micThreshold ? '초록모자가 들어요!' : '조용함') : '마이크 꺼짐'; } break;
+    case 'dead': G.time += dt; firstPersonCam(dt); world.update(dt, G.player.pos, monster.pos); monster.animate(dt, G); break;
   }
-  if (G.mode === 'title' && modalStack.includes('settings')) { const lv = audio.readMic(dt); $('s-micfill').style.width = lv * 100 + '%'; $('s-miclabel').textContent = audio.mic ? (lv > G.micThreshold ? '초록모자가 들어요!' : '조용함') : '마이크 꺼짐'; }
+  if (modalStack.includes('settings')) micMeter(dt);
   if (audio.ctx) { camera.getWorldDirection(tmpV); audio.listener(camera.position, tmpV); audio.lastCam = camera.position; if (monster) audio.monsterAt(monster.pos); }
+  renderer.autoClear = true;
   renderer.render(curScene, camera);
+  if ((G.mode === 'play' || G.mode === 'modal') && !G.player.hidden && !G.busy) {
+    renderer.autoClear = false; renderer.clearDepth(); renderer.render(vmScene, vmCam);
+  }
 }
 
-if (location.search.includes('debug')) window.GH = { G, torch, renderer, get world() { return world; }, get monster() { return monster; }, get noob() { return noob; }, camera, startExit, die, interact, THREE };
+if (location.search.includes('debug')) window.GH = { G, torch, renderer, arms, get world() { return world; }, get monster() { return monster; }, camera, startExit, die, interact, THREE };
 boot().catch(e => { console.error(e); $('ld-text').textContent = '불러오기 실패: ' + e.message + ' — 웹서버(https 또는 localhost)에서 열어 주세요.'; });

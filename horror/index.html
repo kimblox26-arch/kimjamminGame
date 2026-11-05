@@ -9,18 +9,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=East+Sea+Dokdo&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=20261105a">
+<link rel="stylesheet" href="./style.css?v=20261105b">
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
     "three/addons/": "../vendor/three/addons/",
-    "./js/world.js": "./js/world.js?v=20261105a",
-    "./js/noob.js": "./js/noob.js?v=20261105a",
-    "./js/monster.js": "./js/monster.js?v=20261105a",
-    "./js/audio.js": "./js/audio.js?v=20261105a",
-    "./js/input.js": "./js/input.js?v=20261105a",
-    "./js/story.js": "./js/story.js?v=20261105a"
+    "./js/world.js": "./js/world.js?v=20261105b",
+    "./js/noob.js": "./js/noob.js?v=20261105b",
+    "./js/monster.js": "./js/monster.js?v=20261105b",
+    "./js/audio.js": "./js/audio.js?v=20261105b",
+    "./js/input.js": "./js/input.js?v=20261105b",
+    "./js/story.js": "./js/story.js?v=20261105b"
   }
 }
 </script>
@@ -53,6 +53,7 @@
     </div>
   </div>
   <div id="joy-zone"><div id="joy"><div id="joy-knob"></div></div></div>
+  <div id="cross"></div>
   <div id="prompt"></div>
   <div id="btns">
     <button class="btn big" id="b-act" data-act="interact"><i data-icon="hand"></i><span>조사</span></button>
@@ -176,7 +177,7 @@
       <div><i data-icon="mic"></i><b>소리 감지</b><span>크게 말하면 초록모자가 온다</span></div>
       <div><i data-icon="door"></i><b>숨은 곳에서 나가기</b><span>조사 버튼</span></div>
     </div>
-    <p class="small">휴대폰: 왼쪽 조이스틱으로 이동, 화면 오른쪽을 끌어서 둘러보기 · PC: WASD 이동, 마우스 드래그로 둘러보기</p>
+    <p class="small">1인칭 시점 · 휴대폰: 왼쪽 조이스틱으로 이동, 화면 오른쪽을 끌어서 둘러보기 · PC: WASD 이동, 마우스 드래그로 둘러보기</p>
     <button class="menu" data-close="help">확인</button>
   </div>
 </section>
@@ -211,6 +212,6 @@
   <p id="ld-text">저택을 짓는 중...</p>
 </section>
 
-<script type="module" src="./js/main.js?v=20261105a"></script>
+<script type="module" src="./js/main.js?v=20261105b"></script>
 </body>
 </html>
