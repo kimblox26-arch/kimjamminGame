@@ -179,7 +179,7 @@ function goFull() { if (!isTouch) return; try { const d = document.documentEleme
 async function enableMic(on) {
   if (!on) { audio.stopMic(); SET.mic = false; saveSet(); updateMicUI(); return; }
   try { await audio.startMic(); SET.mic = true; }
-  catch (e) { SET.mic = false; toast('마이크를 켤 수 없어요. 마이크 없이 진행합니다.<br><small>(https 주소에서 권한을 허용해야 해요)</small>', 4); }
+  catch (e) { SET.mic = false; toast('마이크를 켤 수 없어요. 마이크 없이 진행합니다.<br><small>(권한을 거절했거나, 이 주소에서는 마이크가 막혀 있어요)</small>', 4); }
   saveSet(); updateMicUI();
 }
 function updateMicUI() { const on = !!audio.mic; $('mic').classList.toggle('off', !on); $('mic').querySelector('i').innerHTML = on ? ICONS.mic : ICONS.micOff; $('s-mic').checked = on; }
