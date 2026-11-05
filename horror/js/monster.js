@@ -1,250 +1,269 @@
-// 초록모자 — 2D 스프라이트(앞/뒤 걷기) + 추적 AI (시야 · 소리 · 숨은 곳 뒤지기)
+// 초록모자 — 사진(앞·뒤)을 입힌 관절 3D 몸 + 천천히 돌아다니는 추적 AI
 import * as THREE from 'three';
-import { SHARED } from './world.js';
 
-const COLS = 8, ROWS = 3, PH = 2.75, PW = PH * 300 / 420;
+// greenhat_parts.png 안의 위치 [u0, v0, u1, v1] (화면 왼쪽 L / 오른쪽 R 기준)
+const P = {
+  head: { front: [0, .2245, .1226, 1], back: [.1242, .2245, .2469, 1], side: [.2484, .2245, .2610, 1] },
+  torso: { front: [.2626, 0, .3821, 1], back: [.3836, 0, .5031, 1], side: [.5047, 0, .5173, 1] },
+  armL: { front: [.5189, .0204, .5613, 1], back: [.5629, .0204, .6053, 1], side: [.6069, .0204, .6195, 1] },
+  armR: { front: [.6211, .0204, .6635, 1], back: [.6651, .0204, .7075, 1], side: [.7091, .0204, .7217, 1] },
+  legL: { front: [.7233, .1735, .7838, 1], back: [.7854, .1735, .8459, 1], side: [.8475, .1735, .8601, 1] },
+  legR: { front: [.8616, .1735, .9222, 1], back: [.9237, .1735, .9843, 1], side: [.9858, .1735, .9984, 1] },
+};
+const PX = 2.45 / 502;   // 사진 1픽셀 = 몇 m (키 2.45m)
+
+function partGeo(w, h, d, front, back, side) {
+  const g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv;
+  const rect = (r, u, v) => [r[0] + u * (r[2] - r[0]), r[1] + v * (r[3] - r[1])];
+  const top = [side[0], side[3] - 0.004, side[2], side[3]], bot = [side[0], side[1], side[2], side[1] + 0.004];
+  const faces = [side, side, top, bot, front, back];      // px nx py ny pz nz
+  for (let f = 0; f < 6; f++) for (let i = 0; i < 4; i++) { const k = f * 4 + i; const [u, v] = rect(faces[f], uv.getX(k), uv.getY(k)); uv.setXY(k, u, v); }
+  return g;
+}
+
+// 초록모자 몸 만들기 — stone 이면 돌 동상
+export function buildGreenHat(tex, stoneMat) {
+  const mat = stoneMat || new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.14 });
+  const root = new THREE.Group(), hips = new THREE.Group(); root.add(hips);
+  const mk = (w, h, d, name, frontKey, backKey) => new THREE.Mesh(partGeo(w, h, d, P[frontKey].front, P[backKey].back, P[frontKey].side), mat);
+  const legH = 162 * PX, legW = 77 * PX, torsoH = 196 * PX, torsoW = 152 * PX, armW = 54 * PX, armH = 192 * PX;
+  const hipY = legH, shY = (946 - 612) * PX, shX = 97 * PX, legX = 37.5 * PX;
+  const torso = mk(torsoW, torsoH, 0.37, 'torso', 'torso', 'torso'); torso.position.y = legH + torsoH / 2 - 0.01; hips.add(torso);
+  const neck = new THREE.Group(); neck.position.y = legH + torsoH - 0.02; hips.add(neck);
+  const head = mk(156 * PX, 152 * PX, 0.62, 'head', 'head', 'head'); head.position.y = 152 * PX / 2; neck.add(head);
+  // 몸의 오른쪽(-x)은 앞 사진의 왼쪽, 뒤 사진의 오른쪽
+  const limb = (x, y, w, h, d, fk, bk, top) => {
+    const piv = new THREE.Group(); piv.position.set(x, y, 0); hips.add(piv);
+    const m = mk(w, h, d, '', fk, bk); m.position.y = top - h / 2; piv.add(m); return piv;
+  };
+  const armRt = limb(-shX, shY, armW, armH, 0.25, 'armL', 'armR', 14 * PX);
+  const armLt = limb(shX, shY, armW, armH, 0.25, 'armR', 'armL', 14 * PX);
+  const legRt = limb(-legX, hipY, legW, legH, 0.33, 'legL', 'legR', 0);
+  const legLt = limb(legX, hipY, legW, legH, 0.33, 'legR', 'legL', 0);
+  return { root, hips, neck, armR: armRt, armL: armLt, legR: legRt, legL: legLt, mat, height: legH + torsoH + 152 * PX };
+}
 
 export class Monster {
-  constructor(scene, atlas, world, audio) {
+  constructor(scene, tex, world, audio) {
     this.world = world; this.audio = audio;
-    atlas.colorSpace = THREE.SRGBColorSpace; atlas.repeat.set(1 / COLS, 1 / ROWS); atlas.magFilter = THREE.LinearFilter;
-    this.tex = atlas;
-    const geo = new THREE.PlaneGeometry(PW, PH); geo.translate(0, PH / 2 - 0.04, 0);
-    this.mat = new THREE.MeshLambertMaterial({ map: atlas, alphaTest: 0.5, side: THREE.DoubleSide, emissive: 0xffffff, emissiveMap: atlas, emissiveIntensity: 0.07 });
-    this.mesh = new THREE.Mesh(geo, this.mat); this.mesh.castShadow = true;
-    this.mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: atlas, alphaTest: 0.5 });
-    const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.7), new THREE.MeshBasicMaterial({ map: SHARED.blob, transparent: true, depthWrite: false }));
-    blob.rotation.x = -Math.PI / 2; blob.position.y = 0.01; this.blob = blob;
-    this.root = new THREE.Group(); this.root.add(this.mesh); this.root.add(blob); scene.add(this.root);
-    this.pos = this.root.position; this.dir = new THREE.Vector3(0, 0, 1);
-    this.reset(new THREE.Vector3(14, 0, 21));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.rig = buildGreenHat(tex); this.mat = this.rig.mat;
+    this.root = this.rig.root; scene.add(this.root);
+    this.pos = this.root.position; this.dir = new THREE.Vector3(0, 0, 1); this.face = 0;
+    this.reset(new THREE.Vector3(38, 0, 8.5));
   }
   reset(p) {
-    this.pos.copy(p); this.state = 'idle'; this.timer = 4; this.path = []; this.dist = 0; this.frame = 0; this.row = 0;
-    this.aware = 0; this.lastSeen = new THREE.Vector3(); this.seenT = 0; this.cool = 0; this.target = null; this.sawHide = null;
-    this.searchLeft = 0; this.checkSpot = null; this.stuck = 0; this.lastPos = p.clone(); this.anim = 0; this.voiceT = 8;
-    this.speed = 0; this.root.visible = true; this.enabled = true; this.facingOverride = null; this.jit = 0; this.lookT = 0;
+    this.pos.copy(p); this.state = 'idle'; this.timer = 4; this.path = []; this.ph = 0; this.speed = 0;
+    this.aware = 0; this.lastSeen = new THREE.Vector3(); this.seenT = 99; this.cool = 0; this.target = null; this.sawHide = null;
+    this.searchLeft = 0; this.checkSpot = null; this.stuck = 0; this.lastPos = p.clone(); this.anim = 0; this.voiceT = 10; this.wait = 0;
+    this.root.visible = true; this.enabled = true; this.lookT = 0; this.stepSide = 0;
   }
   get chasing() { return this.state === 'chase' || this.state === 'attack'; }
 
-  // ── 감각 ──
+  // ── 감각: 눈으로 본다 ──
   canSee(g) {
     const pl = g.player; if (pl.hidden || g.safe) return false;
     const dx = pl.pos.x - this.pos.x, dz = pl.pos.z - this.pos.z, d = Math.hypot(dx, dz);
-    const range = 12 + (g.torchOn ? 5 : 0) + (pl.running ? 2 : 0);
-    if (d > range) return false;
-    if (d > 2.2) { const dot = (dx * this.dir.x + dz * this.dir.z) / d; if (dot < 0.25) return false; }
+    if (d > 17 + (pl.running ? 3 : 0)) return false;
+    if (d > 2.5) { const dot = (dx * this.dir.x + dz * this.dir.z) / d; if (dot < 0.3) return false; }
     return this.world.clear(this.pos.x, this.pos.z, pl.pos.x, pl.pos.z, 1.5, false, true);
   }
-  // 소리 듣기: radius 안이면 그 위치로 간다. 벽 너머는 절반만 들린다
-  hear(pos, radius, g, kind = 'noise') {
-    if (!this.enabled || this.state === 'attack' || this.state === 'recover' || this.state === 'pull') return false;
+  // ── 감각: 마이크로 들어온 실제 목소리만 듣는다 ──
+  hearVoice(pos, radius, g) {
+    if (!this.enabled || ['attack', 'recover', 'pull', 'chase'].includes(this.state)) return false;
     let d = Math.hypot(pos.x - this.pos.x, pos.z - this.pos.z);
-    if (!this.world.clear(this.pos.x, this.pos.z, pos.x, pos.z, 1.5, false, true)) d *= 1.6;
+    if (!this.world.clear(this.pos.x, this.pos.z, pos.x, pos.z, 1.5, false, true)) d *= 1.5;
     if (d > radius) return false;
     const pl = g.player;
-    if (kind === 'voice' && pl.hidden && pl.spot) { // 숨어서 떠들면 숨은 곳을 정확히 안다
-      this.goCheck(pl.spot, true); return true;
-    }
-    if (this.state === 'chase') return true;
-    this.investigate(pos); return true;
-  }
-  investigate(pos) {
-    this.state = 'investigate'; this.target = pos.clone(); this.pathTo(pos); this.timer = 0;
-    this.say(['뭐야...?', '거기 누구야?', '소리가 났는데...'][Math.random() * 3 | 0]);
+    if (pl.hidden && pl.spot) { this.goCheck(pl.spot, true); return true; }
+    this.state = 'investigate'; this.target = pos.clone(); this.pathTo(pos);
+    this.say(['뭐야...?', '거기 누구야?', '목소리가 들렸는데...'][Math.random() * 3 | 0]);
+    return true;
   }
   goCheck(spot, sure) {
     this.state = 'goCheck'; this.checkSpot = spot; this.sure = sure; this.pathTo(spot.front);
-    if (sure) this.say('찾았다...');
+    if (sure) this.say('거기 있구나...');
   }
-  say(t) { this.audio.monsterVoice(t, this.pos); }
+  say(t) { if (Array.isArray(t)) t = t[Math.random() * t.length | 0]; this.audio.monsterVoice(t, this.pos); }
 
   // ── 이동 ──
   pathTo(p) {
     const w = this.world;
     if (w.clear(this.pos.x, this.pos.z, p.x, p.z, 0.6, false)) { this.path = [{ x: p.x, z: p.z }]; return; }
-    const a = w.nearestNode(this.pos.x, this.pos.z), b = w.nearestNode(p.x, p.z);
-    const nodes = w.findPath(a, b);
+    const nodes = w.findPath(w.nearestNode(this.pos.x, this.pos.z), w.nearestNode(p.x, p.z));
     this.path = nodes.map(n => ({ x: n.x, z: n.z, door: n.door }));
     this.path.push({ x: p.x, z: p.z });
+  }
+  turnTo(dx, dz, dt) {
+    const want = Math.atan2(dx, dz); let d = want - this.face; d = Math.atan2(Math.sin(d), Math.cos(d));
+    this.face += d * Math.min(1, dt * 5); this.dir.set(Math.sin(this.face), 0, Math.cos(this.face));
   }
   step(dt, speed) {
     if (!this.path.length) { this.speed = 0; return true; }
     const t = this.path[0];
-    // 문 열기
-    if (t.door) { const d = this.world.doors[t.door]; if (d && !d.open && Math.hypot(t.x - this.pos.x, t.z - this.pos.z) < 1.6) { d.setOpen(true); this.audio.door(d.pos, true); this.wait = 0.45; } }
+    if (t.door) { const d = this.world.doors[t.door]; if (d && !d.open && Math.hypot(t.x - this.pos.x, t.z - this.pos.z) < 1.7) { d.setOpen(true); this.audio.door(d.pos, true); this.wait = 0.6; } }
     if (this.wait > 0) { this.wait -= dt; this.speed = 0; return false; }
     const dx = t.x - this.pos.x, dz = t.z - this.pos.z, d = Math.hypot(dx, dz);
-    if (d < 0.25) { this.path.shift(); return !this.path.length; }
+    if (d < 0.3) { this.path.shift(); return !this.path.length; }
+    this.turnTo(dx, dz, dt);
     const v = Math.min(d, speed * dt);
-    this.dir.set(dx / d, 0, dz / d);
-    this.pos.x += this.dir.x * v; this.pos.z += this.dir.z * v;
-    this.world.collide(this.pos, 0.3, 1.8, true);
-    this.speed = speed; this.dist += v;
-    return false;
+    this.pos.x += dx / d * v; this.pos.z += dz / d * v;
+    this.world.collide(this.pos, 0.35, 1.8, true);
+    this.speed = speed; return false;
   }
   moveDirect(dt, target, speed) {
     const dx = target.x - this.pos.x, dz = target.z - this.pos.z, d = Math.hypot(dx, dz);
     if (d < 0.05) return;
-    this.dir.set(dx / d, 0, dz / d);
+    this.turnTo(dx, dz, dt);
     const v = Math.min(d, speed * dt);
-    this.pos.x += this.dir.x * v; this.pos.z += this.dir.z * v;
-    this.world.collide(this.pos, 0.3, 1.8, false);
-    this.speed = speed; this.dist += v;
+    this.pos.x += dx / d * v; this.pos.z += dz / d * v;
+    this.world.collide(this.pos, 0.35, 1.8, false);
+    this.speed = speed;
   }
   randomPatrol(g) {
-    const w = this.world, ids = w.patrolIds.filter(id => w.nodeOpen(w.nodes[id]));
-    // 처음 잠깐은 플레이어 근처로 오지 않는다
-    let cand = ids.map(id => w.nodes[id]);
-    if (g.time < 35) cand = cand.filter(n => Math.hypot(n.x - g.player.pos.x, n.z - g.player.pos.z) > 12);
-    // 플레이어 쪽으로 약간 끌리게
+    const w = this.world;
+    let cand = w.patrolIds.map(id => w.nodes[id]).filter(n => w.nodeOpen(n) && w.reachable(n));
+    const pp = g.player.pos, far = cand.filter(n => Math.hypot(n.x - pp.x, n.z - pp.z) > 10);
+    if (g.time < 30 && far.length) cand = far;                // 처음엔 멀리서만 돈다
     cand.sort(() => Math.random() - 0.5);
-    const near = cand.slice(0, 4).sort((a, b) => Math.hypot(a.x - g.player.pos.x, a.z - g.player.pos.z) - Math.hypot(b.x - g.player.pos.x, b.z - g.player.pos.z));
-    const n = Math.random() < 0.55 ? near[0] : cand[0];
-    this.pathTo(new THREE.Vector3(n.x, 0, n.z));
+    // 점점 플레이어 쪽으로 걸어온다
+    const near = cand.slice(0, 5).sort((a, b) => Math.hypot(a.x - pp.x, a.z - pp.z) - Math.hypot(b.x - pp.x, b.z - pp.z));
+    const n = Math.random() < 0.6 ? near[0] : cand[0];
+    if (n) this.pathTo(new THREE.Vector3(n.x, 0, n.z));
   }
 
   // ── 매 프레임 ──
   update(dt, g) {
     if (!this.enabled) return;
+    this.world.monsterPos.copy(this.pos);
     const pl = g.player;
     this.cool -= dt; this.voiceT -= dt;
     const sees = this.canSee(g);
     const dpl = Math.hypot(pl.pos.x - this.pos.x, pl.pos.z - this.pos.z);
     if (sees) {
       this.lastSeen.copy(pl.pos); this.seenT = 0;
-      if (this.state !== 'chase' && this.state !== 'attack' && this.state !== 'recover' && this.state !== 'pull') {
-        this.aware += dt * (dpl < 4 ? 10 : 1.4 + (12 - dpl) * 0.25);
-        if (this.aware >= 1) { this.state = 'chase'; g.onSpotted(); this.say(['찾았다', '팔로우 안 한 애...', '거기 있었구나'][Math.random() * 3 | 0]); }
+      if (!['chase', 'attack', 'recover', 'pull'].includes(this.state)) {
+        // 멀리 있으면 천천히 알아챈다
+        this.aware += dt * (dpl < 4 ? 6 : 0.5 + (17 - dpl) * 0.09);
+        if (this.aware > 0.4 && this.state !== 'notice') { this.state = 'notice'; this.timer = 0.6; this.path = []; }
+        if (this.aware >= 1) { this.state = 'chase'; g.onSpotted(); this.say(['찾았다...', '팔로우 안 한 애...', '거기 있었구나']); }
       }
-    } else { this.seenT += dt; this.aware = Math.max(0, this.aware - dt * 0.4); }
+    } else { this.seenT += dt; this.aware = Math.max(0, this.aware - dt * 0.3); }
 
     switch (this.state) {
       case 'idle': this.speed = 0; this.timer -= dt; if (this.timer <= 0) { this.state = 'patrol'; this.randomPatrol(g); } break;
+      case 'notice': { // 고개를 돌려 이쪽을 본다
+        this.speed = 0; this.turnTo(pl.pos.x - this.pos.x, pl.pos.z - this.pos.z, dt);
+        if (!sees && this.aware < 0.3) { this.state = 'patrol'; this.randomPatrol(g); }
+        break;
+      }
       case 'patrol': {
-        if (this.step(dt, 1.45)) { this.state = 'look'; this.timer = 1.5 + Math.random() * 2.5; }
-        if (this.voiceT < 0 && dpl < 13) { this.voiceT = 12 + Math.random() * 14; this.say(['팔로우...', '팔로우 해줘...', '어디 있니...', '맞팔 해줄 거지?'][Math.random() * 4 | 0]); }
+        if (this.step(dt, 1.1)) { this.state = 'look'; this.timer = 2 + Math.random() * 3; }
+        if (this.voiceT < 0 && dpl < 14) { this.voiceT = 14 + Math.random() * 16; this.say(['팔로우...', '어디 있니...', '맞팔 해줄 거지?', '숨바꼭질 할까?']); }
         break;
       }
       case 'look': {
         this.speed = 0; this.timer -= dt; this.lookT -= dt;
-        if (this.lookT <= 0) { this.lookT = 0.7; const a = Math.random() * Math.PI * 2; this.dir.set(Math.cos(a), 0, Math.sin(a)); }
+        if (this.lookT <= 0) { this.lookT = 1.2; this.lookYaw = this.face + (Math.random() - 0.5) * 2.5; }
+        this.turnTo(Math.sin(this.lookYaw), Math.cos(this.lookYaw), dt * 0.4);
         if (this.timer <= 0) { this.state = 'patrol'; this.randomPatrol(g); }
         break;
       }
-      case 'investigate': {
-        if (this.step(dt, 2.6)) { this.state = 'search'; this.searchLeft = 9; this.lastSeen.copy(this.target); this.pickSearch(g, true); }
+      case 'investigate':
+        if (this.step(dt, 1.6)) { this.state = 'search'; this.searchLeft = 10; this.lastSeen.copy(this.target); this.pickSearch(g, true); }
         break;
-      }
       case 'chase': {
         if (pl.hidden) {
-          // 숨는 걸 봤으면 바로 그 곳으로
           if (this.sawHide === pl.spot) { this.goCheck(pl.spot, true); break; }
           this.state = 'search'; this.searchLeft = 14; this.pathTo(this.lastSeen); break;
         }
         if (this.seenT > 4) { this.state = 'search'; this.searchLeft = 14; this.pathTo(this.lastSeen); this.say('어디 갔어...?'); break; }
-        const sp = 4.05 + Math.min(0.6, g.chaseTime * 0.02);
+        const sp = 3.0 + Math.min(0.5, g.chaseTime * 0.02);
         if (this.world.clear(this.pos.x, this.pos.z, pl.pos.x, pl.pos.z, 0.6, false)) { this.path = []; this.moveDirect(dt, pl.pos, sp); }
         else {
           this.repath = (this.repath || 0) - dt;
           if (this.repath <= 0 || !this.path.length) { this.repath = 0.5; this.pathTo(this.seenT < 0.1 ? pl.pos : this.lastSeen); }
           this.step(dt, sp);
         }
-        if (dpl < 1.05 && this.cool <= 0) this.startAttack(g);
+        if (dpl < 1.15 && this.cool <= 0) this.startAttack(g);
         break;
       }
       case 'search': {
-        if (this.step(dt, 2.2)) { this.searchLeft -= 2; this.pickSearch(g, false); }
+        if (this.step(dt, 1.3)) { this.searchLeft -= 2; this.pickSearch(g, false); }
         this.searchLeft -= dt;
         if (this.searchLeft <= 0) { this.state = 'patrol'; this.randomPatrol(g); }
         break;
       }
-      case 'goCheck': {
-        if (this.step(dt, this.sure ? 3.4 : 2.2)) {
-          this.state = 'check'; this.timer = this.sure ? 0.6 : 2.6;
-          const s = this.checkSpot; this.dir.set(-s.out.x, 0, -s.out.z);
-          if (!this.sure) this.say(['여기 있니...?', '킁... 킁...', '숨어도 소용없어'][Math.random() * 3 | 0]);
+      case 'goCheck':
+        if (this.step(dt, this.sure ? 2.2 : 1.3)) {
+          this.state = 'check'; this.timer = this.sure ? 0.8 : 2.8;
+          if (!this.sure) this.say(['여기 있니...?', '킁... 킁...', '숨어도 소용없어']);
         }
         break;
-      }
       case 'check': {
         this.speed = 0; this.timer -= dt;
-        const s = this.checkSpot;
+        const s = this.checkSpot; this.turnTo(-s.out.x, -s.out.z, dt);
         if (pl.hidden && pl.spot === s && (this.sure || g.micLevel > g.micHideThreshold)) { this.pullOut(g); break; }
-        if (this.timer <= 0) {
-          if (pl.hidden && pl.spot === s && this.sure) { this.pullOut(g); break; }
-          this.sure = false; this.state = 'search'; this.searchLeft = Math.min(this.searchLeft, 6); this.pickSearch(g, false);
-        }
+        if (this.timer <= 0) { this.sure = false; this.state = 'search'; this.searchLeft = Math.min(this.searchLeft, 6); this.pickSearch(g, false); }
         break;
       }
-      case 'pull': {
-        this.speed = 0; this.timer -= dt;
-        if (this.timer <= 0) { this.state = 'chase'; this.seenT = 0; this.startAttack(g); }
-        break;
-      }
+      case 'pull': this.speed = 0; this.timer -= dt; if (this.timer <= 0) { this.state = 'chase'; this.seenT = 0; this.startAttack(g); } break;
       case 'attack': {
         this.speed = 0; this.timer -= dt; this.anim += dt;
-        if (!this.hit && this.anim > 0.35) {
-          this.hit = true;
-          if (Math.hypot(pl.pos.x - this.pos.x, pl.pos.z - this.pos.z) < 1.9 && !pl.hidden) g.onHit(this);
-        }
-        if (this.timer <= 0) { this.state = 'recover'; this.timer = 1.3; }
+        this.turnTo(pl.pos.x - this.pos.x, pl.pos.z - this.pos.z, dt);
+        if (!this.hit && this.anim > 0.45) { this.hit = true; if (dpl < 2.0 && !pl.hidden) g.onHit(this); }
+        if (this.timer <= 0) { this.state = 'recover'; this.timer = 1.6; }
         break;
       }
-      case 'recover': {
+      case 'recover':
         this.speed = 0; this.timer -= dt;
         if (this.timer <= 0) { this.state = this.canSee(g) ? 'chase' : 'search'; this.searchLeft = 10; if (this.state === 'search') this.pathTo(this.lastSeen); }
         break;
-      }
     }
     // 끼임 방지
     this.stuck += dt;
-    if (this.stuck > 1.2) {
-      if (this.speed > 0 && this.pos.distanceTo(this.lastPos) < 0.25) { const t = this.path[this.path.length - 1]; if (t) this.pathTo(new THREE.Vector3(t.x, 0, t.z)); }
+    if (this.stuck > 1.5) {
+      if (this.speed > 0 && this.pos.distanceTo(this.lastPos) < 0.3) { const t = this.path[this.path.length - 1]; if (t) this.pathTo(new THREE.Vector3(t.x, 0, t.z)); }
       this.stuck = 0; this.lastPos.copy(this.pos);
     }
     this.animate(dt, g);
   }
   pickSearch(g, first) {
-    // 근처 숨는 곳을 뒤지거나 근처 지점을 돈다
     const w = this.world, from = this.lastSeen;
-    const spots = w.hides.filter(s => s.front.distanceTo(from) < 7 && w.nodeOpen(w.nearestNode(s.front.x, s.front.z, false)));
+    const spots = w.hides.filter(s => s.front.distanceTo(from) < 8 && w.reachable(w.nearestNode(s.front.x, s.front.z, false)));
     if (spots.length && Math.random() < (first ? 0.5 : 0.6)) { this.goCheck(spots[Math.random() * spots.length | 0], false); return; }
-    const ns = Object.values(w.nodes).filter(n => w.nodeOpen(n) && Math.hypot(n.x - from.x, n.z - from.z) < 8);
+    const ns = Object.values(w.nodes).filter(n => w.nodeOpen(n) && w.reachable(n) && Math.hypot(n.x - from.x, n.z - from.z) < 9);
     const n = ns[Math.random() * ns.length | 0];
     if (n) this.pathTo(new THREE.Vector3(n.x, 0, n.z)); else { this.state = 'patrol'; this.randomPatrol(g); }
   }
   startAttack(g) {
-    this.state = 'attack'; this.timer = 0.9; this.anim = 0; this.hit = false; this.cool = 2.6;
-    const pl = g.player; this.dir.set(pl.pos.x - this.pos.x, 0, pl.pos.z - this.pos.z).normalize();
+    this.state = 'attack'; this.timer = 1.0; this.anim = 0; this.hit = false; this.cool = 2.8;
     this.audio.scream(this.pos);
   }
-  pullOut(g) {
-    const s = this.checkSpot; this.state = 'pull'; this.timer = 0.5;
-    g.onPulled(s, this);
-  }
+  pullOut(g) { this.state = 'pull'; this.timer = 0.6; g.onPulled(this.checkSpot, this); }
 
-  // ── 스프라이트 ──
+  // ── 관절 애니메이션 ──
   animate(dt, g) {
-    const cam = g.camera.position;
-    const tcx = cam.x - this.pos.x, tcz = cam.z - this.pos.z;
-    this.mesh.rotation.y = Math.atan2(tcx, tcz);
-    const front = (tcx * this.dir.x + tcz * this.dir.z) >= 0;
-    let col, row;
-    if (this.state === 'attack' || this.state === 'pull') { row = 2; col = this.anim < 0.3 ? 0 : 1; }
-    else if (this.speed > 0.1) {
-      row = front ? 0 : 1;
-      const stride = this.speed > 3 ? 1.5 : 1.15;
-      const f = Math.floor(this.dist / stride * COLS) % COLS;
-      if ((f === 0 || f === 4) && f !== this.frame) this.audio.monsterStep(this.pos, this.speed > 3);
-      this.frame = f; col = f;
-    } else { row = 2; col = front ? 2 : 3; }
-    this.tex.offset.set(col / COLS, 1 - (row + 1) / ROWS);
-    // 추격 중엔 지직거리는 느낌
-    this.jit -= dt;
-    if (this.chasing && this.jit <= 0) { this.jit = 0.05 + Math.random() * 0.2; this.mesh.position.x = (Math.random() - 0.5) * 0.08; this.mesh.scale.set(1 + (Math.random() - 0.5) * 0.06, 1, 1); }
-    else if (!this.chasing) { this.mesh.position.x = 0; this.mesh.scale.set(1, 1, 1); }
-    const atk = this.state === 'attack' ? Math.sin(Math.min(1, this.anim / 0.4) * Math.PI) * 0.12 : 0;
-    this.mesh.scale.y = 1 + atk; this.mat.emissiveIntensity = this.chasing ? 0.12 : 0.07;
+    const r = this.rig, sp = this.speed, t = (this.t = (this.t || 0) + dt);
+    this.root.rotation.y = this.face;
+    const prev = this.ph; this.ph += dt * sp * 2.3;
+    const k = Math.min(1, sp / 1.2), amp = sp > 2.4 ? 0.85 : 0.55 * k, s = Math.sin(this.ph);
+    // 발이 땅에 닿을 때 발소리
+    if (sp > 0.2 && Math.floor(prev / Math.PI) !== Math.floor(this.ph / Math.PI)) this.audio.monsterStep(this.pos, sp > 2.4);
+    const lerp = (o, v, kk = 10) => o + (v - o) * Math.min(1, dt * kk);
+    let aR = -s * amp * 0.9, aL = s * amp * 0.9, lR = s * amp, lL = -s * amp, bob = Math.abs(Math.cos(this.ph)) * 0.05 * k, lean = 0, headZ = Math.sin(t * 0.8) * 0.07, headX = 0;
+    if (this.state === 'chase') { aR = -1.4 + s * 0.2; aL = -1.4 - s * 0.2; lean = 0.18; headZ = Math.sin(t * 7) * 0.12; }
+    if (this.state === 'notice' || this.state === 'check') { headX = -0.12; headZ = 0.25 * Math.sin(t * 1.3); }
+    if (this.state === 'attack' || this.state === 'pull') {
+      const a = Math.min(1, this.anim / 0.45), down = this.anim > 0.45 ? Math.min(1, (this.anim - 0.45) / 0.15) : 0;
+      aR = aL = -2.8 * a + 2.2 * down; lean = 0.3 * a - 0.1 * down; headX = 0.25;
+    }
+    if (sp < 0.1 && this.state !== 'attack' && this.state !== 'chase') { aR = Math.sin(t * 1.4) * 0.04; aL = -aR; lR = lL = 0; }
+    r.armR.rotation.x = lerp(r.armR.rotation.x, aR); r.armL.rotation.x = lerp(r.armL.rotation.x, aL);
+    r.legR.rotation.x = lerp(r.legR.rotation.x, lR, 14); r.legL.rotation.x = lerp(r.legL.rotation.x, lL, 14);
+    r.armR.rotation.z = -0.08; r.armL.rotation.z = 0.08;
+    r.hips.position.y = lerp(r.hips.position.y, bob, 12); r.hips.rotation.x = lerp(r.hips.rotation.x, lean, 6);
+    r.neck.rotation.z = lerp(r.neck.rotation.z, headZ, 6); r.neck.rotation.x = lerp(r.neck.rotation.x, headX, 6);
+    this.mat.emissiveIntensity = this.chasing ? 0.2 : 0.14;
   }
 }

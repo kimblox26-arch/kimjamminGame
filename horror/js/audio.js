@@ -1,159 +1,159 @@
-// 사운드: 전부 WebAudio 로 합성 + 마이크 소리 감지
+// 사운드: 실제 녹음 효과음(Kenney · Freesound CC0, sounds/CREDITS.md) + 마이크 소리 감지
+const NAMES = ['step_wood_0', 'step_wood_1', 'step_wood_2', 'step_wood_3', 'step_wood_4', 'step_carpet_0', 'step_carpet_1', 'step_carpet_2', 'step_carpet_3', 'step_carpet_4',
+  'step_stone_0', 'step_stone_1', 'step_stone_2', 'step_stone_3', 'step_stone_4', 'door_open_1', 'door_open_2', 'door_open_real', 'door_close_1', 'door_close_2', 'door_close_3',
+  'creak_1', 'creak_2', 'creak_3', 'book_flip_1', 'book_flip_2', 'book_open', 'book_close', 'cloth_1', 'cloth_2', 'cloth_3', 'body_drop', 'keys', 'metal_click', 'latch', 'belt', 'leather',
+  'punch_0', 'punch_1', 'punch_2', 'wood_light_0', 'wood_light_1', 'wood_heavy_0', 'wood_heavy_1', 'soft_heavy_0', 'soft_heavy_1', 'bell', 'glass_hit', 'metal_light',
+  'drip_1', 'drip_2', 'drip_3', 'stone_drag_1', 'stone_drag_2', 'woosh_1', 'woosh_2', 'switch_1', 'switch_2', 'click',
+  'thunder_1', 'thunder_2', 'knock', 'glass_break', 'owl', 'rain', 'wind', 'crickets', 'clock', 'heartbeat'];
+const pick = (n, k) => n + '_' + (Math.random() * k | 0);
+const pick1 = (n, k) => n + '_' + (1 + (Math.random() * k | 0));
+
 export class Audio {
-  constructor() { this.ctx = null; this.vol = 0.9; this.mic = null; this.micDb = -100; this.floor = -60; this.level = 0; this.sens = 1; }
+  constructor() { this.ctx = null; this.vol = 0.9; this.mic = null; this.micDb = -100; this.floor = -60; this.level = 0; this.sens = 1; this.raw = {}; this.buf = {}; this.loops = {}; }
+  // 로딩 화면에서 미리 받아 둔다
+  async preload(base = 'sounds/') {
+    await Promise.all(NAMES.map(async n => { try { const r = await fetch(base + n + '.mp3'); if (r.ok) this.raw[n] = await r.arrayBuffer(); } catch (e) { } }));
+  }
   init() {
     if (this.ctx) { this.ctx.resume(); return; }
     const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
     const ctx = this.ctx = new C();
     this.master = ctx.createGain(); this.master.gain.value = this.vol;
-    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 4;
     this.master.connect(comp); comp.connect(ctx.destination);
     this.sfx = ctx.createGain(); this.sfx.connect(this.master);
-    this.music = ctx.createGain(); this.music.gain.value = 0.0; this.music.connect(this.master);
     this.amb = ctx.createGain(); this.amb.gain.value = 0; this.amb.connect(this.master);
-    // 노이즈 버퍼
+    this.tense = ctx.createGain(); this.tense.gain.value = 0; this.tense.connect(this.master);
     const n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
-    let last = 0; for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = i % 2 ? w : last * 3.5; }
-    this.noiseBuf = b;
-    const wb = ctx.createBuffer(1, n, ctx.sampleRate), wd = wb.getChannelData(0); for (let i = 0; i < n; i++) wd[i] = Math.random() * 2 - 1; this.white = wb;
-    // 괴물 위치 소리
-    this.mPan = ctx.createPanner(); Object.assign(this.mPan, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 1.5, rolloffFactor: 1.3, maxDistance: 40 });
-    this.mPan.connect(this.sfx);
-    this.startAmbience(); this.startChase();
+    let last = 0; for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+    this.brown = b;
+    this.mPan = this.panAt({ x: 0, y: 1.6, z: 0 }, 1.8);
+    for (const [k, ab] of Object.entries(this.raw)) ctx.decodeAudioData(ab.slice(0), bb => this.buf[k] = bb, () => { });
+    this.startBeds();
   }
   setVolume(v) { this.vol = v; if (this.master) this.master.gain.value = v; }
   get t() { return this.ctx.currentTime; }
+  panAt(p, ref = 1.5, roll = 1.2) {
+    const P = this.ctx.createPanner(); Object.assign(P, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: ref, rolloffFactor: roll, maxDistance: 60 });
+    if (P.positionX) { P.positionX.value = p.x; P.positionY.value = p.y ?? 1.2; P.positionZ.value = p.z; } else P.setPosition(p.x, p.y ?? 1.2, p.z);
+    P.connect(this.sfx); return P;
+  }
   listener(cam, fwd) {
     if (!this.ctx) return; const L = this.ctx.listener;
     if (L.positionX) { L.positionX.value = cam.x; L.positionY.value = cam.y; L.positionZ.value = cam.z; L.forwardX.value = fwd.x; L.forwardY.value = fwd.y; L.forwardZ.value = fwd.z; L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0; }
     else { L.setPosition(cam.x, cam.y, cam.z); L.setOrientation(fwd.x, fwd.y, fwd.z, 0, 1, 0); }
   }
-  monsterAt(p) { if (!this.ctx) return; const P = this.mPan; if (P.positionX) { P.positionX.value = p.x; P.positionY.value = 1.6; P.positionZ.value = p.z; } else P.setPosition(p.x, 1.6, p.z); }
-  pan(p) { const P = this.ctx.createPanner(); Object.assign(P, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: 1.5, rolloffFactor: 1.2 }); if (P.positionX) { P.positionX.value = p.x; P.positionY.value = p.y ?? 1; P.positionZ.value = p.z; } else P.setPosition(p.x, p.y ?? 1, p.z); P.connect(this.sfx); return P; }
-
-  // 기본 소리 조각
-  noise(dest, t, dur, f, q, gain, type = 'bandpass', white = false) {
-    const c = this.ctx, s = c.createBufferSource(); s.buffer = white ? this.white : this.noiseBuf; s.loop = true;
-    const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-    const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + Math.min(0.01, dur / 4)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(fl); fl.connect(g); g.connect(dest); s.start(t, Math.random()); s.stop(t + dur + 0.05);
-    return fl;
+  monsterAt(p) { if (!this.ctx) return; const P = this.mPan; if (P.positionX) { P.positionX.value = p.x; P.positionY.value = 1.4; P.positionZ.value = p.z; } else P.setPosition(p.x, 1.4, p.z); }
+  // 녹음된 소리 재생
+  play(name, o = {}) {
+    const c = this.ctx; if (!c) return null; const b = this.buf[name]; if (!b) return null;
+    const s = c.createBufferSource(); s.buffer = b; s.loop = !!o.loop;
+    s.playbackRate.value = (o.rate || 1) * (1 + (Math.random() - 0.5) * (o.vary ?? 0.08));
+    let node = s;
+    if (o.lp) { const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = o.lp; node.connect(f); node = f; }
+    if (o.hp) { const f = c.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = o.hp; node.connect(f); node = f; }
+    if (o.drive) { const ws = c.createWaveShaper(), cur = new Float32Array(256); for (let i = 0; i < 256; i++) cur[i] = Math.tanh((i / 128 - 1) * o.drive); ws.curve = cur; node.connect(ws); node = ws; }
+    const g = c.createGain(); g.gain.value = o.vol ?? 1; node.connect(g);
+    g.connect(o.dest || (o.pos ? this.panAt(o.pos, o.ref || 1.5, o.roll || 1.2) : this.sfx));
+    s.start(c.currentTime + (o.delay || 0), o.offset || 0);
+    if (o.dur) s.stop(c.currentTime + (o.delay || 0) + o.dur);
+    return { s, g };
   }
-  tone(dest, t, dur, f, gain, type = 'sine', f2) {
-    const c = this.ctx, o = c.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
-    const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.05); return o;
-  }
+  loopAt(key, name, o) { if (!this.ctx || this.loops[key]) return; const h = this.play(name, { ...o, loop: true, vary: 0 }); if (h) this.loops[key] = h; else setTimeout(() => this.loopAt(key, name, o), 500); }
+  stopLoop(key, fade = 0.5) { const h = this.loops[key]; if (!h) return; h.g.gain.setTargetAtTime(0, this.t, fade / 3); h.s.stop(this.t + fade + 0.1); delete this.loops[key]; }
 
-  startAmbience() {
-    const c = this.ctx, t = this.t;
-    // 낮은 웅웅거림
-    for (const [f, gv] of [[43.6, 0.18], [44.1, 0.16], [87.3, 0.04], [130.8, 0.015]]) {
-      const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f; const g = c.createGain(); g.gain.value = gv; o.connect(g); g.connect(this.amb); o.start();
-    }
-    // 바람
-    const s = c.createBufferSource(); s.buffer = this.noiseBuf; s.loop = true;
-    const fl = c.createBiquadFilter(); fl.type = 'bandpass'; fl.frequency.value = 300; fl.Q.value = 0.8;
-    const g = c.createGain(); g.gain.value = 0.06; s.connect(fl); fl.connect(g); g.connect(this.amb); s.start();
-    const lfo = c.createOscillator(); lfo.frequency.value = 0.07; const lg = c.createGain(); lg.gain.value = 180; lfo.connect(lg); lg.connect(fl.frequency); lfo.start();
-    this.ambT = 3;
+  // 배경: 낮은 웅웅거림 + 빗소리 + 바람
+  startBeds() {
+    const c = this.ctx;
+    const s = c.createBufferSource(); s.buffer = this.brown; s.loop = true;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 160; const g = c.createGain(); g.gain.value = 0.25;
+    s.connect(f); f.connect(g); g.connect(this.amb); s.start();
+    // 추격 때 커지는 낮은 진동
+    const r = c.createBufferSource(); r.buffer = this.brown; r.loop = true;
+    const rf = c.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 90; r.connect(rf); rf.connect(this.tense); r.start();
+    this.ambT = 4; this.bedsOn = false;
   }
   ambience(on, dt) {
     if (!this.ctx) return;
-    this.amb.gain.setTargetAtTime(on ? 0.9 : 0, this.t, 0.8);
+    this.amb.gain.setTargetAtTime(on ? 1 : 0, this.t, 0.8);
+    if (on && !this.bedsOn && this.buf.rain) { this.bedsOn = true; this.loopAt('rain', 'rain', { vol: 0.32, lp: 1400, dest: this.amb }); this.loopAt('wind', 'wind', { vol: 0.14, dest: this.amb }); }
     if (!on) return;
     this.ambT -= dt;
     if (this.ambT <= 0) {
-      this.ambT = 5 + Math.random() * 10;
-      const r = Math.random(), p = this.pan({ x: (Math.random() - 0.5) * 30 + 14, y: 2, z: (Math.random() - 0.5) * 24 + 12 });
-      if (r < 0.4) this.creak(p);
-      else if (r < 0.6) { for (let i = 0; i < 3; i++) this.noise(p, this.t + i * 0.32, 0.12, 120, 2, 0.5, 'lowpass'); }
-      else if (r < 0.8) this.whisper(p);
-      else this.tone(p, this.t, 3, 640 + Math.random() * 300, 0.02, 'sine', 600);
+      this.ambT = 6 + Math.random() * 9;
+      const L = this.lastCam || { x: 0, z: 0 }, a = Math.random() * Math.PI * 2, r = 6 + Math.random() * 10;
+      const pos = { x: L.x + Math.cos(a) * r, y: 2, z: L.z + Math.sin(a) * r }, k = Math.random();
+      if (k < 0.45) this.play(pick1('creak', 3), { pos, vol: 0.7, rate: 0.7 + Math.random() * 0.4 });
+      else if (k < 0.6) this.play('knock', { pos, vol: 0.5, lp: 900 });
+      else if (k < 0.72) this.play(pick('wood_heavy', 2), { pos, vol: 0.6, lp: 700 });
+      else if (k < 0.82) this.play('glass_hit', { pos, vol: 0.35, lp: 2000 });
+      else if (k < 0.9) this.play('owl', { vol: 0.12, lp: 900 });
+      else this.play(pick1('door_close', 3), { pos, vol: 0.5, lp: 1200, rate: 0.85 });
     }
   }
-  startChase() {
-    const c = this.ctx;
-    // 불협화음 현악 트레몰로
-    const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 1400; fl.connect(this.music);
-    const trem = c.createGain(); trem.gain.value = 0.5; trem.connect(fl);
-    const lfo = c.createOscillator(); lfo.frequency.value = 11; const lg = c.createGain(); lg.gain.value = 0.45; lfo.connect(lg); lg.connect(trem.gain); lfo.start();
-    for (const f of [110, 116.5, 155.6, 220, 233.1]) { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = (Math.random() - 0.5) * 20; const g = c.createGain(); g.gain.value = 0.05; o.connect(g); g.connect(trem); o.start(); }
-    this.beatT = 0;
-  }
-  chase(level, dt) { // 0..1
+  chase(level, dt) {
     if (!this.ctx) return;
-    this.music.gain.setTargetAtTime(level * 0.55, this.t, level > 0.5 ? 0.15 : 1.2);
-    if (level > 0.3) { this.beatT -= dt; if (this.beatT <= 0) { this.beatT = 0.42; this.tone(this.sfx, this.t, 0.25, 70, 0.5 * level, 'sine', 40); this.noise(this.sfx, this.t, 0.08, 2000, 1, 0.1 * level, 'highpass'); } }
+    this.tense.gain.setTargetAtTime(level * 1.6, this.t, level > 0.5 ? 0.2 : 1.5);
   }
   heartbeat(rate, vol) {
     if (!this.ctx || vol <= 0.01) return;
     const t = this.t; this.hbT = this.hbT ?? 0;
     if (t < this.hbT) return; this.hbT = t + 60 / rate;
-    this.tone(this.sfx, t, 0.18, 62, vol, 'sine', 40); this.tone(this.sfx, t + 0.22, 0.2, 55, vol * 0.75, 'sine', 38);
+    this.play('heartbeat', { vol: vol * 1.4, vary: 0.02 });
   }
   step(surface, run) {
-    if (!this.ctx) return; const t = this.t, v = run ? 0.35 : 0.16;
-    const f = surface === 'tile' || surface === 'marble' ? 1800 : surface === 'rug' ? 500 : 900;
-    this.noise(this.sfx, t, run ? 0.09 : 0.07, f * (0.9 + Math.random() * 0.2), 1.4, v, 'bandpass');
-    this.tone(this.sfx, t, 0.08, 90 + Math.random() * 20, v * 0.6, 'sine', 50);
-    if (surface === 'wood' && Math.random() < 0.12) this.creak(this.sfx, 0.25);
+    const n = surface === 'rug' ? 'step_carpet' : surface === 'wood' ? 'step_wood' : 'step_stone';
+    this.play(pick(n, 5), { vol: run ? 0.5 : 0.28, rate: run ? 1.05 : 0.95 });
   }
   monsterStep(p, run) {
-    if (!this.ctx) return; this.monsterAt(p); const t = this.t;
-    this.noise(this.mPan, t, 0.14, 300, 1.2, run ? 1.4 : 1.0, 'lowpass');
-    this.tone(this.mPan, t, 0.22, 55, run ? 1.0 : 0.7, 'sine', 30);
-    if (Math.random() < 0.25) this.creak(this.mPan, 0.5);
+    if (!this.ctx) return; this.monsterAt(p);
+    this.play(pick('step_wood', 5), { dest: this.mPan, vol: run ? 1.3 : 1.0, rate: 0.6, lp: 2500 });
+    this.play(pick('soft_heavy', 2), { dest: this.mPan, vol: run ? 0.7 : 0.45, rate: 0.7 });
+    if (Math.random() < 0.15) this.play(pick1('creak', 3), { dest: this.mPan, vol: 0.5, rate: 0.8 });
   }
-  creak(dest, v = 0.4) {
-    const t = this.t, c = this.ctx, o = c.createOscillator(); o.type = 'sawtooth';
-    const base = 120 + Math.random() * 200; o.frequency.setValueAtTime(base, t);
-    for (let i = 1; i < 8; i++) o.frequency.linearRampToValueAtTime(base * (0.8 + Math.random() * 0.6), t + i * 0.08);
-    const fl = c.createBiquadFilter(); fl.type = 'bandpass'; fl.frequency.value = 900; fl.Q.value = 6;
-    const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * 0.25, t + 0.05); g.gain.linearRampToValueAtTime(0, t + 0.65);
-    o.connect(fl); fl.connect(g); g.connect(dest); o.start(t); o.stop(t + 0.7);
+  door(p, monster) { this.play(monster ? 'door_open_real' : pick1('door_open', 2), { pos: p, vol: monster ? 1.2 : 0.8, ref: 2 }); }
+  doorClose(p) { this.play(pick1('door_close', 3), { pos: p, vol: 0.8, ref: 2 }); }
+  drawer() { this.play(pick1('creak', 3), { vol: 0.45, rate: 1.5, dur: 0.6 }); this.play(pick('wood_light', 2), { vol: 0.5, delay: 0.3 }); }
+  pickup() { this.play('keys', { vol: 0.7 }); this.play('metal_click', { vol: 0.4, delay: 0.15 }); }
+  paper() { this.play(Math.random() < 0.5 ? 'book_flip_1' : 'book_flip_2', { vol: 0.6 }); }
+  book() { this.play('book_open', { vol: 0.7 }); }
+  unlock() { this.play('metal_click', { vol: 0.7 }); this.play('latch', { vol: 0.8, delay: 0.18 }); }
+  locked() { this.play('latch', { vol: 0.6, rate: 0.8 }); this.play('belt', { vol: 0.5, rate: 1.3, delay: 0.1 }); this.play('metal_light', { vol: 0.3, delay: 0.2 }); }
+  beep(ok = true) { this.play(ok ? 'click' : 'switch_2', { vol: ok ? 0.6 : 0.8, rate: ok ? 1 : 0.6 }); }
+  alarm() { for (let i = 0; i < 4; i++) this.play('bell', { vol: 0.9, delay: i * 0.35, rate: 0.9 + (i % 2) * 0.15 }); }
+  hide(type, enter = true) {
+    if (type === 'bed') { this.play(pick1('cloth', 3), { vol: 0.6 }); this.play('body_drop', { vol: 0.5, delay: 0.25 }); }
+    else { this.play('door_open_2', { vol: 0.5, rate: 1.25 }); this.play(pick1('cloth', 3), { vol: 0.5, delay: 0.3 }); this.play('door_close_3', { vol: 0.45, rate: 1.3, delay: enter ? 1.0 : 0.7 }); }
   }
-  whisper(dest) { const t = this.t; for (let i = 0; i < 6; i++) this.noise(dest, t + i * 0.18 + Math.random() * 0.1, 0.15, 2500 + Math.random() * 2500, 8, 0.12, 'bandpass', true); }
-  door(p, monster) { if (!this.ctx) return; const d = this.pan(p); this.creak(d, monster ? 1.2 : 0.8); this.noise(d, this.t + 0.5, 0.15, 200, 1, 0.5, 'lowpass'); }
-  drawer() { if (!this.ctx) return; const t = this.t; this.noise(this.sfx, t, 0.35, 700, 2, 0.25, 'bandpass'); this.tone(this.sfx, t + 0.3, 0.1, 140, 0.2); }
-  pickup() { if (!this.ctx) return; const t = this.t; for (const [f, d] of [[1320, 0], [1760, 0.08], [2640, 0.16]]) this.tone(this.sfx, t + d, 0.5, f, 0.12, 'triangle'); this.noise(this.sfx, t, 0.08, 6000, 3, 0.1, 'bandpass', true); }
-  paper() { if (!this.ctx) return; const t = this.t; for (let i = 0; i < 4; i++) this.noise(this.sfx, t + i * 0.06, 0.08, 3500, 1, 0.12, 'highpass', true); }
-  unlock() { if (!this.ctx) return; const t = this.t; this.noise(this.sfx, t, 0.06, 3000, 4, 0.4, 'bandpass', true); this.noise(this.sfx, t + 0.15, 0.1, 1200, 3, 0.6, 'bandpass', true); this.tone(this.sfx, t + 0.15, 0.2, 180, 0.3, 'square', 120); }
-  locked() { if (!this.ctx) return; const t = this.t; for (let i = 0; i < 3; i++) this.noise(this.sfx, t + i * 0.09, 0.07, 900, 3, 0.4, 'bandpass'); }
-  beep(ok = true) { if (!this.ctx) return; this.tone(this.sfx, this.t, 0.09, ok ? 1200 : 220, 0.15, ok ? 'square' : 'sawtooth'); }
-  alarm() { if (!this.ctx) return; const t = this.t; for (let i = 0; i < 4; i++) this.tone(this.sfx, t + i * 0.25, 0.2, i % 2 ? 660 : 880, 0.25, 'square'); }
-  hide(type) { if (!this.ctx) return; const t = this.t; if (type === 'bed') { this.noise(this.sfx, t, 0.6, 400, 1, 0.25, 'lowpass'); } else { this.creak(this.sfx, 0.7); this.noise(this.sfx, t + 0.3, 0.3, 1500, 1, 0.1, 'bandpass'); } }
-  stinger() {
-    if (!this.ctx) return; const t = this.t;
-    for (const f of [92.5, 98, 138.6, 196, 207.7, 293.7, 311.1]) this.tone(this.sfx, t, 2.2, f, 0.09, 'sawtooth', f * 0.97);
-    this.noise(this.sfx, t, 1.2, 3000, 0.5, 0.35, 'highpass', true); this.tone(this.sfx, t, 1.5, 50, 0.8, 'sine', 30);
-  }
+  stinger() { this.play('woosh_1', { vol: 0.9, rate: 0.7 }); this.play(pick('punch', 3), { vol: 0.7, rate: 0.6 }); this.play('creak_1', { vol: 0.8, rate: 2.2 }); this.play('metal_light', { vol: 0.5, rate: 0.5 }); }
   scream(p) {
-    if (!this.ctx) return; this.monsterAt(p); const t = this.t;
-    const c = this.ctx, ws = c.createWaveShaper(); const cur = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; cur[i] = Math.tanh(x * 6); } ws.curve = cur;
-    const g = c.createGain(); g.gain.value = 0.6; ws.connect(g); g.connect(this.mPan);
-    for (const f of [380, 420, 560, 760]) { const o = this.tone(ws, t, 0.9, f, 0.3, 'sawtooth', f * 0.45); }
-    this.noise(this.mPan, t, 0.8, 1800, 1, 1.0, 'bandpass', true);
+    if (!this.ctx) return; this.monsterAt(p);
+    this.play('creak_2', { dest: this.mPan, vol: 1.2, rate: 2.3, drive: 4 }); this.play('creak_1', { dest: this.mPan, vol: 1.0, rate: 1.7, drive: 3, delay: 0.05 });
+    this.play('woosh_2', { dest: this.mPan, vol: 0.9, rate: 0.8 });
   }
   jumpscare() {
-    if (!this.ctx) return; const t = this.t;
-    for (const f of [300, 317, 450, 600, 905]) this.tone(this.sfx, t, 1.6, f, 0.22, 'sawtooth', f * 0.4);
-    this.noise(this.sfx, t, 1.6, 2000, 0.4, 1.4, 'bandpass', true); this.tone(this.sfx, t, 1.2, 60, 1, 'square', 30);
+    this.play('woosh_1', { vol: 1.2, rate: 0.6 }); this.play('glass_break', { vol: 1.0 }); this.play(pick('punch', 3), { vol: 1.2, rate: 0.5 });
+    this.play('creak_3', { vol: 1.4, rate: 2.6, drive: 5 }); this.play('creak_2', { vol: 1.2, rate: 1.9, drive: 5, delay: 0.1 }); this.play('soft_heavy_0', { vol: 1.2, rate: 0.5 });
   }
-  hit() { if (!this.ctx) return; const t = this.t; this.noise(this.sfx, t, 0.25, 400, 1, 1.2, 'lowpass'); this.tone(this.sfx, t, 0.3, 120, 0.8, 'square', 40); }
-  drag() { if (!this.ctx) return; const t = this.t; for (let i = 0; i < 8; i++) this.noise(this.sfx, t + i * 0.55, 0.5, 250, 0.8, 0.35, 'lowpass'); }
-  slam() { if (!this.ctx) return; const t = this.t; this.noise(this.sfx, t, 0.5, 150, 1, 1.4, 'lowpass'); this.tone(this.sfx, t, 0.5, 60, 1, 'sine', 30); }
-  ding() { if (!this.ctx) return; const t = this.t; this.tone(this.sfx, t, 0.3, 1568, 0.15, 'sine'); this.tone(this.sfx, t + 0.1, 0.4, 2093, 0.12, 'sine'); }
-  glitch() { if (!this.ctx) return; const t = this.t; for (let i = 0; i < 10; i++) this.tone(this.sfx, t + i * 0.04, 0.04, 200 + Math.random() * 3000, 0.08, 'square'); }
-  thunder(delay = 0.6) { if (!this.ctx) return; const t = this.t + delay; this.noise(this.sfx, t, 3.5, 90, 0.7, 1.0, 'lowpass'); this.noise(this.sfx, t, 0.4, 1200, 0.5, 0.25, 'lowpass'); }
-  tick() { if (!this.ctx) return; this.noise(this.sfx, this.t, 0.03, 3500, 6, 0.25, 'bandpass', true); }
-  piano() { if (!this.ctx) return; const t = this.t; for (const [f, d] of [[233, 0], [277, 0.02], [329.6, 0.04]]) this.tone(this.sfx, t + d, 2.5, f, 0.18, 'triangle'); }
-  light() { if (!this.ctx) return; this.tone(this.sfx, this.t, 0.04, 2500, 0.12, 'square'); }
-  wind(on) { if (!this.ctx) return; if (on) { this.noise(this.sfx, this.t, 4, 600, 0.4, 0.4, 'bandpass', true); this.tone(this.sfx, this.t, 4, 523, 0.06, 'sine'); this.tone(this.sfx, this.t + 0.5, 3.5, 784, 0.05, 'sine'); } }
+  hit() { this.play(pick('punch', 3), { vol: 1.1 }); this.play('soft_heavy_1', { vol: 0.8, rate: 0.7 }); }
+  fall() { this.play('body_drop', { vol: 1.0, rate: 0.8 }); this.play('soft_heavy_0', { vol: 0.8, delay: 0.1 }); }
+  drag() { for (let i = 0; i < 4; i++) { this.play(pick1('stone_drag', 2), { vol: 0.6, rate: 0.7, lp: 700, delay: i * 0.8 }); this.play(pick1('cloth', 3), { vol: 0.4, delay: i * 0.8 + 0.3 }); } }
+  slam() { this.play('door_close_3', { vol: 1.2, rate: 0.75 }); this.play('wood_heavy_0', { vol: 1.0, rate: 0.8 }); }
+  ding() { if (!this.ctx) return; const c = this.ctx, t = this.t; for (const [f, d] of [[1568, 0], [2093, 0.1]]) { const o = c.createOscillator(), g = c.createGain(); o.frequency.value = f; g.gain.setValueAtTime(0.12, t + d); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.4); o.connect(g); g.connect(this.sfx); o.start(t + d); o.stop(t + d + 0.45); } }
+  glitch() { if (!this.ctx) return; const c = this.ctx, t = this.t; for (let i = 0; i < 10; i++) { const o = c.createOscillator(), g = c.createGain(); o.type = 'square'; o.frequency.value = 200 + Math.random() * 3000; g.gain.setValueAtTime(0.05, t + i * 0.04); g.gain.linearRampToValueAtTime(0, t + i * 0.04 + 0.04); o.connect(g); g.connect(this.sfx); o.start(t + i * 0.04); o.stop(t + i * 0.04 + 0.05); } }
+  thunder(delay = 0.6) { this.play(Math.random() < 0.5 ? 'thunder_1' : 'thunder_2', { vol: 0.8, delay, lp: 3000 }); }
+  piano() { this.play('bell', { vol: 0.6, rate: 0.42, lp: 1800 }); this.play('bell', { vol: 0.4, rate: 0.5, lp: 1800, delay: 0.02 }); this.play('wood_heavy_1', { vol: 0.4 }); }
+  light() { this.play('switch_1', { vol: 0.5 }); }
+  wind(on) { if (on) { this.play('wind', { vol: 0.8, hp: 300, dur: 6 }); } }
+  statue(p) { this.play(Math.random() < 0.5 ? 'stone_drag_1' : 'stone_drag_2', { pos: p, vol: 0.9, rate: 0.85, ref: 2.5 }); }
+  drip(p) { this.play(pick1('drip', 3), { pos: p, vol: 0.5 }); }
+  street(on) { if (on) this.loopAt('crickets', 'crickets', { vol: 0.35 }); else this.stopLoop('crickets', 1); }
+  groan(p) { if (!this.ctx) return; this.monsterAt(p); this.play('creak_3', { dest: this.mPan, vol: 1.1, rate: 0.36, lp: 800 }); }
 
-  // 괴물 목소리 (음성 합성, 낮고 느리게)
+  // 괴물 목소리: 낮은 신음(녹음 소리를 늦게) + 자막. 음성 합성은 설정에서 켤 때만
   monsterVoice(text, p) {
     this.onSubtitle && this.onSubtitle(text);
+    if (p) this.groan(p);
     if (!('speechSynthesis' in window) || this.noVoice) return;
     try {
       const u = new SpeechSynthesisUtterance(text); u.lang = 'ko-KR'; u.pitch = 0.1; u.rate = 0.72;

@@ -44,8 +44,13 @@ button { font-family: var(--ui); }
 #st-fill { background: linear-gradient(90deg, #6a5a2a, #e0cf8a); }
 #st-fill.tired { background: #6a4a3a; }
 #inv { display: flex; gap: 6px; margin-top: 2px; }
+.count { display: flex; gap: 12px; margin-top: 2px; }
+.count span { display: flex; align-items: center; gap: 5px; padding: 3px 9px 3px 6px; border-radius: 10px; border: 1.5px solid var(--edge); background: var(--glass); font-size: 13px; }
+.count i { width: 17px; height: 17px; color: #e8c870; }
+.count b { font-variant-numeric: tabular-nums; }
+.count b.done { color: #9fe08f; }
 #inv .key { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid var(--edge); background: var(--glass); display: grid; place-items: center; padding: 5px; }
-#inv .key.rusty { color: #b56a3a; } #inv .key.silver { color: #d6dde2; } #inv .key.gold { color: #f0c040; }
+#inv .key.rusty { color: #b56a3a; } #inv .key.silver { color: #d6dde2; } #inv .key.iron { color: #8a8a96; } #inv .key.gold { color: #f0c040; }
 #inv .key.used { opacity: 0.35; }
 #objective { margin-top: 2px; padding: 6px 14px; max-width: 46vw; text-align: center; font-size: 13px; letter-spacing: 0.02em; color: #e9dcc8; background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.55), transparent); text-shadow: 0 0 6px #000; border-top: 1px solid rgba(160, 20, 20, 0.6); }
 #objective:empty { display: none; }
@@ -70,7 +75,7 @@ button { font-family: var(--ui); }
 .btn.big { width: 92px; height: 92px; right: 0; bottom: 6px; }
 .btn.big i { width: 42%; height: 42%; margin-top: 8px; }
 .btn.mid { width: 64px; height: 64px; }
-#b-run { right: 102px; bottom: 0; } #b-torch { right: 72px; bottom: 98px; }
+#b-run { right: 100px; bottom: 4px; }
 #b-act.dim { opacity: 0.45; }
 #b-act.ready { border-color: #ffd890; box-shadow: 0 0 18px rgba(255, 200, 120, 0.55), inset 0 0 14px rgba(255, 200, 120, 0.2); animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { box-shadow: 0 0 26px rgba(255, 200, 120, 0.85), inset 0 0 14px rgba(255, 200, 120, 0.3); } }
@@ -248,7 +253,7 @@ nav { display: flex; flex-direction: column; gap: 10px; align-items: center; }
   #objective { font-size: 11px; max-width: 40vw; padding: 4px 8px; }
   .micbox .track { width: 44px; }
   .btn.big { width: 80px; height: 80px; } .btn.mid { width: 56px; height: 56px; }
-  #b-run { right: 90px; } #b-torch { right: 62px; bottom: 86px; }
+  #b-run { right: 88px; }
   #joy { width: 112px; height: 112px; }
   #prompt { font-size: 13px; }
   #heard { font-size: 26px; }

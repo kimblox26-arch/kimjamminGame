@@ -9,18 +9,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=East+Sea+Dokdo&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=20261105b">
+<link rel="stylesheet" href="./style.css?v=20261105c">
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
     "three/addons/": "../vendor/three/addons/",
-    "./js/world.js": "./js/world.js?v=20261105b",
-    "./js/noob.js": "./js/noob.js?v=20261105b",
-    "./js/monster.js": "./js/monster.js?v=20261105b",
-    "./js/audio.js": "./js/audio.js?v=20261105b",
-    "./js/input.js": "./js/input.js?v=20261105b",
-    "./js/story.js": "./js/story.js?v=20261105b"
+    "./js/world.js": "./js/world.js?v=20261105c",
+    "./js/noob.js": "./js/noob.js?v=20261105c",
+    "./js/monster.js": "./js/monster.js?v=20261105c",
+    "./js/audio.js": "./js/audio.js?v=20261105c",
+    "./js/input.js": "./js/input.js?v=20261105c",
+    "./js/story.js": "./js/story.js?v=20261105c"
   }
 }
 </script>
@@ -43,6 +43,7 @@
     <div class="bars">
       <div class="bar hp"><i data-icon="heart"></i><div class="track"><div id="hp-fill"></div></div></div>
       <div class="bar st"><i data-icon="run"></i><div class="track"><div id="st-fill"></div></div></div>
+      <div class="count"><span><i data-icon="key"></i><b id="c-key">0/4</b></span><span><i data-icon="book"></i><b id="c-diary">0/4</b></span></div>
       <div id="inv"></div>
     </div>
     <div id="objective"></div>
@@ -58,7 +59,6 @@
   <div id="btns">
     <button class="btn big" id="b-act" data-act="interact"><i data-icon="hand"></i><span>조사</span></button>
     <button class="btn mid" id="b-run" data-act="run"><i data-icon="run"></i><span>달리기</span></button>
-    <button class="btn mid on" id="b-torch" data-act="torch"><i data-icon="torch"></i><span>손전등</span></button>
   </div>
   <div id="hidden-tag"><i data-icon="eye"></i><span>숨는 중 · 소리 내지 마세요</span></div>
   <div id="heard"><i data-icon="ear"></i><span>초록모자가 소리를 들었다!</span></div>
@@ -106,14 +106,14 @@
     <button class="menu" id="m-settings">설정</button>
     <button class="menu" id="m-help">조작법</button>
   </nav>
-  <p class="warn"><i data-icon="mic"></i>이 게임은 마이크로 <b>실제 목소리</b>를 감지합니다 · 이어폰 권장</p>
+  <p class="warn"><i data-icon="mic"></i>마이크를 켜면 초록모자가 <b>실제 목소리</b>를 듣습니다 · 이어폰 권장</p>
 </section>
 
 <!-- 마이크 안내 -->
 <section id="micask" class="modal hidden">
   <div class="panel">
     <h2><i data-icon="mic"></i>소리 감지 센서</h2>
-    <p>마이크를 켜면 <b>내 실제 목소리</b>를 초록모자가 듣습니다.<br>크게 말하면 찾아오고, 숨어 있을 때 떠들면 들킵니다.</p>
+    <p>마이크를 켜면 <b>내 실제 목소리</b>를 초록모자가 듣습니다.<br>크게 말하면 찾아오고, 숨어 있을 때 떠들면 들킵니다.<br>끄면 초록모자는 소리를 듣지 못하고, 돌아다니다 <b>눈에 보일 때만</b> 쫓아옵니다.</p>
     <p class="small">소리는 기기 안에서만 크기를 재고, 녹음하거나 어디로 보내지 않습니다.</p>
     <div class="row"><button class="menu" id="mic-yes">마이크 켜기</button><button class="menu ghost" id="mic-no">끄고 하기</button></div>
   </div>
@@ -160,7 +160,7 @@
     <label class="opt"><span>밝기</span><input type="range" id="s-bright" min="0.6" max="2" step="0.1"></label>
     <label class="opt"><span>시점 감도</span><input type="range" id="s-look" min="0.4" max="2" step="0.1"></label>
     <label class="opt"><span>그래픽</span><select id="s-q"><option value="low">낮음 (빠름)</option><option value="mid">보통</option><option value="high">높음</option></select></label>
-    <label class="opt"><span>괴물 목소리 (음성)</span><input type="checkbox" id="s-voice"></label>
+    <label class="opt"><span>괴물 말소리 (기계 음성)</span><input type="checkbox" id="s-voice"></label>
     <button class="menu" data-close="settings">확인</button>
   </div>
 </section>
@@ -172,7 +172,7 @@
     <div class="help-grid">
       <div><i data-icon="hand"></i><b>조사 / 숨기</b><span>E · 스페이스</span></div>
       <div><i data-icon="run"></i><b>달리기</b><span>Shift (누르는 동안) · 버튼은 켜고 끄기</span></div>
-      <div><i data-icon="torch"></i><b>손전등</b><span>F · 켜면 잘 보이지만 들키기 쉬움</span></div>
+      <div><i data-icon="key"></i><b>열쇠 4개 · 일기 4장</b><span>일기마다 비밀번호 숫자가 하나씩</span></div>
       <div><i data-icon="book"></i><b>일기와 단서</b><span>Tab · N</span></div>
       <div><i data-icon="mic"></i><b>소리 감지</b><span>크게 말하면 초록모자가 온다</span></div>
       <div><i data-icon="door"></i><b>숨은 곳에서 나가기</b><span>조사 버튼</span></div>
@@ -212,6 +212,6 @@
   <p id="ld-text">저택을 짓는 중...</p>
 </section>
 
-<script type="module" src="./js/main.js?v=20261105b"></script>
+<script type="module" src="./js/main.js?v=20261105c"></script>
 </body>
 </html>
