@@ -20,6 +20,17 @@ export const ROOMS = [
   { id: 'gallery', num: '09', name: '동상 갤러리', x0: 34, x1: 40, z0: 10, z1: 30, wp: 'wpTeal', fl: 'marble' },
   { id: 'foyer', num: '10', name: '현관 홀', x0: 0, x1: 34, z0: 18, z1: 30, wp: 'wpTeal', fl: 'marble' },
   { id: 'chapel', num: '11', name: '예배당', x0: 0, x1: 12, z0: 30, z1: 38, wp: 'stoneW', fl: 'stoneF' },
+  { id: 'living1', num: '12', name: '푸른 거실', x0: 40, x1: 52, z0: 0, z1: 7, wp: 'wpBlue', fl: 'wood' },
+  { id: 'toilet1', num: '13', name: '화장실', x0: 52, x1: 56, z0: 0, z1: 7, wp: 'tileW', fl: 'tileF' },
+  { id: 'guest', num: '14', name: '손님방', x0: 56, x1: 64, z0: 0, z1: 7, wp: 'wpRed', fl: 'wood2' },
+  { id: 'photo', num: '15', name: '사진실', x0: 64, x1: 72, z0: 0, z1: 7, wp: 'wpBeige', fl: 'wood' },
+  { id: 'hallB', name: '동쪽 복도', x0: 40, x1: 72, z0: 7, z1: 10, wp: 'wpGold', fl: 'wood' },
+  { id: 'living2', num: '16', name: '큰 거실', x0: 40, x1: 56, z0: 10, z1: 22, wp: 'wpWine', fl: 'wood' },
+  { id: 'kitchen2', num: '17', name: '큰 부엌', x0: 56, x1: 72, z0: 10, z1: 17, wp: 'tileW', fl: 'tileF' },
+  { id: 'toilet2', num: '18', name: '공용 화장실', x0: 56, x1: 72, z0: 17, z1: 22, wp: 'tileW', fl: 'tileF' },
+  { id: 'hallC', name: '남쪽 복도', x0: 40, x1: 72, z0: 22, z1: 25, wp: 'wpGold', fl: 'wood' },
+  { id: 'garden', num: '19', name: '동상 정원', x0: 40, x1: 56, z0: 25, z1: 34, wp: 'stoneW', fl: 'stoneF' },
+  { id: 'portrait', num: '20', name: '초상화 방', x0: 56, x1: 72, z0: 25, z1: 34, wp: 'wpGreen', fl: 'wood' },
 ];
 export function roomAt(x, z) {
   for (const r of ROOMS) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) return r;
@@ -329,6 +340,20 @@ function painting(kind, img) {
   noise(g, 256, 320, 24); grime(g, 256, 320, 18, 0.6);
   return toTex(c, false);
 }
+function photoTex(i) { // 폴라로이드: 잡혀 온 사람들
+  const [c, g] = cv(128, 154);
+  g.fillStyle = '#d8d2c0'; g.fillRect(0, 0, 128, 154);
+  g.fillStyle = '#1a1612'; g.fillRect(8, 8, 112, 112);
+  const sh = ['#2a5aa0', '#a03030', '#3a8a3a', '#8a4aa0', '#c08020', '#404040'][i % 6];
+  g.fillStyle = sh; g.fillRect(34, 76, 60, 44);
+  g.fillStyle = ['#e8c070', '#d8a878', '#f0d090'][i % 3]; g.fillRect(44, 34, 40, 40);
+  g.fillStyle = '#111'; g.fillRect(52, 46, 6, 10); g.fillRect(70, 46, 6, 10);
+  g.strokeStyle = '#111'; g.lineWidth = 3; g.beginPath(); g.arc(64, 66, 7, Math.PI, 0); g.stroke();
+  g.fillStyle = '#2a2a2a'; g.font = '16px "Nanum Pen Script", sans-serif'; g.textAlign = 'center'; g.fillText(['팔로우 X', '맞팔 안 함', '#' + (i + 3), '도망침', '팔로우 X', '?'][i], 64, 142);
+  if (i % 2 === 0) { g.strokeStyle = 'rgba(170,10,10,0.9)'; g.lineWidth = 6; g.beginPath(); g.moveTo(20, 20); g.lineTo(108, 108); g.moveTo(108, 20); g.lineTo(20, 108); g.stroke(); }
+  noise(g, 128, 154, 26); grime(g, 128, 154, 6, 0.4);
+  return toTex(c, false);
+}
 function kidDrawing(i) {
   const [c, g] = cv(256, 200);
   g.fillStyle = '#d8d0b8'; g.fillRect(0, 0, 256, 200);
@@ -415,6 +440,7 @@ export class World {
     this.buildShell();
     this.furnish();
     this.buildNav();
+    this.items.forEach((it, i) => it.id = i);
     this.mergeStatic();
     this.buildLights();
     this.time = 0; this.focusSort = 0; this.lightning = 0;
@@ -432,6 +458,8 @@ export class World {
     m.wpWine = L(wallpaper('#2d0e18', 'rgba(70,24,36,0.9)'));
     m.wpTeal = L(wallpaper('#11262a', 'rgba(40,66,64,0.9)'));
     m.wpGold = L(wallpaper('#5e4a24', 'rgba(118,92,44,0.85)'));
+    m.wpBlue = L(wallpaper('#14203a', 'rgba(52,70,110,0.9)'));
+    m.photos = [0, 1, 2, 3, 4, 5].map(i => new THREE.MeshLambertMaterial({ map: photoTex(i) }));
     m.stoneW = L(stoneBlocks([92, 88, 80])); m.stoneF = L(stoneBlocks([70, 68, 62], 4)); m.stoneB = L(stoneBlocks([120, 116, 108], 4));
     m.statue = L((() => { const [c, g] = cv(128); g.fillStyle = '#8a8680'; g.fillRect(0, 0, 128, 128); noise(g, 128, 128, 40); grime(g, 128, 128, 10, 0.5); return toTex(c); })(), 0xb0aca4);
     m.tileW = L(tiles([170, 168, 155], [170, 168, 155], 8, false));
@@ -530,7 +558,7 @@ export class World {
     seg(s, b);
   }
   buildShell() {
-    const DOORS = [
+    const DOORS = this.DOORS = [
       { id: 'bed', axis: 'x', at: 7, c: 4, w: 1.2, swing: -1, num: '01', name: '침실 문' },
       { id: 'bath', axis: 'x', at: 7, c: 11, w: 1.1, swing: -1, num: '02', name: '욕실 문' },
       { id: 'store', axis: 'x', at: 7, c: 17, w: 1.2, swing: -1, num: '03', name: '창고 문' },
@@ -544,7 +572,20 @@ export class World {
       { id: 'foyer', axis: 'z', at: 34, c: 24, w: 1.6, swing: -1, num: '10', name: '현관 홀 문' },
       { id: 'chapel', axis: 'x', at: 30, c: 6, w: 1.3, swing: 1, num: '11', name: '예배당 문' },
     ];
-    const gaps = [...DOORS, { axis: 'z', at: 26, c: 14, w: 1.8 }, { axis: 'x', at: 30, c: 22, w: 2.4, h: 3.0 }];
+    DOORS.push(
+      { id: 'liv1', axis: 'x', at: 7, c: 46, w: 1.3, swing: -1, num: '12', name: '거실 문' },
+      { id: 'toi1', axis: 'x', at: 7, c: 54, w: 1.0, swing: -1, num: '13', name: '화장실 문' },
+      { id: 'guest', axis: 'x', at: 7, c: 60, w: 1.2, swing: -1, num: '14', name: '손님방 문' },
+      { id: 'photo', axis: 'x', at: 7, c: 68, w: 1.2, swing: -1, num: '15', name: '사진실 문' },
+      { id: 'liv2a', axis: 'x', at: 10, c: 44, w: 1.3, swing: 1, num: '16', name: '큰 거실 문' },
+      { id: 'liv2b', axis: 'x', at: 10, c: 52, w: 1.3, swing: 1, num: '16', name: '큰 거실 문' },
+      { id: 'kit2', axis: 'x', at: 10, c: 64, w: 1.3, swing: 1, num: '17', name: '부엌 문' },
+      { id: 'toi2', axis: 'x', at: 17, c: 64, w: 1.2, swing: 1, num: '18', name: '화장실 문' },
+      { id: 'hallc', axis: 'z', at: 40, c: 23.5, w: 1.4, swing: 1, name: '남쪽 복도 문' },
+      { id: 'garden', axis: 'x', at: 25, c: 48, w: 1.6, swing: 1, num: '19', name: '정원 문' },
+      { id: 'portr', axis: 'x', at: 25, c: 64, w: 1.3, swing: 1, num: '20', name: '초상화 방 문' },
+    );
+    const gaps = [...DOORS, { axis: 'z', at: 26, c: 14, w: 1.8 }, { axis: 'x', at: 30, c: 22, w: 2.4, h: 3.0 }, { axis: 'z', at: 40, c: 8.5, w: 2.6, h: 2.8 }, { axis: 'z', at: 56, c: 13.5, w: 1.6 }];
     const lines = { x: new Map(), z: new Map() };
     const add = (ax, at, a, b) => { const mp = lines[ax]; if (!mp.has(at)) mp.set(at, []); mp.get(at).push([a, b]); };
     for (const r of ROOMS) { add('x', r.z0, r.x0, r.x1); add('x', r.z1, r.x0, r.x1); add('z', r.x0, r.z0, r.z1); add('z', r.x1, r.z0, r.z1); }
@@ -652,12 +693,12 @@ export class World {
     this.addHide('cabinet', g, [0, D / 2 + 0.6], [0, 0, -0.05], doors, '서랍장에 숨기', 0);
     return g;
   }
-  addHide(type, g, front, inside, doors, label, look) {
+  addHide(type, g, front, inside, doors, label, look, overlay) {
     const fp = this.lw(g, front[0], 0, front[1]);
     const ip = this.lw(g, inside[0], inside.length > 2 ? inside[1] : 0, inside[inside.length - 1]);
     const yaw = g.rotation.y + look; // 바깥쪽을 보는 방향 (로컬 +z 기준)
     const out = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-    const spot = { type, group: g, front: fp, inside: ip, doors, label, out, faceYaw: yaw, room: roomAt(fp.x, fp.z) };
+    const spot = { type, overlay: overlay || type, group: g, front: fp, inside: ip, doors, label, out, faceYaw: yaw, room: roomAt(fp.x, fp.z), id: this.hides.length };
     this.hides.push(spot);
     this.addInter({ kind: 'hide', spot, pos: fp.clone().setY(1), r: 1.25 });
   }
@@ -673,8 +714,7 @@ export class World {
   drawer(g, dr, item, itemL, slide, label = '서랍 열기', text) {
     const it = { kind: 'drawer', g, dr, item, opened: false, slide, label, text, pos: this.lw(g, 0, 0.8, 0.5) };
     if (item) {
-      const mat = this.keyMat(item.key);
-      const km = this.keyMesh(mat); km.position.set(...itemL); km.rotation.y = 0.6; dr.add(km); dyn(km); it.mesh = km;
+      const km = item.key === 'bandage' ? (() => { const b = new THREE.Group(); box(b, 0.16, 0.05, 0.1, new THREE.MeshLambertMaterial({ color: 0xe8e4dc }), 0, 0, 0); box(b, 0.04, 0.052, 0.1, new THREE.MeshLambertMaterial({ color: 0xc02020 }), 0, 0, 0); return b; })() : this.keyMesh(this.keyMat(item.key)); km.position.set(...itemL); km.rotation.y = 0.6; dr.add(km); dyn(km); it.mesh = km;
       it.glint = this.addGlint(this.lw(g, itemL[0], itemL[1] + 0.25, itemL[2] + 0.2)); it.glint.visible = false;
     }
     this.items.push(it);
@@ -862,7 +902,7 @@ export class World {
     this.portrait(28.2, 1.75, 7.1, 0, m.portraitGH, 0.6, 0.8);
     this.portrait(34.5, 1.75, 7.1, 0, m.portraitFam, 0.8, 0.6);
     for (const x of [9.5, 18, 26, 33.5]) this.bust(x, 9.55, P);
-    this.wardrobe(0.4, 8.5, P / 2); this.wardrobe(39.6, 8.5, -P / 2);
+    this.wardrobe(0.4, 8.5, P / 2); this.wardrobe(71.6, 8.5, -P / 2);
     this.decal(m.blood('도망쳐', 512, 200, 120), 19.5, 1.6, 9.88, P, 1.2, 0.48);
     /* ── 06 아이방 ── */
     this.bed(1.0, 12.4, P / 2, true);
@@ -886,7 +926,7 @@ export class World {
       box(g, 6.0, 0.012, 0.9, m.fabricW, 0, 0.822, 0);
       for (let i = 0; i < 6; i++) { const x = -2.75 + i * 1.1; for (const s of [-1, 1]) { cyl(g, 0.13, 0.11, 0.02, m.porcelain, x, 0.83, s * 0.32, 14); box(g, 0.1, 0.04, 0.08, new THREE.MeshLambertMaterial({ color: 0x2a3010 }), x, 0.85, s * 0.32); } }
       this.candelabra(g, -1.4, 0.815, 0); this.candelabra(g, 1.4, 0.815, 0);
-      this.col(14.6, 21.4, 13.3, 14.7, 0, 0.85);
+      this.col(14.6, 21.4, 13.3, 14.7, 0.62, 0.85);
       this.addInter({ kind: 'flavor', text: '썩은 음식이 담긴 접시들. 접시마다 이름표가 붙어 있다.\n"팔로우 안 한 사람 1", "팔로우 안 한 사람 2"...', pos: new THREE.Vector3(14.0, 1, 14), r: 1.2, label: '식탁 살펴보기' }); }
     for (let i = 0; i < 6; i++) { const x = 15.25 + i * 1.1; this.chair(x, 12.75, 0); this.chair(x, 15.25, P); }
     this.chandelier(16.2, 14); this.chandelier(19.8, 14);
@@ -898,7 +938,7 @@ export class World {
     this.counter(30, 17.65, P, { key: 'rusty' });
     this.wardrobe(33.6, 12.6, -P / 2, '찬장에 숨기');
     { const g = this.grp(30.5, 13.4, 0); box(g, 1.4, 0.06, 0.8, m.woodMid, 0, 0.78, 0); for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.07, 0.76, 0.07, m.woodMid, sx * 0.62, 0.38, sz * 0.32);
-      cyl(g, 0.12, 0.1, 0.18, m.iron, 0.3, 0.9, 0, 12); box(g, 0.4, 0.03, 0.25, m.woodDark, -0.3, 0.825, 0.1); this.colFoot(g, 1.42, 0.82, 0.85);
+      cyl(g, 0.12, 0.1, 0.18, m.iron, 0.3, 0.9, 0, 12); box(g, 0.4, 0.03, 0.25, m.woodDark, -0.3, 0.825, 0.1); this.colFoot(g, 1.42, 0.82, 0.85).y0 = 0.62;
       this.addInter({ kind: 'flavor', text: '도마 위에 칼 자국이 가득하다. 냄비 안은... 보지 않는 게 좋겠다.', pos: this.lw(g, 0, 1, 0.8), r: 1.2, label: '식탁 살펴보기' }); }
     this.chair(31.6, 13.4, -P / 2, m.woodMid);
     this.ceilingLamp(30, 14, 'bad', 0xfff0d0);
@@ -932,14 +972,183 @@ export class World {
     /* ── 11 예배당 ── */
     for (const z of [32.6, 34.2]) { this.pew(2.9, z); this.pew(9.1, z); }
     this.altar(6, 37.3, P, { key: 'gold' });
-    this.lectern(2.0, 31.0, 4);
+    this.lectern(2.0, 31.0, null, '낡은 찬송가 책. 가사가 전부 같은 단어로 덧칠돼 있다.\n"팔로우, 팔로우, 팔로우..."');
     this.wardrobe(11.6, 33.6, -P / 2, '고해실에 숨기');
     this.windowBoard(0.1, 35.5, P / 2);
     this.ceilingLamp(6, 34, 'bad', 0xffd090);
     this.statue(10.8, 37.2, -P * 0.8, 0.7);
     this.decal(m.blood('팔로우', 512, 200, 120), 6, 2.6, 37.88, P, 1.4, 0.55);
+    /* ════════ 동쪽 별관 ════════ */
+    /* 복도 B */
+    { const g2 = new THREE.PlaneGeometry(30, 1.2), u2 = g2.attributes.uv;
+      for (let i = 0; i < u2.count; i++) { const x = u2.getX(i), y = u2.getY(i); u2.setXY(i, y, x * 21); }
+      const r = new THREE.Mesh(g2, m.runner); r.rotation.x = -P / 2; r.position.set(56, 0.006, 8.5); this.st.add(r); }
+    [42.5, 47.5, 52.5, 57.5, 62.5, 67.5, 71].forEach((x, i) => this.ceilingLamp(x, 8.5, i % 3 === 1 ? 'bad' : 'normal', 0xffd6a0, 0.75));
+    for (const [x, mat] of [[43, m.portraitLand], [50, m.portraitGH], [57, m.portraitFam], [64.5, m.portraitGH], [71, m.portraitLand]]) this.portrait(x, 1.75, 7.1, 0, mat, 0.7, 0.9);
+    for (const x of [48, 58, 68.5]) this.bust(x, 9.55, P);
+    this.decal(m.blood('여기도 아니야', 640, 200, 110), 61, 1.7, 9.88, P, 1.6, 0.5);
+    /* 12 푸른 거실 */
+    this.sofa(44, 1.0, 0); this.coffeeTable(44, 2.7);
+    this.chair(42.0, 3.4, P / 2, m.fabricB); this.chair(46.6, 3.0, -P / 2, m.fabricB);
+    this.fireplace(50.5, 0.35, 0); this.bookshelf(47.6, 0.32, 0);
+    this.tv(41.2, 6.55, P);
+    this.wardrobe(51.6, 5.0, -P / 2);
+    rug(45, 3.5, 4, 3);
+    this.ceilingLamp(46, 3.6, 'normal', 0xd0e0ff);
+    /* 13 화장실 */
+    this.toilet(55.55, 1.4, -P / 2); this.sinkMirror(52.32, 3.6, P / 2);
+    this.cabinet(55.48, 5.6, -P / 2);
+    this.ceilingLamp(54, 3.5, 'bad', 0xe0f0ff);
+    this.decal(m.hands, 52.12, 1.5, 1.5, P / 2, 1.0, 1.0);
+    /* 14 손님방 */
+    this.bed(59, 1.15, 0);
+    this.nightstand(57.6, 0.35, 0, null, '서랍 안에 손톱으로 긁은 글씨: "열쇠는 4개야. 일기도 4장."');
+    this.dresser(61.6, 0.32, 0, null, { key: 'bandage' });
+    this.wardrobe(63.6, 4.6, -P / 2);
+    this.windowBoard(59, 0.1, 0);
+    this.ceilingLamp(60, 3.6, 'bad');
+    this.portrait(56.12, 1.8, 4.6, P / 2, m.portraitFam, 0.8, 0.6);
+    /* 15 사진실 */
+    this.photoWall(64.12, 3.5, P / 2, 5); this.photoWall(71.88, 3.0, -P / 2, 5); this.photoWall(68, 0.12, 0, 6);
+    { const g = this.grp(68, 1.2, 0); box(g, 1.6, 0.05, 0.7, m.woodDark, 0, 0.76, 0); for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.06, 0.74, 0.06, m.woodDark, sx * 0.72, 0.37, sz * 0.3);
+      box(g, 0.4, 0.06, 0.3, m.leather, -0.3, 0.81, 0); box(g, 0.35, 0.05, 0.28, m.fabricR, 0.35, 0.81, 0.05).rotation.y = 0.3;
+      this.colFoot(g, 1.62, 0.72, 0.8);
+      this.addInter({ kind: 'flavor', text: '사진첩이다. 모두 초록모자를 팔로우하지 않은 사람들...\n마지막 장에 내 사진이 있다. 아래에 "다음 차례".', pos: this.lw(g, 0, 1, 0.8), r: 1.3, label: '사진첩 보기', clue: true }); }
+    this.cabinet(71.48, 5.8, -P / 2);
+    this.bust(65.2, 6.3, P * 0.75);
+    this.ceilingLamp(68, 3.5, 'normal', 0xffb0a0);
+    /* 16 큰 거실 */
+    rug(48, 18.5, 7, 4.6);
+    this.fireplace(48, 21.65, P);
+    this.sofa(48, 17.6, 0); this.coffeeTable(48, 19.3);
+    this.chair(45.2, 19.6, P / 2 + 0.3, m.fabricG); this.chair(50.8, 19.6, -P / 2 - 0.3, m.fabricG);
+    this.bookshelf(55.68, 17.2, -P / 2); this.bookshelf(55.68, 19.6, -P / 2);
+    this.wardrobe(40.42, 15, P / 2); this.cabinet(51.6, 21.52, P);
+    this.statue(54.5, 11.6, -P * 0.75, 0.8);
+    this.chandelier(46, 14.5); this.chandelier(51, 18.5);
+    this.grandClock(41.2, 21.6, P / 2, false);
+    for (const [z, mat] of [[12.5, m.portraitGH], [19, m.portraitLand]]) this.portrait(40.12, 1.9, z, P / 2, mat, 0.8, 1.0);
+    this.tv(47.5, 10.45, 0);
+    /* 17 부엌 2 */
+    this.counter(59.8, 10.35, 0, { key: 'bandage' }); this.counter(68.3, 10.35, 0, null, '썩은 우유와 곰팡이 핀 빵뿐이다.');
+    { const g = this.grp(64, 14, 0); box(g, 1.4, 0.06, 0.8, m.woodMid, 0, 0.78, 0); for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.07, 0.76, 0.07, m.woodMid, sx * 0.62, 0.38, sz * 0.32);
+      cyl(g, 0.15, 0.15, 0.03, m.porcelain, 0.2, 0.82, 0, 14); this.colFoot(g, 1.42, 0.82, 0.85).y0 = 0.62; }
+    this.chair(62.9, 14, P / 2, m.woodMid); this.chair(65.1, 14, -P / 2, m.woodMid);
+    this.fridge(71.55, 15.6, -P / 2);
+    this.wardrobe(71.6, 12.6, -P / 2, '찬장에 숨기');
+    this.ceilingLamp(60, 13.5, 'bad', 0xfff0d0); this.ceilingLamp(68, 13.5, 'normal', 0xfff0d0);
+    this.decal(m.blood('배고파', 512, 200, 120), 56.12, 1.6, 15.5, P / 2, 1.2, 0.47);
+    /* 18 화장실 2 */
+    for (const x of [66.6, 68.5, 70.4]) this.stall(x, 21.0, P);
+    this.sinkMirror(56.32, 19.0, P / 2); this.sinkMirror(56.32, 20.6, P / 2);
+    this.ceilingLamp(62, 19.5, 'bad', 0xe0f0ff); this.ceilingLamp(68.5, 19.0, 'bad', 0xe0f0ff);
+    this.decal(m.hands, 60, 0.012, 20.5, 0, 1.4, 1.4, -P / 2);
+    this.sfx.push({ kind: 'drip', pos: new THREE.Vector3(61, 0.5, 21) });
+    /* 복도 C */
+    { const g2 = new THREE.PlaneGeometry(30, 1.2), u2 = g2.attributes.uv;
+      for (let i = 0; i < u2.count; i++) { const x = u2.getX(i), y = u2.getY(i); u2.setXY(i, y, x * 21); }
+      const r = new THREE.Mesh(g2, m.runner); r.rotation.x = -P / 2; r.position.set(56, 0.006, 23.5); this.st.add(r); }
+    [43, 49, 55, 61, 67, 71].forEach((x, i) => this.ceilingLamp(x, 23.5, i % 2 ? 'bad' : 'normal', 0xffd6a0, 0.7));
+    for (const [x, mat] of [[44, m.portraitGH], [52, m.portraitFam], [58, m.portraitLand], [68, m.portraitGH]]) this.portrait(x, 1.75, 22.1, 0, mat, 0.7, 0.9);
+    for (const x of [44, 56, 70]) this.bust(x, 24.45, P);
+    this.decal(m.blood('거의 다 왔어', 640, 200, 110), 60, 1.7, 24.88, P, 1.6, 0.5);
+    /* 19 동상 정원 */
+    this.fountain(48, 30);
+    for (const [x, z, ry] of [[41.6, 27, P / 2], [41.6, 32.6, P / 2], [54.4, 27, -P / 2], [54.4, 32.6, -P / 2]]) this.statue(x, z, ry, 0.82);
+    for (const [x, z] of [[44, 33.4], [52, 33.4], [44, 26], [52, 26]]) this.plant(x, z);
+    this.wardrobe(55.6, 29.8, -P / 2, '창고 옷장에 숨기');
+    this.ceilingLamp(44.5, 29.5, 'normal', 0xcfe8ff); this.ceilingLamp(51.5, 29.5, 'bad', 0xcfe8ff);
+    this.windowBoard(46, 33.9, P); this.windowBoard(51, 33.9, P);
+    /* 20 초상화 방 */
+    for (let i = 0; i < 5; i++) this.portrait(57.5 + i * 3.2, 1.9, 33.88, P, [m.portraitGH, m.portraitFam, m.portraitLand][i % 3], 0.8, 1.0);
+    for (const z of [27.5, 31]) { this.portrait(56.12, 1.9, z, P / 2, m.portraitGH, 0.8, 1.0); this.portrait(71.88, 1.9, z, -P / 2, m.portraitFam, 0.8, 0.6); }
+    this.lectern(64, 32.8, 4);
+    this.statue(70.4, 26.4, -P * 0.75, 0.8);
+    this.wardrobe(56.4, 29.2, P / 2);
+    this.cabinet(71.48, 29.6, -P / 2);
+    this.chandelier(64, 29.5, true);
+    this.decal(m.blood('모두 내 팔로워', 768, 200, 110), 64, 2.75, 33.88, P, 2.0, 0.52);
   }
   /* 새 가구 */
+  coffeeTable(x, z) {
+    const g = this.grp(x, z, 0), m = this.m.woodRed;
+    box(g, 1.1, 0.05, 0.6, m, 0, 0.42, 0); for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.05, 0.4, 0.05, m, sx * 0.5, 0.2, sz * 0.25);
+    cyl(g, 0.05, 0.04, 0.12, this.m.porcelain, 0.2, 0.51, 0, 8);
+    this.colFoot(g, 1.1, 0.6, 0.45).y0 = 0.38;
+  }
+  tv(x, z, ry) { // 지직거리는 옛날 텔레비전
+    const g = this.grp(x, z, ry), m = this.m;
+    box(g, 0.9, 0.5, 0.45, m.woodDark, 0, 0.25, 0);
+    box(g, 0.7, 0.55, 0.5, new THREE.MeshLambertMaterial({ color: 0x2a2620 }), 0, 0.78, 0);
+    if (!this.tvTex) {
+      const [c, gg] = cv(64, 48); this.tvTex = toTex(c, false); this.tvCv = [c, gg];
+      this.anims.push(t => { if ((t * 12 | 0) === this.tvF) return; this.tvF = t * 12 | 0; const d = gg.createImageData(64, 48); for (let i = 0; i < d.data.length; i += 4) { const v = Math.random() * 200; d.data[i] = v; d.data[i + 1] = v; d.data[i + 2] = v * 1.05; d.data[i + 3] = 255; } gg.putImageData(d, 0, 0); if ((t | 0) % 7 === 0) { gg.fillStyle = '#c03030'; gg.font = 'bold 14px sans-serif'; gg.textAlign = 'center'; gg.fillText('팔로우 해', 32, 28); } this.tvTex.needsUpdate = true; });
+    }
+    const scr = plane(g, 0.56, 0.42, new THREE.MeshBasicMaterial({ map: this.tvTex }), 0, 0.8, 0.252); dyn(scr);
+    this.fixture(this.lw(g, 0, 0.8, 0.6), 0xb0c0ff, 1.6, 4, 'bad', [scr]);
+    this.colFoot(g, 0.9, 0.5, 1.05);
+    this.addInter({ kind: 'flavor', text: '켜진 채로 지직거리는 텔레비전. 가끔 붉은 글씨가 번쩍인다.\n"팔로우 해"', pos: this.lw(g, 0, 1, 0.8), r: 1.3, label: '텔레비전 보기' });
+  }
+  toilet(x, z, ry) {
+    const g = this.grp(x, z, ry), pm = this.m.porcelain;
+    cyl(g, 0.16, 0.13, 0.38, pm, 0, 0.19, 0.05, 12); const bowl = cyl(g, 0.21, 0.17, 0.08, pm, 0, 0.42, 0.08, 14); bowl.scale.z = 1.25;
+    box(g, 0.42, 0.38, 0.18, pm, 0, 0.62, -0.2); box(g, 0.44, 0.04, 0.2, pm, 0, 0.82, -0.2);
+    const w = cyl(g, 0.15, 0.15, 0.01, new THREE.MeshLambertMaterial({ color: 0x5a0a0a }), 0, 0.45, 0.08, 12); w.scale.z = 1.25;
+    this.colFoot(g, 0.46, 0.7, 0.8, 0, -0.05);
+    this.addInter({ kind: 'flavor', text: '변기 물이 붉다... 물을 내려 봤다.', pos: this.lw(g, 0, 1, 0.8), r: 1.1, label: '변기 물 내리기', sound: 'flush' });
+  }
+  sinkMirror(x, z, ry) {
+    const g = this.grp(x, z, ry), m = this.m;
+    box(g, 0.6, 0.12, 0.45, m.porcelain, 0, 0.82, 0); cyl(g, 0.08, 0.12, 0.76, m.porcelain, 0, 0.38, 0, 10);
+    box(g, 0.7, 0.9, 0.04, m.brass, 0, 1.65, -0.2); plane(g, 0.6, 0.8, m.mirror, 0, 1.65, -0.175);
+    this.colFoot(g, 0.62, 0.5, 0.9);
+    this.addInter({ kind: 'flavor', text: ['거울 속 내 뒤로 무언가 지나간 것 같다...', '수도꼭지에서 녹물이 나온다.', '거울에 립스틱으로 쓴 글씨: "웃어"'][Math.random() * 3 | 0], pos: this.lw(g, 0, 1, 0.7), r: 1.2, label: '세면대 살펴보기', sound: 'sink' });
+  }
+  stall(x, z, ry) { // 화장실 칸 (숨을 수 있다)
+    const g = this.grp(x, z, ry), pm = new THREE.MeshLambertMaterial({ color: 0x4a5048, map: this.m.woodMid.map });
+    for (const s of [-1, 1]) box(g, 0.05, 1.9, 1.8, pm, s * 0.92, 1.05, 0);
+    box(g, 1.85, 1.9, 0.05, pm, 0, 1.05, -0.9);
+    this.toiletMesh(g, 0, -0.55);
+    const piv = new THREE.Group(); piv.position.set(-0.88, 0, 0.9); g.add(piv); dyn(piv);
+    dyn(box(piv, 0.86, 1.7, 0.04, pm, 0.43, 1.0, 0, 0));
+    const k = new THREE.Mesh(this.geo.knob, this.m.iron); k.position.set(0.76, 1.0, 0.03); piv.add(k); dyn(k);
+    const piv2 = new THREE.Group(); piv2.position.set(0.88, 0, 0.9); g.add(piv2); dyn(piv2); dyn(box(piv2, 0.86, 1.7, 0.04, pm, -0.43, 1.0, 0, 0));
+    for (const s of [-1, 1]) { const a = this.lw(g, s * 0.92, 0, 0); this.col(a.x - 0.06, a.x + 0.06, Math.min(a.z, a.z) - 0.9, a.z + 0.9, 0, 2, 'tall'); }
+    const bk = this.lw(g, 0, 0, -0.9); this.col(bk.x - 0.95, bk.x + 0.95, bk.z - 0.05, bk.z + 0.05, 0, 2, 'tall');
+    this.addHide('wardrobe', g, [0, 1.45], [0, 0, 0.1], [{ piv, open: -1.6 }, { piv: piv2, open: 1.6 }], '화장실 칸에 숨기', 0, 'stall');
+  }
+  toiletMesh(g, x, z) { const pm = this.m.porcelain; cyl(g, 0.15, 0.12, 0.38, pm, x, 0.19, z + 0.05, 10); cyl(g, 0.2, 0.16, 0.08, pm, x, 0.42, z + 0.08, 12); box(g, 0.4, 0.36, 0.16, pm, x, 0.6, z - 0.2); }
+  fridge(x, z, ry) {
+    const g = this.grp(x, z, ry), pm = new THREE.MeshStandardMaterial({ color: 0x9a9c94, roughness: 0.5 });
+    box(g, 0.8, 1.8, 0.7, pm, 0, 0.9, 0); box(g, 0.04, 0.5, 0.04, this.m.silver, 0.32, 1.2, 0.37);
+    this.colFoot(g, 0.82, 0.72, 1.85, 0, 0, 'tall');
+    this.addInter({ kind: 'flavor', text: '냉장고 안에 이름표가 붙은 도시락이 가득하다.\n"팔로우 안 한 사람 몫"', pos: this.lw(g, 0, 1, 0.9), r: 1.2, label: '냉장고 열기', sound: 'door' });
+  }
+  fountain(x, z) {
+    const g = this.grp(x, z, 0), sm = this.m.stoneB;
+    const b = cyl(g, 1.25, 1.35, 0.5, sm, 0, 0.25, 0, 24);
+    const w = cyl(g, 1.12, 1.12, 0.02, this.m.water, 0, 0.44, 0, 24);
+    cyl(g, 0.18, 0.25, 1.1, sm, 0, 0.8, 0, 12); cyl(g, 0.55, 0.3, 0.15, sm, 0, 1.4, 0, 16);
+    const r = buildGreenHat(null, this.m.statue); r.root.scale.setScalar(0.32); r.root.position.y = 1.47; g.add(r.root);
+    this.col(x - 1.3, x + 1.3, z - 1.3, z + 1.3, 0, 1.6);
+    this.sfx.push({ kind: 'drip', pos: new THREE.Vector3(x, 0.5, z) });
+    this.addInter({ kind: 'flavor', text: '말라붙은 분수. 바닥에 동전 대신 휴대폰들이 가라앉아 있다.\n전부 같은 알림이 떠 있다: "초록모자 님이 회원님을 팔로우합니다"', pos: new THREE.Vector3(x, 1, z + 1.7), r: 1.4, label: '분수 살펴보기', clue: true });
+  }
+  plant(x, z) {
+    const g = this.grp(x, z, rnd() * 3);
+    cyl(g, 0.22, 0.16, 0.4, this.m.rust, 0, 0.2, 0, 10);
+    for (let i = 0; i < 5; i++) { const b = box(g, 0.025, 0.7 + rnd() * 0.5, 0.025, this.m.woodDark, (rnd() - 0.5) * 0.15, 0.7, (rnd() - 0.5) * 0.15); b.rotation.set((rnd() - 0.5) * 0.8, 0, (rnd() - 0.5) * 0.8); }
+    this.colFoot(g, 0.44, 0.44, 1.0);
+  }
+  photoWall(x, z, ry, n) {
+    const g = this.grp(x, z, ry);
+    for (let i = 0; i < n * 2; i++) {
+      const px = (i % n - (n - 1) / 2) * 0.42 + (rnd() - 0.5) * 0.06, py = 1.35 + (i / n | 0) * 0.5 + (rnd() - 0.5) * 0.06;
+      const p = plane(g, 0.3, 0.36, this.m.photos[i % this.m.photos.length], px, py, 0.01 + i * 0.0005); p.rotation.z = (rnd() - 0.5) * 0.25;
+    }
+    this.addInter({ kind: 'flavor', text: '벽 가득 붙은 사진들. 모두 겁에 질린 얼굴이다.\n몇 장에는 빨간 X가 그어져 있다. "잡았다"', pos: this.lw(g, 0, 1, 0.8), r: 1.4, label: '사진 살펴보기', clue: true });
+  }
+
   crates(x, z) {
     const g = this.grp(x, z, rnd() * 0.5), mm = this.m.woodMid;
     box(g, 0.7, 0.6, 0.7, mm, 0, 0.3, 0); box(g, 0.5, 0.45, 0.5, mm, 0.1, 0.825, 0.05).rotation.y = 0.4; box(g, 0.55, 0.5, 0.55, mm, 0.65, 0.25, -0.1).rotation.y = -0.3;
@@ -963,7 +1172,7 @@ export class World {
     this.colFoot(g, 1.52, 0.9, 1.3, 0, 0.15);
     this.addInter({ kind: 'flavor', text: '먼지 쌓인 피아노. 건반 하나를 누르자 둔한 소리가 저택에 울린다...', pos: this.lw(g, 0, 1, 1.0), r: 1.4, label: '피아노 살펴보기', sound: 'piano' });
   }
-  grandClock(x, z, ry) {
+  grandClock(x, z, ry, tick = true) {
     const g = this.grp(x, z, ry), m = this.m, cm = m.woodDark;
     box(g, 0.62, 2.25, 0.4, cm, 0, 1.125, 0); box(g, 0.7, 0.14, 0.46, cm, 0, 2.3, 0);
     plane(g, 0.46, 0.46, m.clockFace, 0, 1.85, 0.205); box(g, 0.4, 1.0, 0.02, m.black, 0, 0.95, 0.2);
@@ -971,7 +1180,7 @@ export class World {
     cyl(pend, 0.006, 0.006, 0.6, m.brass, 0, -0.3, 0, 4); const bob = cyl(pend, 0.07, 0.07, 0.015, m.brass, 0, -0.62, 0, 14); bob.rotation.x = Math.PI / 2;
     this.anims.push(t => pend.rotation.z = Math.sin(t * 2.2) * 0.22);
     this.colFoot(g, 0.7, 0.46, 2.4, 0, 0, 'tall');
-    this.sfx.push({ kind: 'clock', pos: this.lw(g, 0, 1.5, 0.3) });
+    if (tick) this.sfx.push({ kind: 'clock', pos: this.lw(g, 0, 1.5, 0.3) });
     this.addInter({ kind: 'flavor', text: '멈추지 않는 괘종시계. 바늘이 거꾸로 돌고 있다...', pos: this.lw(g, 0, 1, 0.7), r: 1.4, label: '괘종시계 살펴보기' });
   }
   stairs() {
@@ -986,7 +1195,7 @@ export class World {
     box(g, 2.0, 0.42, 0.85, sm, 0, 0.21, 0); box(g, 2.0, 0.6, 0.18, sm, 0, 0.6, -0.34); for (const s of [-1, 1]) box(g, 0.18, 0.55, 0.85, sm, s * 0.95, 0.35, 0);
     this.colFoot(g, 2.02, 0.88, 0.8);
   }
-  counter(x, z, ry, item) { // 부엌 싱크대 — 가운데 서랍에 열쇠
+  counter(x, z, ry, item, text) { // 부엌 싱크대 — 가운데 서랍
     const g = this.grp(x, z, ry), m = this.m, wm = m.woodMid;
     box(g, 6.4, 0.86, 0.6, wm, 0, 0.43, 0); box(g, 6.5, 0.05, 0.66, m.porcelain, 0, 0.885, 0.02);
     box(g, 1.0, 0.04, 0.5, m.black, -2.4, 0.92, 0); for (const sx of [-1, 1]) cyl(g, 0.12, 0.12, 0.02, m.iron, -2.4 + sx * 0.25, 0.945, 0, 14);
@@ -997,7 +1206,7 @@ export class World {
     box(dr, 0.84, 0.2, 0.03, wm, 0, 0.7, 0.31); box(dr, 0.8, 0.02, 0.45, wm, 0, 0.61, 0.08);
     const k = new THREE.Mesh(this.geo.knob, m.brass); k.position.set(0, 0.7, 0.34); dr.add(k); dyn(dr);
     this.colFoot(g, 6.5, 0.66, 0.95);
-    return this.drawer(g, dr, item, [0.1, 0.64, 0.15], new THREE.Vector3(0, 0, 0.35), '찬장 서랍 열기');
+    return this.drawer(g, dr, item, [0.1, 0.64, 0.15], new THREE.Vector3(0, 0, 0.35), '찬장 서랍 열기', text);
   }
   toyChest(x, z, ry, item) {
     const g = this.grp(x, z, ry), wm = this.m.woodMid;
@@ -1025,12 +1234,13 @@ export class World {
     this.colFoot(g, 2.2, 0.9, 1.0);
     return this.drawer(g, dr, item, [0, 0.64, 0.25], new THREE.Vector3(0, 0, 0.36), '제단 서랍 열기');
   }
-  lectern(x, z, diary) {
+  lectern(x, z, diary, text) {
     const g = this.grp(x, z, Math.PI * 0.15), m = this.m;
     box(g, 0.12, 1.0, 0.12, m.woodDark, 0, 0.5, 0); box(g, 0.5, 0.04, 0.4, m.woodDark, 0, 0.02, 0);
     const top = box(g, 0.55, 0.04, 0.42, m.woodDark, 0, 1.05, 0); top.rotation.x = 0.35;
-    const d = this.diaryMesh(0x2a2a2a); d.position.set(0, 1.08, 0.02); d.rotation.x = 0.35; g.add(d); dyn(d);
-    this.addDiary(diary, d, this.lw(g, 0, 1.1, 0));
+    const d = this.diaryMesh(0x2a2a2a); d.position.set(0, 1.08, 0.02); d.rotation.x = 0.35; g.add(d);
+    if (diary) { dyn(d); this.addDiary(diary, d, this.lw(g, 0, 1.1, 0)); }
+    else this.addInter({ kind: 'flavor', text, pos: this.lw(g, 0, 1, 0.6), r: 1.2, label: '책 펼쳐 보기' });
     this.colFoot(g, 0.5, 0.42, 1.1);
   }
   bust(x, z, ry) {
@@ -1103,12 +1313,18 @@ export class World {
       galD: [37, 10, 'gal'], g0: [37, 11.6], g1: [37, 15], g2: [37, 19], g3: [37, 24], g4: [37, 28.4], foyD: [34, 24, 'foyer'],
       f1: [31.5, 24], f2: [28, 21], f3: [17, 20.6], f4: [8, 21.2], f5: [5, 26.5], f6: [17, 27.6], f7: [28, 27.2], fF: [22, 28.6],
       chapD: [6, 30, 'chapel'], c1: [6, 31.6], c2: [6, 36.2],
+      hb0: [40, 8.5], hb1: [44, 8.5], hb2: [46, 8.5], hb3: [52, 8.5], hb4: [54, 8.5], hb5: [60, 8.5], hb6: [64, 8.5], hb7: [68, 8.5], hb8: [70.6, 8.5],
+      liv1D: [46, 7, 'liv1'], L1a: [46, 4.6], L1b: [49, 3.6], toi1D: [54, 7, 'toi1'], T1: [54, 3.4], guestD: [60, 7, 'guest'], G1: [60, 4.3], G2: [57.6, 4.8], photoD: [68, 7, 'photo'], P1: [68, 4.3], P2: [66, 2.6],
+      liv2aD: [44, 10, 'liv2a'], liv2bD: [52, 10, 'liv2b'], L2a: [44, 11.6], L2b: [52, 11.6], L2c: [43, 17], L2d: [53, 16.4], L2e: [48, 14.6], kD2: [56, 13.5],
+      kit2D: [64, 10, 'kit2'], K2a: [60, 12.2], K2b: [68, 12.2], K2c: [64, 16], toi2D: [64, 17, 'toi2'], T2a: [64, 18.7], T2b: [59, 18.7], T2c: [69.5, 18.7],
+      hcD: [40, 23.5, 'hallc'], hc0: [42, 23.5], hc1: [48, 23.5], hc2: [56, 23.5], hc3: [64, 23.5], hc4: [70.6, 23.5],
+      garD: [48, 25, 'garden'], GA: [48, 27.2], GB: [44, 30.5], GC: [52, 30.5], GD: [48, 32.8], porD: [64, 25, 'portr'], PR1: [64, 27.4], PR2: [60, 30.6], PR3: [68, 30.6],
     };
-    const E = 'h0-h1 h1-h2 h2-h3 h3-h4 h4-h5 h5-h6 h6-h7 h7-h8 h8-h9 h9-h10 h10-h11 h1-bedD bedD-b1 b1-b2 h3-bathD bathD-ba1 ba1-ba2 h5-storeD storeD-st1 st1-st2 h7-studyD studyD-s1 s1-s2 s1-musicD musicD-m1 m1-m2 m1-m3 h1-kidsD kidsD-k1 k1-k2 k1-k3 h4-din1D din1D-dA h6-din2D din2D-dB dA-dB dB-dC dC-dD dD-dE dE-dF dF-dA dC-kA kA-kt1 kt1-kt2 kt1-kt3 kt2-kitD kitD-h8 h10-galD galD-g0 g0-g1 g1-g2 g2-g3 g3-g4 g3-foyD foyD-f1 f1-f2 f2-f3 f3-f4 f4-f5 f5-f6 f6-fF fF-f7 f7-f1 f5-chapD chapD-c1 c1-c2';
+    const E = 'h0-h1 h1-h2 h2-h3 h3-h4 h4-h5 h5-h6 h6-h7 h7-h8 h8-h9 h9-h10 h10-h11 h1-bedD bedD-b1 b1-b2 h3-bathD bathD-ba1 ba1-ba2 h5-storeD storeD-st1 st1-st2 h7-studyD studyD-s1 s1-s2 s1-musicD musicD-m1 m1-m2 m1-m3 h1-kidsD kidsD-k1 k1-k2 k1-k3 h4-din1D din1D-dA h6-din2D din2D-dB dA-dB dB-dC dC-dD dD-dE dE-dF dF-dA dC-kA kA-kt1 kt1-kt2 kt1-kt3 kt2-kitD kitD-h8 h10-galD galD-g0 g0-g1 g1-g2 g2-g3 g3-g4 g3-foyD foyD-f1 f1-f2 f2-f3 f3-f4 f4-f5 f5-f6 f6-fF fF-f7 f7-f1 f5-chapD chapD-c1 c1-c2 h11-hb0 hb0-hb1 hb1-hb2 hb2-hb3 hb3-hb4 hb4-hb5 hb5-hb6 hb6-hb7 hb7-hb8 hb2-liv1D liv1D-L1a L1a-L1b hb4-toi1D toi1D-T1 hb5-guestD guestD-G1 G1-G2 hb7-photoD photoD-P1 P1-P2 hb1-liv2aD liv2aD-L2a hb3-liv2bD liv2bD-L2b L2a-L2b L2a-L2c L2a-L2e L2b-L2e L2b-L2d L2d-kD2 kD2-K2a hb6-kit2D kit2D-K2a kit2D-K2b K2a-K2b K2a-K2c K2b-K2c K2c-toi2D toi2D-T2a T2a-T2b T2a-T2c g3-hcD hcD-hc0 hc0-hc1 hc1-hc2 hc2-hc3 hc3-hc4 hc1-garD garD-GA GA-GB GA-GC GB-GD GC-GD hc3-porD porD-PR1 PR1-PR2 PR1-PR3';
     this.nodes = {};
     for (const [id, [x, z, door]] of Object.entries(N)) this.nodes[id] = { id, x, z, door, nb: [] };
     for (const e of E.split(' ')) { const [a, b] = e.split('-'); this.nodes[a].nb.push(this.nodes[b]); this.nodes[b].nb.push(this.nodes[a]); }
-    this.patrolIds = ['b1', 'b2', 'ba1', 'st1', 's1', 's2', 'm1', 'm2', 'h0', 'h2', 'h5', 'h7', 'h9', 'h11', 'k1', 'k2', 'dA', 'dC', 'dE', 'kt1', 'kt3', 'g1', 'g3', 'g4', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'c1', 'c2'];
+    this.patrolIds = ['b1', 'b2', 'ba1', 'st1', 's1', 's2', 'm1', 'm2', 'h0', 'h2', 'h5', 'h7', 'h9', 'h11', 'k1', 'k2', 'dA', 'dC', 'dE', 'kt1', 'kt3', 'g1', 'g3', 'g4', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'c1', 'c2', 'hb2', 'hb5', 'hb8', 'L1a', 'T1', 'G1', 'P1', 'L2a', 'L2c', 'L2d', 'L2e', 'K2a', 'K2b', 'T2b', 'T2c', 'hc1', 'hc4', 'GB', 'GC', 'PR2', 'PR3'];
     this.monsterPos = new THREE.Vector3(38.4, 0, 8.5); this.reachDirty = true;
   }
   // 괴물이 지금 갈 수 있는 곳 (잠긴 문 너머는 못 간다)

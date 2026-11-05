@@ -4,7 +4,7 @@ const NAMES = ['step_wood_0', 'step_wood_1', 'step_wood_2', 'step_wood_3', 'step
   'creak_1', 'creak_2', 'creak_3', 'book_flip_1', 'book_flip_2', 'book_open', 'book_close', 'cloth_1', 'cloth_2', 'cloth_3', 'body_drop', 'keys', 'metal_click', 'latch', 'belt', 'leather',
   'punch_0', 'punch_1', 'punch_2', 'wood_light_0', 'wood_light_1', 'wood_heavy_0', 'wood_heavy_1', 'soft_heavy_0', 'soft_heavy_1', 'bell', 'glass_hit', 'metal_light',
   'drip_1', 'drip_2', 'drip_3', 'stone_drag_1', 'stone_drag_2', 'woosh_1', 'woosh_2', 'switch_1', 'switch_2', 'click',
-  'thunder_1', 'thunder_2', 'knock', 'glass_break', 'owl', 'rain', 'wind', 'crickets', 'clock', 'heartbeat'];
+  'thunder_1', 'thunder_2', 'knock', 'glass_break', 'owl', 'rain', 'wind', 'crickets', 'clock', 'heartbeat', 'flush', 'sink'];
 const pick = (n, k) => n + '_' + (Math.random() * k | 0);
 const pick1 = (n, k) => n + '_' + (1 + (Math.random() * k | 0));
 

@@ -33,14 +33,15 @@ export const DIARY = {
 
 <b>검은 열쇠</b>를 내 <b>장난감 상자</b>에 숨겼어. <b>09 갤러리</b> 문 열쇠야.
 갤러리 동상들은 내가 안 볼 때 고개를 돌려. 진짜야.
+갤러리를 지나면 <b>남쪽 복도</b>랑 <b>초상화 방</b>이 있대.
 
 <b>세 번째 숫자는 『 ${d} 』</b>`,
   },
   4: {
-    title: '마지막 장', who: '먼저 잡혀 온 사람', where: '11 예배당',
+    title: '마지막 장', who: '먼저 잡혀 온 사람', where: '20 초상화 방',
     text: d => `여기까지 온 사람이 있다면.
 
-<b>금색 열쇠</b>는 <b>예배당 제단 서랍</b>에 있다. 현관문 자물쇠를 연다.
+<b>금색 열쇠</b>는 <b>11 예배당 제단 서랍</b>에 있다. 현관 홀 옆이다. 현관문 자물쇠를 연다.
 비밀번호 장치는 현관문 오른쪽에 있다.
 
 <b>마지막 숫자는 『 ${d} 』</b>
@@ -68,6 +69,18 @@ export const ICONS = {
   gear: sv('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>'),
   ear: sv('<path d="M7 9a5 5 0 0 1 10 0c0 3-2.5 4-3 6.5S12.5 20 10 20a3 3 0 0 1-3-3"/><path d="M10 9a2 2 0 0 1 4 0c0 1.5-2 2-2 3.5"/>'),
   close: sv('<path d="M5 5l14 14M19 5 5 19"/>'),
+  search: sv('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M8 10.5h5M10.5 8v5"/>'),
+  pen: sv('<path d="M4 20l1.2-4.6L16 4.6a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M14 6.6l3.4 3.4"/><path d="M4 20h7"/>'),
+  chat: sv('<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h-1A.5.5 0 0 1 4 15.5z"/><path d="M8 8.5h8M8 11.5h5"/>'),
+  crouch: sv('<circle cx="12" cy="5" r="2"/><path d="M12 7.5 10.5 12l4 1.5-1 5.5"/><path d="M10.5 12l-3 3.5h-3"/><path d="M11.5 9l3.5 1.5"/>'),
+  prone: sv('<circle cx="19" cy="13" r="2"/><path d="M17 14.5H9l-5 2"/><path d="M13 14.5l-2.5-3.5"/><path d="M3 19h18"/>'),
+  heal: sv('<rect x="3" y="7" width="18" height="10" rx="3"/><path d="M12 9.5v5M9.5 12h5"/>'),
+  up: sv('<path d="M6 15l6-6 6 6"/>'), down: sv('<path d="M6 9l6 6 6-6"/>'),
+  back: sv('<path d="M15 5l-7 7 7 7"/>'),
+  users: sv('<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2A4.5 4.5 0 0 1 21 18.5"/>'),
+  wrench: sv('<path d="M14.5 6.5a4 4 0 0 0 5 5l-8.5 8.5a2.1 2.1 0 0 1-3-3L16.5 8.5"/><path d="M14.5 6.5 17 4l3 3-2.5 2.5"/>'),
+  send: sv('<path d="M4 12 20 4l-6 16-2.5-6.5z"/><path d="M11.5 13.5 20 4"/>'),
+  play: sv('<path d="M7 4.5v15l12-7.5z"/>', true),
   finger: `<svg viewBox="0 0 48 64"><path d="M18 34V8a5 5 0 0 1 10 0v18l12 3a6 6 0 0 1 4.5 7L42 52a10 10 0 0 1-10 9H24a10 10 0 0 1-8-4L6 44a4.5 4.5 0 0 1 7-5.5l5 5z" fill="#f2d2b0" stroke="#5a3a2a" stroke-width="2.5" stroke-linejoin="round"/></svg>`,
 };
 export function paintIcons(root = document) {

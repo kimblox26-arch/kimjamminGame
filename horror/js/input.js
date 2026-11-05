@@ -12,7 +12,7 @@ export class Input {
       knob.style.transform = `translate(${dx}px,${dy}px)`; this.mx = dx / max; this.my = -dy / max;
     };
     const resetKnob = () => { knob.style.transform = ''; this.mx = 0; this.my = 0; };
-    const isUI = (t) => t.closest && t.closest('.btn, .hud-top, .modal, .panel, button, #joy-zone, input');
+    const isUI = (t) => t.closest && t.closest('.btn, .hud-top, .modal, .panel, button, #joy-zone, input, select, #chatbar, #devpanel');
     // 조이스틱 영역
     const zone = document.getElementById('joy-zone');
     zone.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; this.joyId = t.identifier; setKnob(t.clientX, t.clientY); joy.classList.add('on'); }, { passive: false });
@@ -39,9 +39,9 @@ export class Input {
     });
     // 키보드
     window.addEventListener('keydown', e => {
-      if (e.target.tagName === 'INPUT') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
       this.keys[e.code] = true;
-      const map = { KeyE: 'interact', Space: 'interact', Enter: 'interact', KeyF: 'torch', Tab: 'notes', KeyN: 'notes', Escape: 'pause', KeyP: 'pause', KeyR: 'run' };
+      const map = { KeyE: 'interact', Space: 'interact', Enter: 'interact', Tab: 'notes', KeyN: 'notes', Escape: 'pause', KeyP: 'pause', KeyR: 'run', KeyH: 'hide', KeyC: 'crouch', KeyZ: 'prone', KeyT: 'chat', KeyJ: 'clues', KeyM: 'memo', KeyB: 'heal' };
       if (map[e.code]) { e.preventDefault(); if (!e.repeat) this.fire(map[e.code]); }
     });
     window.addEventListener('keyup', e => { this.keys[e.code] = false; });
