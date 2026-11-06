@@ -117,9 +117,10 @@ export class Weapons {
   select(i) { if (i === this.cur || this.swing) return; this.cur = i; this.cd = 0.25; this.G.audio.click(); }
 
   // 무기 위치(월드 행렬) 계산 + 손 잡는 법(player.hold)
-  pose(dt, aimDir) {
+  pose(dt, aimDir, ads = 0, eye = null) {
     const G = this.G, pl = G.player, w = this.w, mdl = this.models[w.id];
     for (const k in this.models) this.models[k].g.visible = false;
+    if (pl.car) return;
     const P = pl.particles;
     const f = _a.copy(aimDir).normalize(), r = _b.crossVectors(f, new V(0, 1, 0)).normalize(), u = _c.crossVectors(r, f);
     const basis = new M4().makeBasis(r.clone().negate(), u, f);
@@ -129,8 +130,13 @@ export class Weapons {
     const kb = this.kick;
     const at = (x, y, z) => grip.copy(sh).addScaledVector(r, x).addScaledVector(u, y).addScaledVector(f, z);
     if (w.type === 'gun') {
-      if (w.id === 'pistol') at(-0.16, -0.1 + kb * 0.5, 0.47 - kb);
-      else at(-0.03, -0.085, 0.2 - kb * 0.6);
+      if (w.id === 'pistol') at(-0.06, 0.04 + kb * 0.5, 0.44 - kb);
+      else at(-0.02, 0.0, 0.24 - kb * 0.6);
+      if (eye && ads > 0.001) { // 눈높이에 가늠자가 오게
+        const A = { pistol: [0.085, 0.42], rifle: [0.115, 0.26], shotgun: [0.088, 0.3], sniper: [0.14, 0.2] }[w.id];
+        const e = new V().copy(eye).addScaledVector(u, -A[0] + kb * 0.3).addScaledVector(f, A[1] - kb);
+        grip.lerp(e, ads);
+      }
       if (kb > 0) rot.multiply(_m.makeRotationX(-kb * 2.5));
     } else if (w.id === 'knife') {
       let t = this.swing ? this.swing.t / this.swing.dur : 0, k = this.swing?.kind || 0;
@@ -172,13 +178,14 @@ export class Weapons {
   // 물리 뒤: 모델을 손에 맞춰 놓는다 (쓰러지면 손을 따라감)
   place() {
     const pl = this.G.player, mdl = this.models[this.w.id], hm = pl.arms.R.mat[2];
+    if (pl.car) return;
     if (pl.hold) { mdl.g.matrix.copy(this.wpose); this.rel = (this.rel || new M4()).copy(hm).invert().multiply(this.wpose); }
     else if (this.rel) mdl.g.matrix.multiplyMatrices(hm, this.rel); // 쓰러져도 손에 쥔 채로
   }
 
   trigger(down, pressed, aimDir, camPos) {
     const G = this.G, w = this.w, pl = G.player;
-    if (pl.dead || !pl.conscious || pl.state !== 'stand' || this.cd > 0 || this.swing) return;
+    if (pl.dead || pl.car || !pl.conscious || pl.state !== 'stand' || this.cd > 0 || this.swing) return;
     if (!(pressed || (down && w.auto))) return;
     this.cd = w.rate;
     if (w.type === 'gun') this.fire(aimDir, camPos);

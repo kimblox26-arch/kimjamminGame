@@ -121,7 +121,7 @@ export class FX {
     const i = this.nD < this.maxD ? this.nD++ : (this.dIdx = ((this.dIdx || 0) + 1) % this.maxD);
     _q.setFromUnitVectors(Z, n);
     _q.multiply(new THREE.Quaternion().setFromAxisAngle(Z, spin));
-    _a.copy(p).addScaledVector(n, 0.003 + (i % 7) * 0.0004);
+    _a.copy(p).addScaledVector(n, 0.012 + (i % 7) * 0.0004);
     _m.compose(_a, _q, _s.set(size, size, 1));
     this.decals.setMatrixAt(i, _m);
     this.decals.setColorAt(i, color);

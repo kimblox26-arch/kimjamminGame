@@ -47,6 +47,7 @@ const LINES = {
   hide: ['제발... 여기까지 오지 마...', '조용히... 들키면 안 돼...', '(덜덜 떨며) 숨어야 돼...'],
   crawl: ['다리가... 안 움직여...', '살려줘... 제발...', '오지 마... 오지 마...'],
   grenade: ['수류탄이다!!', '피해!!'],
+  car: ['차다!! 피해!!', '으아악 차가 온다!!', '멈춰!!'],
 };
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -128,7 +129,7 @@ export class Human {
     const head = new THREE.Mesh(A.headGeometry(R.head.clone().add(new V(0, 0.002, 0.004))), this.mats.head);
     head.castShadow = head.receiveShadow = true; this.bo.head.add(head); this.headMesh = head;
     const { face, F } = A.buildFace(R.head.clone().add(new V(0, 0.002, 0.004)), this.mats.head);
-    this.bo.head.add(face); this.face = F;
+    this.bo.head.add(face); this.face = F; this.faceGroup = face;
     // 엑스레이: 피부는 유령처럼, 내부(뼈·장기·근육)는 엑스레이 화면에만
     const ghost = A.xrayMaterial(0x9fd8ff, { solid: 0.0, rim: 3, power: 0.35 });
     const ghostS = A.xrayMaterial(0x9fd8ff, { solid: 0.0, rim: 3, power: 0.35 });
@@ -175,6 +176,7 @@ export class Human {
 
   // ───────── 상태 초기화 (살아나기) ─────────
   reset(pos, yaw) {
+    if (this.car) { this.car.occupant = null; this.car = null; for (const p of this.particles) p.w = 1 / p.m; }
     this.root = pos.clone(); this.rootYaw = yaw; this.vel = new V(); this.moveSpeed = 0; this.phase = 0;
     this.hp = 100; this.blood = 5; this.oxygen = 1; this.pain = 0; this.fear = 0; this.panic = 0; this.stun = 0; this.shock = 0;
     this.dead = false; this.conscious = true; this.cause = ''; this.state = 'stand'; this.downT = 0; this.getupT = 0; this.flinch = 0;
@@ -228,12 +230,14 @@ export class Human {
       this.BM['foot' + k].setPosition(pa.x - _c.x, pa.y - _c.y, pa.z - _c.z);
     }
   }
+  setFirstPerson(on) { this.headMesh.visible = !on; this.faceGroup.visible = !on; }
   boneMat(part) { const d = PART[part]; return d.arm ? this.arms[d.arm].mat[d.bi] : this.BM[d.bone]; }
   boneObj(part) { const d = PART[part]; return d.arm ? this.arms[d.arm].objs[d.bi] : this.bo[d.bone]; }
   center(out = new V()) { return out.copy(this.particles[2].p); }
 
   // ───────── 물리 훅 ─────────
   preSolve(h) {
+    if (this.car) return;
     const m = this.muscle;
     if (m <= 0.001 && !this.spasm) return;
     const P = this.particles;
@@ -247,6 +251,7 @@ export class Human {
     if (this.spasm > 0) for (const p of P) p.acc.set((Math.random() - 0.5) * 160, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 160).multiplyScalar(this.spasm);
   }
   innerSolve(it) {
+    if (this.car) return;
     const P = this.particles;
     if (it % 2) return;
     for (const [a, b] of this.selfPairs) {
@@ -272,7 +277,15 @@ export class Human {
       }
     }
   }
-  onImpact(pt, speed, n) {
+  onImpact(pt, speed, n, b) {
+    if (b?.car) {
+      if (b.car.occupant === this || speed < 2.5 || this.impactCd[pt.idx] > 0) return;
+      for (let i = 0; i < 17; i++) this.impactCd[i] = Math.max(this.impactCd[i], 0.35);
+      const part = P2PART[pt.idx], dmg = (speed - 2.5) * 6.5;
+      b.car.vel.multiplyScalar(0.96);
+      this.G.queue.push(() => { this.knock(3); this.hit({ part, type: 'impact', dmg, point: pt.p.clone().addScaledVector(n, -pt.r), dir: b.vel.clone().normalize(), noImpulse: true, car: true }); this.G.audio.thud(pt.p, Math.min(2, speed / 8)); });
+      return;
+    }
     if (speed < 6.5 || this.impactCd[pt.idx] > 0) return;
     this.impactCd[pt.idx] = 0.25;
     const part = P2PART[pt.idx], dmg = (speed - 6.5) * 7;
@@ -323,6 +336,7 @@ export class Human {
     // 몸 좌표 → 월드
     _m.makeRotationY(this.rootYaw).setPosition(this.root);
     for (let i = 0; i < 17; i++) this.target[i].copy(L[i]).applyMatrix4(_m);
+    if (this.car) this.seatTargets();
     // 손: 무기 / 항복 / 상처 누르기
     const handsOverride = (k, sh, el, ha, sg) => {
       const arm = this.arms[k === 'l' ? 'L' : 'R'];
@@ -372,6 +386,7 @@ export class Human {
     if (!isFinite(this.particles[2].p.x + this.particles[0].p.y + this.root.x)) { const ok = isFinite(this.root.x) ? this.root.clone() : new V(); ok.y = 0; this.reset(ok, 0); }
     const G = this.G;
     this.time = G.time;
+    if (this.car) { this.life(dt); this.seated(dt); return; }
     for (let i = 0; i < 17; i++) this.impactCd[i] = Math.max(0, this.impactCd[i] - dt);
     for (const k in this.recent) this.recent[k] *= Math.exp(-dt * 1.5);
     this.life(dt);
@@ -421,6 +436,39 @@ export class Human {
     this.vel.set(0, 0, 0);
   }
   knock(seconds) { if (!this.dead) this.fall(seconds); this.muscle = 0; }
+  // ───────── 자동차 ─────────
+  enterCar(car) {
+    this.car = car; car.occupant = this; this.state = 'stand'; this.swim = false; this.vel.set(0, 0, 0); this.ctrl.move.set(0, 0, 0);
+    for (const p of this.particles) p.w = 0; // 차 안에서는 몸을 차에 고정
+  }
+  exitCar() {
+    const car = this.car; if (!car) return;
+    car.occupant = null; this.car = null; this.hold = null;
+    for (const p of this.particles) { p.w = 1 / p.m; }
+    const pos = car.exitPoint(); this.placeStanding(pos, car.yaw + Math.PI / 2);
+  }
+  placeStanding(pos, yaw) {
+    this.root.copy(pos); this.rootYaw = yaw; this.vel.set(0, 0, 0); this.state = 'stand'; this.muscle = 1; this.footFlat = 1;
+    _m.makeRotationY(yaw).setPosition(pos);
+    this.particles.forEach((p, i) => p.setPos(_a.copy(this.RP[i]).applyMatrix4(_m)));
+  }
+  seatTargets() {
+    const car = this.car;
+    const at = (x, y, z, out) => car.toWorld(_c.set(car.seat.x + x, car.seat.y + y, car.seat.z + z), out);
+    const T = this.target;
+    at(0, 0.13, 0, T[4]); at(0, 0.31, -0.02, T[3]); at(0, 0.5, -0.05, T[2]); at(0, 0.69, -0.07, T[1]); at(0, 0.85, -0.05, T[0]);
+    at(0.175, 0.635, -0.07, T[5]); at(-0.175, 0.635, -0.07, T[8]);
+    const pole = car.dirToWorld(_b.set(0, 1, 0.5));
+    for (const [h, k, f, x] of [[11, 12, 13, 0.092], [14, 15, 16, -0.092]]) { at(x, 0.1, 0.03, T[h]); at(x * 1.35, -0.25, 0.66, T[f]); ik2(T[h], T[f], this.lenT, this.lenS, pole, T[k], T[f]); }
+    for (const [s_, e, h, x] of [[5, 6, 7, 1], [8, 9, 10, -1]]) { at(x * 0.25, 0.32, 0.25, T[h]); ik2(T[s_], T[h], this.lenU, this.lenF, car.dirToWorld(_b.set(x, -1, -0.4)), T[e], T[h]); }
+  }
+  seated(dt) {
+    const car = this.car;
+    this.root.copy(car.toWorld(car.seat)); this.rootYaw = car.yaw; this.footFlat = 0; this.muscle = 1;
+    this.hold = this.dead || !this.conscious ? null : car.wheelHold();
+    this.computeTargets(dt);
+    this.particles.forEach((p, i) => p.setPos(this.target[i]));
+  }
 
   locomote(dt) {
     const G = this.G, W = G.world;
@@ -524,11 +572,13 @@ export class Human {
   threat() {
     const me = this.particles[4].p;
     for (const g of this.G.weapons?.grenades || []) if (g.pt.p.distanceTo(me) < 7) return { pos: g.pt.p, grenade: true };
+    const car = this.G.player.car;
+    if (car && Math.abs(car.speed) > 4) { const d = car.pos.distanceTo(_c.set(me.x, 0, me.z)); const to = _b.set(me.x - car.pos.x, 0, me.z - car.pos.z).normalize(); if (d < 16 && to.dot(car.vel.clone().normalize()) > 0.5) return { pos: car.pos, grenade: true, car: true }; }
     return { pos: this.G.player.root, grenade: false };
   }
   canSee(from, to) {
     const d = _c.subVectors(to, from), L = d.length(); if (L < 1e-3) return true; d.divideScalar(L);
-    for (const b of this.G.world.solids) { if (b.max.y < 1.2 || b.max.y > 5.9) continue; const t = rayBox(from, d, b, null); if (t >= 0 && t < L) return false; }
+    for (const b of this.G.world.solids) { if (b.max.y < 1.2 || b.max.y > 25) continue; const t = rayBox(from, d, b, null); if (t >= 0 && t < L) return false; }
     return true;
   }
   think(dt) {
@@ -545,7 +595,7 @@ export class Human {
     if (melee) this.fear = Math.min(1, this.fear + dt * 0.8);
     // 도망치는 이유: 다침, 총소리·빗나간 총알로 극도의 공포, 오래 겨눔당함, 칼·방망이를 들고 다가옴, 수류탄
     if (!ai.flee && this.conscious && this.state !== 'down') {
-      if ((this.hurtT > 0 && this.pain > 0.12) || this.fear > 0.88 || th.grenade || (melee && this.fear > 0.4) || ai.aimT > 6) this.startFlee(th.grenade ? pick(LINES.grenade) : null);
+      if ((this.hurtT > 0 && this.pain > 0.12) || this.fear > 0.88 || th.grenade || (melee && this.fear > 0.4) || ai.aimT > 6) this.startFlee(th.car ? pick(LINES.car) : th.grenade ? pick(LINES.grenade) : null);
     }
     if (ai.flee) {
       ai.fleeT -= dt;
@@ -649,16 +699,18 @@ export class Human {
     }
     if (this.sayCd <= 0) { this.say(pick(LINES.crawl), 2.2); this.sayCd = 5 + Math.random() * 3; }
   }
-  pickPoint(score, n = 24) {
-    const W = this.G.world; let best = null, bs = -1e9;
+  pickPoint(score, n = 24, R = 0) {
+    const W = this.G.world, me = this.root; let best = null, bs = -1e9;
+    R = R || (this.ai.flee ? 26 : 12);
     for (let i = 0; i < n; i++) {
-      const p = new V((Math.random() - 0.5) * 24, 0, (Math.random() - 0.5) * 24);
+      const a = Math.random() * Math.PI * 2, r = R * (0.35 + 0.65 * Math.sqrt(Math.random()));
+      const p = new V(Math.max(-140, Math.min(140, me.x + Math.cos(a) * r)), 0, Math.max(-140, Math.min(140, me.z + Math.sin(a) * r)));
       if (W.inPool(p.x, p.z, 1.5)) continue;
       if (W.devices.some(d => Math.hypot(p.x - d.pos.x, p.z - d.pos.z) < d.radius + 1.5)) continue;
-      if (W.solids.some(b => b.max.y > 0.5 && b.max.y < 5.5 && p.x > b.min.x - 0.6 && p.x < b.max.x + 0.6 && p.z > b.min.z - 0.6 && p.z < b.max.z + 0.6)) continue;
+      if (W.solids.some(b => b.max.y > 0.5 && b.max.y < 25 && p.x > b.min.x - 0.6 && p.x < b.max.x + 0.6 && p.z > b.min.z - 0.6 && p.z < b.max.z + 0.6)) continue;
       const s = score(p); if (s > bs) { bs = s; best = p; }
     }
-    return best || new V();
+    return best || me.clone();
   }
 
   // ───────── 피격 판정 ─────────

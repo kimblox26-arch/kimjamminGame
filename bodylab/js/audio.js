@@ -109,6 +109,8 @@ export class Audio {
     const mk = (build) => { const g = C.createGain(); g.gain.value = 0; const p = C.createPanner(); p.panningModel = 'HRTF'; p.refDistance = 2; p.rolloffFactor = 1; g.connect(p).connect(this.master); build(g); return { g, p }; };
     this.loops.saw = mk(g => { const o = C.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 190; const o2 = C.createOscillator(); o2.type = 'square'; o2.frequency.value = 380; const n = C.createBufferSource(); n.buffer = this.noise; n.loop = true; const hp = C.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3000; const m = C.createGain(); m.gain.value = 0.12; o.connect(m); o2.connect(m); n.connect(hp).connect(m); m.connect(g); o.start(); o2.start(); n.start(); this.sawOsc = [o, o2]; });
     this.loops.buzz = mk(g => { const o = C.createOscillator(); o.type = 'square'; o.frequency.value = 100; const n = C.createBufferSource(); n.buffer = this.noise; n.loop = true; const bp = C.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 4000; const m = C.createGain(); m.gain.value = 0.1; o.connect(m); n.connect(bp).connect(m); m.connect(g); o.start(); n.start(); });
+    this.loops.eng = mk(g => { const o = C.createOscillator(); o.type = 'sawtooth'; const o2 = C.createOscillator(); o2.type = 'square'; const lp = C.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; const m = C.createGain(); m.gain.value = 0.25; const m2 = C.createGain(); m2.gain.value = 0.12; o.connect(lp); o2.connect(m2).connect(lp); lp.connect(m).connect(g); o.start(); o2.start(); this.engOsc = [o, o2, lp]; });
+    this.loops.skid = mk(g => { const n = C.createBufferSource(); n.buffer = this.noise; n.loop = true; const bp = C.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1900; bp.Q.value = 3; const m = C.createGain(); m.gain.value = 0.35; n.connect(bp).connect(m).connect(g); n.start(); });
     this.loops.hyd = mk(g => { const n = C.createBufferSource(); n.buffer = this.noise; n.loop = true; const bp = C.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 2; const o = C.createOscillator(); o.frequency.value = 55; const m = C.createGain(); m.gain.value = 0.3; n.connect(bp).connect(m); o.connect(m); m.connect(g); n.start(); o.start(); });
   }
   loop(name, gain, pos) {
@@ -116,6 +118,14 @@ export class Audio {
     L.g.gain.setTargetAtTime(gain, t, 0.05);
     L.p.positionX.value = pos.x; L.p.positionY.value = pos.y; L.p.positionZ.value = pos.z;
     if (name === 'saw' && this.sawOsc) { this.sawOsc[0].frequency.setTargetAtTime(190 * this.pf * (gain > 0.3 ? 0.85 : 1), t, 0.05); this.sawOsc[1].frequency.setTargetAtTime(380 * this.pf, t, 0.05); }
+  }
+  // 엔진: rpm 은 속도로 (rpm<0 이면 끔), 미끄러짐 소리
+  engine(sp, skid, pos) {
+    if (!this.ctx || !this.engOsc) return; const t = this.ctx.currentTime;
+    const on = sp >= 0, gear = Math.min(4, Math.floor(Math.max(0, sp) / 11)), rpm = 0.25 + ((Math.max(0, sp) - gear * 11) / 11) * 0.75;
+    const f = (38 + rpm * 70 + gear * 6) * this.pf;
+    this.engOsc[0].frequency.setTargetAtTime(f, t, 0.05); this.engOsc[1].frequency.setTargetAtTime(f * 0.5, t, 0.05); this.engOsc[2].frequency.setTargetAtTime(500 + rpm * 1500, t, 0.05);
+    this.loop('eng', on ? 0.25 + rpm * 0.2 : 0, pos); this.loop('skid', on ? skid * 0.5 : 0, pos);
   }
   shing(pos) { if (!this.ctx) return; const t = this.ctx.currentTime, k = 1 / this.pf, o = this.out(pos, 0.9); this.nz(o, t, 0.25 * k, { type: 'highpass', f: 3000, g: 0.6 }); this.tone(o, t, 0.2 * k, 400, 120, { type: 'square', g: 0.2 }); }
   boing(pos) { if (!this.ctx) return; const t = this.ctx.currentTime, k = 1 / this.pf, o = this.out(pos, 1); this.tone(o, t, 0.5 * k, 90, 300, { type: 'triangle', g: 0.8 }); this.nz(o, t, 0.15 * k, { f: 600, g: 0.6 }); }

@@ -58,18 +58,18 @@ export function collideBox(pt, b, h, out) {
   }
   _v.subVectors(p, pt.o);
   p.addScaledVector(_n, depth);
-  const vn = _v.dot(_n);
+  // 상대 속도 (움직이는 박스: 프레스 판, 자동차)
+  const bvx = b.vel ? b.vel.x * h : 0, bvy = b.vel ? b.vel.y * h : 0, bvz = b.vel ? b.vel.z * h : 0;
+  const rx = _v.x - bvx, ry = _v.y - bvy, rz = _v.z - bvz;
+  const vn = rx * _n.x + ry * _n.y + rz * _n.z;
   let impact = 0;
   if (vn < 0) {
     impact = -vn / h;
-    _v.addScaledVector(_n, -vn); // 접선 성분만
-    const bvx = b.vel ? b.vel.x * h : 0, bvy = b.vel ? b.vel.y * h : 0, bvz = b.vel ? b.vel.z * h : 0;
     // 쿨롱 마찰: 누르는 힘만큼만 미끄러짐을 줄인다
-    const tx = _v.x - bvx, ty = _v.y - bvy, tz = _v.z - bvz, vt = Math.hypot(tx, ty, tz);
+    const tx = rx - _n.x * vn, ty = ry - _n.y * vn, tz = rz - _n.z * vn, vt = Math.hypot(tx, ty, tz);
     const mu = 0.9 * (b.fric ?? 1) * pt.fric;
     const keep = vt > 1e-9 ? Math.max(0, 1 - mu * (-vn) / vt) : 0;
-    _v.set(tx * keep + bvx, ty * keep + bvy, tz * keep + bvz);
-    _v.addScaledVector(_n, -vn * 0.15);
+    _v.set(tx * keep + bvx - _n.x * vn * 0.15, ty * keep + bvy - _n.y * vn * 0.15, tz * keep + bvz - _n.z * vn * 0.15);
     pt.o.subVectors(p, _v);
   }
   pt.touch = 1;
@@ -77,9 +77,25 @@ export function collideBox(pt, b, h, out) {
   return impact;
 }
 
+// 회전한 박스(y축 회전만): 입자를 박스 좌표로 옮겨 AABB 충돌을 쓰고 되돌린다
+const _proxy = { p: new V(), o: new V(), r: 0, fric: 1, touch: 0 }, _lb = { min: new V(), max: new V(), vel: new V(), fric: 1 };
+export function collideOBB(pt, ob, h, out) {
+  const c = ob.c, cs = Math.cos(ob.yaw), sn = Math.sin(ob.yaw);
+  const tl = (src, dst) => { const dx = src.x - c.x, dz = src.z - c.z; dst.set(dx * cs - dz * sn, src.y - c.y, dx * sn + dz * cs); };
+  tl(pt.p, _proxy.p); tl(pt.o, _proxy.o); _proxy.r = pt.r; _proxy.fric = pt.fric;
+  _lb.min.copy(ob.half).negate(); _lb.max.copy(ob.half);
+  _lb.vel.set(ob.vel.x * cs - ob.vel.z * sn, ob.vel.y, ob.vel.x * sn + ob.vel.z * cs);
+  const imp = collideBox(_proxy, _lb, h, out);
+  if (imp < 0) return -1;
+  const tw = (src, dst) => { dst.set(c.x + src.x * cs + src.z * sn, src.y + c.y, c.z - src.x * sn + src.z * cs); };
+  tw(_proxy.p, pt.p); tw(_proxy.o, pt.o); pt.touch = 1;
+  if (out) out.set(out.x * cs + out.z * sn, out.y, -out.x * sn + out.z * cs);
+  return imp;
+}
+
 export class Physics {
   constructor(world) {
-    this.world = world; this.h = 1 / 240; this.acc = 0;
+    this.world = world; this.h = 1 / 240; this.acc = 0; this.iters = 6; this._near = [];
     this.groups = new Set(); // { particles, constraints, preSolve(h), postSolve(h), onImpact(pt, speed, n) }
     this.pairs = []; // 서로 부딪히는 입자 그룹 쌍 (사람끼리)
   }
@@ -112,18 +128,30 @@ export class Physics {
         pt.touch = 0;
       }
     }
-    for (let it = 0; it < 6; it++) {
+    // 넓은 판정: 그룹 근처의 박스만 추린다 (나무·건물이 많아도 빠르게)
+    for (const g of this.groups) {
+      const P = g.particles; if (!P.length) { g._near = []; continue; }
+      let x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+      for (const q of P) { x0 = Math.min(x0, q.p.x); y0 = Math.min(y0, q.p.y); z0 = Math.min(z0, q.p.z); x1 = Math.max(x1, q.p.x); y1 = Math.max(y1, q.p.y); z1 = Math.max(z1, q.p.z); }
+      const m = 0.6, near = g._near || (g._near = []); near.length = 0;
+      for (const b of W.boxes) if (b.max.x > x0 - m && b.min.x < x1 + m && b.max.y > y0 - m && b.min.y < y1 + m && b.max.z > z0 - m && b.min.z < z1 + m) near.push(b);
+      g._obb = W.obbs?.filter(o => Math.abs(o.c.x - (x0 + x1) / 2) < 6 + (x1 - x0) && Math.abs(o.c.z - (z0 + z1) / 2) < 6 + (z1 - z0)) || [];
+    }
+    for (let it = 0; it < this.iters; it++) {
       for (const g of this.groups) for (const c of g.constraints) if (c.on) c.solve();
       for (const g of this.groups) g.innerSolve?.(it);
-      // 사람끼리 몸 충돌
       if (it % 2 === 0) for (const [A, B] of this.pairs) collideGroups(A, B);
-      // 정적·움직이는 박스
       for (const g of this.groups) {
         for (const pt of g.particles) {
-          for (const b of W.boxes) {
+          if (pt.w === 0) continue;
+          for (const b of g._near) {
             if (pt.p.x + pt.r < b.min.x || pt.p.x - pt.r > b.max.x || pt.p.y + pt.r < b.min.y || pt.p.y - pt.r > b.max.y || pt.p.z + pt.r < b.min.z || pt.p.z - pt.r > b.max.z) continue;
             const imp = collideBox(pt, b, h, _n);
             if (imp > 0 && it === 0) g.onImpact?.(pt, imp, _n, b);
+          }
+          for (const ob of g._obb) {
+            const imp = collideOBB(pt, ob, h, _n);
+            if (imp > 0 && it === 0) g.onImpact?.(pt, imp, _n, ob);
           }
         }
       }
@@ -134,6 +162,7 @@ export class Physics {
 
 function collideGroups(A, B) {
   for (const a of A.particles) for (const b of B.particles) {
+    if (a.w + b.w === 0) continue;
     _d.subVectors(b.p, a.p);
     const r = a.r + b.r, d2 = _d.lengthSq();
     if (d2 >= r * r || d2 < 1e-10) continue;
