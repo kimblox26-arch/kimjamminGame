@@ -1,7 +1,7 @@
 // 사람: 래그돌 물리 + 근육(자세 유지) + 해부(장기·뼈·근육) + 상처·출혈 + 감정·표정 + NPC 행동
 // 플레이어와 NPC 가 같은 클래스를 쓴다.
 import * as THREE from 'three';
-import { Particle, Constraint, rayCapsuleSpan } from './physics.js';
+import { Particle, Constraint, rayCapsuleSpan, rayBox } from './physics.js';
 import { Arm, hingeFrame } from './arm.js';
 import * as A from './anatomy.js';
 
@@ -44,6 +44,9 @@ const LINES = {
   hurt: ['피가... 멈추질 않아...', '숨을... 못 쉬겠어...', '엄마...', '제발... 그만...'],
   water: ['읍...! 살려...!', '컥... 숨이...!'],
   calm: ['...', '여긴 어디지?', '흠...'],
+  hide: ['제발... 여기까지 오지 마...', '조용히... 들키면 안 돼...', '(덜덜 떨며) 숨어야 돼...'],
+  crawl: ['다리가... 안 움직여...', '살려줘... 제발...', '오지 마... 오지 마...'],
+  grenade: ['수류탄이다!!', '피해!!'],
 };
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -177,7 +180,7 @@ export class Human {
     this.dead = false; this.conscious = true; this.cause = ''; this.state = 'stand'; this.downT = 0; this.getupT = 0; this.flinch = 0;
     this.heartStop = 0; this.broken = {}; this.partDmg = {}; this.recent = {}; this.muscle = 1; this.spasm = 0; this.swim = false;
     this.screamCd = 0; this.moanT = 2; this.sayCd = 0; this.blinkT = 2; this.blink = 0; this.hurtT = 0; this.emotion = '평온';
-    this.ai = { mode: 'idle', t: 0, target: null, stuck: 0, last: new V() };
+    this.ai = { mode: 'idle', t: 0, target: null, stuck: 0, last: new V() }; this.cower = 0;
     this.ctrl = { move: new V(), yaw, run: false };
     this.hold = null; this.clutch = null; this.surrender = 0; this.mouth = 0; this.scream = 0; this.impactCd = new Float32Array(17);
     for (const o of Object.values(this.organs)) { o.hp = 100; o.out = false; o.mesh.visible = true; o.mesh.material.uniforms.uFlash.value = 0; }
@@ -286,9 +289,9 @@ export class Human {
     this.phase += dt * Math.PI * s / Math.max(0.35, stride);
     const t = this.G.time;
     const breath = Math.sin(t * (1.4 + this.fear * 2)) * 0.004;
-    const crouch = this.surrender * 0.05 + (this.fear > 0.6 && !this.ai.flee ? 0.03 : 0);
+    const crouch = this.surrender * 0.05 + (this.fear > 0.6 && !this.ai.flee ? 0.03 : 0) + this.cower * 0.38;
     const bob = swim ? 0 : -0.022 * amp * (1 - Math.cos(2 * this.phase)) / 2 - crouch;
-    const lean = swim ? 0.5 : 0.06 * amp + 0.2 * run + this.surrender * 0.06;
+    const lean = swim ? 0.5 : 0.06 * amp + 0.22 * run + this.surrender * 0.06 + this.cower * 0.55;
     const tremble = this.fear > 0.5 && !this.dead ? (this.fear - 0.5) * 0.012 : 0;
     // 상체
     for (const i of [0, 1, 2, 3, 5, 6, 7, 8, 9, 10]) {
@@ -314,7 +317,7 @@ export class Human {
       const phi = this.phase + ph;
       const hand = _d.copy(L[sh]);
       if (swim) hand.add(_a.set(sg * (0.3 + 0.12 * Math.cos(t * 3 + ph)), -0.1, 0.35 + 0.15 * Math.sin(t * 3 + ph)));
-      else hand.add(_a.set(sg * 0.035, -(this.lenU + this.lenF) * (0.97 - 0.32 * run), Math.sin(phi) * 0.2 * amp + 0.06 + 0.18 * run));
+      else hand.add(_a.set(sg * (0.035 + 0.04 * run), -(this.lenU + this.lenF) * (0.97 - 0.42 * run), Math.sin(phi) * (0.2 * amp + 0.14 * run) + 0.06 + 0.12 * run));
       ik2(L[sh], hand, this.lenU, this.lenF, _b.set(sg * 0.4, -0.2, -1), L[el], L[ha]);
     }
     // 몸 좌표 → 월드
@@ -332,6 +335,11 @@ export class Human {
         tgt = arm.wristOf(arm._hm, _d);
         pole.copy(hd.pole || _a.set(sg, -1, -0.3).applyAxisAngle(UP, this.rootYaw));
         arm.curl.forEach((c, f) => { const g = hd.curl[f]; c[0] = g[0]; c[1] = g[1]; c[2] = g[2]; });
+      } else if (this.cower > 0.05) { // 웅크려 머리 감싸기
+        _a.set(sg * 0.1, 0.03, 0.06).applyAxisAngle(UP, this.rootYaw).add(this.target[0]);
+        tgt = _d.lerpVectors(this.target[ha], _a, this.cower);
+        pole.set(sg * 0.4, -0.3, 1).applyAxisAngle(UP, this.rootYaw);
+        arm.curl.forEach(c => { c[0] = 0.5; c[1] = 0.6; c[2] = 0.4; });
       } else if (this.surrender > 0.05) {
         _a.set(sg * 0.28, 1.74 - crouch, 0.1).applyAxisAngle(UP, this.rootYaw).add(this.root);
         tgt = _d.lerpVectors(this.target[ha], _a, this.surrender);
@@ -511,26 +519,61 @@ export class Human {
   say(text, dur = 2.6) { if (this.isPlayer || (text && !this.conscious)) return; this.G.ui?.say(this, text, dur); }
 
   // ───────── NPC 행동 ─────────
+  legsOut() { const b = this.broken; return b.thighL || b.thighR || b.shinL || b.shinR || b.belly || b.pelvis; }
+  // 위협: 가까운 수류탄, 아니면 플레이어
+  threat() {
+    const me = this.particles[4].p;
+    for (const g of this.G.weapons?.grenades || []) if (g.pt.p.distanceTo(me) < 7) return { pos: g.pt.p, grenade: true };
+    return { pos: this.G.player.root, grenade: false };
+  }
+  canSee(from, to) {
+    const d = _c.subVectors(to, from), L = d.length(); if (L < 1e-3) return true; d.divideScalar(L);
+    for (const b of this.G.world.solids) { if (b.max.y < 1.2 || b.max.y > 5.9) continue; const t = rayBox(from, d, b, null); if (t >= 0 && t < L) return false; }
+    return true;
+  }
   think(dt) {
-    const G = this.G, pl = G.player, ai = this.ai, W = G.world;
+    const G = this.G, pl = G.player, ai = this.ai, W = G.world, time = G.time;
     const myPos = this.root;
-    _a.subVectors(pl.root, myPos); _a.y = 0; const dist = _a.length();
-    const aimed = G.aimTarget === this && !pl.dead && G.weaponRanged;
-    if (aimed) this.fear = Math.min(1, this.fear + dt * (dist < 8 ? 1.1 : 0.6));
-    else this.fear = Math.max(0, this.fear - dt * (this.hurtT > 0 ? 0.01 : 0.06));
-    if (!this.conscious || this.state !== 'stand') { this.ctrl.move.set(0, 0, 0); this.surrender = Math.max(0, this.surrender - dt * 3); return; }
-    if (this.hurtT > 0 && !ai.flee && this.pain > 0.15) { ai.flee = true; ai.target = null; ai.fleeT = 6 + Math.random() * 5; this.say(pick(LINES.flee)); }
-    if (ai.flee) { ai.fleeT -= dt; if (ai.fleeT <= 0 && this.pain < 0.3) ai.flee = false; }
-    let speed = 0, target = null, faceYaw = null;
+    const th = this.threat(), tp = th.pos;
+    _a.subVectors(tp, myPos); _a.y = 0; const dist = _a.length();
+    const plOk = !pl.dead && pl.conscious;
+    const pd = _d.subVectors(pl.root, myPos).setY(0).length();
+    const aimed = G.aimTarget === this && plOk && G.weaponRanged;
+    const melee = plOk && !G.weaponRanged && pd < 3.2;
+    if (aimed) { this.fear = Math.min(1, this.fear + dt * (dist < 8 ? 0.45 : 0.25)); ai.aimT = (ai.aimT || 0) + dt; }
+    else { ai.aimT = 0; this.fear = Math.max(0, this.fear - dt * (this.hurtT > 0 ? 0.01 : ai.flee ? 0.02 : 0.06)); }
+    if (melee) this.fear = Math.min(1, this.fear + dt * 0.8);
+    // 도망치는 이유: 다침, 총소리·빗나간 총알로 극도의 공포, 오래 겨눔당함, 칼·방망이를 들고 다가옴, 수류탄
+    if (!ai.flee && this.conscious && this.state !== 'down') {
+      if ((this.hurtT > 0 && this.pain > 0.12) || this.fear > 0.88 || th.grenade || (melee && this.fear > 0.4) || ai.aimT > 6) this.startFlee(th.grenade ? pick(LINES.grenade) : null);
+    }
+    if (ai.flee) {
+      ai.fleeT -= dt;
+      const safe = pd > 13 && !this.canSee(pl.particles[0].p, this.particles[0].p);
+      if (ai.fleeT <= 0 && this.pain < 0.3 && (safe || pd > 17 || !plOk) && !th.grenade) { ai.flee = false; ai.hide = 6 + Math.random() * 6; this.fear = Math.max(this.fear, 0.5); }
+    }
+    ai.hide = Math.max(0, (ai.hide || 0) - dt);
+    // 쓰러졌지만 의식이 있고 다리가 부러졌으면 기어서 도망
+    if (this.state === 'down' && this.conscious) this.crawl(dt, tp);
+    if (!this.conscious || this.state !== 'stand') { this.ctrl.move.set(0, 0, 0); this.surrender = Math.max(0, this.surrender - dt * 3); this.cower = Math.max(0, this.cower - dt * 3); return; }
+    let speed = 0, target = null, faceYaw = null, cowerT = 0;
     if (this.swim) { // 물에서는 가장 가까운 가장자리로
       const P = W.water; const cx = Math.min(Math.max(myPos.x, P.min.x), P.max.x), cz = Math.min(Math.max(myPos.z, P.min.z), P.max.z);
       const ex = [P.min.x - 0.6, P.max.x + 0.6], ez = [P.min.z - 0.6, P.max.z + 0.6];
       const opts = [new V(ex[0], 0, cz), new V(ex[1], 0, cz), new V(cx, 0, ez[0]), new V(cx, 0, ez[1])];
       target = opts.sort((a, b) => a.distanceTo(myPos) - b.distanceTo(myPos))[0]; speed = 1.8;
     } else if (ai.flee) {
-      if (!ai.target || myPos.distanceTo(ai.target) < 1 || ai.stuck > 1.5) { ai.target = this.pickPoint(p => p.distanceTo(pl.root)); ai.stuck = 0; }
-      target = ai.target; speed = 3.7;
-      if (this.screamCd <= 0 && Math.random() < dt * 0.5) { G.audio.voice(this, 'scream', 0.7); this.screamCd = 2.5; this.mouth = 1; }
+      ai.repick = (ai.repick ?? 0) - dt;
+      if (!ai.target || myPos.distanceTo(ai.target) < 1 || ai.stuck > 1.2 || ai.repick <= 0) { ai.target = this.fleePoint(tp); ai.stuck = 0; ai.repick = 2.5; }
+      target = ai.target;
+      const legHurt = this.wounds.some(w => /thigh|shin|foot/.test(w.part));
+      speed = 4.1 * (this.hurtT > 0 ? 0.88 : 1) * (legHurt ? 0.62 : 1);
+      if (ai.stuck > 2.5 && pd < 4) { cowerT = 1; target = null; } // 궁지에 몰리면 웅크림
+      if (this.screamCd <= 0 && Math.random() < dt * 0.6) { G.audio.voice(this, 'scream', 0.7); this.screamCd = 2.2; this.mouth = 1; if (Math.random() < 0.5) this.say(pick(LINES.flee), 1.8); }
+      if (this.hurtT > 0 && this.moveSpeed > 2.5 && Math.random() < dt * 0.06) { this.knock(0.8 + Math.random()); this.say('으악...!', 1.2); return; } // 다친 채 달리다 넘어짐
+    } else if (ai.hide > 0) { // 숨어서 웅크리고 떪
+      cowerT = 1; faceYaw = Math.atan2(_a.x, _a.z);
+      if (this.sayCd <= 0) { this.say(pick(LINES.hide), 2.4); this.sayCd = 5 + Math.random() * 4; }
     } else if (this.fear > 0.35) {
       faceYaw = Math.atan2(_a.x, _a.z);
       if (dist < 7) { target = _b.copy(myPos).addScaledVector(_a, -1 / Math.max(dist, 0.1)); speed = 0.55; }
@@ -542,7 +585,9 @@ export class Human {
       target = ai.target; speed = 1.15;
       if (dist < 5 && Math.random() < dt * 0.3) faceYaw = Math.atan2(_a.x, _a.z);
     }
-    this.surrender += ((this.fear > 0.35 && !ai.flee && aimed) || (this.fear > 0.55 && !ai.flee) ? 1 - this.surrender : -this.surrender) * Math.min(1, dt * 4);
+    this.cower += (cowerT - this.cower) * Math.min(1, dt * 4);
+    const surr = !ai.flee && !cowerT && ((this.fear > 0.35 && aimed) || this.fear > 0.55);
+    this.surrender += ((surr ? 1 : 0) - this.surrender) * Math.min(1, dt * 4);
     const mv = this.ctrl.move.set(0, 0, 0);
     if (target) {
       mv.subVectors(target, myPos); mv.y = 0; const d = mv.length();
@@ -564,16 +609,49 @@ export class Human {
       ai.stuck = this.moveSpeed < speed * 0.25 ? ai.stuck + dt : 0;
     }
     this.ctrl.yaw = faceYaw;
-    // 시선
+    // 시선: 도망칠 때는 가끔 뒤를 돌아봄
     _b.subVectors(pl.particles[0].p, this.particles[0].p);
     const ly = Math.atan2(_b.x, _b.z) - this.rootYaw, lyN = Math.atan2(Math.sin(ly), Math.cos(ly));
-    const want = (dist < 12 && Math.abs(lyN) < 1.6) || this.fear > 0.2 ? lyN : 0;
-    this.look.yaw += (Math.max(-1.1, Math.min(1.1, want)) - this.look.yaw) * Math.min(1, dt * 5);
-    this.look.pitch += (Math.atan2(_b.y, Math.hypot(_b.x, _b.z)) * (want ? 1 : 0) * 0.6 - this.look.pitch) * Math.min(1, dt * 5);
+    let want = (dist < 12 && Math.abs(lyN) < 1.6) || this.fear > 0.2 ? lyN : 0;
+    if (ai.flee) want = Math.sin(time * 3.7) > 0.55 ? lyN : 0;
+    if (this.cower > 0.5) want = 0;
+    this.look.yaw += (Math.max(-1.35, Math.min(1.35, want)) - this.look.yaw) * Math.min(1, dt * 6);
+    this.look.pitch += ((this.cower > 0.5 ? -0.6 : Math.atan2(_b.y, Math.hypot(_b.x, _b.z)) * (want ? 1 : 0) * 0.6) - this.look.pitch) * Math.min(1, dt * 5);
   }
-  pickPoint(score) {
+  startFlee(line) {
+    const ai = this.ai; ai.flee = true; ai.target = null; ai.fleeT = 7 + Math.random() * 5; ai.hide = 0; this.surrender = 0;
+    this.say(line || pick(LINES.flee), 1.8);
+    if (this.screamCd <= 0) { this.G.audio.voice(this, 'scream', 0.8); this.screamCd = 2; this.mouth = 1; }
+  }
+  // 위협 반대쪽, 가능하면 벽 뒤(보이지 않는 곳)로
+  fleePoint(tp) {
+    const me = this.root, eye = this.G.player.particles[0].p;
+    const away = new V().subVectors(me, tp).setY(0); if (away.lengthSq() < 1e-6) away.set(0, 0, 1); away.normalize();
+    return this.pickPoint(p => {
+      const to = new V().subVectors(p, me).setY(0), L = to.length() || 1e-3;
+      let sc = p.distanceTo(tp) - L * 0.25;
+      if (to.dot(away) / L < -0.1) sc -= 12;
+      if (!this.canSee(eye, new V(p.x, 1.5, p.z))) sc += 7;
+      return sc;
+    }, 36);
+  }
+  // 기어가기: 팔을 앞으로 뻗었다가 몸을 끌어당김
+  crawl(dt, tp) {
+    if (!this.legsOut() || this.inWaterDeep()) return;
+    const ai = this.ai, P = this.particles, h = this.G.physics.h;
+    ai.crawlT = (ai.crawlT || 0) + dt;
+    const away = new V().subVectors(P[4].p, tp).setY(0); if (away.lengthSq() < 1e-6) away.set(0, 0, 1); away.normalize();
+    const ph = ai.crawlT % 1.2;
+    if (ph < 0.5) for (const i of [7, 10, 6, 9]) { const v = P[i].velocity(_a, h); P[i].push(_b.copy(away).multiplyScalar(i === 7 || i === 10 ? 1.5 : 0.8).setY(0.6).sub(v).multiplyScalar(0.15), h); }
+    else if (ph < 1.05) {
+      for (const i of [7, 10]) P[i].o.lerp(P[i].p, 0.5); // 손으로 바닥을 짚음
+      for (const i of [0, 1, 2, 3, 4, 5, 8]) { const v = P[i].velocity(_a, h); v.y = 0; P[i].push(_b.copy(away).multiplyScalar(1.1).sub(v).multiplyScalar(0.4), h); }
+    }
+    if (this.sayCd <= 0) { this.say(pick(LINES.crawl), 2.2); this.sayCd = 5 + Math.random() * 3; }
+  }
+  pickPoint(score, n = 24) {
     const W = this.G.world; let best = null, bs = -1e9;
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < n; i++) {
       const p = new V((Math.random() - 0.5) * 24, 0, (Math.random() - 0.5) * 24);
       if (W.inPool(p.x, p.z, 1.5)) continue;
       if (W.devices.some(d => Math.hypot(p.x - d.pos.x, p.z - d.pos.z) < d.radius + 1.5)) continue;
