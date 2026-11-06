@@ -34,8 +34,94 @@ export const ROOMS = [
 ];
 export function roomAt(x, z) {
   for (const r of ROOMS) if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) return r;
+  if (x > MZ.X0 && x < MZ.X1 && z > MZ.Z0 && z < MZ.Z1) return MZ_HALLS[Math.min(2, (x - MZ.X0) / (MZ.X1 - MZ.X0) * 3 | 0)];
   return null;
 }
+
+/* ───────────── 미로 별관: 시드로 만든다 (같이하는 친구 모두에게 같은 미로) ─────────────
+   3m 칸으로 나눈 넓은 땅에 방 수십 개를 띄엄띄엄 놓고, 남은 칸으로 구불구불한 미로 복도를 판다. */
+export const MZ = { X0: 72, Z0: -14, C: 3, NX: 32, NZ: 24 };
+MZ.X1 = MZ.X0 + MZ.C * MZ.NX; MZ.Z1 = MZ.Z0 + MZ.C * MZ.NZ;
+const MZ_HALLS = [
+  { id: 'mzA', name: '미로 복도 (붉은 구역)', wp: 'wpGold', fl: 'wood', light: 0xffd6a0 },
+  { id: 'mzB', name: '미로 복도 (검은 구역)', wp: 'wpWine', fl: 'wood2', light: 0xffb890 },
+  { id: 'mzC', name: '미로 복도 (돌 구역)', wp: 'stoneW', fl: 'stoneF', light: 0xcfe0ff },
+];
+const THEMES = [
+  { names: ['빈 침실', '하녀 방', '손님 침실'], wp: ['wpRed', 'wpBeige'], fl: 'wood2', must: ['bed', 'wardrobe', 'nightstand'], pool: ['dresser', 'wardrobe', 'portrait', 'plant'] },
+  { names: ['인형 방', '놀이방'], wp: ['wpKids'], fl: 'wood2', must: ['kidbed', 'wardrobe', 'teddy'], pool: ['dresser', 'kiddraw', 'plant', 'teddy'] },
+  { names: ['창고', '다락 창고'], wp: ['wpBeige', 'stoneW'], fl: 'wood2', must: ['crates', 'wardrobe'], pool: ['crates', 'bookshelf', 'cabinet'] },
+  { names: ['작은 서재', '기록 보관실'], wp: ['wpGreen'], fl: 'wood', must: ['desk', 'bookshelf'], pool: ['bookshelf', 'cabinet', 'portrait'] },
+  { names: ['응접실', '작은 거실'], wp: ['wpBlue', 'wpWine'], fl: 'wood', must: ['sofa', 'fireplace', 'tv'], pool: ['bookshelf', 'plant', 'portrait', 'wardrobe'], big: true },
+  { names: ['화장실', '세면실'], wp: ['tileW'], fl: 'tileF', must: ['toilet', 'sink', 'stall'], pool: ['cabinet', 'stall', 'sink'] },
+  { names: ['식료품실', '작은 부엌'], wp: ['tileW'], fl: 'tileF', must: ['fridge', 'pantry'], pool: ['cabinet', 'pantry', 'dresser'] },
+  { names: ['동상의 방', '석상 방'], wp: ['stoneW', 'wpTeal'], fl: 'marble', must: ['statue', 'statue'], pool: ['bust', 'statue', 'plant'], big: true },
+  { names: ['사진 방', '기억의 방'], wp: ['wpBeige'], fl: 'wood', must: ['photos', 'photos'], pool: ['photos', 'cabinet', 'bust'] },
+  { names: ['연주실', '시계 방'], wp: ['wpWine', 'wpGold'], fl: 'wood', must: ['piano', 'clock'], pool: ['bust', 'portrait', 'wardrobe'] },
+];
+function genMaze() {
+  let sd = 4242; const R = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+  const { X0, Z0, C, NX, NZ } = MZ, id = (i, j) => j * NX + i, inb = (i, j) => i >= 0 && j >= 0 && i < NX && j < NZ;
+  const own = new Int16Array(NX * NZ).fill(-1), rooms = [];
+  const keep = new Set([id(0, 7), id(1, 7), id(0, 12), id(1, 12)]);   // 본관과 이어지는 입구 칸
+  const SIZES = [[2, 2], [3, 2], [2, 3], [3, 3], [4, 3], [3, 4], [4, 4], [2, 4], [4, 2], [3, 3]];
+  for (let t = 0; t < 4000 && rooms.length < 46; t++) {
+    const [w, h] = SIZES[R() * SIZES.length | 0], i0 = R() * (NX - w + 1) | 0, j0 = R() * (NZ - h + 1) | 0;
+    let ok = true;
+    for (let i = i0 - 1; i <= i0 + w && ok; i++) for (let j = j0 - 1; j <= j0 + h; j++) {
+      if (!inb(i, j)) continue;
+      const inside = i >= i0 && i < i0 + w && j >= j0 && j < j0 + h;
+      if (own[id(i, j)] >= 0 || (inside && keep.has(id(i, j)))) { ok = false; break; }
+    }
+    if (!ok) continue;
+    const k = rooms.length; rooms.push({ i0, j0, w, h, k });
+    for (let i = i0; i < i0 + w; i++) for (let j = j0; j < j0 + h; j++) own[id(i, j)] = k;
+  }
+  // 미로: 복도 칸끼리 구불구불하게 잇는다 (가던 방향으로 계속 가려는 성질 → 긴 복도)
+  const DI = [1, 0, -1, 0], DJ = [0, 1, 0, -1], link = new Set(), ek = (a, b) => a < b ? a + ':' + b : b + ':' + a;
+  const vis = new Uint8Array(NX * NZ), st = [[0, 7, 0]]; vis[id(0, 7)] = 1;
+  while (st.length) {
+    const [i, j, pd] = st[st.length - 1], opts = [];
+    for (let d = 0; d < 4; d++) { const a = i + DI[d], b = j + DJ[d]; if (inb(a, b) && own[id(a, b)] < 0 && !vis[id(a, b)]) opts.push(d); }
+    if (!opts.length) { st.pop(); continue; }
+    const d = opts.includes(pd) && R() < 0.66 ? pd : opts[R() * opts.length | 0], a = i + DI[d], b = j + DJ[d];
+    link.add(ek(id(i, j), id(a, b))); vis[id(a, b)] = 1; st.push([a, b, d]);
+  }
+  for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) for (const d of [0, 1]) {   // 막다른 길을 조금 뚫어 고리를 만든다
+    const a = i + DI[d], b = j + DJ[d];
+    if (inb(a, b) && own[id(i, j)] < 0 && own[id(a, b)] < 0 && R() < 0.08) link.add(ek(id(i, j), id(a, b)));
+  }
+  // 거리 (입구에서 몇 칸)
+  const dist = new Int32Array(NX * NZ).fill(-1), q = [id(0, 7)]; dist[q[0]] = 0;
+  for (let h = 0; h < q.length; h++) { const c = q[h], i = c % NX, j = c / NX | 0; for (let d = 0; d < 4; d++) { const a = i + DI[d], b = j + DJ[d]; if (inb(a, b) && dist[id(a, b)] < 0 && link.has(ek(c, id(a, b)))) { dist[id(a, b)] = dist[c] + 1; q.push(id(a, b)); } } }
+  // 방: 문 1~2개, 테마, 번호
+  const order = rooms.slice().sort((p, q2) => (p.j0 - q2.j0) || (p.i0 - q2.i0));
+  const doors = [];
+  order.forEach((r, n) => {
+    const th = THEMES[(n * 7 + (R() * 3 | 0)) % THEMES.length], big = r.w * r.h >= 9;
+    const T = th.big && !big ? THEMES[n % 4] : th;
+    Object.assign(r, { id: 'mz' + (n + 1), num: String(21 + n), name: T.names[R() * T.names.length | 0], wp: T.wp[R() * T.wp.length | 0], fl: T.fl, theme: T, maze: true,
+      x0: X0 + r.i0 * C, x1: X0 + (r.i0 + r.w) * C, z0: Z0 + r.j0 * C, z1: Z0 + (r.j0 + r.h) * C, doors: [] });
+    const cand = [];
+    for (let i = r.i0; i < r.i0 + r.w; i++) { cand.push([i, r.j0 - 1, i, r.j0, 'n']); cand.push([i, r.j0 + r.h, i, r.j0 + r.h - 1, 's']); }
+    for (let j = r.j0; j < r.j0 + r.h; j++) { cand.push([r.i0 - 1, j, r.i0, j, 'w']); cand.push([r.i0 + r.w, j, r.i0 + r.w - 1, j, 'e']); }
+    const ok = cand.filter(([a, b]) => inb(a, b) && dist[id(a, b)] >= 0).sort(() => R() - 0.5);
+    const nd = R() < 0.35 ? 2 : 1, used = [];
+    for (const c of ok) { if (used.length >= nd) break; if (used.some(u => u[4] === c[4])) continue; used.push(c); }
+    for (const [a, b, ri, rj, side] of used) {
+      const did = 'md' + doors.length, x = X0 + a * C + C / 2, z = Z0 + b * C + C / 2;
+      const D = side === 'n' ? { axis: 'x', at: r.z0, c: x, swing: 1 } : side === 's' ? { axis: 'x', at: r.z1, c: x, swing: -1 } : side === 'w' ? { axis: 'z', at: r.x0, c: z, swing: 1 } : { axis: 'z', at: r.x1, c: z, swing: -1 };
+      Object.assign(D, { id: did, w: 1.2, num: r.num, name: r.name + ' 문', cell: id(a, b), side });
+      doors.push(D); r.doors.push(D);
+    }
+    r.dist = Math.min(...r.doors.map(D => dist[D.cell]));
+  });
+  const far = order.slice().sort((p, q2) => q2.dist - p.dist);
+  return { own, link, ek, id, inb, DI, DJ, dist, rooms: order, doors, gold: far[0], notes: [far[3], far[8], far[14]].filter(Boolean), bandage: [far[5], far[11], far[20]].filter(Boolean) };
+}
+export const MAZE = genMaze();
+ROOMS.push(...MAZE.rooms.map(r => ({ id: r.id, num: r.num, name: r.name, x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1, wp: r.wp, fl: r.fl })));
+export const MAZE_INFO = { gold: `${MAZE.gold.num} ${MAZE.gold.name}`, rooms: MAZE.rooms.length };
 
 /* ───────────── 캔버스 텍스처 ───────────── */
 export function cv(w, h = w) { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; }
@@ -385,6 +471,7 @@ export function cyl(parent, rt, rb, h, m, x, y, z, seg = 12) {
 function plane(parent, w, h, m, x, y, z, ry = 0) {
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m); mesh.position.set(x, y, z); mesh.rotation.y = ry; parent.add(mesh); return mesh;
 }
+const _wp = new THREE.Vector3(), _bc = new THREE.Color();
 const dyn = (o) => { o.userData.dyn = true; o.traverse(c => c.userData.dyn = true); return o; };
 
 /* ───────────── 문 ───────────── */
@@ -397,7 +484,8 @@ class Door {
     piv.rotation.y = this.base;
     const pw = width - 0.06;
     box(piv, pw, DOOR_H - 0.03, 0.07, w.m.door, pw / 2, DOOR_H / 2, 0, 0);
-    for (const s of [-1, 1]) { const k = new THREE.Mesh(w.geo.knob, w.m.brass); k.position.set(pw - 0.1, 1.0, s * 0.06); piv.add(k); }
+    if (!w.geo.knob2) w.geo.knob2 = mergeGeometries([-1, 1].map(s => w.geo.knob.clone().translate(0, 0, s * 0.06)));   // 손잡이 두 개를 한 번에
+    { const k = new THREE.Mesh(w.geo.knob2, w.m.brass); k.position.set(pw - 0.1, 1.0, 0); piv.add(k); }
     if (lock) {
       this.lockMesh = new THREE.Group();
       box(this.lockMesh, 0.1, 0.12, 0.04, w.keyMat(lock), 0, 0, 0);
@@ -521,10 +609,16 @@ export class World {
   /* 벽 · 바닥 · 천장 */
   wpFor(x, z) { const r = roomAt(x, z); return r ? this.m[r.wp] : this.m.trim; }
   piece(x0, x1, z0, z1, y0, y1) {
-    const w = x1 - x0, d = z1 - z0, h = y1 - y0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    const mats = [this.wpFor(x1 + 0.3, cz), this.wpFor(x0 - 0.3, cz), this.m.trim, this.m.trim, this.wpFor(cx, z1 + 0.3), this.wpFor(cx, z0 - 0.3)];
-    const mesh = new THREE.Mesh(boxGeo(w, h, d, 1.25), mats); mesh.position.set(cx, (y0 + y1) / 2, cz); this.st.add(mesh);
-    mesh.userData.noMerge = true; mesh.receiveShadow = true;
+    const w = x1 - x0, d = z1 - z0, h = y1 - y0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, cy = (y0 + y1) / 2, P = Math.PI;
+    // 면마다 따로 만든다 → 같은 벽지끼리 한 덩어리로 합쳐져 그리기 횟수가 크게 줄어든다
+    const face = (m, pw, ph, x, y, z, ry, rx = 0) => {
+      const g = new THREE.PlaneGeometry(pw, ph), uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * pw / 1.25, uv.getY(i) * ph / 1.25);
+      const me = new THREE.Mesh(g, m); me.position.set(x, y, z); me.rotation.set(rx, ry, 0, 'YXZ'); this.st.add(me);
+    };
+    face(this.wpFor(x1 + 0.3, cz), d, h, x1, cy, cz, P / 2); face(this.wpFor(x0 - 0.3, cz), d, h, x0, cy, cz, -P / 2);
+    face(this.wpFor(cx, z1 + 0.3), w, h, cx, cy, z1, 0); face(this.wpFor(cx, z0 - 0.3), w, h, cx, cy, z0, P);
+    if (y0 > 0.01) face(this.m.trim, w, d, cx, y0, cz, 0, P / 2);
     if (y0 < 1) { // 징두리 판벽 + 몰딩
       const ex = w < d ? 0.03 : 0, ez = w < d ? 0 : 0.03;
       box(this.st, w + ex * 2, 1.0, d + ez * 2, this.m.wains, cx, 0.5, cz, 1.2);
@@ -584,11 +678,24 @@ export class World {
       { id: 'hallc', axis: 'z', at: 40, c: 23.5, w: 1.4, swing: 1, name: '남쪽 복도 문' },
       { id: 'garden', axis: 'x', at: 25, c: 48, w: 1.6, swing: 1, num: '19', name: '정원 문' },
       { id: 'portr', axis: 'x', at: 25, c: 64, w: 1.3, swing: 1, num: '20', name: '초상화 방 문' },
+      { id: 'mzN', axis: 'z', at: 72, c: 8.5, w: 1.4, swing: 1, name: '미로 별관 문' },
+      { id: 'mzS', axis: 'z', at: 72, c: 23.5, w: 1.4, swing: 1, name: '미로 별관 남쪽 문', lock: 'iron' },
+      ...MAZE.doors,
     );
     const gaps = [...DOORS, { axis: 'z', at: 26, c: 14, w: 1.8 }, { axis: 'x', at: 30, c: 22, w: 2.4, h: 3.0 }, { axis: 'z', at: 40, c: 8.5, w: 2.6, h: 2.8 }, { axis: 'z', at: 56, c: 13.5, w: 1.6 }];
     const lines = { x: new Map(), z: new Map() };
     const add = (ax, at, a, b) => { const mp = lines[ax]; if (!mp.has(at)) mp.set(at, []); mp.get(at).push([a, b]); };
     for (const r of ROOMS) { add('x', r.z0, r.x0, r.x1); add('x', r.z1, r.x0, r.x1); add('z', r.x0, r.z0, r.z1); add('z', r.x1, r.z0, r.z1); }
+    const { X0, Z0, C, NX, NZ } = MZ, { own, link, ek, id, inb } = MAZE;
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+      if (own[id(i, j)] >= 0) continue;
+      const x = X0 + i * C, z = Z0 + j * C;
+      const wall = (a, b) => !inb(a, b) || (own[id(a, b)] < 0 && !link.has(ek(id(i, j), id(a, b))));
+      if (!inb(i - 1, j)) add('z', x, z, z + C);
+      if (!inb(i, j - 1)) add('x', z, x, x + C);
+      if (wall(i + 1, j) && (!inb(i + 1, j) || own[id(i + 1, j)] < 0)) add('z', x + C, z, z + C);
+      if (wall(i, j + 1) && (!inb(i, j + 1) || own[id(i, j + 1)] < 0)) add('x', z + C, x, x + C);
+    }
     for (const ax of ['x', 'z']) for (const [at, segs] of lines[ax]) {
       segs.sort((p, q) => p[0] - q[0]); const merged = [];
       for (const sg of segs) { const l = merged[merged.length - 1]; if (l && sg[0] <= l[1] + 0.01) l[1] = Math.max(l[1], sg[1]); else merged.push([...sg]); }
@@ -600,6 +707,16 @@ export class World {
       const f = new THREE.Mesh(g, this.m[r.fl]); f.rotation.x = -Math.PI / 2; f.position.set((r.x0 + r.x1) / 2, 0, (r.z0 + r.z1) / 2); this.st.add(f);
       const cg = new THREE.PlaneGeometry(w, d); const cu = cg.attributes.uv; for (let i = 0; i < cu.count; i++) cu.setXY(i, cu.getX(i) * w / 3, cu.getY(i) * d / 3);
       const ce = new THREE.Mesh(cg, this.m.ceil); ce.rotation.x = Math.PI / 2; ce.position.set((r.x0 + r.x1) / 2, CEIL, (r.z0 + r.z1) / 2); this.st.add(ce);
+    }
+    // 미로 복도 바닥 · 천장 (세계 좌표로 무늬를 이어 붙인다)
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+      if (own[id(i, j)] >= 0) continue;
+      const x = X0 + i * C + C / 2, z = Z0 + j * C + C / 2, hall = roomAt(x, z), fs = hall.fl.startsWith('stone') ? 2.5 : 1.7;
+      for (const [m, y, sc, rx] of [[this.m[hall.fl], 0, fs, -Math.PI / 2], [this.m.ceil, CEIL, 3, Math.PI / 2]]) {
+        const g = new THREE.PlaneGeometry(C, C), uv = g.attributes.uv, ps = g.attributes.position;
+        for (let k = 0; k < uv.count; k++) uv.setXY(k, (x + ps.getX(k)) / sc, (z + ps.getY(k)) / sc);
+        const f = new THREE.Mesh(g, m); f.rotation.x = rx; f.position.set(x, y, z); this.st.add(f);
+      }
     }
     for (const d of DOORS) this.doors[d.id] = new Door(this, d.id, d.axis === 'x' ? d.c : d.at, d.axis === 'x' ? d.at : d.c, d.axis, d.w, d.swing, d.lock, d.name, d.num);
     for (const d of Object.values(this.doors)) this.inter.push({ kind: 'door', door: d, pos: d.pos, r: 1.5 });
@@ -902,7 +1019,7 @@ export class World {
     this.portrait(28.2, 1.75, 7.1, 0, m.portraitGH, 0.6, 0.8);
     this.portrait(34.5, 1.75, 7.1, 0, m.portraitFam, 0.8, 0.6);
     for (const x of [9.5, 18, 26, 33.5]) this.bust(x, 9.55, P);
-    this.wardrobe(0.4, 8.5, P / 2); this.wardrobe(71.6, 8.5, -P / 2);
+    this.wardrobe(0.4, 8.5, P / 2); this.wardrobe(70.9, 7.42, 0);
     this.decal(m.blood('도망쳐', 512, 200, 120), 19.5, 1.6, 9.88, P, 1.2, 0.48);
     /* ── 06 아이방 ── */
     this.bed(1.0, 12.4, P / 2, true);
@@ -971,7 +1088,7 @@ export class World {
     this.frontDoor();
     /* ── 11 예배당 ── */
     for (const z of [32.6, 34.2]) { this.pew(2.9, z); this.pew(9.1, z); }
-    this.altar(6, 37.3, P, { key: 'gold' });
+    this.altar(6, 37.3, P, { key: 'bandage' }, `제단 서랍에 쪽지가 있다.\n"금색 열쇠는 미로 별관 가장 깊은 곳, ${MAZE_INFO.gold}(으)로 옮겼다. 방 번호를 따라가라."`);
     this.lectern(2.0, 31.0, null, '낡은 찬송가 책. 가사가 전부 같은 단어로 덧칠돼 있다.\n"팔로우, 팔로우, 팔로우..."');
     this.wardrobe(11.6, 33.6, -P / 2, '고해실에 숨기');
     this.windowBoard(0.1, 35.5, P / 2);
@@ -1068,6 +1185,79 @@ export class World {
     this.cabinet(71.48, 29.6, -P / 2);
     this.chandelier(64, 29.5, true);
     this.decal(m.blood('모두 내 팔로워', 768, 200, 110), 64, 2.75, 33.88, P, 2.0, 0.52);
+    this.furnishMaze();
+  }
+  /* 미로 별관 꾸미기 */
+  furnishMaze() {
+    const P = Math.PI, m = this.m, { X0, Z0, C, NX, NZ } = MZ, { own, link, ek, id, inb, DI, DJ } = MAZE;
+    const pick = a => a[rnd() * a.length | 0], pmats = [m.portraitGH, m.portraitFam, m.portraitLand];
+    const NOTES = [
+      `벽에 손톱으로 새긴 글씨: "${MAZE_INFO.gold}... 거기가 제일 깊은 곳이야."`,
+      `쪽지: "같은 복도를 세 번째 지나고 있다. 방 번호를 외워. ${MAZE_INFO.gold}까지 가야 해."`,
+      `찢어진 지도 조각. 동그라미 쳐진 곳에 "${MAZE_INFO.gold} — 금색 열쇠"라고 적혀 있다.`,
+    ];
+    // 가구: [벽에서 떨어진 거리, 깊이, 만드는 함수]
+    const F = {
+      wardrobe: [0.42, 0.7, (x, z, r) => this.wardrobe(x, z, r)], pantry: [0.42, 0.7, (x, z, r) => this.wardrobe(x, z, r, '찬장에 숨기')],
+      bookshelf: [0.32, 0.5, (x, z, r) => this.bookshelf(x, z, r)], cabinet: [0.48, 0.8, (x, z, r) => this.cabinet(x, z, r)],
+      dresser: [0.32, 0.5, (x, z, r, o) => this.dresser(x, z, r, o.text || '먼지 쌓인 옷가지뿐이다.', o.item)],
+      nightstand: [0.35, 0.5, (x, z, r, o) => this.nightstand(x, z, r, o.item, o.text || '빈 서랍이다.')],
+      bed: [1.15, 2.3, (x, z, r) => this.bed(x, z, r)], kidbed: [1.0, 2.0, (x, z, r) => this.bed(x, z, r, true)],
+      fireplace: [0.35, 0.6, (x, z, r) => this.fireplace(x, z, r)], sofa: [0.55, 0.9, (x, z, r) => this.sofa(x, z, r)], tv: [0.45, 0.6, (x, z, r) => this.tv(x, z, r)],
+      piano: [0.38, 0.7, (x, z, r) => this.piano(x, z, r)], clock: [0.32, 0.5, (x, z, r) => this.grandClock(x, z, r, false)],
+      fridge: [0.45, 0.8, (x, z, r) => this.fridge(x, z, r)], toilet: [0.45, 0.8, (x, z, r) => this.toilet(x, z, r)], sink: [0.32, 0.6, (x, z, r) => this.sinkMirror(x, z, r)],
+      stall: [1.0, 2.0, (x, z, r) => this.stall(x, z, r)], statue: [0.9, 1.3, (x, z, r) => this.statue(x, z, r, 0.8)], bust: [0.45, 0.7, (x, z, r) => this.bust(x, z, r)],
+      photos: [0.12, 0.1, (x, z, r) => this.photoWall(x, z, r, 5)], portrait: [0.12, 0.1, (x, z, r) => this.portrait(x, 1.8, z, r, pick(pmats), 0.8, 1.0)],
+      kiddraw: [0.12, 0.1, (x, z, r) => this.decal(pick(m.kidDraw), x, 1.5, z, r, 0.6, 0.47)],
+      crates: [0.9, 1.4, (x, z) => this.crates(x, z)], plant: [0.5, 0.6, (x, z) => this.plant(x, z)],
+      teddy: [0.4, 0.4, (x, z, r) => this.teddy(x, 0, z, r, true)], desk: [0.55, 0.9, (x, z, r) => this.desk(x, z, r, { lamp: 0xffb070 })],
+    };
+    for (const r of MAZE.rooms) {
+      const T = r.theme, cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2;
+      // 문이 없는 벽 칸 (동·서 벽의 모서리 칸은 남·북 가구와 겹치니 비운다)
+      const segs = [];
+      for (let i = r.i0; i < r.i0 + r.w; i++) for (const side of ['n', 's']) segs.push({ side, c: X0 + i * C + C / 2, corner: false });
+      for (let j = r.j0; j < r.j0 + r.h; j++) for (const side of ['w', 'e']) segs.push({ side, c: Z0 + j * C + C / 2, corner: j === r.j0 || j === r.j0 + r.h - 1 });
+      const free = segs.filter(sg => !sg.corner && !r.doors.some(D => D.side === sg.side && Math.abs(D.c - sg.c) < 0.1)).sort(() => rnd() - 0.5);
+      const place = (type, o = {}) => {
+        const sg = free.shift(); if (!sg) return false; const [off, , fn] = F[type];
+        const at = { n: [sg.c, r.z0 + off, 0], s: [sg.c, r.z1 - off, P], w: [r.x0 + off, sg.c, P / 2], e: [r.x1 - off, sg.c, -P / 2] }[sg.side];
+        fn(at[0], at[1], at[2], o); return true;
+      };
+      if (r === MAZE.gold) place('dresser', { item: { key: 'gold' }, text: '' });
+      if (MAZE.bandage.includes(r)) place('nightstand', { item: { key: 'bandage' } });
+      const ni = MAZE.notes.indexOf(r); if (ni >= 0) place('dresser', { text: NOTES[ni] });
+      for (const t of T.must) place(t);
+      const extra = Math.min(free.length, 1 + (rnd() * 3 | 0)); for (let k = 0; k < extra; k++) place(pick(T.pool));
+      if (r.w >= 3 && r.h >= 3) this.chandelier(cx, cz, r.w * r.h >= 12); else this.ceilingLamp(cx, cz, rnd() < 0.45 ? 'bad' : 'normal', 0xffd6a0, 0.9);
+      if (rnd() < 0.3) this.decal(m.hands, cx + (rnd() - 0.5) * 2, 0.012, cz + (rnd() - 0.5) * 2, 0, 1.2, 1.2, -P / 2);
+    }
+    // 복도: 듬성듬성한 등, 막다른 길의 동상 · 옷장, 벽의 초상화 · 피 글씨
+    const BLOOD = ['돌아가', '길을 잃었지?', '여기 아까 왔잖아', '팔로우 해', '뒤에 있어', '끝이 없어', '출구는 없어', '보고 있어'];
+    let bloods = 0;
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+      const c = id(i, j); if (own[c] >= 0) continue;
+      const x = X0 + i * C + C / 2, z = Z0 + j * C + C / 2, hall = roomAt(x, z);
+      const open = [0, 1, 2, 3].filter(d => inb(i + DI[d], j + DJ[d]) && link.has(ek(c, id(i + DI[d], j + DJ[d]))));
+      const hasDoor = MAZE.doors.some(D => D.cell === c);
+      if ((i * 7 + j * 11) % 5 === 0) this.ceilingLamp(x, z, rnd() < 0.4 ? 'bad' : 'normal', hall.light, 0.7);
+      if (open.length === 1 && !hasDoor && !(i < 2 && (j === 7 || j === 12))) {   // 막다른 길
+        const d = (open[0] + 2) % 4, wx = x + DI[d] * C / 2, wz = z + DJ[d] * C / 2, ry = Math.atan2(-DI[d], -DJ[d]), k = rnd();
+        if (k < 0.3) this.statue(x + DI[d] * 0.55, z + DJ[d] * 0.55, ry, 0.8);
+        else if (k < 0.55) this.wardrobe(wx - DI[d] * 0.42, wz - DJ[d] * 0.42, ry);
+        else if (k < 0.7) this.bust(wx - DI[d] * 0.45, wz - DJ[d] * 0.45, ry);
+        else this.portrait(wx - DI[d] * 0.12, 1.8, wz - DJ[d] * 0.12, ry, pick(pmats), 0.8, 1.0);
+        continue;
+      }
+      for (let d = 0; d < 4; d++) {   // 막힌 벽면에 장식
+        if (open.includes(d)) continue; const a = i + DI[d], b = j + DJ[d];
+        if (inb(a, b) && own[id(a, b)] >= 0 && MAZE.doors.some(D => D.cell === c && D.side === ['w', 'n', 'e', 's'][d])) continue;
+        const wx = x + DI[d] * (C / 2 - 0.12), wz = z + DJ[d] * (C / 2 - 0.12), ry = Math.atan2(-DI[d], -DJ[d]), k = rnd();
+        if (k < 0.05) this.portrait(wx, 1.8, wz, ry, pick(pmats), 0.7, 0.9);
+        else if (k < 0.07 && bloods < 12) { bloods++; this.decal(m.blood(pick(BLOOD), 640, 200, 110), wx, 1.7, wz, ry, 1.5, 0.47); }
+        else if (k < 0.09) this.decal(m.hands, wx, 1.3, wz, ry, 1.0, 1.0);
+      }
+    }
   }
   /* 새 가구 */
   coffeeTable(x, z) {
@@ -1224,7 +1414,7 @@ export class World {
     for (const s of [-1, 1]) box(g, 0.06, 0.95, 0.5, wm, s * 1.47, 0.475, 0);
     this.colFoot(g, 3.0, 0.5, 0.9);
   }
-  altar(x, z, ry, item) {
+  altar(x, z, ry, item, text) {
     const g = this.grp(x, z, ry), m = this.m;
     box(g, 2.0, 0.95, 0.8, m.stoneB, 0, 0.475, 0); box(g, 2.2, 0.03, 0.9, m.fabricW, 0, 0.965, 0.02);
     this.candelabra(g, -0.6, 0.98, 0); this.candelabra(g, 0.6, 0.98, 0);
@@ -1232,7 +1422,7 @@ export class World {
     box(dr, 0.7, 0.2, 0.03, m.woodDark, 0, 0.7, 0.41); box(dr, 0.66, 0.02, 0.5, m.woodDark, 0, 0.61, 0.17);
     const k = new THREE.Mesh(this.geo.knob, m.brass); k.position.set(0, 0.7, 0.44); dr.add(k); dyn(dr);
     this.colFoot(g, 2.2, 0.9, 1.0);
-    return this.drawer(g, dr, item, [0, 0.64, 0.25], new THREE.Vector3(0, 0, 0.36), '제단 서랍 열기');
+    return this.drawer(g, dr, item, [0, 0.64, 0.25], new THREE.Vector3(0, 0, 0.36), '제단 서랍 열기', text);
   }
   lectern(x, z, diary, text) {
     const g = this.grp(x, z, Math.PI * 0.15), m = this.m;
@@ -1324,7 +1514,28 @@ export class World {
     this.nodes = {};
     for (const [id, [x, z, door]] of Object.entries(N)) this.nodes[id] = { id, x, z, door, nb: [] };
     for (const e of E.split(' ')) { const [a, b] = e.split('-'); this.nodes[a].nb.push(this.nodes[b]); this.nodes[b].nb.push(this.nodes[a]); }
-    this.patrolIds = ['b1', 'b2', 'ba1', 'st1', 's1', 's2', 'm1', 'm2', 'h0', 'h2', 'h5', 'h7', 'h9', 'h11', 'k1', 'k2', 'dA', 'dC', 'dE', 'kt1', 'kt3', 'g1', 'g3', 'g4', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'c1', 'c2', 'hb2', 'hb5', 'hb8', 'L1a', 'T1', 'G1', 'P1', 'L2a', 'L2c', 'L2d', 'L2e', 'K2a', 'K2b', 'T2b', 'T2c', 'hc1', 'hc4', 'GB', 'GC', 'PR2', 'PR3'];
+    // 미로 별관: 복도 칸마다 하나, 방마다 가운데 하나, 문마다 하나
+    const { X0, Z0, C, NX, NZ } = MZ, { own, link, ek, id, inb, DI, DJ } = MAZE, cn = {}, mzPatrol = [];
+    const addN = (nid, x, z, door) => (this.nodes[nid] = { id: nid, x, z, door, nb: [] });
+    const join = (a, b) => { a.nb.push(b); b.nb.push(a); };
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+      const c = id(i, j); if (own[c] >= 0) continue;
+      const open = [0, 1, 2, 3].filter(d => inb(i + DI[d], j + DJ[d]) && link.has(ek(c, id(i + DI[d], j + DJ[d]))));
+      const sh = open.length === 1 ? 0.6 : 0;   // 막다른 길은 동상 · 옷장이 있으니 열린 쪽으로 조금
+      cn[c] = addN('c' + c, X0 + i * C + C / 2 + (sh ? DI[open[0]] * sh : 0), Z0 + j * C + C / 2 + (sh ? DJ[open[0]] * sh : 0));
+      if (open.length === 1 || (i + j) % 4 === 0) mzPatrol.push('c' + c);
+    }
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) for (const d of [0, 1]) {
+      const c = id(i, j), o = id(i + DI[d], j + DJ[d]);
+      if (cn[c] && inb(i + DI[d], j + DJ[d]) && cn[o] && link.has(ek(c, o))) join(cn[c], cn[o]);
+    }
+    for (const r of MAZE.rooms) {
+      const rn = addN(r.id, (r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2); mzPatrol.push(r.id);
+      for (const D of r.doors) { const dn = addN(D.id + 'D', D.axis === 'x' ? D.c : D.at, D.axis === 'x' ? D.at : D.c, D.id); join(cn[D.cell], dn); join(dn, rn); }
+    }
+    const eN = addN('mzND', 72, 8.5, 'mzN'), eS = addN('mzSD', 72, 23.5, 'mzS');
+    join(this.nodes.hb8, eN); join(eN, cn[id(0, 7)]); join(this.nodes.hc4, eS); join(eS, cn[id(0, 12)]);
+    this.patrolIds = [...mzPatrol, 'b1', 'b2', 'ba1', 'st1', 's1', 's2', 'm1', 'm2', 'h0', 'h2', 'h5', 'h7', 'h9', 'h11', 'k1', 'k2', 'dA', 'dC', 'dE', 'kt1', 'kt3', 'g1', 'g3', 'g4', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'c1', 'c2', 'hb2', 'hb5', 'hb8', 'L1a', 'T1', 'G1', 'P1', 'L2a', 'L2c', 'L2d', 'L2e', 'K2a', 'K2b', 'T2b', 'T2c', 'hc1', 'hc4', 'GB', 'GC', 'PR2', 'PR3'];
     this.monsterPos = new THREE.Vector3(38.4, 0, 8.5); this.reachDirty = true;
   }
   // 괴물이 지금 갈 수 있는 곳 (잠긴 문 너머는 못 간다)
@@ -1365,10 +1576,25 @@ export class World {
   }
 
   /* 충돌 · 시야 */
+  // 4m 격자로 나눠서 근처 충돌체만 검사한다 (맵이 커져도 빠르게)
+  nearCols(x0, z0, x1, z1) {
+    const S = 4;
+    if (this._gn !== this.colliders.length) {
+      this._gn = this.colliders.length; this._grid = new Map();
+      for (const c of this.colliders) for (let gx = Math.floor(c.x0 / S); gx <= Math.floor(c.x1 / S); gx++) for (let gz = Math.floor(c.z0 / S); gz <= Math.floor(c.z1 / S); gz++) {
+        const k = gx * 1000 + gz; let a = this._grid.get(k); if (!a) this._grid.set(k, a = []); a.push(c);
+      }
+    }
+    const out = [], stamp = this._stamp = (this._stamp || 0) + 1;
+    for (let gx = Math.floor(x0 / S); gx <= Math.floor(x1 / S); gx++) for (let gz = Math.floor(z0 / S); gz <= Math.floor(z1 / S); gz++) {
+      const a = this._grid.get(gx * 1000 + gz); if (a) for (const c of a) if (c._s !== stamp) { c._s = stamp; out.push(c); }
+    }
+    return out;
+  }
   // 선분이 막혀 있지 않은지 (y 높이에서), ignoreDoors 면 문은 무시
   clear(x0, z0, x1, z1, y, ignoreDoors = false, tallOnly = false) {
     const dx = x1 - x0, dz = z1 - z0;
-    for (const c of this.colliders) {
+    for (const c of this.nearCols(Math.min(x0, x1), Math.min(z0, z1), Math.max(x0, x1), Math.max(z0, z1))) {
       if (!c.on || y < c.y0 || y > c.y1) continue;
       if (ignoreDoors && c.tag === 'door') continue;
       if (tallOnly && c.tag === 'f') continue;
@@ -1381,8 +1607,8 @@ export class World {
   }
   // 3D 광선 (카메라 충돌용) — 가장 가까운 충돌 거리
   ray(o, d, maxT) {
-    let best = maxT;
-    for (const c of this.colliders) {
+    let best = maxT; const ex = o.x + d.x * maxT, ez = o.z + d.z * maxT;
+    for (const c of this.nearCols(Math.min(o.x, ex) - 0.2, Math.min(o.z, ez) - 0.2, Math.max(o.x, ex) + 0.2, Math.max(o.z, ez) + 0.2)) {
       if (!c.on) continue;
       let t0 = 0, t1 = best;
       const ax = [[o.x, d.x, c.x0 - 0.12, c.x1 + 0.12], [o.y, d.y, c.y0 - 0.05, c.y1 + 0.05], [o.z, d.z, c.z0 - 0.12, c.z1 + 0.12]];
@@ -1397,7 +1623,8 @@ export class World {
     return best;
   }
   collide(p, r, yTop = 1.6, ignoreDoors = false) {
-    for (let it = 0; it < 2; it++) for (const c of this.colliders) {
+    const near = this.nearCols(p.x - r - 0.6, p.z - r - 0.6, p.x + r + 0.6, p.z + r + 0.6);
+    for (let it = 0; it < 2; it++) for (const c of near) {
       if (!c.on || c.y0 > yTop || c.y1 < 0.15) continue;
       if (ignoreDoors && c.tag === 'door') continue;
       const cx = Math.max(c.x0, Math.min(p.x, c.x1)), cz = Math.max(c.z0, Math.min(p.z, c.z1));
@@ -1419,11 +1646,12 @@ export class World {
       const g = o.geometry.index ? o.geometry.clone() : o.geometry.clone();
       g.applyMatrix4(o.matrixWorld);
       for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
-      if (!groups.has(o.material)) groups.set(o.material, []);
-      groups.get(o.material).push(g.index ? g : g); kill.push(o);
+      o.getWorldPosition(_wp); const key = o.material.uuid + '|' + Math.floor(_wp.x / 56) + "," + Math.floor((_wp.z + 14) / 72);
+      if (!groups.has(key)) groups.set(key, { mat: o.material, list: [] });
+      groups.get(key).list.push(g); kill.push(o);
     });
     for (const o of kill) o.parent.remove(o);
-    for (const [mat, list] of groups) {
+    for (const { mat, list } of groups.values()) {
       const idx = list.filter(g => g.index), non = list.filter(g => !g.index);
       for (const part of [idx, non]) {
         if (!part.length) continue;
@@ -1436,8 +1664,27 @@ export class World {
     this.scene.traverse(o => { if (o.isMesh && !o.material.transparent) { o.receiveShadow = true; if (o.userData.dyn) o.castShadow = true; } });
   }
 
+  /* 전구 수백 개를 모양별로 한 번에 그린다 (InstancedMesh) — 깜빡임은 전구마다 색으로 */
+  instanceBulbs() {
+    this.scene.updateMatrixWorld(true);
+    const groups = new Map();
+    for (const f of this.fixtures) f.bulbs = f.bulbs.map(b => {
+      if (!b.isMesh || !b.geometry.parameters || b.material.map || !b.material.isMeshBasicMaterial) return b;
+      const key = b.geometry.type + JSON.stringify(b.geometry.parameters) + b.material.transparent + b.material.opacity;
+      if (!groups.has(key)) groups.set(key, { geo: b.geometry, mat: b.material, list: [] });
+      const g = groups.get(key); g.list.push(b.matrixWorld.clone()); b.parent.remove(b);
+      return { g, idx: g.list.length - 1, base: b.userData.base };
+    });
+    for (const g of groups.values()) {
+      const mat = g.mat.clone(); mat.color.setRGB(1, 1, 1);
+      const im = new THREE.InstancedMesh(g.geo, mat, g.list.length); g.list.forEach((m, i) => im.setMatrixAt(i, m));
+      im.frustumCulled = false; this.scene.add(im); g.im = im;
+    }
+    for (const f of this.fixtures) for (const b of f.bulbs) if (b.g) { b.inst = b.g.im; b.inst.setColorAt(b.idx, b.base); }
+  }
   /* 조명: 가까운 등만 실제 빛을 켠다 */
   buildLights() {
+    this.instanceBulbs();
     this.pool = [];
     for (let i = 0; i < 8; i++) { const l = new THREE.PointLight(0xffaa66, 0, 8, 2); this.scene.add(l); this.pool.push(l); }
     this.sorted = this.fixtures.slice();
@@ -1461,7 +1708,10 @@ export class World {
         else v = 0.95 + Math.sin(t * 50 + f.ph) * 0.03;
       }
       f.cur = v;
-      for (const b of f.bulbs) b.material.color.copy(b.userData.base).multiplyScalar(0.18 + 0.82 * v);
+      for (const b of f.bulbs) {
+        if (b.inst) { _bc.copy(b.base).multiplyScalar(0.18 + 0.82 * v); b.inst.setColorAt(b.idx, _bc); b.inst.instanceColor.needsUpdate = true; }
+        else b.material.color.copy(b.userData.base).multiplyScalar(0.18 + 0.82 * v);
+      }
     }
     this.focusSort -= dt;
     if (this.focusSort <= 0) {

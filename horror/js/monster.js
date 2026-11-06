@@ -124,6 +124,8 @@ export class Monster {
     const pp = (T[Math.random() * T.length | 0] || { pos: this.pos }).pos;
     const far = cand.filter(n => Math.hypot(n.x - pp.x, n.z - pp.z) > 10);
     if (g.time < 30 && far.length) cand = far;
+    const close = cand.filter(n => Math.hypot(n.x - pp.x, n.z - pp.z) < 34);   // 맵이 넓으니 대개는 사람 근처를 돈다
+    if (close.length > 4 && Math.random() < 0.75) cand = close;
     cand.sort(() => Math.random() - 0.5);
     const near = cand.slice(0, 5).sort((a, b) => Math.hypot(a.x - pp.x, a.z - pp.z) - Math.hypot(b.x - pp.x, b.z - pp.z));
     const n = Math.random() < 0.6 ? near[0] : cand[0];

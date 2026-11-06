@@ -9,21 +9,21 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=East+Sea+Dokdo&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=20261106b">
+<link rel="stylesheet" href="./style.css?v=20261106c">
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
     "three/addons/": "../vendor/three/addons/",
-    "./js/world.js": "./js/world.js?v=20261106b",
-    "./js/noob.js": "./js/noob.js?v=20261106b",
-    "./js/monster.js": "./js/monster.js?v=20261106b",
-    "./js/audio.js": "./js/audio.js?v=20261106b",
-    "./js/input.js": "./js/input.js?v=20261106b",
-    "./js/story.js": "./js/story.js?v=20261106b",
-    "./js/avatar.js": "./js/avatar.js?v=20261106b",
-    "./js/bots.js": "./js/bots.js?v=20261106b",
-    "./js/net.js": "./js/net.js?v=20261106b"
+    "./js/world.js": "./js/world.js?v=20261106c",
+    "./js/noob.js": "./js/noob.js?v=20261106c",
+    "./js/monster.js": "./js/monster.js?v=20261106c",
+    "./js/audio.js": "./js/audio.js?v=20261106c",
+    "./js/input.js": "./js/input.js?v=20261106c",
+    "./js/story.js": "./js/story.js?v=20261106c",
+    "./js/avatar.js": "./js/avatar.js?v=20261106c",
+    "./js/bots.js": "./js/bots.js?v=20261106c",
+    "./js/net.js": "./js/net.js?v=20261106c"
   }
 }
 </script>
@@ -74,12 +74,13 @@
   <div id="devwin" class="hidden closed" role="dialog" aria-label="개발자 모드">
     <div class="dw-head"><i data-icon="wrench"></i><b>개발자 모드</b><button id="dw-close" type="button" aria-label="창 닫기"><i data-icon="close"></i></button></div>
     <div class="dw-grid">
-      <button data-dev="noclip" type="button"><i data-icon="door"></i>벽뚫기</button>
+      <button data-dev="noclip" type="button"><i data-icon="finger"></i>벽뚫기</button>
       <button data-dev="fly" type="button"><i data-icon="up"></i>날기</button>
       <button data-dev="keys" type="button"><i data-icon="key"></i>모든 자물쇠 열쇠 얻기</button>
       <button data-dev="diaries" type="button"><i data-icon="book"></i>모든 일기 얻기</button>
       <button data-dev="doors" type="button"><i data-icon="hand"></i>문 열기</button>
       <button data-dev="god" type="button"><i data-icon="heart"></i>초록모자 공격 안 당하기</button>
+      <button data-dev="exit" type="button" class="wide"><i data-icon="door"></i>탈출구로 순간이동</button>
     </div>
     <div class="dw-more">
       <button data-dev="invis" type="button">투명</button><button data-dev="freeze" type="button">초록모자 정지</button><button data-dev="fast" type="button">빠르게</button><button data-dev="summon" type="button">초록모자 부르기</button>
@@ -326,6 +327,6 @@
   <p id="ld-text">저택을 짓는 중...</p>
 </section>
 
-<script type="module" src="./js/main.js?v=20261106b"></script>
+<script type="module" src="./js/main.js?v=20261106c"></script>
 </body>
 </html>

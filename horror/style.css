@@ -382,3 +382,4 @@ input, select { font-family: var(--ui); }
 @media (max-height: 430px) { .dw-grid button { min-height: 36px; font-size: 12px; } #devwin { padding: 8px 10px 10px; } }
 #toast { z-index: 8; }
 #devfab { color: #dfffd8; }
+.dw-grid button.wide { grid-column: 1 / -1; justify-content: center; border-color: #c9a24a; }

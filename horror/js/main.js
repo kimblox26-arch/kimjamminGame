@@ -1,6 +1,6 @@
 // 초록모자 CHAPTER 1 — 1인칭 진행 · 같이하기(로비/방) · AI 친구 · 컷신 · HUD
 import * as THREE from 'three';
-import { World, CEIL, roomAt, cv, toTex } from './world.js';
+import { World, CEIL, roomAt, cv, toTex, MAZE_INFO } from './world.js';
 import { createArms } from './noob.js';
 import { Monster, buildGreenHat } from './monster.js';
 import { Audio } from './audio.js';
@@ -37,7 +37,7 @@ renderer.shadowMap.enabled = false;
 const scene = new THREE.Scene();
 const FOG = new THREE.Color(0x050304);
 scene.background = FOG.clone(); scene.fog = new THREE.FogExp2(0x050304, 0.038);
-const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 90);
+const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 46);
 const hemi = new THREE.HemisphereLight(0x6a6e90, 0x24140c, 0.85); scene.add(hemi);
 const fill = new THREE.PointLight(0xffd8b0, 1.0, 6, 2); scene.add(fill);
 const exitLight = new THREE.PointLight(0xfff6e8, 0, 30, 1.2); exitLight.position.set(22, 2, 30.6); scene.add(exitLight);
@@ -150,7 +150,7 @@ async function boot() {
   renderer.compile(scene, camera);
   $('loading').classList.add('hidden');
   toTitle();
-  if (SET.dev) setDev(true);
+  if (SET.dev) setDev(true, true);
   requestAnimationFrame(loop);
 }
 
@@ -524,7 +524,7 @@ function objective() {
   if (!G.inv.iron) return '06 아이방에서 검은 열쇠를 찾자';
   if (d.gal.locked) return '검은 열쇠로 09 갤러리를 열자';
   if (!G.diaries.has(4)) return '갤러리 너머 20 초상화 방을 찾아보자';
-  if (!G.inv.gold) return '11 예배당에서 금색 열쇠를 찾자';
+  if (!G.inv.gold) return `미로 별관 가장 깊은 곳, ${MAZE_INFO.gold}에서 금색 열쇠를 찾자`;
   if (nd < 4) return `일기를 모두 모으자 (${nd}/4) — 비밀번호가 적혀 있다`;
   if (f.padlock || f.keypad) return '현관문을 열자 — 금색 열쇠 + 비밀번호';
   return '현관문으로 탈출하라!';
@@ -668,8 +668,8 @@ async function interact() {
     case 'door': {
       const d = it.door;
       if (d.locked) {
-        if (G.inv[d.lock]) { act('unlock', d.id); toast(`<b>${KEYS[d.lock]}</b>로 ${d.num}번 ${d.name}을 열었다.`); addClue(`${KEYS[d.lock]}로 ${d.num}번 ${d.name}을 열었다`, d.pos, 'open-' + d.id); }
-        else { audio.locked(); toast(`잠겨 있다. <b>${KEYS[d.lock].replace(' 열쇠', '')}</b> 자물쇠가 달려 있다.`); addClue(`${d.num}번 ${d.name}: ${KEYS[d.lock]}가 필요하다`, d.pos, 'lock-' + d.id); }
+        if (G.inv[d.lock]) { act('unlock', d.id); toast(`<b>${KEYS[d.lock]}</b>로 ${d.num ? d.num + '번 ' : ''}${d.name}을 열었다.`); addClue(`${KEYS[d.lock]}로 ${d.num}번 ${d.name}을 열었다`, d.pos, 'open-' + d.id); }
+        else { audio.locked(); toast(`잠겨 있다. <b>${KEYS[d.lock].replace(' 열쇠', '')}</b> 자물쇠가 달려 있다.`); addClue(`${d.num ? d.num + '번 ' : ''}${d.name}: ${KEYS[d.lock]}가 필요하다`, d.pos, 'lock-' + d.id); }
       } else act('door', d.id, d.open ? 0 : 1);
       break;
     }
@@ -920,10 +920,10 @@ $('memo-form').onsubmit = e => {
 
 /* ── 개발자 모드 (비밀번호) ── */
 const DEV_HASH = 2539790135;   // 비밀번호의 해시 (비밀번호 자체는 코드에 적지 않는다)
-function setDev(on) {
+function setDev(on, boot) {
   SET.dev = on; saveSet();
   $('s-dev').textContent = on ? '끄기' : '켜기';
-  if (on) { $('devwin').classList.remove('hidden'); $('devfab').classList.remove('hidden'); devWin(true, true); }
+  if (on) { $('devwin').classList.remove('hidden'); $('devfab').classList.remove('hidden'); if (boot) { $('devwin').classList.add('closed'); $('devfab').classList.add('show'); } else devWin(true, true); }
   else {
     $('devwin').classList.add('hidden'); $('devfab').classList.add('hidden');
     Object.keys(G.dev).forEach(k => G.dev[k] = false); monster.frozen = false; document.querySelectorAll('[data-dev]').forEach(b => b.classList.remove('on')); updateButtons();
@@ -960,6 +960,12 @@ document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => {
   if (k === 'keys') { let n = 0; for (const it of world.items) if (it.item && it.item.key !== 'bandage' && !it.opened) { act('item', it.id); n++; } toast(n ? '자물쇠 열쇠를 모두 얻었어요!' : '열쇠는 이미 다 있어요.', 2); }
   if (k === 'diaries') { for (const i of world.inter) if (i.kind === 'diary' && !i.read) act('diary', i.id, 1); toast(`일기 4개를 모두 얻었어요! 비밀번호는 <b>${G.code.join('')}</b>`, 3.5); }
   if (k === 'doors') { let n = 0; for (const d of Object.values(world.doors)) { if (d.locked) { act('unlock', d.id); n++; } else if (!d.open) { act('door', d.id, 1); n++; } } toast(n ? '문을 모두 열었어요.' : '문이 이미 다 열려 있어요.', 2); }
+  if (k === 'exit') {
+    if (G.mode !== 'play') return;
+    if (G.player.hidden) { toast('숨은 곳에서 나온 다음 눌러 주세요.', 2); return; }
+    G.player.pos.set(22, 0, 28.3); G.y = 0; G.camYaw = Math.PI; G.camPitch = 0;
+    toast('탈출구(현관문) 앞으로 순간이동했어요!', 2); devWin(false);
+  }
   if (k === 'summon') { monster.pos.set(G.player.pos.x + 6, 0, G.player.pos.z); world.collide(monster.pos, 0.35); monster.state = 'patrol'; monster.path = []; }
 });
 $('dev-tp').onchange = e => {
