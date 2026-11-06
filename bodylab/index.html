@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BODY LAB — 해부 실험실</title>
+<link rel="stylesheet" href="./style.css?v=1">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- 엑스레이 (오른쪽) -->
+<aside id="xray">
+  <header>
+    <div class="row"><b id="tName">실험체</b><span id="tEmo" class="emo">평온</span></div>
+    <div class="bar hp"><i id="tHp"></i><em>체력 <span id="tHpN">100</span></em></div>
+    <div class="bar bl"><i id="tBlood"></i><em>혈액 <span id="tBloodN">5.0L</span></em></div>
+    <div id="tState" class="state"></div>
+  </header>
+  <div id="xview"><span class="lbl">X-RAY</span><div class="scan"></div></div>
+  <div id="organs"></div>
+  <footer>
+    <button id="xMode">보기: 전체</button><button id="xTarget">대상: 실험체</button>
+    <button id="reviveNpc" class="rv">실험체 살리기 (R)</button><button id="revivePlayer" class="rv">나 살리기 (G)</button>
+  </footer>
+</aside>
+
+<!-- 플레이어 상태 -->
+<section id="me">
+  <div class="row"><b>나</b><span id="pEmo" class="emo">평온</span></div>
+  <div class="bar hp"><i id="pHp"></i><em>체력 <span id="pHpN">100</span></em></div>
+  <div class="bar bl"><i id="pBlood"></i><em>혈액 <span id="pBloodN">5.0L</span></em></div>
+  <div class="bar ox" id="pOxRow"><i id="pOx"></i><em>산소</em></div>
+</section>
+
+<div id="cross"><i></i><i></i><i></i><i></i></div>
+<div id="hitmark">✕</div>
+<div id="weapons"></div>
+<div id="slow"><button id="slowBtn">슬로우 모션 (Q)</button><label><input type="checkbox" id="autoSlow" checked> 맞으면 자동</label></div>
+<div id="log"></div>
+<div id="tag"><div class="hpb"><i id="tagHp"></i></div><span id="tagEmo"></span></div>
+<div id="bubble"></div>
+<div id="help">WASD 이동 · Shift 달리기 · 마우스 조준 · 좌클릭 공격 · 우클릭 정조준 · 1~7 무기 · F(누르고 있기) 잡아 끌기 · Q 슬로우 · X 엑스레이 보기 · C 엑스레이 대상 · Esc 마우스 풀기</div>
+
+<div id="dead"><div><h2>사망했습니다</h2><button id="revive2">살아나기</button></div></div>
+<div id="loading">불러오는 중…</div>
+<div id="start">
+  <div class="card">
+    <h1>BODY<span>LAB</span></h1>
+    <p>해부 실험실 — 무기·장치로 실험체에게 일어나는 일을 오른쪽 엑스레이로 지켜보세요.</p>
+    <ul>
+      <li>무기 7종: 권총, 돌격소총, 산탄총, 저격소총, 칼, 야구 방망이, 수류탄</li>
+      <li>장치: 회전 톱, 유압 프레스, 가시 함정, 고압 전기 바닥, 발사대, 수영장(물)</li>
+      <li>잡아 끌기(F)로 실험체를 장치에 넣을 수 있어요. 나도 똑같이 다칩니다.</li>
+    </ul>
+    <button>시작</button>
+    <small>손·팔 모델: "Hand and arm - Zbrush sculpt" by Andy Woodhead, CC BY 4.0</small>
+  </div>
+</div>
+<script type="module" src="./js/main.js?v=1"></script>
+</body>
+</html>
