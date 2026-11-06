@@ -19,7 +19,7 @@ const V = THREE.Vector3;
 const $ = id => document.getElementById(id);
 const canvas = $('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-const LQ = location.search.includes('lq');
+const LQ = location.search.includes('lq') || location.hash.includes('lq');
 renderer.setPixelRatio(LQ ? 0.5 : Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
@@ -86,7 +86,7 @@ G.onHit = (h, info, organs) => {
   if (h === npc && info.dmg > 0) { const hm = $('hitmark'); hm.classList.remove('on'); void hm.offsetWidth; hm.classList.add('on'); }
   if (organs?.length) log(`${h.name}: ${organs.map(o => ORGAN_NAMES[o.def.id]).join(', ')} 손상`);
 };
-G.onDeath = h => { log(`${h.name} 사망 — ${h.cause}`); if (h === player) $('dead').classList.add('on'), document.exitPointerLock?.(); };
+G.onDeath = h => { log(`${h.name} 사망 — ${h.cause}`); if (h === player) { $('dead').classList.add('on'); freeLook = false; document.exitPointerLock?.(); } };
 const logEl = $('log');
 function log(t) { const d = document.createElement('div'); d.textContent = t; logEl.prepend(d); while (logEl.children.length > 5) logEl.lastChild.remove(); setTimeout(() => d.classList.add('fade'), 4000); setTimeout(() => d.remove(), 5000); }
 G.ui = { say(h, text, dur) { if (!text) { bubble.classList.remove('on'); return; } bubble.textContent = text; bubble.classList.add('on'); bubbleT = dur; } };
@@ -100,14 +100,22 @@ $('reviveNpc').onclick = reviveNPC; $('revivePlayer').onclick = revivePlayer; $(
 const keys = {}; let mouseL = false, mouseR = false, pressed = false, camYaw = Math.PI, camPitch = -0.08;
 let xMode = 0, xTarget = npc, grab = null;
 const XMODES = ['전체', '뼈', '근육', '장기'];
-function lock() { G.audio.init(); canvas.requestPointerLock?.(); }
-canvas.addEventListener('mousedown', e => { if (document.pointerLockElement !== canvas) { lock(); return; } if (e.button === 0) { mouseL = true; pressed = true; } if (e.button === 2) mouseR = true; });
+// 마우스 고정이 안 되는 환경(일부 웹뷰)에서는 마우스를 움직이는 대로 시점이 돈다
+let freeLook = false;
+function lock() {
+  G.audio.init();
+  try { const r = canvas.requestPointerLock?.(); if (r?.catch) r.catch(() => { freeLook = true; }); } catch (e) { freeLook = true; }
+  setTimeout(() => { if (document.pointerLockElement !== canvas) freeLook = true; }, 500);
+}
+const active = () => document.pointerLockElement === canvas || freeLook;
+canvas.addEventListener('mousedown', e => { if (!active()) { lock(); return; } if (e.button === 0) { mouseL = true; pressed = true; } if (e.button === 2) mouseR = true; });
 addEventListener('mouseup', e => { if (e.button === 0) mouseL = false; if (e.button === 2) mouseR = false; });
 addEventListener('contextmenu', e => e.preventDefault());
-addEventListener('mousemove', e => { if (document.pointerLockElement !== canvas) return; const s = mouseR && weapons.w.zoom ? 0.0006 : 0.0022; camYaw -= e.movementX * s; camPitch = Math.max(-1.2, Math.min(1.1, camPitch - e.movementY * s)); });
+addEventListener('mousemove', e => { if (!active() || (freeLook && e.target !== canvas)) return; const s = mouseR && weapons.w.zoom ? 0.0006 : 0.0022; camYaw -= e.movementX * s; camPitch = Math.max(-1.2, Math.min(1.1, camPitch - e.movementY * s)); });
 addEventListener('wheel', e => { weapons.select((weapons.cur + (e.deltaY > 0 ? 1 : WEAPONS.length - 1)) % WEAPONS.length); });
 addEventListener('keydown', e => {
   keys[e.code] = true;
+  if (e.code === 'Escape') freeLook = false;
   const n = +e.key; if (n >= 1 && n <= WEAPONS.length) weapons.select(n - 1);
   if (e.code === 'KeyQ') { manualSlow = !manualSlow; }
   if (e.code === 'KeyR') reviveNPC();
@@ -267,7 +275,7 @@ function frame(now) {
   player.ctrl.yaw = camYaw;
   player.look.yaw = 0; player.look.pitch = camPitch * 0.6;
   const aimDir = aim();
-  if (document.pointerLockElement === canvas) weapons.trigger(mouseL, pressed, aimDir, camera.position);
+  if (active()) weapons.trigger(mouseL, pressed, aimDir, camera.position);
   pressed = false;
   weapons.pose(simDt, aimDir);
   for (const h of G.humans) h.update(simDt);
