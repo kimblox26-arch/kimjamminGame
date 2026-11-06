@@ -325,11 +325,6 @@ input, select { font-family: var(--ui); }
 @media (max-width: 720px), (max-height: 480px) { #b-hide { right: 22px; bottom: 92px; } #b-crouch { right: 160px; } #b-prone { right: 150px; bottom: 58px; } #b-heal { right: 96px; bottom: 132px; } .btn.sm { width: 44px; height: 44px; } }
 #flybtns { position: absolute; right: max(18px, env(safe-area-inset-right)); top: 42%; display: flex; flex-direction: column; gap: 10px; }
 #flybtns .btn { position: static; }
-#devpanel { margin-top: 6px; padding: 7px; display: flex; flex-wrap: wrap; gap: 4px; max-width: 230px; background: rgba(10, 30, 10, 0.55); border: 1px solid #6fd06f; border-radius: 8px; }
-#devpanel b { width: 100%; display: flex; align-items: center; gap: 5px; font-size: 12px; color: #9fe08f; }
-#devpanel b i { width: 14px; height: 14px; }
-#devpanel button, #devpanel select { font-size: 11px; padding: 4px 6px; border-radius: 5px; border: 1px solid #4a6a4a; background: rgba(0, 0, 0, 0.5); color: #dfe; cursor: pointer; }
-#devpanel button.on { background: #2a7a2a; border-color: #9fe08f; color: #fff; }
 #tags { position: absolute; inset: 0; pointer-events: none !important; overflow: hidden; }
 .tag { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 3px; white-space: nowrap; will-change: transform; }
 .tag .nm { font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000; }
@@ -361,6 +356,29 @@ input, select { font-family: var(--ui); }
 #hud > .hud-top > * { pointer-events: auto; }
 #hud > .hud-top > .bars { pointer-events: none; }
 #hud > .hud-top > .bars > * { pointer-events: auto; }
-#devpanel b { cursor: pointer; }
-#devpanel.mini > :not(b) { display: none; }
-#devpanel.mini b::after { content: " (펼치기)"; font-weight: 400; opacity: 0.7; }
+
+/* 개발자 창 ↔ 동그란 버튼 */
+#devwin { position: absolute; left: 50%; top: 50%; z-index: 6; width: min(340px, 86vw); max-height: 86vh; overflow: auto; padding: 10px 12px 12px; border-radius: 14px; background: rgba(8, 24, 10, 0.88); border: 2px solid #6fd06f; box-shadow: 0 0 24px rgba(80, 220, 80, 0.35), 0 10px 30px rgba(0, 0, 0, 0.7); color: #dfe; transform: translate(-50%, -50%); transform-origin: 50% 50%; transition: transform .42s cubic-bezier(.6, -0.2, .25, 1.15), opacity .32s ease, border-radius .42s ease; }
+#devwin.closed { transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) scale(.1); opacity: 0; border-radius: 50%; pointer-events: none; }
+#devwin.snap, #devfab.snap { transition: none !important; }
+.dw-head { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: #9fe08f; font-size: 15px; }
+.dw-head i { width: 18px; height: 18px; }
+.dw-head b { flex: 1; }
+#dw-close { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid #6fd06f; background: rgba(0, 0, 0, 0.45); color: #dfffd8; display: grid; place-items: center; cursor: pointer; padding: 0; }
+#dw-close i { width: 16px; height: 16px; }
+#dw-close:active { transform: scale(.9); }
+.dw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.dw-grid button { display: flex; align-items: center; gap: 7px; min-height: 42px; padding: 6px 9px; text-align: left; font: inherit; font-size: 13px; line-height: 1.2; color: #e8ffe8; background: rgba(0, 0, 0, 0.45); border: 1.5px solid #4a7a4a; border-radius: 9px; cursor: pointer; transition: background .2s, border-color .2s, transform .12s; }
+.dw-grid button i { width: 18px; height: 18px; flex: none; }
+.dw-grid button:active, .dw-more button:active { transform: scale(.95); }
+.dw-grid button.on, .dw-more button.on { background: #2a7a2a; border-color: #b6f0a6; color: #fff; box-shadow: 0 0 10px rgba(120, 240, 120, 0.45); }
+.dw-grid button.flash { background: #3d8f3d; }
+.dw-more { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; padding-top: 8px; border-top: 1px dashed rgba(111, 208, 111, 0.4); }
+.dw-more button, .dw-more select { font-size: 11px; padding: 4px 7px; border-radius: 6px; border: 1px solid #4a6a4a; background: rgba(0, 0, 0, 0.5); color: #dfe; cursor: pointer; }
+#devfab { position: absolute; left: max(14px, env(safe-area-inset-left)); top: 38%; z-index: 6; width: 54px; height: 54px; padding: 0; border-radius: 50%; display: grid; place-items: center; background: rgba(8, 30, 10, 0.6); border: 2px solid #6fd06f; box-shadow: 0 0 14px rgba(80, 220, 80, 0.45); cursor: pointer; transform: scale(0) rotate(-120deg); opacity: 0; pointer-events: none; transition: transform .22s ease-in, opacity .18s; }
+#devfab i { width: 26px; height: 26px; }
+#devfab.show { transform: scale(1) rotate(0); opacity: 1; pointer-events: auto; transition: transform .38s cubic-bezier(.3, 1.7, .5, 1) .28s, opacity .2s .28s; }
+#devfab.show:active { transform: scale(.9); }
+@media (max-height: 430px) { .dw-grid button { min-height: 36px; font-size: 12px; } #devwin { padding: 8px 10px 10px; } }
+#toast { z-index: 8; }
+#devfab { color: #dfffd8; }

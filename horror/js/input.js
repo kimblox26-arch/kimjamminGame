@@ -12,7 +12,7 @@ export class Input {
       knob.style.transform = `translate(${dx}px,${dy}px)`; this.mx = dx / max; this.my = -dy / max;
     };
     const resetKnob = () => { knob.style.transform = ''; this.mx = 0; this.my = 0; };
-    const isUI = (t) => t.closest && t.closest('.btn, .hud-top, .modal, .panel, button, #joy-zone, input, select, #chatbar, #devpanel');
+    const isUI = (t) => t.closest && t.closest('.btn, .hud-top, .modal, .panel, button, #joy-zone, input, select, #chatbar, #devwin, #devfab');
     // 조이스틱 영역
     const zone = document.getElementById('joy-zone');
     zone.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; this.joyId = t.identifier; setKnob(t.clientX, t.clientY); joy.classList.add('on'); }, { passive: false });

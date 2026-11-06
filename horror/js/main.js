@@ -617,10 +617,10 @@ async function openItem(it, mine) {
   } else if (mine) toast(it.text || '비어 있다.', it.text ? 4 : 2);
   if (mine && it.text) addClue(it.text, it.pos, 'item-' + it.id);
 }
-function readDiary(it, mine, who) {
+function readDiary(it, mine, who, quiet) {
   if (it.read) return; it.read = true; it.mesh.visible = false; it.glint.visible = false; G.diaries.add(it.id); audio.book(); renderInv();
   addClue(`일기 ${it.id} — 비밀번호 ${it.id}번째 숫자는 『 ${G.code[it.id - 1]} 』`, it.pos, 'diary-' + it.id);
-  if (mine) openNotes('d' + it.id); else toast(`${esc(who || '친구')}가 <b>일기 ${it.id}</b>을 찾았다! 일기 버튼으로 읽을 수 있어요`, 3);
+  if (mine) { if (!quiet) openNotes('d' + it.id); } else toast(`${esc(who || '친구')}가 <b>일기 ${it.id}</b>을 찾았다! 일기 버튼으로 읽을 수 있어요`, 3);
 }
 function frontPad() { const f = world.front; if (!f.padlock) return; f.padlock = false; G.used.gold = true; f.chain.visible = false; audio.unlock(); audio.play('metal_light', { vol: 0.6, delay: 0.3 }); renderInv(); }
 function frontKeypad() { const f = world.front; if (!f.keypad) return; f.keypad = false; f.screen.material.color.setHex(0x0a4010); }
@@ -630,7 +630,7 @@ function act(k, id, v) {
   if (k === 'door') { lock('d' + id); doorSet(world.doors[id], !!v); }
   if (k === 'unlock') { lock('d' + id); unlockDoor(world.doors[id]); }
   if (k === 'item') openItem(world.items[id], true);
-  if (k === 'diary') readDiary(diaryById(id), true);
+  if (k === 'diary') readDiary(diaryById(id), true, null, v);
   if (k === 'pad') frontPad();
   if (k === 'kp') frontKeypad();
   if (k === 'esc') { G.escaped = true; startExit(); }
@@ -759,6 +759,7 @@ async function exitHide() {
   G.busy = false; updateButtons(); sendMe(true);
 }
 function pulledLocal(spot, mpos) {
+  if (G.dev.god) return;   // 개발자: 초록모자 공격 안 당하기
   const pl = G.player; pl.hidden = false; pl.spot = null; G.busy = false; tweens.clear(); G.occ.delete(spot.id);
   spot.doors.forEach(d => { d.piv.visible = true; d.piv.rotation.y = d.open; });
   pl.pos.copy(spot.front).addScaledVector(spot.out, 0.35); G.eyeH = EYE;
@@ -921,20 +922,44 @@ $('memo-form').onsubmit = e => {
 const DEV_HASH = 2539790135;   // 비밀번호의 해시 (비밀번호 자체는 코드에 적지 않는다)
 function setDev(on) {
   SET.dev = on; saveSet();
-  $('devpanel').classList.toggle('hidden', !on); $('s-dev').textContent = on ? '끄기' : '켜기';
-  if (!on) { Object.keys(G.dev).forEach(k => G.dev[k] = false); monster.frozen = false; document.querySelectorAll('[data-dev]').forEach(b => b.classList.remove('on')); updateButtons(); }
+  $('s-dev').textContent = on ? '끄기' : '켜기';
+  if (on) { $('devwin').classList.remove('hidden'); $('devfab').classList.remove('hidden'); devWin(true, true); }
+  else {
+    $('devwin').classList.add('hidden'); $('devfab').classList.add('hidden');
+    Object.keys(G.dev).forEach(k => G.dev[k] = false); monster.frozen = false; document.querySelectorAll('[data-dev]').forEach(b => b.classList.remove('on')); updateButtons();
+  }
 }
+// 창 ↔ 동그란 버튼: 창이 버튼 자리로 빨려 들어가며 작아지고, 버튼을 누르면 그 자리에서 창이 펼쳐진다
+function devWin(open, fromFab) {
+  const w = $('devwin'), f = $('devfab');
+  const fr = f.getBoundingClientRect(), wr = w.getBoundingClientRect();
+  if (fr.width || wr.width) {
+    w.style.setProperty('--dx', (fr.left + fr.width / 2 - (wr.left + wr.width / 2)) + 'px');
+    w.style.setProperty('--dy', (fr.top + fr.height / 2 - (wr.top + wr.height / 2)) + 'px');
+  }
+  if (open && fromFab) { w.classList.add('snap', 'closed'); void w.offsetWidth; w.classList.remove('snap'); }
+  requestAnimationFrame(() => { w.classList.toggle('closed', !open); f.classList.toggle('show', !open); });
+  audio.play(open ? 'woosh_1' : 'woosh_2', { vol: 0.35, rate: open ? 1.2 : 1.5 });
+}
+$('dw-close').onclick = e => { e.stopPropagation(); devWin(false); };
+$('devfab').onclick = e => { e.stopPropagation(); devWin(true, true); };
 $('s-dev').onclick = () => { if (SET.dev) { setDev(false); toast('개발자 모드를 껐어요.', 2); } else { $('devpw-in').value = ''; $('devpw-msg').textContent = ''; openModal('devpw'); setTimeout(() => $('devpw-in').focus(), 50); } };
 $('devpw-form').onsubmit = e => {
   e.preventDefault();
-  if (hashStr($('devpw-in').value) === DEV_HASH) { closeModal('devpw'); setDev(true); toast('개발자 모드가 켜졌어요! 왼쪽 위 초록 패널을 보세요.', 3); }
+  if (hashStr($('devpw-in').value) === DEV_HASH) { closeModal('devpw'); setDev(true); toast('개발자 모드가 켜졌어요! 창을 닫으면 왼쪽의 동그란 버튼이 돼요.', 3); }
   else { $('devpw-msg').textContent = '비밀번호가 틀렸어요.'; audio.beep(false); }
 };
 document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => {
   const k = b.dataset.dev;
-  if (k in G.dev) { G.dev[k] = !G.dev[k]; b.classList.toggle('on', G.dev[k]); if (k === 'freeze') monster.frozen = G.dev.freeze; if (k === 'fly' && !G.dev.fly) G.y = 0; updateButtons(); return; }
-  if (k === 'items') { for (const it of world.items) if (it.item && it.item.key !== 'bandage' && !it.opened) act('item', it.id); for (const i of world.inter) if (i.kind === 'diary' && !i.read) act('diary', i.id); toast('열쇠와 일기를 모두 받았어요.', 2); }
-  if (k === 'doors') { for (const d of Object.values(world.doors)) { if (d.locked) act('unlock', d.id); else if (!d.open) act('door', d.id, 1); } }
+  if (k in G.dev) {
+    G.dev[k] = !G.dev[k]; b.classList.toggle('on', G.dev[k]); if (k === 'freeze') monster.frozen = G.dev.freeze; if (k === 'fly' && !G.dev.fly) G.y = 0; updateButtons();
+    const names = { noclip: '벽뚫기', fly: '날기', god: '초록모자 공격 안 당하기', invis: '투명', freeze: '초록모자 정지', fast: '빠르게' };
+    toast(`${names[k]} ${G.dev[k] ? '켜짐' : '꺼짐'}${k === 'fly' && G.dev.fly ? ' — 위·아래 버튼(스페이스/Q)으로 높이 조절' : ''}`, 1.6); return;
+  }
+  b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 300);
+  if (k === 'keys') { let n = 0; for (const it of world.items) if (it.item && it.item.key !== 'bandage' && !it.opened) { act('item', it.id); n++; } toast(n ? '자물쇠 열쇠를 모두 얻었어요!' : '열쇠는 이미 다 있어요.', 2); }
+  if (k === 'diaries') { for (const i of world.inter) if (i.kind === 'diary' && !i.read) act('diary', i.id, 1); toast(`일기 4개를 모두 얻었어요! 비밀번호는 <b>${G.code.join('')}</b>`, 3.5); }
+  if (k === 'doors') { let n = 0; for (const d of Object.values(world.doors)) { if (d.locked) { act('unlock', d.id); n++; } else if (!d.open) { act('door', d.id, 1); n++; } } toast(n ? '문을 모두 열었어요.' : '문이 이미 다 열려 있어요.', 2); }
   if (k === 'summon') { monster.pos.set(G.player.pos.x + 6, 0, G.player.pos.z); world.collide(monster.pos, 0.35); monster.state = 'patrol'; monster.path = []; }
 });
 $('dev-tp').onchange = e => {
@@ -942,7 +967,6 @@ $('dev-tp').onchange = e => {
   const n = Object.values(world.nodes).find(n => { const r = roomAt(n.x, n.z); return r && r.id === id; });
   if (n && G.mode === 'play' && !G.player.hidden) { G.player.pos.set(n.x, 0, n.z); toast(`${where(G.player.pos)}(으)로 이동했어요.`, 1.5); }
 };
-$('devpanel').querySelector('b').onclick = () => $('devpanel').classList.toggle('mini');
 let flyDir = 0;
 for (const [id, d] of [['fly-up', 1], ['fly-down', -1]]) {
   const b = $(id);
