@@ -32,32 +32,33 @@
 
 <!-- 메인 화면 -->
 <section class="screen menu" id="menu">
-  <div class="menu-bg" aria-hidden="true"></div>
+  <div class="menu-top">
+    <button class="round-btn" id="btnLang" type="button" aria-label="언어"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg></button>
+    <button class="round-btn" id="btnSettings" type="button" aria-label="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3 5.5 5.5"/><circle cx="12" cy="12" r="6.6"/></svg></button>
+  </div>
+  <div class="hero" aria-hidden="true">
+    <div class="rays"></div>
+    <div class="pedestal"></div>
+    <span class="hp hp-l" data-p="nb"></span>
+    <span class="hp hp-r" data-p="qb"></span>
+    <span class="hp hp-c" data-p="kw"></span>
+    <i class="spark"></i><i class="spark"></i><i class="spark"></i><i class="spark"></i><i class="spark"></i><i class="spark"></i>
+  </div>
   <header class="brand">
-    <span class="brand-mark" id="brandMark"></span>
     <h1 data-t="title">체스</h1>
     <p data-t="subtitle">컴퓨터와 한 판</p>
   </header>
-  <div class="stage3d" aria-hidden="true"><div class="showcase" id="showcase"></div></div>
   <nav class="menu-buttons">
-    <button class="mbtn primary" id="btnPlay" type="button">
-      <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
-      <span data-t="play">플레이</span>
+    <button class="card-btn play" id="btnPlay" type="button">
+      <span class="cb-icon"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg></span>
+      <span class="cb-text"><b data-t="play">플레이</b><small data-t="playSub">컴퓨터와 대결</small></span>
+      <svg class="cb-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
     </button>
-    <button class="mbtn duo" id="btnDuo" type="button">
-      <svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.8 19.5c.6-3.3 2.9-5.2 5.7-5.2s5.1 1.9 5.7 5.2"/><path d="M14.6 14.3c.6-.2 1.2-.3 1.9-.3 2.4 0 4.2 1.6 4.7 4.6"/></svg>
-      <span data-t="duo">두 명이서</span>
+    <button class="card-btn duo" id="btnDuo" type="button">
+      <span class="cb-icon"><svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.8 19.5c.6-3.3 2.9-5.2 5.7-5.2s5.1 1.9 5.7 5.2"/><path d="M14.6 14.3c.6-.2 1.2-.3 1.9-.3 2.4 0 4.2 1.6 4.7 4.6"/></svg></span>
+      <span class="cb-text"><b data-t="duo">두 명이서</b><small data-t="duoSub">한 화면에서 친구와</small></span>
+      <svg class="cb-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
     </button>
-    <div class="menu-row">
-      <button class="mbtn" id="btnSettings" type="button">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3 5.5 5.5"/><circle cx="12" cy="12" r="6.6"/></svg>
-        <span data-t="settings">설정</span>
-      </button>
-      <button class="mbtn" id="btnLang" type="button">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg>
-        <span data-t="language">언어</span>
-      </button>
-    </div>
   </nav>
 </section>
 

@@ -42,6 +42,8 @@
     document.querySelectorAll('.lang').forEach((b) => b.classList.toggle('on', b.dataset.lang === prefs.lang));
     $('btnHome').setAttribute('aria-label', tr('menu'));
     $('btnRec').setAttribute('aria-label', tr('record'));
+    $('btnSettings').setAttribute('aria-label', tr('settings'));
+    $('btnLang').setAttribute('aria-label', tr('language'));
     setModeTag();
     renderBars(false);
     if (over && !veilEl.hidden) showVeil();
@@ -518,7 +520,7 @@
   }
   // 메인 화면이 나타날 때 위에서부터 차례로 떠오른다
   function introMenu() {
-    [...menuEl.querySelectorAll('.brand, .stage3d, .menu-buttons > *')].forEach((el, i) => {
+    [...menuEl.querySelectorAll('.menu-top, .hero, .brand, .menu-buttons > *')].forEach((el, i) => {
       el.animate([{ opacity: 0, transform: 'translateY(22px)' }, { opacity: 1, transform: 'none' }],
         { duration: 520, delay: 60 + i * 80, easing: 'cubic-bezier(.2,.9,.25,1)', fill: 'backwards' });
     });
@@ -808,28 +810,11 @@
     if (!bubble.hidden) place(bubble, bubble.offsetLeft, bubble.offsetTop);
   });
 
-  // 메인 화면 뒤 흐린 체스판
-  function buildShowcase() {
-    const pcs = {
-      '0,1': 'pb', '0,4': 'nb', '1,0': 'pb', '1,2': 'nb', '1,3': 'pb', '1,5': 'bb', '2,1': 'pb', '2,4': 'pb',
-      '3,2': 'pw', '3,3': 'pw', '4,0': 'bw', '4,1': 'pw', '4,4': 'nw', '5,3': 'qw', '5,5': 'pw',
-    };
-    let html = '';
-    for (let r = 0; r < 6; r++) {
-      for (let c = 0; c < 6; c++) {
-        const k = pcs[r + ',' + c];
-        const sp = k ? `<span class="sp" style="animation-delay:${-((r * 6 + c) * 0.37).toFixed(2)}s">${pieceSVG(k[0], k[1])}</span>` : '';
-        html += `<div class="sq ${(r + c) % 2 ? 'd' : 'l'}">${sp}</div>`;
-      }
-    }
-    $('showcase').innerHTML = html;
-  }
 
   // ---------- 시작 ----------
-  $('brandMark').innerHTML = pieceSVG('n', 'w');
+  document.querySelectorAll('.hp[data-p]').forEach((h) => { h.innerHTML = pieceSVG(h.dataset.p[0], h.dataset.p[1]); });
   document.querySelectorAll('.ghost[data-p]').forEach((g) => { g.innerHTML = pieceSVG(g.dataset.p, 'w'); });
   mascot.innerHTML = pieceSVG('k', 'w');
-  buildShowcase();
   markLevel();
   applyLang();
   timerReset();
