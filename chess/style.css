@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=IBM+Plex+Sans+KR:wght@500;600;700&family=Orbitron:wght@700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@500;600;700&family=Orbitron:wght@700;900&display=swap');
 /* 어두운 배경 + 베이지/초록 보드, 메인 화면은 흐린 보드 위에 큰 버튼 — 단일 테마 */
 :root {
   --bg: #302e2b;
@@ -978,3 +978,22 @@ body { background: #0d0c18; }
 @media (prefers-reduced-motion: reduce) {
   .rays, .hp, .spark, .card-btn::after { animation: none !important; }
 }
+
+/* ================= 평범한 글씨: 제목도 본문과 같은 글씨체의 굵은 글자 ================= */
+:root { --display: var(--body); }
+.brand h1, .cb-text b, .mbtn.primary, .mbtn.duo, .mbtn.small, .start-big, .sheet-card h2, .veil-card strong {
+  font-family: var(--body);
+  font-weight: 700;
+}
+.brand h1 {
+  font-size: clamp(44px, 13vw, 64px);
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+}
+.cb-text b { font-size: 24px; letter-spacing: 0.01em; text-shadow: none; }
+.mbtn.primary, .mbtn.duo { letter-spacing: 0.02em; text-shadow: none; }
+.mbtn.primary { font-size: 22px; }
+.start-big { font-size: 26px; }
+.sheet-card h2 { font-size: 22px; }
+.veil-card strong { font-size: clamp(24px, 6vmin, 32px); }
