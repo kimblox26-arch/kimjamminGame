@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -21,11 +22,13 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 /** 다른 앱 위에 떠 있는 창. 닫으면 체스 그림 원형 버튼으로 축소, 누르면 다시 창으로. */
 public class OverlayService extends Service {
     public static final String ACTION_REFRESH = "refresh";
     public static volatile boolean running;
+    private static OverlayService self;
     private static final String CH = "chessbot";
 
     private WindowManager wm;
@@ -41,6 +44,7 @@ public class OverlayService extends Service {
     public void onCreate() {
         super.onCreate();
         running = true;
+        self = this;
         startAsForeground();
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         buildPanel();
@@ -60,6 +64,8 @@ public class OverlayService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        self = null;
+        BotService.active = false;
         removeSafe(panel);
         removeSafe(bubble);
         super.onDestroy();
@@ -128,7 +134,7 @@ public class OverlayService extends Service {
 
         // 봇 작동하기
         runBtn = new Ui.IconButton(this, 16, 20);
-        runBtn.setOnClickListener(v -> { botOn = !botOn; updateTexts(); });
+        runBtn.setOnClickListener(v -> toggleBot());
         root.addView(runBtn, new LinearLayout.LayoutParams(-1, Ui.dp(this, 52)));
 
         panel = root;
@@ -188,6 +194,32 @@ public class OverlayService extends Service {
         panelLp.x = Math.max(0, Math.min(dm.widthPixels - panelLp.width, bubbleLp.x + bubbleLp.width - panelLp.width));
         panelLp.y = bubbleLp.y;
         if (!panel.isAttachedToWindow()) wm.addView(panel, panelLp);
+    }
+
+    private void toggleBot() {
+        if (!botOn && BotService.instance == null) {
+            // 접근성 서비스가 꺼져 있으면 설정 화면으로 안내
+            Toast.makeText(this, I18n.t(this, I18n.ACC), Toast.LENGTH_LONG).show();
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            return;
+        }
+        botOn = !botOn;
+        BotService.active = botOn;
+        updateTexts();
+    }
+
+    /** 봇이 터치하는 동안 창이 터치를 가로막지 않도록 통과시킨다 */
+    static void passThrough(boolean on) {
+        OverlayService s = self;
+        if (s == null) return;
+        for (View v : new View[]{s.panel, s.bubble}) {
+            if (v == null || !v.isAttachedToWindow()) continue;
+            WindowManager.LayoutParams lp = (WindowManager.LayoutParams) v.getLayoutParams();
+            if (on) lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            else lp.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            lp.alpha = on ? 0.75f : 1f;
+            s.wm.updateViewLayout(v, lp);
+        }
     }
 
     private void updateTexts() {
