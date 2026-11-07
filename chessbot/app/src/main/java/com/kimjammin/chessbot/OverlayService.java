@@ -18,10 +18,11 @@ import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** 다른 앱 위에 떠 있는 체스 봇 창. 닫으면 체스 버튼(원형)으로 축소된다. */
+/** 다른 앱 위에 떠 있는 창. 닫으면 체스 그림 원형 버튼으로 축소, 누르면 다시 창으로. */
 public class OverlayService extends Service {
     public static final String ACTION_REFRESH = "refresh";
     public static volatile boolean running;
@@ -31,9 +32,8 @@ public class OverlayService extends Service {
     private View panel;
     private BubbleView bubble;
     private WindowManager.LayoutParams panelLp, bubbleLp;
-    private GameController game;
-    private TextView title, status, analysis, runBtn, newBtn, flipBtn, oppBtn;
-    private boolean expanded;
+    private Ui.IconButton runBtn;
+    private boolean botOn;
 
     @Override public IBinder onBind(Intent i) { return null; }
 
@@ -43,12 +43,9 @@ public class OverlayService extends Service {
         running = true;
         startAsForeground();
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
-        game = new GameController(this);
         buildPanel();
         buildBubble();
-        game.listener = this::updateTexts;
-        game.attach(boardView);
-        showPanel();
+        wm.addView(panel, panelLp);
     }
 
     @Override
@@ -63,7 +60,6 @@ public class OverlayService extends Service {
     @Override
     public void onDestroy() {
         running = false;
-        game.shutdown();
         removeSafe(panel);
         removeSafe(bubble);
         super.onDestroy();
@@ -89,8 +85,8 @@ public class OverlayService extends Service {
         else startForeground(1, n);
     }
 
-    private WindowManager.LayoutParams params(int w) {
-        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(w, WindowManager.LayoutParams.WRAP_CONTENT,
+    private WindowManager.LayoutParams params(int w, int h) {
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(w, h,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
@@ -98,13 +94,10 @@ public class OverlayService extends Service {
         return lp;
     }
 
-    private BoardView boardView;
-
-    @SuppressLint("ClickableViewAccessibility")
     private void buildPanel() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int w = Math.min(dm.widthPixels - Ui.dp(this, 24), Ui.dp(this, 360));
-        int pad = Ui.dp(this, 12);
+        int w = Math.min(dm.widthPixels - Ui.dp(this, 48), Ui.dp(this, 300));
+        int pad = Ui.dp(this, 14);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -112,75 +105,48 @@ public class OverlayService extends Service {
         root.setBackground(Ui.bg(new int[]{0xF2182241, 0xF20B1224}, Ui.dp(this, 22), 0x88F5C451, Ui.dp(this, 1.5f)));
         root.setElevation(Ui.dp(this, 12));
 
-        // 제목 줄 (드래그 가능) + 닫기
-        FrameLayout bar = new FrameLayout(this);
-        title = Ui.text(this, "♞  CHESS AUTO BOT", 15, Ui.GOLD, true);
+        // 제목 줄 (끌어서 이동) + 닫기
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 10));
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.knight);
+        bar.addView(logo, new LinearLayout.LayoutParams(Ui.dp(this, 18), Ui.dp(this, 22)));
+        TextView title = Ui.text(this, "CHESS AUTO BOT", 14, Ui.GOLD);
         title.setLetterSpacing(0.08f);
-        title.setPadding(Ui.dp(this, 4), Ui.dp(this, 8), 0, Ui.dp(this, 8));
-        bar.addView(title);
-        TextView close = Ui.text(this, "✕", 18, Ui.TEXT, true);
-        close.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, -2, 1);
+        tlp.setMarginStart(Ui.dp(this, 8));
+        bar.addView(title, tlp);
+        ImageView close = new ImageView(this);
+        close.setImageResource(R.drawable.ic_close);
+        int cp = Ui.dp(this, 7);
+        close.setPadding(cp, cp, cp, cp);
         close.setBackground(Ui.bg(new int[]{0x33FFFFFF, 0x22FFFFFF}, Ui.dp(this, 18), 0, 0));
-        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 36), Gravity.END | Gravity.CENTER_VERTICAL);
-        bar.addView(close, clp);
         close.setOnClickListener(v -> collapse());
+        bar.addView(close, new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 34)));
         root.addView(bar);
 
-        boardView = new BoardView(this);
-        FrameLayout boardFrame = new FrameLayout(this);
-        boardFrame.setBackground(Ui.bg(new int[]{0xFF5A3D24, 0xFF3A2614}, Ui.dp(this, 8), 0, 0));
-        int bp = Ui.dp(this, 4);
-        boardFrame.setPadding(bp, bp, bp, bp);
-        boardFrame.addView(boardView);
-        root.addView(boardFrame);
-
-        status = Ui.text(this, "", 14, Ui.TEXT, true);
-        status.setPadding(Ui.dp(this, 4), Ui.dp(this, 10), 0, Ui.dp(this, 2));
-        root.addView(status);
-        analysis = Ui.text(this, "", 11.5f, Ui.MUTED, false);
-        analysis.setPadding(Ui.dp(this, 4), 0, 0, Ui.dp(this, 10));
-        analysis.setLineSpacing(0, 1.15f);
-        root.addView(analysis);
-
-        runBtn = Ui.button(this, "", Ui.GREEN, 16);
-        runBtn.setOnClickListener(v -> game.setBotActive(!game.botActive));
-        root.addView(runBtn, new LinearLayout.LayoutParams(-1, Ui.dp(this, 50)));
-
-        LinearLayout row = new LinearLayout(this);
-        row.setPadding(0, Ui.dp(this, 8), 0, 0);
-        newBtn = Ui.button(this, "", Ui.DARK, 12.5f);
-        flipBtn = Ui.button(this, "", Ui.DARK, 12.5f);
-        oppBtn = Ui.button(this, "", Ui.DARK, 12.5f);
-        newBtn.setOnClickListener(v -> game.newGame());
-        flipBtn.setOnClickListener(v -> game.flip());
-        oppBtn.setOnClickListener(v -> game.toggleOpponent());
-        int gap = Ui.dp(this, 6);
-        TextView[] bs = {newBtn, flipBtn, oppBtn};
-        for (int i = 0; i < 3; i++) {
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1);
-            if (i > 0) lp.leftMargin = gap;
-            bs[i].setSingleLine(true);
-            row.addView(bs[i], lp);
-        }
-        root.addView(row);
+        // 봇 작동하기
+        runBtn = new Ui.IconButton(this, 16, 20);
+        runBtn.setOnClickListener(v -> { botOn = !botOn; updateTexts(); });
+        root.addView(runBtn, new LinearLayout.LayoutParams(-1, Ui.dp(this, 52)));
 
         panel = root;
-        panelLp = params(w);
+        panelLp = params(w, WindowManager.LayoutParams.WRAP_CONTENT);
         panelLp.x = (dm.widthPixels - w) / 2;
-        panelLp.y = Ui.dp(this, 80);
+        panelLp.y = Ui.dp(this, 100);
         dragOn(bar, panel, panelLp, null);
-        dragOn(title, panel, panelLp, null);
+        updateTexts();
     }
 
     private void buildBubble() {
         bubble = new BubbleView(this);
         int s = Ui.dp(this, 64);
-        bubbleLp = params(s);
-        bubbleLp.height = s;
+        bubbleLp = params(s, s);
         dragOn(bubble, bubble, bubbleLp, this::expand);
     }
 
-    /** 드래그 이동 + 탭 감지 */
+    /** 끌어서 이동 + 탭 감지 */
     @SuppressLint("ClickableViewAccessibility")
     private void dragOn(View handle, View win, WindowManager.LayoutParams lp, Runnable onTap) {
         final int slop = ViewConfiguration.get(this).getScaledTouchSlop();
@@ -196,30 +162,17 @@ public class OverlayService extends Service {
                     float dx = e.getRawX() - st[0], dy = e.getRawY() - st[1];
                     if (!moved[0] && Math.hypot(dx, dy) > slop) moved[0] = true;
                     if (moved[0] && win.isAttachedToWindow()) {
-                        lp.x = (int) (st[2] + dx);
+                        lp.x = (int) Math.max(0, st[2] + dx);
                         lp.y = (int) Math.max(0, st[3] + dy);
                         wm.updateViewLayout(win, lp);
                     }
                     return true;
                 case MotionEvent.ACTION_UP:
                     if (!moved[0] && onTap != null) onTap.run();
-                    else if (moved[0] && win == bubble) snapBubble();
                     return true;
             }
             return false;
         });
-    }
-
-    private void snapBubble() {
-        int sw = getResources().getDisplayMetrics().widthPixels;
-        bubbleLp.x = bubbleLp.x + bubbleLp.width / 2 < sw / 2 ? Ui.dp(this, 6) : sw - bubbleLp.width - Ui.dp(this, 6);
-        if (bubble.isAttachedToWindow()) wm.updateViewLayout(bubble, bubbleLp);
-    }
-
-    private void showPanel() {
-        if (!panel.isAttachedToWindow()) wm.addView(panel, panelLp);
-        expanded = true;
-        updateTexts();
     }
 
     private void collapse() {
@@ -227,32 +180,19 @@ public class OverlayService extends Service {
         bubbleLp.y = panelLp.y;
         removeSafe(panel);
         if (!bubble.isAttachedToWindow()) wm.addView(bubble, bubbleLp);
-        snapBubble();
-        expanded = false;
-        bubble.setActive(game.botActive);
     }
 
     private void expand() {
         removeSafe(bubble);
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        panelLp.x = Math.max(0, Math.min(dm.widthPixels - panelLp.width, bubbleLp.x - panelLp.width / 2));
-        panelLp.y = Math.max(0, Math.min(dm.heightPixels - Ui.dp(this, 560), bubbleLp.y));
-        showPanel();
+        panelLp.x = Math.max(0, Math.min(dm.widthPixels - panelLp.width, bubbleLp.x + bubbleLp.width - panelLp.width));
+        panelLp.y = bubbleLp.y;
+        if (!panel.isAttachedToWindow()) wm.addView(panel, panelLp);
     }
 
     private void updateTexts() {
-        if (game == null || runBtn == null) return;
-        boolean on = game.botActive;
-        runBtn.setText(on ? "⏸  " + I18n.t(this, I18n.BOT_OFF) : "▶  " + I18n.t(this, I18n.BOT_ON));
-        Ui.setColors(runBtn, on ? Ui.RED : Ui.GREEN);
-        newBtn.setText(I18n.t(this, I18n.NEW_GAME));
-        flipBtn.setText(I18n.t(this, I18n.FLIP));
-        oppBtn.setText(I18n.t(this, game.oppAI ? I18n.OPP_AI : I18n.OPP_HUMAN));
-        status.setText(game.status());
-        analysis.setText(game.analysis());
-        int dir = I18n.rtl(this) ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR;
-        status.setLayoutDirection(dir);
-        analysis.setLayoutDirection(dir);
-        if (!expanded) bubble.setActive(on);
+        if (runBtn == null) return;
+        runBtn.set(botOn ? R.drawable.ic_stop : R.drawable.ic_play,
+                I18n.t(this, botOn ? I18n.BOT_OFF : I18n.BOT_ON), botOn ? Ui.RED : Ui.GREEN);
     }
 }

@@ -2,7 +2,7 @@
 
 > 🚀 이 저장소에는 **어몽어스 팬 제작 웹 게임**도 들어있습니다 → [`amongus/`](amongus/README.md) (`cd amongus && npm start`)
 >
-> ♞ **안드로이드 체스 봇 앱** → [`chessbot/`](chessbot/README.md)
+> **안드로이드 체스 봇 앱** → [`chessbot/`](chessbot/README.md)
 
 브라우저에서 바로 실행되는 3D 비행 시뮬레이터입니다.
 **설계도에서 기체를 직접 만들고**, 실제 공기역학·중력·부력이 적용된 하늘을 날 수 있습니다.

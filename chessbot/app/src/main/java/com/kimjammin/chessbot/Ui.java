@@ -6,13 +6,15 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
+import android.view.View;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 final class Ui {
-    static final int GOLD = 0xFFF5C451, NAVY = 0xFF0B1224, PANEL = 0xFF121A30, TEXT = 0xFFE8ECF5, MUTED = 0xFF8D97B0;
+    static final int GOLD = 0xFFF5C451, NAVY = 0xFF0B1224, TEXT = 0xFFE8ECF5;
     static final int[] GREEN = {0xFF34D399, 0xFF10B981, 0xFF059669};
     static final int[] RED = {0xFFF87171, 0xFFEF4444, 0xFFB91C1C};
-    static final int[] GOLDS = {0xFFFFE08A, 0xFFF5C451, 0xFFD49B1F};
     static final int[] DARK = {0xFF26324F, 0xFF1B2540};
 
     static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
@@ -24,28 +26,44 @@ final class Ui {
         return g;
     }
 
-    static TextView text(Context c, String s, float sp, int color, boolean bold) {
+    static TextView text(Context c, String s, float sp, int color) {
         TextView t = new TextView(c);
         t.setText(s);
         t.setTextSize(sp);
         t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         return t;
     }
 
-    static TextView button(Context c, String s, int[] colors, float sp) {
-        TextView b = text(c, s, sp, 0xFFFFFFFF, true);
-        b.setGravity(Gravity.CENTER);
-        b.setClickable(true);
-        b.setFocusable(true);
-        setColors(b, colors);
-        int p = dp(c, 10);
-        b.setPadding(p, p, p, p);
-        return b;
+    static void setColors(View v, int[] colors) {
+        v.setBackground(new RippleDrawable(ColorStateList.valueOf(0x55FFFFFF),
+                bg(colors, dp(v.getContext(), 100), 0x33FFFFFF, dp(v.getContext(), 1)), null));
     }
 
-    static void setColors(TextView b, int[] colors) {
-        float r = dp(b.getContext(), 100);
-        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x55FFFFFF), bg(colors, r, 0x33FFFFFF, dp(b.getContext(), 1)), null));
+    /** 그림 아이콘 + 글자 버튼 (가운데 정렬) */
+    static final class IconButton extends LinearLayout {
+        final ImageView icon;
+        final TextView label;
+
+        IconButton(Context c, float sp, int iconDp) {
+            super(c);
+            setGravity(Gravity.CENTER);
+            setClickable(true);
+            setFocusable(true);
+            int p = dp(c, 10);
+            setPadding(p, p / 2, p, p / 2);
+            icon = new ImageView(c);
+            addView(icon, new LayoutParams(dp(c, iconDp), dp(c, iconDp)));
+            label = text(c, "", sp, 0xFFFFFFFF);
+            LayoutParams lp = new LayoutParams(-2, -2);
+            lp.setMarginStart(dp(c, 8));
+            addView(label, lp);
+        }
+
+        void set(int iconRes, String s, int[] colors) {
+            icon.setImageResource(iconRes);
+            label.setText(s);
+            setColors(this, colors);
+        }
     }
 }
