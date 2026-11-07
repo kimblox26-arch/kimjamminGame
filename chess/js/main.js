@@ -561,6 +561,32 @@
   });
   $('btnHome').addEventListener('click', showMenu);
 
+  // ---------- Chess Auto Bot(안드로이드 앱) 연동 ----------
+  // 판에 현재 국면을 접근성 라벨로 붙여 둔다: KJBOT|FEN|판 뒤집힘(0/1)|봇이 둘 차례(0/1)
+  boardEl.setAttribute('role', 'img');
+  let botLabel = '';
+  setInterval(() => {
+    if (!state) return;
+    let fen = '';
+    for (let r = 0; r < 8; r++) {
+      let e = 0;
+      for (let c = 0; c < 8; c++) {
+        const p = state.board[r * 8 + c];
+        if (!p) { e++; continue; }
+        if (e) { fen += e; e = 0; }
+        fen += p.color === 'w' ? p.type.toUpperCase() : p.type;
+      }
+      fen += (e || '') + (r < 7 ? '/' : '');
+    }
+    const cs = state.castling;
+    const cas = (cs.wK ? 'K' : '') + (cs.wQ ? 'Q' : '') + (cs.bK ? 'k' : '') + (cs.bQ ? 'q' : '') || '-';
+    const ep = state.ep >= 0 ? 'abcdefgh'[state.ep & 7] + (8 - (state.ep >> 3)) : '-';
+    fen += ` ${state.turn} ${cas} ${ep} ${state.half} ${state.full}`;
+    const ready = !gameEl.hidden && readyEl.hidden && veilEl.hidden && !busy && !over && humanSide(state.turn);
+    const label = `KJBOT|${fen}|${flipped ? 1 : 0}|${ready ? 1 : 0}`;
+    if (label !== botLabel) boardEl.setAttribute('aria-label', (botLabel = label));
+  }, 150);
+
   // ---------- 영상 찍기 ----------
   const btnRec = $('btnRec'), recTime = $('recTime');
   let recStart = 0, recTick = 0, toastTimer = 0;
