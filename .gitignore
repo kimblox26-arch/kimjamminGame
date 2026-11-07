@@ -1,5 +1,6 @@
-node_modules/
-dist/
-.DS_Store
 *.log
+.DS_Store
 .cache/
+chessbot/app/src/main/jniLibs/
+dist/
+node_modules/

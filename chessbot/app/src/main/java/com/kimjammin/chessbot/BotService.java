@@ -14,6 +14,7 @@ import android.view.accessibility.AccessibilityWindowInfo;
 import com.kimjammin.chessbot.engine.Board;
 import com.kimjammin.chessbot.engine.OpponentModel;
 import com.kimjammin.chessbot.engine.Search;
+import com.kimjammin.chessbot.engine.Stockfish;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -37,12 +38,22 @@ public class BotService extends AccessibilityService {
     private Board afterMine;
     private long lastTap;
     private boolean working;
+    private Stockfish sf;
+    private volatile boolean sfOk;
 
     @Override
     protected void onServiceConnected() {
         instance = this;
         prefs = getSharedPreferences("chessbot", MODE_PRIVATE);
         model.load(prefs.getString("model", ""));
+        // 앱에 들어 있는 Stockfish 시작 (없거나 실패하면 내장 엔진 사용)
+        exec.execute(() -> {
+            java.io.File f = new java.io.File(getApplicationInfo().nativeLibraryDir, "libstockfish.so");
+            if (!f.exists()) return;
+            int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 2));
+            sf = new Stockfish();
+            sfOk = sf.start(f.getAbsolutePath(), threads, 64);
+        });
         ui.post(loop);
     }
 
@@ -50,6 +61,7 @@ public class BotService extends AccessibilityService {
     public boolean onUnbind(android.content.Intent i) {
         instance = null;
         ui.removeCallbacks(loop);
+        if (sf != null) exec.execute(sf::stop);
         return super.onUnbind(i);
     }
 
@@ -81,14 +93,55 @@ public class BotService extends AccessibilityService {
         working = true;
         final Board copy = b.copy();
         exec.execute(() -> {
-            Search.Result r = search.think(copy, 800, 64, model, null);
+            int mv = sfOk ? stockfishMove(copy) : 0;
+            if (mv == 0) mv = search.think(copy, 800, 64, model, null).move;
+            final int move = mv;
             ui.post(() -> {
-                if (!active || r.move == 0) { working = false; return; }
+                if (!active || move == 0) { working = false; return; }
                 afterMine = b.copy();
-                afterMine.make(r.move);
-                play(m, r.move);
+                afterMine.make(move);
+                play(m, move);
             });
         });
+    }
+
+    /**
+     * Stockfish 로 최선의 수를 고른다. 상대 패턴을 알고 있으면 비슷하게 좋은 후보 중에서
+     * 상대가 습관적으로 실수하는 수순으로 이어지는 수를 고른다.
+     */
+    private int stockfishMove(Board b) {
+        try {
+            boolean known = false;
+            int[] l = new int[256];
+            int n = b.legal(l);
+            for (int i = 0; i < n && !known; i++) {
+                b.make(l[i]);
+                known = model.predictConfident(b) != 0;
+                b.unmake();
+            }
+            List<Stockfish.Line> ls = sf.analyse(b.toFen(), 1000, known ? 3 : 1);
+            if (ls.isEmpty() || ls.get(0).move == null) return 0;
+            int best = b.fromUci(ls.get(0).move), top = ls.get(0).score + 40;
+            if (!known || Math.abs(ls.get(0).score) > Stockfish.MATE - 1000) return best;
+            for (Stockfish.Line c : ls) {
+                if (c.move == null || c.score < ls.get(0).score - 30) continue;
+                int m = b.fromUci(c.move);
+                if (m == 0) continue;
+                b.make(m);
+                int pred = model.predictConfident(b);
+                if (pred != 0) {
+                    b.make(pred);
+                    List<Stockfish.Line> r = sf.analyse(b.toFen(), 250, 1); // 다시 내 차례 → 내 기준 점수
+                    b.unmake();
+                    if (!r.isEmpty() && r.get(0).score > top) { top = r.get(0).score; best = m; }
+                }
+                b.unmake();
+            }
+            return best;
+        } catch (java.io.IOException | RuntimeException e) {
+            sfOk = false;
+            return 0;
+        }
     }
 
     /** 상대가 둔 수를 찾아 패턴으로 저장 */

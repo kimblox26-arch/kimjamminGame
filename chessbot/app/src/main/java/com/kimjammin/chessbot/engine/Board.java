@@ -101,6 +101,35 @@ public final class Board {
         return h;
     }
 
+    public String toFen() {
+        StringBuilder sb = new StringBuilder();
+        for (int r = 7; r >= 0; r--) {
+            int e = 0;
+            for (int f = 0; f < 8; f++) {
+                int pc = sq[r * 16 + f];
+                if (pc == 0) { e++; continue; }
+                if (e > 0) { sb.append(e); e = 0; }
+                char c = " pnbrqk".charAt(Math.abs(pc));
+                sb.append(pc > 0 ? Character.toUpperCase(c) : c);
+            }
+            if (e > 0) sb.append(e);
+            if (r > 0) sb.append('/');
+        }
+        String cs = ((castle & 1) != 0 ? "K" : "") + ((castle & 2) != 0 ? "Q" : "")
+                + ((castle & 4) != 0 ? "k" : "") + ((castle & 8) != 0 ? "q" : "");
+        sb.append(side == 1 ? " w " : " b ").append(cs.isEmpty() ? "-" : cs).append(' ')
+                .append(ep >= 0 ? sqName(ep) : "-").append(' ').append(half).append(' ').append(fullmove);
+        return sb.toString();
+    }
+
+    /** UCI 문자열(e2e4, e7e8q) → 합법수 (없으면 0) */
+    public int fromUci(String u) {
+        int[] l = new int[256];
+        int n = legal(l);
+        for (int i = 0; i < n; i++) if (uci(l[i]).equals(u)) return l[i];
+        return 0;
+    }
+
     public static int sqIndex(String s) { return (s.charAt(1) - '1') * 16 + (s.charAt(0) - 'a'); }
     public static String sqName(int s) { return "" + (char) ('a' + (s & 7)) + (char) ('1' + (s >> 4)); }
 

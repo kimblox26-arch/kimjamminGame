@@ -19,6 +19,10 @@ android {
             signingConfig signingConfigs.debug
         }
     }
+    packaging {
+        // Stockfish 실행 파일(libstockfish.so)을 설치 시 풀어 둬야 실행할 수 있다
+        jniLibs { useLegacyPackaging true }
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
