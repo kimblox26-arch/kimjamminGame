@@ -111,6 +111,12 @@ add('rleg', 'rleg_robot', '로봇 다리', 900, { robot: true });
  ['emote_sit', '앉기', 30], ['emote_spin', '빙글빙글', 80], ['emote_flex', '근육 자랑', 60]]
   .forEach(([id, n, p]) => add('emote', id, n, p));
 
+// 장비 (보유하면 게임 속 가방(핫바)에 들어간다)
+[['gear_sword', '클래식 검', 150, '휘둘러서 블록을 부숴요.'], ['gear_gravity', '중력 코일', 300, '들고 있으면 몸이 가벼워져 높이 뛰어요.'],
+ ['gear_speed', '스피드 코일', 250, '들고 있으면 두 배로 빨리 달려요.'], ['gear_rocket', '로켓 발사기', 600, '로켓을 쏴서 날아오르거나 블록을 부숴요.'],
+ ['gear_builder', '블록 빌더', 200, '화면을 눌러 블록을 쌓아요.'], ['gear_balloon', '빨간 풍선', 120, '들고 있으면 천천히 떨어져요.']]
+  .forEach(([id, n, p, d]) => add('gear', id, n, p, { desc: d }));
+
 export const ITEMS = L;
 export const ITEM = Object.fromEntries(L.map(i => [i.id, i]));
 
@@ -127,7 +133,24 @@ export const CATS = [
   { id: 'acc', name: '장신구', subs: [['hat', '모자'], ['hair', '헤어'], ['faceacc', '얼굴'], ['neck', '목'], ['back', '등'], ['aura', '이펙트']] },
   { id: 'anim', name: '애니메이션', subs: [['anim', '애니메이션']] },
   { id: 'emote', name: '감정 표현', subs: [['emote', '감정 표현']] },
+  { id: 'gear', name: '장비', subs: [['gear', '장비']] },
 ];
 
 export const CREATORS = ['Koblox', 'BlockMaker', 'K-Studio', 'PixelHan', 'Hangul_Dev', 'Koblox'];
 export const creatorOf = it => CREATORS[(it.id.length + it.price) % CREATORS.length];
+
+// 배지 (게임 속 행동으로 얻는다)
+export const BADGES = [
+  { id: 'welcome', name: 'Test 첫 방문', desc: 'Test 에 처음 들어왔어요.', color: '#3b82ff' },
+  { id: 'jumper', name: '점프 마스터', desc: '점프를 100번 했어요.', color: '#22c55e' },
+  { id: 'sky', name: '하늘 높이', desc: '높이 50 스터드까지 올라갔어요.', color: '#38bdf8' },
+  { id: 'dancer', name: '첫 감정 표현', desc: '게임에서 감정 표현을 했어요.', color: '#f472b6' },
+  { id: 'oops', name: '앗 부서졌다', desc: '캐릭터가 10번 부서졌어요.', color: '#ef4444' },
+  { id: 'builder', name: '건축가', desc: '블록 빌더로 블록을 50개 쌓았어요.', color: '#f59e0b' },
+  { id: 'boom', name: '로켓 점프', desc: '로켓 폭발로 날아올랐어요.', color: '#fb923c' },
+  { id: 'creator', name: '크리에이터', desc: '스튜디오에서 체험을 처음 게시했어요.', color: '#a855f7' },
+  { id: 'coin', name: '반짝반짝', desc: '코인을 처음 주웠어요.', color: '#facc15' },
+  { id: 'finish', name: '완주', desc: '체크포인트를 5개 지났어요.', color: '#14b8a6' },
+  { id: 'shopper', name: '첫 쇼핑', desc: '마켓플레이스에서 아이템을 처음 샀어요.', color: '#ec4899' },
+  { id: 'rich', name: '코벅스 부자', desc: '코벅스를 100,000 개 모았어요.', color: '#eab308' },
+];

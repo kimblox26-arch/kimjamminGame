@@ -22,6 +22,13 @@ export const sfx = {
   buy: () => { tone({ f0: 660, dur: 0.08, type: 'triangle', vol: 0.2 }); tone({ f0: 990, dur: 0.14, type: 'triangle', vol: 0.2, delay: 0.08 }); },
   coin: () => { tone({ f0: 988, dur: 0.07, type: 'square', vol: 0.08 }); tone({ f0: 1318, dur: 0.16, type: 'square', vol: 0.08, delay: 0.07 }); },
   intro: () => [262, 330, 392, 523].forEach((f, i) => tone({ f0: f, dur: 0.25, type: 'triangle', vol: 0.15, delay: i * 0.11 })),
+  swing: () => tone({ f0: 900, f1: 250, dur: 0.18, type: 'sawtooth', vol: 0.05 }),
+  shoot: () => tone({ f0: 200, f1: 900, dur: 0.25, type: 'sawtooth', vol: 0.06 }),
+  boom: () => { tone({ f0: 120, f1: 30, dur: 0.6, type: 'sawtooth', vol: 0.25 }); tone({ f0: 60, f1: 20, dur: 0.8, type: 'square', vol: 0.15 }); },
+  place: () => tone({ f0: 520, f1: 380, dur: 0.07, type: 'triangle', vol: 0.15 }),
+  remove: () => tone({ f0: 300, f1: 140, dur: 0.1, type: 'triangle', vol: 0.15 }),
+  badge: () => [523, 659, 784, 1047].forEach((f, i) => tone({ f0: f, dur: 0.3, type: 'triangle', vol: 0.14, delay: i * 0.09 })),
+  shutter: () => tone({ f0: 2000, f1: 600, dur: 0.08, type: 'square', vol: 0.06 }),
   notify: () => tone({ f0: 740, f1: 990, dur: 0.15, type: 'sine', vol: 0.15 }),
 };
 export function unlockAudio() { try { ac().resume(); } catch { } }

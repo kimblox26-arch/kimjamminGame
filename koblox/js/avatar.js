@@ -1,9 +1,12 @@
 // 블록 캐릭터 만들기 + 애니메이션
 import * as THREE from 'three';
 import { ITEM, DEFAULT_EQUIP } from './items.js';
+import { rboxGeo, disposeTree } from './gfx.js';
 
 const texCache = new Map();
-const lam = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
+const lam = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0, ...o });
+const gold = c => lam(c, { metalness: 0.9, roughness: 0.25 });
+const rb = (w, h, d, m, r = 0.12) => new THREE.Mesh(rboxGeo(w, h, d, r), m);
 
 function canvasTex(key, w, h, draw) {
   if (texCache.has(key)) return texCache.get(key);
@@ -120,7 +123,7 @@ function buildHat(it) {
   switch (it.kind) {
     case 'cap': { const d = dome(0.7, m); d.scale.y = 0.6; return grp(at(d, 0, -0.08, 0), at(cyl(0.7, 0.7, 0.12, m), 0, -0.08, 0), at(box(1.0, 0.07, 0.65, m), 0, -0.05, 0.85)); }
     case 'tophat': return grp(at(cyl(0.68, 0.68, 0.06, m), 0, 0.03, 0), at(cyl(0.48, 0.48, 1.0, m), 0, 0.55, 0), at(cyl(0.49, 0.49, 0.16, lam(0xb01e1e)), 0, 0.15, 0));
-    case 'crown': { const g = grp(at(cyl(0.6, 0.6, 0.3, lam(it.color, { emissive: 0x332200 }), 8), 0, 0.15, 0)); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; g.add(at(cone(0.12, 0.35, lam(it.color, { emissive: 0x332200 }), 4), Math.cos(a) * 0.52, 0.45, Math.sin(a) * 0.52)); g.add(at(sph(0.07, lam(i % 2 ? 0xff2244 : 0x22aaff), 8), Math.cos(a) * 0.6, 0.15, Math.sin(a) * 0.6)); } return g; }
+    case 'crown': { const g = grp(at(cyl(0.6, 0.6, 0.3, gold(it.color), 8), 0, 0.15, 0)); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; g.add(at(cone(0.12, 0.35, gold(it.color), 4), Math.cos(a) * 0.52, 0.45, Math.sin(a) * 0.52)); g.add(at(sph(0.07, lam(i % 2 ? 0xff2244 : 0x22aaff), 8), Math.cos(a) * 0.6, 0.15, Math.sin(a) * 0.6)); } return g; }
     case 'santa': { const c = at(cone(0.62, 1.3, m), 0, 0.62, -0.1, -0.35, 0, 0); return grp(c, at(new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.14, 8, 24), w), 0, 0.02, 0, Math.PI / 2), at(sph(0.17, w), 0, 1.1, -0.55)); }
     case 'beanie': return grp(at(dome(0.68, m), 0, -0.1, 0), at(cyl(0.7, 0.7, 0.22, lam(0xffffff)), 0, -0.1, 0), at(sph(0.16, w), 0, 0.6, 0));
     case 'wizard': { const g = grp(at(cyl(0.95, 0.95, 0.05, m), 0, 0.02, 0), at(cone(0.55, 1.6, m), 0, 0.82, 0, 0, 0, 0.12)); g.add(at(cone(0.08, 0.16, lam(0xffe14d, { emissive: 0x665500 }), 5), 0.2, 0.7, 0.42, Math.PI / 2)); return g; }
@@ -170,7 +173,7 @@ function buildNeck(it) {
   switch (it.kind) {
     case 'scarf': { const t = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.16, 8, 20), m); t.scale.set(1.15, 0.85, 1); return grp(at(t, 0, -0.05, 0, Math.PI / 2), at(box(0.3, 0.9, 0.12, m), 0.35, -0.5, 0.55, 0.1, 0, 0.15)); }
     case 'bowtie': return grp(at(cone(0.16, 0.3, m, 4), -0.14, -0.15, 0.53, 0, 0, Math.PI / 2), at(cone(0.16, 0.3, m, 4), 0.14, -0.15, 0.53, 0, 0, -Math.PI / 2), at(box(0.1, 0.12, 0.1, m), 0, -0.15, 0.55));
-    case 'chain': { const t = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.05, 6, 24), lam(it.color, { emissive: 0x332200 })); t.scale.set(1, 1.5, 1); return grp(at(t, 0, -0.35, 0.12, 1.25), at(box(0.22, 0.26, 0.06, lam(it.color, { emissive: 0x332200 })), 0, -0.82, 0.54)); }
+    case 'chain': { const t = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.05, 6, 24), gold(it.color)); t.scale.set(1, 1.5, 1); return grp(at(t, 0, -0.35, 0.12, 1.25), at(box(0.22, 0.26, 0.06, gold(it.color)), 0, -0.82, 0.54)); }
   }
   return new THREE.Group();
 }
@@ -207,7 +210,7 @@ function buildAura(it) {
   const size = it.id === 'aura_fire' ? 0.45 : it.id === 'aura_bubble' ? 0.35 : 0.25;
   const tex = canvasTex('aura|' + it.id, 32, 32, (g) => {
     if (it.id === 'aura_bubble') { g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(16, 16, 12, 0, 7); g.stroke(); }
-    else if (it.id === 'aura_heart') { g.fillStyle = '#fff'; g.font = '28px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('♥', 16, 18); }
+    else if (it.id === 'aura_heart') { g.fillStyle = '#fff'; g.beginPath(); g.moveTo(16, 28); g.bezierCurveTo(-2, 16, 4, 2, 16, 11); g.bezierCurveTo(28, 2, 34, 16, 16, 28); g.fill(); }
     else { const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, '#fff'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); }
   });
   const mat = new THREE.PointsMaterial({ color: it.color, size, map: tex, transparent: true, depthWrite: false, blending: it.id === 'aura_bubble' || it.id === 'aura_heart' ? THREE.NormalBlending : THREE.AdditiveBlending });
@@ -232,20 +235,21 @@ export function resolveLook(equip) {
     back: e.back && ITEM[e.back], aura: e.aura && ITEM[e.aura], anim: g('anim') };
 }
 
-export function buildAvatar(equip) {
+export function buildAvatar(equip, scales = {}) {
   const L = resolveLook(equip);
-  const skin = L.skin.color, b = L.body, hs = L.head.size;
+  const sc0 = { height: 1, width: 1, head: 1, ...scales };
+  const skin = L.skin.color, b = { leg: L.body.leg * sc0.height, torso: L.body.torso * sc0.height, w: L.body.w * sc0.width }, hs = L.head.size.map(v => v * sc0.head);
   const legH = 2 * b.leg, torH = 2 * b.torso, W = b.w;
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
   const shirt = L.shirt, pants = L.pants;
   const tFront = lam(0xffffff, { map: shirtTex(shirt, 'front') }), tSide = lam(0xffffff, { map: shirtTex(shirt, 'side') });
-  const torso = box(2 * W, torH, 1, [tSide, tSide, tSide, tSide, tFront, tSide]); torso.position.y = legH + torH / 2; body.add(torso);
+  const torso = rb(2 * W, torH, 1, [tSide, tSide, tSide, tSide, tFront, tSide]); torso.position.y = legH + torH / 2; body.add(torso);
   const armMat = lam(0xffffff, { map: shirtTex(shirt, 'arm') });
   const handMat = lam(skin);
   const mkArm = s => {
     const p = new THREE.Group(); p.position.set(s * (W + 0.5 * W), legH + torH - 0.5 * W, 0);
-    const sleeve = box(W, torH * 0.7, 1, armMat); sleeve.position.y = -torH * 0.35 + 0.5 * W;
-    const hand = box(W * 0.98, torH * 0.3, 0.98, handMat); hand.position.y = -torH * 0.85 + 0.5 * W;
+    const sleeve = rb(W, torH * 0.7, 1, armMat, 0.14); sleeve.position.y = -torH * 0.35 + 0.5 * W;
+    const hand = rb(W * 0.96, torH * 0.32, 0.96, handMat, 0.16); hand.position.y = -torH * 0.85 + 0.5 * W;
     p.add(sleeve, hand); body.add(p); return p;
   };
   const la = mkArm(1), ra = mkArm(-1);
@@ -260,12 +264,12 @@ export function buildAvatar(equip) {
     } else if (special?.robot) {
       const mt = lam(0x9aa4b2), dk = lam(0x4a5260);
       p.add(at(box(W * 0.9, legH * 0.45, 0.9, mt), 0, -legH * 0.23, 0), at(cyl(0.22, 0.22, legH * 0.5, dk, 10), 0, -legH * 0.62, 0), at(box(W, 0.28, 1.05, mt), 0, -legH + 0.14, 0.05));
-    } else { const l = box(W, legH, 1, legMat); l.position.y = -legH / 2; p.add(l); }
+    } else { const l = rb(W, legH, 1, legMat, 0.12); l.position.y = -legH / 2; p.add(l); }
     body.add(p); return p;
   };
   const ll = mkLeg(1), rl = mkLeg(-1, L.rleg);
   const head = new THREE.Group(); head.position.y = legH + torH; body.add(head);
-  const headMesh = box(hs[0], hs[1], hs[2], headMats(skin, L.face.id, L.head.headless)); headMesh.position.y = hs[1] / 2 + 0.02; head.add(headMesh);
+  const headMesh = rb(hs[0], hs[1], hs[2], headMats(skin, L.face.id, L.head.headless), Math.min(...hs) * 0.2); headMesh.position.y = hs[1] / 2 + 0.02; head.add(headMesh);
   const neck = box(0.5 * W, 0.15, 0.5, handMat); neck.position.y = 0.02; if (!L.head.headless) head.add(neck);
   const sc = hs[0] / 1.2;
   if (L.hair && !L.head.headless) { const h = buildHair(L.hair); h.scale.set(hs[0] / 1.2, hs[1] / 1.2, hs[2] / 1.2); h.position.y = hs[1]; head.add(h); }
@@ -278,11 +282,11 @@ export function buildAvatar(equip) {
   if (L.aura) { aura = buildAura(L.aura); root.add(aura); }
   root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
   const height = legH + torH + hs[1];
-  return { root, body, torso, head, la, ra, ll, rl, back, aura, legH, torH, height, anim: L.anim.id, look: L, t: 0, phase: 0 };
+  return { root, body, torso, head, la, ra, ll, rl, back, aura, legH, torH, height, handY: -torH + 0.5 * W - 0.05, W, anim: L.anim.id, look: L, t: 0, phase: 0 };
 }
 
 export function disposeAvatar(av) {
-  av.root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => m.dispose()); });
+  disposeTree(av.root);
 }
 
 // st: { speed(0..), air(bool), emote(id|null), emoteT }
@@ -317,6 +321,11 @@ export function animateAvatar(av, dt, st = {}) {
     if (av.anim === 'anim_robot') { head.rotation.y = Math.round(Math.sin(t * 0.7) * 2) * 0.25; }
   }
   if (st.emote && !st.air) emotePose(av, st.emote, st.emoteT || 0);
+  if (st.tool) {
+    ra.rotation.set(-Math.PI / 2 + (st.air ? -0.2 : 0), 0, 0);
+    if (st.toolT > 0) { const k = Math.sin(Math.min(st.toolT / 0.3, 1) * Math.PI); ra.rotation.x = -Math.PI / 2 - k * 1.3; ra.rotation.z = k * 0.4; }
+    if (st.tool === 'gear_balloon') ra.rotation.set(-2.9, 0, 0);
+  }
   if (av.back) av.back.traverse(o => {
     if (o.userData.flap) o.rotation.y = o.userData.flap * (0.35 + Math.sin(t * 3) * 0.15);
     if (o.userData.cape) o.rotation.x = 0.12 + Math.min(sp, 1) * 0.7 + Math.sin(t * 4) * 0.04 + (st.air ? 0.4 : 0);
@@ -335,4 +344,31 @@ function emotePose(av, id, e) {
     case 'emote_spin': body.rotation.y = e * 10; la.rotation.z = 1.4; ra.rotation.z = -1.4; break;
     case 'emote_flex': la.rotation.z = 1.6; ra.rotation.z = -1.6; la.rotation.x = ra.rotation.x = 0; la.rotation.y = -1.2 - Math.sin(e * 8) * 0.2; ra.rotation.y = 1.2 + Math.sin(e * 8) * 0.2; break;
   }
+}
+
+// ── 장비(손에 드는 도구): 손 위치 기준, -y 방향(팔 끝 쪽)으로 뻗는다 ──
+export function buildGear(id) {
+  const g = new THREE.Group();
+  const coil = (col) => { for (let i = 0; i < 6; i++) { const t = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.06, 8, 18), lam(col, { metalness: 0.6, roughness: 0.3 })); t.rotation.x = Math.PI / 2; t.position.y = -0.2 - i * 0.14; g.add(t); } };
+  switch (id) {
+    case 'gear_sword':
+      g.add(at(cyl(0.09, 0.09, 0.6, lam(0x4a2a12), 8), 0, 0, 0), at(box(0.7, 0.12, 0.16, gold(0xd8a93a)), 0, -0.33, 0),
+        at(box(0.18, 2.6, 0.06, lam(0xdfe7f2, { metalness: 0.9, roughness: 0.15 })), 0, -1.7, 0), at(cone(0.09, 0.3, lam(0xdfe7f2, { metalness: 0.9, roughness: 0.15 }), 4), 0, -3.15, 0, Math.PI));
+      break;
+    case 'gear_gravity': coil(0x8a4bff); break;
+    case 'gear_speed': coil(0xff3b3b); break;
+    case 'gear_rocket':
+      g.add(at(cyl(0.3, 0.3, 2.6, lam(0x3d7a3a), 14), 0.25, -0.6, 0.35), at(cyl(0.34, 0.34, 0.2, lam(0x222222), 14), 0.25, -1.95, 0.35), at(box(0.15, 0.5, 0.15, lam(0x222222)), 0.2, -0.1, 0.1));
+      break;
+    case 'gear_builder':
+      g.add(at(cyl(0.07, 0.07, 1.1, lam(0x6b4423), 8), 0, -0.4, 0), at(box(0.7, 0.35, 0.35, lam(0x2f6fe4, { metalness: 0.3 })), 0, -1.0, 0), at(box(0.3, 0.3, 0.3, lam(0xffcc33)), 0, -1.0, 0.25));
+      break;
+    case 'gear_balloon': {
+      g.add(at(cyl(0.015, 0.015, 4, lam(0xffffff), 4), 0, -2, 0));
+      const b = sph(0.9, lam(0xff2e4d, { roughness: 0.2 }), 18); b.scale.set(1, 1.15, 1); b.position.y = -4.8; g.add(b);
+      break;
+    }
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  return g;
 }

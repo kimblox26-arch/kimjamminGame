@@ -1,6 +1,9 @@
 // 아이템/아바타/게임 썸네일을 3D로 찍어 이미지로 만든다
 import * as THREE from 'three';
-import { buildAvatar, animateAvatar, disposeAvatar, drawFace } from './avatar.js';
+import { buildAvatar, animateAvatar, disposeAvatar, drawFace, buildGear } from './avatar.js';
+import { envFromSky, disposeTree, gfxProfile } from './gfx.js';
+import { buildWorld, TEST_PLACE } from './world.js';
+import { S } from './store.js';
 import { DEFAULT_EQUIP } from './items.js';
 
 let R, scene, cam;
@@ -8,9 +11,10 @@ function init() {
   if (R) return;
   const c = document.createElement('canvas');
   R = new THREE.WebGLRenderer({ canvas: c, antialias: true, alpha: true, preserveDrawingBuffer: true });
-  R.setSize(256, 256, false); R.setClearColor(0x000000, 0); R.outputColorSpace = THREE.SRGBColorSpace;
+  R.setSize(256, 256, false); R.setClearColor(0x000000, 0); R.outputColorSpace = THREE.SRGBColorSpace; R.toneMapping = THREE.ACESFilmicToneMapping;
   scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x777788, 1.6));
+  scene.environment = envFromSky(R, { top: '#9fb4d8', hor: '#e8eef8', bot: '#8a8d94' });
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x777788, 0.8));
   const d = new THREE.DirectionalLight(0xffffff, 1.4); d.position.set(3, 6, 8); scene.add(d);
   cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
 }
@@ -31,7 +35,7 @@ function shoot(av, frame) {
 
 export function avatarShot(equip, frame = 'full') {
   init();
-  const av = buildAvatar(equip); animateAvatar(av, 0.016, {});
+  const av = buildAvatar(equip, S.scales); animateAvatar(av, 0.016, {});
   av.root.rotation.y = frame === 'head' ? 0.35 : 0.3;
   return shoot(av, frame);
 }
@@ -43,6 +47,13 @@ export function itemThumb(it) {
   let url;
   if (it.slot === 'skin') url = swatch(it.color);
   else if (it.slot === 'face') url = faceSwatch(it.id);
+  else if (it.slot === 'gear') {
+    init();
+    const g = buildGear(it.id); g.rotation.set(0.5, 0.6, 2.3); scene.add(g);
+    const box = new THREE.Box3().setFromObject(g), c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() / 2;
+    cam.position.set(c.x, c.y, c.z + r / Math.tan(THREE.MathUtils.degToRad(15)) * 1.05); cam.lookAt(c);
+    R.render(scene, cam); url = R.domElement.toDataURL('image/png'); scene.remove(g); disposeTree(g);
+  }
   else {
     init();
     const eq = { ...DEFAULT_EQUIP, hair: null };
@@ -74,22 +85,40 @@ function faceSwatch(id) {
 }
 
 // 게임 썸네일: 파란 하늘 + 회색 바닥 + 캐릭터
+// 사용자가 만든 체험 썸네일: 월드를 위에서 비스듬히 찍는다
+const placeCache = new Map();
+export function placeThumb(place, w = 480, h = 270) {
+  const key = place.id + '|' + place.updated;
+  if (placeCache.has(key)) return placeCache.get(key);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const r = new THREE.WebGLRenderer({ canvas: c, antialias: true, preserveDrawingBuffer: true });
+  r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; r.shadowMap.enabled = true;
+  const sc = new THREE.Scene(), prof = gfxProfile(6); prof.shadowRange = 120;
+  const world = buildWorld(sc, place, prof, r);
+  const box = new THREE.Box3();
+  (place.parts || []).forEach(p => box.expandByPoint(new THREE.Vector3(...p.p)));
+  if (box.isEmpty()) box.set(new THREE.Vector3(-10, 0, -10), new THREE.Vector3(10, 4, 10));
+  const ctr = box.getCenter(new THREE.Vector3()), size = Math.max(16, box.getSize(new THREE.Vector3()).length());
+  world.follow(ctr);
+  const cm = new THREE.PerspectiveCamera(45, w / h, 0.5, 3000); cm.position.set(ctr.x + size * 0.55, ctr.y + size * 0.45, ctr.z + size * 0.75); cm.lookAt(ctr);
+  r.render(sc, cm);
+  const url = c.toDataURL('image/jpeg', 0.85);
+  world.dispose(); r.dispose(); r.forceContextLoss?.();
+  placeCache.set(key, url);
+  return url;
+}
+
 export function gameThumb(equip, w = 480, h = 270) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const r = new THREE.WebGLRenderer({ canvas: c, antialias: true, preserveDrawingBuffer: true });
-  r.outputColorSpace = THREE.SRGBColorSpace;
-  const sc = new THREE.Scene();
-  const sky = document.createElement('canvas'); sky.width = 2; sky.height = 128; const g = sky.getContext('2d');
-  const gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, '#2f8cff'); gr.addColorStop(1, '#cfe9ff'); g.fillStyle = gr; g.fillRect(0, 0, 2, 128);
-  const st = new THREE.CanvasTexture(sky); st.colorSpace = THREE.SRGBColorSpace; sc.background = st;
-  sc.add(new THREE.HemisphereLight(0xe6f3ff, 0x6b6f76, 1.3));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(6, 12, 8); sc.add(sun);
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(300, 1, 300), new THREE.MeshLambertMaterial({ color: 0x8c9098 })); floor.position.y = -0.5; sc.add(floor);
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(8, 0.6, 8), new THREE.MeshLambertMaterial({ color: 0x5d626b })); pad.position.y = 0.3; sc.add(pad);
-  const av = buildAvatar(equip); av.root.position.y = 0.6; av.root.rotation.y = 0.4; animateAvatar(av, 0.016, { emote: 'emote_wave', emoteT: 0.1 }); sc.add(av.root);
-  const cm2 = new THREE.PerspectiveCamera(40, w / h, 0.1, 500); cm2.position.set(5, 5, 13); cm2.lookAt(0, 3, 0);
+  r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.ACESFilmicToneMapping; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+  const sc = new THREE.Scene(), prof = gfxProfile(8);
+  const world = buildWorld(sc, TEST_PLACE, prof, r);
+  const av = buildAvatar(equip, S.scales); av.root.position.y = 1; av.root.rotation.y = 0.4; animateAvatar(av, 0.016, { emote: 'emote_wave', emoteT: 0.1 }); sc.add(av.root);
+  world.follow(new THREE.Vector3());
+  const cm2 = new THREE.PerspectiveCamera(40, w / h, 0.1, 3000); cm2.position.set(6, 5.5, 14); cm2.lookAt(0, 3.4, 0);
   r.render(sc, cm2);
-  const url = c.toDataURL('image/jpeg', 0.85);
-  disposeAvatar(av); r.dispose(); r.forceContextLoss?.();
+  const url = c.toDataURL('image/jpeg', 0.88);
+  disposeAvatar(av); world.dispose(); r.dispose(); r.forceContextLoss?.();
   return url;
 }
