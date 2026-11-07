@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>체스</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg class="defs" aria-hidden="true">
+  <defs>
+    <linearGradient id="gw" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.58" stop-color="#f7f7f7"/>
+      <stop offset="1" stop-color="#d9d9d9"/>
+    </linearGradient>
+    <linearGradient id="gb" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5a5856"/>
+      <stop offset="0.58" stop-color="#4a4846"/>
+      <stop offset="1" stop-color="#383634"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<!-- 배경화면 -->
+<div class="wallpaper" aria-hidden="true">
+  <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
+  <span class="ghost g1" data-p="k"></span><span class="ghost g2" data-p="n"></span><span class="ghost g3" data-p="q"></span>
+  <span class="ghost g4" data-p="r"></span><span class="ghost g5" data-p="b"></span>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<!-- 메인 화면 -->
+<section class="screen menu" id="menu">
+  <div class="menu-top">
+    <button class="round-btn" id="btnLang" type="button" aria-label="언어"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg></button>
+    <button class="round-btn" id="btnSettings" type="button" aria-label="설정"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3 5.5 5.5"/><circle cx="12" cy="12" r="6.6"/></svg></button>
+  </div>
+  <div class="hero" aria-hidden="true">
+    <div class="rays"></div>
+    <div class="pedestal"></div>
+    <span class="hp hp-l" data-p="nb"></span>
+    <span class="hp hp-r" data-p="qb"></span>
+    <span class="hp hp-c" data-p="kw"></span>
+    <i class="spark"></i><i class="spark"></i><i class="spark"></i><i class="spark"></i><i class="spark"></i><i class="spark"></i>
+  </div>
+  <header class="brand">
+    <h1 data-t="title">체스</h1>
+    <p data-t="subtitle">컴퓨터와 한 판</p>
+  </header>
+  <nav class="menu-buttons">
+    <button class="card-btn play" id="btnPlay" type="button">
+      <span class="cb-icon"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg></span>
+      <span class="cb-text"><b data-t="play">플레이</b><small data-t="playSub">컴퓨터와 대결</small></span>
+      <svg class="cb-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
+    </button>
+    <button class="card-btn duo" id="btnDuo" type="button">
+      <span class="cb-icon"><svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.8 19.5c.6-3.3 2.9-5.2 5.7-5.2s5.1 1.9 5.7 5.2"/><path d="M14.6 14.3c.6-.2 1.2-.3 1.9-.3 2.4 0 4.2 1.6 4.7 4.6"/></svg></span>
+      <span class="cb-text"><b data-t="duo">두 명이서</b><small data-t="duoSub">한 화면에서 친구와</small></span>
+      <svg class="cb-arrow" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>
+    </button>
+  </nav>
+</section>
+
+<!-- 창들 -->
+<div class="sheet" id="sheetLevel" hidden>
+  <div class="sheet-card">
+    <h2 data-t="difficulty">난이도</h2>
+    <div class="levels">
+      <button class="lvl" type="button" data-level="0" data-t="easy">쉬움</button>
+      <button class="lvl" type="button" data-level="1" data-t="normal">보통</button>
+      <button class="lvl" type="button" data-level="2" data-t="hard">어려움</button>
+      <button class="lvl" type="button" data-level="3" data-t="max">최강</button>
+    </div>
+    <button class="mbtn primary" id="btnStart" type="button">
+      <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+      <span data-t="start">시작</span>
+    </button>
+  </div>
+</div>
+<div class="sheet" id="sheetDuo" hidden>
+  <div class="sheet-card">
+    <h2 data-t="duo">두 명이서</h2>
+    <button class="mbtn primary" id="btnDuoStart" type="button">
+      <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+      <span data-t="start">시작</span>
+    </button>
+    <button class="mbtn" type="button" data-close>
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      <span data-t="close">닫기</span>
+    </button>
+  </div>
+</div>
+<div class="sheet" id="sheetSettings" hidden>
+  <div class="sheet-card has-mascot">
+    <button class="mascot" id="mascot" type="button" aria-label="chess piece"></button>
+    <h2 data-t="settings">설정</h2>
+    <label class="opt"><span data-t="sound">소리</span><input type="checkbox" id="optSound" checked><i></i></label>
+    <label class="opt"><span data-t="hints">추천 표시</span><input type="checkbox" id="optHints" checked><i></i></label>
+    <button class="mbtn" type="button" data-close>
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      <span data-t="close">닫기</span>
+    </button>
+  </div>
+</div>
+<div class="sheet" id="sheetLang" hidden>
+  <div class="sheet-card">
+    <h2 data-t="language">언어</h2>
+    <div class="lang-grid" id="langGrid"></div>
+    <button class="mbtn" type="button" data-close>
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      <span data-t="close">닫기</span>
+    </button>
+  </div>
+</div>
+<div class="sheet top" id="sheetPw" hidden>
+  <form class="sheet-card" id="pwForm" autocomplete="off">
+    <h2 data-t="password">비밀번호</h2>
+    <input class="pw" id="pwInput" type="password" inputmode="text" autocapitalize="off" spellcheck="false">
+    <p class="pw-err" id="pwErr" hidden data-t="wrongPw">비밀번호가 틀렸어요</p>
+    <div class="menu-row">
+      <button class="mbtn" type="button" data-close>
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        <span data-t="close">닫기</span>
+      </button>
+      <button class="mbtn primary small" type="submit"><span data-t="confirm">확인</span></button>
+    </div>
+  </form>
+</div>
+
+<!-- AI 오토 모드 (비밀 창) -->
+<div class="float" id="autoWin" hidden>
+  <div class="float-head" id="autoHead">
+    <span>AI Auto Mode</span>
+    <span class="float-tools">
+      <button class="float-min" id="autoHide" type="button" aria-label="Hide"><svg viewBox="0 0 24 24"><path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2M21 12s-3.5 6-9 6c-1.6 0-3-.5-4.2-1.2"/><path d="M4 20 20 4"/></svg></button>
+      <button class="float-min" id="autoMin" type="button" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+    </span>
+  </div>
+  <div class="float-body">
+    <button class="auto-toggle" id="autoToggle" type="button" aria-pressed="false"><i></i><span id="autoState">OFF</span></button>
+    <div class="seg">
+      <button type="button" data-pace="think">Think</button>
+      <button type="button" data-pace="speed">Speed</button>
+      <button type="button" data-pace="turbo">Turbo</button>
+    </div>
+    <p>Plays your side at full strength.</p>
+  </div>
+</div>
+<button class="float-bubble" id="autoBubble" type="button" hidden aria-label="AI Auto Mode"></button>
+<div class="hide-zone" id="hideZone" hidden><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></div>
+
+<!-- 게임 화면 -->
+<section class="screen game" id="game" hidden>
+  <div class="topbar">
+    <div class="topleft"><span class="timer" id="timer">00:00:00</span><span class="mode-tag" id="modeTag"></span></div>
+    <div class="topright">
+      <button class="icon-btn rec" id="btnRec" type="button" aria-label="녹화" aria-pressed="false"><i></i><span class="rec-time" id="recTime"></span></button>
+      <button class="icon-btn" id="btnHome" type="button" aria-label="메인">
+        <svg viewBox="0 0 24 24"><path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="pbar" id="barTop"><span class="pbar-pc"></span><span class="pbar-name"></span><span class="pbar-count"><small data-t="pieces">기물</small><b>16</b></span></div>
+  <div class="board" id="board">
+    <div class="layer squares" id="squares"></div>
+    <div class="layer marks" id="marks"></div>
+    <div class="layer pieces" id="pieces"></div>
+    <div class="layer promo" id="promo" hidden></div>
+    <div class="layer ready" id="ready" hidden>
+      <button class="mbtn primary start-big" id="btnGo" type="button">
+        <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        <span data-t="start">시작</span>
+      </button>
+    </div>
+    <div class="layer veil" id="veil" hidden>
+      <div class="veil-card">
+        <strong id="veilTitle"></strong>
+        <span id="veilText"></span>
+        <small data-t="toMenu">눌러서 메인으로</small>
+      </div>
+    </div>
+  </div>
+  <div class="pbar" id="barBottom"><span class="pbar-pc"></span><span class="pbar-name"></span><span class="pbar-count"><small data-t="pieces">기물</small><b>16</b></span></div>
+</section>
+
+<script src="js/pieces.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/sound.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/recorder.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
