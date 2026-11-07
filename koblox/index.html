@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#121215">
+<title>KOBLOX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js" } }
+</script>
+</head>
+<body>
+
+<!-- 인트로 -->
+<section id="intro" class="screen active">
+  <div class="intro-stage">
+    <div class="intro-mark"><span>K</span></div>
+    <div class="intro-word"><b>K</b><b>O</b><b>B</b><b>L</b><b>O</b><b>X</b></div>
+    <div class="intro-sub">상상하는 모든 것을 블록으로</div>
+  </div>
+  <div class="intro-bottom">
+    <div class="intro-bar"><i></i></div>
+    <div class="intro-tip">불러오는 중…</div>
+  </div>
+  <div class="intro-skip">화면을 누르면 건너뛰어요</div>
+</section>
+
+<!-- 가입 (나이 인증 없음) -->
+<section id="signup" class="screen">
+  <div class="signup-box">
+    <div class="logo big"><span class="k-mark">K</span>KOBLOX</div>
+    <h2>가입하고 시작하기</h2>
+    <label>사용자 이름<input id="su-name" maxlength="20" placeholder="영문, 숫자, _ (3~20자)" autocomplete="off"></label>
+    <label>표시 이름 <small>(선택)</small><input id="su-display" maxlength="20" placeholder="게임에서 보이는 이름" autocomplete="off"></label>
+    <div id="su-err" class="err"></div>
+    <button id="su-go" class="btn primary wide">가입하기</button>
+    <p class="fine">이 버전은 혼자 하는 오프라인 버전이에요. 데이터는 이 기기에만 저장돼요.</p>
+  </div>
+</section>
+
+<!-- 메인 앱 -->
+<section id="app" class="screen">
+  <div id="pages">
+    <div class="page" id="p-home"></div>
+    <div class="page" id="p-charts"></div>
+    <div class="page" id="p-me"></div>
+  </div>
+  <nav id="tabbar">
+    <button data-tab="home"><i data-ico="home"></i><span>홈</span></button>
+    <button data-tab="charts"><i data-ico="chart"></i><span>차트</span></button>
+    <button data-tab="me"><img class="tab-head" alt=""><span>나</span></button>
+  </nav>
+  <div id="overlays"></div>
+  <div id="drawer-wrap"><div class="drawer-bg"></div><aside id="drawer"></aside></div>
+</section>
+
+<!-- 게임 접속 로딩 -->
+<section id="joining" class="screen">
+  <div class="join-bg"></div>
+  <div class="join-box">
+    <img class="join-thumb" alt="">
+    <h2 class="join-title">Test</h2>
+    <p class="join-by">제작: Koblox</p>
+    <div class="spinner"></div>
+    <p class="join-msg">게임에 참가하는 중…</p>
+  </div>
+  <button class="join-cancel btn">취소</button>
+</section>
+
+<!-- 게임 -->
+<section id="game" class="screen"></section>
+
+<div id="modal-root"></div>
+<div id="toast"></div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

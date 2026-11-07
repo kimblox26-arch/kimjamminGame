@@ -1,5 +1,7 @@
 # FREE FREELY ✈️ — 물리 기반 웹 비행 시뮬레이터
 
+> 🧱 **KOBLOX** — 블록 아바타 게임 플랫폼 → [`koblox/`](koblox/README.md) (`http://localhost:8080/koblox/`)
+
 > 🚀 이 저장소에는 **어몽어스 팬 제작 웹 게임**도 들어있습니다 → [`amongus/`](amongus/README.md) (`cd amongus && npm start`)
 
 브라우저에서 바로 실행되는 3D 비행 시뮬레이터입니다.
