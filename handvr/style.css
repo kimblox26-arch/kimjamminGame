@@ -14,6 +14,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 .card { width: min(480px, 100%); max-height: 100%; overflow: auto; padding: 28px 26px 20px; border-radius: 22px;
   background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 20px 60px rgba(20, 60, 120, 0.25); text-align: center; }
+.hero { display: flex; justify-content: center; margin: -8px 0 2px; }
+.hero-hand { width: 150px; height: auto; }
+.ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .brand { margin: 0; font-size: 46px; letter-spacing: 2px; font-weight: 900; color: #0f3b78; }
 .brand span { color: #2f8cff; margin-left: 6px; }
 .sub { margin: 6px 0 18px; color: #3a5577; }
@@ -28,9 +31,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 #tones button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; cursor: pointer;
   box-shadow: 0 0 0 1px #b9cbe2; }
 #tones button.on { box-shadow: 0 0 0 3px #2f8cff; }
-#tones button.auto { width: auto; padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 700; color: #17406f;
-  background: linear-gradient(90deg, #f3cbb0, #dca47f, #b87b53, #7b4a2f); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
-.btn { display: block; width: 100%; margin-top: 8px; padding: 13px; font-size: 16px; font-weight: 700; border-radius: 12px;
+#tones button.auto { width: auto; display: inline-flex; align-items: center; gap: 4px; padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 700;
+  white-space: nowrap; background: linear-gradient(90deg, #f3cbb0, #dca47f, #b87b53, #7b4a2f); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+#tones button.auto .ic { width: 15px; height: 15px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.4)); }
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 8px; padding: 13px; font-size: 16px; font-weight: 700; border-radius: 12px;
   border: 1px solid #c9dbf2; background: #fff; color: #17406f; cursor: pointer; }
 .btn:hover { background: #f2f8ff; }
 .btn.primary { background: linear-gradient(180deg, #3f99ff, #1f74e0); color: #fff; border: none; }
@@ -38,7 +42,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 .btn:disabled { opacity: 0.6; cursor: wait; }
 .msg { min-height: 20px; margin-top: 12px; font-size: 14px; color: #1f5fae; }
 .msg.err { color: #c62828; }
-.scan-tip { margin: 0 0 8px; padding: 10px 12px; border-radius: 12px; background: #fff7e6; border: 1px solid #ffe2a8; font-size: 13px; color: #6b4a00; text-align: left; }
+.scan-tip { display: flex; gap: 10px; align-items: center; margin: 0 0 8px; padding: 10px 12px; border-radius: 12px; background: #fff7e6; border: 1px solid #ffe2a8; font-size: 13px; color: #6b4a00; text-align: left; }
+.scan-tip p { margin: 0; }
+.tip-ic { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 50%; background: #ffe7b3; color: #a06a00; }
+.tip-ic .ic { width: 22px; height: 22px; }
 .note { margin: 10px 0 0; font-size: 12px; color: #6d84a3; }
 
 /* ── HUD ── */
@@ -56,8 +63,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 #preview { display: block; width: 256px; height: auto; border-radius: 10px; background: #000; }
 .pv-label { font-size: 11px; color: #456; text-align: center; margin-top: 3px; }
 #top-btns { position: absolute; right: 12px; top: 12px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-#top-btns button.on { background: rgba(47, 140, 255, 0.85); color: #fff; }
-#top-btns button { padding: 7px 12px; font-size: 13px; cursor: pointer; pointer-events: auto; color: #17406f; }
+#top-btns button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; font-size: 13px; cursor: pointer; pointer-events: auto; color: #17406f; }
+#top-btns .ic { width: 16px; height: 16px; }
 #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(860px, calc(100% - 32px));
   max-height: calc(100% - 32px); overflow: auto; padding: 18px 22px; pointer-events: auto; background: rgba(255, 255, 255, 0.9); }
 #help h2 { margin: 0 0 8px; color: #0f3b78; }
@@ -67,6 +74,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
 #help td { padding: 4px 6px; border-bottom: 1px solid #e3ecf7; vertical-align: top; }
 #help td:first-child { white-space: nowrap; font-weight: 700; color: #234; }
 
+@media (max-width: 480px) {
+  .opt.tone { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
 @media (max-width: 720px) {
   #help .cols { grid-template-columns: 1fr; }
   #preview { width: 160px; }
@@ -85,4 +95,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
   .card { padding: 16px 18px 12px; }
   .brand { font-size: 32px; }
   .scan-tip { display: none; }
+  .hero { margin: -6px 0 0; }
+  .hero-hand { width: 76px; }
+  .sub { margin: 2px 0 10px; }
 }

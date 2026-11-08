@@ -50,8 +50,9 @@ export class HandState {
     this.target = vec21();  // 카메라(눈) 공간 목표 관절 위치
     this.joints = vec21();  // 화면 표시용(보간된) 관절 위치
     this.palmCam = new THREE.Vector3();
-    this.posFilter = new VecFilter(1.2, 3.0, 0.7);
-    this.shapeFilters = Array.from({ length: 21 }, () => new VecFilter(2.2, 12));
+    // 떨림만 살짝 거르는 가벼운 필터 (반응 속도 우선)
+    this.posFilter = new VecFilter(2.5, 4.0, 1.5);
+    this.shapeFilters = Array.from({ length: 21 }, () => new VecFilter(4.0, 15));
     this.gesture = 'none';
     this.cand = 'none';
     this.candN = 0;
@@ -176,7 +177,7 @@ export class HandState {
       this.gesture = 'none';
     }
     if (!this.visible) return;
-    const k = this.snap ? 1 : 1 - Math.exp(-dt * 24);
+    const k = this.snap ? 1 : 1 - Math.exp(-dt * 45);
     for (let i = 0; i < 21; i++) this.joints[i].lerp(this.target[i], k);
     this.snap = false;
   }

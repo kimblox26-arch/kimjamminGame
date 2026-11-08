@@ -80,7 +80,10 @@ export function createWorld(scene, renderer) {
   sun.shadow.camera.near = 2;
   sun.shadow.camera.far = 9;
   // 그림자 품질: size 해상도로 주변 ext m 범위
+  // size 0: 그림자 끔 (가벼운 화질)
   const setShadowQuality = (size, ext) => {
+    sun.castShadow = size > 0;
+    if (!size) return;
     size = Math.min(size, renderer.capabilities.maxTextureSize);
     if (sun.shadow.mapSize.x === size && sun.shadow.camera.right === ext && sun.shadow.map) return;
     sun.shadow.mapSize.set(size, size);
@@ -134,8 +137,6 @@ export function createWorld(scene, renderer) {
 
   return {
     setShadowQuality,
-    // 하늘·바닥·구름 보이기/숨기기 (AR 화면에서는 카메라 영상이 배경)
-    setVisible(v) { sky.visible = floor.visible = clouds.visible = v; },
     // focus: 그림자를 또렷하게 그릴 중심 (손이 있는 곳). 좁은 범위만 그리니 손가락 그림자까지 선명하다
     update(dt, playerPos, focus = playerPos) {
       sky.position.copy(playerPos);
