@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#050304">
+<title>초록모자 — CHAPTER 1 저택</title>
+<meta name="description" content="팔로우하지 않은 사람을 납치한 초록모자의 저택에서 탈출하는 공포 방탈출 게임">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=East+Sea+Dokdo&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css?v=20261106c">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/three.module.min.js",
+    "three/addons/": "../vendor/three/addons/",
+    "./js/world.js": "./js/world.js?v=20261106c",
+    "./js/noob.js": "./js/noob.js?v=20261106c",
+    "./js/monster.js": "./js/monster.js?v=20261106c",
+    "./js/audio.js": "./js/audio.js?v=20261106c",
+    "./js/input.js": "./js/input.js?v=20261106c",
+    "./js/story.js": "./js/story.js?v=20261106c",
+    "./js/avatar.js": "./js/avatar.js?v=20261106c",
+    "./js/bots.js": "./js/bots.js?v=20261106c",
+    "./js/net.js": "./js/net.js?v=20261106c"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- 화면 효과 -->
+<div id="fx-hide" class="fx"></div>
+<div id="fx-vig" class="fx"></div>
+<div id="fx-low" class="fx"></div>
+<div id="fx-dmg" class="fx"></div>
+<div id="fx-grain" class="fx"></div>
+<div id="fx-white" class="fx"></div>
+<div id="fx-black" class="fx"></div>
+
+<!-- ───────── 게임 HUD ───────── -->
+<div id="hud" class="hidden">
+  <div class="hud-top">
+    <div class="bars">
+      <div class="bar hp"><i data-icon="heart"></i><div class="track"><div id="hp-fill"></div></div></div>
+      <div class="bar st"><i data-icon="run"></i><div class="track"><div id="st-fill"></div></div></div>
+      <div class="count"><span><i data-icon="key"></i><b id="c-key">0/4</b></span><span><i data-icon="book"></i><b id="c-diary">0/4</b></span></div>
+      <div id="inv"></div>
+      <div id="team"></div>
+    </div>
+    <div id="objective"></div>
+    <div class="tr">
+      <div id="mic" class="micbox" title="소리 감지 센서"><i data-icon="mic"></i><div class="track"><div id="mic-fill"></div><div id="mic-th"></div></div></div>
+      <button class="btn sq" data-act="notes" aria-label="일기"><i data-icon="book"></i></button>
+      <button class="btn sq" data-act="clues" aria-label="모은 단서"><i data-icon="search"></i></button>
+      <button class="btn sq" data-act="memo" aria-label="메모"><i data-icon="pen"></i></button>
+      <button class="btn sq" data-act="chat" aria-label="채팅"><i data-icon="chat"></i></button>
+      <button class="btn sq" data-act="pause" aria-label="일시정지"><i data-icon="pause"></i></button>
+    </div>
+  </div>
+  <div id="joy-zone"><div id="joy"><div id="joy-knob"></div></div></div>
+  <div id="cross"></div>
+  <div id="prompt"></div>
+  <div id="btns">
+    <button class="btn big" id="b-act" data-act="interact"><i data-icon="hand"></i><span>조사</span></button>
+    <button class="btn mid" id="b-run" data-act="run"><i data-icon="run"></i><span>달리기</span></button>
+    <button class="btn mid" id="b-hide" data-act="hide"><i data-icon="eye"></i><span>숨기</span></button>
+    <button class="btn sm" id="b-crouch" data-act="crouch"><i data-icon="crouch"></i><span>숙이기</span></button>
+    <button class="btn sm" id="b-prone" data-act="prone"><i data-icon="prone"></i><span>엎드리기</span></button>
+    <button class="btn sm hidden" id="b-heal" data-act="heal"><i data-icon="heal"></i><span id="heal-n">붕대</span></button>
+  </div>
+  <div id="devwin" class="hidden closed" role="dialog" aria-label="개발자 모드">
+    <div class="dw-head"><i data-icon="wrench"></i><b>개발자 모드</b><button id="dw-close" type="button" aria-label="창 닫기"><i data-icon="close"></i></button></div>
+    <div class="dw-grid">
+      <button data-dev="noclip" type="button"><i data-icon="finger"></i>벽뚫기</button>
+      <button data-dev="fly" type="button"><i data-icon="up"></i>날기</button>
+      <button data-dev="keys" type="button"><i data-icon="key"></i>모든 자물쇠 열쇠 얻기</button>
+      <button data-dev="diaries" type="button"><i data-icon="book"></i>모든 일기 얻기</button>
+      <button data-dev="doors" type="button"><i data-icon="hand"></i>문 열기</button>
+      <button data-dev="god" type="button"><i data-icon="heart"></i>초록모자 공격 안 당하기</button>
+      <button data-dev="exit" type="button" class="wide"><i data-icon="door"></i>탈출구로 순간이동</button>
+    </div>
+    <div class="dw-more">
+      <button data-dev="invis" type="button">투명</button><button data-dev="freeze" type="button">초록모자 정지</button><button data-dev="fast" type="button">빠르게</button><button data-dev="summon" type="button">초록모자 부르기</button>
+      <select id="dev-tp"><option value="">순간이동...</option></select>
+    </div>
+  </div>
+  <button id="devfab" class="hidden" type="button" aria-label="개발자 창 열기"><i data-icon="wrench"></i></button>
+  <div id="flybtns" class="hidden"><button class="btn sm" id="fly-up"><i data-icon="up"></i></button><button class="btn sm" id="fly-down"><i data-icon="down"></i></button></div>
+  <div id="tags"></div>
+  <div id="chatlog"></div>
+  <div id="chatbar" class="hidden">
+    <div class="quick"><button>따라와!</button><button>여기서 기다려</button><button>흩어져서 찾자</button><button>숨어!</button><button>열쇠 찾았어!</button><button>도와줘!</button></div>
+    <form id="chatform"><input id="chatin" maxlength="60" placeholder="말하기 (AI 친구에게 명령도 돼요)" autocomplete="off"><button class="btn sq" type="submit"><i data-icon="send"></i></button></form>
+  </div>
+  <div id="hidden-tag"><i data-icon="eye"></i><span>숨는 중 · 소리 내지 마세요</span></div>
+  <div id="heard"><i data-icon="ear"></i><span>초록모자가 소리를 들었다!</span></div>
+  <div id="toast"></div>
+</div>
+
+<!-- ───────── 컷신 ───────── -->
+<div id="cine" class="hidden">
+  <div class="lb top"></div><div class="lb bot"></div>
+  <div id="cine-text"></div>
+  <div id="sub"><b id="sub-name"></b><span id="sub-text"></span></div>
+  <button class="btn skip" id="b-skip"><span>건너뛰기</span><i data-icon="skip"></i></button>
+</div>
+
+<!-- 휴대폰 (프롤로그) -->
+<div id="phone" class="hidden">
+  <div class="ph">
+    <div class="ph-notch"></div>
+    <div class="ph-status"><span>23:47</span><span>LTE · 12%</span></div>
+    <div id="ph-noti"><b>BLOXGRAM</b><span>초록모자 님이 회원님을 팔로우하기 시작했습니다.</span></div>
+    <div id="ph-profile">
+      <img src="assets/greenhat_face.png" alt="">
+      <h3>초록모자</h3>
+      <p>게시물 0 · 팔로워 0 · 팔로잉 <b>1</b></p>
+      <p class="bio">맞팔 안 하면 데리러 감 :)</p>
+      <div class="ph-btns"><button id="ph-follow">맞팔로우</button><button id="ph-later">나중에</button></div>
+    </div>
+    <div id="ph-chat"></div>
+    <div id="ph-finger"></div>
+  </div>
+</div>
+
+<div id="card" class="hidden"><small>CHAPTER 1</small><h1>저택</h1><p>초록모자에게서 탈출하라</p></div>
+
+<!-- ───────── 타이틀 ───────── -->
+<section id="title" class="screen hidden">
+  <div class="logo">
+    <h1>초록모자</h1>
+    <h2>CHAPTER 1 <span>·</span> 저택</h2>
+    <p class="tag">팔로우하지 않은 대가</p>
+  </div>
+  <nav>
+    <button class="menu play" id="m-start">플레이</button>
+    <button class="menu" id="m-intro">프롤로그 보기</button>
+    <button class="menu" id="m-settings">설정</button>
+    <button class="menu" id="m-help">조작법</button>
+  </nav>
+  <p class="warn"><i data-icon="mic"></i>마이크를 켜면 초록모자가 <b>실제 목소리</b>를 듣습니다 · 이어폰 권장</p>
+</section>
+
+<!-- 로비 -->
+<section id="lobby" class="screen hidden">
+  <div class="lb-wrap">
+    <header class="lb-head">
+      <button class="btn sq" id="lb-back" aria-label="뒤로"><i data-icon="back"></i></button>
+      <h2>로비</h2>
+      <span id="lb-status" class="pill">연결 확인 중...</span>
+    </header>
+    <div class="lb-grid">
+      <div class="lb-card">
+        <h3>내 캐릭터</h3>
+        <div class="me-row"><canvas id="av-prev" width="120" height="170"></canvas>
+          <div class="me-col"><label class="fld"><span>이름</span><input id="nick" maxlength="10" autocomplete="off"></label><div id="skins" class="skins"></div></div></div>
+      </div>
+      <div class="lb-card">
+        <div class="tabs2"><button data-lt="list" class="on">방 목록</button><button data-lt="make">방 만들기</button></div>
+        <div id="lt-list">
+          <div id="room-list"></div>
+          <form class="row tight" id="join-form"><input id="join-code" maxlength="8" placeholder="방 코드" autocomplete="off"><button class="menu small" type="submit">코드로 참가</button></form>
+        </div>
+        <div id="lt-make" class="hidden">
+          <label class="opt"><span>방 이름</span><input id="mk-name" maxlength="16" autocomplete="off"></label>
+          <label class="opt"><span>최대 인원</span><select id="mk-max"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option></select></label>
+          <label class="opt"><span>AI 친구</span><select id="mk-bots"><option value="0">없음</option><option value="1">1명</option><option value="2" selected>2명</option><option value="3">3명</option></select></label>
+          <label class="opt"><span>난이도</span><select id="mk-diff"><option value="0">쉬움</option><option value="1" selected>보통</option><option value="2">어려움</option></select></label>
+          <button class="menu" id="mk-go">방 만들기</button>
+        </div>
+      </div>
+    </div>
+    <button class="menu play" id="quick"><i data-icon="play"></i>혼자 시작 (AI 친구와 함께)</button>
+  </div>
+</section>
+
+<!-- 대기실 -->
+<section id="waitroom" class="screen hidden">
+  <div class="wr-wrap panel">
+    <h2 id="wr-name">방</h2>
+    <p>방 코드 <b id="wr-code" class="code"></b> · 친구는 로비에서 이 방을 누르거나 코드를 입력하면 들어와요</p>
+    <ul id="wr-list"></ul>
+    <p class="small" id="wr-hint"></p>
+    <div class="row"><button class="menu play" id="wr-start">게임 시작</button><button class="menu ghost" id="wr-leave">나가기</button></div>
+  </div>
+</section>
+
+<!-- 모은 단서 -->
+<section id="clues" class="modal hidden">
+  <div class="panel wide list-panel">
+    <h2><i data-icon="search"></i>모은 단서</h2>
+    <div id="clue-list" class="scroll"></div>
+    <button class="menu" data-close="clues">닫기</button>
+  </div>
+</section>
+
+<!-- 메모 -->
+<section id="memo" class="modal hidden">
+  <div class="panel wide list-panel">
+    <h2><i data-icon="pen"></i>메모</h2>
+    <form class="row tight" id="memo-form"><input id="memo-in" maxlength="50" placeholder="중요한 걸 적어 두세요 (예: 비밀번호 첫 자리 7)" autocomplete="off"><button class="menu small" type="submit">적기</button></form>
+    <div id="memo-list" class="scroll"></div>
+    <button class="menu" data-close="memo">닫기</button>
+  </div>
+</section>
+
+<!-- 개발자 모드 비밀번호 -->
+<section id="devpw" class="modal hidden">
+  <form class="panel" id="devpw-form">
+    <h2><i data-icon="wrench"></i>개발자 모드</h2>
+    <p>비밀번호를 입력하세요</p>
+    <input id="devpw-in" type="password" autocomplete="off">
+    <p class="small" id="devpw-msg"></p>
+    <div class="row"><button class="menu" type="submit">켜기</button><button class="menu ghost" type="button" data-close="devpw">취소</button></div>
+  </form>
+</section>
+
+<!-- 마이크 안내 -->
+<section id="micask" class="modal hidden">
+  <div class="panel">
+    <h2><i data-icon="mic"></i>소리 감지 센서</h2>
+    <p>마이크를 켜면 <b>내 실제 목소리</b>를 초록모자가 듣습니다.<br>크게 말하면 찾아오고, 숨어 있을 때 떠들면 들킵니다.<br>끄면 초록모자는 소리를 듣지 못하고, 돌아다니다 <b>눈에 보일 때만</b> 쫓아옵니다.</p>
+    <p class="small">소리는 기기 안에서만 크기를 재고, 녹음하거나 어디로 보내지 않습니다.</p>
+    <div class="row"><button class="menu" id="mic-yes">마이크 켜기</button><button class="menu ghost" id="mic-no">끄고 하기</button></div>
+  </div>
+</section>
+
+<!-- 일기 · 단서 -->
+<section id="notes" class="modal hidden">
+  <div class="book">
+    <div class="tabs" id="note-tabs"></div>
+    <div class="page" id="note-page"></div>
+    <button class="btn close" data-close="notes" aria-label="닫기"><i data-icon="close"></i></button>
+  </div>
+</section>
+
+<!-- 비밀번호 -->
+<section id="keypad" class="modal hidden">
+  <div class="kp">
+    <div class="kp-screen" id="kp-screen">_ _ _ _</div>
+    <div class="kp-grid" id="kp-grid"></div>
+    <button class="btn close" data-close="keypad" aria-label="닫기"><i data-icon="close"></i></button>
+  </div>
+</section>
+
+<!-- 일시정지 -->
+<section id="pause" class="modal hidden">
+  <div class="panel">
+    <h2>일시정지</h2>
+    <button class="menu" id="p-resume">계속하기</button>
+    <button class="menu" id="p-settings">설정</button>
+    <button class="menu" id="p-help">조작법</button>
+    <button class="menu ghost" id="p-restart">처음부터 다시</button>
+    <button class="menu ghost" id="p-title">타이틀로</button>
+  </div>
+</section>
+
+<!-- 설정 -->
+<section id="settings" class="modal hidden">
+  <div class="panel">
+    <h2><i data-icon="gear"></i>설정</h2>
+    <label class="opt"><span>소리 감지 센서 (마이크)</span><input type="checkbox" id="s-mic"></label>
+    <label class="opt"><span>마이크 민감도</span><input type="range" id="s-sens" min="0.4" max="2" step="0.1"></label>
+    <div class="miclive"><div class="track"><div id="s-micfill"></div></div><small id="s-miclabel">말해 보세요</small></div>
+    <label class="opt"><span>음량</span><input type="range" id="s-vol" min="0" max="1" step="0.05"></label>
+    <label class="opt"><span>밝기</span><input type="range" id="s-bright" min="0.6" max="2" step="0.1"></label>
+    <label class="opt"><span>시점 감도</span><input type="range" id="s-look" min="0.4" max="2" step="0.1"></label>
+    <label class="opt"><span>그래픽</span><select id="s-q"><option value="low">낮음 (빠름)</option><option value="mid">보통</option><option value="high">높음</option></select></label>
+    <label class="opt"><span>괴물 말소리 (기계 음성)</span><input type="checkbox" id="s-voice"></label>
+    <div class="opt"><span>개발자 모드</span><button class="menu small" id="s-dev" type="button">켜기</button></div>
+    <button class="menu" data-close="settings">확인</button>
+  </div>
+</section>
+
+<!-- 조작법 -->
+<section id="help" class="modal hidden">
+  <div class="panel wide">
+    <h2>조작법</h2>
+    <div class="help-grid">
+      <div><i data-icon="hand"></i><b>조사 / 숨기</b><span>E · 스페이스</span></div>
+      <div><i data-icon="run"></i><b>달리기</b><span>Shift (누르는 동안) · 버튼은 켜고 끄기</span></div>
+      <div><i data-icon="key"></i><b>열쇠 4개 · 일기 4장</b><span>일기마다 비밀번호 숫자가 하나씩</span></div>
+      <div><i data-icon="book"></i><b>일기와 단서</b><span>Tab · N</span></div>
+      <div><i data-icon="mic"></i><b>소리 감지</b><span>크게 말하면 초록모자가 온다</span></div>
+      <div><i data-icon="eye"></i><b>숨기 / 나가기</b><span>숨기 버튼 · H</span></div>
+      <div><i data-icon="crouch"></i><b>숙이기</b><span>C · 들키기 어려움, 느림</span></div>
+      <div><i data-icon="prone"></i><b>엎드리기</b><span>Z · 식탁 밑으로 지나갈 수 있음</span></div>
+      <div><i data-icon="chat"></i><b>말하기</b><span>T · "따라와", "기다려", "흩어져", "숨어"로 AI 친구에게 명령</span></div>
+      <div><i data-icon="search"></i><b>모은 단서</b><span>J</span></div>
+      <div><i data-icon="pen"></i><b>메모</b><span>M · 친구들 메모도 함께 보여요</span></div>
+    </div>
+    <p class="small">1인칭 시점 · 휴대폰: 왼쪽 조이스틱으로 이동, 화면 오른쪽을 끌어서 둘러보기 · PC: WASD 이동, 마우스 드래그로 둘러보기</p>
+    <button class="menu" data-close="help">확인</button>
+  </div>
+</section>
+
+<!-- 게임 오버 -->
+<section id="over" class="screen hidden">
+  <img id="js-face" src="assets/greenhat_face.png" alt="">
+  <div class="over-box">
+    <h1>잡혔다...</h1>
+    <p id="over-line">초록모자: "팔로우 했으면 됐잖아."</p>
+    <div class="row"><button class="menu" id="o-retry">다시 하기</button><button class="menu ghost" id="o-title">타이틀로</button></div>
+  </div>
+</section>
+
+<!-- 엔딩 -->
+<section id="ending" class="screen hidden">
+  <div class="end-box">
+    <small>CHAPTER 1</small>
+    <h1>탈출 성공</h1>
+    <p>눈부신 빛 속으로 걸어 나왔다.<br>그런데... 등 뒤에서 낮은 목소리가 들렸다.</p>
+    <p class="gh">"다음엔... 꼭 팔로우 해."</p>
+    <div class="stats" id="end-stats"></div>
+    <p class="next">CHAPTER 2 — 준비 중</p>
+    <button class="menu" id="e-title">타이틀로</button>
+  </div>
+</section>
+
+<!-- 로딩 -->
+<section id="loading" class="screen">
+  <h1>초록모자</h1>
+  <div class="ld-bar"><div id="ld-fill"></div></div>
+  <p id="ld-text">저택을 짓는 중...</p>
+</section>
+
+<script type="module" src="./js/main.js?v=20261106c"></script>
+</body>
+</html>
