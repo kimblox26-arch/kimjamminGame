@@ -20,9 +20,15 @@ const V = THREE.Vector3;
 const $ = id => document.getElementById(id);
 const canvas = $('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-let LQ = location.search.includes('lq') || location.hash.includes('lq');
-try { if (localStorage.getItem('bodylab-low') === '1') LQ = true; } catch (e) { }
-renderer.setPixelRatio(LQ ? 0.5 : Math.min(devicePixelRatio, 1.5));
+// 터치 기기(폰·태블릿)면 모바일 조작 + 최대 최적화로 시작
+const TOUCH = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches);
+if (TOUCH) document.body.classList.add('touch');
+// 화질 단계: 0 고화질, 1 최적화, 2 최대 최적화
+let Q = TOUCH ? 2 : 0;
+try { const v = localStorage.getItem('bodylab-q'); if (v !== null) Q = +v; else if (localStorage.getItem('bodylab-low') === '1') Q = 1; } catch (e) { }
+if (location.search.includes('lq') || location.hash.includes('lq')) Q = Math.max(Q, 1);
+const PR = q => q === 2 ? 0.6 : q === 1 ? 0.75 : Math.min(devicePixelRatio, 1.5);
+renderer.setPixelRatio(PR(Q));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.85;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -40,7 +46,7 @@ createDevices(G);
 const grid = new THREE.GridHelper(30, 30, 0x1d4a6a, 0x0f2a3c); grid.layers.set(1); grid.position.y = 0.002; scene.add(grid);
 
 // ───────── 후처리 ─────────
-const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: LQ ? 0 : 4 });
+const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: Q ? 0 : 4 });
 const composer = new EffectComposer(renderer, rt);
 composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(innerWidth, innerHeight);
 composer.addPass(new RenderPass(scene, camera));
@@ -99,14 +105,15 @@ function reviveNPC() { npc.reset(SPAWN_N.clone(), Math.atan2(player.root.x - SPA
 function revivePlayer() { player.reset(SPAWN_P.clone(), Math.PI); camYaw = Math.PI; camPitch = -0.05; $('dead').hidden = true; log('살아났습니다'); }
 
 // ───────── 마우스 고정 ─────────
-let freeLook = false, uiOpen = false;
+let freeLook = false, uiOpen = false, touchOn = false;
 function lock() {
   G.audio.init();
+  if (TOUCH) { touchOn = true; return; }
   try { const r = canvas.requestPointerLock?.(); if (r?.catch) r.catch(() => { freeLook = true; }); } catch (e) { freeLook = true; }
   setTimeout(() => { if (document.pointerLockElement !== canvas && !uiOpen) freeLook = true; }, 500);
 }
 function unlock() { freeLook = false; document.exitPointerLock?.(); }
-const active = () => !uiOpen && (document.pointerLockElement === canvas || freeLook);
+const active = () => !uiOpen && (touchOn || document.pointerLockElement === canvas || freeLook);
 
 // ───────── 창 (무기 고르기 · 조작법) ─────────
 const TYPE = { gun: '총', melee: '근접', throw: '투척' };
@@ -127,8 +134,11 @@ $('helpBtn').onclick = () => openModal('helpMenu');
 $('reviveNpc').onclick = reviveNPC; $('revivePlayer').onclick = revivePlayer; $('revive2').onclick = () => { revivePlayer(); lock(); };
 $('slowBtn').onclick = () => { manualSlow = !manualSlow; };
 $('autoSlow').onchange = e => { autoSlow = e.target.checked; };
-$('xMode').onclick = cycleX; $('xTarget').onclick = swapTarget; $('perfBtn').onclick = () => setLow(!LQ);
-$('startBtn').onclick = () => { $('start').classList.add('hide'); lock(); };
+$('xMode').onclick = cycleX; $('xTarget').onclick = swapTarget; $('perfBtn').onclick = () => setQuality((Q + 1) % 3);
+$('startBtn').onclick = () => {
+  $('start').classList.add('hide'); lock();
+  if (TOUCH) try { document.documentElement.requestFullscreen?.().catch(() => { }); } catch (e) { }
+};
 
 // ───────── 입력 ─────────
 const keys = {}; let mouseL = false, mouseR = false, pressed = false, camYaw = Math.PI, camPitch = -0.05, carLook = 0;
@@ -157,7 +167,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyG') revivePlayer();
   if (e.code === 'KeyX') cycleX();
   if (e.code === 'KeyC') swapTarget();
-  if (e.code === 'KeyO') setLow(!LQ);
+  if (e.code === 'KeyO') setQuality((Q + 1) % 3);
   if (e.code === 'KeyF') startGrab();
   if (e.code === 'KeyE') toggleCar();
 });
@@ -184,20 +194,63 @@ G.physics.add({ particles: [], constraints: [], preSolve() {
   grab.p.lerp(t, 0.08); npc.downT = Math.max(npc.downT, 1);
 } });
 
-// ───────── 최적화 모드 ─────────
-function setLow(on) {
-  LQ = on;
-  try { localStorage.setItem('bodylab-low', on ? '1' : '0'); } catch (e) { }
-  const pr = on ? 0.6 : Math.min(devicePixelRatio, 1.5);
+// ───────── 최적화 모드 (끔 / 켬 / 최대) ─────────
+const QNAME = ['끔', '켬', '최대'];
+function setQuality(q) {
+  Q = q;
+  try { localStorage.setItem('bodylab-q', String(q)); } catch (e) { }
+  const pr = PR(q);
   renderer.setPixelRatio(pr); composer.setPixelRatio(pr); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
-  for (const t of [composer.renderTarget1, composer.renderTarget2]) { t.samples = on ? 0 : 4; t.dispose(); }
-  bloom.enabled = !on; grade.uniforms.uAber.value = on ? 0 : 0.3;
-  G.world.setQuality(on);
-  G.physics.iters = on ? 4 : 6; G.physics.h = on ? 1 / 160 : 1 / 240;
-  camera.far = on ? 420 : 1000; camera.updateProjectionMatrix();
-  $('perfState').textContent = on ? '켬' : '끔'; $('perfBtn').classList.toggle('on', on);
+  for (const t of [composer.renderTarget1, composer.renderTarget2]) { t.samples = q ? 0 : 4; t.dispose(); }
+  bloom.enabled = q === 0; grade.uniforms.uAber.value = q ? 0 : 0.3;
+  G.useComposer = q < 2; // 최대: 후처리 없이 바로 그리고, 화면 효과는 가벼운 덮개로
+  G.world.setQuality(q);
+  G.physics.iters = q ? 4 : 6; G.physics.h = [1 / 240, 1 / 160, 1 / 120][q];
+  camera.far = [1000, 420, 260][q]; camera.updateProjectionMatrix();
+  $('perfState').textContent = QNAME[q]; $('perfBtn').classList.toggle('on', q > 0);
 }
-setLow(LQ);
+setQuality(Q);
+
+// ───────── 모바일 조작: 왼쪽 조이스틱(이동·운전), 오른쪽 끌기(둘러보기), 버튼 ─────────
+const joy = { id: null, x: 0, y: 0, ox: 0, oy: 0 }, look = { id: null, x: 0, y: 0 }, JR = 55;
+const joyBase = $('joyBase'), joyKnob = $('joyKnob');
+const onTouch = (el, fn) => el.addEventListener('touchstart', e => { e.preventDefault(); G.audio.init(); for (const t of e.changedTouches) fn(t); }, { passive: false });
+onTouch($('joyZone'), t => { if (joy.id !== null) return; joy.id = t.identifier; joy.ox = t.clientX; joy.oy = t.clientY; joy.x = joy.y = 0; joyBase.style.left = t.clientX + 'px'; joyBase.style.top = t.clientY + 'px'; joyKnob.style.transform = ''; joyBase.classList.add('on'); });
+onTouch($('lookZone'), t => { if (look.id !== null) return; look.id = t.identifier; look.x = t.clientX; look.y = t.clientY; });
+addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joy.id) {
+      e.preventDefault();
+      let dx = t.clientX - joy.ox, dy = t.clientY - joy.oy; const L = Math.hypot(dx, dy); if (L > JR) { dx *= JR / L; dy *= JR / L; }
+      joy.x = dx / JR; joy.y = dy / JR; joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    } else if (t.identifier === look.id) {
+      e.preventDefault();
+      const dx = t.clientX - look.x, dy = t.clientY - look.y; look.x = t.clientX; look.y = t.clientY;
+      if (!active()) continue;
+      const k = mouseR && weapons.w.zoom ? 0.0016 : 0.0055;
+      if (player.car) carLook = Math.max(-2.2, Math.min(2.2, carLook - dx * k)); else camYaw -= dx * k;
+      camPitch = Math.max(-1.35, Math.min(1.3, camPitch - dy * k));
+    }
+  }
+}, { passive: false });
+const touchEnd = e => { for (const t of e.changedTouches) { if (t.identifier === joy.id) { joy.id = null; joy.x = joy.y = 0; joyBase.classList.remove('on'); joyBase.style.left = joyBase.style.top = ''; joyKnob.style.transform = ''; } if (t.identifier === look.id) look.id = null; } };
+addEventListener('touchend', touchEnd); addEventListener('touchcancel', touchEnd);
+const holdBtn = (id, down, up) => {
+  const el = $(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); G.audio.init(); touchOn = true; down(); el.classList.add('press'); }, { passive: false });
+  const u = e => { e.preventDefault(); el.classList.remove('press'); up?.(); };
+  el.addEventListener('touchend', u); el.addEventListener('touchcancel', u);
+};
+holdBtn('aFire', () => { mouseL = true; pressed = true; }, () => { mouseL = false; });
+holdBtn('aAim', () => { mouseR = !mouseR; });
+holdBtn('aGrab', () => startGrab(), () => { grab = null; });
+holdBtn('aCar', () => toggleCar());
+holdBtn('aBrake', () => { keys.Space = true; }, () => { keys.Space = false; });
+$('mWeapon').onclick = () => openModal('weaponMenu');
+$('mMenu').onclick = () => document.body.classList.toggle('menu-open');
+$('barClose').onclick = () => document.body.classList.remove('menu-open');
+$('rotateOk').onclick = () => document.body.classList.add('noRotate');
+if (TOUCH) $('prompt').innerHTML = '<b>타기</b> 버튼으로 차에 타기';
 
 // ───────── 카메라 (1인칭) ─────────
 const EYE = new V(0, 1.695, 0.095), camEye = new V(), _v = new V(), _w = new V();
@@ -298,6 +351,15 @@ function hud(dt) {
   $('prompt').hidden = !!player.car || player.dead || player.state !== 'stand' || !car.nearDoor(player.root);
   $('carHud').hidden = !player.car; $('speed').textContent = Math.round(Math.abs(car.speed) * 3.6);
   $('cross').hidden = !!player.car;
+  if (TOUCH) {
+    $('mWName').textContent = weapons.w.name;
+    const inCar = !!player.car, near = !inCar && !player.dead && player.state === 'stand' && car.nearDoor(player.root);
+    $('aFire').hidden = $('aGrab').hidden = inCar; $('aAim').hidden = inCar || weapons.w.type !== 'gun';
+    $('aFire').textContent = { gun: '발사', melee: '공격', throw: '던지기' }[weapons.w.type];
+    $('aAim').classList.toggle('on', mouseR);
+    $('aCar').hidden = !(inCar || near); $('aCar').textContent = inCar ? '내리기' : '타기';
+    $('aBrake').hidden = !inCar;
+  }
 }
 const tag = $('tag'), tagHp = $('tagHp');
 function worldUI(dt) {
@@ -311,6 +373,7 @@ function worldUI(dt) {
 }
 
 // ───────── 반복 ─────────
+const fxOver = $('fxOverlay'), slowOver = $('slowOverlay');
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -324,11 +387,16 @@ function frame(now) {
   const f = new V(Math.sin(camYaw), 0, Math.cos(camYaw)), r = new V(-Math.cos(camYaw), 0, Math.sin(camYaw));
   const mv = player.ctrl.move.set(0, 0, 0);
   const play = active();
-  if (play && !player.car) { if (keys.KeyW) mv.add(f); if (keys.KeyS) mv.sub(f); if (keys.KeyD) mv.add(r); if (keys.KeyA) mv.sub(r); }
-  if (mv.lengthSq() > 0) mv.normalize().multiplyScalar(keys.ShiftLeft || keys.ShiftRight ? 3.8 : 1.7);
+  const keyMove = keys.KeyW || keys.KeyS || keys.KeyA || keys.KeyD;
+  const jm = Math.hypot(joy.x, joy.y), dz = v => Math.abs(v) < 0.15 ? 0 : v;
+  if (play && !player.car) {
+    if (keys.KeyW) mv.add(f); if (keys.KeyS) mv.sub(f); if (keys.KeyD) mv.add(r); if (keys.KeyA) mv.sub(r);
+    if (!keyMove && jm > 0.15) mv.addScaledVector(f, -joy.y).addScaledVector(r, joy.x);
+  }
+  if (mv.lengthSq() > 0) { const run = keys.ShiftLeft || keys.ShiftRight || (!keyMove && jm > 0.9); mv.normalize().multiplyScalar(run ? 3.8 : keyMove ? 1.7 : 1.7 * Math.min(1, jm / 0.6)); }
   player.ctrl.yaw = camYaw;
   player.look.yaw = player.car ? Math.max(-1.3, Math.min(1.3, carLook)) : 0; player.look.pitch = camPitch * 0.6;
-  car.update(simDt, play && player.car ? { w: keys.KeyW, s: keys.KeyS, a: keys.KeyA, d: keys.KeyD, space: keys.Space } : {});
+  car.update(simDt, play && player.car ? { w: keys.KeyW, s: keys.KeyS, a: keys.KeyA, d: keys.KeyD, space: keys.Space, thr: joy.id !== null ? -dz(joy.y) : null, st: joy.id !== null ? -dz(joy.x) : null } : {});
   const aimDir = aim();
   if (play) weapons.trigger(mouseL, pressed, aimDir, camera.position);
   pressed = false;
@@ -350,7 +418,8 @@ function frame(now) {
   grade.uniforms.uTime.value = now * 0.001;
   let saved = null;
   if (G.debugCam) { saved = [camera.position.clone(), camera.quaternion.clone()]; const d = G.debugCam(); camera.position.copy(d.p); camera.lookAt(d.t); camera.updateMatrixWorld(); }
-  composer.render();
+  if (G.useComposer) composer.render(); else { renderer.setRenderTarget(null); renderer.render(scene, camera); }
+  fxOver.style.opacity = G.useComposer ? 0 : grade.uniforms.uHurt.value; slowOver.style.opacity = G.useComposer ? 0 : grade.uniforms.uSlow.value * 0.8;
   if (saved) { camera.position.copy(saved[0]); camera.quaternion.copy(saved[1]); camera.updateMatrixWorld(); }
   renderXray();
   hud(dt); worldUI(dt);

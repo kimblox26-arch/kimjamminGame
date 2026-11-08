@@ -227,11 +227,12 @@ export function createWorld(renderer, scene) {
       sun.target.position.set(x, 0, z); sun.position.set(x + SUN_DIR.x * 80, SUN_DIR.y * 80, z + SUN_DIR.z * 80);
       sky.position.copy(p);
     },
-    setQuality(low) {
-      sun.shadow.mapSize.set(low ? 1024 : 2048, low ? 1024 : 2048); sun.shadow.map?.dispose(); sun.shadow.map = null;
-      waterMat.transmission = low ? 0 : 0.92; waterMat.opacity = low ? 0.8 : 0.96; waterMat.color.set(low ? 0x2a7d90 : 0x9fe3f0); waterMat.needsUpdate = true;
-      scene.fog.density = low ? 0.011 : 0.0065;
-      trunks.count = crowns.count = low ? Math.floor(trees.length * 0.55) : trees.length;
+    setQuality(q) { // 0 고화질 · 1 최적화 · 2 최대 최적화(그림자 없음)
+      sun.castShadow = q < 2;
+      const ms = q ? 1024 : 2048; if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+      waterMat.transmission = q ? 0 : 0.92; waterMat.opacity = q ? 0.8 : 0.96; waterMat.color.set(q ? 0x2a7d90 : 0x9fe3f0); waterMat.needsUpdate = true;
+      scene.fog.density = [0.0065, 0.011, 0.016][q];
+      trunks.count = crowns.count = Math.floor(trees.length * [1, 0.55, 0.35][q]);
     },
     update(dt, time) {
       M.caus.value = time * 0.6;

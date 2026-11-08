@@ -4,13 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BODY LAB</title>
-<link rel="stylesheet" href="./style.css?v=2">
+<link rel="stylesheet" href="./style.css?v=3">
 <script type="importmap">
 { "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
 </script>
 </head>
 <body>
 <canvas id="gl"></canvas>
+<div id="fxOverlay"></div><div id="slowOverlay"></div>
+<!-- 모바일: 왼쪽 조이스틱 영역, 오른쪽 둘러보기 영역 -->
+<div id="lookZone"></div><div id="joyZone"></div>
+<div id="joyBase"><i id="joyKnob"></i></div>
 
 <!-- 내 상태 (왼쪽 위) -->
 <section id="me" class="card">
@@ -45,7 +49,22 @@
   <span class="sep"></span>
   <button id="perfBtn" class="tool"><small>최적화</small><b id="perfState">끔</b><kbd>O</kbd></button>
   <button id="helpBtn" class="tool"><small>도움말</small><b>조작법</b><kbd>H</kbd></button>
+  <button id="barClose" class="tool touchOnly"><small>메뉴</small><b>닫기</b></button>
 </nav>
+
+<!-- 모바일: 위쪽 무기·메뉴, 오른쪽 아래 행동 버튼 -->
+<div id="mTop">
+  <button id="mWeapon" class="tool main"><small>무기</small><b id="mWName">권총</b></button>
+  <button id="mMenu" class="tool"><small>메뉴</small><b>설정·살리기</b></button>
+</div>
+<div id="acts">
+  <button id="aCar" class="act" hidden>타기</button>
+  <button id="aBrake" class="act" hidden>브레이크</button>
+  <button id="aGrab" class="act">잡기</button>
+  <button id="aAim" class="act">조준</button>
+  <button id="aFire" class="act big">발사</button>
+</div>
+<div id="rotate"><div class="card"><p>폰을 가로로 돌리면 더 편하게 할 수 있어요</p><button id="rotateOk">그냥 세로로 하기</button></div></div>
 
 <div id="cross"><i></i><i></i><i></i><i></i></div>
 <div id="hitmark">✕</div>
@@ -66,7 +85,13 @@
 <div id="helpMenu" class="modal" hidden>
   <div class="sheet narrow">
     <div class="sheetHead"><h2>조작법</h2><button class="close" data-close>닫기 <kbd>Esc</kbd></button></div>
-    <dl class="keys">
+    <dl class="keys touchKeys">
+      <dt>왼쪽 아래 끌기</dt><dd>이동 (끝까지 밀면 달리기) · 운전 중엔 가속·브레이크·조향</dd>
+      <dt>오른쪽 끌기</dt><dd>둘러보기</dd>
+      <dt>버튼</dt><dd>발사(누르고 있으면 연사) · 조준 · 잡기(누르고 있기) · 타기/내리기 · 브레이크</dd>
+      <dt>위쪽</dt><dd>무기 고르기 · 메뉴(슬로우, 엑스레이, 살리기, 최적화)</dd>
+    </dl>
+    <dl class="keys deskKeys">
       <dt>WASD</dt><dd>걷기 (Shift 달리기)</dd>
       <dt>마우스</dt><dd>둘러보기 · 좌클릭 공격 · 우클릭 정조준</dd>
       <dt>Tab / 1~7 / 휠</dt><dd>무기 고르기</dd>
@@ -93,11 +118,12 @@
       <li>무기 7종 — 아래 <b>무기</b> 버튼이나 Tab 으로 고르기</li>
       <li>장치: 회전 톱, 유압 프레스, 가시 함정, 고압 전기 바닥, 발사대, 저수지</li>
       <li>빨간 차에 다가가 <b>E</b> 로 타고 운전</li>
-      <li>느리면 아래 <b>최적화 모드</b>를 켜세요</li>
+      <li class="deskOnly">느리면 아래 <b>최적화 모드</b>를 켜세요</li>
+      <li class="touchOnly">폰: 왼쪽 아래를 끌어 이동, 오른쪽을 끌어 둘러보기. 최적화 모드가 켜진 채로 시작해요</li>
     </ul>
     <button id="startBtn">시작</button>
   </div>
 </div>
-<script type="module" src="./js/main.js?v=2"></script>
+<script type="module" src="./js/main.js?v=3"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 body, body * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
 body { background: var(--bg); color: var(--fg); font: 13px/1.4 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; user-select: none; }
-#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 [hidden] { display: none !important; }
 button { font: inherit; color: var(--fg); background: #161c22; border: 1px solid var(--line2); border-radius: 6px; cursor: pointer; }
 button:hover { background: #1f2730; }
@@ -86,3 +86,39 @@ kbd { font: 10px/1 ui-monospace, Menlo, monospace; color: var(--dim); border: 1p
 .intro h1 { font-size: 44px; letter-spacing: 6px; } .intro h1 span { color: #d33; } .intro p { margin: 8px 0 12px; color: #b9c4cc; }
 .intro ul { margin: 0 0 18px 18px; color: #9fb0bc; display: grid; gap: 3px; } #startBtn { font-size: 18px; padding: 10px 40px; background: #8a1c1c; border-color: #c33; }
 @media (max-width: 900px) { #xray { width: 38vw; } .tool { min-width: 0; } .tool kbd { display: none; } }
+
+/* ───────── 화면 효과 덮개 (최대 최적화일 때 후처리 대신) ───────── */
+#fxOverlay, #slowOverlay { position: fixed; inset: 0; pointer-events: none; opacity: 0; }
+#fxOverlay { background: radial-gradient(ellipse at center, transparent 40%, rgba(150, 0, 0, .8)); }
+#slowOverlay { background: radial-gradient(ellipse at center, rgba(120, 150, 180, .08) 30%, rgba(10, 20, 40, .7)); }
+
+/* ───────── 모바일 ───────── */
+.touchOnly, .touchKeys, #mTop, #lookZone, #joyZone, #joyBase, #acts, #rotate { display: none; }
+body.touch .deskOnly, body.touch .deskKeys { display: none; }
+body.touch .touchOnly { display: list-item; } body.touch button.touchOnly { display: grid; } body.touch .touchKeys { display: grid; }
+body.touch #lookZone { display: block; position: fixed; top: 0; right: 0; bottom: 0; left: 38vw; touch-action: none; }
+body.touch #joyZone { display: block; position: fixed; left: 0; bottom: 0; width: 38vw; height: 70vh; touch-action: none; }
+body.touch #joyBase { display: block; opacity: .4; left: calc(max(16px, env(safe-area-inset-left, 0px)) + 70px); top: calc(100% - 80px); } body.touch #joyBase.on { opacity: 1; }
+#joyBase { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .35); background: rgba(10, 14, 18, .25); pointer-events: none; }
+#joyKnob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255, 255, 255, .55); }
+body.touch #acts { display: flex; pointer-events: none; position: fixed; right: max(14px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); gap: 10px; align-items: flex-end; }
+.act { pointer-events: auto; width: 58px; height: 58px; flex: none; border-radius: 50%; background: rgba(20, 26, 32, .6); border: 2px solid rgba(255, 255, 255, .3); font-weight: 700; font-size: 12px; touch-action: none; }
+.act.big { width: 82px; height: 82px; background: rgba(140, 28, 28, .7); border-color: rgba(255, 130, 130, .6); font-size: 16px; }
+.act.on { background: rgba(30, 90, 130, .75); border-color: var(--xr); } .act.press { filter: brightness(1.5); }
+body.touch #mTop { display: flex; position: fixed; top: 8px; left: 50%; transform: translateX(-50%); gap: 6px; }
+body.touch #bar { display: none; }
+body.touch.menu-open #bar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; position: fixed; left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); padding: 12px; z-index: 6; }
+body.touch #bar .sep, body.touch .tool kbd { display: none; }
+body.touch .tool { padding: 7px 10px; touch-action: manipulation; }
+body.touch #me { left: max(8px, env(safe-area-inset-left, 0px)); top: 8px; width: 160px; padding: 6px 8px; }
+body.touch .bar { height: 15px; margin-top: 3px; } body.touch .row { margin-bottom: 3px; }
+body.touch #xray { right: max(8px, env(safe-area-inset-right, 0px)); top: 8px; bottom: calc(108px + env(safe-area-inset-bottom, 0px)); width: 28vw; gap: 5px; }
+body.touch #xray header .bar.bl { display: none; }
+body.touch #xray header { padding: 6px 8px; } body.touch .state { display: none; } body.touch #organBox { display: none; }
+body.touch #carHud { left: max(8px, env(safe-area-inset-left, 0px)); top: 92px; bottom: auto; padding: 4px 10px; } body.touch #carHud span { display: none; } body.touch #carHud b { font-size: 22px; }
+body.touch #log { top: 56px; }
+@media (orientation: portrait) {
+  body.touch:not(.noRotate) #rotate { display: grid; position: fixed; inset: 0; place-items: center; background: rgba(0, 0, 0, .7); z-index: 7; padding: 16px; text-align: center; }
+  #rotate p { margin-bottom: 12px; } #rotate button { padding: 8px 16px; }
+  body.touch #xray { width: 40vw; bottom: auto; height: 40vh; } body.touch #me { width: 140px; }
+}

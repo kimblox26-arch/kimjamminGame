@@ -15,7 +15,7 @@ function extrudeSide(pts, depth, bevel = 0.07) {
   return g;
 }
 // 차체 아랫부분 (창문 아래 선까지)
-function bodyGeo() { return extrudeSide([[-2.25, 0.32], [2.2, 0.32], [2.27, 0.5], [2.22, 0.72], [1.95, 0.86], [1.0, 0.98], [0.62, 1.03], [-1.6, 1.06], [-2.18, 1.02], [-2.27, 0.75]], W - 0.16, 0.08); }
+function bodyGeo() { return extrudeSide([[-2.25, 0.32], [2.2, 0.32], [2.27, 0.5], [2.22, 0.72], [1.95, 0.86], [1.0, 0.92], [0.62, 0.96], [-1.6, 0.98], [-2.18, 0.95], [-2.27, 0.72]], W - 0.16, 0.08); }
 // 두 점 사이 기둥
 function pillar(a, b, w, t) { const d = new V().subVectors(b, a), L = d.length(); const g = new THREE.BoxGeometry(w, L, t); g.translate(0, L / 2, 0); g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V(0, 1, 0), d.normalize())); g.translate(a.x, a.y, a.z); return g; }
 function sidePane(points, x) {
@@ -108,9 +108,9 @@ export class Car {
     const drive = !!this.occupant && dt > 0;
     let fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), lx = Math.cos(this.yaw), lz = -Math.sin(this.yaw);
     let fwdS = this.vel.x * fx + this.vel.z * fz, lat = this.vel.x * lx + this.vel.z * lz;
-    const thr = drive ? (inp.w ? 1 : 0) - (inp.s ? 1 : 0) : 0, st = drive ? (inp.a ? 1 : 0) - (inp.d ? 1 : 0) : 0, hb = drive && inp.space;
-    if (thr > 0) fwdS += (fwdS < -0.3 ? 16 : 9.5 * (1 - Math.max(0, fwdS) / 44)) * dt;
-    else if (thr < 0) fwdS -= (fwdS > 0.3 ? 16 : 5) * dt;
+    const thr = drive ? (inp.thr != null ? inp.thr : (inp.w ? 1 : 0) - (inp.s ? 1 : 0)) : 0, st = drive ? (inp.st != null ? inp.st : (inp.a ? 1 : 0) - (inp.d ? 1 : 0)) : 0, hb = drive && inp.space;
+    if (thr > 0) fwdS += (fwdS < -0.3 ? 16 : 9.5 * (1 - Math.max(0, fwdS) / 44)) * dt * thr;
+    else if (thr < 0) fwdS -= (fwdS > 0.3 ? 16 : 5) * dt * -thr;
     else fwdS -= Math.sign(fwdS) * Math.min(Math.abs(fwdS), 1.8 * dt);
     fwdS = Math.max(-9, Math.min(44, fwdS)) * Math.exp(-0.04 * dt);
     if (hb) fwdS *= Math.exp(-1.4 * dt);

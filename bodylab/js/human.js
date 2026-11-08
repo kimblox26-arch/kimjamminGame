@@ -242,11 +242,12 @@ export class Human {
     if (m <= 0.001 && !this.spasm) return;
     const P = this.particles;
     for (let i = 0; i < 17; i++) {
-      const k = this.K[i] * m;
-      if (k <= 0) continue;
+      const k0 = this.K[i] * m;
+      if (k0 <= 0) continue;
+      const k = h === 1 / 240 ? k0 : 1 - Math.pow(1 - k0, h * 240); // 물리 주기가 달라도 같은 힘
       const p = P[i].p, t = this.target[i];
       p.x += (t.x - p.x) * k; p.y += (t.y - p.y) * k; p.z += (t.z - p.z) * k;
-      P[i].o.lerp(p, 0.02 * m);
+      P[i].o.lerp(p, 0.02 * m * h * 240);
     }
     if (this.spasm > 0) for (const p of P) p.acc.set((Math.random() - 0.5) * 160, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 160).multiplyScalar(this.spasm);
   }
