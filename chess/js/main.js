@@ -1,0 +1,849 @@
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const menuEl = $('menu'), gameEl = $('game');
+  const boardEl = $('board'), squaresEl = $('squares'), marksEl = $('marks'), piecesEl = $('pieces');
+  const promoEl = $('promo'), veilEl = $('veil'), timerEl = $('timer');
+  const els = new Map(); // 기물 id -> DOM
+
+  // mode: 'ai' = 컴퓨터와 대전, 'duo' = 한 화면에서 두 명이서
+  let state, legal = [], keys = [], played = [], selected = null, over = null, hint = null, promoMoves = null;
+  let me = 'w', flipped = false, busy = true, token = 0, turnSeq = 0, mode = 'ai', auto = false;
+
+  // 난이도: Stockfish 실력(0~20)과 생각 시간
+  const LEVELS = [
+    { key: 'easy', skill: 0, ms: 150, depth: 1 },
+    { key: 'normal', skill: 6, ms: 400, depth: 2 },
+    { key: 'hard', skill: 13, ms: 900, depth: 3 },
+    { key: 'max', skill: 20, ms: 1500, depth: 4 },
+  ];
+
+  // ---------- 설정 / 언어 ----------
+  const TEXT = I18N.TEXT; // js/i18n.js
+  const store = {
+    get(k, d) {
+      try { const v = localStorage.getItem('chess.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; }
+    },
+    set(k, v) {
+      try { localStorage.setItem('chess.' + k, JSON.stringify(v)); } catch (e) { /* 저장 불가 */ }
+    },
+  };
+  const prefs = {
+    sound: store.get('sound', true), hints: store.get('hints', true), lang: store.get('lang', 'ko'),
+    level: Math.min(3, Math.max(0, Number(store.get('level', 1)) || 0)),
+    pace: ['think', 'speed', 'turbo'].includes(store.get('pace', 'think')) ? store.get('pace', 'think') : 'think',
+  };
+  if (!TEXT[prefs.lang]) prefs.lang = 'ko';
+  const tr = (k) => TEXT[prefs.lang][k];
+
+  function applyLang() {
+    document.documentElement.lang = I18N.htmlLang[prefs.lang] || prefs.lang;
+    document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = tr(el.dataset.t); });
+    document.querySelectorAll('.lang').forEach((b) => b.classList.toggle('on', b.dataset.lang === prefs.lang));
+    $('btnHome').setAttribute('aria-label', tr('menu'));
+    $('btnRec').setAttribute('aria-label', tr('record'));
+    $('btnSettings').setAttribute('aria-label', tr('settings'));
+    $('btnLang').setAttribute('aria-label', tr('language'));
+    setModeTag();
+    renderBars(false);
+    if (over && !veilEl.hidden) showVeil();
+  }
+  // 위·아래 막대: 각 쪽 이름과 남은 기물 수
+  function renderBars(animate) {
+    if (!state) return;
+    const top = flipped ? 'w' : 'b', bottom = flipped ? 'b' : 'w';
+    for (const [id, color] of [['barTop', top], ['barBottom', bottom]]) {
+      const bar = $(id);
+      const name = mode === 'duo' ? tr(color === 'w' ? 'white' : 'black') : tr(color === me ? 'you' : 'opponent');
+      const count = state.board.filter((p) => p && p.color === color).length;
+      if (bar.dataset.color !== color) { bar.querySelector('.pbar-pc').innerHTML = pieceSVG('k', color); bar.dataset.color = color; }
+      bar.querySelector('.pbar-name').textContent = name;
+      const b = bar.querySelector('.pbar-count b');
+      if (b.textContent !== String(count)) {
+        b.textContent = count;
+        if (animate) b.animate([{ transform: 'scale(1.6)', color: '#ff8a7a' }, { transform: 'scale(1)' }], { duration: 420, easing: EASE_POP });
+      }
+      bar.classList.toggle('turn', !over && state.turn === color);
+    }
+  }
+  const setModeTag = () => { $('modeTag').textContent = mode === 'duo' ? tr('twoP') : tr(LEVELS[prefs.level].key); };
+
+  // ---------- 화면·창 애니메이션 ----------
+  const EASE_POP = 'cubic-bezier(.2,1.25,.4,1)';
+  function swap(from, to, done) {
+    const out = from.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.97)' }],
+      { duration: 180, easing: 'ease-in' });
+    out.onfinish = () => {
+      from.hidden = true;
+      to.hidden = false;
+      to.animate([{ opacity: 0, transform: 'scale(1.03)' }, { opacity: 1, transform: 'scale(1)' }],
+        { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      if (done) done();
+    };
+  }
+  function openSheet(sh) {
+    sh.hidden = false;
+    sh.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180 });
+    sh.firstElementChild.animate([
+      { opacity: 0, transform: 'translateY(18px) scale(.92)' },
+      { opacity: 1, transform: 'none' },
+    ], { duration: 300, easing: EASE_POP });
+  }
+  function closeSheet(sh, done) {
+    if (sh.hidden) { if (done) done(); return; }
+    sh.firstElementChild.animate([{ transform: 'none' }, { transform: 'scale(.94)' }], { duration: 160 });
+    const a = sh.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
+    a.onfinish = () => { sh.hidden = true; a.cancel(); if (done) done(); };
+  }
+  const pop = (el) => el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.12)' }, { transform: 'scale(1)' }],
+    { duration: 260, easing: EASE_POP });
+
+  // ---------- 타이머 (왼쪽 위, 분:초:1/100초) ----------
+  let tStart = 0, tAcc = 0, tRun = false, raf = 0, tLast = '';
+  const fmt = (ms) => {
+    const cs = Math.floor(ms / 10);
+    return [Math.floor(cs / 6000), Math.floor(cs / 100) % 60, cs % 100].map((v) => String(v).padStart(2, '0')).join(':');
+  };
+  function tick() {
+    const txt = fmt(tAcc + (tRun ? performance.now() - tStart : 0));
+    if (txt !== tLast) {
+      // 숫자마다 같은 폭 칸에 넣어 글자가 흔들리지 않게 한다
+      timerEl.innerHTML = txt.split('').map((ch) => (ch === ':' ? '<i>:</i>' : `<b>${ch}</b>`)).join('');
+      tLast = txt;
+    }
+    if (tRun) raf = requestAnimationFrame(tick);
+  }
+  function timerReset() { cancelAnimationFrame(raf); tRun = false; tAcc = 0; tick(); }
+  function timerGo() { if (!tRun) { tRun = true; tStart = performance.now(); raf = requestAnimationFrame(tick); } }
+  function timerStop() {
+    if (!tRun) return;
+    tAcc += performance.now() - tStart;
+    tRun = false;
+    cancelAnimationFrame(raf);
+    tick();
+  }
+
+  // ---------- 좌표 / 변형 ----------
+  function screenPos(s) {
+    let r = s >> 3, c = s & 7;
+    if (flipped) { r = 7 - r; c = 7 - c; }
+    return [r, c];
+  }
+  const at = (r, c) => `translate(${c * 100}%, ${r * 100}%)`;
+  const translate = (s) => at(...screenPos(s));
+  const pose = (y = 0, rz = 0, sx = 1, sy = sx) => `translateY(${y}%) rotate(${rz}deg) scale(${sx}, ${sy})`;
+  // 오토 모드의 빠르기: think = 깊게 생각, speed = 빠르게, turbo = 몇 초 만에 끝나는 초고속
+  const PACE = {
+    think: { anim: 1, mine: 2500, theirs: Infinity },
+    speed: { anim: 0.4, mine: 200, theirs: 150 },
+    turbo: { anim: 0.09, mine: 40, theirs: 20 },
+  };
+  const pace = () => PACE[auto ? prefs.pace : 'think'];
+  const spd = () => pace().anim;
+
+  function later(fn, ms) {
+    const t = token;
+    setTimeout(() => { if (t === token) fn(); }, ms);
+  }
+
+  // ---------- 그리기 ----------
+  function buildSquares() {
+    let html = '';
+    for (let vr = 0; vr < 8; vr++) {
+      for (let vc = 0; vc < 8; vc++) {
+        const r = flipped ? 7 - vr : vr, c = flipped ? 7 - vc : vc;
+        html += `<div class="sq ${(r + c) % 2 ? 'd' : 'l'}">`;
+        if (vc === 0) html += `<span class="coord rank">${8 - r}</span>`;
+        if (vr === 7) html += `<span class="coord file">${'abcdefgh'[c]}</span>`;
+        html += '</div>';
+      }
+    }
+    squaresEl.innerHTML = html;
+  }
+
+  function makePiece(p, s) {
+    const el = document.createElement('div');
+    el.className = 'piece';
+    el.innerHTML = `<div class="body">${pieceSVG(p.type, p.color)}</div>`;
+    el.style.transform = translate(s);
+    el.body = el.firstElementChild;
+    el.dataset.kind = p.color + p.type;
+    piecesEl.appendChild(el);
+    els.set(p.id, el);
+    return el;
+  }
+
+  function renderMarks() {
+    let html = '';
+    const add = (s, cls) => { html += `<div class="mark ${cls}" style="transform:${translate(s)}"></div>`; };
+    if (Chess.inCheck(state, state.turn)) add(Chess.kingSq(state.board, state.turn), 'check');
+    if (hint && selected !== hint.best.move.from) add(hint.best.move.from, 'rec');
+    if (selected !== null) {
+      add(selected, 'sel');
+      const rec = hint && hint.byFrom.get(selected);
+      const done = new Set();
+      for (const m of legal) {
+        if (m.from !== selected || done.has(m.to)) continue;
+        done.add(m.to);
+        const best = rec && rec.move.to === m.to ? ' best' : '';
+        add(m.to, (m.capture !== undefined ? 'take' : 'move') + best);
+      }
+    }
+    marksEl.innerHTML = html;
+  }
+
+  // 승급 선택: 승급하는 칸에서 판 안쪽으로 4칸
+  const promoRows = (to) => (screenPos(to)[0] === 0 ? [0, 1, 2, 3] : [7, 6, 5, 4]);
+  function renderPromo() {
+    if (!promoMoves) { promoEl.hidden = true; return; }
+    const c = screenPos(promoMoves[0].to)[1], rows = promoRows(promoMoves[0].to);
+    promoEl.innerHTML = 'qnrb'.split('').map((t, i) =>
+      `<div class="promo-opt" style="transform:${at(rows[i], c)}">${pieceSVG(t, state.turn)}</div>`).join('');
+    promoEl.hidden = false;
+  }
+
+  function showVeil() {
+    $('veilTitle').textContent = tr(over.title);
+    $('veilText').textContent = tr(over.text);
+    if (veilEl.hidden) {
+      veilEl.hidden = false;
+      veilEl.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 });
+      veilEl.firstElementChild.animate([{ opacity: 0, transform: 'scale(.85)' }, { opacity: 1, transform: 'none' }],
+        { duration: 320, easing: EASE_POP });
+    }
+  }
+
+  // ---------- 기물 애니메이션 ----------
+  // 이동: 살짝 들어 올려 진행 방향으로 기울며 옮기고, 멈출 때 관성으로 살짝 뒤로 기울었다가 내려놓는다
+  function travel(el, from, to, delay = 0) {
+    const [r0, c0] = screenPos(from), [r1, c1] = screenPos(to);
+    const dist = Math.hypot(r1 - r0, c1 - c0);
+    const dur = Math.round(Math.min(520, 260 + dist * 38) * spd());
+    const tail = Math.round(140 * spd());
+    const dir = Math.sign(c1 - c0) || (c0 < 4 ? -1 : 1);
+    const lean = dir * 6;
+    const a = dur / (dur + tail);
+
+    el.style.zIndex = 5;
+    el.style.transform = at(r1, c1);
+    el.animate([{ transform: at(r0, c0) }, { transform: at(r1, c1) }],
+      { duration: dur, delay, easing: 'cubic-bezier(.33,0,.2,1)', fill: 'backwards' });
+    el.body.animate([
+      { offset: 0, transform: pose(), easing: 'ease-out' },
+      { offset: a * 0.25, transform: pose(-5, lean * 0.6, 1.05), easing: 'ease-in-out' },
+      { offset: a * 0.6, transform: pose(-6, lean * 0.3, 1.06), easing: 'ease-in-out' },
+      { offset: a * 0.92, transform: pose(-2, -lean * 0.4, 1.02), easing: 'ease-in' },
+      { offset: a, transform: pose(0, 0, 1.02, 0.97), easing: 'ease-out' },
+      { offset: a + (1 - a) * 0.55, transform: pose(0, 0, 0.995, 1.005), easing: 'ease-in-out' },
+      { offset: 1, transform: pose() },
+    ], { duration: dur + tail, delay, fill: 'backwards' });
+    later(() => { el.style.zIndex = ''; }, delay + dur + tail);
+
+    Sound.knock(delay + dur); // 둑
+    return { land: delay + dur, end: delay + dur + tail, dir };
+  }
+
+  // 잡힘: 제자리 가운데에서 흐려지며 살짝 돌아가며 사라진다
+  function vanish(vic, dir, T) {
+    const d = Math.round(480 * spd());
+    vic.style.zIndex = 0;
+    vic.body.animate([
+      { transform: pose(), opacity: 1, filter: 'blur(0px)' },
+      { offset: 0.35, transform: pose(0, dir * 6, 0.97), opacity: 0.75, filter: 'blur(1px)' },
+      { transform: pose(0, dir * 20, 0.8), opacity: 0, filter: 'blur(4px)' },
+    ], { duration: d, delay: T, easing: 'ease-out', fill: 'forwards' });
+    later(() => vic.remove(), T + d + 20);
+    return T + d;
+  }
+
+  function promote(el, type, color) {
+    el.body.firstElementChild.outerHTML = pieceSVG(type, color);
+    el.dataset.kind = color + type;
+    el.body.animate([{ transform: pose(0, 0, 0.75) }, { offset: 0.6, transform: pose(-4, 0, 1.1) }, { transform: pose() }],
+      { duration: 300, easing: 'ease-out' });
+  }
+
+  function animateMove(prev, m) {
+    const mover = prev.board[m.from];
+    const el = els.get(mover.id);
+    const t = travel(el, m.from, m.to);
+    let end = t.end;
+    if (m.castle) end = Math.max(end, travel(els.get(prev.board[m.rookFrom].id), m.rookFrom, m.rookTo, 160 * spd()).end);
+    if (m.capture !== undefined) {
+      const victim = prev.board[m.capture];
+      const vel = els.get(victim.id);
+      els.delete(victim.id);
+      end = Math.max(end, vanish(vel, t.dir, Math.max(0, t.land - 180 * spd())));
+    }
+    if (m.promo) {
+      later(() => promote(el, m.promo, mover.color), t.land + 40);
+      end = Math.max(end, t.land + 360);
+    }
+    return end;
+  }
+
+  // 시작: 아래쪽 기물은 아래에서 위로, 위쪽 기물은 위에서 아래로 부드럽게 자리 잡는다
+  function setupBoard() {
+    const dur = 620;
+    let end = 0;
+    state.board.forEach((p, s) => {
+      if (!p) return;
+      const el = makePiece(p, s);
+      const [r, c] = screenPos(s);
+      const d = c * 55 + (r === 0 || r === 7 ? 110 : 0);
+      el.animate([
+        { transform: at(r + (r >= 4 ? 2.6 : -2.6), c), opacity: 0 },
+        { offset: 0.35, opacity: 1 },
+        { transform: at(r, c), opacity: 1 },
+      ], { duration: dur, delay: d, easing: 'cubic-bezier(.2,.85,.25,1)', fill: 'backwards' });
+      end = Math.max(end, d + dur);
+    });
+    for (let c = 0; c < 8; c++) Sound.knock(c * 55 + 110 + dur * 0.8, { gain: 0.32 });
+    return end;
+  }
+
+  // ---------- 엔진 ----------
+  const sqName = (s) => 'abcdefgh'[s & 7] + (8 - (s >> 3));
+  const sqIndex = (n) => (8 - Number(n[1])) * 8 + 'abcdefgh'.indexOf(n[0]);
+  // Stockfish: 백그라운드 워커에서 계산 (화면이 멈추지 않음)
+  function makeEngine(url) {
+    let w = null, waiting = null, skip = 0, failed = false;
+    function fail() {
+      failed = true;
+      if (w) w.terminate();
+      w = null;
+      const cb = waiting;
+      waiting = null;
+      if (cb) cb(null);
+    }
+    function start() {
+      if (w || failed) return;
+      try {
+        w = new Worker(url);
+      } catch (e) {
+        failed = true;
+        return;
+      }
+      w.onmessage = (e) => {
+        const line = String(e.data);
+        if (!line.startsWith('bestmove')) return;
+        if (skip > 0) { skip--; return; }
+        const cb = waiting;
+        waiting = null;
+        if (cb) cb(line.split(' ')[1]);
+      };
+      w.onerror = fail;
+      w.postMessage('uci');
+      w.postMessage('isready');
+    }
+    function best(moves, skill, ms, cb) {
+      if (!w) { cb(null); return; }
+      if (waiting) { skip++; w.postMessage('stop'); }
+      waiting = cb;
+      w.postMessage('setoption name Skill Level value ' + skill);
+      w.postMessage('position startpos' + (moves.length ? ' moves ' + moves.join(' ') : ''));
+      w.postMessage('go movetime ' + ms);
+      // 응답이 없으면(불러오기 실패 등) 이 엔진은 더 쓰지 않는다
+      setTimeout(() => { if (waiting === cb) fail(); }, ms + 12000);
+    }
+    return { start, best, ok: () => !!w, newGame: () => { if (w) w.postMessage('ucinewgame'); } };
+  }
+  const Strong = makeEngine('vendor/stockfish.asm.js');               // Stockfish 10: 난이도별 상대·추천
+  const Genius = makeEngine('vendor/stockfish-17.1-lite-single.js');  // Stockfish 17.1 NNUE: AI 오토 모드
+  const uciMoves = () => played.map((m) => sqName(m.from) + sqName(m.to) + (m.promo || ''));
+  const fromUci = (u) => u && u.length >= 4 && legal.find((x) =>
+    x.from === sqIndex(u.slice(0, 2)) && x.to === sqIndex(u.slice(2, 4)) && (x.promo || '') === (u[4] || ''));
+
+  // 엔진에게 수를 받아 두기: 앞의 엔진이 안 되면 다음 엔진, 마지막은 내장 엔진
+  function engineMove(id, engines, skill, ms, depth, random) {
+    const [eng, ...rest] = engines;
+    if (eng && eng.ok()) {
+      eng.best(uciMoves(), skill, ms, (u) => {
+        if (id !== turnSeq) return;
+        const m = fromUci(u);
+        if (m) doMove(m);
+        else engineMove(id, rest, skill, ms, depth, random);
+      });
+      return;
+    }
+    if (eng) { engineMove(id, rest, skill, ms, depth, random); return; }
+    Brain.analyze(state, depth, ({ best, byFrom }) => {
+      if (id !== turnSeq) return;
+      const pool = random ? [...byFrom.values()].filter((x) => x.score >= best.score - random) : [best];
+      doMove(pool[Math.floor(Math.random() * pool.length)].move);
+    });
+  }
+
+  function requestHints(id) {
+    Brain.analyze(state, 3, (res) => {
+      if (id !== turnSeq || !prefs.hints) return;
+      hint = res;
+      renderMarks();
+      if (!Strong.ok()) return;
+      Strong.best(uciMoves(), 20, 600, (u) => {
+        const m = id === turnSeq && hint && fromUci(u);
+        if (!m) return;
+        hint.best = { move: m, score: hint.best.score };
+        hint.byFrom.set(m.from, { move: m, score: hint.best.score });
+        renderMarks();
+      });
+    });
+  }
+
+  // ---------- 진행 ----------
+  function judge() {
+    if (!legal.length) {
+      if (Chess.inCheck(state, state.turn)) {
+        const winner = state.turn === 'w' ? 'b' : 'w';
+        const text = mode === 'duo' ? (winner === 'w' ? 'whiteWins' : 'blackWins') : winner === me ? 'win' : 'lose';
+        return { title: 'checkmate', text };
+      }
+      return { title: 'stalemate', text: 'draw' };
+    }
+    if (Chess.insufficient(state.board)) return { title: 'insufficient', text: 'draw' };
+    if (state.half >= 100) return { title: 'fifty', text: 'draw' };
+    const k = keys[keys.length - 1];
+    if (keys.filter((x) => x === k).length >= 3) return { title: 'repetition', text: 'draw' };
+    return null;
+  }
+
+  function play(m) {
+    state = Chess.apply(state, m);
+    keys.push(Chess.key(state));
+    played.push({ from: m.from, to: m.to, promo: m.promo });
+  }
+
+  // 사람이 두는 쪽인가 (오토 모드가 켜지면 내 쪽은 AI 가 대신 둔다)
+  const humanSide = (color) => (mode === 'duo' || color === me) && !(auto && color === me);
+
+  function beginTurn() {
+    const id = ++turnSeq;
+    legal = Chess.legalMoves(state);
+    over = judge();
+    hint = null;
+    selected = null;
+    renderMarks();
+    renderBars(true);
+    if (over) {
+      busy = true;
+      timerStop();
+      showVeil();
+    } else if (!humanSide(state.turn)) {
+      busy = true;
+      // 오토 모드: 가장 강한 Stockfish 17.1 이 최고 실력으로 충분히 생각해서 둔다
+      // 생각 모드: 한 수에 2.5초 깊게 / 스피드 모드: 0.2초 만에
+      if (auto && state.turn === me) engineMove(id, [Genius, Strong], 20, pace().mine, 4, 0);
+      else {
+        const L = LEVELS[prefs.level];
+        engineMove(id, [Strong], L.skill, Math.min(L.ms, pace().theirs), L.depth, L.skill < 10 ? 40 : 0);
+      }
+    } else {
+      busy = false;
+      if (prefs.hints) requestHints(id);
+    }
+  }
+
+  function doMove(m) {
+    busy = true;
+    selected = null;
+    hint = null;
+    turnSeq++;
+    marksEl.innerHTML = '';
+    const prev = state;
+    play(m);
+    later(beginTurn, animateMove(prev, m) + 60 * spd());
+  }
+
+  function reset(color, replay) {
+    me = color;
+    flipped = me === 'b';
+    state = Chess.initial();
+    keys = [Chess.key(state)];
+    played = [];
+    selected = null;
+    promoMoves = null;
+    hint = null;
+    over = null;
+    for (const r of replay || []) {
+      const m = Chess.legalMoves(state).find((x) => x.from === r.from && x.to === r.to && x.promo === r.promo);
+      if (!m) break;
+      play(m);
+    }
+    piecesEl.innerHTML = '';
+    els.clear();
+    buildSquares();
+    renderPromo();
+    marksEl.innerHTML = '';
+    veilEl.hidden = true;
+    renderBars(false);
+  }
+
+  function startGame(m) {
+    mode = m;
+    setModeTag();
+    Strong.start();
+    Strong.newGame();
+    Sound.init();
+    token++;
+    turnSeq++;
+    busy = true;
+    reset(mode === 'duo' ? 'w' : Math.random() < 0.5 ? 'w' : 'b');
+    timerReset();
+    swap(menuEl, gameEl, () => {
+      // 게임 화면의 시작 버튼을 눌러야 기물이 놓이고 게임이 시작된다
+      readyEl.hidden = false;
+      readyEl.firstElementChild.animate([{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'scale(1)' }],
+        { duration: 360, easing: EASE_POP });
+    });
+  }
+  const readyEl = $('ready');
+  $('btnGo').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (readyEl.hidden) return;
+    const a = readyEl.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
+    readyEl.firstElementChild.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.15)' }], { duration: 200 });
+    a.onfinish = () => {
+      readyEl.hidden = true;
+      a.cancel();
+      later(() => { timerGo(); beginTurn(); }, setupBoard() + 60);
+    };
+  });
+
+  function showMenu() {
+    token++;
+    turnSeq++;
+    busy = true;
+    timerStop();
+    stopRecording();
+    readyEl.hidden = true;
+    swap(gameEl, menuEl, introMenu);
+  }
+  // 메인 화면이 나타날 때 위에서부터 차례로 떠오른다
+  function introMenu() {
+    [...menuEl.querySelectorAll('.menu-top, .hero, .brand, .menu-buttons > *')].forEach((el, i) => {
+      el.animate([{ opacity: 0, transform: 'translateY(22px)' }, { opacity: 1, transform: 'none' }],
+        { duration: 520, delay: 60 + i * 80, easing: 'cubic-bezier(.2,.9,.25,1)', fill: 'backwards' });
+    });
+  }
+
+  // ---------- 입력: 게임 ----------
+  boardEl.addEventListener('click', (e) => {
+    if (!veilEl.hidden) { showMenu(); return; }
+    if (busy || over) return;
+    const rect = boardEl.getBoundingClientRect();
+    const vc = Math.floor(((e.clientX - rect.left) / rect.width) * 8);
+    const vr = Math.floor(((e.clientY - rect.top) / rect.height) * 8);
+    if (vr < 0 || vr > 7 || vc < 0 || vc > 7) return;
+
+    if (promoMoves) {
+      const pc = screenPos(promoMoves[0].to)[1], i = promoRows(promoMoves[0].to).indexOf(vr);
+      const m = vc === pc && i >= 0 ? promoMoves.find((x) => x.promo === 'qnrb'[i]) : null;
+      promoMoves = null;
+      renderPromo();
+      if (m) doMove(m);
+      else { selected = null; renderMarks(); }
+      return;
+    }
+    if (!humanSide(state.turn)) return;
+
+    const s = flipped ? (7 - vr) * 8 + (7 - vc) : vr * 8 + vc;
+    if (selected !== null) {
+      const moves = legal.filter((m) => m.from === selected && m.to === s);
+      if (moves.length) {
+        if (moves[0].promo) { promoMoves = moves; renderPromo(); }
+        else doMove(moves[0]);
+        return;
+      }
+    }
+    const p = state.board[s];
+    selected = p && p.color === state.turn && selected !== s ? s : null;
+    renderMarks();
+  });
+  $('btnHome').addEventListener('click', showMenu);
+
+  // ---------- Chess Auto Bot(안드로이드 앱) 연동 ----------
+  // 판에 현재 국면을 접근성 라벨로 붙여 둔다: KJBOT|FEN|판 뒤집힘(0/1)|봇이 둘 차례(0/1)
+  boardEl.setAttribute('role', 'img');
+  let botLabel = '';
+  setInterval(() => {
+    if (!state) return;
+    let fen = '';
+    for (let r = 0; r < 8; r++) {
+      let e = 0;
+      for (let c = 0; c < 8; c++) {
+        const p = state.board[r * 8 + c];
+        if (!p) { e++; continue; }
+        if (e) { fen += e; e = 0; }
+        fen += p.color === 'w' ? p.type.toUpperCase() : p.type;
+      }
+      fen += (e || '') + (r < 7 ? '/' : '');
+    }
+    const cs = state.castling;
+    const cas = (cs.wK ? 'K' : '') + (cs.wQ ? 'Q' : '') + (cs.bK ? 'k' : '') + (cs.bQ ? 'q' : '') || '-';
+    const ep = state.ep >= 0 ? 'abcdefgh'[state.ep & 7] + (8 - (state.ep >> 3)) : '-';
+    fen += ` ${state.turn} ${cas} ${ep} ${state.half} ${state.full}`;
+    const ready = !gameEl.hidden && readyEl.hidden && veilEl.hidden && !busy && !over && humanSide(state.turn);
+    const label = `KJBOT|${fen}|${flipped ? 1 : 0}|${ready ? 1 : 0}`;
+    if (label !== botLabel) boardEl.setAttribute('aria-label', (botLabel = label));
+  }, 150);
+
+  // ---------- 영상 찍기 ----------
+  const btnRec = $('btnRec'), recTime = $('recTime');
+  let recStart = 0, recTick = 0, toastTimer = 0;
+  if (!GameRecorder.supported()) btnRec.hidden = true;
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.hidden = false;
+    t.animate([{ opacity: 0, transform: 'translateY(-12px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: EASE_POP });
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  }
+  async function saveVideo(file) {
+    if (!file) { toast(tr('recFailed')); return; }
+    const name = 'chess-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.' + file.ext;
+    if (window.claude && window.claude.use) {
+      const dl = await window.claude.use('downloads').catch(() => null);
+      if (!dl) { toast(tr('recFailed')); return; }
+      try {
+        await dl.save({ filename: name, data: file.blob });
+        toast(tr('recSaved'));
+      } catch (e) {
+        if (!e || e.code !== 'declined') toast(tr('recFailed'));
+      }
+      return;
+    }
+    // 저장소에서 직접 연 경우: 보통의 다운로드
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file.blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast(tr('recSaved'));
+  }
+  function setRecUI(on) {
+    btnRec.classList.toggle('on', on);
+    btnRec.setAttribute('aria-pressed', String(on));
+    clearInterval(recTick);
+    recTime.textContent = '';
+    if (on) {
+      recStart = performance.now();
+      recTick = setInterval(() => {
+        const s = Math.floor((performance.now() - recStart) / 1000);
+        recTime.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      }, 250);
+    }
+  }
+  async function stopRecording() {
+    if (!GameRecorder.isOn()) return;
+    setRecUI(false);
+    saveVideo(await GameRecorder.stop());
+  }
+  btnRec.addEventListener('click', () => {
+    Sound.init();
+    if (GameRecorder.isOn()) stopRecording();
+    else if (GameRecorder.start()) setRecUI(true);
+    else toast(tr('recFailed'));
+  });
+
+  // ---------- 입력: 메인 화면 / 창 ----------
+  document.addEventListener('pointerdown', Sound.init);
+  const sheets = [...document.querySelectorAll('.sheet')];
+  const sheetLevel = $('sheetLevel'), sheetSettings = $('sheetSettings'), sheetLang = $('sheetLang'), sheetPw = $('sheetPw');
+  let taps = 0, unlocked = false;
+
+  function markLevel() {
+    document.querySelectorAll('[data-level]').forEach((b) => b.classList.toggle('on', Number(b.dataset.level) === prefs.level));
+  }
+  $('btnPlay').addEventListener('click', () => openSheet(sheetLevel));
+  $('btnDuo').addEventListener('click', () => openSheet($('sheetDuo')));
+  $('btnDuoStart').addEventListener('click', () => closeSheet($('sheetDuo'), () => startGame('duo')));
+  // 생각 모드 / 스피드 모드 (난이도 창과 오토 창이 같은 설정을 쓴다)
+  function markPace() {
+    document.querySelectorAll('[data-pace]').forEach((b) => b.classList.toggle('on', b.dataset.pace === prefs.pace));
+  }
+  document.querySelectorAll('[data-pace]').forEach((b) => b.addEventListener('click', () => {
+    prefs.pace = b.dataset.pace;
+    store.set('pace', prefs.pace);
+    markPace();
+    pop(b);
+  }));
+  markPace();
+  $('btnStart').addEventListener('click', () => closeSheet(sheetLevel, () => startGame('ai')));
+  document.querySelectorAll('[data-level]').forEach((b) => b.addEventListener('click', () => {
+    prefs.level = Number(b.dataset.level);
+    store.set('level', prefs.level);
+    markLevel();
+    pop(b);
+  }));
+  $('btnSettings').addEventListener('click', () => { taps = 0; openSheet(sheetSettings); });
+  $('btnLang').addEventListener('click', () => openSheet(sheetLang));
+  sheets.forEach((sh) => {
+    sh.addEventListener('click', (e) => {
+      if (e.target === sh || e.target.closest('[data-close]')) closeSheet(sh);
+    });
+  });
+  $('langGrid').innerHTML = I18N.names.map(([code, name]) =>
+    `<button class="lang" type="button" data-lang="${code}">${name}</button>`).join('');
+  document.querySelectorAll('.lang').forEach((b) => b.addEventListener('click', () => {
+    prefs.lang = b.dataset.lang;
+    store.set('lang', prefs.lang);
+    applyLang();
+    pop(b);
+  }));
+  const optSound = $('optSound'), optHints = $('optHints');
+  optSound.checked = prefs.sound;
+  optHints.checked = prefs.hints;
+  Sound.setOn(prefs.sound);
+  optSound.addEventListener('change', () => { prefs.sound = optSound.checked; store.set('sound', prefs.sound); Sound.setOn(prefs.sound); });
+  optHints.addEventListener('change', () => { prefs.hints = optHints.checked; store.set('hints', prefs.hints); });
+
+  // 설정 창 위 체스말을 10번 누르면 비밀번호 창
+  const mascot = $('mascot');
+  mascot.addEventListener('click', () => {
+    mascot.animate([{ transform: 'translateY(0) scale(1)' }, { transform: 'translateY(-8px) scale(1.08)' }, { transform: 'translateY(0) scale(1)' }],
+      { duration: 240, easing: EASE_POP });
+    if (++taps >= 10) {
+      taps = 0;
+      if (unlocked) { sheets.forEach((sh) => closeSheet(sh)); setTimeout(openAutoWin, 200); return; }
+      $('pwInput').value = '';
+      $('pwErr').hidden = true;
+      openSheet(sheetPw);
+      setTimeout(() => $('pwInput').focus(), 50);
+    }
+  });
+  $('pwForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if ($('pwInput').value === 'chess0101') {
+      $('pwInput').blur();
+      sheets.forEach((sh) => closeSheet(sh));
+      unlocked = true;
+      Genius.start(); // 큰 엔진을 미리 불러 둔다
+      setTimeout(openAutoWin, 200);
+    } else {
+      $('pwErr').hidden = false;
+      $('pwForm').animate([0, -10, 10, -8, 8, -4, 0].map((x) => ({ transform: `translateX(${x}px)` })), { duration: 380 });
+    }
+  });
+
+  // ---------- AI 오토 모드 창 ----------
+  const win = $('autoWin'), bubble = $('autoBubble'), toggle = $('autoToggle');
+  bubble.innerHTML = pieceSVG('n', 'w');
+  function place(el, x, y) {
+    el.style.left = Math.max(6, Math.min(window.innerWidth - el.offsetWidth - 6, x)) + 'px';
+    el.style.top = Math.max(6, Math.min(window.innerHeight - el.offsetHeight - 6, y)) + 'px';
+  }
+  // 끌어서 옮기기 (거의 안 움직이고 떼면 누른 것으로 본다)
+  function draggable(handle, target, onTap, onDrag, onDrop) {
+    let sx = 0, sy = 0, ox = 0, oy = 0, moved = false, down = false;
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.float-min')) return;
+      down = true;
+      moved = false;
+      sx = e.clientX;
+      sy = e.clientY;
+      ox = target.offsetLeft;
+      oy = target.offsetTop;
+      handle.setPointerCapture(e.pointerId);
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!down) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!moved && Math.hypot(dx, dy) < 6) return;
+      moved = true;
+      place(target, ox + dx, oy + dy);
+      if (onDrag) onDrag();
+    });
+    handle.addEventListener('pointerup', () => {
+      if (down && !moved && onTap) onTap();
+      if (down && moved && onDrop) onDrop(false);
+      down = false;
+    });
+    handle.addEventListener('pointercancel', () => { if (down && moved && onDrop) onDrop(true); down = false; });
+  }
+  function openAutoWin() {
+    bubble.hidden = true;
+    win.hidden = false;
+    if (!win.style.left) place(win, (window.innerWidth - win.offsetWidth) / 2, window.innerHeight * 0.18);
+    win.animate([{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 340, easing: EASE_POP });
+  }
+  function minimize(ghost) {
+    const a = win.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.25)' }],
+      { duration: 220, easing: 'ease-in', fill: 'forwards' });
+    a.onfinish = () => {
+      win.hidden = true;
+      a.cancel();
+      bubble.hidden = false;
+      place(bubble, win.offsetLeft, win.offsetTop);
+      bubble.classList.toggle('ghost', ghost === true);
+      bubble.animate([{ transform: 'scale(0)' }, { transform: 'scale(1)' }], { duration: 320, easing: EASE_POP });
+    };
+  }
+  function expand() {
+    const x = bubble.offsetLeft, y = bubble.offsetTop;
+    const a = bubble.animate([{ transform: 'scale(1)' }, { transform: 'scale(0)' }], { duration: 150, easing: 'ease-in', fill: 'forwards' });
+    a.onfinish = () => {
+      a.cancel();
+      bubble.hidden = true;
+      bubble.classList.remove('ghost');
+      win.hidden = false;
+      place(win, x, y);
+      win.animate([{ opacity: 0, transform: 'scale(.25)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 360, easing: EASE_POP });
+    };
+  }
+  draggable($('autoHead'), win);
+  // 숨기기: 동그라미를 끌면 아래에 X 가 나타나고, 거기에 놓으면 숨는다 (창의 눈 버튼으로도 숨김)
+  // 다시 보려면 설정 창의 체스말을 10번 누르면 된다 (한 번 연 뒤에는 비밀번호 없이)
+  const zone = $('hideZone');
+  const overZone = () => {
+    const a = bubble.getBoundingClientRect(), z = zone.getBoundingClientRect();
+    return Math.hypot(a.left + a.width / 2 - (z.left + z.width / 2), a.top + a.height / 2 - (z.top + z.height / 2)) < 56;
+  };
+  // 숨기기 = 동그라미가 거의 투명해진다. 투명한 동그라미를 누르면 창이 다시 열린다
+  function ghostBubble() {
+    bubble.classList.add('ghost');
+    bubble.animate([{ transform: 'scale(1.2)' }, { transform: 'scale(1)' }], { duration: 300, easing: EASE_POP });
+  }
+  draggable(bubble, bubble, expand, () => {
+    if (zone.hidden) {
+      zone.hidden = false;
+      zone.animate([{ opacity: 0, transform: 'translateY(30px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: EASE_POP });
+    }
+    zone.classList.toggle('hot', overZone());
+  }, (cancel) => {
+    const drop = !cancel && overZone();
+    zone.classList.remove('hot');
+    const a = zone.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' });
+    a.onfinish = () => { zone.hidden = true; a.cancel(); };
+    if (drop) ghostBubble();
+  });
+  $('autoHide').addEventListener('click', () => minimize(true));
+  $('autoMin').addEventListener('click', () => minimize(false));
+  toggle.addEventListener('click', () => {
+    auto = !auto;
+    if (auto) Genius.start();
+    toggle.classList.toggle('on', auto);
+    bubble.classList.toggle('on', auto);
+    toggle.setAttribute('aria-pressed', String(auto));
+    $('autoState').textContent = auto ? 'ON' : 'OFF';
+    // 지금 내 차례라면 바로 넘겨받는다
+    if (!gameEl.hidden && state && !over && !busy && state.turn === me && !promoMoves) beginTurn();
+  });
+  window.addEventListener('resize', () => {
+    if (!win.hidden) place(win, win.offsetLeft, win.offsetTop);
+    if (!bubble.hidden) place(bubble, bubble.offsetLeft, bubble.offsetTop);
+  });
+
+
+  // ---------- 시작 ----------
+  document.querySelectorAll('.hp[data-p]').forEach((h) => { h.innerHTML = pieceSVG(h.dataset.p[0], h.dataset.p[1]); });
+  document.querySelectorAll('.ghost[data-p]').forEach((g) => { g.innerHTML = pieceSVG(g.dataset.p, 'w'); });
+  mascot.innerHTML = pieceSVG('k', 'w');
+  markLevel();
+  applyLang();
+  timerReset();
+  introMenu();
+
+})();
