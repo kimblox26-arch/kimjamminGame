@@ -4,7 +4,6 @@ import { createWorld } from './world.js';
 import { Tracker, IS_MOBILE } from './tracking.js';
 import { HandState, HandAssigner, BONES, WEBCAM_HFOV, recalibrateDepth } from './hands.js';
 import { loadHandRigs, SKIN_TONES, setSkinTone, setSkinFromCamera } from './hand-rig.js';
-import { FrameFX } from './frame-fx.js';
 import { HandScanner } from './scan.js';
 import { FINGER_NAME, STATE_NAME } from './finger-pose.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -62,14 +61,14 @@ let playing = false;
 // ───────── 화질: 자동(기기 성능에 맞춰 단계 조절) / 고품질 / 보통 ─────────
 // 단계: 해상도 배율, 후처리(MSAA+블룸), 그림자 해상도·범위
 const LEVELS = [
-  { pr: 0.85, post: false, shadow: [1024, 0.9] },
-  { pr: 1.0, post: false, shadow: [1024, 0.9] },
-  { pr: 1.25, post: false, shadow: [2048, 0.9] },
+  { pr: 0.75, post: false, shadow: [0, 0.9] },
+  { pr: 1.0, post: false, shadow: [0, 0.9] },
+  { pr: 1.25, post: false, shadow: [1024, 0.9] },
   { pr: 1.5, post: true, shadow: [2048, 0.9] },
-  { pr: 2.0, post: true, shadow: [4096, 0.9] },
+  { pr: 2.0, post: true, shadow: [2048, 0.9] },
 ];
 const QUALITY_NAME = { auto: '자동', high: '고품질', normal: '보통(빠름)' };
-let qLevel = IS_MOBILE ? 1 : 3;
+let qLevel = IS_MOBILE ? 1 : 2;
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.55, 3.0));
@@ -106,24 +105,9 @@ addEventListener('keydown', e => {
     case 'KeyX': settings.swap = !settings.swap; toast('왼손 ↔ 오른손 바꿈'); save(); break;
     case 'KeyV': settings.preview = !settings.preview; save(); break;
     case 'KeyH': $('#help').classList.toggle('hidden'); break;
-    case 'KeyF': fx?.next(); break;
-    case 'KeyC': setAR(!ar); break;
   }
 });
 $('#help-btn').addEventListener('click', () => $('#help').classList.toggle('hidden'));
-
-// ───────── 손가락 틀 필터 (양손 엄지·검지로 사각 틀) / AR 화면 ─────────
-let fx = null, ar = false;
-const screenSize = new THREE.Vector2();
-function setAR(on) {
-  ar = on;
-  world.setVisible(!on);
-  fx?.setAR(on);
-  $('#ar-btn').classList.toggle('on', on);
-  toast(on ? '📷 AR: 카메라 화면 — 양손으로 사각 틀을 만들어 보세요' : '🌤 게임 화면', 2500);
-}
-$('#fx-btn').addEventListener('click', () => fx?.next());
-$('#ar-btn').addEventListener('click', () => setAR(!ar));
 
 // ───────── 가로 화면: 전체 화면 + 가로 고정 (지원하는 브라우저에서, 안 되면 돌려 달라고 안내) ─────────
 async function goLandscape() {
@@ -150,7 +134,7 @@ addEventListener('resize', () => {
 // ───────── 시작 화면 ─────────
 for (const [name, hex] of [['auto', null], ...Object.entries(SKIN_TONES)]) {
   const b = document.createElement('button');
-  if (hex === null) { b.className = 'auto'; b.textContent = '📷 자동'; b.title = '카메라로 내 피부색 그대로'; }
+  if (hex === null) { b.className = 'auto'; b.innerHTML = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg><span>자동</span>'; b.title = '카메라로 내 피부색 그대로'; }
   else { b.style.background = '#' + hex.toString(16).padStart(6, '0'); b.title = name; }
   b.classList.toggle('on', name === settings.tone);
   b.onclick = () => {
@@ -181,11 +165,10 @@ async function start() {
     tracker.loadPose().catch(e => console.warn('[HandVR] 몸 인식(팔꿈치) 없이 진행', e)); // 뒤에서 불러옴
     msg('손 3D 모델 준비 중…');
     try { await rigsReady; } catch (e) { throw new Error('손 3D 모델을 불러오지 못했어요: ' + (e.message || e)); }
-    fx ??= new FrameFX(tracker.video, camera, scene, name => toast(`필터: ${name}`));
     playing = true;
     $('#start').classList.add('hidden');
     $('#hud').classList.remove('hidden');
-    toast('손을 카메라 앞에 보여주세요 🖐', 3500);
+    toast('손을 카메라 앞에 보여주세요', 3500);
   } catch (e) {
     msg(e.message, true);
   } finally {
@@ -333,11 +316,11 @@ function updateHud(now) {
     chip.querySelector('.g').textContent = !st ? '안 보임'
       : ['ext', 'half', 'fold'].filter(k => st.includes(k)).map(k => `${STATE_NAME[k]} ${group(k)}`).join('  ');
     chip.querySelector('.a').textContent = h.visible && !h.profile.done
-      ? `🔍 손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : (h.bridging ? '손을 놓쳐서 팔로 이어 가는 중' : h.arm?.toE ? '팔 인식됨' : h.arm?.toS ? '어깨 인식됨' : '');
+      ? `손 스캔 ${Math.round(h.profile.progress * 100)}% — 손가락을 벌리고 손바닥을 카메라로` : (h.bridging ? '손을 놓쳐서 팔로 이어 가는 중' : h.arm?.toE ? '팔 인식됨' : h.arm?.toS ? '어깨 인식됨' : '');
     chip.style.opacity = h.visible ? 1 : 0.55;
     if (h.profile.done && !scanToasted[s]) {
       scanToasted[s] = true;
-      if (Object.keys(h.profile.samples).length) toast(`${s === 'L' ? '왼손' : '오른손'} 스캔 완료! 손가락 굵기·피부색을 내 손에 맞췄어요 ✋`, 2500);
+      if (Object.keys(h.profile.samples).length) toast(`${s === 'L' ? '왼손' : '오른손'} 스캔 완료! 손가락 굵기·피부색을 내 손에 맞췄어요`, 2500);
     }
   }
   applyProfiles();
@@ -354,10 +337,6 @@ function frame(now) {
     const h = hands[s];
     h.updateDisplay(dt, now, lostMs());
     meshes?.[s].update(h.joints, h.local, h.pose, h.arm, dt, h.profile, h.visible);
-  }
-  if (fx) {
-    fx.update(dt, now, hands, meshes, renderer.getSize(screenSize));
-    if (ar && meshes) meshes.L.group.visible = meshes.R.group.visible = false; // AR: 진짜 손이 보이니 3D 손은 숨김
   }
   world.update(dt, STAND, camera.localToWorld(shadowFocus.set(0, -0.15, -0.45)));
   if (playing) updateHud(now);

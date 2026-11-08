@@ -1,10 +1,9 @@
 // 손가락 모양 판단기
-// 카메라가 준 관절 좌표를 그대로 따라가지 않고, 손가락마다 "얼마나 접혔는지"를 각도로 읽어서
-//   ① 펴짐 / 반쯤 / 접힘 으로 판단하고 (오락가락하지 않게 문턱에 여유를 둠)
-//   ② 펴짐이면 곧게, 접힘이면 자연스러운 주먹 모양 쪽으로 끌어당기고
-//   ③ 끝마디는 사람 손처럼 둘째 마디에 맞춰 함께 굽게(약 0.7배) 하고
-//   ④ 말이 안 되는 프레임(손 크기가 갑자기 변함, 손 좌우가 뒤집힘, 각도가 비정상)은 버리고 직전 모양을 유지한다.
-// 결과는 손 모델(hand-rig.js)이 관절 각도로 그대로 쓴다.
+// 카메라가 준 3D 관절에서 손가락마다 관절 각도(뿌리·둘째·끝 마디 굽힘, 벌림, 엄지 방향)를 읽어서
+//   ① 실제 손 모양 그대로 손 모델에 넘기고 (판단한 모양 쪽으로 끌어당기지 않음 → 내 손과 똑같이)
+//   ② 펴짐 / 반쯤 / 접힘 은 화면 표시용으로만 판단하고 (오락가락하지 않게 문턱에 여유)
+//   ③ 말이 안 되는 프레임(손 크기가 갑자기 변함)은 버리고 직전 모양을 유지한다.
+// 떨림만 살짝 거르는 가벼운 필터라 반응이 빠르다. 결과는 손 모델(hand-rig.js)이 관절 각도로 그대로 쓴다.
 import * as THREE from 'three';
 import { FINGERS } from './hands.js';
 
@@ -18,9 +17,8 @@ export const STATE_NAME = { ext: '펴짐', half: '반쯤', fold: '접힘' };
 
 // 관절 범위 (도)
 const RANGE = { m: [-25, 95], a: [-25, 25], p: [-5, 110], d: [-5, 85], t1: [-20, 65], t2: [-25, 85] };
-// 접힘 상태의 자연스러운 주먹 각도 / 펴짐 상태
+// 주먹 쥔 손의 각도 (접힘 정도를 잴 때 기준)
 const FIST = { m: 82, p: 100, d: 68 };
-const ASSIST = 0.55; // 판단한 상태 쪽으로 끌어당기는 정도
 
 class OneEuro {
   constructor(minCutoff, beta) { this.minCutoff = minCutoff; this.beta = beta; this.x = null; this.dx = 0; }
@@ -85,8 +83,8 @@ export function palmBasis(P0, P5, P9, P17, sign) {
 
 export class FingerPose {
   constructor() {
-    this.f = [null, 1, 2, 3, 4].map(() => ({ m: new OneEuro(3, 0.02), a: new OneEuro(2, 0.02), p: new OneEuro(3, 0.02), d: new OneEuro(3, 0.02) }));
-    this.tf = { x: new OneEuro(2.5, 0.5), y: new OneEuro(2.5, 0.5), z: new OneEuro(2.5, 0.5), t1: new OneEuro(3, 0.02), t2: new OneEuro(3, 0.02) };
+    this.f = [null, 1, 2, 3, 4].map(() => ({ m: new OneEuro(8, 0.05), a: new OneEuro(6, 0.05), p: new OneEuro(8, 0.05), d: new OneEuro(8, 0.05) }));
+    this.tf = { x: new OneEuro(6, 1), y: new OneEuro(6, 1), z: new OneEuro(6, 1), t1: new OneEuro(8, 0.05), t2: new OneEuro(8, 0.05) };
     this.state = ['ext', 'ext', 'ext', 'ext', 'ext'];
     this.out = null;     // 마지막으로 확정한 손가락 각도
     this.sizes = [];     // 손바닥 크기 기록 (이상한 프레임 걸러내기)
@@ -136,8 +134,8 @@ export class FingerPose {
     for (let f = 1; f < 5; f++) {
       const r = raw.fingers[f], g = this.f[f];
       const reach = img ? Math.max(r.reach, this.reach2d(img, local, FINGERS[f][0], FINGERS[f][3])) : r.reach;
-      let m = clamp(r.m, ...RANGE.m), p = clamp(r.p, ...RANGE.p);
-      let d = clamp(0.5 * clamp(r.d, ...RANGE.d) + 0.5 * 0.72 * p, ...RANGE.d); // 끝마디는 둘째 마디와 함께
+      const m = clamp(r.m, ...RANGE.m), p = clamp(r.p, ...RANGE.p);
+      const d = clamp(0.8 * clamp(r.d, ...RANGE.d) + 0.2 * 0.72 * p, ...RANGE.d); // 끝마디 측정이 흔들리는 만큼만 둘째 마디와 맞춤
       // ── 상태 판단 (펴짐 / 반쯤 / 접힘): 관절 각도 + 손끝 거리를 함께 보고, 문턱에 여유
       const angCurl = (Math.max(0, m) / FIST.m + Math.max(0, p) / FIST.p + Math.max(0, d) / FIST.d) / 3;
       const reachCurl = clamp((1.75 - reach) / (1.75 - 1.0), 0, 1);
@@ -145,8 +143,6 @@ export class FingerPose {
       this.debug.curl[f] = `${curl.toFixed(2)}(a${angCurl.toFixed(2)} r${reach.toFixed(2)})`;
       const st = this.state[f];
       this.state[f] = curl > (st === 'fold' ? 0.56 : 0.64) ? 'fold' : curl < (st === 'ext' ? 0.36 : 0.3) ? 'ext' : 'half';
-      if (this.state[f] === 'fold') { m += (FIST.m - m) * ASSIST; p += (FIST.p - p) * ASSIST; d += (FIST.d - d) * ASSIST; }
-      else if (this.state[f] === 'ext') { m += (clamp(m, -10, 30) - m) * ASSIST; p *= 1 - ASSIST; d *= 1 - ASSIST; }
       fingers[f] = {
         m: g.m.filter(m, dt), p: g.p.filter(p, dt), d: g.d.filter(d, dt),
         a: g.a.filter(clamp(r.a, ...RANGE.a), dt),
@@ -161,7 +157,7 @@ export class FingerPose {
     // ── 엄지: 뿌리 방향(손바닥 기준) + 두 마디 굽힘
     const t = raw.thumb, tf = this.tf;
     const dir = new THREE.Vector3(tf.x.filter(t.dir.x, dt), tf.y.filter(t.dir.y, dt), tf.z.filter(t.dir.z, dt)).normalize();
-    let t1 = clamp(t.t1, ...RANGE.t1), t2 = clamp(t.t2, ...RANGE.t2);
+    const t1 = clamp(t.t1, ...RANGE.t1), t2 = clamp(t.t2, ...RANGE.t2);
     // 엄지 접힘: 굽힘 각도보다 '엄지 끝이 손바닥 안쪽(검지·약지 뿌리)에 가까운지'를 더 믿는다
     const angFold = (Math.max(0, t1) / 60 + Math.max(0, t2) / 80) / 2;
     const tipFold = clamp((0.9 - t.tipRing) / 0.4, 0, 1);
@@ -169,7 +165,6 @@ export class FingerPose {
     this.debug.thumb = `${tc.toFixed(2)}(a${angFold.toFixed(2)} tipR${t.tipRing.toFixed(2)} t1 ${t.t1.toFixed(0)} t2 ${t.t2.toFixed(0)})`;
     const ts = this.state[0];
     this.state[0] = tc > (ts === 'fold' ? 0.5 : 0.6) ? 'fold' : tc < (ts === 'ext' ? 0.3 : 0.22) ? 'ext' : 'half';
-    if (this.state[0] === 'ext') { t1 *= 1 - ASSIST * 0.6; t2 *= 1 - ASSIST * 0.6; }
     const thumb = { dir, t1: tf.t1.filter(t1, dt), t2: tf.t2.filter(t2, dt), state: this.state[0] };
 
     this.out = { fingers, thumb };

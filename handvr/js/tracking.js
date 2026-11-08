@@ -138,7 +138,7 @@ export class Tracker {
         this.lastTime = v.currentTime;
         this.busy = true;
         const w = Math.min(640, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth);
-        const pose = this.poseLoaded && this.sent++ % 2 === 0; // 몸 인식은 격 프레임
+        const pose = this.poseLoaded && this.sent++ % 3 === 0; // 몸 인식(팔)은 3 프레임에 한 번 → 손 인식이 더 빠르게
         const send = bmp => this.worker.postMessage({ type: 'frame', bitmap: bmp, t: performance.now(), pose }, [bmp]);
         createImageBitmap(v, { resizeWidth: w, resizeHeight: h, resizeQuality: 'low' })
           .catch(() => createImageBitmap(v))
@@ -150,7 +150,7 @@ export class Tracker {
     if (v.currentTime === this.lastTime) return false;
     this.lastTime = v.currentTime;
     this.handResult = this.hands.detectForVideo(v, now);
-    if (this.pose && this.frame % 2 === 0) {
+    if (this.pose && this.frame % 3 === 0) {
       const p = this.pose.detectForVideo(v, now);
       this.poseResult = { landmarks: p.landmarks, worldLandmarks: p.worldLandmarks, t: now };
     }

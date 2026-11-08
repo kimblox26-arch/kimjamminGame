@@ -1,7 +1,7 @@
 // 실제 사람 손·팔 3D 모델 + 뼈대·스킨 가중치 + MediaPipe 관절 리타기팅
 //
 // 모델: "Hand and arm - Zbrush sculpt" (Andy Woodhead, CC BY 4.0, models/LICENSE.md)
-//   어깨부터 손끝까지 한 덩어리인 왼팔 조각 모델. 피부색·주름·핏줄·손톱은 모델 텍스처(색, 노멀맵, 거칠기·AO)를 그대로 쓴다.
+//   어깨부터 손끝까지 한 덩어리인 왼팔 조각 모델. 피부색·주름·핏줄·손톱은 모델 텍스처(색, 노멀맵, AO)를 가벼운 재질로 쓴다.
 //   오른팔은 같은 모델을 좌우로 뒤집어 만든다.
 // 뼈대: 손 25개(WebXR 손 관절 이름) + 위팔·아래팔·아래팔 비틀림.
 //   관절 위치(JOINTS)는 모델을 여러 방향에서 렌더링해 손 인식 AI 로 찾고 손가락 단면의 중심으로 보정한 값이고,
@@ -15,7 +15,7 @@
 //   3) 팔: 몸 인식(PoseLandmarker)으로 찾은 내 팔꿈치·어깨 방향을 그대로 따라간다. 안 보이면 몸 쪽 어깨에서
 //      손목까지 두 마디 IK + 손목이 편하게 펴진 방향을 섞어 자연스럽게. 손목은 실제 범위(70°) 이상 꺾이지 않고,
 //      팔뚝은 손이 돌아간 만큼 손목 쪽으로 갈수록 더 비틀린다(실제 아래팔뼈처럼).
-//   4) 부드럽게: 각도는 One-Euro 필터, 뼈 회전은 프레임마다 slerp, 팔꿈치·어깨도 천천히 따라간다.
+//   4) 빠르게: 떨림만 거르는 가벼운 필터 + 짧은 보간이라 내 손을 바로 따라간다. 팔꿈치·어깨는 튀지 않게 조금 천천히.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { makeSkin } from './skin.js';
@@ -240,7 +240,7 @@ class HandRig {
     }
     this.girth = new Float32Array([1, 1, 1, 1, 1]);
     this.prepareSkin(geo);
-    this.mat = makeSkin({ map: T.map, normalMap: T.normalMap, roughnessMap: T.orm, aoMap: T.orm, aoMapIntensity: 0.7, roughness: 1, girth: this.girth });
+    this.mat = makeSkin({ map: T.map, normalMap: T.normalMap, aoMap: T.orm, aoMapIntensity: 0.6, girth: this.girth });
 
     // 뼈대: 모두 Armature 바로 아래(평평한 구조), 바인드 회전은 단위 회전
     const root = new THREE.Object3D();
@@ -300,7 +300,7 @@ class HandRig {
       return { p, planes, segs: [[W, p[0]], [p[0], p[1]], [p[1], p[2]], [p[2], p[3]]], bones: ch.slice(0, 3).map(bi), axis: f === 0 ? 1 : 0 };
     });
     const lab = fingerRegions(geo, br.map(b => b.p));
-    const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4), thin = new Float32Array(n), gd = new Float32Array(n * 4), fid = new Float32Array(n);
+    const si = new Uint16Array(n * 4), sw = new Float32Array(n * 4), gd = new Float32Array(n * 4), fid = new Float32Array(n);
     const v = V(), cp = V(), tmp = V(), BU = bi('upperarm'), BF = bi('forearm'), BT = bi('forearm-twist'), BW = bi('wrist');
     for (let i = 0; i < n; i++) {
       v.fromBufferAttribute(Pa, i);
@@ -322,11 +322,9 @@ class HandRig {
       for (let k = B.axis + 1; k < 4; k++) { const d = segDist(v, B.segs[k][0], B.segs[k][1], tmp); if (d < dd) { dd = d; cp.copy(tmp); } }
       gd.set([v.x - cp.x, v.y - cp.y, v.z - cp.z, hand * s[B.axis]], i * 4);
       fid[i] = f;
-      thin[i] = 0.12 + 0.88 * hand * s[0];
     }
     geo.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
     geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
-    geo.setAttribute('thin', new THREE.BufferAttribute(thin, 1));
     geo.setAttribute('girthData', new THREE.BufferAttribute(gd, 4));
     geo.setAttribute('fingerId', new THREE.BufferAttribute(fid, 1));
     // 모델 손가락 마디 폭(스캔값과 비교해 굵기 보정)
@@ -349,7 +347,8 @@ class HandRig {
 
   applySkin() {
     const c = skinColor;
-    this.mat.color.setRGB(...[c.r, c.g, c.b].map((x, k) => clamp(x / TEX_SKIN[k], 0.4, 2.6)));
+    // 가벼운 재질(반사광 없음)은 조금 어둡게 보여서 15% 밝게
+    this.mat.color.setRGB(...[c.r, c.g, c.b].map((x, k) => clamp(1.15 * x / TEX_SKIN[k], 0.4, 3)));
   }
 
   // J: 화면용 관절 21개(카메라 공간 — 손 위치와 손바닥 방향에 씀), local: 3D 손 모양(크기·마디 비율),
@@ -431,7 +430,7 @@ class HandRig {
     for (const n in Qbs) { toCam(n, Pbs[n]); Q[n].copy(Rp).multiply(Qbs[n]); }
 
     // ④ 손 뼈에 적용 (부드럽게)
-    const k = snap ? 1 : 1 - Math.exp(-dt * 30);
+    const k = snap ? 1 : 1 - Math.exp(-dt * 60);
     for (const n of HAND_BONES) {
       const b = this.bone[n];
       b.position.lerp(Pt[n], k);
