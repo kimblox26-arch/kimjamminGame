@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>못 박기</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#2a1e14;color:#fff;
+  font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+canvas{display:block;width:100vw;height:100vh;touch-action:none;cursor:grab}
+canvas.drag{cursor:grabbing}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(18,10,4,.7);z-index:2}
+.overlay.hidden{display:none}
+.card{background:#3b2a1c;border:3px solid #c79a5b;border-radius:18px;padding:26px 28px;max-width:420px;margin:16px;
+  text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.55)}
+h1{margin:0 0 10px;font-size:2.1rem;color:#ffd58a;letter-spacing:2px}
+p{margin:8px 0;line-height:1.55;color:#f1e1c8}
+.small{font-size:.88rem;opacity:.82}
+.score{font-size:1.3rem;font-weight:700;color:#ffd58a}
+button{margin-top:14px;font-size:1.15rem;font-weight:800;padding:12px 34px;border:0;border-radius:999px;
+  background:#ffb347;color:#3b2a1c;cursor:pointer;box-shadow:0 4px 0 #b86f1d}
+button:active{transform:translateY(3px);box-shadow:0 1px 0 #b86f1d}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="overlay" id="menu"><div class="card">
+  <h1 id="mTitle">🔨 못 박기</h1>
+  <div id="mBody">
+    <p>망치를 <b>드래그</b>해서 위에서 아래로 힘껏 내려치세요!<br>못이 나무에 완전히 박히면 성공이에요.</p>
+    <p class="small">빠르게 휘두를수록 깊이 박혀요.<br>망치 가장자리로 치면 못이 휘어요 (♥ -1).<br>한 번 친 뒤에는 망치를 살짝 들어 올려야 다시 칠 수 있어요.</p>
+  </div>
+  <button id="startBtn">시작하기</button>
+</div></div>
+<script>
+(() => {
+'use strict';
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const menu = document.getElementById('menu'), mTitle = document.getElementById('mTitle'),
+      mBody = document.getElementById('mBody'), startBtn = document.getElementById('startBtn');
+
+// ---------- 상수 ----------
+const FACE_W = 50, HEAD_TALL = 74, NH_W = 22, NH_H = 7, SHAFT_W = 6;
+const REACH = FACE_W / 2 + NH_W / 2;
+const V_MIN = 200, V_MAX = 4000;
+const WOODS = [
+  { name: '소나무',  k: 0.020, base: '#dcab6e', dark: '#b8834a', grain: '#94632f' },
+  { name: '참나무',  k: 0.013, base: '#ba8653', dark: '#93623a', grain: '#6f4520' },
+  { name: '마호가니', k: 0.009, base: '#934d30', dark: '#6e351e', grain: '#4f1e0d' },
+  { name: '흑단',    k: 0.0065, base: '#4c3527', dark: '#34241a', grain: '#1c120c' },
+];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// ---------- 화면 ----------
+let DPR = 1, CW = 0, CH = 0, W = 800, H = 600, S = 1, OX = 0, OY = 0, woodTop = 372;
+const woodCv = document.createElement('canvas');
+let wallPat = null;
+
+function resize() {
+  const oldW = W, oldTop = woodTop;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  CW = cv.width = Math.round(innerWidth * DPR);
+  CH = cv.height = Math.round(innerHeight * DPR);
+  const portrait = innerHeight > innerWidth;
+  W = portrait ? 480 : 800; H = portrait ? 760 : 600;
+  S = Math.min(CW / W, CH / H); OX = (CW - W * S) / 2; OY = (CH - H * S) / 2;
+  woodTop = Math.round(H * 0.62);
+  if (oldW !== W) { const f = W / oldW; nails.forEach(n => n.x *= f); dents.forEach(d => d.x *= f); ham.x *= f; target.x *= f; }
+  ham.y += woodTop - oldTop; target.y += woodTop - oldTop;
+  genWall(); genWood();
+}
+
+function genWall() {
+  const p = document.createElement('canvas'), s = Math.round(28 * S);
+  p.width = p.height = Math.max(4, s);
+  const g = p.getContext('2d');
+  g.fillStyle = '#3a2b1f'; g.fillRect(0, 0, s, s);
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.arc(s / 2, s / 2, s * 0.09, 0, 7); g.fill();
+  wallPat = ctx.createPattern(p, 'repeat');
+}
+
+function genWood() {
+  const top = Math.floor(OY + woodTop * S), h = Math.max(4, CH - top + 40);
+  woodCv.width = CW + 40; woodCv.height = h;
+  const g = woodCv.getContext('2d'), w = woodCv.width;
+  const gr = g.createLinearGradient(0, 0, 0, h);
+  gr.addColorStop(0, wood.base); gr.addColorStop(1, wood.dark);
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.lineCap = 'round';
+  for (let i = 0; i < 46; i++) {
+    const y0 = Math.random() * h, amp = rand(1, 6) * S, fr = rand(0.002, 0.008) / S, ph = Math.random() * 7;
+    g.strokeStyle = wood.grain; g.globalAlpha = rand(0.15, 0.45); g.lineWidth = rand(0.6, 2.4) * S;
+    g.beginPath();
+    for (let x = 0; x <= w; x += 12) { const y = y0 + Math.sin(x * fr + ph) * amp; x ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.stroke();
+  }
+  for (let k = 0; k < 3; k++) {          // 옹이
+    const kx = Math.random() * w, ky = rand(0.3, 0.9) * h, r = rand(8, 16) * S;
+    for (let j = 5; j > 0; j--) {
+      g.globalAlpha = 0.18 + 0.1 * (5 - j); g.strokeStyle = wood.grain; g.lineWidth = 1.5 * S;
+      g.beginPath(); g.ellipse(kx, ky, r * j / 3, r * j / 5, 0, 0, 7); g.stroke();
+    }
+  }
+  g.globalAlpha = 1;
+  g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(0, 0, w, 4 * S);   // 윗면 하이라이트
+  g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, 4 * S, w, 2 * S);
+}
+
+// ---------- 사운드 (WebAudio 합성) ----------
+let AC = null, noiseBuf = null;
+function initAudio() {
+  try {
+    if (!AC) {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      noiseBuf = AC.createBuffer(1, AC.sampleRate * 0.5, AC.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (AC.state === 'suspended') AC.resume();
+  } catch (e) { AC = null; }
+}
+function tone(f, dur, type, vol, f2, delay = 0) {
+  if (!AC) return;
+  const t = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(dur, vol, freq) {
+  if (!AC) return;
+  const t = AC.currentTime, s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = noiseBuf; f.type = 'lowpass'; f.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  s.connect(f).connect(g).connect(AC.destination); s.start(t); s.stop(t + dur);
+}
+const sfx = {
+  hit(p, s) { tone(1300 + p * 900, 0.22, 'triangle', 0.18 + s * 0.12); tone(2900 + p * 1400, 0.1, 'sine', 0.08); noise(0.07, 0.35 + s * 0.3, 2200); tone(160, 0.08, 'sine', 0.3, 80); },
+  done() { tone(200, 0.25, 'sine', 0.5, 90); noise(0.12, 0.5, 700); tone(988, 0.12, 'triangle', 0.15, 0, 0.05); tone(1319, 0.2, 'triangle', 0.15, 0, 0.12); },
+  bend() { tone(1100, 0.45, 'sawtooth', 0.09, 260); tone(700, 0.3, 'square', 0.05, 200); noise(0.1, 0.3, 1500); },
+  wood(s) { noise(0.14, 0.4 + s * 0.4, 450); tone(130, 0.16, 'sine', 0.4, 55); },
+  tap() { tone(1800, 0.05, 'triangle', 0.05); },
+  clank() { tone(620, 0.14, 'square', 0.06, 500); noise(0.05, 0.2, 2500); },
+  clear() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'triangle', 0.16, 0, i * 0.1)); },
+  over() { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.32, 'triangle', 0.16, 0, i * 0.16)); },
+};
+
+// ---------- 게임 상태 ----------
+let state = 'menu', stage = 1, score = 0, lives = 3, combo = 0, timeLeft = 0, timeMax = 1, stateT = 0, firstHit = false;
+let wood = WOODS[0], best = 0;
+let nails = [], dents = [], parts = [], pops = [], shake = 0;
+const ham = { x: 400, y: 170, armed: true, tilt: 0, hitY: 1e9 };
+const target = { x: 400, y: 170 };
+let drag = null, lastP = { x: 0, y: 0 };
+const samples = [];
+try { best = +localStorage.getItem('nailgame.best') || 0; } catch (e) {}
+
+function headTop(n) {
+  if (n.done) return woodTop - 3;
+  if (n.bent) return woodTop - n.exposed * 0.55 - NH_H;
+  return woodTop - n.exposed - NH_H;
+}
+function floorAt(x) {
+  let y = woodTop, nail = null;
+  for (const n of nails) if (Math.abs(x - n.x) < REACH) { const t = headTop(n); if (t < y) { y = t; nail = n; } }
+  return { y, nail };
+}
+
+function startStage() {
+  const wi = Math.min(Math.floor((stage - 1) / 2), WOODS.length - 1);
+  wood = WOODS[wi];
+  const count = Math.min(2 + stage, Math.floor((W - 60) / 95)), slot = (W - 60) / count;
+  nails = []; dents = [];
+  for (let i = 0; i < count; i++) {
+    const j = Math.max(0, (slot - 95) / 2);
+    const len = rand(55, 95) + Math.min(stage * 3, 25);
+    nails.push({ x: 30 + slot * (i + 0.5) + rand(-j, j), len, exposed: len, hits: 0, done: false, bent: false, dir: 1, wob: 0 });
+  }
+  timeMax = timeLeft = Math.round(10 + count * (3.5 + wi * 1.6));
+  ham.y = Math.min(ham.y, woodTop - 170); ham.armed = true; ham.hitY = 1e9;
+  if (drag) { drag.dx = ham.x - lastP.x; drag.dy = ham.y - lastP.y; }
+  target.x = ham.x; target.y = ham.y;
+  genWood();
+  state = 'play';
+  pops.push({ x: W / 2, y: H * 0.3, text: `STAGE ${stage} · ${wood.name}`, color: '#ffd58a', life: 1.6, max: 1.6, big: true });
+}
+
+function newGame() {
+  stage = 1; score = 0; lives = 3; combo = 0; firstHit = false;
+  ham.x = W / 2; ham.y = woodTop - 190; ham.tilt = 0;
+  menu.classList.add('hidden');
+  startStage();
+}
+
+function gameOver(reason) {
+  if (state !== 'play') return;
+  state = 'over'; stateT = 1.1; sfx.over();
+  const isBest = score > best;
+  if (isBest) { best = score; try { localStorage.setItem('nailgame.best', best); } catch (e) {} }
+  mTitle.textContent = '게임 오버';
+  mBody.innerHTML = `<p>${reason}</p><p class="score">점수 ${score}${isBest ? ' 🏆 최고 기록!' : ''}</p>
+    <p class="small">스테이지 ${stage} · 최고 기록 ${best}</p>`;
+  startBtn.textContent = '다시 하기';
+}
+
+function checkStage() {
+  if (state === 'play' && nails.every(n => n.done || n.bent)) {
+    const bonus = Math.ceil(timeLeft) * 10;
+    score += bonus; state = 'clear'; stateT = 2; sfx.clear();
+    pops.push({ x: W / 2, y: H * 0.3, text: 'STAGE CLEAR!', color: '#7dff9b', life: 2, max: 2, big: true });
+    pops.push({ x: W / 2, y: H * 0.3 + 44, text: `시간 보너스 +${bonus}`, color: '#fff', life: 2, max: 2 });
+  }
+}
+
+// ---------- 충돌 & 타격 ----------
+function pointerVy() {
+  const now = performance.now();
+  if (samples.length < 2) return 0;
+  const last = samples[samples.length - 1];
+  if (now - last.t > 70) return 0;
+  let old = last;
+  for (let i = samples.length - 1; i >= 0; i--) { old = samples[i]; if (last.t - old.t >= 45) break; }
+  const dt = (last.t - old.t) / 1000;
+  return dt > 0 ? (last.y - old.y) / dt : 0;
+}
+
+function tryX(nx) {
+  for (const n of nails) {
+    if (Math.abs(nx - n.x) >= REACH) continue;
+    const t = headTop(n);
+    if (ham.y > t + 0.5) { if (ham.y - t <= 10) ham.y = t; else return; }
+  }
+  ham.x = nx;
+}
+
+function moveHammer() {
+  if (ham.y < Math.min(floorAt(ham.x).y, ham.hitY) - 12) ham.armed = true;
+  if (!drag) return;
+  const tx = clamp(target.x, FACE_W / 2 + 2, W - FACE_W / 2 - 2), ty = clamp(target.y, HEAD_TALL + 34, H + 200);
+  const dx = tx - ham.x, dy = ty - ham.y;
+  const steps = Math.min(300, Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 4)));
+  const sx = dx / steps, sy = dy / steps;
+  for (let i = 0; i < steps; i++) {
+    tryX(ham.x + sx);
+    let ny = ham.y + sy;
+    if (sy > 0) {
+      const f = floorAt(ham.x);
+      if (ny >= f.y) { if (ham.armed) contact(f.nail); ny = f.y; }
+    }
+    ham.y = ny;
+  }
+}
+
+function contact(n) {
+  if (!ham.armed || state === 'over') return;
+  ham.armed = false; ham.hitY = ham.y;
+  const v = Math.min(pointerVy(), V_MAX);
+  if (n) impact(n, v); else woodHit(v);
+}
+
+function woodHit(v) {
+  if (v < 500) { if (v > V_MIN) sfx.wood(0.1); return; }
+  const s = Math.min(1, v / 3000);
+  sfx.wood(s); shake = Math.max(shake, 2 + s * 5);
+  dents.push({ x: ham.x, w: 16 + s * 18 });
+  chips(ham.x, woodTop, 4 + s * 8);
+}
+
+function impact(n, v) {
+  if (n.done || n.bent) { sfx.clank(); sparks(n.x, headTop(n), 4); return; }
+  if (v < V_MIN) { sfx.tap(); return; }
+  n.hits++; n.wob = 1; firstHit = true;
+  const dxh = ham.x - n.x, r = Math.abs(dxh) / REACH;
+  if (r > 0.72 && v > 700) {
+    n.bent = true; n.dir = dxh < 0 ? 1 : -1; lives--; combo = 0;
+    sfx.bend(); shake = 9; sparks(n.x, headTop(n), 10);
+    pops.push({ x: n.x, y: headTop(n) - 24, text: '휘었다! ♥-1', color: '#ff6b6b', life: 1.2, max: 1.2 });
+    if (lives <= 0) gameOver('못이 전부 휘어버렸어요!'); else checkStage();
+    return;
+  }
+  const eff = 1 - 0.55 * r * r;
+  const d = Math.min(n.exposed, (v - V_MIN) * wood.k * eff);
+  n.exposed -= d;
+  const s = Math.min(1, v / 3000);
+  sfx.hit(1 - n.exposed / n.len, s);
+  sparks(n.x, headTop(n), 5 + s * 10);
+  shake = Math.max(shake, Math.min(10, 1.5 + d * 0.25));
+  if (r > 0.45) pops.push({ x: n.x, y: headTop(n) - 22, text: '아슬아슬!', color: '#ffb36b', life: 0.8, max: 0.8 });
+  if (n.exposed <= 0.5) {
+    n.exposed = 0; n.done = true; combo++;
+    const par = Math.max(1, Math.ceil(n.len / (1800 * wood.k)));
+    let pts = 100, txt = 'GOOD', col = '#ffffff';
+    if (n.hits === 1) { pts = 300; txt = 'ONE SHOT!'; col = '#ffd84d'; }
+    else if (n.hits <= par) { pts = 150; txt = 'PERFECT!'; col = '#7dff9b'; }
+    const mult = Math.min(2, 1 + (combo - 1) * 0.1);
+    pts = Math.round(pts * mult); score += pts;
+    pops.push({ x: n.x, y: woodTop - 40, text: txt, color: col, life: 1.2, max: 1.2 });
+    pops.push({ x: n.x, y: woodTop - 18, text: `+${pts}` + (combo > 1 ? ` (${combo}콤보)` : ''), color: '#fff', life: 1.2, max: 1.2, small: true });
+    sfx.done(); chips(n.x, woodTop, 12); shake = Math.max(shake, 7);
+    checkStage();
+  }
+}
+
+// ---------- 파티클 ----------
+function sparks(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(Math.PI * 1.05, Math.PI * 1.95), sp = rand(150, 520);
+    parts.push({ k: 's', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.15, 0.35), max: 0.35 });
+  }
+}
+function chips(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(Math.PI * 1.1, Math.PI * 1.9), sp = rand(80, 300);
+    parts.push({ k: 'c', x: x + rand(-14, 14), y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.5, 0.9), max: 0.9,
+      r: rand(0, 6), vr: rand(-12, 12), sz: rand(2, 5), col: Math.random() < 0.5 ? wood.base : wood.dark });
+  }
+}
+
+// ---------- 입력 ----------
+function toWorld(e) { return { x: (e.clientX * DPR - OX) / S, y: (e.clientY * DPR - OY) / S }; }
+cv.addEventListener('pointerdown', e => {
+  initAudio();
+  if (state !== 'play' && state !== 'clear') return;
+  if (drag) return;
+  const p = toWorld(e); lastP = p;
+  drag = { id: e.pointerId, dx: ham.x - p.x, dy: ham.y - p.y };
+  target.x = ham.x; target.y = ham.y; samples.length = 0;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  cv.classList.add('drag');
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  const now = performance.now();
+  for (const ce of (list.length ? list : [e])) {
+    const p = toWorld(ce); lastP = p;
+    samples.push({ t: now, y: p.y + drag.dy });
+  }
+  while (samples.length > 2 && now - samples[0].t > 300) samples.shift();
+  target.x = lastP.x + drag.dx; target.y = lastP.y + drag.dy;
+});
+function endDrag(e) { if (drag && e.pointerId === drag.id) { drag = null; cv.classList.remove('drag'); } }
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+startBtn.addEventListener('click', () => { initAudio(); newGame(); });
+addEventListener('resize', resize);
+
+// ---------- 업데이트 ----------
+function update(dt) {
+  if (state === 'play') {
+    timeLeft -= dt;
+    if (timeLeft <= 0) { timeLeft = 0; gameOver('시간이 다 됐어요!'); }
+  } else if (state === 'clear') {
+    stateT -= dt; if (stateT <= 0) { stage++; startStage(); }
+  } else if (state === 'over') {
+    stateT -= dt; if (stateT <= 0 && menu.classList.contains('hidden')) { menu.classList.remove('hidden'); drag = null; cv.classList.remove('drag'); }
+  }
+  if (state === 'play' || state === 'clear') moveHammer();
+
+  const prox = clamp((floorAt(ham.x).y - ham.y) / 50, 0, 1);
+  const tt = drag ? clamp(-pointerVy() * 0.00008, -0.4, 0.4) * prox : 0;
+  ham.tilt += (tt - ham.tilt) * Math.min(1, dt * 18);
+
+  for (const n of nails) n.wob = Math.max(0, n.wob - dt * 4);
+  shake = Math.max(0, shake - dt * 40);
+  for (const p of parts) {
+    p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.k === 'c') { p.vy += 900 * dt; p.r += p.vr * dt; if (p.y > woodTop) { p.y = woodTop; p.vy *= -0.3; p.vx *= 0.6; } }
+    else p.vy += 600 * dt;
+  }
+  parts = parts.filter(p => p.life > 0);
+  for (const p of pops) { p.life -= dt; p.y -= dt * (p.big ? 10 : 30); }
+  pops = pops.filter(p => p.life > 0);
+}
+
+// ---------- 그리기 ----------
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+}
+function steel(x0, x1, light) {
+  const g = ctx.createLinearGradient(x0, 0, x1, 0);
+  g.addColorStop(0, light ? '#7d868f' : '#5a626b'); g.addColorStop(0.45, light ? '#f1f5f8' : '#cfd6dc'); g.addColorStop(1, light ? '#8b949d' : '#646c75');
+  return g;
+}
+
+function drawNail(n, t) {
+  const x = n.x + Math.sin(t * 70) * n.wob * 2.2;
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.ellipse(n.x, woodTop + 1, 7, 2.2, 0, 0, 7); ctx.fill();
+  if (n.bent) {
+    const e = n.exposed, k1 = e * 0.4, len2 = e * 0.75, a = n.dir * 1.0;
+    const bx = n.x, by = woodTop - k1, hx = bx + Math.sin(a) * len2, hy = by - Math.cos(a) * len2;
+    ctx.strokeStyle = steel(bx - 3, bx + 3); ctx.lineWidth = SHAFT_W; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(bx, woodTop); ctx.lineTo(bx, by); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.save(); ctx.translate(hx, hy); ctx.rotate(a);
+    ctx.fillStyle = steel(-NH_W / 2, NH_W / 2); rr(-NH_W / 2, -NH_H, NH_W, NH_H, 2); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  const e = n.exposed, ht = headTop(n);
+  if (e > 0) {
+    ctx.fillStyle = steel(x - SHAFT_W / 2, x + SHAFT_W / 2);
+    ctx.fillRect(x - SHAFT_W / 2, woodTop - e, SHAFT_W, e);
+  }
+  ctx.fillStyle = steel(x - NH_W / 2, x + NH_W / 2, n.done);
+  rr(x - NH_W / 2, ht, NH_W, NH_H, 2.5); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(x - NH_W / 2 + 3, ht + 1, NH_W - 6, 1.2);
+  if (n.done) {
+    ctx.strokeStyle = `rgba(255,240,180,${0.35 + 0.25 * Math.sin(t * 5 + n.x)})`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(n.x, ht + 2, 15, 5, 0, 0, 7); ctx.stroke();
+  }
+}
+
+function drawHammer() {
+  ctx.save();
+  ctx.translate(ham.x, ham.y); ctx.rotate(ham.tilt);
+  // 손잡이
+  const hg = ctx.createLinearGradient(0, -50, 0, -24);
+  hg.addColorStop(0, '#e2b878'); hg.addColorStop(0.5, '#c48c4c'); hg.addColorStop(1, '#8e5c2a');
+  ctx.fillStyle = hg;
+  ctx.beginPath(); ctx.moveTo(14, -48); ctx.lineTo(200, -46); ctx.quadraticCurveTo(212, -37, 200, -27); ctx.lineTo(14, -29); ctx.closePath(); ctx.fill();
+  const gg = ctx.createLinearGradient(0, -50, 0, -24);
+  gg.addColorStop(0, '#d9473a'); gg.addColorStop(0.5, '#a72a20'); gg.addColorStop(1, '#651510');
+  ctx.fillStyle = gg; rr(128, -50, 82, 25, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1.5;
+  for (let gx = 140; gx < 206; gx += 10) { ctx.beginPath(); ctx.moveTo(gx, -48); ctx.lineTo(gx, -27); ctx.stroke(); }
+  // 머리(쇠)
+  ctx.fillStyle = steel(-21, 21);
+  ctx.beginPath();                          // 노루발(위쪽)
+  ctx.moveTo(-16, -HEAD_TALL + 4); ctx.quadraticCurveTo(-20, -HEAD_TALL - 22, 8, -HEAD_TALL - 34);
+  ctx.quadraticCurveTo(-4, -HEAD_TALL - 14, 16, -HEAD_TALL + 4); ctx.closePath(); ctx.fill();
+  rr(-20, -HEAD_TALL, 40, 30, 4); ctx.fill();          // 눈
+  rr(-17, -48, 34, 36, 2); ctx.fill();                  // 목
+  ctx.fillStyle = steel(-FACE_W / 2, FACE_W / 2, true);
+  rr(-FACE_W / 2, -15, FACE_W, 15, 3); ctx.fill();      // 타격면
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(-FACE_W / 2, -2.5, FACE_W, 2.5);
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-14, -HEAD_TALL + 4, 4, HEAD_TALL - 10);
+  ctx.restore();
+}
+
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#2a1e14'; ctx.fillRect(0, 0, CW, CH);
+  const shx = (Math.random() - 0.5) * shake * S, shy = (Math.random() - 0.5) * shake * S;
+  ctx.setTransform(1, 0, 0, 1, shx, shy);
+  ctx.fillStyle = wallPat; ctx.fillRect(-20, -20, CW + 40, CH + 40);
+  const vg = ctx.createLinearGradient(0, 0, 0, OY + woodTop * S);
+  vg.addColorStop(0, 'rgba(0,0,0,.45)'); vg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = vg; ctx.fillRect(-20, -20, CW + 40, OY + woodTop * S + 20);
+  ctx.drawImage(woodCv, -20, Math.floor(OY + woodTop * S));
+
+  ctx.setTransform(S, 0, 0, S, OX + shx, OY + shy);
+  ctx.fillStyle = 'rgba(0,0,0,.22)';
+  for (const d of dents) { ctx.beginPath(); ctx.ellipse(d.x, woodTop + 1.5, d.w / 2, 2.2, 0, 0, 7); ctx.fill(); }
+  for (const n of nails) drawNail(n, t);
+
+  if (state === 'play' && !firstHit && stage === 1 && nails[0]) {   // 안내
+    const n = nails[0], by = headTop(n) - 30 - Math.abs(Math.sin(t * 4)) * 12;
+    ctx.fillStyle = '#ffd58a'; ctx.font = '700 16px system-ui,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('망치로 쾅!', n.x, by - 22);
+    ctx.beginPath(); ctx.moveTo(n.x - 9, by - 12); ctx.lineTo(n.x + 9, by - 12); ctx.lineTo(n.x, by); ctx.fill();
+  }
+
+  if (state !== 'menu') drawHammer();
+
+  for (const p of parts) {
+    const a = clamp(p.life / p.max, 0, 1);
+    if (p.k === 's') {
+      ctx.strokeStyle = `rgba(255,${200 + Math.random() * 55 | 0},120,${a})`; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025); ctx.stroke();
+    } else {
+      ctx.save(); ctx.globalAlpha = a; ctx.translate(p.x, p.y); ctx.rotate(p.r);
+      ctx.fillStyle = p.col; ctx.fillRect(-p.sz, -p.sz / 2, p.sz * 2, p.sz); ctx.restore();
+    }
+  }
+
+  ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+  for (const p of pops) {
+    const a = clamp(p.life / p.max * 2, 0, 1), sz = p.big ? 40 : p.small ? 14 : 20;
+    ctx.globalAlpha = a; ctx.font = `900 ${sz}px system-ui,sans-serif`;
+    ctx.lineWidth = sz * 0.22; ctx.strokeStyle = 'rgba(30,15,5,.85)'; ctx.strokeText(p.text, p.x, p.y);
+    ctx.fillStyle = p.color; ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+
+  if (state !== 'menu') drawHud();
+}
+
+function drawHud() {
+  ctx.setTransform(S, 0, 0, S, OX, OY);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#ffd58a'; ctx.font = '800 18px system-ui,sans-serif';
+  ctx.fillText(`STAGE ${stage} · ${wood.name}`, 18, 30);
+  ctx.fillStyle = '#fff'; ctx.font = '700 15px system-ui,sans-serif';
+  const left = nails.filter(n => !n.done && !n.bent).length;
+  ctx.fillText(`점수 ${score}   남은 못 ${left}/${nails.length}`, 18, 52);
+  ctx.textAlign = 'right'; ctx.font = '20px system-ui,sans-serif';
+  ctx.fillStyle = '#ff5a5a'; ctx.fillText('♥'.repeat(Math.max(0, lives)), W - 18, 32);
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillText('♥'.repeat(Math.max(0, 3 - lives)), W - 18 - 20 * Math.max(0, lives), 32);
+  const bw = W - 36, ratio = clamp(timeLeft / timeMax, 0, 1);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; rr(18, 64, bw, 10, 5); ctx.fill();
+  ctx.fillStyle = ratio < 0.25 ? '#ff5a5a' : ratio < 0.5 ? '#ffb347' : '#7dd87a';
+  if (ratio > 0) { rr(18, 64, bw * ratio, 10, 5); ctx.fill(); }
+  ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = '700 13px system-ui,sans-serif';
+  ctx.fillText(`${Math.ceil(timeLeft)}초`, W - 18, 92);
+}
+
+let last = performance.now();
+function frame(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  update(dt); render(t / 1000);
+  requestAnimationFrame(frame);
+}
+resize();
+requestAnimationFrame(frame);
+window.__nail = { get state() { return state; }, get nails() { return nails; }, get ham() { return ham; }, get score() { return score; }, toScreen: (x, y) => ({ x: (x * S + OX) / DPR, y: (y * S + OY) / DPR }) };
+})();
+</script>
+</body>
+</html>
