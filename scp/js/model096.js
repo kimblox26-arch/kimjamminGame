@@ -19,7 +19,7 @@ function organ(len, prof, bump = () => 0, segT = 28, segA = 24, capT = 0.7, capB
     for (let j = 0; j <= segA; j++) {
       const th = j / segA * TAU, d = bump(t, th), m = (1 + d) * sc;
       pos.push(cx + rx * m * Math.sin(th), y, cz + rz * m * Math.cos(th));
-      const c = Math.min(1.08, Math.max(0.5, 1 + Math.max(-0.4, Math.min(0.4, d)) * 1.1)) * (0.82 + 0.18 * sc);
+      const c = Math.min(1.12, Math.max(0.42, 1 + Math.max(-0.4, Math.min(0.4, d)) * 1.7)) * (0.82 + 0.18 * sc);
       col.push(c, c * 0.985, c * 0.98);
       uv.push(j / segA, 1 - r / (rings.length - 1));
     }
@@ -78,27 +78,29 @@ export function buildModel096() {
   const root = new THREE.Group(), B = {};
   const M = (geo, parent, mat = skin, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; m.frustumCulled = false; parent.add(m); return m; };
   const bone = (n, p, x = 0, y = 0, z = 0) => { const b = new THREE.Group(); b.name = n; b.position.set(x, y, z); p.add(b); B[n] = b; return b; };
-  const H = { hipH: 1.28, thigh: 0.58, shin: 0.57, spine: 0.32, chest: 0.36, neck: 0.15, upper: 0.52, fore: 0.5, sw: 0.215, hw: 0.088 };
+  const H = { hipH: 1.28, thigh: 0.58, shin: 0.57, spine: 0.32, chest: 0.36, neck: 0.15, upper: 0.52, fore: 0.5, sw: 0.2, hw: 0.088 };
+  // 관절 살덩이(구): 부위 사이 틈을 메움 — vertexColors 용 color 속성 포함
+  const ball = (p, r, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) => { const g = new THREE.SphereGeometry(r, 20, 16); g.setAttribute('color', new THREE.Float32BufferAttribute(new Array(g.attributes.position.count * 3).fill(0.93), 3)); const m = M(g, p, skin, x, y, z); m.scale.set(sx, sy, sz); return m; };
   const vert = (t, th) => (-0.07 + 0.09 * Math.max(0, Math.sin(t * PI * 7))) * G(ad(th, PI), 0.13); // 척추 마디
 
   const hips = bone('hips', root, 0, H.hipH, 0);
   M(organ(0.2, t => [0.122 - 0.012 * t, 0.088 - 0.012 * t, -0.005], (t, th) => 0.07 * G(t - 0.55, 0.3) * (G(ad(th, PI - 0.5), 0.45) + G(ad(th, PI + 0.5), 0.45)) - 0.05 * G(th, 0.5) * G(t - 0.9, 0.2), 20, 24, 0.3, 0.55), hips, skin, 0, 0.08);
   const sp = bone('spine', hips, 0, 0.06, 0);
   // 배: 푹 꺼진 복부, 골반뼈 돌출, 등뼈
-  M(up(organ(H.spine + 0.03, t => [0.1 - 0.02 * Math.sin(PI * t) + 0.018 * t, 0.078 - 0.014 * Math.sin(PI * t), 0.004], (t, th) =>
+  M(up(organ(H.spine + 0.13, t => [0.1 - 0.02 * Math.sin(PI * t) + 0.018 * t, 0.078 - 0.014 * Math.sin(PI * t), 0.004], (t, th) =>
     -0.24 * G(t - 0.45, 0.24) * G(th, 0.85) - 0.05 * G(th, 0.07) + 0.16 * G(t - 0.9, 0.08) * G(ad(Math.abs(ad(th, 0)), 1.05), 0.3)
-    + 0.07 * G(t - 0.04, 0.06) * G(ad(Math.abs(ad(th, 0)), 0.9), 0.5) + vert(t, th), 26, 26, 0.2, 0.2), H.spine + 0.03), sp);
+    + 0.1 * G(t - 0.08 - 0.05 * Math.cos(th), 0.03) * G(ad(Math.abs(ad(th, 0)), 1.0), 0.55) + vert(t, th), 44, 32, 0.45, 0.5), H.spine + 0.05), sp);
   const ch = bone('chest', sp, 0, H.spine, 0);
   // 흉곽: 갈비뼈 6쌍, 흉골, 쇄골, 견갑골, 척추
-  M(up(organ(H.chest, t => [0.128 + 0.026 * Math.sin(PI * t) - 0.012 * t, 0.086 + 0.016 * Math.sin(PI * t), 0.005], (t, th) => {
+  M(up(organ(H.chest + 0.02, t => [0.13 + 0.024 * Math.sin(PI * t) - 0.012 * t + 0.08 * G(t - 0.05, 0.15), 0.086 + 0.016 * Math.sin(PI * t), 0.005], (t, th) => {
     let d = 0; const a = Math.abs(ad(th, 0));
-    for (let k = 0; k < 6; k++) { const tr = 0.3 + k * 0.105 + 0.08 * Math.cos(th); d += 0.075 * G(t - tr, 0.02); }
-    d *= (1 - G(a, 0.25)) * (1 - G(ad(th, PI), 0.45)) * (t > 0.18 ? 1 : 0);
+    for (let k = 0; k < 7; k++) { const tr = 0.24 + k * 0.1 + 0.09 * Math.cos(th); d += 0.15 * G(t - tr, 0.024); }
+    d = (d - 0.045 * (t > 0.24 && t < 0.98 ? 1 : 0)) * (1 - G(a, 0.22)) * (1 - G(ad(th, PI), 0.42)) * (t > 0.16 ? 1 : 0); // 갈비뼈 사이는 움푹
     d += 0.035 * G(a, 0.12) * (t > 0.2 && t < 0.8 ? 1 : 0) - 0.04 * G(t - 0.95, 0.06) * G(a, 0.6);
     d += 0.1 * G(t - 0.07 - 0.04 * Math.abs(Math.sin(th)), 0.028) * G(a - 0.85, 0.5) * (a < 1.6 ? 1 : 0); // 쇄골
     d += 0.13 * G(t - 0.3, 0.13) * (G(ad(th, PI - 0.78), 0.33) + G(ad(th, PI + 0.78), 0.33)); // 견갑골
     return d + vert(t, th);
-  }, 34, 30, 0.55, 0.2), H.chest), ch);
+  }, 96, 52, 0.35, 0.6), H.chest), ch);
   // 목: 흉쇄유돌근 힘줄, 울대뼈
   const nk = bone('neck', ch, 0, H.chest, 0.025);
   M(up(organ(H.neck + 0.04, t => [0.043 + 0.012 * t, 0.046 + 0.016 * t, 0.004 * t], (t, th) => {
@@ -115,25 +117,31 @@ export function buildModel096() {
     M(organ(H.upper, t => [0.037 - 0.006 * t, 0.037 - 0.006 * t], (t, th) =>
       0.42 * G(t - 0.05, 0.12) * G(ad(th, o), 1.0) + 0.24 * G(t - 0.45, 0.2) * G(th, 0.6) + 0.2 * G(t - 0.35, 0.22) * G(ad(th, PI), 0.7)
       - 0.1 * G(ad(th, -o), 0.22) * G(t - 0.5, 0.3) + 0.34 * G(t - 0.985, 0.035) * G(ad(th, PI), 0.5) - 0.12 * G(t - 0.95, 0.05) * G(th, 0.5), 28, 22, 0.9, 0.6), arm);
+    ball(arm, 0.052, 0, 0.005, 0, 1, 1.05, 0.95); // 어깨
     const fo = bone('fore' + L, arm, 0, -H.upper, 0);
+    ball(fo, 0.034, 0, 0, -0.004); // 팔꿈치
     M(organ(H.fore, t => [0.034 - 0.013 * t, 0.029 - 0.012 * t], (t, th) =>
       0.32 * G(t - 0.17, 0.14) * G(ad(th, o * 0.5), 0.6) + 0.18 * G(t - 0.25, 0.2) * G(ad(th, -o * 0.6), 0.6)
       + 0.14 * G(t - 0.85, 0.16) * (G(ad(th, 0.35), 0.1) + G(ad(th, -0.35), 0.1)) + 0.28 * G(t - 0.96, 0.04) * G(ad(th, PI - o * 0.5), 0.4), 28, 22, 0.5, 0.5), fo);
     const hn = bone('hand' + L, fo, 0, -H.fore, 0);
+    ball(hn, 0.022, 0, 0.004, 0, 1.15, 1, 0.85); // 손목
     buildHand(hn, s, L, skin, nail, M, B);
   }
   // 다리
   for (const s of [1, -1]) {
     const L = s > 0 ? 'L' : 'R', o = s * PI / 2;
     const lg = bone('leg' + L, hips, s * H.hw, 0, 0);
+    ball(lg, 0.07, 0, -0.01, 0); // 고관절
     M(organ(H.thigh, t => [0.066 - 0.022 * t, 0.068 - 0.022 * t], (t, th) =>
       0.16 * G(t - 0.4, 0.25) * G(th, 0.8) + 0.2 * G(t - 0.8, 0.1) * G(ad(th, -o * 0.5), 0.4) + 0.1 * G(t - 0.45, 0.3) * G(ad(th, PI), 0.6)
-      - 0.07 * G(ad(th, o), 0.15) + 0.36 * G(t - 0.985, 0.04) * G(th, 0.45), 30, 24, 0.4, 0.55), lg);
+      - 0.07 * G(ad(th, o), 0.15) + 0.36 * G(t - 0.985, 0.04) * G(th, 0.45), 30, 24, 0.9, 0.7), lg);
     const sh = bone('shin' + L, lg, 0, -H.thigh, 0);
+    ball(sh, 0.047, 0, 0, 0.004); // 무릎
     M(organ(H.shin, t => [0.043 - 0.017 * t, 0.044 - 0.016 * t], (t, th) =>
       0.45 * G(t - 0.22, 0.17) * G(ad(th, PI), 0.85) + 0.06 * G(ad(th, -o * 0.15), 0.12) + 0.16 * G(t - 0.02, 0.05) * G(th, 0.6)
       - 0.16 * G(t - 0.85, 0.1) * (G(ad(th, PI - 0.5), 0.2) + G(ad(th, PI + 0.5), 0.2)) + 0.38 * G(t - 0.97, 0.035) * (G(ad(th, PI / 2), 0.35) + G(ad(th, -PI / 2), 0.35)), 30, 22, 0.5, 0.5), sh);
     const ft = bone('foot' + L, sh, 0, -H.shin, 0);
+    ball(ft, 0.031); // 발목
     const fg = organ(0.31, t => [0.032 + 0.016 * Math.min(1, t / 0.75), 0.04 - 0.02 * t, 0], (t, th) => 0.13 * G(t - 0.6, 0.25) * [-2, -1, 0, 1, 2].reduce((a, k) => a + G(ad(th, k * 0.28), 0.06), 0) + 0.2 * G(t - 0.1, 0.12) * G(ad(th, PI), 0.8), 20, 20, 0.6, 0.3);
     fg.rotateX(-PI / 2); M(fg, ft, skin, 0, -0.075, -0.07);
     for (let i = 0; i < 5; i++) { // 발가락 + 발톱
@@ -167,7 +175,8 @@ function buildHead(hd, skin, dark, eyeMat, M, bone, B) {
   for (const s of [1, -1]) {
     M(new THREE.SphereGeometry(0.019, 12, 10), hd, dark, s * 0.036, cy + 0.016, 0.098);  // 눈 안쪽 어둠
     const e = new THREE.Mesh(new THREE.SphereGeometry(0.0055, 10, 8), eyeMat); e.position.set(s * 0.036, cy + 0.016, 0.112); hd.add(e); // 빛나는 작은 눈동자
-    const ear = M(new THREE.SphereGeometry(0.022, 12, 10), hd, skin, s * 0.098, cy + 0.005, -0.012); ear.scale.set(0.35, 1, 0.6);
+    const eg = new THREE.SphereGeometry(0.022, 12, 10); eg.setAttribute('color', new THREE.Float32BufferAttribute(new Array(eg.attributes.position.count * 3).fill(0.9), 3));
+    const ear = M(eg, hd, skin, s * 0.098, cy + 0.005, -0.012); ear.scale.set(0.35, 1, 0.6);
   }
   // 입 안 + 윗니
   M(new THREE.SphereGeometry(0.055, 18, 14), hd, new THREE.MeshStandardMaterial({ color: 0x2a0606, roughness: 0.7 }), 0, cy - 0.085, 0.055).scale.set(1, 0.9, 1.1);
