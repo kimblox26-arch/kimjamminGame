@@ -3,14 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>못 박기</title>
+<title>못 박기 3D</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#2a1e14;color:#fff;
+html,body{margin:0;height:100%;overflow:hidden;background:#1d140d;color:#fff;
   font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-canvas{display:block;width:100vw;height:100vh;touch-action:none;cursor:grab}
-canvas.drag{cursor:grabbing}
-.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(18,10,4,.7);z-index:2}
+#gl,#ui{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+#gl{touch-action:none;cursor:grab}
+#gl.drag{cursor:grabbing}
+#ui{pointer-events:none}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(18,10,4,.66);z-index:2}
 .overlay.hidden{display:none}
 .card{background:#3b2a1c;border:3px solid #c79a5b;border-radius:18px;padding:26px 28px;max-width:420px;margin:16px;
   text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.55)}
@@ -22,28 +24,30 @@ button{margin-top:14px;font-size:1.15rem;font-weight:800;padding:12px 34px;borde
   background:#ffb347;color:#3b2a1c;cursor:pointer;box-shadow:0 4px 0 #b86f1d}
 button:active{transform:translateY(3px);box-shadow:0 1px 0 #b86f1d}
 </style>
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.min.js" } }</script>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="gl"></canvas>
+<canvas id="ui"></canvas>
 <div class="overlay" id="menu"><div class="card">
-  <h1 id="mTitle">🔨 못 박기</h1>
+  <h1 id="mTitle">🔨 못 박기 3D</h1>
   <div id="mBody">
     <p>망치를 <b>드래그</b>해서 위에서 아래로 힘껏 내려치세요!<br>못이 나무에 완전히 박히면 성공이에요.</p>
     <p class="small">빠르게 휘두를수록 깊이 박혀요.<br>망치 가장자리로 치면 못이 휘어요 (♥ -1).<br>한 번 친 뒤에는 망치를 살짝 들어 올려야 다시 칠 수 있어요.</p>
   </div>
   <button id="startBtn">시작하기</button>
 </div></div>
-<script>
-(() => {
-'use strict';
-const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+<script type="module">
+import * as THREE from 'three';
+
+const glc = document.getElementById('gl'), ui = document.getElementById('ui'), uctx = ui.getContext('2d');
 const menu = document.getElementById('menu'), mTitle = document.getElementById('mTitle'),
       mBody = document.getElementById('mBody'), startBtn = document.getElementById('startBtn');
 
-// ---------- 상수 ----------
-const FACE_W = 50, HEAD_TALL = 74, NH_W = 22, NH_H = 7, SHAFT_W = 6;
-const REACH = FACE_W / 2 + NH_W / 2;
-const V_MIN = 200, V_MAX = 4000;
+// ---------- 상수 (게임 로직 단위: 1 = 3D 0.1) ----------
+const FACE_W = 50, NH_W = 22, NH_H = 7, SC = 0.1, MAX_LIFT = 280;
+const REACH = FACE_W / 2 + NH_W / 2, V_MIN = 200, V_MAX = 4000;
+const PLANK_H = 6, PLANK_D = 14;
 const WOODS = [
   { name: '소나무',  k: 0.020, base: '#dcab6e', dark: '#b8834a', grain: '#94632f' },
   { name: '참나무',  k: 0.013, base: '#ba8653', dark: '#93623a', grain: '#6f4520' },
@@ -52,63 +56,189 @@ const WOODS = [
 ];
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const rand = (a, b) => a + Math.random() * (b - a);
+let W = 800;
+const woodTop = 372;
+const X3 = x => (x - W / 2) * SC, Y3 = y => (woodTop - y) * SC;
 
-// ---------- 화면 ----------
-let DPR = 1, CW = 0, CH = 0, W = 800, H = 600, S = 1, OX = 0, OY = 0, woodTop = 372;
-const woodCv = document.createElement('canvas');
-let wallPat = null;
+// ---------- 렌더러 & 장면 ----------
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true });
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1d140d);
+scene.fog = new THREE.Fog(0x1d140d, 140, 320);
+const camera = new THREE.PerspectiveCamera(38, 1, 0.5, 600);
 
-function resize() {
-  const oldW = W, oldTop = woodTop;
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
-  CW = cv.width = Math.round(innerWidth * DPR);
-  CH = cv.height = Math.round(innerHeight * DPR);
-  const portrait = innerHeight > innerWidth;
-  W = portrait ? 480 : 800; H = portrait ? 760 : 600;
-  S = Math.min(CW / W, CH / H); OX = (CW - W * S) / 2; OY = (CH - H * S) / 2;
-  woodTop = Math.round(H * 0.62);
-  if (oldW !== W) { const f = W / oldW; nails.forEach(n => n.x *= f); dents.forEach(d => d.x *= f); ham.x *= f; target.x *= f; }
-  ham.y += woodTop - oldTop; target.y += woodTop - oldTop;
-  genWall(); genWood();
+(function makeEnv() {
+  const s = new THREE.Scene();
+  s.add(new THREE.Mesh(new THREE.BoxGeometry(100, 100, 100), new THREE.MeshBasicMaterial({ color: 0x6a5a4c, side: THREE.BackSide })));
+  const panel = (c, x, y, z, w, h) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }));
+    m.position.set(x, y, z); m.lookAt(0, 0, 0); s.add(m);
+  };
+  panel(new THREE.Color(9, 8, 6.6), 0, 45, 12, 60, 30);
+  panel(new THREE.Color(3, 3.3, 4), -45, 12, 20, 30, 50);
+  panel(new THREE.Color(2.4, 2.2, 2), 0, 10, 48, 60, 24);
+  panel(new THREE.Color(1.6, 1.3, 1.0), 42, 6, -18, 22, 30);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(s, 0.04).texture; pm.dispose();
+})();
+
+scene.add(new THREE.HemisphereLight(0xfff1dc, 0x3a2a1c, 0.9));
+const sun = new THREE.DirectionalLight(0xffe2b8, 2.1);
+sun.position.set(-12, 80, 14); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 50, bottom: -40, near: 1, far: 200 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xbcd2ff, 0.55); fill.position.set(40, 20, 50); scene.add(fill);
+
+function canvasTex(cv, repX = 1, repY = 1) {
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping; t.repeat.set(repX, repY);
+  return t;
 }
-
-function genWall() {
-  const p = document.createElement('canvas'), s = Math.round(28 * S);
-  p.width = p.height = Math.max(4, s);
-  const g = p.getContext('2d');
-  g.fillStyle = '#3a2b1f'; g.fillRect(0, 0, s, s);
-  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.arc(s / 2, s / 2, s * 0.09, 0, 7); g.fill();
-  wallPat = ctx.createPattern(p, 'repeat');
-}
-
-function genWood() {
-  const top = Math.floor(OY + woodTop * S), h = Math.max(4, CH - top + 40);
-  woodCv.width = CW + 40; woodCv.height = h;
-  const g = woodCv.getContext('2d'), w = woodCv.width;
-  const gr = g.createLinearGradient(0, 0, 0, h);
-  gr.addColorStop(0, wood.base); gr.addColorStop(1, wood.dark);
+function paintWood(cv, w, h, c, lines) {
+  cv.width = w; cv.height = h;
+  const g = cv.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, c.base); gr.addColorStop(1, c.dark);
   g.fillStyle = gr; g.fillRect(0, 0, w, h);
-  g.lineCap = 'round';
-  for (let i = 0; i < 46; i++) {
-    const y0 = Math.random() * h, amp = rand(1, 6) * S, fr = rand(0.002, 0.008) / S, ph = Math.random() * 7;
-    g.strokeStyle = wood.grain; g.globalAlpha = rand(0.15, 0.45); g.lineWidth = rand(0.6, 2.4) * S;
+  for (let i = 0; i < lines; i++) {
+    const y0 = Math.random() * h, amp = rand(1, 7), fr = rand(0.004, 0.016), ph = Math.random() * 7;
+    g.strokeStyle = c.grain; g.globalAlpha = rand(0.15, 0.45); g.lineWidth = rand(0.6, 2.6);
     g.beginPath();
-    for (let x = 0; x <= w; x += 12) { const y = y0 + Math.sin(x * fr + ph) * amp; x ? g.lineTo(x, y) : g.moveTo(x, y); }
+    for (let x = 0; x <= w; x += 8) { const y = y0 + Math.sin(x * fr + ph) * amp; x ? g.lineTo(x, y) : g.moveTo(x, y); }
     g.stroke();
   }
-  for (let k = 0; k < 3; k++) {          // 옹이
-    const kx = Math.random() * w, ky = rand(0.3, 0.9) * h, r = rand(8, 16) * S;
+  for (let k = 0; k < 3; k++) {
+    const kx = Math.random() * w, ky = Math.random() * h, r = rand(8, 16);
     for (let j = 5; j > 0; j--) {
-      g.globalAlpha = 0.18 + 0.1 * (5 - j); g.strokeStyle = wood.grain; g.lineWidth = 1.5 * S;
+      g.globalAlpha = 0.18 + 0.1 * (5 - j); g.strokeStyle = c.grain; g.lineWidth = 1.5;
       g.beginPath(); g.ellipse(kx, ky, r * j / 3, r * j / 5, 0, 0, 7); g.stroke();
     }
   }
   g.globalAlpha = 1;
-  g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(0, 0, w, 4 * S);   // 윗면 하이라이트
-  g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, 4 * S, w, 2 * S);
 }
 
-// ---------- 사운드 (WebAudio 합성) ----------
+// 벽(타공판)
+{
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  const g = cv.getContext('2d'); g.fillStyle = '#3d2e22'; g.fillRect(0, 0, 64, 64);
+  g.fillStyle = '#1a120c'; g.beginPath(); g.arc(32, 32, 5, 0, 7); g.fill();
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(500, 220),
+    new THREE.MeshStandardMaterial({ map: canvasTex(cv, 125, 55), roughness: 0.95 }));
+  wall.position.set(0, 50, -40); wall.receiveShadow = true; scene.add(wall);
+}
+// 작업대
+{
+  const cv = document.createElement('canvas');
+  paintWood(cv, 512, 256, { base: '#5a3d28', dark: '#3e291a', grain: '#24170e' }, 40);
+  const table = new THREE.Mesh(new THREE.BoxGeometry(500, 6, 90),
+    new THREE.MeshStandardMaterial({ map: canvasTex(cv, 4, 1), roughness: 0.75 }));
+  table.position.set(0, -PLANK_H - 3, 5); table.receiveShadow = true; scene.add(table);
+}
+// 나무판
+const woodCv = document.createElement('canvas');
+const woodTex = canvasTex(woodCv);
+const plankMat = new THREE.MeshStandardMaterial({ map: woodTex, bumpMap: woodTex, bumpScale: 0.03, roughness: 0.62 });
+const plank = new THREE.Mesh(new THREE.BoxGeometry(1, PLANK_H, PLANK_D), plankMat);
+plank.position.y = -PLANK_H / 2; plank.castShadow = plank.receiveShadow = true; scene.add(plank);
+
+// ---------- 못 ----------
+const steelMat = new THREE.MeshStandardMaterial({ color: 0xd8dde2, metalness: 0.9, roughness: 0.32 });
+const brightMat = new THREE.MeshStandardMaterial({ color: 0xe6ebf0, metalness: 1, roughness: 0.18 });
+const headGeo = new THREE.CylinderGeometry(NH_W / 2 * SC, NH_W / 2 * SC * 0.9, NH_H * SC, 28); headGeo.translate(0, NH_H * SC / 2, 0);
+const shaftDown = new THREE.CylinderGeometry(0.3, 0.3, 1, 12); shaftDown.translate(0, -0.5, 0);
+const shaftUp = new THREE.CylinderGeometry(0.3, 0.3, 1, 12); shaftUp.translate(0, 0.5, 0);
+const jointGeo = new THREE.SphereGeometry(0.3, 12, 8);
+const holeGeo = new THREE.CircleGeometry(1, 24); holeGeo.rotateX(-Math.PI / 2);
+const ringGeo = new THREE.RingGeometry(1.25, 1.65, 32); ringGeo.rotateX(-Math.PI / 2);
+const decalMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+
+function buildNail(n) {
+  const g = new THREE.Group();
+  const head = new THREE.Mesh(headGeo, steelMat), shaft = new THREE.Mesh(shaftDown, steelMat);
+  shaft.scale.y = n.len * SC + 1.5;
+  head.castShadow = shaft.castShadow = true;
+  g.add(head, shaft); scene.add(g);
+  const hole = new THREE.Mesh(holeGeo, decalMat); hole.scale.set(0.75, 1, 0.75); hole.position.y = 0.01; scene.add(hole);
+  n.mesh = g; n.hole = hole; n.ring = null;
+}
+function bendNail(n) {
+  const g = n.mesh; g.clear();
+  const e = n.exposed * SC, k1 = e * 0.4, len2 = e * 0.75, a = 1.0, s = n.dir;
+  const low = new THREE.Mesh(shaftUp, steelMat); low.scale.y = k1;
+  const up = new THREE.Mesh(shaftUp, steelMat); up.scale.y = len2; up.position.y = k1; up.rotation.z = -s * a;
+  const joint = new THREE.Mesh(jointGeo, steelMat); joint.position.y = k1;
+  const head = new THREE.Mesh(headGeo, steelMat);
+  head.position.set(s * Math.sin(a) * len2, k1 + Math.cos(a) * len2, 0); head.rotation.z = -s * a;
+  [low, up, joint, head].forEach(m => { m.castShadow = true; g.add(m); });
+}
+function finishNail(n) {
+  n.mesh.children[0].material = brightMat;
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xfff0b4, transparent: true, opacity: 0.5, depthWrite: false }));
+  ring.position.y = 0.03; scene.add(ring); n.ring = ring;
+}
+function removeNail(n) { scene.remove(n.mesh, n.hole); if (n.ring) { scene.remove(n.ring); n.ring.material.dispose(); } }
+
+// ---------- 망치 ----------
+const hammer = new THREE.Group(), hYaw = new THREE.Group(), hPitch = new THREE.Group();
+hammer.add(hYaw); hYaw.add(hPitch); hYaw.rotation.y = -0.55; scene.add(hammer);
+{
+  const add = (geo, mat, x, y, z, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.z = rz; m.castShadow = true; hPitch.add(m); return m; };
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xaab2ba, metalness: 0.9, roughness: 0.38 });
+  add(new THREE.CylinderGeometry(2.5, 2.5, 1.5, 36), brightMat, 0, 0.75, 0);          // 타격면
+  add(new THREE.CylinderGeometry(1.9, 2.3, 3.2, 36), headMat, 0, 3.1, 0);             // 목
+  add(new THREE.BoxGeometry(4.2, 2.8, 3.2), headMat, 0, 6.0, 0);                      // 눈
+  const sh = new THREE.Shape();
+  sh.moveTo(-1.7, 0); sh.quadraticCurveTo(-2.3, 2.6, 1.4, 4.0); sh.quadraticCurveTo(-0.2, 1.8, 1.7, 0); sh.closePath();
+  const claw = new THREE.ExtrudeGeometry(sh, { depth: 2.4, bevelEnabled: true, bevelSize: 0.2, bevelThickness: 0.2, bevelSegments: 2 });
+  claw.translate(0, 7.2, -1.2);
+  add(claw, headMat, 0, 0, 0);                                                         // 노루발
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0xc48c4c, roughness: 0.55 });
+  const handle = add(new THREE.CylinderGeometry(0.85, 1.0, 19, 20), woodMat, 11.0, 6.0, 0, Math.PI / 2); handle.scale.z = 0.8;
+  const gripMat = new THREE.MeshStandardMaterial({ color: 0xb32a20, roughness: 0.85 });
+  add(new THREE.CylinderGeometry(1.25, 1.2, 8.2, 24), gripMat, 16.9, 6.0, 0, Math.PI / 2);
+  const cap = add(new THREE.SphereGeometry(1.25, 20, 12), gripMat, 21.0, 6.0, 0); cap.scale.x = 0.5;
+  const rib = new THREE.TorusGeometry(1.26, 0.1, 6, 24); rib.rotateY(Math.PI / 2);
+  for (let gx = 13.6; gx < 20.6; gx += 1.2) add(rib, new THREE.MeshStandardMaterial({ color: 0x7a1a14, roughness: 0.9 }), gx, 6.0, 0);
+}
+
+// ---------- 파티클 ----------
+const SPK = 260;
+const spPos = new Float32Array(SPK * 3), spCol = new Float32Array(SPK * 3);
+const spGeo = new THREE.BufferGeometry();
+spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
+spGeo.setAttribute('color', new THREE.BufferAttribute(spCol, 3));
+const dot = document.createElement('canvas'); dot.width = dot.height = 32;
+{ const g = dot.getContext('2d'), r = g.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, '#fff'); r.addColorStop(0.4, 'rgba(255,255,255,.7)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 32, 32); }
+const sparkPts = new THREE.Points(spGeo, new THREE.PointsMaterial({ size: 0.6, map: new THREE.CanvasTexture(dot), vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+sparkPts.frustumCulled = false; scene.add(sparkPts);
+let sparks = [];
+const chipGeo = new THREE.BoxGeometry(0.9, 0.22, 0.55);
+const chipMats = [new THREE.MeshStandardMaterial({ roughness: 0.8 }), new THREE.MeshStandardMaterial({ roughness: 0.8 })];
+const chipPool = [];
+for (let i = 0; i < 90; i++) { const m = new THREE.Mesh(chipGeo, chipMats[i % 2]); m.visible = false; scene.add(m); chipPool.push({ m, life: 0 }); }
+
+function spawnSparks(x, y, n) {
+  for (let i = 0; i < n && sparks.length < SPK; i++) {
+    const a = rand(0.15, Math.PI - 0.15), sp = rand(15, 50), az = rand(-1, 1);
+    sparks.push({ x: X3(x), y: Y3(y), z: 0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: az * sp * 0.6, life: rand(0.15, 0.4), max: 0.4 });
+  }
+}
+function spawnChips(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const c = chipPool.find(p => p.life <= 0); if (!c) return;
+    const a = rand(0.3, Math.PI - 0.3), sp = rand(8, 28);
+    c.life = rand(0.6, 1.0); c.m.visible = true;
+    c.m.position.set(X3(x) + rand(-1.4, 1.4), Y3(y) + 0.2, rand(-1, 1));
+    c.v = new THREE.Vector3(Math.cos(a) * sp, Math.sin(a) * sp, rand(-10, 10));
+    c.r = new THREE.Vector3(rand(-14, 14), rand(-14, 14), rand(-14, 14));
+  }
+}
+
+// ---------- 사운드 ----------
 let AC = null, noiseBuf = null;
 function initAudio() {
   try {
@@ -149,16 +279,16 @@ const sfx = {
 // ---------- 게임 상태 ----------
 let state = 'menu', stage = 1, score = 0, lives = 3, combo = 0, timeLeft = 0, timeMax = 1, stateT = 0, firstHit = false;
 let wood = WOODS[0], best = 0;
-let nails = [], dents = [], parts = [], pops = [], shake = 0;
-const ham = { x: 400, y: 170, armed: true, tilt: 0, hitY: 1e9 };
-const target = { x: 400, y: 170 };
-let drag = null, lastP = { x: 0, y: 0 };
+let nails = [], dents = [], pops = [], shake = 0;
+const ham = { x: 400, y: woodTop - 190, armed: true, tilt: 0, hitY: 1e9 };
+const target = { x: 400, y: woodTop - 190 };
+let lastV = 0, drag = null, lastP = { x: 0, y: 0 };
 const samples = [];
 try { best = +localStorage.getItem('nailgame.best') || 0; } catch (e) {}
 
 function headTop(n) {
   if (n.done) return woodTop - 3;
-  if (n.bent) return woodTop - n.exposed * 0.55 - NH_H;
+  if (n.bent) return woodTop - n.exposed * 0.45 - 3;
   return woodTop - n.exposed - NH_H;
 }
 function floorAt(x) {
@@ -170,20 +300,23 @@ function floorAt(x) {
 function startStage() {
   const wi = Math.min(Math.floor((stage - 1) / 2), WOODS.length - 1);
   wood = WOODS[wi];
-  const count = Math.min(2 + stage, Math.floor((W - 60) / 95)), slot = (W - 60) / count;
+  nails.forEach(removeNail); dents.forEach(d => scene.remove(d.m));
   nails = []; dents = [];
+  const count = Math.min(2 + stage, Math.floor((W - 60) / 95)), slot = (W - 60) / count;
   for (let i = 0; i < count; i++) {
     const j = Math.max(0, (slot - 95) / 2);
     const len = rand(55, 95) + Math.min(stage * 3, 25);
-    nails.push({ x: 30 + slot * (i + 0.5) + rand(-j, j), len, exposed: len, hits: 0, done: false, bent: false, dir: 1, wob: 0 });
+    const n = { x: 30 + slot * (i + 0.5) + rand(-j, j), len, exposed: len, hits: 0, done: false, bent: false, dir: 1, wob: 0 };
+    buildNail(n); nails.push(n);
   }
   timeMax = timeLeft = Math.round(10 + count * (3.5 + wi * 1.6));
   ham.y = Math.min(ham.y, woodTop - 170); ham.armed = true; ham.hitY = 1e9;
   if (drag) { drag.dx = ham.x - lastP.x; drag.dy = ham.y - lastP.y; }
   target.x = ham.x; target.y = ham.y;
-  genWood();
+  paintWood(woodCv, 1024, 256, wood, 50); woodTex.needsUpdate = true;
+  chipMats[0].color.set(wood.base); chipMats[1].color.set(wood.dark);
   state = 'play';
-  pops.push({ x: W / 2, y: H * 0.3, text: `STAGE ${stage} · ${wood.name}`, color: '#ffd58a', life: 1.6, max: 1.6, big: true });
+  pops.push({ center: true, text: `STAGE ${stage} · ${wood.name}`, color: '#ffd58a', life: 1.6, max: 1.6, big: true });
 }
 
 function newGame() {
@@ -208,8 +341,8 @@ function checkStage() {
   if (state === 'play' && nails.every(n => n.done || n.bent)) {
     const bonus = Math.ceil(timeLeft) * 10;
     score += bonus; state = 'clear'; stateT = 2; sfx.clear();
-    pops.push({ x: W / 2, y: H * 0.3, text: 'STAGE CLEAR!', color: '#7dff9b', life: 2, max: 2, big: true });
-    pops.push({ x: W / 2, y: H * 0.3 + 44, text: `시간 보너스 +${bonus}`, color: '#fff', life: 2, max: 2 });
+    pops.push({ center: true, text: 'STAGE CLEAR!', color: '#7dff9b', life: 2, max: 2, big: true });
+    pops.push({ center: true, dy: 46, text: `시간 보너스 +${bonus}`, color: '#fff', life: 2, max: 2 });
   }
 }
 
@@ -218,7 +351,7 @@ function pointerVy() {
   const now = performance.now();
   if (samples.length < 2) return 0;
   const last = samples[samples.length - 1];
-  if (now - last.t > 70) return 0;
+  if (last.rt <= prevFrame && now - last.rt > 100) return 0;   // 이번 프레임에 새 입력이 없고 오래됐으면 정지 상태
   let old = last;
   for (let i = samples.length - 1; i >= 0; i--) { old = samples[i]; if (last.t - old.t >= 45) break; }
   const dt = (last.t - old.t) / 1000;
@@ -237,7 +370,7 @@ function tryX(nx) {
 function moveHammer() {
   if (ham.y < Math.min(floorAt(ham.x).y, ham.hitY) - 12) ham.armed = true;
   if (!drag) return;
-  const tx = clamp(target.x, FACE_W / 2 + 2, W - FACE_W / 2 - 2), ty = clamp(target.y, HEAD_TALL + 34, H + 200);
+  const tx = clamp(target.x, FACE_W / 2 + 2, W - FACE_W / 2 - 2), ty = clamp(target.y, woodTop - MAX_LIFT, woodTop + 200);
   const dx = tx - ham.x, dy = ty - ham.y;
   const steps = Math.min(300, Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 4)));
   const sx = dx / steps, sy = dy / steps;
@@ -255,7 +388,7 @@ function moveHammer() {
 function contact(n) {
   if (!ham.armed || state === 'over') return;
   ham.armed = false; ham.hitY = ham.y;
-  const v = Math.min(pointerVy(), V_MAX);
+  const v = Math.min(pointerVy(), V_MAX); lastV = v;
   if (n) impact(n, v); else woodHit(v);
 }
 
@@ -263,19 +396,22 @@ function woodHit(v) {
   if (v < 500) { if (v > V_MIN) sfx.wood(0.1); return; }
   const s = Math.min(1, v / 3000);
   sfx.wood(s); shake = Math.max(shake, 2 + s * 5);
-  dents.push({ x: ham.x, w: 16 + s * 18 });
-  chips(ham.x, woodTop, 4 + s * 8);
+  const m = new THREE.Mesh(holeGeo, decalMat);
+  m.scale.set((8 + s * 9) * SC * 1.6, 1, 0.9); m.position.set(X3(ham.x), 0.012, 0);
+  scene.add(m); dents.push({ x: ham.x, m });
+  spawnChips(ham.x, woodTop, 4 + s * 8);
 }
 
 function impact(n, v) {
-  if (n.done || n.bent) { sfx.clank(); sparks(n.x, headTop(n), 4); return; }
+  if (n.done || n.bent) { sfx.clank(); spawnSparks(n.x, headTop(n), 4); return; }
   if (v < V_MIN) { sfx.tap(); return; }
   n.hits++; n.wob = 1; firstHit = true;
   const dxh = ham.x - n.x, r = Math.abs(dxh) / REACH;
   if (r > 0.72 && v > 700) {
     n.bent = true; n.dir = dxh < 0 ? 1 : -1; lives--; combo = 0;
-    sfx.bend(); shake = 9; sparks(n.x, headTop(n), 10);
-    pops.push({ x: n.x, y: headTop(n) - 24, text: '휘었다! ♥-1', color: '#ff6b6b', life: 1.2, max: 1.2 });
+    bendNail(n);
+    sfx.bend(); shake = 9; spawnSparks(n.x, headTop(n), 12);
+    pops.push({ x: n.x, y: headTop(n) - 60, text: '휘었다! ♥-1', color: '#ff6b6b', life: 1.2, max: 1.2 });
     if (lives <= 0) gameOver('못이 전부 휘어버렸어요!'); else checkStage();
     return;
   }
@@ -284,238 +420,189 @@ function impact(n, v) {
   n.exposed -= d;
   const s = Math.min(1, v / 3000);
   sfx.hit(1 - n.exposed / n.len, s);
-  sparks(n.x, headTop(n), 5 + s * 10);
+  spawnSparks(n.x, headTop(n), 6 + s * 12);
   shake = Math.max(shake, Math.min(10, 1.5 + d * 0.25));
-  if (r > 0.45) pops.push({ x: n.x, y: headTop(n) - 22, text: '아슬아슬!', color: '#ffb36b', life: 0.8, max: 0.8 });
+  if (r > 0.45) pops.push({ x: n.x, y: headTop(n) - 40, text: '아슬아슬!', color: '#ffb36b', life: 0.8, max: 0.8 });
   if (n.exposed <= 0.5) {
     n.exposed = 0; n.done = true; combo++;
+    finishNail(n);
     const par = Math.max(1, Math.ceil(n.len / (1800 * wood.k)));
     let pts = 100, txt = 'GOOD', col = '#ffffff';
     if (n.hits === 1) { pts = 300; txt = 'ONE SHOT!'; col = '#ffd84d'; }
     else if (n.hits <= par) { pts = 150; txt = 'PERFECT!'; col = '#7dff9b'; }
     const mult = Math.min(2, 1 + (combo - 1) * 0.1);
     pts = Math.round(pts * mult); score += pts;
-    pops.push({ x: n.x, y: woodTop - 40, text: txt, color: col, life: 1.2, max: 1.2 });
-    pops.push({ x: n.x, y: woodTop - 18, text: `+${pts}` + (combo > 1 ? ` (${combo}콤보)` : ''), color: '#fff', life: 1.2, max: 1.2, small: true });
-    sfx.done(); chips(n.x, woodTop, 12); shake = Math.max(shake, 7);
+    pops.push({ x: n.x, y: woodTop - 50, text: txt, color: col, life: 1.2, max: 1.2 });
+    pops.push({ x: n.x, y: woodTop - 50, dy: 24, text: `+${pts}` + (combo > 1 ? ` (${combo}콤보)` : ''), color: '#fff', life: 1.2, max: 1.2, small: true });
+    sfx.done(); spawnChips(n.x, woodTop, 12); shake = Math.max(shake, 7);
     checkStage();
   }
 }
 
-// ---------- 파티클 ----------
-function sparks(x, y, n) {
-  for (let i = 0; i < n; i++) {
-    const a = rand(Math.PI * 1.05, Math.PI * 1.95), sp = rand(150, 520);
-    parts.push({ k: 's', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.15, 0.35), max: 0.35 });
-  }
+// ---------- 화면 / 카메라 ----------
+let vw = 1, vh = 1, DPR = 1;
+const camTarget = new THREE.Vector3();
+function resize() {
+  vw = innerWidth; vh = innerHeight; DPR = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(DPR); renderer.setSize(vw, vh, false);
+  ui.width = Math.round(vw * DPR); ui.height = Math.round(vh * DPR);
+  const oldW = W, portrait = vh > vw;
+  W = portrait ? 420 : 800;
+  if (oldW !== W) { const f = W / oldW; nails.forEach(n => n.x *= f); dents.forEach(d => { d.x *= f; d.m.position.x = X3(d.x); }); ham.x *= f; target.x *= f; }
+  plank.scale.x = W * SC + 14;
+  camera.aspect = vw / vh; camera.fov = portrait ? 46 : 36;
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const halfW = W * SC / 2 + 5, halfH = portrait ? 24 : 21;
+  const d = Math.max(halfW / (t * camera.aspect), halfH / t);
+  const el = THREE.MathUtils.degToRad(portrait ? 30 : 20);
+  camTarget.set(0, portrait ? 7 : 10.5, 0);
+  camera.position.set(0, camTarget.y + Math.sin(el) * d, Math.cos(el) * d);
+  camera.lookAt(camTarget); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+  scene.fog.near = d * 1.4; scene.fog.far = d * 3.2;
 }
-function chips(x, y, n) {
-  for (let i = 0; i < n; i++) {
-    const a = rand(Math.PI * 1.1, Math.PI * 1.9), sp = rand(80, 300);
-    parts.push({ k: 'c', x: x + rand(-14, 14), y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rand(0.5, 0.9), max: 0.9,
-      r: rand(0, 6), vr: rand(-12, 12), sz: rand(2, 5), col: Math.random() < 0.5 ? wood.base : wood.dark });
-  }
-}
+const _v = new THREE.Vector3();
+function toScreen(x, y) { _v.set(X3(x), Y3(y), 0).project(camera); return { x: (_v.x + 1) / 2 * vw, y: (1 - _v.y) / 2 * vh }; }
 
 // ---------- 입력 ----------
-function toWorld(e) { return { x: (e.clientX * DPR - OX) / S, y: (e.clientY * DPR - OY) / S }; }
-cv.addEventListener('pointerdown', e => {
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hitP = new THREE.Vector3();
+function toWorld(e) {
+  ndc.set(e.clientX / vw * 2 - 1, -(e.clientY / vh) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(plane, hitP)) return lastP;
+  return { x: hitP.x / SC + W / 2, y: woodTop - hitP.y / SC };
+}
+glc.addEventListener('pointerdown', e => {
   initAudio();
-  if (state !== 'play' && state !== 'clear') return;
-  if (drag) return;
+  if ((state !== 'play' && state !== 'clear') || drag) return;
   const p = toWorld(e); lastP = p;
   drag = { id: e.pointerId, dx: ham.x - p.x, dy: ham.y - p.y };
   target.x = ham.x; target.y = ham.y; samples.length = 0;
-  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
-  cv.classList.add('drag');
+  try { glc.setPointerCapture(e.pointerId); } catch (_) {}
+  glc.classList.add('drag');
 });
-cv.addEventListener('pointermove', e => {
+glc.addEventListener('pointermove', e => {
   if (!drag || e.pointerId !== drag.id) return;
-  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
   const now = performance.now();
-  for (const ce of (list.length ? list : [e])) {
-    const p = toWorld(ce); lastP = p;
-    samples.push({ t: now, y: p.y + drag.dy });
-  }
-  while (samples.length > 2 && now - samples[0].t > 300) samples.shift();
+  for (const ce of (list.length ? list : [e])) { const p = toWorld(ce); lastP = p; samples.push({ t: ce.timeStamp > 0 && Math.abs(now - ce.timeStamp) < 1000 ? ce.timeStamp : now, rt: now, y: p.y + drag.dy }); }
+  while (samples.length > 2 && now - samples[0].rt > 400) samples.shift();
   target.x = lastP.x + drag.dx; target.y = lastP.y + drag.dy;
 });
-function endDrag(e) { if (drag && e.pointerId === drag.id) { drag = null; cv.classList.remove('drag'); } }
-cv.addEventListener('pointerup', endDrag);
-cv.addEventListener('pointercancel', endDrag);
+function endDrag(e) { if (drag && e.pointerId === drag.id) { drag = null; glc.classList.remove('drag'); } }
+glc.addEventListener('pointerup', endDrag);
+glc.addEventListener('pointercancel', endDrag);
 startBtn.addEventListener('click', () => { initAudio(); newGame(); });
 addEventListener('resize', resize);
 
 // ---------- 업데이트 ----------
-function update(dt) {
+function update(dt, t) {
   if (state === 'play') {
     timeLeft -= dt;
     if (timeLeft <= 0) { timeLeft = 0; gameOver('시간이 다 됐어요!'); }
   } else if (state === 'clear') {
     stateT -= dt; if (stateT <= 0) { stage++; startStage(); }
   } else if (state === 'over') {
-    stateT -= dt; if (stateT <= 0 && menu.classList.contains('hidden')) { menu.classList.remove('hidden'); drag = null; cv.classList.remove('drag'); }
+    stateT -= dt; if (stateT <= 0 && menu.classList.contains('hidden')) { menu.classList.remove('hidden'); drag = null; glc.classList.remove('drag'); }
   }
   if (state === 'play' || state === 'clear') moveHammer();
 
   const prox = clamp((floorAt(ham.x).y - ham.y) / 50, 0, 1);
   const tt = drag ? clamp(-pointerVy() * 0.00008, -0.4, 0.4) * prox : 0;
   ham.tilt += (tt - ham.tilt) * Math.min(1, dt * 18);
+  hammer.visible = state !== 'menu';
+  hammer.position.set(X3(ham.x), Y3(ham.y), 0);
+  hPitch.rotation.z = -ham.tilt;
 
-  for (const n of nails) n.wob = Math.max(0, n.wob - dt * 4);
-  shake = Math.max(0, shake - dt * 40);
-  for (const p of parts) {
-    p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
-    if (p.k === 'c') { p.vy += 900 * dt; p.r += p.vr * dt; if (p.y > woodTop) { p.y = woodTop; p.vy *= -0.3; p.vx *= 0.6; } }
-    else p.vy += 600 * dt;
+  for (const n of nails) {
+    n.wob = Math.max(0, n.wob - dt * 4);
+    const wx = X3(n.x);
+    n.mesh.position.x = wx + Math.sin(t * 70) * n.wob * 0.22;
+    n.mesh.position.y = n.bent ? 0 : n.done ? 0.3 - NH_H * SC : n.exposed * SC;
+    n.hole.position.x = wx;
+    if (n.ring) { n.ring.position.x = wx; n.ring.material.opacity = 0.35 + 0.25 * Math.sin(t * 5 + n.x); }
   }
-  parts = parts.filter(p => p.life > 0);
-  for (const p of pops) { p.life -= dt; p.y -= dt * (p.big ? 10 : 30); }
+  shake = Math.max(0, shake - dt * 40);
+
+  let i = 0;
+  for (const p of sparks) {
+    p.life -= dt; p.vy -= 60 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    if (p.life > 0) sparks[i++] = p;
+  }
+  sparks.length = i;
+  for (let k = 0; k < SPK; k++) {
+    const p = sparks[k];
+    if (p) { const a = p.life / p.max; spPos.set([p.x, p.y, p.z], k * 3); spCol.set([a, a * 0.8, a * 0.45], k * 3); }
+    else spPos[k * 3 + 1] = -999;
+  }
+  spGeo.attributes.position.needsUpdate = true; spGeo.attributes.color.needsUpdate = true;
+  for (const c of chipPool) {
+    if (c.life <= 0) continue;
+    c.life -= dt; if (c.life <= 0) { c.m.visible = false; continue; }
+    c.v.y -= 90 * dt; c.m.position.addScaledVector(c.v, dt);
+    c.m.rotation.x += c.r.x * dt; c.m.rotation.y += c.r.y * dt; c.m.rotation.z += c.r.z * dt;
+    if (c.m.position.y < 0.1) { c.m.position.y = 0.1; c.v.y *= -0.3; c.v.x *= 0.6; c.v.z *= 0.6; c.r.multiplyScalar(0.5); }
+  }
+  for (const p of pops) p.life -= dt;
   pops = pops.filter(p => p.life > 0);
 }
 
-// ---------- 그리기 ----------
-function rr(x, y, w, h, r) {
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
-}
-function steel(x0, x1, light) {
-  const g = ctx.createLinearGradient(x0, 0, x1, 0);
-  g.addColorStop(0, light ? '#7d868f' : '#5a626b'); g.addColorStop(0.45, light ? '#f1f5f8' : '#cfd6dc'); g.addColorStop(1, light ? '#8b949d' : '#646c75');
-  return g;
-}
-
-function drawNail(n, t) {
-  const x = n.x + Math.sin(t * 70) * n.wob * 2.2;
-  ctx.fillStyle = 'rgba(0,0,0,.35)';
-  ctx.beginPath(); ctx.ellipse(n.x, woodTop + 1, 7, 2.2, 0, 0, 7); ctx.fill();
-  if (n.bent) {
-    const e = n.exposed, k1 = e * 0.4, len2 = e * 0.75, a = n.dir * 1.0;
-    const bx = n.x, by = woodTop - k1, hx = bx + Math.sin(a) * len2, hy = by - Math.cos(a) * len2;
-    ctx.strokeStyle = steel(bx - 3, bx + 3); ctx.lineWidth = SHAFT_W; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(bx, woodTop); ctx.lineTo(bx, by); ctx.lineTo(hx, hy); ctx.stroke();
-    ctx.save(); ctx.translate(hx, hy); ctx.rotate(a);
-    ctx.fillStyle = steel(-NH_W / 2, NH_W / 2); rr(-NH_W / 2, -NH_H, NH_W, NH_H, 2); ctx.fill();
-    ctx.restore();
-    return;
+// ---------- 2D UI ----------
+function rr(g, x, y, w, h, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
+function drawUI(t) {
+  const g = uctx;
+  g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, vw, vh);
+  if (state === 'menu') return;
+  g.textAlign = 'center'; g.lineJoin = 'round';
+  if (state === 'play' && !firstHit && stage === 1 && nails[0]) {
+    const n = nails[0], s = toScreen(n.x, headTop(n)), by = s.y - 26 - Math.abs(Math.sin(t * 4)) * 12;
+    g.fillStyle = '#ffd58a'; g.font = '800 16px system-ui,sans-serif';
+    g.lineWidth = 4; g.strokeStyle = 'rgba(30,15,5,.8)'; g.strokeText('망치로 쾅!', s.x, by - 20); g.fillText('망치로 쾅!', s.x, by - 20);
+    g.beginPath(); g.moveTo(s.x - 9, by - 12); g.lineTo(s.x + 9, by - 12); g.lineTo(s.x, by); g.fill();
   }
-  const e = n.exposed, ht = headTop(n);
-  if (e > 0) {
-    ctx.fillStyle = steel(x - SHAFT_W / 2, x + SHAFT_W / 2);
-    ctx.fillRect(x - SHAFT_W / 2, woodTop - e, SHAFT_W, e);
-  }
-  ctx.fillStyle = steel(x - NH_W / 2, x + NH_W / 2, n.done);
-  rr(x - NH_W / 2, ht, NH_W, NH_H, 2.5); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(x - NH_W / 2 + 3, ht + 1, NH_W - 6, 1.2);
-  if (n.done) {
-    ctx.strokeStyle = `rgba(255,240,180,${0.35 + 0.25 * Math.sin(t * 5 + n.x)})`; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.ellipse(n.x, ht + 2, 15, 5, 0, 0, 7); ctx.stroke();
-  }
-}
-
-function drawHammer() {
-  ctx.save();
-  ctx.translate(ham.x, ham.y); ctx.rotate(ham.tilt);
-  // 손잡이
-  const hg = ctx.createLinearGradient(0, -50, 0, -24);
-  hg.addColorStop(0, '#e2b878'); hg.addColorStop(0.5, '#c48c4c'); hg.addColorStop(1, '#8e5c2a');
-  ctx.fillStyle = hg;
-  ctx.beginPath(); ctx.moveTo(14, -48); ctx.lineTo(200, -46); ctx.quadraticCurveTo(212, -37, 200, -27); ctx.lineTo(14, -29); ctx.closePath(); ctx.fill();
-  const gg = ctx.createLinearGradient(0, -50, 0, -24);
-  gg.addColorStop(0, '#d9473a'); gg.addColorStop(0.5, '#a72a20'); gg.addColorStop(1, '#651510');
-  ctx.fillStyle = gg; rr(128, -50, 82, 25, 9); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1.5;
-  for (let gx = 140; gx < 206; gx += 10) { ctx.beginPath(); ctx.moveTo(gx, -48); ctx.lineTo(gx, -27); ctx.stroke(); }
-  // 머리(쇠)
-  ctx.fillStyle = steel(-21, 21);
-  ctx.beginPath();                          // 노루발(위쪽)
-  ctx.moveTo(-16, -HEAD_TALL + 4); ctx.quadraticCurveTo(-20, -HEAD_TALL - 22, 8, -HEAD_TALL - 34);
-  ctx.quadraticCurveTo(-4, -HEAD_TALL - 14, 16, -HEAD_TALL + 4); ctx.closePath(); ctx.fill();
-  rr(-20, -HEAD_TALL, 40, 30, 4); ctx.fill();          // 눈
-  rr(-17, -48, 34, 36, 2); ctx.fill();                  // 목
-  ctx.fillStyle = steel(-FACE_W / 2, FACE_W / 2, true);
-  rr(-FACE_W / 2, -15, FACE_W, 15, 3); ctx.fill();      // 타격면
-  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(-FACE_W / 2, -2.5, FACE_W, 2.5);
-  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-14, -HEAD_TALL + 4, 4, HEAD_TALL - 10);
-  ctx.restore();
-}
-
-function render(t) {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#2a1e14'; ctx.fillRect(0, 0, CW, CH);
-  const shx = (Math.random() - 0.5) * shake * S, shy = (Math.random() - 0.5) * shake * S;
-  ctx.setTransform(1, 0, 0, 1, shx, shy);
-  ctx.fillStyle = wallPat; ctx.fillRect(-20, -20, CW + 40, CH + 40);
-  const vg = ctx.createLinearGradient(0, 0, 0, OY + woodTop * S);
-  vg.addColorStop(0, 'rgba(0,0,0,.45)'); vg.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = vg; ctx.fillRect(-20, -20, CW + 40, OY + woodTop * S + 20);
-  ctx.drawImage(woodCv, -20, Math.floor(OY + woodTop * S));
-
-  ctx.setTransform(S, 0, 0, S, OX + shx, OY + shy);
-  ctx.fillStyle = 'rgba(0,0,0,.22)';
-  for (const d of dents) { ctx.beginPath(); ctx.ellipse(d.x, woodTop + 1.5, d.w / 2, 2.2, 0, 0, 7); ctx.fill(); }
-  for (const n of nails) drawNail(n, t);
-
-  if (state === 'play' && !firstHit && stage === 1 && nails[0]) {   // 안내
-    const n = nails[0], by = headTop(n) - 30 - Math.abs(Math.sin(t * 4)) * 12;
-    ctx.fillStyle = '#ffd58a'; ctx.font = '700 16px system-ui,sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('망치로 쾅!', n.x, by - 22);
-    ctx.beginPath(); ctx.moveTo(n.x - 9, by - 12); ctx.lineTo(n.x + 9, by - 12); ctx.lineTo(n.x, by); ctx.fill();
-  }
-
-  if (state !== 'menu') drawHammer();
-
-  for (const p of parts) {
-    const a = clamp(p.life / p.max, 0, 1);
-    if (p.k === 's') {
-      ctx.strokeStyle = `rgba(255,${200 + Math.random() * 55 | 0},120,${a})`; ctx.lineWidth = 1.8;
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.025, p.y - p.vy * 0.025); ctx.stroke();
-    } else {
-      ctx.save(); ctx.globalAlpha = a; ctx.translate(p.x, p.y); ctx.rotate(p.r);
-      ctx.fillStyle = p.col; ctx.fillRect(-p.sz, -p.sz / 2, p.sz * 2, p.sz); ctx.restore();
-    }
-  }
-
-  ctx.textAlign = 'center'; ctx.lineJoin = 'round';
   for (const p of pops) {
-    const a = clamp(p.life / p.max * 2, 0, 1), sz = p.big ? 40 : p.small ? 14 : 20;
-    ctx.globalAlpha = a; ctx.font = `900 ${sz}px system-ui,sans-serif`;
-    ctx.lineWidth = sz * 0.22; ctx.strokeStyle = 'rgba(30,15,5,.85)'; ctx.strokeText(p.text, p.x, p.y);
-    ctx.fillStyle = p.color; ctx.fillText(p.text, p.x, p.y);
+    const a = clamp(p.life / p.max * 2, 0, 1), age = p.max - p.life, sz = p.big ? 40 : p.small ? 15 : 22;
+    let x, y;
+    if (p.center) { x = vw / 2; y = vh * 0.3 + (p.dy || 0) - age * 10; }
+    else { const s = toScreen(p.x, p.y); x = s.x; y = s.y + (p.dy || 0) - age * 30; }
+    g.globalAlpha = a; g.font = `900 ${sz}px system-ui,sans-serif`;
+    g.lineWidth = sz * 0.22; g.strokeStyle = 'rgba(30,15,5,.85)'; g.strokeText(p.text, x, y);
+    g.fillStyle = p.color; g.fillText(p.text, x, y);
   }
-  ctx.globalAlpha = 1;
-
-  if (state !== 'menu') drawHud();
+  g.globalAlpha = 1;
+  // HUD
+  const m = Math.max(14, Math.min(28, vw * 0.03));
+  g.textAlign = 'left'; g.fillStyle = '#ffd58a'; g.font = '800 18px system-ui,sans-serif';
+  g.strokeStyle = 'rgba(0,0,0,.5)'; g.lineWidth = 3;
+  g.strokeText(`STAGE ${stage} · ${wood.name}`, m, 30); g.fillText(`STAGE ${stage} · ${wood.name}`, m, 30);
+  const left = nails.filter(n => !n.done && !n.bent).length, info = `점수 ${score}   남은 못 ${left}/${nails.length}`;
+  g.fillStyle = '#fff'; g.font = '700 15px system-ui,sans-serif'; g.strokeText(info, m, 52); g.fillText(info, m, 52);
+  g.textAlign = 'right'; g.font = '20px system-ui,sans-serif';
+  g.fillStyle = '#ff5a5a'; g.fillText('♥'.repeat(Math.max(0, lives)), vw - m, 32);
+  g.fillStyle = 'rgba(255,255,255,.35)'; g.fillText('♥'.repeat(Math.max(0, 3 - lives)), vw - m - 20 * Math.max(0, lives), 32);
+  const bw = vw - m * 2, ratio = clamp(timeLeft / timeMax, 0, 1);
+  g.fillStyle = 'rgba(0,0,0,.45)'; rr(g, m, 64, bw, 10, 5); g.fill();
+  g.fillStyle = ratio < 0.25 ? '#ff5a5a' : ratio < 0.5 ? '#ffb347' : '#7dd87a';
+  if (ratio > 0) { rr(g, m, 64, bw * ratio, 10, 5); g.fill(); }
+  g.fillStyle = '#fff'; g.font = '700 13px system-ui,sans-serif'; g.fillText(`${Math.ceil(timeLeft)}초`, vw - m, 92);
 }
 
-function drawHud() {
-  ctx.setTransform(S, 0, 0, S, OX, OY);
-  ctx.textAlign = 'left'; ctx.fillStyle = '#ffd58a'; ctx.font = '800 18px system-ui,sans-serif';
-  ctx.fillText(`STAGE ${stage} · ${wood.name}`, 18, 30);
-  ctx.fillStyle = '#fff'; ctx.font = '700 15px system-ui,sans-serif';
-  const left = nails.filter(n => !n.done && !n.bent).length;
-  ctx.fillText(`점수 ${score}   남은 못 ${left}/${nails.length}`, 18, 52);
-  ctx.textAlign = 'right'; ctx.font = '20px system-ui,sans-serif';
-  ctx.fillStyle = '#ff5a5a'; ctx.fillText('♥'.repeat(Math.max(0, lives)), W - 18, 32);
-  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillText('♥'.repeat(Math.max(0, 3 - lives)), W - 18 - 20 * Math.max(0, lives), 32);
-  const bw = W - 36, ratio = clamp(timeLeft / timeMax, 0, 1);
-  ctx.fillStyle = 'rgba(0,0,0,.4)'; rr(18, 64, bw, 10, 5); ctx.fill();
-  ctx.fillStyle = ratio < 0.25 ? '#ff5a5a' : ratio < 0.5 ? '#ffb347' : '#7dd87a';
-  if (ratio > 0) { rr(18, 64, bw * ratio, 10, 5); ctx.fill(); }
-  ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = '700 13px system-ui,sans-serif';
-  ctx.fillText(`${Math.ceil(timeLeft)}초`, W - 18, 92);
-}
-
-let last = performance.now();
-function frame(t) {
-  const dt = Math.min(0.05, (t - last) / 1000); last = t;
-  update(dt); render(t / 1000);
+let last = performance.now(), prevFrame = last;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const t = now / 1000;
+  update(dt, t);
+  const base = camera.position.clone();
+  if (shake > 0) { camera.position.x += (Math.random() - 0.5) * shake * 0.12; camera.position.y += (Math.random() - 0.5) * shake * 0.12; }
+  renderer.render(scene, camera);
+  prevFrame = performance.now();
+  camera.position.copy(base); camera.updateMatrixWorld();
+  drawUI(t);
   requestAnimationFrame(frame);
 }
 resize();
+paintWood(woodCv, 1024, 256, wood, 50); woodTex.needsUpdate = true;
 requestAnimationFrame(frame);
-window.__nail = { get state() { return state; }, get nails() { return nails; }, get ham() { return ham; }, get score() { return score; }, toScreen: (x, y) => ({ x: (x * S + OX) / DPR, y: (y * S + OY) / DPR }) };
-})();
+window.__nail = { get state() { return state; }, get nails() { return nails.map(({ mesh, hole, ring, ...r }) => r); }, get ham() { return ham; }, get score() { return score; }, get lastV() { return lastV; }, toScreen };
 </script>
 </body>
 </html>
