@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SCP: 격리 실패 — SCP-096</title>
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #e8e4da; font-family: 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+  canvas { display: block; }
+  .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0,0,0,.35), rgba(0,0,0,.92)); z-index: 5; }
+  .screen[hidden], #hud[hidden] { display: none; }
+  .card { max-width: 640px; padding: 34px 38px; border: 1px solid #3a3a3a; background: rgba(8,8,9,.82); box-shadow: 0 0 60px rgba(0,0,0,.8); }
+  .tag { font: 700 12px monospace; letter-spacing: .3em; color: #b52a22; }
+  h1 { margin: 6px 0 4px; font-size: 44px; letter-spacing: .04em; }
+  h1 b { color: #b52a22; }
+  p { line-height: 1.6; color: #b9b4a8; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; margin: 18px 0 24px; }
+  kbd { display: inline-block; min-width: 26px; padding: 2px 7px; border: 1px solid #555; border-bottom-width: 3px; border-radius: 4px; font: 600 12px monospace; text-align: center; color: #eee; background: #1b1b1d; }
+  button { font: 700 18px inherit; letter-spacing: .2em; padding: 14px 40px; color: #fff; background: #8e1b15; border: 0; cursor: pointer; }
+  button:hover { background: #b52a22; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
+  #obj { position: absolute; left: 22px; top: 18px; font-size: 15px; padding: 8px 14px; background: rgba(0,0,0,.45); border-left: 3px solid #b52a22; }
+  #stamwrap { position: absolute; left: 50%; bottom: 34px; width: 260px; height: 5px; margin-left: -130px; background: rgba(255,255,255,.12); }
+  #stam { height: 100%; width: 100%; background: #e9e4d6; transition: background .3s; }
+  #dot { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: rgba(255,255,255,.55); }
+  #prompt { position: absolute; left: 0; right: 0; top: 60%; text-align: center; font-size: 17px; text-shadow: 0 0 6px #000; }
+  #msg { position: absolute; left: 0; right: 0; top: 22%; text-align: center; font-size: 24px; letter-spacing: .06em; opacity: 0; transition: opacity .6s; text-shadow: 0 0 12px #000; }
+  #msg.show { opacity: 1; } #msg.red { color: #ff4a3a; font-size: 30px; }
+  #help { position: absolute; right: 18px; bottom: 16px; font-size: 12px; color: #8d887c; text-align: right; line-height: 1.7; }
+  #dead h1 { color: #c0221a; font-size: 64px; } #win h1 { color: #7de3a0; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<section id="menu" class="screen">
+  <div class="card">
+    <div class="tag">SITE-19 · 격리 실패 경보</div>
+    <h1>SCP-<b>096</b></h1>
+    <div style="color:#999;margin-bottom:8px">"수줍은 자" — 등급 KETER</div>
+    <p>격리실 문이 뜯겨 나갔다. 당신은 D계급 인원이다.<br>
+      관측실의 <b>LEVEL 3 키카드</b>를 찾아 <b>Gate A</b>로 탈출하라.<br>
+      <span style="color:#e05a4a">절대로 SCP-096 의 얼굴을 보지 마라.</span> 사진·영상으로라도 얼굴을 본 자는 어디에 있든 찾아내 죽인다.</p>
+    <div class="keys">
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>이동 (마우스로 시점)</span>
+      <span><kbd>Shift</kbd></span><span>달리기 (스태미나 소모)</span>
+      <span><kbd>Space</kbd></span><span>점프 (상자 위로 올라갈 수 있음)</span>
+      <span><kbd>C</kbd></span><span>웅크리기</span>
+      <span><kbd>E</kbd> / <kbd>F</kbd> / <kbd>V</kbd></span><span>줍기 / 손전등 / 1인칭·3인칭 전환</span>
+    </div>
+    <button id="start">시작</button>
+    <p style="font-size:12px;margin:14px 0 0">🎧 헤드폰 권장 — 096 의 울음소리가 들리는 방향으로 위치를 알 수 있다.</p>
+  </div>
+</section>
+
+<section id="pause" class="screen" hidden><div class="card" style="text-align:center"><h1>일시정지</h1><p>클릭하면 계속합니다</p></div></section>
+<section id="dead" class="screen" hidden><div class="card" style="text-align:center"><div class="tag">PERSONNEL TERMINATED</div><h1>사망</h1><p>SCP-096 은 결코 놓치지 않는다.</p><p><kbd>R</kbd> 다시 시작</p></div></section>
+<section id="win" class="screen" hidden><div class="card" style="text-align:center"><div class="tag">GATE A · 탈출 성공</div><h1>생존</h1><p id="wintime"></p><p><kbd>R</kbd> 다시 시작</p></div></section>
+
+<div id="hud" hidden>
+  <div id="obj"></div>
+  <div id="dot"></div>
+  <div id="prompt"></div>
+  <div id="msg"></div>
+  <div id="stamwrap"><div id="stam"></div></div>
+  <div id="help">WASD 이동 · Shift 달리기 · Space 점프 · C 웅크리기<br>E 줍기 · F 손전등 · V 시점 전환</div>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
