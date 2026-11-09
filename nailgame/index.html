@@ -10,14 +10,21 @@ html,body{margin:0;height:100%;overflow:hidden;background:#8fb6e0;
 #gl{position:fixed;inset:0;width:100vw;height:100vh;display:block;touch-action:none;cursor:grab}
 #gl.drag{cursor:grabbing}
 </style>
-<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.min.js" } }</script>
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }</script>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <script type="module">
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const glc = document.getElementById('gl');
+const MOBILE = matchMedia('(pointer: coarse)').matches;
 
 // ---------- 상수 (게임 로직 단위: 1 = 3D 0.1) ----------
 const FACE_W = 50, NH_W = 22, NH_H = 7, SC = 0.1, MAX_LIFT = 280;
@@ -26,28 +33,75 @@ const W = 420, woodTop = 372;
 const R = 26, TOP_Y = 38;                         // 그루터기 반지름 / 윗면 높이
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const rand = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.random() * a.length | 0];
 const X3 = x => (x - W / 2) * SC, Y3 = y => TOP_Y + (woodTop - y) * SC;
 const rf = th => 1 + 0.035 * Math.sin(3 * th + 1) + 0.02 * Math.sin(5 * th + 2) + 0.01 * Math.sin(11 * th + 0.5);
 
-// ---------- 렌더러 ----------
-const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true });
+// ---------- 렌더러 & 후처리 ----------
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: false, powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
 const scene = new THREE.Scene();
-const HAZE = new THREE.Color(0x8fb0dc);
-scene.fog = new THREE.Fog(HAZE, 160, 900);
-const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 2500);
+const HAZE = new THREE.Color(0x8dacd8);
+scene.fog = new THREE.Fog(HAZE, 220, 1150);
+const camera = new THREE.PerspectiveCamera(46, 1, 0.5, 2500);
 const ANISO = renderer.capabilities.getMaxAnisotropy();
 
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: MOBILE ? 2 : 4 }));
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.28, 0.5, 1.4));
+composer.addPass(new OutputPass());
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv); vec3 col = c.rgb;
+      float l = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(vec3(l), col, 1.1);
+      col = (col - 0.5) * 1.04 + 0.5;
+      vec2 d = (vUv - 0.5) * vec2(1.0, 0.85);
+      col *= mix(0.74, 1.0, smoothstep(0.82, 0.22, length(d)));
+      gl_FragColor = vec4(col, c.a);
+    }`
+}));
+
+// ---------- 유틸 ----------
+const CTX = { willReadFrequently: true };
+function mkCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function tex(cv, rx = 1, ry = 1, srgb = true) {
   const t = new THREE.CanvasTexture(cv);
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = ANISO; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry);
   return t;
 }
-function mkCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function lum(cv) {
+  const d = cv.getContext('2d', CTX).getImageData(0, 0, cv.width, cv.height).data, L = new Float32Array(cv.width * cv.height);
+  for (let i = 0; i < L.length; i++) L[i] = (d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11) / 255;
+  return L;
+}
+function normalTex(cv, strength, rx = 1, ry = 1, L = lum(cv)) {
+  const w = cv.width, h = cv.height, out = mkCanvas(w, h), og = out.getContext('2d', CTX), id = og.createImageData(w, h), o = id.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const xl = (x + w - 1) % w, xr = (x + 1) % w, yu = (y + h - 1) % h, yd = (y + 1) % h;
+    const nx = -(L[y * w + xr] - L[y * w + xl]) * strength, ny = (L[yd * w + x] - L[yu * w + x]) * strength;
+    const k = 1 / Math.hypot(nx, ny, 1), i = (y * w + x) * 4;
+    o[i] = (nx * k * 0.5 + 0.5) * 255; o[i + 1] = (ny * k * 0.5 + 0.5) * 255; o[i + 2] = (k * 0.5 + 0.5) * 255; o[i + 3] = 255;
+  }
+  og.putImageData(id, 0, 0);
+  return tex(out, rx, ry, false);
+}
+const NS = 256, NV = new Float32Array(NS * NS).map(() => Math.random());
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y); let xf = x - xi, yf = y - yi;
+  xf = xf * xf * (3 - 2 * xf); yf = yf * yf * (3 - 2 * yf);
+  const g = (i, j) => NV[(j & 255) * NS + (i & 255)];
+  const a = g(xi, yi) + (g(xi + 1, yi) - g(xi, yi)) * xf, b = g(xi, yi + 1) + (g(xi + 1, yi + 1) - g(xi, yi + 1)) * xf;
+  return a + (b - a) * yf;
+}
+function fbm(x, y, o = 5) { let a = 0.5, s = 0; for (let i = 0; i < o; i++) { s += a * vnoise(x, y); x *= 2.03; y *= 2.03; a *= 0.5; } return s; }
 
-// ---------- 하늘 (그라디언트 + 해) ----------
+// ---------- 하늘 ----------
 const SUN_DIR = new THREE.Vector3(-0.27, 0.15, -0.95).normalize();
 const skyMat = new THREE.ShaderMaterial({
   uniforms: { sunDir: { value: SUN_DIR } }, side: THREE.BackSide, depthWrite: false,
@@ -55,12 +109,13 @@ const skyMat = new THREE.ShaderMaterial({
   fragmentShader: `uniform vec3 sunDir; varying vec3 vDir;
     void main(){
       vec3 d = normalize(vDir); float h = clamp(d.y, 0.0, 1.0);
-      vec3 zen = vec3(0.02, 0.11, 0.52), hor = vec3(0.26, 0.47, 0.82);
-      vec3 col = mix(hor, zen, pow(h, 0.5));
-      if (d.y < 0.0) col = mix(hor, vec3(0.3, 0.33, 0.33), clamp(-d.y * 4.0, 0.0, 1.0));
+      vec3 zen = vec3(0.015, 0.09, 0.48), hor = vec3(0.2, 0.42, 0.82);
+      vec3 col = mix(hor, zen, pow(h, 0.45));
+      col = mix(col, vec3(0.55, 0.68, 0.86), exp(-h * 30.0) * 0.4);
+      if (d.y < 0.0) col = mix(vec3(0.5, 0.6, 0.75), vec3(0.3, 0.32, 0.3), clamp(-d.y * 4.0, 0.0, 1.0));
       float s = max(dot(d, sunDir), 0.0);
-      col += vec3(1.0, 0.86, 0.62) * (pow(s, 12.0) * 0.22 + pow(s, 220.0) * 1.4);
-      col += vec3(1.0, 0.97, 0.9) * smoothstep(0.99955, 0.99972, s) * 24.0;
+      col += vec3(1.0, 0.86, 0.62) * (pow(s, 12.0) * 0.22 + pow(s, 260.0) * 1.6);
+      col += vec3(1.0, 0.97, 0.9) * smoothstep(0.99955, 0.99972, s) * 30.0;
       gl_FragColor = vec4(col, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
@@ -68,56 +123,57 @@ const skyMat = new THREE.ShaderMaterial({
 });
 const skyGeo = new THREE.SphereGeometry(1000, 48, 24);
 scene.add(new THREE.Mesh(skyGeo, skyMat));
-{ // 금속 반사용 환경맵: 하늘 그대로
+{
   const s = new THREE.Scene(); s.add(new THREE.Mesh(skyGeo, skyMat));
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(s, 0.02, 0.1, 3000).texture; pm.dispose();
 }
 
-// 구름
+// 뭉게구름 (fBm 노이즈)
 const clouds = new THREE.Group(); scene.add(clouds);
 {
   const texs = [];
-  for (let k = 0; k < 4; k++) {
-    const c = mkCanvas(512, 256), g = c.getContext('2d');
-    for (let i = 0; i < 46; i++) {
-      const x = rand(90, 420), arch = Math.sin(clamp((x - 90) / 330, 0, 1) * Math.PI);
-      const y = 175 - arch * rand(20, 75), r = rand(28, 72) * (0.6 + arch * 0.5);
-      const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, 'rgba(255,255,255,.5)'); gr.addColorStop(0.6, 'rgba(255,255,255,.25)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+  for (let k = 0; k < 5; k++) {
+    const w = 384, h = 192, c = mkCanvas(w, h), g = c.getContext('2d', CTX), id = g.createImageData(w, h), d = id.data;
+    const ox = rand(0, 200), oy = rand(0, 200), flat = rand(4, 8);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const nx = (x - w / 2) / (w / 2), ny = (y - h * 0.64) / (h * 0.5);
+      const shape = 1 - (nx * nx + (ny < 0 ? ny * ny * 1.1 : ny * ny * flat));
+      const n = fbm(ox + x / 46, oy + y / 46);
+      const dens = n + shape * 0.85 - 0.86;
+      const a = clamp(dens * 3.2, 0, 1);
+      const light = clamp(0.78 - ny * 0.28 + (n - 0.5) * 0.35, 0.55, 1.08);
+      const i = (y * w + x) * 4;
+      d[i] = 255 * Math.min(1, light); d[i + 1] = 255 * Math.min(1, light * 1.0); d[i + 2] = 255 * Math.min(1, light * 1.05 + 0.03); d[i + 3] = a * 255;
     }
-    g.globalCompositeOperation = 'source-atop';
-    const sh = g.createLinearGradient(0, 90, 0, 230);
-    sh.addColorStop(0, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(140,155,180,.55)');
-    g.fillStyle = sh; g.fillRect(0, 0, 512, 256);
-    texs.push(tex(c));
+    g.putImageData(id, 0, 0);
+    const t = tex(c); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; texs.push(t);
   }
-  for (let i = 0; i < 14; i++) {
-    const a = rand(-1.5, 1.5), e = rand(0.05, 0.38), D = 750;
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: texs[i % 4], transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1.25, 1.25, 1.25), opacity: rand(0.6, 0.9) }));
+  for (let i = 0; i < 16; i++) {
+    const a = rand(-1.4, 1.4), e = i < 11 ? rand(0.03, 0.15) : rand(0.15, 0.4), D = 780;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pick(texs), transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1.3, 1.3, 1.3), opacity: rand(0.8, 1) }));
     sp.position.set(Math.sin(a) * Math.cos(e) * D, Math.sin(e) * D, -Math.cos(a) * Math.cos(e) * D);
-    const w = rand(160, 340); sp.scale.set(w, w / 2, 1);
+    const w = rand(170, 380) * (1 - e * 0.6); sp.scale.set(w, w / 2, 1);
     clouds.add(sp);
   }
 }
 
 // ---------- 조명 ----------
-scene.add(new THREE.HemisphereLight(0xbcd6ff, 0x5a4630, 1.15));
-const sun = new THREE.DirectionalLight(0xfff1dc, 3.0);
+scene.add(new THREE.HemisphereLight(0xbcd6ff, 0x5a4630, 0.6));
+const sun = new THREE.DirectionalLight(0xfff0d8, 3.2);
 const LIGHT_DIR = new THREE.Vector3(-0.62, 0.74, -0.06).normalize();
 sun.position.copy(LIGHT_DIR).multiplyScalar(140).add(new THREE.Vector3(0, TOP_Y, 0));
 sun.target.position.set(0, TOP_Y * 0.6, 0); scene.add(sun.target);
-sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -55, right: 55, top: 55, bottom: -55, near: 20, far: 300 });
-sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.04;
+sun.castShadow = true; sun.shadow.mapSize.setScalar(MOBILE ? 2048 : 4096);
+Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 20, far: 320 });
+sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.05;
 scene.add(sun);
 
-// ---------- 텍스처 ----------
+// ---------- 텍스처 생성 ----------
 function barkCanvas(w, h, lichen) {
-  const c = mkCanvas(w, h), g = c.getContext('2d');
+  const c = mkCanvas(w, h), g = c.getContext('2d', CTX);
   g.fillStyle = '#5e5249'; g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 9000; i++) {
+  for (let i = 0; i < 12000; i++) {
     const v = rand(60, 150) | 0; g.fillStyle = `rgba(${v},${v * 0.9 | 0},${v * 0.8 | 0},.2)`;
     g.fillRect(Math.random() * w, Math.random() * h, rand(1, 4), rand(2, 9));
   }
@@ -125,21 +181,21 @@ function barkCanvas(w, h, lichen) {
     g.strokeStyle = col; g.lineWidth = lw;
     for (const off of [-w, 0, w]) {
       g.beginPath(); const ph = Math.random() * 6;
-      for (let y = -10; y <= h + 10; y += 6) { const x = x0 + off + Math.sin(y * fr + ph) * amp + Math.sin(y * fr * 3.1) * amp * 0.3; y < 0 ? g.moveTo(x, y) : g.lineTo(x, y); }
+      for (let y = -10; y <= h + 10; y += 5) { const x = x0 + off + Math.sin(y * fr + ph) * amp + Math.sin(y * fr * 3.1) * amp * 0.3; y < 0 ? g.moveTo(x, y) : g.lineTo(x, y); }
       g.stroke();
     }
   };
-  for (let i = 0; i < 80; i++) wavy(Math.random() * w, rand(2, 7), `rgba(28,22,18,${rand(0.3, 0.55)})`, rand(3, 10), rand(0.01, 0.03));
-  for (let i = 0; i < 60; i++) wavy(Math.random() * w, rand(1, 3), `rgba(165,155,145,${rand(0.2, 0.4)})`, rand(3, 9), rand(0.01, 0.03));
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 90; i++) wavy(Math.random() * w, rand(2, 8), `rgba(26,20,16,${rand(0.35, 0.6)})`, rand(3, 10), rand(0.01, 0.03));
+  for (let i = 0; i < 70; i++) wavy(Math.random() * w, rand(1, 3), `rgba(170,160,150,${rand(0.2, 0.4)})`, rand(3, 9), rand(0.01, 0.03));
+  for (let i = 0; i < 50; i++) {
     g.strokeStyle = 'rgba(15,10,8,.55)'; g.lineWidth = rand(1, 3);
     const x = Math.random() * w, y = Math.random() * h; g.beginPath(); g.moveTo(x, y); g.lineTo(x + rand(6, 20), y + rand(-3, 3)); g.stroke();
   }
   for (let i = 0; i < lichen; i++) {
     const cx = Math.random() * w, cy = Math.random() * h;
-    for (let j = 0; j < 40; j++) {
-      g.fillStyle = `rgba(${rand(170, 200) | 0},${rand(175, 200) | 0},${rand(150, 170) | 0},${rand(0.3, 0.7)})`;
-      g.beginPath(); g.arc(cx + rand(-18, 18), cy + rand(-12, 12), rand(1, 4), 0, 7); g.fill();
+    for (let j = 0; j < 50; j++) {
+      g.fillStyle = `rgba(${rand(170, 205) | 0},${rand(178, 205) | 0},${rand(150, 172) | 0},${rand(0.3, 0.75)})`;
+      g.beginPath(); g.arc(cx + rand(-20, 20), cy + rand(-13, 13), rand(1, 4), 0, 7); g.fill();
     }
   }
   return c;
@@ -147,7 +203,7 @@ function barkCanvas(w, h, lichen) {
 
 const CUT_PX = 1024, CUT_S = (CUT_PX / 2) / (R * 1.07);
 function cutCanvas() {
-  const c = mkCanvas(CUT_PX, CUT_PX), g = c.getContext('2d'), m = CUT_PX / 2;
+  const c = mkCanvas(CUT_PX, CUT_PX), g = c.getContext('2d', CTX), m = CUT_PX / 2;
   const path = (f, wob = 0, ph = 0) => {
     g.beginPath();
     for (let i = 0; i <= 160; i++) {
@@ -159,42 +215,41 @@ function cutCanvas() {
   };
   g.fillStyle = '#3a3029'; g.fillRect(0, 0, CUT_PX, CUT_PX);
   path(1); g.save(); g.clip();
-  // 껍질 링
   g.fillStyle = '#3d332b'; g.fillRect(0, 0, CUT_PX, CUT_PX);
-  for (let i = 0; i < 2500; i++) { const v = rand(30, 90) | 0; g.fillStyle = `rgba(${v},${v * 0.85 | 0},${v * 0.7 | 0},.5)`; g.fillRect(Math.random() * CUT_PX, Math.random() * CUT_PX, 3, 3); }
-  // 형성층(적갈색)
-  path(0.955); g.fillStyle = '#8b5a33'; g.fill();
-  // 목질부
-  path(0.94);
+  for (let i = 0; i < 3500; i++) { const v = rand(30, 100) | 0; g.fillStyle = `rgba(${v},${v * 0.85 | 0},${v * 0.7 | 0},.55)`; g.fillRect(Math.random() * CUT_PX, Math.random() * CUT_PX, rand(2, 5), rand(2, 5)); }
+  path(0.957); g.fillStyle = '#8b5a33'; g.fill();
+  path(0.942);
   const gr = g.createRadialGradient(m - 14, m + 10, 0, m, m, R * CUT_S);
   gr.addColorStop(0, '#f0dc9c'); gr.addColorStop(0.55, '#ebd283'); gr.addColorStop(0.85, '#e2c472'); gr.addColorStop(1, '#f1e0ae');
   g.fillStyle = gr; g.fill();
-  g.save(); path(0.94); g.clip();
-  // 나이테
-  for (let i = 1; i <= 34; i++) {
-    const f = Math.pow(i / 34, 0.92) * 0.93;
+  g.save(); path(0.942); g.clip();
+  for (let i = 1; i <= 38; i++) {
+    const f = Math.pow(i / 38, 0.92) * 0.935;
     g.save(); g.translate(-14 * (1 - f), 10 * (1 - f));
-    path(f, 0.012, i); g.strokeStyle = `rgba(160,115,50,${rand(0.14, 0.32)})`; g.lineWidth = rand(1, 3.2); g.stroke();
+    path(f, 0.012, i); g.strokeStyle = `rgba(160,112,48,${rand(0.14, 0.34)})`; g.lineWidth = rand(1, 3.4); g.stroke();
     g.restore();
   }
-  // 수(심)
+  // 방사 갈라짐
+  for (let i = 0; i < 3; i++) {
+    const a = Math.random() * 7, r0 = rand(20, 60), r1 = rand(120, 260);
+    g.strokeStyle = 'rgba(110,70,30,.55)'; g.lineWidth = rand(1.2, 2.4);
+    g.beginPath(); g.moveTo(m - 14 + Math.cos(a) * r0, m + 10 + Math.sin(a) * r0);
+    g.lineTo(m - 14 + Math.cos(a + rand(-0.05, 0.05)) * r1, m + 10 + Math.sin(a + rand(-0.05, 0.05)) * r1); g.stroke();
+  }
   g.fillStyle = 'rgba(140,95,40,.6)'; g.beginPath(); g.arc(m - 14, m + 10, 5, 0, 7); g.fill();
-  // 톱자국
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 30; i++) {
     const y0 = rand(-80, CUT_PX + 80), bend = rand(-60, 60);
     g.strokeStyle = Math.random() < 0.5 ? `rgba(255,250,230,${rand(0.12, 0.28)})` : `rgba(150,110,50,${rand(0.08, 0.18)})`;
     g.lineWidth = rand(2, 10);
     g.beginPath(); g.moveTo(-20, y0); g.quadraticCurveTo(m, y0 + bend, CUT_PX + 20, y0 + rand(-120, 120)); g.stroke();
   }
-  // 결 노이즈
-  for (let i = 0; i < 9000; i++) {
+  for (let i = 0; i < 14000; i++) {
     g.fillStyle = Math.random() < 0.5 ? 'rgba(255,248,220,.12)' : 'rgba(150,110,50,.08)';
     g.fillRect(Math.random() * CUT_PX, Math.random() * CUT_PX, rand(1, 3), rand(1, 3));
   }
-  // 톱밥
-  for (let k = 0; k < 7; k++) {
+  for (let k = 0; k < 8; k++) {
     const cx = rand(200, 820), cy = rand(200, 820);
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 110; i++) {
       g.fillStyle = `rgba(250,244,222,${rand(0.4, 0.9)})`;
       g.beginPath(); g.arc(cx + rand(-45, 45), cy + rand(-30, 30), rand(1, 3.2), 0, 7); g.fill();
     }
@@ -203,131 +258,255 @@ function cutCanvas() {
   return c;
 }
 
-function leafCanvas() {
-  const S = 2048, c = mkCanvas(S, S), g = c.getContext('2d');
-  g.fillStyle = '#5b4630'; g.fillRect(0, 0, S, S);
-  for (let i = 0; i < 20000; i++) { const v = rand(50, 110) | 0; g.fillStyle = `rgba(${v},${v * 0.78 | 0},${v * 0.55 | 0},.35)`; g.fillRect(Math.random() * S, Math.random() * S, 3, 3); }
-  const cols = ['#a37a4e', '#8c6440', '#c49b68', '#6f4f33', '#b5895a', '#d2b088', '#7d5a3a', '#9b7550', '#c8a47a'];
-  const leaf = (x, y, L, a, col) => {
+// 잎 모양 (0 타원, 1 참나무형, 2 톱니)
+function leafPath(g, L, type) {
+  const N = 28, top = [];
+  for (let i = 0; i <= N; i++) {
+    const u = i / N, x = -L / 2 + u * L;
+    let e = Math.sin(Math.PI * Math.pow(u, 0.8)) * L * 0.3;
+    if (type === 1) e *= 0.62 + 0.45 * Math.abs(Math.sin(u * Math.PI * 4.5));
+    if (type === 2) e *= 0.78 * (1 + (i % 2) * 0.07);
+    top.push([x, e]);
+  }
+  g.beginPath(); g.moveTo(-L / 2, 0);
+  for (const [x, e] of top) g.lineTo(x, -e);
+  for (let i = top.length - 1; i >= 0; i--) g.lineTo(top[i][0], top[i][1]);
+  g.closePath();
+}
+function drawLeaf(g, L, type, col, edge, spots = 18) {
+  leafPath(g, L, type); g.fillStyle = col; g.fill();
+  g.save(); g.clip();
+  for (let i = 0; i < spots; i++) { g.fillStyle = `rgba(${rand(60, 120) | 0},${rand(40, 80) | 0},20,${rand(0.05, 0.18)})`; g.beginPath(); g.arc(rand(-L / 2, L / 2), rand(-L / 4, L / 4), rand(1, L / 10), 0, 7); g.fill(); }
+  g.lineWidth = Math.max(2, L * 0.08); g.strokeStyle = edge; leafPath(g, L, type); g.stroke();
+  g.restore();
+  g.strokeStyle = 'rgba(70,45,22,.5)'; g.lineWidth = Math.max(1, L * 0.018);
+  g.beginPath(); g.moveTo(-L / 2 - L * 0.08, 0); g.lineTo(L / 2 * 0.95, 0); g.stroke();
+  g.lineWidth = Math.max(0.6, L * 0.008);
+  for (let k = 1; k < 7; k++) { const x = -L / 2 + k * L / 7.5; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + L / 8, -L * 0.16); g.moveTo(x, 0); g.lineTo(x + L / 8, L * 0.16); g.stroke(); }
+}
+const LEAF_COLS = ['#a37a4e', '#8c6440', '#c49b68', '#6f4f33', '#b5895a', '#d2b088', '#7d5a3a', '#9b7550', '#c8a47a'];
+
+function groundCanvas() {
+  const S = MOBILE ? 1024 : 2048, k = S / 2048, c = mkCanvas(S, S), g = c.getContext('2d', CTX);
+  g.fillStyle = '#4c3a28'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 20000 * k; i++) { const v = rand(40, 100) | 0; g.fillStyle = `rgba(${v},${v * 0.78 | 0},${v * 0.55 | 0},.35)`; g.fillRect(Math.random() * S, Math.random() * S, 3, 3); }
+  for (let i = 0; i < 1900 * k; i++) {
+    const x = Math.random() * S, y = Math.random() * S, L = rand(60, 150) * k, a = Math.random() * 7;
     for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) {
       if (x + ox < -L || x + ox > S + L || y + oy < -L || y + oy > S + L) continue;
       g.save(); g.translate(x + ox, y + oy); g.rotate(a);
-      g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.moveTo(-L / 2 + 2, 3); g.quadraticCurveTo(2, -L * 0.36 + 3, L / 2 + 2, 3); g.quadraticCurveTo(2, L * 0.36 + 3, -L / 2 + 2, 3); g.fill();
-      g.fillStyle = col; g.beginPath(); g.moveTo(-L / 2, 0); g.quadraticCurveTo(0, -L * 0.36, L / 2, 0); g.quadraticCurveTo(0, L * 0.36, -L / 2, 0); g.fill();
-      g.strokeStyle = 'rgba(60,40,25,.45)'; g.lineWidth = 1.2;
-      g.beginPath(); g.moveTo(-L / 2 - 5, 0); g.lineTo(L / 2, 0); g.stroke();
-      g.lineWidth = 0.7;
-      for (let k = -2; k <= 2; k++) { if (!k) continue; g.beginPath(); g.moveTo(k * L / 7, 0); g.lineTo(k * L / 7 + L / 9, -L * 0.15); g.moveTo(k * L / 7, 0); g.lineTo(k * L / 7 + L / 9, L * 0.15); g.stroke(); }
+      g.fillStyle = 'rgba(0,0,0,.3)'; g.save(); g.translate(3, 3); leafPath(g, L, i % 3); g.fill(); g.restore();
+      drawLeaf(g, L, i % 3, pick(LEAF_COLS), 'rgba(80,52,28,.5)', 8);
       g.restore();
     }
-  };
-  for (let i = 0; i < 1500; i++) leaf(Math.random() * S, Math.random() * S, rand(60, 150), Math.random() * 7, cols[Math.random() * cols.length | 0]);
-  for (let i = 0; i < 40; i++) {
-    const x = Math.random() * S, y = Math.random() * S, a = Math.random() * 7, L = rand(120, 420);
-    g.strokeStyle = `rgba(${rand(60, 110) | 0},${rand(50, 90) | 0},${rand(40, 70) | 0},.9)`; g.lineWidth = rand(3, 7);
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L); g.stroke();
   }
-  for (let i = 0; i < 26; i++) {
-    const x = Math.random() * S, y = Math.random() * S;
-    for (let j = 0; j < 4; j++) { g.fillStyle = `rgba(${rand(70, 110) | 0},${rand(130, 170) | 0},${rand(50, 80) | 0},.9)`; g.beginPath(); g.ellipse(x + rand(-6, 6), y + rand(-6, 6), rand(3, 7), rand(2, 4), Math.random() * 3, 0, 7); g.fill(); }
+  for (let i = 0; i < 50 * k; i++) {
+    const x = Math.random() * S, y = Math.random() * S, a = Math.random() * 7, L = rand(120, 420) * k;
+    g.strokeStyle = `rgba(${rand(60, 110) | 0},${rand(50, 90) | 0},${rand(40, 70) | 0},.95)`; g.lineWidth = rand(3, 7) * k;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L); g.stroke();
   }
   return c;
 }
 
-function treelineCanvas() {
-  const w = 2048, h = 256, c = mkCanvas(w, h), g = c.getContext('2d');
-  for (let layer = 0; layer < 3; layer++) {
-    const haze = 1 - layer * 0.18;
-    for (let i = 0; i < 160; i++) {
-      const x = Math.random() * w, top = rand(30, 150) + layer * 25;
-      const k = rand(0.8, 1.1) * haze, pal = [[104, 84, 62], [92, 88, 60], [118, 96, 70], [80, 78, 66], [70, 84, 56]][Math.random() * 5 | 0];
-      g.fillStyle = `rgb(${pal[0] * k | 0},${pal[1] * k | 0},${pal[2] * k | 0})`;
-      for (const ox of [-w, 0, w]) {
-        g.fillRect(x + ox - 2, top, 4, h);
-        for (let j = 0; j < 10; j++) { g.beginPath(); g.ellipse(x + ox + rand(-24, 24), top + rand(0, 50), rand(6, 16), rand(6, 14), 0, 0, 7); g.fill(); }
-      }
-    }
-    g.fillRect(0, h - 40 + layer * 10, w, 60);
+function leafAtlas() {
+  const c = mkCanvas(1024, 256), g = c.getContext('2d', CTX);
+  for (let i = 0; i < 4; i++) {
+    g.save(); g.translate(i * 256 + 128, 128); g.rotate(0.0);
+    const gr = g.createLinearGradient(-110, 0, 110, 0); gr.addColorStop(0, '#e2cfb0'); gr.addColorStop(1, '#f4e8d2');
+    drawLeaf(g, 236, i % 3, gr, 'rgba(110,70,35,.55)');
+    g.restore();
   }
   return c;
+}
+
+function drawTree(g, x, y, H, depth, o) {
+  const br = (x, y, len, ang, th, d) => {
+    const x2 = x + Math.sin(ang) * len, y2 = y - Math.cos(ang) * len;
+    g.strokeStyle = o.bark; g.lineWidth = th; g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke();
+    if (d <= 0) {
+      if (Math.random() < o.fol) for (let k = 0; k < o.dots; k++) { g.fillStyle = pick(o.cols); g.beginPath(); g.arc(x2 + rand(-2, 2) * o.ds, y2 + rand(-2, 2) * o.ds, rand(0.5, 1) * o.ds, 0, 7); g.fill(); }
+      return;
+    }
+    const n = Math.random() < 0.35 ? 3 : 2;
+    for (let k = 0; k < n; k++) br(x2, y2, len * rand(0.66, 0.82), ang * 0.85 + (k - (n - 1) / 2) * rand(0.35, 0.6) + rand(-0.15, 0.15), th * 0.7, d - 1);
+  };
+  g.lineCap = 'round';
+  br(x, y, H * 0.34, rand(-0.03, 0.03), H * o.thick, depth);
 }
 
 // ---------- 땅 ----------
 {
-  const lc = leafCanvas();
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400),
-    new THREE.MeshStandardMaterial({ map: tex(lc, 12, 12), bumpMap: tex(lc, 12, 12, false), bumpScale: 0.8, roughness: 0.95 }));
+  const gc = groundCanvas(), REP = 12;
+  const macro = mkCanvas(256, 256), mg = macro.getContext('2d', CTX), mid = mg.createImageData(256, 256);
+  for (let i = 0; i < 256 * 256; i++) { const v = clamp(0.55 + fbm((i % 256) / 40, (i / 256 | 0) / 40, 4) * 0.7, 0.4, 1) * 255; mid.data.set([v, v * 0.97, v * 0.93, 255], i * 4); }
+  mg.putImageData(mid, 0, 0);
+  const macroTex = tex(macro, 1, 1, false);
+  const mat = new THREE.MeshStandardMaterial({ map: tex(gc, REP, REP), normalMap: normalTex(gc, 3, REP, REP), normalScale: new THREE.Vector2(1, 1), roughness: 0.95 });
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.macroMap = { value: macroTex };
+    sh.fragmentShader = 'uniform sampler2D macroMap;\n' + sh.fragmentShader.replace('#include <map_fragment>',
+      `#include <map_fragment>\n diffuseColor.rgb *= texture2D(macroMap, vMapUv / ${REP}.0).rgb * 1.15;`);
+  };
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), mat);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
-  const ring = new THREE.Mesh(new THREE.CylinderGeometry(560, 560, 90, 64, 1, true),
-    new THREE.MeshBasicMaterial({ map: tex(treelineCanvas(), 3, 1), transparent: true, alphaTest: 0.05, side: THREE.BackSide }));
-  ring.material.map.wrapT = THREE.ClampToEdgeWrapping;
-  ring.position.y = 43; scene.add(ring);
+
+  // 멀리 보이는 숲 띠
+  const tc = mkCanvas(3072, 384), tg = tc.getContext('2d', CTX);
+  for (let layer = 0; layer < 3; layer++) {
+    const k = 0.92 - layer * 0.12;
+    for (let i = 0; i < 90; i++) {
+      const x = Math.random() * 3072, H = rand(140, 340) - layer * 30;
+      const bark = `rgb(${92 * k | 0},${86 * k | 0},${80 * k | 0})`;
+      const cols = [[120, 96, 70], [104, 92, 64], [132, 108, 76], [90, 86, 70]].map(c => `rgb(${c[0] * k | 0},${c[1] * k | 0},${c[2] * k | 0})`);
+      for (const ox of [-3072, 0, 3072]) if (x + ox > -200 && x + ox < 3272) drawTree(tg, x + ox, 384, H, 6, { bark, thick: 0.03, fol: 0.75, dots: 5, ds: 4, cols });
+    }
+    tg.fillStyle = `rgb(${88 * k | 0},${78 * k | 0},${64 * k | 0})`; tg.fillRect(0, 352 + layer * 8, 3072, 40);
+  }
+  const ringTex = tex(tc, 3, 1); ringTex.wrapT = THREE.ClampToEdgeWrapping;
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(620, 620, 110, 72, 1, true),
+    new THREE.MeshBasicMaterial({ map: ringTex, transparent: true, alphaTest: 0.3, side: THREE.BackSide, color: 0xd0d0d0 }));
+  ring.position.y = 53; scene.add(ring);
+
+  // 그루터기 밑 그늘(AO)
+  const ao = mkCanvas(256, 256), ag = ao.getContext('2d', CTX), agr = ag.createRadialGradient(128, 128, 40, 128, 128, 128);
+  agr.addColorStop(0, 'rgba(0,0,0,.6)'); agr.addColorStop(1, 'rgba(0,0,0,0)'); ag.fillStyle = agr; ag.fillRect(0, 0, 256, 256);
+  const aoMesh = new THREE.Mesh(new THREE.PlaneGeometry(R * 4.2, R * 4.2), new THREE.MeshBasicMaterial({ map: tex(ao), transparent: true, depthWrite: false }));
+  aoMesh.rotation.x = -Math.PI / 2; aoMesh.position.y = 0.03; scene.add(aoMesh);
+}
+
+// 빌보드 나무 (가지 모양 텍스처, 인스턴싱)
+{
+  const crossGeo = (() => {
+    const a = new THREE.PlaneGeometry(0.5, 1); a.translate(0, 0.5, 0);
+    const b = a.clone(); b.rotateY(Math.PI / 2);
+    return mergeGeometries([a, b]);
+  })();
+  const kinds = [];
+  for (let k = 0; k < 4; k++) {
+    const c = mkCanvas(512, 1024), g = c.getContext('2d', CTX);
+    drawTree(g, 256, 1024, 960, 8, { bark: pick(['#5a5048', '#615851', '#4f4740']), thick: 0.032, fol: k < 2 ? 0.55 : 0.12, dots: 7, ds: 5,
+      cols: ['#a0682e', '#b88a40', '#8a5a2a', '#9c7a3a', '#c09a52'] });
+    kinds.push(new THREE.MeshBasicMaterial({ map: tex(c), alphaTest: 0.4, side: THREE.DoubleSide, color: 0xb4b4b4 }));
+  }
+  // 화면 양옆에서 장면을 감싸는 큰 나무들 (가운데 하늘은 비워 둠)
+  const dummy = new THREE.Object3D(), spots = [];
+  for (const side of [-1, 1]) for (let i = 0; i < 4; i++) spots.push([side * (0.55 + i * 0.18 + rand(0, 0.1)), rand(150, 300)]);
+  kinds.forEach((mat, ki) => {
+    const mine = spots.filter((_, i) => i % 4 === ki);
+    const im = new THREE.InstancedMesh(crossGeo, mat, mine.length); im.frustumCulled = false;
+    mine.forEach(([az, d], i) => {
+      dummy.position.set(Math.sin(az) * d, -1, -Math.cos(az) * d); dummy.rotation.set(0, Math.random() * 7, 0); dummy.scale.setScalar(rand(300, 460));
+      dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
+    });
+    scene.add(im);
+  });
 }
 
 // ---------- 그루터기 ----------
-const barkTex = tex(barkCanvas(1024, 512, 6), 2, 1);
-const barkBump = tex(barkTex.image, 2, 1, false);
-const barkMat = new THREE.MeshStandardMaterial({ map: barkTex, bumpMap: barkBump, bumpScale: 1.4, roughness: 0.95 });
+const barkC = barkCanvas(1024, 512, 6), barkL = lum(barkC);
+const barkTex = tex(barkC, 2, 1);
+const barkMat = new THREE.MeshStandardMaterial({ map: barkTex, normalMap: normalTex(barkC, 5, 2, 1, barkL), normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.95 });
 {
-  const H = TOP_Y + 2, geo = new THREE.CylinderGeometry(R, R, H, 96, 16, true);
+  const H = TOP_Y + 2, geo = new THREE.CylinderGeometry(R, R, H, 256, 48, true);
   geo.translate(0, H / 2 - 2, 0);
-  const p = geo.attributes.position;
+  const p = geo.attributes.position, uv = geo.attributes.uv;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i), th = Math.atan2(x, z);
     const flare = 1 + 0.24 * Math.pow(1 - clamp(y / (TOP_Y * 0.35), 0, 1), 2);
-    const s = rf(th) * flare * (1 + 0.012 * Math.sin(th * 37 + y * 0.2));
-    p.setX(i, Math.sin(th) * R * s); p.setZ(i, Math.cos(th) * R * s);
+    const u = uv.getX(i), v = uv.getY(i);
+    const bx = Math.floor(((u * 2) % 1) * 1023), by = Math.floor((1 - v) * 511);
+    const disp = (barkL[by * 1024 + bx] - 0.42) * 2.2 * clamp((TOP_Y - y) / 1.6, 0, 1);
+    const r = R * rf(th) * flare + disp;
+    p.setX(i, Math.sin(th) * r); p.setZ(i, Math.cos(th) * r);
   }
   geo.computeVertexNormals();
   const side = new THREE.Mesh(geo, barkMat); side.castShadow = side.receiveShadow = true; scene.add(side);
 
   const sh = new THREE.Shape();
-  for (let i = 0; i < 160; i++) {
-    const th = i / 160 * Math.PI * 2, r = R * rf(th);
-    const x = Math.sin(th) * r, z = Math.cos(th) * r;
-    i ? sh.lineTo(x, -z) : sh.moveTo(x, -z);
+  for (let i = 0; i < 200; i++) {
+    const th = i / 200 * Math.PI * 2, r = R * rf(th);
+    i ? sh.lineTo(Math.sin(th) * r, -Math.cos(th) * r) : sh.moveTo(Math.sin(th) * r, -Math.cos(th) * r);
   }
   const cap = new THREE.ShapeGeometry(sh, 4); cap.rotateX(-Math.PI / 2);
-  const cp = cap.attributes.position, uv = cap.attributes.uv;
-  for (let i = 0; i < cp.count; i++) uv.setXY(i, 0.5 + cp.getX(i) / (2 * R * 1.07), 0.5 - cp.getZ(i) / (2 * R * 1.07));
+  const cp = cap.attributes.position, cuv = cap.attributes.uv;
+  for (let i = 0; i < cp.count; i++) cuv.setXY(i, 0.5 + cp.getX(i) / (2 * R * 1.07), 0.5 - cp.getZ(i) / (2 * R * 1.07));
   const cc = cutCanvas();
-  const top = new THREE.Mesh(cap, new THREE.MeshStandardMaterial({ map: tex(cc), bumpMap: tex(cc, 1, 1, false), bumpScale: 0.25, roughness: 0.82 }));
+  const top = new THREE.Mesh(cap, new THREE.MeshStandardMaterial({ map: tex(cc), normalMap: normalTex(cc, 2.2), roughness: 0.8 }));
   top.position.y = TOP_Y; top.receiveShadow = true; scene.add(top);
 }
 
-// 나뭇가지들, 주변 나무
+// 나뭇가지
 {
-  const twigMat = new THREE.MeshStandardMaterial({ map: barkTex, color: 0x9a8f86, roughness: 0.95 });
-  const lichenMat = new THREE.MeshStandardMaterial({ map: tex(barkCanvas(512, 256, 14), 3, 1), color: 0xb0aaa0, roughness: 0.95 });
-  const branch = (r, L, x, z, ay, mat, lift = 0, tilt = 0) => {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.75, r, L, 10), mat);
+  const lc = barkCanvas(512, 256, 14);
+  const twigMat = new THREE.MeshStandardMaterial({ map: barkTex, normalMap: barkMat.normalMap, color: 0x9a8f86, roughness: 0.95 });
+  const lichenMat = new THREE.MeshStandardMaterial({ map: tex(lc, 3, 1), normalMap: normalTex(lc, 4, 3, 1), color: 0xb0aaa0, roughness: 0.95 });
+  const branch = (r, L, x, z, ay, mat, tilt = 0) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.75, r, L, 14, 1), mat);
     m.rotation.order = 'YXZ'; m.rotation.set(0, ay, Math.PI / 2 - tilt);
-    m.position.set(x, r + lift, z); m.castShadow = m.receiveShadow = true; scene.add(m); return m;
+    m.position.set(x, r, z); m.castShadow = m.receiveShadow = true; scene.add(m);
   };
-  branch(2.2, 90, 44, 6, -0.9, lichenMat, 0, 0.04);
-  branch(1.4, 55, 30, -34, 0.5, twigMat);
-  for (let i = 0; i < 14; i++) {
-    const a = Math.random() * 7, d = rand(R + 8, 110);
+  branch(2.2, 90, 46, 6, -0.9, lichenMat, 0.04);
+  branch(1.4, 55, 32, -36, 0.5, twigMat);
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * 7, d = rand(R + 10, 120);
     branch(rand(0.25, 0.7), rand(12, 40), Math.cos(a) * d, Math.sin(a) * d, Math.random() * 7, twigMat);
   }
-  const trunkMat = new THREE.MeshStandardMaterial({ map: tex(barkTex.image, 1, 5), bumpMap: tex(barkTex.image, 1, 5, false), bumpScale: 1, roughness: 0.95 });
-  const sunAz = Math.atan2(SUN_DIR.x, -SUN_DIR.z);
-  let made = 0;
-  while (made < 7) {
-    const az = (Math.random() < 0.5 ? -1 : 1) * rand(0.55, 1.5), d = rand(220, 460);
-    if (Math.abs(az - sunAz) < 0.25) continue;
-    const r = rand(2.5, 4.5), Hh = rand(260, 340);
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r, Hh, 12), trunkMat);
-    t.position.set(Math.sin(az) * d, Hh / 2, -Math.cos(az) * d); t.castShadow = true; scene.add(t);
-    for (let j = 0; j < 4; j++) {
-      const L = rand(30, 70), b = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.15, r * 0.35, L, 8), trunkMat);
-      const h = rand(90, Hh * 0.8), ang = Math.random() * 7, up = rand(0.5, 1.1);
-      b.position.set(t.position.x + Math.cos(ang) * Math.sin(up) * L / 2, h + Math.cos(up) * L / 2, t.position.z + Math.sin(ang) * Math.sin(up) * L / 2);
-      b.lookAt(t.position.x + Math.cos(ang) * Math.sin(up) * L, h + Math.cos(up) * L, t.position.z + Math.sin(ang) * Math.sin(up) * L);
-      b.rotateX(Math.PI / 2); scene.add(b);
-    }
-    made++;
+}
+
+// ---------- 3D 낙엽 & 풀 ----------
+const atlas = tex(leafAtlas()); atlas.wrapS = atlas.wrapT = THREE.ClampToEdgeWrapping;
+const leafMat = new THREE.MeshStandardMaterial({ map: atlas, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85 });
+const leafDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: atlas, alphaTest: 0.45 });
+function leafGeo(cell) {
+  const g = new THREE.PlaneGeometry(1, 1, 6, 6), p = g.attributes.position, uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i);
+    p.setZ(i, 0.1 * (y * 2) ** 2 + 0.05 * (x * 2) ** 2 - 0.03);
+    uv.setX(i, (cell + uv.getX(i)) * 0.25);
   }
+  g.rotateX(-Math.PI / 2); g.computeVertexNormals(); return g;
+}
+{
+  const N = MOBILE ? 1400 : 2600, per = N / 4 | 0, dummy = new THREE.Object3D(), col = new THREE.Color();
+  for (let t = 0; t < 4; t++) {
+    const im = new THREE.InstancedMesh(leafGeo(t), leafMat, per);
+    im.customDepthMaterial = leafDepth; im.castShadow = im.receiveShadow = true; im.frustumCulled = false;
+    for (let i = 0; i < per; i++) {
+      const a = Math.random() * 7, r = R * 1.32 + Math.pow(Math.random(), 1.5) * 150;
+      dummy.position.set(Math.cos(a) * r, 0.05 + Math.random() * 0.4, Math.sin(a) * r);
+      dummy.rotation.set(rand(-0.25, 0.25), Math.random() * 7, rand(-0.25, 0.25));
+      dummy.scale.setScalar(rand(9, 17)); dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
+      im.setColorAt(i, col.set(pick(LEAF_COLS)).multiplyScalar(rand(0.8, 1.1)));
+    }
+    scene.add(im);
+  }
+  // 풀싹
+  const gc = mkCanvas(128, 128), gg = gc.getContext('2d', CTX);
+  for (let i = 0; i < 16; i++) {
+    gg.strokeStyle = pick(['#5f8a3a', '#78a048', '#4c7330', '#8db35a']); gg.lineWidth = rand(3, 6); gg.lineCap = 'round';
+    const x0 = 64 + rand(-14, 14), x1 = x0 + rand(-40, 40);
+    gg.beginPath(); gg.moveTo(x0, 128); gg.quadraticCurveTo(x0 + (x1 - x0) * 0.2, rand(50, 80), x1, rand(8, 50)); gg.stroke();
+  }
+  const a = new THREE.PlaneGeometry(1, 1); a.translate(0, 0.5, 0);
+  const b = a.clone(); b.rotateY(Math.PI / 2);
+  const grass = new THREE.InstancedMesh(mergeGeometries([a, b]), new THREE.MeshStandardMaterial({ map: tex(gc), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 }), 90);
+  grass.frustumCulled = false;
+  for (let i = 0; i < 90; i++) {
+    const an = Math.random() * 7, r = R * 1.4 + Math.random() * 140;
+    dummy.position.set(Math.cos(an) * r, 0, Math.sin(an) * r); dummy.rotation.set(0, Math.random() * 7, 0); dummy.scale.setScalar(rand(2.5, 6));
+    dummy.updateMatrix(); grass.setMatrixAt(i, dummy.matrix);
+  }
+  scene.add(grass);
+}
+// 떨어지는 낙엽
+const FALL = 22;
+const fallMesh = new THREE.InstancedMesh(leafGeo(0), leafMat, FALL); fallMesh.frustumCulled = false; fallMesh.castShadow = true; fallMesh.customDepthMaterial = leafDepth;
+const fall = [];
+for (let i = 0; i < FALL; i++) { fall.push({}); resetFall(fall[i], true); fallMesh.setColorAt(i, new THREE.Color(pick(LEAF_COLS))); }
+scene.add(fallMesh);
+function resetFall(f, init) {
+  f.x = rand(-140, 140); f.z = rand(-160, -30); f.y = init ? rand(2, 110) : rand(90, 130);
+  f.vy = rand(4, 8); f.ph = Math.random() * 7; f.sw = rand(3, 8); f.s = rand(8, 12); f.rx = Math.random() * 7; f.ry = Math.random() * 7; f.wr = rand(1.5, 3.5);
 }
 
 // ---------- 못 ----------
@@ -367,21 +546,32 @@ const hammer = new THREE.Group(), hYaw = new THREE.Group(), hPitch = new THREE.G
 hammer.add(hYaw); hYaw.add(hPitch); hYaw.rotation.y = -0.55; scene.add(hammer);
 {
   const add = (geo, mat, x, y, z, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.z = rz; m.castShadow = true; hPitch.add(m); return m; };
-  const headMat = new THREE.MeshStandardMaterial({ color: 0x6b6b6b, metalness: 0.6, roughness: 0.52 });
-  add(new THREE.CylinderGeometry(2.5, 2.5, 1.5, 40), brightMat, 0, 0.75, 0);
-  add(new THREE.CylinderGeometry(1.9, 2.3, 3.2, 40), headMat, 0, 3.1, 0);
-  add(new THREE.BoxGeometry(4.2, 2.8, 3.2), headMat, 0, 6.0, 0);
+  const rc = mkCanvas(256, 256), rg = rc.getContext('2d', CTX);
+  for (let i = 0; i < 6000; i++) { const v = rand(110, 230) | 0; rg.fillStyle = `rgb(${v},${v},${v})`; rg.fillRect(Math.random() * 256, Math.random() * 256, rand(1, 6), 1); }
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x6b6b6b, metalness: 0.65, roughness: 0.7, roughnessMap: tex(rc, 1, 1, false) });
+  add(new THREE.CylinderGeometry(2.5, 2.5, 1.5, 48), brightMat, 0, 0.75, 0);
+  add(new THREE.CylinderGeometry(2.62, 2.5, 0.25, 48), brightMat, 0, 1.55, 0);
+  add(new THREE.CylinderGeometry(1.9, 2.3, 3.0, 48), headMat, 0, 3.15, 0);
+  add(new THREE.BoxGeometry(4.2, 2.8, 3.2, 2, 2, 2), headMat, 0, 6.0, 0);
   const sh = new THREE.Shape();
   sh.moveTo(-1.7, 0); sh.quadraticCurveTo(-2.3, 2.6, 1.4, 4.0); sh.quadraticCurveTo(-0.2, 1.8, 1.7, 0); sh.closePath();
-  const claw = new THREE.ExtrudeGeometry(sh, { depth: 2.4, bevelEnabled: true, bevelSize: 0.2, bevelThickness: 0.2, bevelSegments: 2 });
+  const claw = new THREE.ExtrudeGeometry(sh, { depth: 2.4, bevelEnabled: true, bevelSize: 0.2, bevelThickness: 0.2, bevelSegments: 3, curveSegments: 16 });
   claw.translate(0, 7.2, -1.2);
   add(claw, headMat, 0, 0, 0);
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0xd2a06a, roughness: 0.5 });
-  const handle = add(new THREE.CylinderGeometry(0.85, 1.05, 26, 20), woodMat, 14.6, 6.0, 0, Math.PI / 2); handle.scale.z = 0.8;
+  // 손잡이: 니스 칠한 히코리 나뭇결
+  const hc = mkCanvas(256, 512), hg = hc.getContext('2d', CTX);
+  hg.fillStyle = '#cf9e62'; hg.fillRect(0, 0, 256, 512);
+  for (let i = 0; i < 70; i++) {
+    hg.strokeStyle = `rgba(${rand(120, 170) | 0},${rand(75, 110) | 0},${rand(35, 60) | 0},${rand(0.15, 0.45)})`; hg.lineWidth = rand(0.8, 3);
+    const x0 = Math.random() * 256, ph = Math.random() * 6, amp = rand(1, 6);
+    hg.beginPath(); for (let y = 0; y <= 512; y += 8) { const x = x0 + Math.sin(y * 0.012 + ph) * amp; y ? hg.lineTo(x, y) : hg.moveTo(x, y); } hg.stroke();
+  }
+  const woodMat = new THREE.MeshPhysicalMaterial({ map: tex(hc), normalMap: normalTex(hc, 1.5), roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.22 });
+  const handle = add(new THREE.CylinderGeometry(0.85, 1.05, 26, 32), woodMat, 14.6, 6.0, 0, Math.PI / 2); handle.scale.z = 0.8;
   const gripMat = new THREE.MeshStandardMaterial({ color: 0x1d1d1f, roughness: 0.85 });
-  add(new THREE.CylinderGeometry(1.3, 1.22, 10, 24), gripMat, 23.6, 6.0, 0, Math.PI / 2);
-  const cap = add(new THREE.SphereGeometry(1.3, 20, 12), gripMat, 28.6, 6.0, 0); cap.scale.x = 0.5;
-  const rib = new THREE.TorusGeometry(1.31, 0.1, 6, 24); rib.rotateY(Math.PI / 2);
+  add(new THREE.CylinderGeometry(1.3, 1.22, 10, 32), gripMat, 23.6, 6.0, 0, Math.PI / 2);
+  const cap = add(new THREE.SphereGeometry(1.3, 24, 14), gripMat, 28.6, 6.0, 0); cap.scale.x = 0.5;
+  const rib = new THREE.TorusGeometry(1.31, 0.1, 8, 32); rib.rotateY(Math.PI / 2);
   for (let gx = 19.4; gx < 28.4; gx += 1.1) add(rib, gripMat, gx, 6.0, 0);
 }
 
@@ -468,7 +658,6 @@ function newRound() {
     buildNail(n); nails.push(n);
   }
   nails.sort((a, b) => a.x - b.x);
-  // 새 못이 망치를 뚫지 않도록 망치를 위로
   const f = floorAt(ham.x);
   if (ham.y > f.y - 1) { ham.y = f.y - 1; if (drag) drag.dy = ham.y - lastP.y; target.y = ham.y; }
   ham.armed = true; ham.hitY = 1e9;
@@ -561,9 +750,11 @@ let vw = 1, vh = 1;
 const camTarget = new THREE.Vector3();
 function resize() {
   vw = innerWidth; vh = innerHeight;
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(vw, vh, false);
+  const dpr = Math.min(devicePixelRatio || 1, MOBILE ? 1.5 : 2);
+  renderer.setPixelRatio(dpr); renderer.setSize(vw, vh, false);
+  composer.setPixelRatio(dpr); composer.setSize(vw, vh);
   const portrait = vh > vw;
-  camera.aspect = vw / vh; camera.fov = portrait ? 64 : 48;
+  camera.aspect = vw / vh; camera.fov = portrait ? 62 : 46;
   const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   const d = Math.max(33 / (t * camera.aspect), 26 / t);
   const pitch = THREE.MathUtils.degToRad(portrait ? 17 : 13);
@@ -580,9 +771,8 @@ function toWorld(e) {
   ndc.set(e.clientX / vw * 2 - 1, -(e.clientY / vh) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   if (!ray.ray.intersectPlane(plane, hitP)) return lastP;
-  return { x: X(hitP.x), y: woodTop - (hitP.y - TOP_Y) / SC };
+  return { x: hitP.x / SC + W / 2, y: woodTop - (hitP.y - TOP_Y) / SC };
 }
-const X = x3 => x3 / SC + W / 2;
 glc.addEventListener('pointerdown', e => {
   initAudio();
   if (drag) return;
@@ -609,6 +799,7 @@ glc.addEventListener('pointercancel', endDrag);
 addEventListener('resize', resize);
 
 // ---------- 업데이트 ----------
+const fd = new THREE.Object3D();
 function update(dt, t) {
   if (roundT > 0) { roundT -= dt; if (roundT <= 0) newRound(); }
   moveHammer();
@@ -630,6 +821,15 @@ function update(dt, t) {
   shake = Math.max(0, shake - dt * 40);
   clouds.rotation.y += dt * 0.004;
 
+  for (let i = 0; i < FALL; i++) {
+    const f = fall[i];
+    f.y -= f.vy * dt; f.x += Math.sin(t * 1.2 + f.ph) * f.sw * dt; f.rx += f.wr * dt; f.ry += f.wr * 0.7 * dt;
+    if (f.y < 0.3 || (Math.hypot(f.x, f.z) < R * 1.1 && f.y < TOP_Y + 0.5)) resetFall(f, false);
+    fd.position.set(f.x, f.y, f.z); fd.rotation.set(Math.sin(f.rx) * 0.9, f.ry, Math.cos(f.rx * 0.8) * 0.6); fd.scale.setScalar(f.s);
+    fd.updateMatrix(); fallMesh.setMatrixAt(i, fd.matrix);
+  }
+  fallMesh.instanceMatrix.needsUpdate = true;
+
   for (const c of chipPool) {
     if (c.life <= 0) continue;
     c.life -= dt; if (c.life <= 0) { c.m.visible = false; continue; }
@@ -646,7 +846,7 @@ function frame(now) {
   update(dt, now / 1000);
   const base = camera.position.clone();
   if (shake > 0) { camera.position.x += (Math.random() - 0.5) * shake * 0.1; camera.position.y += (Math.random() - 0.5) * shake * 0.1; }
-  renderer.render(scene, camera);
+  composer.render(dt);
   prevFrame = performance.now();
   camera.position.copy(base); camera.updateMatrixWorld();
   requestAnimationFrame(frame);
