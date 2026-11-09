@@ -107,6 +107,34 @@ function doorMaps(gate) {
   stains(x, w, h, 12, 'rgba(70,40,20,1)', 200);
   return { map: tex(c), normalMap: tex(normalFrom(c, 2), 1, false) };
 }
+// 격리실 강철판 벽 (리벳·긁힘·녹물)
+function steelMaps() {
+  const w = 512, h = 1024, c = cv(w, h), x = c.getContext('2d');
+  x.fillStyle = '#5b6168'; x.fillRect(0, 0, w, h); noise(x, w, h, 0.3, 'overlay', [16, 64, 256, 512]);
+  const ph = h / 3;
+  for (let r = 0; r < 3; r++) for (let k = 0; k < 2; k++) {
+    const px = k * w / 2, py = r * ph, v = 85 + Math.random() * 18;
+    x.fillStyle = `rgba(${v},${v + 4},${v + 10},0.35)`; x.fillRect(px + 6, py + 6, w / 2 - 12, ph - 12);
+    x.strokeStyle = 'rgba(10,12,14,0.85)'; x.lineWidth = 5; x.strokeRect(px + 2, py + 2, w / 2 - 4, ph - 4);
+    x.strokeStyle = 'rgba(200,210,220,0.18)'; x.lineWidth = 2; x.strokeRect(px + 7, py + 7, w / 2 - 14, ph - 14);
+    x.fillStyle = '#2a2e33';
+    for (let i = 0; i < 8; i++) for (const [a, b] of [[px + 18 + i * (w / 2 - 36) / 7, py + 16], [px + 18 + i * (w / 2 - 36) / 7, py + ph - 16]]) { x.beginPath(); x.arc(a, b, 5, 0, 7); x.fill(); }
+  }
+  for (let i = 0; i < 90; i++) { x.strokeStyle = `rgba(220,225,230,${rnd(0.05, 0.22)})`; x.lineWidth = rnd(0.5, 2); x.beginPath(); const a = rnd(0, w), b = rnd(0, h); x.moveTo(a, b); x.lineTo(a + rnd(-60, 60), b + rnd(-30, 30)); x.stroke(); }
+  stains(x, w, h, 22, 'rgba(110,60,25,1)', h * 0.5);
+  return { map: tex(c), normalMap: tex(normalFrom(c, 3), 1, false) };
+}
+function containMaps() {
+  const w = 512, h = 768, c = cv(w, h), x = c.getContext('2d');
+  x.fillStyle = '#4a4f55'; x.fillRect(0, 0, w, h); noise(x, w, h, 0.25, 'overlay', [32, 128, 512]);
+  for (const y0 of [0, h - 110]) { x.save(); x.beginPath(); x.rect(0, y0, w, 110); x.clip(); for (let i = -10; i < 20; i++) { x.fillStyle = i % 2 ? '#c9a020' : '#141414'; x.beginPath(); x.moveTo(i * 50, y0 + 110); x.lineTo(i * 50 + 50, y0 + 110); x.lineTo(i * 50 + 160, y0); x.lineTo(i * 50 + 110, y0); x.fill(); } x.restore(); }
+  x.strokeStyle = 'rgba(0,0,0,0.7)'; x.lineWidth = 8; for (const yy of [230, 470]) { x.beginPath(); x.moveTo(20, yy); x.lineTo(w - 20, yy); x.stroke(); }
+  x.fillStyle = '#9b1a14'; x.fillRect(60, 270, w - 120, 160);
+  x.fillStyle = '#eee'; x.textAlign = 'center'; x.font = 'bold 84px Arial'; x.fillText('SCP-096', w / 2, 360); x.font = 'bold 36px Arial'; x.fillText('KETER · 격리 중', w / 2, 412);
+  x.fillStyle = '#23272b'; for (let i = 0; i < 9; i++) for (const yy of [140, 560]) { x.beginPath(); x.arc(50 + i * (w - 100) / 8, yy, 9, 0, 7); x.fill(); }
+  stains(x, w, h, 14, 'rgba(90,50,20,1)', 260);
+  return { map: tex(c), normalMap: tex(normalFrom(c, 3), 1, false) };
+}
 function crateMaps() {
   const s = 256, c = cv(s, s), x = c.getContext('2d');
   x.fillStyle = '#7d6440'; x.fillRect(0, 0, s, s); noise(x, s, s, 0.6, 'overlay', [8, 32, 64, 256]);
@@ -119,12 +147,13 @@ function crateMaps() {
 
 // ── 문 ──
 class Door {
-  constructor(x, y, gate, mats, scene) {
-    this.x = x; this.y = y; this.gate = gate; this.locked = gate; this.open = 0; this.broken = false;
+  constructor(x, y, kind, mats, scene) {
+    const gate = kind === 'gate', contain = kind === 'contain';
+    this.x = x; this.y = y; this.gate = gate; this.contain = contain; this.locked = gate || contain; this.open = 0; this.broken = false;
     this.alongX = at(x - 1, y) === '#' && at(x + 1, y) === '#';
     this.cx = center(x); this.cz = center(y);
     const g = new THREE.Group();
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(CELL - 0.05, 3.0, 0.16), gate ? mats.gate : mats.door);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(CELL - 0.05, 3.0, contain ? 0.38 : 0.16), contain ? mats.contain : gate ? mats.gate : mats.door);
     slab.position.y = 1.5; slab.castShadow = slab.receiveShadow = true; g.add(slab);
     g.position.set(this.cx, 0, this.cz); if (!this.alongX) g.rotation.y = Math.PI / 2;
     scene.add(g); this.g = g; this.slab = slab; this.scene = scene;
@@ -135,7 +164,7 @@ class Door {
     for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.05, 0.34), frameM); p.position.set(s * (CELL / 2 - 0.06), 1.52, 0); g.add(p); }
     const top = new THREE.Mesh(new THREE.BoxGeometry(CELL, 0.12, 0.34), frameM); top.position.y = 3.02; g.add(top);
     // 상태 표시등
-    this.lamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, CELL + 0.04), new THREE.MeshBasicMaterial({ color: gate ? 0xff2200 : 0x22ff66 }));
+    this.lamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, CELL + 0.04), new THREE.MeshBasicMaterial({ color: this.locked ? 0xff2200 : 0x22ff66 }));
     this.lamp.position.set(0, 3.25, 0); g.add(this.lamp);
     this.vel = new THREE.Vector3(); this.spin = new THREE.Vector3();
   }
@@ -146,7 +175,7 @@ class Door {
     const w = new THREE.Vector3(); this.slab.getWorldPosition(w);
     this.g.remove(this.slab); this.scene.add(this.slab);
     this.slab.position.copy(w); this.slab.rotation.order = 'YXZ'; this.slab.rotation.y = this.g.rotation.y;
-    this.vel.set(dir.x * 9, 3.5, dir.z * 9); this.spin.set(rnd(-4, 4), rnd(-3, 3), rnd(-6, 6));
+    this.vel.set(dir.x * 14, 4.5, dir.z * 14); this.spin.set(rnd(-4, 4), rnd(-3, 3), rnd(-6, 6));
     this.lamp.material.color.set(0x330000);
     audio?.doorBurst(w);
   }
@@ -174,13 +203,15 @@ class Door {
 }
 
 export function buildWorld(scene, audio) {
-  const wm = wallMaps(), fm = floorMaps(), dm = doorMaps(false), gm = doorMaps(true), cm = crateMaps();
+  const wm = wallMaps(), fm = floorMaps(), dm = doorMaps(false), gm = doorMaps(true), zm = containMaps(), stm = steelMaps(), cm = crateMaps();
   const mats = {
     wall: new THREE.MeshStandardMaterial({ ...wm, roughness: 0.9, normalScale: new THREE.Vector2(0.9, 0.9) }),
     floor: new THREE.MeshStandardMaterial({ ...fm, roughness: 0.62, metalness: 0.05, normalScale: new THREE.Vector2(0.7, 0.7) }),
     ceil: new THREE.MeshStandardMaterial({ ...ceilMaps(), roughness: 0.95 }),
     door: new THREE.MeshStandardMaterial({ ...dm, roughness: 0.45, metalness: 0.6 }),
     gate: new THREE.MeshStandardMaterial({ ...gm, roughness: 0.5, metalness: 0.55 }),
+    contain: new THREE.MeshStandardMaterial({ ...zm, roughness: 0.4, metalness: 0.75 }),
+    steel: new THREE.MeshStandardMaterial({ ...stm, roughness: 0.42, metalness: 0.7 }),
     frame: new THREE.MeshStandardMaterial({ color: 0x2c3035, roughness: 0.5, metalness: 0.7 }),
     crate: new THREE.MeshStandardMaterial({ ...cm, roughness: 0.85 }),
     metal: new THREE.MeshStandardMaterial({ color: 0x5b6067, roughness: 0.4, metalness: 0.8 }),
@@ -197,7 +228,10 @@ export function buildWorld(scene, audio) {
   const ceil = new THREE.Mesh(floorGeo.clone().rotateX(Math.PI).translate(0, WALL_H, 2 * H), mats.ceil); G.add(ceil);
 
   // 벽: 노출된 면만 생성
-  const pos = [], nor = [], uv = [], idx = [];
+  const pos = [], nor = [], uv = [], idx0 = [], idx1 = [];
+  let idx = idx0;
+  const inCell = (x, y) => x >= 10 && x <= 15 && y >= 11 && y <= 16; // SCP-096 격리실
+  const sel = (x, y) => { idx = inCell(x, y) ? idx1 : idx0; return true; };
   const quad = (a, b, c, d, n, u0, u1) => {
     const i = pos.length / 3; pos.push(...a, ...b, ...c, ...d);
     for (let k = 0; k < 4; k++) nor.push(...n);
@@ -210,17 +244,21 @@ export function buildWorld(scene, audio) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (!solid(at(x, y))) continue;
     const x0 = x * CELL, x1 = x0 + CELL, z0 = y * CELL, z1 = z0 + CELL;
-    if (!solid(at(x + 1, y))) quad([x1, 0, z0], [x1, 0, z1], [x1, WALL_H, z1], [x1, WALL_H, z0], [1, 0, 0], z0 / CELL, z1 / CELL);
-    if (!solid(at(x - 1, y))) quad([x0, 0, z1], [x0, 0, z0], [x0, WALL_H, z0], [x0, WALL_H, z1], [-1, 0, 0], z1 / CELL, z0 / CELL);
-    if (!solid(at(x, y + 1))) quad([x1, 0, z1], [x0, 0, z1], [x0, WALL_H, z1], [x1, WALL_H, z1], [0, 0, 1], x1 / CELL, x0 / CELL);
-    if (!solid(at(x, y - 1))) quad([x0, 0, z0], [x1, 0, z0], [x1, WALL_H, z0], [x0, WALL_H, z0], [0, 0, -1], x0 / CELL, x1 / CELL);
+    if (!solid(at(x + 1, y)) && sel(x + 1, y)) quad([x1, 0, z0], [x1, 0, z1], [x1, WALL_H, z1], [x1, WALL_H, z0], [1, 0, 0], z0 / CELL, z1 / CELL);
+    if (!solid(at(x - 1, y)) && sel(x - 1, y)) quad([x0, 0, z1], [x0, 0, z0], [x0, WALL_H, z0], [x0, WALL_H, z1], [-1, 0, 0], z1 / CELL, z0 / CELL);
+    if (!solid(at(x, y + 1)) && sel(x, y + 1)) quad([x1, 0, z1], [x0, 0, z1], [x0, WALL_H, z1], [x1, WALL_H, z1], [0, 0, 1], x1 / CELL, x0 / CELL);
+    if (!solid(at(x, y - 1)) && sel(x, y - 1)) quad([x0, 0, z0], [x1, 0, z0], [x1, WALL_H, z0], [x0, WALL_H, z0], [0, 0, -1], x0 / CELL, x1 / CELL);
   }
   const wg = new THREE.BufferGeometry();
   wg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   wg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   wg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  wg.setIndex(idx); wg.computeTangents?.();
-  const walls = new THREE.Mesh(wg, mats.wall); walls.receiveShadow = true; walls.castShadow = true; G.add(walls);
+  wg.setIndex([...idx0, ...idx1]); wg.addGroup(0, idx0.length, 0); wg.addGroup(idx0.length, idx1.length, 1); wg.computeTangents?.();
+  const walls = new THREE.Mesh(wg, [mats.wall, mats.steel]);
+  // 격리실 바닥 강철판
+  const sf = new THREE.MeshStandardMaterial({ map: stm.map.clone(), normalMap: stm.normalMap.clone(), roughness: 0.5, metalness: 0.65, polygonOffset: true, polygonOffsetFactor: -1 });
+  sf.map.repeat.set(6, 3); sf.normalMap.repeat.set(6, 3);
+  const cellFloor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), sf); cellFloor.rotation.x = -Math.PI / 2; cellFloor.position.set(26, 0.003, 28); cellFloor.receiveShadow = true; G.add(cellFloor); walls.receiveShadow = true; walls.castShadow = true; G.add(walls);
 
   // 유리창 칸
   const glassM = new THREE.MeshPhysicalMaterial({ color: 0xa8c8d8, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.16, depthWrite: false });
@@ -235,12 +273,9 @@ export function buildWorld(scene, audio) {
 
   // 문
   const doorList = [];
-  for (const ch of ['D', 'X']) for (const c of find(ch)) { const d = new Door(c.x, c.y, ch === 'X', mats, G); doors.set(c.x + ',' + c.y, d); doorList.push(d); }
-  // 096 이 뜯어낸 격리실 문 (O)
-  for (const c of find('O')) {
-    const lin = new THREE.Mesh(new THREE.BoxGeometry(CELL, WALL_H - 3, CELL), mats.wallBox); lin.position.set(center(c.x), 3 + (WALL_H - 3) / 2, center(c.y)); G.add(lin);
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(CELL - 0.05, 3.0, 0.16), mats.door);
-    slab.position.set(center(c.x) + 2.3, 0.1, center(c.y) - 3.2); slab.rotation.order = 'YXZ'; slab.rotation.set(-Math.PI / 2 + 0.05, 0.7, 0.04); slab.castShadow = slab.receiveShadow = true; G.add(slab);
+  for (const ch of ['D', 'X', 'Z']) for (const c of find(ch)) { const d = new Door(c.x, c.y, ch === 'X' ? 'gate' : ch === 'Z' ? 'contain' : 'door', mats, G); doors.set(c.x + ',' + c.y, d); doorList.push(d); }
+  // SCP-096 격리실 표지 (강철문 Z 양옆)
+  for (const c of find('Z')) {
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new THREE.MeshStandardMaterial({ map: textTexture(['SCP-096', 'KETER'], 512, 256, '#d8d4c8', '#111', 'bold 86px Arial', (x, w, h) => { x.fillStyle = '#b01010'; x.fillRect(0, h - 40, w, 40); }), roughness: 0.6 }));
     sign.position.set(center(c.x) - 2, 2.2, c.y * CELL - 0.01); sign.rotation.y = Math.PI; G.add(sign);
     const warn = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.55), new THREE.MeshStandardMaterial({ map: textTexture(['얼굴을 보지 마시오', 'DO NOT LOOK AT ITS FACE'], 640, 220, '#c9a227', '#111', 'bold 52px Arial'), roughness: 0.6 }));
@@ -318,9 +353,6 @@ export function buildWorld(scene, audio) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s), new THREE.MeshStandardMaterial({ map: tex(c), transparent: true, depthWrite: false, roughness: 0.3, polygonOffset: true, polygonOffsetFactor: -2 }));
     m.rotation.set(-Math.PI / 2, 0, rot); m.position.set(cx, 0.01, cz); m.receiveShadow = true; G.add(m);
   };
-  const o = find('O')[0];
-  decal(center(o.x), center(o.y) - 2.5, 2.6, '#3b0606', 0.4);
-  decal(center(o.x) - 3, center(o.y) - 4, 1.6, '#2a0505', 1.2);
   decal(center(s096.x) + 1, center(s096.y) - 1, 2, '#2b2318', 0);
   for (let i = 0; i < 10; i++) decal(rnd(4, 76), rnd(15, 19), rnd(1, 2.5), '#1e1a14', rnd(0, 6));
   // 격리실 벽의 할퀸 자국
@@ -366,7 +398,7 @@ export function buildWorld(scene, audio) {
     update(dt, t, player, a096) {
       for (const d of doorList) {
         const near = (q, r) => Math.hypot(q.x - d.cx, q.z - d.cz) < r;
-        if (d.locked && player.hasCard && near(player.pos, 3.2)) { d.locked = false; audio?.unlock(); }
+        if (d.gate && d.locked && player.hasCard && near(player.pos, 3.2)) { d.locked = false; audio?.unlock(); }
         d.update(dt, near(player.pos, 3.4), audio);
       }
       for (const l of lights) {

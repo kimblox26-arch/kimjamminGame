@@ -1,7 +1,7 @@
 // SCP-096 "수줍은 자" — 모델, 행동(앉아 울기/배회/발작/추격/처치), 절차적 애니메이션, 얼굴 목격 판정
 import * as THREE from 'three';
-import { buildHumanoid, Pose, applyPose } from './rig.js';
-import { normalFrom } from './world.js';
+import { Pose, applyPose } from './rig.js';
+import { buildModel096 } from './model096.js';
 import { CELL, W, at, cellOf, center, find, collideCircle, distanceField, walkable096, lineClear, doors } from './map.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -9,36 +9,10 @@ const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 const rnd = (a, b) => a + Math.random() * (b - a);
 const TRIGGER_TIME = 7.5;
 
-function skinTex() {
-  const s = 512, c = document.createElement('canvas'); c.width = c.height = s; const x = c.getContext('2d');
-  x.fillStyle = '#e6dbd2'; x.fillRect(0, 0, s, s);
-  for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(${150 + Math.random() * 60},${120 + Math.random() * 40},${120 + Math.random() * 50},${Math.random() * 0.08})`; x.beginPath(); x.arc(Math.random() * s, Math.random() * s, 4 + Math.random() * 40, 0, 7); x.fill(); }
-  // 핏줄
-  for (let v = 0; v < 26; v++) {
-    let px = Math.random() * s, py = Math.random() * s, a = Math.random() * 7;
-    x.strokeStyle = `rgba(${90 + Math.random() * 40},${90 + Math.random() * 30},${150 + Math.random() * 50},${0.12 + Math.random() * 0.18})`;
-    x.lineWidth = 0.6 + Math.random() * 1.8; x.beginPath(); x.moveTo(px, py);
-    for (let k = 0; k < 30; k++) { a += rnd(-0.5, 0.5); px += Math.cos(a) * 6; py += Math.sin(a) * 6; x.lineTo(px, py); }
-    x.stroke();
-  }
-  for (let i = 0; i < 9000; i++) { x.fillStyle = `rgba(80,60,60,${Math.random() * 0.06})`; x.fillRect(Math.random() * s, Math.random() * s, 1, 1); }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  const n = new THREE.CanvasTexture(normalFrom(c, 5)); n.wrapS = n.wrapT = THREE.RepeatWrapping;
-  return [t, n];
-}
-
 export class SCP096 {
   constructor(scene, world, audio) {
     this.world = world; this.audio = audio;
-    const [sm, sn] = skinTex();
-    const skin = new THREE.MeshPhysicalMaterial({ map: sm, normalMap: sn, normalScale: new THREE.Vector2(0.6, 0.6), color: 0xc9bdb3, roughness: 0.62, sheen: 0.35, sheenColor: new THREE.Color(0xffb0a0), sheenRoughness: 0.5, clearcoat: 0.12, clearcoatRoughness: 0.6 });
-    this.skin = skin;
-    this.rig = buildHumanoid({
-      kind: '096', skin, cloth: skin, cloth2: skin, shoe: skin,
-      hipH: 1.22, thigh: 0.56, shin: 0.56, ankleH: 0.1, spine: 0.3, chest: 0.34, neck: 0.13, headS: [0.098, 0.142, 0.12],
-      upper: 0.5, fore: 0.48, palmL: 0.12, fingerL: 0.14, fingerR: 0.0088, shoulderW: 0.2, hipW: 0.085,
-      chestR: 0.135, waist: 0.092, depth: 0.62, pelvis: [0.13, 0.09, 0.09], armR: 0.034, legR: 0.062, neckR: 0.04, footL: 0.29,
-    });
+    this.rig = buildModel096();
     this.root = this.rig.root; scene.add(this.root);
     const s = find('S')[0];
     this.home = new THREE.Vector3(center(s.x), 0, center(s.y) - 0.3);
@@ -96,7 +70,7 @@ export class SCP096 {
         break;
       }
       case 'chase': {
-        const top = Math.min(9, 4 + this.st * 2.2);
+        const top = Math.min(11, 5 + this.st * 3.2); // 더 강하게: 빠른 가속, 최고 11 m/s
         this.moveTo(P, top, dt, true);
         if (Math.hypot(P.x - this.pos.x, P.z - this.pos.z) < 1.25 && !player.dead) { this.state = 'kill'; this.st = 0; player.die(); this.audio.kill(); }
         break;
@@ -117,12 +91,13 @@ export class SCP096 {
     const hb = this.rig.bones.head; hb.updateWorldMatrix(true, false);
     hb.getWorldPosition(this.headPos); this.headPos.y += 0.1; hb.getWorldDirection(this.faceDir);
     this.fill.intensity = this.state === 'chase' ? 0.5 : 0.25;
+    this.rig.eyeMat.color.setScalar(this.calm ? 1.6 : 5 + Math.random() * 2); // 분노하면 눈이 강하게 빛남
   }
 
   pickWander() {
     // 격리실과 그 앞 복도 안에서 임의 지점
     const cells = [];
-    for (let y = 7; y <= 16; y++) for (let x = 6; x <= 20; x++) { const c = at(x, y); if ('.*SO'.includes(c) && !(y >= 11 && (x < 10 || x > 15))) cells.push({ x, y }); }
+    for (let y = 11; y <= 16; y++) for (let x = 10; x <= 15; x++) if ('.*S'.includes(at(x, y))) cells.push({ x, y }); // 격리실 안에서만
     const c = cells[Math.random() * cells.length | 0];
     this.target = new THREE.Vector3(center(c.x) + rnd(-0.5, 0.5), 0, center(c.y) + rnd(-0.5, 0.5));
   }
@@ -132,7 +107,7 @@ export class SCP096 {
   moveTo(tgt, top, dt, chase) {
     const dx = tgt.x - this.pos.x, dz = tgt.z - this.pos.z, dist = Math.hypot(dx, dz);
     if (!chase && dist < 0.4) { this.speed *= 0.8; return true; }
-    const ok = chase ? walkable096 : (x, y) => walkable096(x, y) && !'DX'.includes(at(x, y));
+    const ok = chase ? walkable096 : (x, y) => walkable096(x, y) && !'DXZ'.includes(at(x, y));
     this.pathT -= dt;
     const tx = cellOf(tgt.x), ty = cellOf(tgt.z);
     if (this.pathT <= 0 || !this.path || this.pathKey !== tx + ty * W) { this.path = distanceField(tx, ty, ok); this.pathKey = tx + ty * W; this.pathT = 0.3; }
@@ -181,7 +156,7 @@ export class SCP096 {
     };
     if (st === 'sit') {
       const lk = this.look, sob = Math.sin(t * 13) * (0.5 + 0.5 * Math.sin(t * 0.9));
-      P.val('hipY', -1.03).val('hipZ', -0.1);
+      P.val('hipY', -1.1).val('hipZ', -0.1);
       P.rot('legL', -2.05, 0, 0.18).rot('legR', -2.05, 0, -0.18).rot('shinL', 2.55).rot('shinR', 2.55).rot('footL', 0.45).rot('footR', 0.45);
       P.rot('spine', 0.55 - 0.2 * lk + 0.06 * Math.sin(t * 1.3), 0, 0).rot('chest', 0.3 - 0.15 * lk + 0.025 * sob, 0, 0);
       P.rot('neck', 0.25 - 0.3 * lk, 0.25 * lk * Math.sin(t * 0.7), 0).rot('head', 0.35 * (1 - lk) - 0.05 * lk, lk * 1.1 * Math.sin(t * 0.55 + 1), 0.06 * sob);
