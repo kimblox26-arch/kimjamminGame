@@ -114,6 +114,29 @@ export class AudioSys {
     for (const hz of [55, 58.3, 82.4, 87.3, 116.5, 123.5, 233]) { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz; o.detune.value = rnd(-12, 12); o.connect(f); o.start(t); o.stop(t + 5.2); }
     this.tone(this.master, t, 80, 25, 1.4, 1.2); this.hit(this.master, t, 1.5, 300, 'lowpass', 0.8);
   }
+  // SCP 별 효과음: 173 긁힘, 999 웃음/출렁, 682 포효, 939 으르렁, 106 웃음, 049 낮은 허밍
+  sfx(kind, pos) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, p = this.panner(pos, 2.5);
+    if (kind === 'scrape' || kind === '173') { this.hit(p, t, 0.38, 240, 'bandpass', 1.0, 2.5); this.hit(p, t, 0.25, 950, 'bandpass', 0.3, 3); this.tone(p, t, 70, 45, 0.3, 0.4); }
+    else if (kind === 'squish') { this.tone(p, t, 240, 90, 0.12, 0.35); this.hit(p, t, 0.08, 700, 'lowpass', 0.4); }
+    else if (kind === '999') for (let i = 0; i < 8; i++) { const f = rnd(850, 1350); this.tone(p, t + i * 0.1, f, f * 1.35, 0.08, 0.22, 'triangle'); }
+    else if (kind === '682') this.roar(p, t, 70, 2.2, 1.4, 520);
+    else if (kind === '939') this.roar(p, t, 165, 1.4, 0.8, 1500);
+    else if (kind === '106') for (let i = 0; i < 5; i++) { this.hit(p, t + i * 0.17, 0.13, 520, 'bandpass', 0.6, 3); this.tone(p, t + i * 0.17, 120, 90, 0.12, 0.25, 'sawtooth'); }
+    else if (kind === '049') { this.tone(p, t, 118, 104, 1.0, 0.3, 'triangle'); this.tone(p, t, 236, 208, 1.0, 0.08); }
+    setTimeout(() => p.disconnect(), 3500);
+  }
+  roar(out, t, f0, dur, vol, lp) {
+    const c = this.ctx, f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; f.Q.value = 2;
+    if (!this.curve) { this.curve = new Float32Array(512); for (let i = 0; i < 512; i++) this.curve[i] = Math.tanh((i / 255.5 - 1) * 4); }
+    const sh = c.createWaveShaper(); sh.curve = this.curve;
+    const g = this.g(0, out); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.15); g.gain.setValueAtTime(vol, t + dur * 0.6); g.gain.linearRampToValueAtTime(0, t + dur);
+    f.connect(sh).connect(g);
+    for (const m of [1, 1.02, 1.5]) { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f0 * m * 0.8, t); o.frequency.linearRampToValueAtTime(f0 * m * 1.15, t + dur * 0.3); o.frequency.linearRampToValueAtTime(f0 * m * 0.7, t + dur); o.connect(f); o.start(t); o.stop(t + dur + 0.1); }
+    const n = c.createBufferSource(); n.buffer = this.noise; const nf = c.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = lp * 0.6; n.connect(nf).connect(g); n.start(t, rnd(0, 2)); n.stop(t + dur + 0.1);
+    const lfo = c.createOscillator(); lfo.frequency.value = 26; lfo.connect(this.g(vol * 0.45, g.gain)); lfo.start(t); lfo.stop(t + dur);
+  }
   kill() { if (!this.ctx) return; const t = this.ctx.currentTime; this.tone(this.master, t, 60, 20, 1.2, 1.4); this.hit(this.master, t, 0.6, 700, 'lowpass', 1.4); this.hit(this.master, t + 0.05, 0.3, 3000, 'bandpass', 0.6); }
   // 매 프레임: 심장박동, 숨소리, 먼 금속음, 096 목소리
   update(dt, s) {

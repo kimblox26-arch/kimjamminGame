@@ -94,6 +94,20 @@ export class SCP096 {
     this.rig.eyeMat.color.setScalar(this.calm ? 1.6 : 5 + Math.random() * 2); // 분노하면 눈이 강하게 빛남
   }
 
+  // 플레이어가 096 을 조종할 때: 입력 상태로 포즈만 구동
+  asAvatar() {
+    const self = this;
+    return { id: '096', root: this.root, rig: this.rig, head: this.rig.bones.head, radius: 0.38, camH: 2.15, camDist: 3.6, walk: 2.2, run: 10.5, jump: 8, heavy: true, strong: true,
+      animate(dt, s) { self.puppet(dt, s); } };
+  }
+  puppet(dt, s) {
+    this.t += dt; this.pos.copy(s.pos); this.yaw = s.yaw; this.speed = s.speed; this.phase = s.phase; this.wait = 0;
+    const fit = s.act >= 0 && s.act < 3, st = fit ? 'trigger' : s.speed > 4.5 ? 'chase' : 'wander';
+    this.st = fit ? 2 + s.act : st === this.state ? this.st + dt : 3; this.state = st;
+    this.animate(dt);
+    const hb = this.rig.bones.head; hb.updateWorldMatrix(true, false); hb.getWorldPosition(this.headPos); this.headPos.y += 0.1; hb.getWorldDirection(this.faceDir);
+    this.rig.eyeMat.color.setScalar(st === 'wander' ? 1.6 : 5);
+  }
   pickWander() {
     // 격리실과 그 앞 복도 안에서 임의 지점
     const cells = [];

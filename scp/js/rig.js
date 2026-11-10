@@ -104,7 +104,7 @@ function buildHead(hd, o, B) {
       mesh(sphere(0.026, 14, 10), eyeSock, hd, k * 0.042, ey, ez - 0.012, 1.1, 0.8, 0.6); // 퀭한 눈구멍
       mesh(sphere(0.011, 12, 8), eyeW, hd, k * 0.042, ey, ez - 0.004, 1, 0.9, 0.7);
       mesh(sphere(0.0035, 6, 4), pupil, hd, k * 0.042, ey, ez + 0.004);
-    } else {
+    } else if (!o.noFace) {
       mesh(sphere(0.013, 12, 8), eyeW, hd, k * 0.036, ey, ez, 1, 0.8, 0.6);
       mesh(sphere(0.006, 8, 6), pupil, hd, k * 0.036, ey, ez + 0.006);
       mesh(new THREE.BoxGeometry(0.035, 0.007, 0.01), o.hairMat, hd, k * 0.036, ey + 0.026, ez + 0.003); // 눈썹
@@ -112,14 +112,13 @@ function buildHead(hd, o, B) {
     mesh(sphere(0.02, 10, 8), o.skin, hd, k * s[0] * 0.98, s[1] * 0.85, -0.005, 0.35, 0.8, 0.6); // 귀
   }
   // 코
-  const nose = mesh(sphere(0.016, 10, 8), o.skin, hd, 0, s[1] * 0.75, s[2] * 0.97, 0.8, 1.4, 1);
-  nose.rotation.x = -0.3;
+  if (!o.noFace) mesh(sphere(0.016, 10, 8), o.skin, hd, 0, s[1] * 0.75, s[2] * 0.97, 0.8, 1.4, 1).rotation.x = -0.3;
   if (is096) {
     // 입 안(어둠) + 윗니
     mesh(sphere(0.055, 16, 12), new THREE.MeshStandardMaterial({ color: 0x1a0505, roughness: 1 }), hd, 0, s[1] * 0.35, s[2] * 0.45, 1, 1.1, 1);
     const tooth = new THREE.MeshStandardMaterial({ color: 0xd8d0b0, roughness: 0.4 });
     for (let i = 0; i < 8; i++) { const a = (i - 3.5) * 0.24; mesh(new THREE.BoxGeometry(0.011, 0.016, 0.008), tooth, hd, Math.sin(a) * 0.05, s[1] * 0.46, s[2] * 0.62 + Math.cos(a) * 0.035); }
-  } else {
+  } else if (!o.noFace) {
     mesh(new THREE.BoxGeometry(0.035, 0.006, 0.01), new THREE.MeshStandardMaterial({ color: 0x7a3a33 }), hd, 0, s[1] * 0.48, s[2] * 0.92);
     // 짧은 머리카락
     mesh(new THREE.SphereGeometry(1, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.52), o.hairMat, hd, 0, s[1] * 0.9, -0.012, s[0] * 1.06, s[1] * 1.06, s[2] * 1.05).rotation.x = -0.25;
@@ -188,3 +187,50 @@ export function applyPose(rig, P, dt, sharp = 14) {
   }
 }
 const ZERO = [0, 0, 0];
+
+// ── 사람형 이동 애니메이션 (D계급·049·106 공용) ──
+// s: phase, speed, air(0~1), crouch, landT, vy, t, ws(걷기 속도), rs(달리기 속도)
+const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+export function locomotion(P, s) {
+  const φ = s.phase, t = s.t, sp = s.speed, sn = Math.sin(φ), c = Math.cos(φ), ws = s.ws || 3.1, rr = Math.max(0.5, (s.rs || 6.4) - ws);
+  const air = s.air, gw = 1 - air, cr = (s.crouch || 0) * gw, run01 = cl((sp - ws) / rr, 0, 1);
+  const wWalk = cl(sp / ws, 0, 1) * (1 - run01) * gw * (1 - cr), wRun = run01 * gw * (1 - cr), wIdle = (1 - cl(sp / (ws * 0.4), 0, 1)) * gw * (1 - cr);
+  if (wIdle > 0.01) {
+    const br = Math.sin(t * 1.7), w = wIdle;
+    P.rot('spine', 0.02 * br, 0, 0.015 * Math.sin(t * 0.5), w).rot('chest', 0.025 * br, 0, 0, w);
+    P.rot('armL', 0.04 * br, 0, 0.07, w).rot('armR', 0.04 * br, 0, -0.07, w).rot('foreL', -0.15, 0, 0, w).rot('foreR', -0.15, 0, 0, w);
+    P.rot('legL', 0, 0.05, 0.03, w).rot('legR', 0, -0.05, -0.03, w).val('hipY', -0.01 + 0.006 * br, w);
+  }
+  if (wWalk > 0.01) {
+    const w = wWalk, kl = 0.08 + 0.75 * Math.pow(Math.max(0, c), 1.5), kr = 0.08 + 0.75 * Math.pow(Math.max(0, -c), 1.5);
+    P.rot('legL', -0.5 * sn, 0, 0.02, w).rot('legR', 0.5 * sn, 0, -0.02, w).rot('shinL', kl, 0, 0, w).rot('shinR', kr, 0, 0, w);
+    P.rot('footL', 0.5 * sn - kl * 0.4 + 0.1, 0, 0, w).rot('footR', -0.5 * sn - kr * 0.4 + 0.1, 0, 0, w);
+    P.rot('armL', 0.4 * sn, 0, 0.08, w).rot('armR', -0.4 * sn, 0, -0.08, w);
+    P.rot('foreL', -0.25 - 0.25 * Math.max(0, -sn), 0, 0, w).rot('foreR', -0.25 - 0.25 * Math.max(0, sn), 0, 0, w);
+    P.rot('hips', 0, 0.12 * sn, 0.04 * c, w).rot('spine', 0.06, -0.06 * sn, 0, w).rot('chest', 0, -0.1 * sn, -0.03 * c, w).rot('head', -0.04, 0.04 * sn, 0, w);
+    P.val('hipY', -0.045 * Math.abs(sn), w);
+  }
+  if (wRun > 0.01) {
+    const w = wRun, kl = 0.3 + 1.45 * Math.pow(0.5 + 0.5 * Math.cos(φ - 0.5), 2), kr = 0.3 + 1.45 * Math.pow(0.5 - 0.5 * Math.cos(φ - 0.5), 2);
+    P.rot('legL', -0.9 * sn - 0.25, 0, 0.03, w).rot('legR', 0.9 * sn - 0.25, 0, -0.03, w).rot('shinL', kl, 0, 0, w).rot('shinR', kr, 0, 0, w);
+    P.rot('footL', 0.35 * sn - 0.2, 0, 0, w).rot('footR', -0.35 * sn - 0.2, 0, 0, w);
+    P.rot('armL', 0.95 * sn, 0, 0.12, w).rot('armR', -0.95 * sn, 0, -0.12, w).rot('foreL', -1.45 - 0.25 * sn, 0, 0, w).rot('foreR', -1.45 + 0.25 * sn, 0, 0, w);
+    P.rot('hips', 0.05, 0.2 * sn, 0, w).rot('spine', 0.22, -0.12 * sn, 0, w).rot('chest', 0.1, -0.22 * sn, 0, w).rot('head', -0.22, 0.1 * sn, 0, w);
+    P.val('hipY', -0.07 + 0.06 * Math.abs(c), w).val('curlL', 0.9, w).val('curlR', 0.9, w);
+  }
+  if (cr > 0.01) {
+    const m = cl(sp / 1.7, 0, 1), w = cr;
+    P.rot('legL', -1.15 - 0.35 * sn * m, 0, 0.12, w).rot('legR', -1.15 + 0.35 * sn * m, 0, -0.12, w);
+    P.rot('shinL', 1.95 + 0.25 * Math.max(0, c) * m, 0, 0, w).rot('shinR', 1.95 + 0.25 * Math.max(0, -c) * m, 0, 0, w).rot('footL', -0.75, 0, 0, w).rot('footR', -0.75, 0, 0, w);
+    P.rot('spine', 0.4, 0, 0, w).rot('chest', 0.15, 0, 0, w).rot('head', -0.4, 0, 0, w);
+    P.rot('armL', -0.5 + 0.2 * sn * m, 0, 0.15, w).rot('armR', -0.5 - 0.2 * sn * m, 0, -0.15, w).rot('foreL', -1.1, 0, 0, w).rot('foreR', -1.1, 0, 0, w).val('hipY', -0.42, w);
+  }
+  if (air > 0.01) {
+    const up = s.vy > 0 ? 1 : 0, w = air, fl = Math.sin(t * 9) * (1 - up);
+    P.rot('legL', -0.95 * up - 0.3, 0, 0.08, w).rot('shinL', 1.3 * up + 0.4, 0, 0, w).rot('legR', -0.2 * up + 0.15, 0, -0.08, w).rot('shinR', 0.5 * up + 0.3, 0, 0, w);
+    P.rot('armL', -0.6 * up - 0.3 + 0.2 * fl, 0, 0.6 + 0.4 * (1 - up), w).rot('armR', -0.6 * up - 0.3 - 0.2 * fl, 0, -0.6 - 0.4 * (1 - up), w);
+    P.rot('foreL', -0.6, 0, 0, w).rot('foreR', -0.6, 0, 0, w).rot('spine', 0.1 * up - 0.05, 0, 0, w).rot('head', -0.1, 0, 0, w);
+  }
+  const l = s.landT || 0;
+  if (l > 0) P.rot('legL', -0.55 * l).rot('legR', -0.55 * l).rot('shinL', 1.0 * l).rot('shinR', 1.0 * l).rot('footL', -0.45 * l).rot('footR', -0.45 * l).rot('spine', 0.3 * l).val('hipY', -0.2 * l);
+}
