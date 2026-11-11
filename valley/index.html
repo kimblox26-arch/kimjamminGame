@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>계곡 물막이 — 돌과 흙으로 계곡물을 막아라</title>
+<meta name="description" content="돌을 직접 주워 쌓고 흙을 파서 메워 계곡물을 막는 초고화질 물리 샌드박스 게임">
+<link rel="stylesheet" href="./style.css?v=20261111a">
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/three.module.min.js",
+    "three/addons/": "../vendor/three/addons/",
+    "rapier": "../vendor/rapier/rapier.es.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- 시작 화면 -->
+<section id="start" class="screen">
+  <div class="card">
+    <div class="badge">물리 샌드박스 · 초고화질</div>
+    <h1>계곡 물막이</h1>
+    <p class="lead">맑은 계곡물이 흘러갑니다. <b>돌을 직접 주워 쌓고</b>, <b>삽으로 흙을 파서</b> 돌 틈을 메워 물길을 막아보세요.<br>
+      돌 사이 틈으로는 물이 새고, 흙만 쌓은 둑은 물살에 쓸려갑니다. 돌과 흙을 함께 써야 튼튼한 둑이 됩니다.</p>
+    <div class="keys">
+      <div><kbd>W A S D</kbd> 이동 · <kbd>Shift</kbd> 달리기 · <kbd>Space</kbd> 점프</div>
+      <div><kbd>1</kbd> 손 — <kbd>클릭</kbd>/<kbd>E</kbd> 돌 줍기·내려놓기, <kbd>우클릭</kbd> 던지기, <kbd>휠</kbd> 거리, <kbd>Q</kbd>/<kbd>R</kbd> 돌 돌리기</div>
+      <div><kbd>2</kbd> 삽 — <kbd>좌클릭</kbd> 흙 파기, <kbd>우클릭</kbd> 흙 붓기 (돌 틈에 부으면 틈이 메워져요)</div>
+    </div>
+    <div class="row">
+      <label>그래픽 품질
+        <select id="quality">
+          <option value="ultra">초고화질</option>
+          <option value="high">고화질</option>
+          <option value="low">보통 (저사양)</option>
+        </select>
+      </label>
+      <button id="go" class="btn">계곡으로 들어가기</button>
+    </div>
+    <p id="loadmsg" class="load"></p>
+  </div>
+</section>
+
+<!-- 일시정지 -->
+<section id="pause" class="screen hidden">
+  <div class="card small">
+    <h2 id="pauseT">일시정지</h2>
+    <p id="pauseP">화면을 클릭하면 계속합니다.</p>
+    <button id="resume" class="btn">계속하기</button>
+    <button id="restart" class="btn ghost">처음부터</button>
+  </div>
+</section>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="goal">
+    <div class="stage" id="gStage">준비</div>
+    <div class="gtext" id="gText">물이 흐르기 시작했어요</div>
+    <div class="meter"><div id="gBlock"></div><span id="gPct">—</span></div>
+    <div class="hold"><div id="gHold"></div></div>
+  </div>
+  <div id="stats">
+    <div><span>상류 유입</span><b id="sIn">0</b> L/s</div>
+    <div><span>하류 유량</span><b id="sOut">0</b> L/s</div>
+    <div><span>저수량</span><b id="sVol">0</b> m³</div>
+    <div><span>최대 수심</span><b id="sDep">0</b> cm</div>
+    <div><span>옮긴 돌</span><b id="sStones">0</b> 개</div>
+    <div><span>쓸려간 흙</span><b id="sEro">0</b> L</div>
+  </div>
+  <div id="cross"></div>
+  <div id="prompt"></div>
+  <div id="toast"></div>
+  <div id="tools">
+    <div class="tool on" data-t="hand"><kbd>1</kbd> ✋ 손</div>
+    <div class="tool" data-t="shovel"><kbd>2</kbd> 🪏 삽
+      <div class="bucket"><div id="bucket"></div></div>
+    </div>
+  </div>
+  <div id="fps"></div>
+</div>
+
+<!-- 터치 조작 -->
+<div id="touch" class="hidden">
+  <div id="joy"><div id="knob"></div></div>
+  <div id="tbtns">
+    <button id="tPrim">줍기</button>
+    <button id="tSec">던지기</button>
+    <button id="tTool">삽</button>
+    <button id="tRot">회전</button>
+    <button id="tJump">점프</button>
+  </div>
+</div>
+
+<script type="module" src="./js/main.js?v=20261111a"></script>
+</body>
+</html>
