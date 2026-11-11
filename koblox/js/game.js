@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { buildAvatar, animateAvatar, disposeAvatar, buildGear } from './avatar.js';
 import { ITEM, ITEMS, BADGES } from './items.js';
 import { S, save, award, onBadge } from './store.js';
-import { sfx } from './audio.js';
+import { sfx, startAmbient, stopAmbient } from './audio.js';
 import { buildWorld, TEST_PLACE } from './world.js';
 import { makeRenderer, makePipeline, gfxLevel, gfxProfile, partMat } from './gfx.js';
 import { ico, badgeSvg } from './icons.js';
@@ -91,7 +91,7 @@ export function startGame(host, { place = TEST_PLACE, onExit, testMode = false }
   const name = S.user?.displayName || S.user?.username || 'Player';
   const tag = labelSprite(name); scene.add(tag);
   const bubble = labelSprite('', { bg: 'rgba(255,255,255,.95)', color: '#111', size: 34 }); bubble.visible = false; scene.add(bubble);
-  let bubbleT = 0, jumps = 0;
+  let bubbleT = 0, jumps = 0, lastStep = 0;
 
   // ── 장비 ──
   const gear = ITEMS.filter(i => i.slot === 'gear' && S.owned.includes(i.id)).map(i => i.id);
@@ -321,6 +321,7 @@ export function startGame(host, { place = TEST_PLACE, onExit, testMode = false }
       <label class="chk">이름표 표시 <input type="checkbox" data-k="nameTags"></label>
       <label class="chk">FPS 표시 <input type="checkbox" data-k="showFps"></label>
       <label class="chk">효과음 <input type="checkbox" data-k="sfx"></label>
+      <label class="chk">배경 소리 (바람, 새소리) <input type="checkbox" data-k="music"></label>
       <label class="chk">전체 화면 <input type="checkbox" data-k="fullscreen"></label>`;
     const sel = T.querySelector('[data-k=gfxmode]'); sel.value = set.gfx === 'auto' ? 'auto' : 'manual';
     const paint = () => T.querySelectorAll('.g-lv i').forEach((i, n) => i.classList.toggle('on', n < gfxLevel(set)));
@@ -331,7 +332,7 @@ export function startGame(host, { place = TEST_PLACE, onExit, testMode = false }
       if (k === 'fullscreen') { el.checked = !!document.fullscreenElement; el.onchange = () => { el.checked ? document.documentElement.requestFullscreen?.().catch(() => { }) : document.exitFullscreen?.(); }; return; }
       if (k === 'gfx') { el.disabled = set.gfx === 'auto'; el.oninput = () => { set.gfx = +el.value; save(); paint(); applySettings(); }; return; }
       if (el.type === 'checkbox') el.checked = !!set[k]; else el.value = set[k];
-      el.oninput = () => { set[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : el.value; save(); applySettings(); };
+      el.oninput = () => { set[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : el.value; save(); applySettings(); if (k === 'music' || k === 'sfx' || k === 'volume') startAmbient(place.sky); };
     });
   }
   function confirmBox(title, body, cb) {
@@ -391,10 +392,10 @@ export function startGame(host, { place = TEST_PLACE, onExit, testMode = false }
   function touch(c, fromTop) {
     const k = c.part?.k;
     if (k === 'kill') { die(); return; }
-    if (k === 'jump' && fromTop) { me.vel.y = 120; me.grounded = false; sfx.jump(); return; }
+    if (k === 'jump' && fromTop) { me.vel.y = 120; me.grounded = false; sfx.boing(); return; }
     if (k === 'check' && fromTop && me.lastCheck !== c) {
       me.lastCheck = c; me.stage++; me.respawn.set((c.min.x + c.max.x) / 2, c.max.y + 0.05, (c.min.z + c.max.z) / 2);
-      sfx.coin(); toast(`체크포인트 ${me.stage} 저장!`); renderBoard(); if (me.stage >= 5) award('finish');
+      sfx.check(); toast(`체크포인트 ${me.stage} 저장!`); renderBoard(); if (me.stage >= 5) award('finish');
     }
   }
   function collideAxis(axis, h) {
@@ -486,6 +487,8 @@ export function startGame(host, { place = TEST_PLACE, onExit, testMode = false }
     av.root.rotation.y += dy * Math.min(1, dt * (shiftLock ? 30 : 14));
     const hs = Math.hypot(me.vel.x, me.vel.z);
     animateAvatar(av, dt, { speed: me.grounded ? hs : 0, air: !me.grounded, emote: me.emote, emoteT: me.emoteT, tool, toolT: tool === 'gear_sword' || tool === 'gear_rocket' ? toolT : 0 });
+    const stepN = Math.floor(av.phase / Math.PI);
+    if (stepN !== lastStep) { lastStep = stepN; if (me.grounded && hs > 1 && !me.dead) sfx.step(); }
     tag.position.set(me.pos.x, me.pos.y + av.height + 0.9, me.pos.z);
     bubble.position.set(me.pos.x, me.pos.y + av.height + 2.2, me.pos.z);
     if (bubbleT > 0 && (bubbleT -= dt) <= 0) bubble.visible = false;
@@ -515,7 +518,7 @@ export function startGame(host, { place = TEST_PLACE, onExit, testMode = false }
     fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { $('.g-fps').textContent = `${Math.round(fpsN / fpsAcc)} FPS · 그래픽 ${prof.lv}`; fpsAcc = fpsN = 0; }
   }
   addEventListener('resize', resize);
-  applySettings(); frame();
+  applySettings(); frame(); startAmbient(place.sky);
   toast(`${place.name} 에 접속했어요`);
   if (place.id === 'test') setTimeout(() => award('welcome'), 800);
 
@@ -523,7 +526,7 @@ export function startGame(host, { place = TEST_PLACE, onExit, testMode = false }
     stop() {
       cancelAnimationFrame(raf); removeEventListener('keydown', kd); removeEventListener('keyup', ku); removeEventListener('resize', resize);
       document.removeEventListener('pointerlockchange', onLockChange); if (document.pointerLockElement) document.exitPointerLock();
-      unBadge?.(); save();
+      unBadge?.(); save(); stopAmbient();
       disposeAvatar(av); world.dispose(); pipe.dispose(); renderer.dispose(); host.innerHTML = '';
     },
   };

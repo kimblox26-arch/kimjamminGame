@@ -395,7 +395,7 @@ function openGame(id) {
     return ovHead('') + `<div class="scroll">
     <div class="gd-thumb"><img src="${gthumb(id)}" alt=""></div>
     <div class="pad"><h1 class="gd-title">${esc(g.name)}</h1><p class="by">${esc(g.creator)} ${VER}</p>
-    <button class="btn play" data-act="play" data-id="${id}"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z" fill="currentColor"/></svg></button>
+    <button class="btn play" data-act="play" data-id="${id}" aria-label="플레이"><svg viewBox="0 0 24 24"><path d="M8.5 6.2c0-.9 1-1.5 1.8-1l8.3 5.2c.7.5.7 1.5 0 2l-8.3 5.2c-.8.5-1.8-.1-1.8-1z" fill="currentColor"/></svg></button>
     <div class="gd-stats"><div><small>평가</small><b>${ico('thumb')} ${rating(id)}%</b></div><div><small>활동 중</small><b>0</b></div><div><small>방문</small><b>${fmt(S.visits[id] || 0)}</b></div><div><small>장르</small><b>${g.genre}</b></div></div>
     <div class="gd-acts"><button class="btn ${fav ? 'primary' : ''}" data-act="fav" data-id="${id}">${ico('star')} ${fav ? '즐겨찾기 됨' : '즐겨찾기'}</button>
       <button class="btn ${lk === 1 ? 'primary' : ''}" data-act="like" data-id="${id}" data-v="1">${ico('thumb')}</button>
@@ -444,7 +444,7 @@ const SET = [
   { id: 'notif', n: '알림', i: 'bell', rows: [{ t: 'toggle', k: 'notifications', n: '알림 받기' }, { t: 'btn', a: 'clear-notifs', n: '모든 알림 지우기' }] },
   { id: 'app', n: '앱 설정', i: 'palette', rows: [{ t: 'select', k: 'theme', n: '테마', o: [['dark', '어둡게'], ['light', '밝게'], ['system', '시스템 설정']] }, { t: 'select', k: 'language', n: '언어', o: [['ko', '한국어']] }, { t: 'accent', n: '강조 색상 (PLUS)' }, { t: 'toggle', k: 'reduceMotion', n: '움직임 줄이기' }] },
   { id: 'game', n: '게임 설정', i: 'pad', rows: [{ t: 'select', k: 'gfx', n: '그래픽 품질', o: [['auto', '자동'], ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => [String(n), n + '단계' + (n === 10 ? ' (최고)' : n === 1 ? ' (최저)' : '')])] }, { t: 'range', k: 'sensitivity', n: '카메라 감도', min: 0.2, max: 3, step: 0.1 }, { t: 'range', k: 'fov', n: '시야각', min: 50, max: 100, step: 1 }, { t: 'toggle', k: 'invertY', n: '카메라 Y축 반전' }, { t: 'toggle', k: 'nameTags', n: '이름표 표시' }, { t: 'toggle', k: 'showFps', n: 'FPS 표시' }, { t: 'toggle', k: 'vibrate', n: '진동' }] },
-  { id: 'sound', n: '소리', i: 'sound', rows: [{ t: 'toggle', k: 'sfx', n: '효과음' }, { t: 'range', k: 'volume', n: '음량', min: 0, max: 100, step: 1 }] },
+  { id: 'sound', n: '소리', i: 'sound', rows: [{ t: 'toggle', k: 'sfx', n: '효과음' }, { t: 'toggle', k: 'music', n: '게임 배경 소리 (바람, 새소리)' }, { t: 'range', k: 'volume', n: '음량', min: 0, max: 100, step: 1 }] },
   { id: 'about', n: '정보', i: 'info', rows: [{ t: 'text', n: '버전', v: 'KOBLOX 0.1.0 (오프라인)' }, { t: 'btn', a: 'replay-intro', n: '인트로 다시 보기' }, { t: 'btn', a: 'reset-settings', n: '설정 기본값으로' }, { t: 'btn', a: 'reset-all', n: '모든 데이터 초기화', danger: true }] },
 ];
 function openSettings() {

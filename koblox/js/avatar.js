@@ -290,42 +290,49 @@ export function disposeAvatar(av) {
 }
 
 // st: { speed(0..), air(bool), emote(id|null), emoteT }
+// 움직임: 블록 캐릭터 클래식 방식
+// 걷기는 팔다리 진폭 1·주파수 9, 서 있을 때는 진폭 0.1·주파수 1, 점프·낙하는 두 팔을 위로 쭉.
+// 관절은 정해진 최대 속도로만 따라가서 특유의 각진 흔들림이 난다.
+const JOINTS = ['la', 'ra', 'll', 'rl'];
+const clampv = (v, m) => v > m ? m : v < -m ? -m : v;
 export function animateAvatar(av, dt, st = {}) {
   av.t += dt;
-  const t = av.t, sp = Math.min((st.speed || 0) / 16, 1.4);
+  const t = av.t, speed = st.speed || 0, moving = speed > 0.5, sp = Math.min(speed / 16, 1.4);
   const { la, ra, ll, rl, body, head } = av;
   [la, ra, ll, rl].forEach(p => p.rotation.set(0, 0, 0));
   body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); head.rotation.set(0, 0, 0);
-  let A = 0.9, f = 9, armOff = 0, armA = 1, legA = 1;
+  let A = moving ? 1 : 0.1, f = moving ? 9 : 1, armOff = 0, armA = 1, rate = 8;
   switch (av.anim) {
-    case 'anim_robot': f = 7; A = 0.6; break;
-    case 'anim_ninja': f = 12; A = 1.1; armOff = 1.0; armA = 0.15; break;
-    case 'anim_zombie': f = 6; A = 0.5; armOff = -1.5; armA = 0.15; break;
-    case 'anim_stylish': f = 9; A = 1.2; break;
+    case 'anim_robot': if (moving) { A = 0.55; f = 7; } break;
+    case 'anim_ninja': if (moving) { f = 12; armOff = 1.1; armA = 0.15; } break;
+    case 'anim_zombie': armOff = -1.5; armA = 0.15; if (moving) { f = 6; A = 0.6; } break;
+    case 'anim_stylish': if (moving) A = 1.15; break;
   }
-  if (sp > 0.05) av.phase += dt * f * Math.max(sp, 0.5);
+  av.phase += dt * f;
   let s = Math.sin(av.phase);
-  if (av.anim === 'anim_robot') s = Math.sign(s) * Math.min(1, Math.abs(s) * 2);
+  if (av.anim === 'anim_robot') s = Math.round(s * 2) / 2;
   if (st.air) {
-    la.rotation.z = 0.6; ra.rotation.z = -0.6; la.rotation.x = ra.rotation.x = -0.4 + armOff * 0.5; ll.rotation.x = -0.3; rl.rotation.x = 0.25;
-  } else if (sp > 0.05) {
-    const amp = A * Math.min(sp, 1);
-    la.rotation.x = s * amp * armA + armOff; ra.rotation.x = -s * amp * armA + armOff;
-    ll.rotation.x = -s * amp * legA; rl.rotation.x = s * amp * legA;
-    if (av.anim === 'anim_stylish') body.rotation.y = s * 0.12;
-    if (av.anim === 'anim_ninja') body.rotation.x = 0.15;
+    la.rotation.x = ra.rotation.x = -Math.PI; rate = 30;
   } else {
-    const br = Math.sin(t * 2) * 0.05;
-    la.rotation.z = 0.04 + br; ra.rotation.z = -0.04 - br;
-    if (av.anim === 'anim_zombie') { la.rotation.x = ra.rotation.x = -1.5 + br; }
-    if (av.anim === 'anim_robot') { head.rotation.y = Math.round(Math.sin(t * 0.7) * 2) * 0.25; }
+    la.rotation.x = s * A * armA + armOff; ra.rotation.x = -s * A * armA + armOff;
+    ll.rotation.x = -s * A; rl.rotation.x = s * A;
+    if (av.anim === 'anim_stylish' && moving) body.rotation.y = s * 0.12;
+    if (av.anim === 'anim_ninja' && moving) body.rotation.x = 0.15;
+    if (av.anim === 'anim_robot' && !moving) head.rotation.y = Math.round(Math.sin(t * 0.7) * 2) * 0.25;
   }
-  if (st.emote && !st.air) emotePose(av, st.emote, st.emoteT || 0);
+  if (st.emote && !st.air) { emotePose(av, st.emote, st.emoteT || 0); rate = 22; }
+  let raRate = rate;
   if (st.tool) {
-    ra.rotation.set(-Math.PI / 2 + (st.air ? -0.2 : 0), 0, 0);
-    if (st.toolT > 0) { const k = Math.sin(Math.min(st.toolT / 0.3, 1) * Math.PI); ra.rotation.x = -Math.PI / 2 - k * 1.3; ra.rotation.z = k * 0.4; }
-    if (st.tool === 'gear_balloon') ra.rotation.set(-2.9, 0, 0);
+    ra.rotation.set(-Math.PI / 2, 0, 0); raRate = 20;
+    if (st.toolT > 0) { const k = Math.sin(Math.min(st.toolT / 0.3, 1) * Math.PI); ra.rotation.x = -Math.PI / 2 + k * 1.5; raRate = 40; }
+    if (st.tool === 'gear_balloon') ra.rotation.set(-Math.PI, 0, 0);
   }
+  if (!av.cur) { av.cur = {}; JOINTS.forEach(k => { av.cur[k] = av[k].rotation.clone(); }); }
+  else JOINTS.forEach(k => {
+    const c = av.cur[k], r = av[k].rotation, m = (k === 'ra' ? raRate : rate) * dt;
+    c.x += clampv(r.x - c.x, m); c.y += clampv(r.y - c.y, m); c.z += clampv(r.z - c.z, m);
+    r.set(c.x, c.y, c.z);
+  });
   if (av.back) av.back.traverse(o => {
     if (o.userData.flap) o.rotation.y = o.userData.flap * (0.35 + Math.sin(t * 3) * 0.15);
     if (o.userData.cape) o.rotation.x = 0.12 + Math.min(sp, 1) * 0.7 + Math.sin(t * 4) * 0.04 + (st.air ? 0.4 : 0);
@@ -340,7 +347,7 @@ function emotePose(av, id, e) {
     case 'emote_point': ra.rotation.x = -Math.PI / 2; ra.rotation.y = 0; break;
     case 'emote_cheer': la.rotation.z = 2.7 + Math.sin(e * 12) * 0.2; ra.rotation.z = -2.7 - Math.sin(e * 12) * 0.2; body.position.y = Math.abs(Math.sin(e * 6)) * 0.6; break;
     case 'emote_dance': { const s = Math.sin(e * 8); body.rotation.y = s * 0.5; body.position.y = Math.abs(s) * 0.3; la.rotation.z = s > 0 ? 2.6 : 0.4; ra.rotation.z = s > 0 ? -0.4 : -2.6; ll.rotation.x = s * 0.4; rl.rotation.x = -s * 0.4; break; }
-    case 'emote_sit': ll.rotation.x = rl.rotation.x = -Math.PI / 2; body.position.y = -av.legH + 0.5; la.rotation.x = ra.rotation.x = -0.6; break;
+    case 'emote_sit': ll.rotation.x = rl.rotation.x = -Math.PI / 2; body.position.y = -av.legH + 0.5; la.rotation.x = ra.rotation.x = -Math.PI / 2; break;
     case 'emote_spin': body.rotation.y = e * 10; la.rotation.z = 1.4; ra.rotation.z = -1.4; break;
     case 'emote_flex': la.rotation.z = 1.6; ra.rotation.z = -1.6; la.rotation.x = ra.rotation.x = 0; la.rotation.y = -1.2 - Math.sin(e * 8) * 0.2; ra.rotation.y = 1.2 + Math.sin(e * 8) * 0.2; break;
   }
