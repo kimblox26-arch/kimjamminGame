@@ -50,3 +50,10 @@ npm start          # 또는 node server.js
 - `js/app.js` : 화면, 창, 알림
 - `server.js` : 의존성 없는 게임 서버
 - `tools/build-artifact.mjs` : 모든 파일을 한 HTML 파일로 묶어요 (`node tools/build-artifact.mjs` → `dist/index.html`). 서버 없이 파일 하나로 공유할 때 써요.
+
+## 안드로이드 앱(APK)
+
+- 다운로드: https://github.com/kimblox26-arch/kimjamminGame/releases/download/apk-latest/kids-stock.apk
+- `stock/` 이나 `android/` 가 바뀌어 푸시되면 GitHub Actions(`.github/workflows/android-apk.yml`)가 APK를 새로 만들어 위 주소에 올려요.
+- 앱은 `node stock/tools/build-artifact.mjs --full` 로 묶은 게임을 WebView로 보여 줘요. 가로 화면 전용이고 인터넷 권한이 없어요.
+- `android/app/kidstock.keystore` 는 취미용 서명 키예요(비밀번호 `kidstock`). 같은 키라서 새 버전을 덮어 설치할 수 있어요.

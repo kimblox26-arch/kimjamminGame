@@ -958,3 +958,7 @@ E.load();
 applySettings();
 render();
 schedule();
+
+// 앱을 닫거나 다른 화면으로 갈 때 바로 저장해요.
+addEventListener('pagehide', () => E.save());
+document.addEventListener('visibilitychange', () => { if (document.hidden) E.save(); });
