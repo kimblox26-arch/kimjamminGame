@@ -22,7 +22,8 @@ const RANGE_NAME = { day: '하루', week: '일주일', month: '한 달' };
 
 const ui = { sort: 'name', range: { stock: 'day', assets: 'week' }, learnTab: 'lessons', histFilter: 'all', quiz: null };
 let cur = { name: 'home', id: null };
-let navigated = false;
+const trail = [];
+let backing = false, lastHash = location.hash;
 
 // ---------- 소리 ----------
 let actx = null;
@@ -214,18 +215,18 @@ function openNews(id) {
     <p class="news-big">${esc(n.text)}</p>
     <p class="muted small">${E.clockText(n.tick)}</p>
     <div class="ex-box">${icon('bulb')}<div><b>왜 주가가 바뀔까요?</b><p>${n.why}</p></div></div>
-    ${ids.length ? `<h4 class="mini-title">관련 회사</h4><div class="mini-list">${ids.map(i => `<a class="mini-row" href="#/stock/${i}" data-closeall>${logo(BY_ID[i], 36)}<b>${BY_ID[i].name}</b>${live('chg', i, 'chg')}${icon('chevron', 'muted-ic')}</a>`).join('')}</div>`
+    ${ids.length ? `<h4 class="mini-title">관련 회사</h4><div class="mini-list">${ids.map(i => `<a class="mini-row" href="#stock-${i}" data-closeall>${logo(BY_ID[i], 36)}<b>${BY_ID[i].name}</b>${live('chg', i, 'chg')}${icon('chevron', 'muted-ic')}</a>`).join('')}</div>`
       : `<p class="muted">이 소식은 많은 회사에 함께 영향을 줘요.</p>`}`,
     buttons: [{ label: '닫기', kind: 'primary' }] });
 }
 
 // ---------- 화면들 ----------
 function quick(href, ic, label, sub) {
-  return `<a class="quick-btn" href="#/${href}"><span class="q-ic">${icon(ic)}</span><b>${label}</b><span class="muted small">${sub}</span></a>`;
+  return `<a class="quick-btn" href="#${href}"><span class="q-ic">${icon(ic)}</span><b>${label}</b><span class="muted small">${sub}</span></a>`;
 }
 function stockRow(c) {
   const h = E.S.hold[c.id];
-  return `<a class="stock-row" href="#/stock/${c.id}">
+  return `<a class="stock-row" href="#stock-${c.id}">
     ${logo(c, 44)}
     <span class="sr-name"><b>${c.name}</b><span class="muted small">${c.sector} ${volBadge(c.vol)}${h ? ` <span class="own">${fmt(h.q)}주 보유</span>` : ''}</span></span>
     <span class="sr-spark" data-chart="spark" data-id="${c.id}"></span>
@@ -233,7 +234,7 @@ function stockRow(c) {
   </a>`;
 }
 function moverList(list, emptyText) {
-  return list.length ? list.map(c => `<a class="mini-row" href="#/stock/${c.id}">${logo(c, 36)}<b>${c.name}</b>${live('chg', c.id, 'chg')}</a>`).join('') : `<p class="empty-line">${emptyText}</p>`;
+  return list.length ? list.map(c => `<a class="mini-row" href="#stock-${c.id}">${logo(c, 36)}<b>${c.name}</b>${live('chg', c.id, 'chg')}</a>`).join('') : `<p class="empty-line">${emptyText}</p>`;
 }
 function rangeSeg(group, rg) {
   return `<div class="seg" role="tablist">${['day', 'week', 'month'].map(r => `<button type="button" role="tab" class="${r === rg ? 'on' : ''}" aria-selected="${r === rg}" data-act="range" data-group="${group}" data-range="${r}">${RANGE_NAME[r]}</button>`).join('')}</div>`;
@@ -248,7 +249,7 @@ const SCREENS = {
       <h2>${name ? `${esc(name)}님, 안녕하세요!` : '꼬마 투자자님, 안녕하세요!'}</h2>
       <p class="muted">뉴스를 읽고 회사를 살펴본 뒤, 똑똑하게 투자해 봐요.</p></div></section>
     <section class="card asset-hero">
-      <div class="row-between"><span class="label">내 ${term('총자산')}</span><a class="link" href="#/assets">자세히 보기 ${icon('chevron')}</a></div>
+      <div class="row-between"><span class="label">내 ${term('총자산')}</span><a class="link" href="#assets">자세히 보기 ${icon('chevron')}</a></div>
       <div class="big-num">${live('total')}</div>
       <div class="pl-line">${live('profit', '', 'pill')}${live('profitRate', '', 'pill')}<span class="muted small">처음 받은 돈 ${fmt(E.S.start)} 코인과 비교한 ${term('수익')}과 ${term('수익률')}</span></div>
       <div class="spark-wide" data-chart="assetSpark"></div>
@@ -358,14 +359,14 @@ const SCREENS = {
       ${spreadTip()}
     </section>
     <div class="two-btns">
-      <a class="btn ghost big" href="#/holdings">${icon('briefcase')} 보유 주식 보기</a>
-      <a class="btn ghost big" href="#/history">${icon('list')} 거래 기록 보기</a>
+      <a class="btn ghost big" href="#holdings">${icon('briefcase')} 보유 주식 보기</a>
+      <a class="btn ghost big" href="#history">${icon('list')} 거래 기록 보기</a>
     </div>`;
   },
 
   holdings() {
     const ids = Object.keys(E.S.hold);
-    if (!ids.length) return `<section class="card empty">${pic('empty')}<h3>아직 가지고 있는 주식이 없어요</h3><p class="muted">주식 시장에서 마음에 드는 회사를 찾아 주식을 사 보세요.</p><a class="btn primary big" href="#/market">${icon('market')} 주식 시장 가기</a></section>`;
+    if (!ids.length) return `<section class="card empty">${pic('empty')}<h3>아직 가지고 있는 주식이 없어요</h3><p class="muted">주식 시장에서 마음에 드는 회사를 찾아 주식을 사 보세요.</p><a class="btn primary big" href="#market">${icon('market')} 주식 시장 가기</a></section>`;
     return `
     <section class="card"><div class="kv-grid">
       <div><span class="label">가진 회사 수</span><b>${ids.length}곳</b></div>
@@ -373,7 +374,7 @@ const SCREENS = {
       <div class="span2"><span class="label">아직 팔지 않은 주식의 ${term('수익')} / ${term('손실')}</span><b>${live('unreal', '', 'pl')}</b></div>
     </div></section>
     ${ids.map(id => { const c = BY_ID[id]; return `<section class="card hold-card">
-      <a class="hc-top" href="#/stock/${id}">${logo(c, 44)}<span class="hc-name"><b>${c.name}</b><span class="muted small">${live('hq', id)} 가지고 있어요</span></span><span class="hc-pl">${live('hpl', id, 'pl')}${live('hplr', id, 'pl small')}</span></a>
+      <a class="hc-top" href="#stock-${id}">${logo(c, 44)}<span class="hc-name"><b>${c.name}</b><span class="muted small">${live('hq', id)} 가지고 있어요</span></span><span class="hc-pl">${live('hpl', id, 'pl')}${live('hplr', id, 'pl small')}</span></a>
       <div class="kv-grid four">
         <div><span class="label">${term('평균 구매가')}</span><b>${live('avg', id)}</b></div>
         <div><span class="label">지금 가격</span><b>${live('price', id)}</b></div>
@@ -398,7 +399,7 @@ const SCREENS = {
       <div><span class="label">${term('매도')} 횟수</span><b>${all.filter(t => t.t === 'sell').length}번</b></div>
     </div></section>
     <div class="seg">${fl.map(([k, l]) => `<button type="button" class="${f === k ? 'on' : ''}" data-act="hist" data-f="${k}">${l}</button>`).join('')}</div>
-    <section class="card list-card">${items.length ? items.map(tradeRow).join('') : `<div class="empty">${pic('empty')}<p class="muted">아직 기록이 없어요. 주식을 사거나 팔면 여기에 적혀요.</p><a class="btn primary" href="#/market">주식 시장 가기</a></div>`}</section>`;
+    <section class="card list-card">${items.length ? items.map(tradeRow).join('') : `<div class="empty">${pic('empty')}<p class="muted">아직 기록이 없어요. 주식을 사거나 팔면 여기에 적혀요.</p><a class="btn primary" href="#market">주식 시장 가기</a></div>`}</section>`;
   },
 
   learn() {
@@ -425,7 +426,7 @@ const SCREENS = {
       ${row('pause', '시간 멈추기', '켜면 주가가 움직이지 않아요. 천천히 생각할 때 써요.', sw('paused', s.paused))}
       ${row(s.sound ? 'sound' : 'mute', '소리 효과', '사고팔 때와 소식이 올 때 작은 소리가 나요.', sw('sound', s.sound))}
       ${row('text', '글자 크기', '글씨가 작으면 크게 바꿔 보세요.', seg('big', s.big ? 1 : 0, [[0, '보통'], [1, '크게']]))}
-      ${row(s.dark ? 'moon' : 'sun', '화면 밝기', '밤에는 어두운 화면이 눈이 편해요.', seg('dark', s.dark ? 1 : 0, [[0, '밝게'], [1, '어둡게']]))}
+      ${row(s.dark ? 'moon' : 'sun', '화면 밝기', '자동은 기기 설정을 따라가요. 밤에는 어두운 화면이 눈이 편해요.', seg('dark', s.dark == null ? 'auto' : s.dark ? 1 : 0, [['auto', '자동'], [0, '밝게'], [1, '어둡게']]))}
     </section>
     <section class="card set-list">
       ${row('info', '안내 창 다시 보기', '각 화면에 처음 들어갈 때 나오는 안내 창을 다시 보여 줘요.', `<button type="button" class="btn ghost sm" data-act="resetGuides">다시 보기</button>`)}
@@ -443,7 +444,7 @@ function tradeRow(t) {
   const lab = { buy: '매수', sell: '매도', div: '배당금' }[t.t];
   const sub = t.t === 'div' ? `${fmt(t.q)}주 × 1주당 ${fmt(t.p)} 코인` : `${fmt(t.q)}주 × ${fmt(t.p)} 코인`;
   const right = t.t === 'sell' ? `<span class="pl ${dirOf(t.pl)} small">${t.pl >= 0 ? '수익' : '손실'} ${CS(t.pl)}</span>` : `<span class="muted small">${t.t === 'buy' ? '현금을 썼어요' : '현금이 들어왔어요'}</span>`;
-  return `<a class="trade-row" href="#/stock/${t.id}"><span class="badge ${t.t}">${lab}</span>${logo(c, 36)}
+  return `<a class="trade-row" href="#stock-${t.id}"><span class="badge ${t.t}">${lab}</span>${logo(c, 36)}
     <span class="tr-main"><b>${c.name}</b><span class="muted small">${E.clockText(t.tick)} · ${sub}</span></span>
     <span class="tr-amt"><b>${t.t === 'buy' ? '-' : '+'}${fmt(t.amt)}</b>${right}</span></a>`;
 }
@@ -607,10 +608,12 @@ function openLesson(i) {
 
 // ---------- 화면 이동 ----------
 const view = $('#view');
-function go(name) { location.hash = '#/' + name; }
+function go(name) { location.hash = '#' + (name === 'settings' ? 'options' : name); }
 function parseHash() {
-  const [n, id] = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
-  return SCREENS[n] ? { name: n, id: id ? decodeURIComponent(id) : null } : { name: 'home', id: null };
+  const h = decodeURIComponent(location.hash.replace(/^#\/?/, '')) || 'home';
+  let [n, id] = h.startsWith('stock-') ? ['stock', h.slice(6)] : h.split('/');
+  if (n === 'options') n = 'settings';
+  return SCREENS[n] ? { name: n, id: id || null } : { name: 'home', id: null };
 }
 function render(keepScroll = false) {
   cur = parseHash();
@@ -634,7 +637,8 @@ function updateNewsLists() {
 function applySettings() {
   const s = E.S.settings;
   document.documentElement.classList.toggle('big', !!s.big);
-  document.documentElement.dataset.theme = s.dark ? 'dark' : 'light';
+  if (s.dark === null || s.dark === undefined) delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = s.dark ? 'dark' : 'light';
   document.body.classList.toggle('paused', !!s.paused);
   const pb = $('#pauseBtn');
   pb.innerHTML = s.paused ? `${icon('play')}<span>계속</span>` : `${icon('pause')}<span>멈춤</span>`;
@@ -680,7 +684,7 @@ document.addEventListener('click', e => {
     }
     case 'speed': s.speed = a.dataset.v; E.save(); schedule(); render(true); toast(`${icon('speed')}<span>게임 속도를 "${a.textContent}"(으)로 바꿨어요.</span>`, { ms: 2200 }); break;
     case 'big': s.big = a.dataset.v === '1'; E.save(); applySettings(); render(true); break;
-    case 'dark': s.dark = a.dataset.v === '1'; E.save(); applySettings(); render(true); break;
+    case 'dark': s.dark = a.dataset.v === 'auto' ? null : a.dataset.v === '1'; E.save(); applySettings(); render(true); break;
     case 'toggle': s[a.dataset.key] = !s[a.dataset.key]; E.save(); applySettings(); render(true); if (a.dataset.key === 'sound' && s.sound) sfx('ok'); break;
     case 'resetGuides': E.S.seen = {}; E.save(); toast(`${icon('info')}<span>각 화면에 들어가면 안내 창을 다시 보여 줄게요.</span>`, { ms: 2600 }); break;
     case 'resetGame':
@@ -704,13 +708,19 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && stack.length) stack[stack.length - 1].close();
 });
 
-$('#backBtn').addEventListener('click', () => { if (navigated) history.back(); else go(PARENT[cur.name] || 'home'); });
+$('#backBtn').addEventListener('click', () => {
+  if (trail.length) { backing = true; location.hash = trail.pop(); } else go(PARENT[cur.name] || 'home');
+});
 $('#pauseBtn').addEventListener('click', () => {
   E.S.settings.paused = !E.S.settings.paused; E.save(); applySettings();
   if (cur.name === 'settings') render(true);
   toast(`${icon(E.S.settings.paused ? 'pause' : 'play')}<span>${E.S.settings.paused ? '시간을 멈췄어요. 천천히 생각해 보세요.' : '시간이 다시 흘러요.'}</span>`, { ms: 2000 });
 });
-window.addEventListener('hashchange', () => { navigated = true; [...stack].forEach(m => m.close()); render(); });
+window.addEventListener('hashchange', () => {
+  if (!backing && lastHash !== location.hash) { trail.push(lastHash || '#home'); if (trail.length > 30) trail.shift(); }
+  backing = false; lastHash = location.hash;
+  [...stack].forEach(m => m.close()); render();
+});
 let rT = null;
 window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => refresh(document.body), 150); });
 

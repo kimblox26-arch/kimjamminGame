@@ -23,7 +23,7 @@ function gauss() {
 const rand = (a, b) => a + Math.random() * (b - a);
 
 function defaultSettings() {
-  return { speed: 'normal', paused: false, sound: true, big: false, dark: false, name: '' };
+  return { speed: 'normal', paused: false, sound: true, big: false, dark: null, name: '' };
 }
 
 function newState(keepSettings) {
