@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>알 도둑 대작전</title>
+<meta name="description" content="남의 기지에서 알을 훔쳐 내 둥지로! 블록 캐릭터 알 훔치기 웹 게임">
+<link rel="stylesheet" href="./style.css?v=1">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="stats" class="panel">
+    <div class="money">💰 <b id="money">0</b></div>
+    <div class="sub">수입 <b id="cps">0</b>/초 · 누적 <b id="earned">0</b></div>
+  </div>
+  <div id="timer" class="panel">4:00</div>
+  <div id="toasts"></div>
+  <div id="board" class="panel"></div>
+  <canvas id="minimap" width="160" height="160"></canvas>
+  <div id="prompt" class="hidden"></div>
+  <div id="lockInfo" class="panel"></div>
+  <div id="keys" class="panel">WASD 이동 · Space 점프 · <b>E</b> 훔치기/줍기 · <b>F</b>/클릭 펀치 · <b>Q</b> 기지 잠금 · <b>B</b> 상점 · 드래그 시점</div>
+  <!-- 모바일 -->
+  <div id="stick"><div id="knob"></div></div>
+  <div id="mbtns">
+    <button data-act="grab">✋<span>훔치기</span></button>
+    <button data-act="punch">👊<span>펀치</span></button>
+    <button data-act="jump">⤒<span>점프</span></button>
+    <button data-act="lock">🔒<span>잠금</span></button>
+    <button data-act="shop">🛒<span>상점</span></button>
+  </div>
+</div>
+
+<!-- 상점 -->
+<div id="shop" class="hidden">
+  <div class="card">
+    <h2>🛒 업그레이드 상점</h2>
+    <div id="shopList"></div>
+    <button id="shopClose" class="btn">닫기 (B)</button>
+  </div>
+</div>
+
+<!-- 시작 -->
+<section id="start" class="screen">
+  <div class="card">
+    <div class="logo">🥚</div>
+    <h1>알 도둑 대작전</h1>
+    <p class="lead">다른 기지에서 알을 훔쳐 내 둥지에 모으세요!<br>알은 매초 코인을 벌어 줍니다. 4분 동안 가장 많이 번 사람이 승리!</p>
+    <ul class="rules">
+      <li><b>E</b> — 남의 둥지·바닥의 알 훔치기 (내 기지로 들고 오면 자동 보관)</li>
+      <li><b>F / 클릭</b> — 펀치! 알 든 도둑을 때리면 알을 떨어뜨려요</li>
+      <li><b>Q</b> 또는 기지의 초록 발판 — 기지 잠금 (방어막)</li>
+      <li><b>B</b> — 상점: 속도·둥지 칸·잠금 시간·펀치 업그레이드</li>
+      <li>둥지가 꽉 차면 가장 싼 알을 팔고 더 좋은 알로 바꿔요</li>
+    </ul>
+    <div class="eggs">
+      <span style="--c:#f4efe2">보통 1</span><span style="--c:#4aa3ff">희귀 3</span><span style="--c:#a45cff">에픽 8</span><span style="--c:#ffc531">전설 20</span><span style="--c:#ff5fa8">신화 50</span>
+    </div>
+    <div class="diff">
+      <label><input type="radio" name="diff" value="0"> 쉬움</label>
+      <label><input type="radio" name="diff" value="1" checked> 보통</label>
+      <label><input type="radio" name="diff" value="2"> 어려움</label>
+    </div>
+    <button id="startBtn" class="btn big">게임 시작</button>
+  </div>
+</section>
+
+<!-- 결과 -->
+<section id="end" class="screen hidden">
+  <div class="card">
+    <h1 id="endTitle">결과</h1>
+    <ol id="endList"></ol>
+    <button id="againBtn" class="btn big">다시 하기</button>
+  </div>
+</section>
+
+<script type="module" src="./game.js?v=1"></script>
+</body>
+</html>
