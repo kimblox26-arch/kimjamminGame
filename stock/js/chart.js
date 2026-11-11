@@ -34,6 +34,7 @@ ${grid}
 <text class="ax" x="${pl}" y="${H - 6}">${o.xl || ''}</text><text class="ax" x="${pl + iw}" y="${H - 6}" text-anchor="end">${o.xr || ''}</text>
 <g class="hov"></g></svg>`;
   el._c = { vals, X, Y, n, pl, iw, pt, ih, W, f, label: o.label };
+  el._draw = drawHover;
   if (!el._bound) bindHover(el);
   if (el._hi != null) drawHover(el);
 }
@@ -45,11 +46,11 @@ function bindHover(el) {
     const r = el.getBoundingClientRect();
     const x = (e.clientX - r.left) * (c.W / r.width);
     el._hi = Math.max(0, Math.min(c.n - 1, Math.round(((x - c.pl) / c.iw) * (c.n - 1))));
-    drawHover(el);
+    el._draw(el);
   };
   el.addEventListener('pointermove', pick);
   el.addEventListener('pointerdown', pick);
-  el.addEventListener('pointerleave', () => { el._hi = null; drawHover(el); });
+  el.addEventListener('pointerleave', () => { el._hi = null; el._draw(el); });
 }
 
 function drawHover(el) {
@@ -87,4 +88,51 @@ export function donut(parts, size = 168, thick = 28) {
     acc += len;
   }
   return `<svg class="donut" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="var(--soft)" stroke-width="${thick}"/>${segs}</svg>`;
+}
+
+// 캔들 차트: 막대 하나에 시가, 고가, 저가, 종가를 그리고 아래에 거래량을 그려요
+export function candleChart(el, cs, o = {}) {
+  if (!cs.length) { el.innerHTML = ''; return; }
+  const W = Math.max(260, el.clientWidth || 400), H = Math.max(200, el.clientHeight || 300);
+  const pl = 4, pr = 66, pt = 12, pb = 22, gap = 10;
+  const volH = Math.round((H - pt - pb) * 0.2), ph = H - pt - pb - volH - gap;
+  const n = cs.length, iw = W - pl - pr, slot = iw / n, bw = Math.max(1.6, Math.min(16, slot * 0.64));
+  let mn = Math.min(...cs.map(c => c[2])), mx = Math.max(...cs.map(c => c[1]));
+  if (mx === mn) { mx += 1; mn -= 1; }
+  const pad = (mx - mn) * 0.08, lo = mn - pad, hi = mx + pad;
+  const Y = v => pt + (1 - (v - lo) / (hi - lo)) * ph;
+  const X = i => pl + slot * (i + 0.5);
+  const vmax = Math.max(1, ...cs.map(c => c[4])), vb = pt + ph + gap + volH;
+  const f = o.fmt || (v => Math.round(v).toLocaleString('ko-KR'));
+  let g = '';
+  for (let k = 0; k <= 3; k++) { const v = mn + ((mx - mn) * k) / 3; g += `<line class="grid" x1="${pl}" x2="${pl + iw}" y1="${Y(v)}" y2="${Y(v)}"/><text class="ax" x="${pl + iw + 6}" y="${Y(v) + 4}">${f(v)}</text>`; }
+  g += `<line class="grid" x1="${pl}" x2="${pl + iw}" y1="${vb}" y2="${vb}"/><text class="ax" x="${pl + iw + 6}" y="${vb - volH + 10}">거래량</text>`;
+  let body = '';
+  cs.forEach((c, i) => {
+    const d = c[3] > c[0] ? 'up' : c[3] < c[0] ? 'down' : 'flat', x = X(i);
+    const y1 = Y(Math.max(c[0], c[3])), y2 = Y(Math.min(c[0], c[3])), vh = (c[4] / vmax) * volH;
+    body += `<g class="cd ${d}"><line x1="${x}" x2="${x}" y1="${Y(c[1])}" y2="${Y(c[2])}"/><rect x="${x - bw / 2}" y="${y1}" width="${bw}" height="${Math.max(1.2, y2 - y1)}"/><rect class="vb" x="${x - bw / 2}" y="${vb - vh}" width="${bw}" height="${vh}"/></g>`;
+  });
+  const ma = k => { let d = '', sum = 0; cs.forEach((c, i) => { sum += c[3]; if (i >= k) sum -= cs[i - k][3]; if (i >= k - 1) d += (d ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(sum / k).toFixed(1); }); return d; };
+  const last = cs[n - 1][3], ly = Y(last), ld = cs[n - 1][3] >= (o.base ?? cs[n - 1][0]) ? 'up' : 'down';
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="캔들 차트">${g}${body}
+<path class="ma5" d="${ma(5)}"/><path class="ma20" d="${ma(20)}"/>
+<line class="nowline ${ld}" x1="${pl}" x2="${pl + iw}" y1="${ly}" y2="${ly}"/><rect class="nowtag ${ld}" x="${pl + iw + 2}" y="${ly - 10}" width="${pr - 4}" height="20" rx="4"/><text class="nowtxt" x="${pl + iw + pr / 2}" y="${ly + 4}" text-anchor="middle">${f(last)}</text>
+<text class="ax" x="${pl}" y="${H - 6}">${o.xl || ''}</text><text class="ax" x="${pl + iw}" y="${H - 6}" text-anchor="end">${o.xr || ''}</text><g class="hov"></g></svg>`;
+  el._c = { cs, X, n, pl, iw, W, pt, H: vb, f, label: o.label };
+  el._draw = drawCandleHover;
+  if (!el._bound) bindHover(el);
+  if (el._hi != null) drawCandleHover(el);
+}
+
+function drawCandleHover(el) {
+  const c = el._c, g = el.querySelector('.hov');
+  let tip = el.querySelector('.tip');
+  if (el._hi == null || !c || !g) { if (g) g.innerHTML = ''; if (tip) tip.remove(); return; }
+  const i = Math.min(el._hi, c.n - 1), x = c.X(i), k = c.cs[i];
+  g.innerHTML = `<line x1="${x}" x2="${x}" y1="${c.pt}" y2="${c.H}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3"/>`;
+  if (!tip) { tip = document.createElement('div'); tip.className = 'tip ctip'; el.appendChild(tip); }
+  tip.innerHTML = `<span>${c.label ? c.label(i) : ''}</span><span>시가 <b>${c.f(k[0])}</b></span><span>고가 <b>${c.f(k[1])}</b></span><span>저가 <b>${c.f(k[2])}</b></span><span>종가 <b>${c.f(k[3])}</b></span><span>거래량 <b>${c.f(k[4])}</b></span>`;
+  const r = el.getBoundingClientRect(), px = (x / c.W) * r.width;
+  tip.style.left = Math.max(70, Math.min(r.width - 70, px)) + 'px';
 }

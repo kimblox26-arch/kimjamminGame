@@ -32,6 +32,8 @@ const IC = {
   trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4.5M16 6h3a3 3 0 0 1-3 4.5"/><path d="M12 13v4M8 20.5h8M9.5 17h5"/>',
   pie: '<path d="M11 4a8.5 8.5 0 1 0 9 9h-9z"/><path d="M14.5 2.5a7.5 7.5 0 0 1 7 7h-7z"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  candle: '<path d="M7 3v4M7 15v6M17 3v3M17 14v4"/><rect x="4.5" y="7" width="5" height="8" rx="1"/><rect x="14.5" y="6" width="5" height="8" rx="1"/>',
+  bank: '<path d="M3 9.5L12 4l9 5.5z"/><path d="M5.5 11v7M10 11v7M14 11v7M18.5 11v7M3 20.5h18"/>',
   arrowUp: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   arrowDown: '<path d="M12 5v14M6 13l6 6 6-6"/>',
 };
@@ -42,7 +44,8 @@ export function icon(name, cls = '') {
 
 // 오름/내림 세모
 export function tri(dir) {
-  const d = dir === 'up' ? 'M5 1.5L9.2 8.5H.8z' : dir === 'down' ? 'M5 8.5L9.2 1.5H.8z' : 'M1 4h8v2H1z';
+  if (dir !== 'up' && dir !== 'down') return '';
+  const d = dir === 'up' ? 'M5 1.5L9.2 8.5H.8z' : 'M5 8.5L9.2 1.5H.8z';
   return `<svg class="tri" viewBox="0 0 10 10" aria-hidden="true"><path d="${d}" fill="currentColor"/></svg>`;
 }
 
@@ -132,6 +135,20 @@ ${person(178, 14, '#12A37A')}${person(178, 54, '#12A37A')}${person(178, 94, '#12
 <path d="M110 118v-28" stroke="#8B5E3C" stroke-width="6"/><circle cx="110" cy="80" r="20" fill="#4CAF55"/>
 <path d="M190 118v-40" stroke="#8B5E3C" stroke-width="8"/><circle cx="190" cy="56" r="32" fill="#3E9C48"/><circle cx="178" cy="50" r="4" fill="#E5484D"/><circle cx="200" cy="64" r="4" fill="#E5484D"/><circle cx="194" cy="40" r="4" fill="#E5484D"/>
 <path d="M30 20h150M168 12l12 8-12 8" stroke="var(--muted)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>${T(105, 14, '시간이 지나면', 11, 'var(--muted)')}`,
+  candle: () => `<path d="M62 18v104" stroke="var(--up)" stroke-width="3"/><rect x="46" y="42" width="32" height="56" rx="3" fill="var(--up)"/>
+${T(86, 22, '고가', 11, 'var(--text)', 'start')}${T(86, 46, '종가', 11, 'var(--text)', 'start')}${T(86, 100, '시가', 11, 'var(--text)', 'start')}${T(86, 124, '저가', 11, 'var(--text)', 'start')}
+<path d="M168 22v96" stroke="var(--down)" stroke-width="3"/><rect x="152" y="40" width="32" height="56" rx="3" fill="var(--down)"/>
+${T(192, 26, '고가', 11, 'var(--text)', 'start')}${T(192, 44, '시가', 11, 'var(--text)', 'start')}${T(192, 98, '종가', 11, 'var(--text)', 'start')}${T(192, 120, '저가', 11, 'var(--text)', 'start')}
+${T(62, 138, '오른 캔들', 11, 'var(--up)')}${T(168, 138, '내린 캔들', 11, 'var(--down)')}`,
+  bank: () => `<path d="M20 52l38-24 38 24z" fill="#2E8C8C"/><rect x="24" y="54" width="68" height="6" rx="2" fill="#2E8C8C"/>${[32, 48, 64, 80].map(x => `<rect x="${x - 3}" y="62" width="6" height="34" fill="#2E8C8C"/>`).join('')}<rect x="20" y="98" width="76" height="8" rx="2" fill="#2E8C8C"/>${T(58, 124, '은행', 12)}
+<path d="M108 80h28M128 72l8 8-8 8" stroke="var(--muted)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+${[0, 1, 2].map(i => `<ellipse cx="166" cy="${100 - i * 9}" rx="16" ry="6" fill="#F5B82E" stroke="#D18A0F" stroke-width="2"/>`).join('')}
+${[0, 1, 2, 3, 4].map(i => `<ellipse cx="206" cy="${100 - i * 9}" rx="16" ry="6" fill="#F5B82E" stroke="#D18A0F" stroke-width="2"/>`).join('')}
+${T(166, 124, '맡긴 돈', 11, 'var(--muted)')}${T(206, 124, '+ 이자', 11, 'var(--up)')}`,
+  rotate: () => `<rect x="34" y="22" width="52" height="96" rx="10" fill="none" stroke="var(--text)" stroke-width="5"/><circle cx="60" cy="108" r="3.5" fill="var(--text)"/>
+<path d="M98 46q22-18 44 0" stroke="var(--primary)" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M136 34l8 13-15 2" stroke="var(--primary)" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="112" y="60" width="104" height="56" rx="10" fill="var(--primary-soft)" stroke="var(--primary)" stroke-width="5"/><circle cx="204" cy="88" r="3.5" fill="var(--primary)"/>
+<path d="M124 100l16-14 12 8 20-18 22 10" stroke="var(--up)" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
   empty: () => `<rect x="70" y="30" width="100" height="80" rx="10" fill="var(--soft)" stroke="var(--line-strong)" stroke-width="3"/><path d="M70 55h100" stroke="var(--line-strong)" stroke-width="3"/><path d="M106 30V22a4 4 0 0 1 4-4h20a4 4 0 0 1 4 4v8" stroke="var(--line-strong)" stroke-width="3" fill="none"/><circle cx="120" cy="82" r="10" fill="none" stroke="var(--muted)" stroke-width="3"/><path d="M116 82h8" stroke="var(--muted)" stroke-width="3" stroke-linecap="round"/>`,
 };
 

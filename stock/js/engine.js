@@ -1,4 +1,4 @@
-// 게임 엔진: 시간, 주가 변화, 뉴스, 거래, 배당금, 저장
+// 게임 엔진: 시간, 주가 변화(캔들), 뉴스, 거래, 배당금, 은행, 저장
 import { COMPANIES, START_CASH, DAY_HOURS, WEEK_HOURS, MARKET_NEWS, GOOD_WHY, BAD_WHY } from './data.js';
 
 const KEY = 'kidstock.save.v1';
@@ -6,6 +6,7 @@ const VOL = { 1: 0.0035, 2: 0.0065, 3: 0.0105 };
 const MAX_DAYS = 60;
 const MAX_TRADES = 300;
 const MAX_NEWS = 40;
+export const BANK_RATE = 0.001; // 하루 이자율 0.1%
 export const SPEEDS = { slow: 3000, normal: 1500, fast: 700 };
 export const BY_ID = Object.fromEntries(COMPANIES.map(c => [c.id, c]));
 
@@ -22,35 +23,40 @@ function gauss() {
 }
 const rand = (a, b) => a + Math.random() * (b - a);
 
+// 호가 단위: 가격에 따라 한 칸의 크기가 달라요
+export const tickSize = p => (p < 2000 ? 1 : p < 5000 ? 5 : p < 20000 ? 10 : p < 50000 ? 50 : 100);
+export const roundTick = p => { const t = tickSize(p); return Math.max(t, Math.round(p / t) * t); };
+
 function defaultSettings() {
-  return { speed: 'normal', paused: false, sound: true, big: false, dark: null, name: '' };
+  return { speed: 'normal', paused: false, sound: true, big: false, dark: null, name: '', newsPop: false, portraitOk: false };
 }
 
 function newState(keepSettings) {
   const s = {
     v: 1, tick: 0, cash: START_CASH, start: START_CASH,
-    hold: {}, trades: [], news: [], stocks: {}, newsId: 0,
+    hold: {}, trades: [], news: [], stocks: {}, newsId: 0, newsSeen: 0,
+    bank: { bal: 0, earned: 0 },
     assetsH: [], assetsD: [],
     settings: keepSettings || defaultSettings(),
     seen: {}, quizBest: 0, lessonsRead: {},
   };
   // 게임 시작 전 30일 동안의 주가 기록을 미리 만들어요
   for (const c of COMPANIES) {
-    const st = { p: Math.round(c.price * rand(0.82, 1.12)), fair: c.price, trend: 0, push: [], h: [], d: [] };
+    const st = { p: roundTick(c.price * rand(0.82, 1.12)), fair: c.price, trend: 0, push: [], h: [], c: [], d: [], dc: [] };
     for (let t = 1; t <= 30 * DAY_HOURS + 9; t++) {
       move(c, st);
-      if (t % DAY_HOURS === 0 && t <= 30 * DAY_HOURS) st.d.push(st.p);
+      if (t % DAY_HOURS === 0 && t <= 30 * DAY_HOURS) closeDay(st);
     }
     s.stocks[c.id] = st;
   }
   s.tick = 9; // 1일째 오전 9시에 시작
   s.assetsH = [START_CASH];
-  s.assetsD = [];
   return s;
 }
 
 function move(c, st) {
   const sig = VOL[c.vol];
+  const prev = st.p;
   st.trend = st.trend * 0.96 + gauss() * sig * 0.12;
   let r = c.growth + st.trend + gauss() * sig + Math.log(st.fair / st.p) * 0.012;
   if (st.push.length) {
@@ -58,9 +64,33 @@ function move(c, st) {
     st.push = st.push.filter(p => p.n > 0);
   }
   st.fair *= Math.exp(c.growth);
-  st.p = Math.max(100, Math.round(st.p * Math.exp(r)));
-  st.h.push(st.p);
+  const p = roundTick(Math.max(100, prev * Math.exp(r)));
+  const hi = roundTick(Math.max(prev, p) * (1 + Math.abs(gauss()) * sig * 0.6));
+  const lo = roundTick(Math.min(prev, p) * (1 - Math.abs(gauss()) * sig * 0.6));
+  const vol = Math.round((4e7 / c.price) * rand(0.6, 1.4) * (1 + Math.min(4, Math.abs(r) / sig) * 0.5));
+  st.p = p;
+  st.h.push(p); st.c.push([prev, Math.max(hi, prev, p), Math.min(lo, prev, p), p, vol]);
   if (st.h.length > WEEK_HOURS + 1) st.h.shift();
+  if (st.c.length > WEEK_HOURS + 1) st.c.shift();
+}
+
+// 하루가 끝나면 그날의 캔들(시가, 고가, 저가, 종가, 거래량)을 만들어요
+function aggregate(list, fallback) {
+  if (!list.length) return [fallback, fallback, fallback, fallback, 0];
+  return [list[0][0], Math.max(...list.map(x => x[1])), Math.min(...list.map(x => x[2])), list[list.length - 1][3], list.reduce((a, x) => a + x[4], 0)];
+}
+function closeDay(st) {
+  st.d.push(st.p); if (st.d.length > MAX_DAYS) st.d.shift();
+  st.dc.push(aggregate(st.c.slice(-DAY_HOURS), st.p)); if (st.dc.length > MAX_DAYS) st.dc.shift();
+}
+export function todayCandle(id) { const st = S.stocks[id]; return aggregate(hour() ? st.c.slice(-hour()) : [], st.p); }
+export function candles(id, range) {
+  const st = S.stocks[id];
+  if (range === 'day') return st.c.slice(-DAY_HOURS);
+  if (range === 'month') return [...st.dc.slice(-30), todayCandle(id)];
+  const src = st.c.slice(-WEEK_HOURS), out = [];
+  for (let i = src.length; i > 0; i -= 4) out.unshift(aggregate(src.slice(Math.max(0, i - 4), i), st.p));
+  return out;
 }
 
 // ---------- 계산 도우미 ----------
@@ -69,7 +99,7 @@ export const prevClose = id => { const d = S.stocks[id].d; return d.length ? d[d
 export const change = id => price(id) - prevClose(id);
 export const changeRate = id => (change(id) / prevClose(id)) * 100;
 export function stockValue() { let v = 0; for (const id in S.hold) v += S.hold[id].q * price(id); return v; }
-export const totalAssets = () => S.cash + stockValue();
+export const totalAssets = () => S.cash + stockValue() + S.bank.bal;
 export const profit = () => totalAssets() - S.start;
 export const profitRate = () => (profit() / S.start) * 100;
 export const avgPrice = id => { const h = S.hold[id]; return h ? h.cost / h.q : 0; };
@@ -85,17 +115,20 @@ export function clockText(t = S.tick) {
   return d >= 1 ? `${d}일째 ${ampm} ${hh}시` : `시작 ${1 - d}일 전 ${ampm} ${hh}시`;
 }
 export const nextDividendIn = () => WEEK_HOURS - (S.tick % WEEK_HOURS);
+export const nextInterestIn = () => DAY_HOURS - hour();
+export const expectedInterest = () => Math.floor(S.bank.bal * BANK_RATE);
+export const unreadNews = () => Math.max(0, S.newsId - S.newsSeen);
+export function markNewsRead() { if (S.newsSeen !== S.newsId) { S.newsSeen = S.newsId; save(); emit('newsread'); } }
 
 // ---------- 시간 흐름 ----------
 export function step() {
   S.tick++;
   for (const c of COMPANIES) move(c, S.stocks[c.id]);
-  if (Math.random() < 0.11) companyNews();
-  else if (Math.random() < 0.018) marketNews();
+  if (Math.random() < 0.05) companyNews();
+  else if (Math.random() < 0.012) marketNews();
   if (S.tick % DAY_HOURS === 0) {
-    for (const c of COMPANIES) {
-      const d = S.stocks[c.id].d; d.push(price(c.id)); if (d.length > MAX_DAYS) d.shift();
-    }
+    for (const c of COMPANIES) closeDay(S.stocks[c.id]);
+    payInterest();
     S.assetsD.push(totalAssets()); if (S.assetsD.length > MAX_DAYS) S.assetsD.shift();
     emit('day', day());
   }
@@ -155,6 +188,14 @@ function payDividends() {
   if (sum > 0) { save(); emit('dividend', sum); }
 }
 
+function payInterest() {
+  const amt = expectedInterest();
+  if (amt < 1) return;
+  S.bank.bal += amt; S.bank.earned += amt;
+  S.trades.unshift({ t: 'int', amt, bal: S.bank.bal, tick: S.tick });
+  trimTrades(); save(); emit('interest', amt);
+}
+
 function trimTrades() { if (S.trades.length > MAX_TRADES) S.trades.length = MAX_TRADES; }
 
 // ---------- 거래 ----------
@@ -188,25 +229,56 @@ export function sell(id, qty, p) {
   return { ok: true, pl };
 }
 
+// ---------- 은행 ----------
+export function deposit(amt) {
+  amt = Math.floor(amt);
+  if (amt < 1) return { ok: false, msg: '맡길 돈을 1 코인 이상 써 주세요.' };
+  if (amt > S.cash) return { ok: false, msg: '지갑에 있는 현금보다 많이 맡길 수 없어요.' };
+  S.cash -= amt; S.bank.bal += amt;
+  S.trades.unshift({ t: 'dep', amt, bal: S.bank.bal, tick: S.tick });
+  trimTrades(); save(); emit('trade');
+  return { ok: true };
+}
+export function withdraw(amt) {
+  amt = Math.floor(amt);
+  if (amt < 1) return { ok: false, msg: '찾을 돈을 1 코인 이상 써 주세요.' };
+  if (amt > S.bank.bal) return { ok: false, msg: '은행에 맡긴 돈보다 많이 찾을 수 없어요.' };
+  S.bank.bal -= amt; S.cash += amt;
+  S.trades.unshift({ t: 'wd', amt, bal: S.bank.bal, tick: S.tick });
+  trimTrades(); save(); emit('trade');
+  return { ok: true };
+}
+
 // ---------- 저장 / 불러오기 ----------
 export function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* 저장할 수 없는 환경이면 넘어가요 */ }
+}
+
+function migrate(s) {
+  s.settings = { ...defaultSettings(), ...s.settings };
+  s.seen ||= {}; s.lessonsRead ||= {}; s.assetsD ||= [];
+  s.bank ||= { bal: 0, earned: 0 };
+  if (s.newsSeen == null) s.newsSeen = s.newsId || 0;
+  for (const id in s.stocks) {
+    const st = s.stocks[id];
+    if (!st.c) st.c = st.h.map((p, i) => { const o = i ? st.h[i - 1] : p; return [o, Math.max(o, p), Math.min(o, p), p, 0]; });
+    if (!st.dc) st.dc = st.d.map((p, i) => { const o = i ? st.d[i - 1] : p; return [o, Math.max(o, p), Math.min(o, p), p, 0]; });
+  }
+  s.assetsH ||= [s.cash];
+  return s;
 }
 
 export function load() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { s = null; }
   if (s && s.v === 1 && s.stocks && COMPANIES.every(c => s.stocks[c.id])) {
-    s.settings = { ...defaultSettings(), ...s.settings };
-    s.seen ||= {}; s.lessonsRead ||= {}; s.assetsH ||= [totalOf(s)]; s.assetsD ||= [];
-    S = s;
+    S = migrate(s);
   } else {
     S = newState();
     save();
   }
   return S;
 }
-function totalOf(s) { let v = s.cash; for (const id in s.hold) v += s.hold[id].q * s.stocks[id].p; return v; }
 
 export function reset() {
   const keep = { ...S.settings, paused: false };
