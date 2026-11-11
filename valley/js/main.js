@@ -16,7 +16,7 @@ import * as A from './audio.js';
 import { makeSky } from './sky.js';
 
 const QUAL = {
-  ultra: { pr: 2, shadow: 4096, refr: 1, grass: 16000, flowers: 700, pine: 1300, broad: 450, bloom: true, stones: 170 },
+  ultra: { pr: 2, shadow: 4096, refr: 0.75, grass: 16000, flowers: 700, pine: 1300, broad: 450, bloom: true, stones: 170 },
   high: { pr: 1.5, shadow: 2048, refr: 0.6, grass: 9000, flowers: 450, pine: 800, broad: 280, bloom: true, stones: 150 },
   low: { pr: 1, shadow: 1024, refr: 0.5, grass: 3000, flowers: 200, pine: 350, broad: 120, bloom: false, stones: 120 },
 };

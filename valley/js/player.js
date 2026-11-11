@@ -245,3 +245,4 @@ function toolUpdate(dt, time) {
 }
 export function lock(el) { lockEl = el; try { const r = el.requestPointerLock?.(); r?.catch?.(() => {}); } catch {} }
 export function holding() { return !!P.held; }
+export function teleport(x, z) { body.setTranslation({ x, y: T.groundAt(x, z) + 0.9, z }, true); body.setNextKinematicTranslation({ x, y: T.groundAt(x, z) + 0.9, z }); P.vy = 0; }

@@ -1,6 +1,6 @@
 // 얕은 물 시뮬레이션(가상 파이프 + 마찰) · 침식 · 물 표면 렌더링
 import * as THREE from 'three';
-import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, centerX, baseY, markDirtyCell } from './terrain.js';
+import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, diag, centerX, baseY, markDirtyCell } from './terrain.js';
 import { GLSL_NOISE, sstep } from './noise.js';
 import { GLSL_SKY } from './sky.js';
 
@@ -97,7 +97,7 @@ export function post(dt) {
       }
       const dHx = (solid[k + 1] + h[k + 1]) - (solid[k - 1] + h[k - 1]), dHz = (solid[k + NXV] + h[k + NXV]) - (solid[k - NXV] + h[k - NXV]);
       const grad = Math.hypot(dHx, dHz) / (2 * CELL);
-      const tgt = Math.min(1, sstep(0.9, 2.2, sp) + sstep(0.12, 0.45, grad) * sstep(0.2, 0.6, sp) * 1.2);
+      const tgt = Math.min(1, sstep(0.9, 2.2, sp) + sstep(0.15, 0.6, grad) * sstep(0.3, 0.8, sp) * 0.7);
       foam[k] += (tgt - foam[k]) * Math.min(1, dt * (tgt > foam[k] ? 4 : 0.8));
       if (j < MEAS_J && hk > mx) mx = hk;
     } else {
@@ -140,7 +140,7 @@ export function upload() {
       if (c < SW - 1 && h[k + 1] > 0.003) best = Math.max(best, solid[k + 1] + h[k + 1]);
       if (j > 0 && h[k - NXV] > 0.003) best = Math.max(best, solid[k - NXV] + h[k - NXV]);
       if (j < NZ && h[k + NXV] > 0.003) best = Math.max(best, solid[k + NXV] + h[k + NXV]);
-      R = best > solid[k] - 0.25 ? Math.min(best, solid[k] + 0.03) - 0.006 : solid[k] - 0.06;
+      R = best > -1e8 ? Math.min(best, solid[k] + 0.03) - 0.006 : Math.min(solid[k], ground[k]) - 0.06;
     }
     dW[o] = R; dW[o + 1] = hk; dW[o + 2] = wet[k]; dW[o + 3] = foam[k];
     dV[o] = vx[k]; dV[o + 1] = vz[k]; dV[o + 2] = Math.min(1, sed[k] / (hk + 0.02) * 25); dV[o + 3] = 0;
@@ -191,7 +191,9 @@ export function makeWaterMesh(refrRT) {
   const ind = new Uint32Array((SW - 1) * NZ * 6); let p = 0;
   for (let j = 0; j < NZ; j++) for (let c = 0; c < SW - 1; c++) {
     const a = j * SW + c, b = a + 1, cc = a + SW, d = cc + 1;
-    ind[p++] = a; ind[p++] = cc; ind[p++] = b; ind[p++] = b; ind[p++] = cc; ind[p++] = d;
+    // 지형 메시와 같은 대각선 방향(물가 톱니 방지)
+    if (diag[j * NX + SX0 + c]) { ind[p++] = a; ind[p++] = cc; ind[p++] = b; ind[p++] = b; ind[p++] = cc; ind[p++] = d; }
+    else { ind[p++] = a; ind[p++] = cc; ind[p++] = d; ind[p++] = a; ind[p++] = d; ind[p++] = b; }
   }
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(new THREE.BufferAttribute(ind, 1));
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 3, 30), 45);
@@ -264,10 +266,11 @@ void main(){
   vec3 scat = mix(vec3(0.020, 0.085, 0.075), vec3(0.16, 0.11, 0.06), mud) * (0.45 + 0.55*max(uSunDir.y,0.)) * (1.-uRain*0.4);
   vec3 col = refr*ab + scat*(1.-ab);
   col = mix(col, refl, fres) + spec*smoothstep(0.,0.01,depth);
+  col = mix(refr, col, smoothstep(0.004, 0.03, depth)); // 아주 얇은 물막은 보이지 않게
   float fo = w.a;
   float fnz = mix(nA.w, nB.w, wb)*0.6 + nC.w*0.4;
-  float foamA = smoothstep(0.45, 0.8, fo*0.95 + fnz*0.7 - 0.25) * smoothstep(0.,0.02,depth);
-  float edge = smoothstep(0.035, 0.0, depth) * smoothstep(0.5, 0.75, fnz) * step(0.0005, depth) * 0.5;
+  float foamA = smoothstep(0.5, 0.85, fo*0.6 + fnz*0.7 - 0.2) * smoothstep(0.,0.02,depth);
+  float edge = smoothstep(0.05, 0.015, depth) * smoothstep(0.5, 0.75, fnz) * step(0.012, depth) * 0.45;
   foamA = max(foamA, edge);
   vec3 foamC = vec3(0.92,0.95,0.96) * (0.35 + 0.65*max(uSunDir.y,0.)) * uSunCol;
   col = mix(col, foamC, foamA*0.9);

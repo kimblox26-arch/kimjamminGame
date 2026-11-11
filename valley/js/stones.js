@@ -33,18 +33,19 @@ function stoneMaterial([c1, c2, c3, moss]) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying vec3 vWP; varying vec3 vWN; uniform vec3 uC1,uC2,uC3; uniform float uMoss, uTime, uRain; uniform vec3 uSunCol, uSunDir;\n' + GLSL_NOISE)
       .replace('#include <map_fragment>', /* glsl */`
-        float n1 = fbm3(vOP*2.6), n2 = vnoise3(vOP*17.), n3 = vnoise3(vOP*60.);
+        float fade = 1. - smoothstep(4., 25., length(vViewPosition));
+        float n1 = fbm3(vOP*2.6), n2 = vnoise3(vOP*17.), n3 = mix(0.5, vnoise3(vOP*60.), fade);
         vec3 alb = mix(uC1, uC2, smoothstep(0.25,0.75,n1));
         alb *= 0.86 + 0.22*n2;
-        alb = mix(alb, uC3, step(0.8, n3)*0.75);
-        alb = mix(alb, vec3(0.9,0.88,0.84), step(0.86, vnoise3(vOP*45.+3.))*0.6);
-        float vein = smoothstep(0.035, 0.0, abs(fbm3(vOP*1.4+7.)-0.5));
-        alb = mix(alb, vec3(0.86,0.84,0.8), vein*0.55);
+        alb = mix(alb, uC3, smoothstep(0.78, 0.9, n3)*0.35);
+        alb = mix(alb, vec3(0.86,0.84,0.8), smoothstep(0.84, 0.95, vnoise3(vOP*45.+3.))*0.3*fade);
+        float vein = smoothstep(0.02, 0.0, abs(fbm3(vOP*1.4+7.)-0.5)) * smoothstep(0.55, 0.7, vnoise3(vOP*0.9+11.));
+        alb = mix(alb, vec3(0.8,0.78,0.74), vein*0.35);
         vec3 WN = normalize(vWN);
         float mossA = uMoss * smoothstep(0.35,0.85,WN.y) * smoothstep(0.42,0.62, fbm3(vOP*3.3+2.));
         alb = mix(alb, mix(vec3(0.16,0.25,0.06), vec3(0.30,0.36,0.10), n2), mossA);
         alb = mix(alb, vec3(0.62,0.66,0.48), smoothstep(0.7,0.82,fbm3(vOP*5.+9.))*0.35*(1.-mossA));
-        float sH = n1*0.35 + n2*0.4 + n3*0.12 + mossA*vnoise3(vOP*90.)*0.3;
+        float sH = n1*0.025 + n2*0.005*fade + n3*0.0012 + mossA*vnoise3(vOP*90.)*0.002*fade - vein*0.002;
         vec4 wd = waterAt(vWP.xz); float under = wd.r - vWP.y;
         float wet = clamp(max(smoothstep(-0.05, 0.0, under), wd.b*smoothstep(0.25,0.0,vWP.y-wd.r)*0.7) + uRain*0.6, 0., 1.);
         alb *= mix(1., 0.48, wet);
@@ -127,7 +128,10 @@ export function spawnAll(group, count) {
     const r = n < 4 ? 0.55 + rand() * 0.3 : 0.6 + rand() * 0.9;
     if (!free(x, z, r)) continue;
     placed.push([x, z, r]);
-    const st = addStone(x, groundAt(x, z) + r * 0.25, z, r, { fixed: true, mat: [0, 1, 4, 5][n % 4] });
+    let gy = groundAt(x, z), gmin = gy;
+    for (const [ox, oz] of [[r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, -r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, r * 0.7]]) gmin = Math.min(gmin, groundAt(x + ox, z + oz));
+    if (gy - gmin > r * 0.9) continue;
+    const st = addStone(x, gmin + r * 0.22, z, r, { fixed: true, mat: [0, 1, 4, 5][n % 4] });
     group.add(st.mesh); n++;
   }
   // 주울 수 있는 돌

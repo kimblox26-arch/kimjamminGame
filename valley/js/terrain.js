@@ -14,7 +14,7 @@ export const U = {
   tWater: { value: null },
   uWInfo: { value: new THREE.Vector4(X0 + SX0 * CELL, Z0, 1 / CELL, 0) },
   uWSize: { value: new THREE.Vector2(SW, NZV) },
-  uSunDir: { value: new THREE.Vector3(-0.45, 0.72, 0.53).normalize() },
+  uSunDir: { value: new THREE.Vector3(-0.38, 0.82, 0.43).normalize() },
   uSunCol: { value: new THREE.Color(1.0, 0.93, 0.82) },
   uRain: { value: 0 },
 };
@@ -118,37 +118,51 @@ export function terrainMaterial() {
 const TERRAIN_ALBEDO = /* glsl */`
 vec3 P = vWP; vec3 N = normalize(vWN);
 float slope = 1. - N.y;
+float fade = 1. - smoothstep(5., 35., length(vViewPosition));
 float sSoil = vMat.x, sLoose = vMat.y, sGrass = vMat.z, sDug = vMat.w;
 vec4 wd = waterAt(P.xz); float under = wd.r - P.y;
 float wet = clamp(max(wd.b*0.9, smoothstep(-0.06, 0.01, under)), 0., 1.);
-float rn = fbm2(P.xz*0.6 + vec2(P.y*0.7)); float strata = sin(P.y*7. + rn*7.)*.5+.5;
-vec3 rock = mix(vec3(0.30,0.29,0.27), vec3(0.55,0.53,0.49), rn) * (0.82+0.18*strata);
-rock = mix(rock, vec3(0.45,0.47,0.33), smoothstep(0.6,0.72,fbm2(P.xz*2.3+P.y))*0.55);
-float rockH = rn*0.5 + strata*0.2 + vnoise2(P.xz*16.+P.y*9.)*0.12;
-vec3 vo = voronoi(P.xz*7.5);
-float pid = vo.y;
-vec3 peb = mix(vec3(0.40,0.38,0.34), vec3(0.66,0.61,0.53), hash12(vec2(pid,1.3)));
-peb = mix(peb, vec3(0.27,0.26,0.25), step(0.78,pid)); peb = mix(peb, vec3(0.55,0.45,0.36), step(0.9,pid)*0.8);
-peb *= 0.88 + 0.24*vnoise2(P.xz*45.);
-float gap = smoothstep(0.02, 0.11, vo.z);
-vec3 sand = vec3(0.47,0.41,0.32);
-peb = mix(sand*0.75, peb, gap);
-float pebH = gap*(1. - vo.x*0.9)*0.55 + (1.-gap)*vnoise2(P.xz*60.)*0.05;
-vec3 dirt = mix(vec3(0.29,0.20,0.13), vec3(0.43,0.32,0.21), fbm2(P.xz*3.));
-float dirtH = vnoise2(P.xz*28.)*0.25 + fbm2(P.xz*7.)*0.25;
-vec3 gr = mix(vec3(0.17,0.27,0.07), vec3(0.34,0.40,0.12), fbm2(P.xz*0.9));
-gr = mix(gr, vec3(0.42,0.37,0.17), smoothstep(0.55,0.8,fbm2(P.xz*2.1+5.))*0.6);
+// 암반 (경사면은 세로 좌표로 투영)
+vec3 tw = pow(abs(N), vec3(4.)); tw /= tw.x + tw.y + tw.z;
+vec2 rp = P.zy*tw.x + P.xz*tw.y + P.xy*tw.z;
+float rn = fbm2(P.zy*0.5)*tw.x + fbm2(P.xz*0.5)*tw.y + fbm2(P.xy*0.5)*tw.z;
+float rn2 = fbm2(P.zy*2.1+4.)*tw.x + fbm2(P.xz*2.1+4.)*tw.y + fbm2(P.xy*2.1+4.)*tw.z;
+float strata = sin(P.y*5. + rn*9. + rn2*3.)*.5+.5;
+vec3 rock = mix(vec3(0.19,0.18,0.165), vec3(0.42,0.40,0.36), rn) * (0.86 + 0.14*strata) * (0.8 + 0.35*rn2);
+rock = mix(rock, vec3(0.30,0.36,0.18), smoothstep(0.6,0.75,fbm2(rp*1.6 + P.y))*0.5*smoothstep(0.7,0.2,slope));
+float cr = smoothstep(0.018, 0.0, abs(vnoise2(rp*2.6) - 0.5)) * (0.2 + 0.8*fade);
+rock *= 1. - cr*0.22;
+float rockH = rn*0.22 + rn2*0.05 + strata*0.008 - cr*0.015 + vnoise2(rp*15.)*0.006*fade;
+// 자갈: 큰 돌 + 잔자갈 + 모래
+vec3 vb = voronoi(P.xz*4.2), vs = voronoi(P.xz*13.);
+float big = step(0.68, hash12(vec2(vb.y, 7.1)));
+float domeB = sqrt(max(0., 1. - vb.x*vb.x*2.3)) * smoothstep(0.0, 0.07, vb.z);
+float domeS = sqrt(max(0., 1. - vs.x*vs.x*2.3)) * smoothstep(0.0, 0.1, vs.z);
+float inB = big * smoothstep(0.08, 0.2, domeB);
+vec3 sand = mix(vec3(0.44,0.39,0.31), vec3(0.55,0.49,0.39), vnoise2(P.xz*30.));
+vec3 cB = mix(vec3(0.40,0.39,0.37), vec3(0.66,0.62,0.55), hash12(vec2(vb.y,1.3)));
+cB = mix(cB, vec3(0.26,0.25,0.24), step(0.8, hash12(vec2(vb.y,5.2)))); cB = mix(cB, vec3(0.56,0.45,0.35), step(0.88, hash12(vec2(vb.y,3.7)))*0.8);
+vec3 cS = mix(vec3(0.36,0.35,0.33), vec3(0.62,0.58,0.51), hash12(vec2(vs.y,2.1)));
+cS = mix(cS, vec3(0.5,0.4,0.32), step(0.85, hash12(vec2(vs.y,9.3)))*0.7);
+vec3 peb = mix(mix(sand, cS, smoothstep(0.05, 0.35, domeS)), cB, inB);
+peb *= (0.9 + 0.2*vnoise2(P.xz*55.)*fade + 0.1) * mix(mix(0.6, 1., domeS), mix(0.55, 1.05, domeB), inB);
+float pebH = mix(domeS*0.012, 0.012 + domeB*0.05, inB);
+vec3 dirt = mix(vec3(0.27,0.19,0.12), vec3(0.42,0.31,0.20), fbm2(P.xz*3.));
+float dirtH = vnoise2(P.xz*28.)*0.006*fade + fbm2(P.xz*7.)*0.02;
+vec3 gr = mix(vec3(0.16,0.25,0.06), vec3(0.32,0.38,0.11), fbm2(P.xz*0.9));
+gr = mix(gr, vec3(0.40,0.35,0.16), smoothstep(0.55,0.8,fbm2(P.xz*2.1+5.))*0.6);
 float rockW = max(1. - smoothstep(0.03, 0.10, sSoil + sLoose), smoothstep(0.38, 0.62, slope));
 float gravW = (1. - smoothstep(0.24, 0.40, sSoil)) * (1. - rockW);
 float dirtW = max(0., 1. - rockW - gravW);
 vec3 alb = rock*rockW + peb*gravW + mix(dirt, gr, sGrass)*dirtW;
 float tH = rockH*rockW + pebH*gravW + dirtH*dirtW;
-float tRough = 0.85*rockW + 0.8*gravW + 0.95*dirtW;
+float tRough = 0.86*rockW + 0.78*gravW + 0.95*dirtW;
 float fresh = clamp(max(sDug*1.2, sLoose*10.), 0., 1.) * (1. - rockW*0.7);
-vec3 fd = mix(vec3(0.24,0.16,0.10), vec3(0.33,0.23,0.15), vnoise2(P.xz*12.));
-alb = mix(alb, fd, fresh); tH = mix(tH, vnoise2(P.xz*20.)*0.35 + vnoise2(P.xz*70.)*0.15, fresh);
+vec3 fd = mix(vec3(0.23,0.15,0.09), vec3(0.34,0.24,0.15), vnoise2(P.xz*9.));
+float fdH = fbm2(P.xz*9.)*0.03 + vnoise2(P.xz*40.)*0.006*fade;
+alb = mix(alb, fd, fresh); tH = mix(tH, fdH, fresh);
 alb = mix(alb, alb*vec3(0.7,0.85,0.6), smoothstep(0.3,0.0,abs(under))*rockW*0.6);
-alb *= mix(1., 0.52, wet); tRough = mix(tRough, 0.22, wet*0.85);
+alb *= mix(1., 0.5, wet); tRough = mix(tRough, 0.2, wet*0.85);
 alb = mix(alb, alb*vec3(0.78,0.92,0.88), smoothstep(0.,0.3,under));
 float tCaus = under > 0. ? caustic(P.xz, uTime) * smoothstep(0.,0.06,under) * exp(-under*1.6) * max(N.y,0.) * max(uSunDir.y,0.) * (1.-0.7*uRain) : 0.;
 diffuseColor.rgb *= alb;
@@ -156,6 +170,7 @@ diffuseColor.rgb *= alb;
 
 // ───── 메시 ─────
 export let mesh, geo;
+export const diag = new Uint8Array(NX * NZ); // 사각형마다 대각선 방향 (경사를 따라)
 const dirty = { i0: 1e9, i1: -1, j0: 1e9, j1: -1 };
 export const physState = { dirty: false, t: 0 };
 
@@ -166,7 +181,8 @@ export function buildMesh(material) {
   const ind = new Uint32Array(NX * NZ * 6); let p = 0;
   for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
     const a = idx(i, j), b = a + 1, c = a + NXV, d = c + 1;
-    if ((i + j) & 1) { ind[p++] = a; ind[p++] = c; ind[p++] = b; ind[p++] = b; ind[p++] = c; ind[p++] = d; }
+    diag[j * NX + i] = Math.abs(ground[a] - ground[d]) > Math.abs(ground[b] - ground[c]) ? 1 : 0;
+    if (diag[j * NX + i]) { ind[p++] = a; ind[p++] = c; ind[p++] = b; ind[p++] = b; ind[p++] = c; ind[p++] = d; }
     else { ind[p++] = a; ind[p++] = c; ind[p++] = d; ind[p++] = a; ind[p++] = d; ind[p++] = b; }
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
