@@ -93,9 +93,9 @@ export function donut(parts, size = 168, thick = 28) {
 // 캔들 차트: 막대 하나에 시가, 고가, 저가, 종가를 그리고 아래에 거래량을 그려요
 export function candleChart(el, cs, o = {}) {
   if (!cs.length) { el.innerHTML = ''; return; }
-  const W = Math.max(260, el.clientWidth || 400), H = Math.max(200, el.clientHeight || 300);
+  const W = Math.max(260, el.clientWidth || 400), H = Math.max(120, el.clientHeight || 300);
   const pl = 4, pr = 66, pt = 12, pb = 22, gap = 10;
-  const volH = Math.round((H - pt - pb) * 0.2), ph = H - pt - pb - volH - gap;
+  const volH = Math.round(Math.min((H - pt - pb) * 0.18, 80)), ph = H - pt - pb - volH - gap;
   const n = cs.length, iw = W - pl - pr, slot = iw / n, bw = Math.max(1.6, Math.min(16, slot * 0.64));
   let mn = Math.min(...cs.map(c => c[2])), mx = Math.max(...cs.map(c => c[1]));
   if (mx === mn) { mx += 1; mn -= 1; }
@@ -116,7 +116,7 @@ export function candleChart(el, cs, o = {}) {
   const ma = k => { let d = '', sum = 0; cs.forEach((c, i) => { sum += c[3]; if (i >= k) sum -= cs[i - k][3]; if (i >= k - 1) d += (d ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(sum / k).toFixed(1); }); return d; };
   const last = cs[n - 1][3], ly = Y(last), ld = cs[n - 1][3] >= (o.base ?? cs[n - 1][0]) ? 'up' : 'down';
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="캔들 차트">${g}${body}
-<path class="ma5" d="${ma(5)}"/><path class="ma20" d="${ma(20)}"/>
+${o.ma ? `<path class="ma5" d="${ma(5)}"/><path class="ma20" d="${ma(20)}"/>` : ''}
 <line class="nowline ${ld}" x1="${pl}" x2="${pl + iw}" y1="${ly}" y2="${ly}"/><rect class="nowtag ${ld}" x="${pl + iw + 2}" y="${ly - 10}" width="${pr - 4}" height="20" rx="4"/><text class="nowtxt" x="${pl + iw + pr / 2}" y="${ly + 4}" text-anchor="middle">${f(last)}</text>
 <text class="ax" x="${pl}" y="${H - 6}">${o.xl || ''}</text><text class="ax" x="${pl + iw}" y="${H - 6}" text-anchor="end">${o.xr || ''}</text><g class="hov"></g></svg>`;
   el._c = { cs, X, n, pl, iw, W, pt, H: vb, f, label: o.label };

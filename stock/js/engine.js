@@ -7,7 +7,7 @@ const MAX_DAYS = 60;
 const MAX_TRADES = 300;
 const MAX_NEWS = 40;
 export const BANK_RATE = 0.001; // 하루 이자율 0.1%
-export const SPEEDS = { slow: 3000, normal: 1500, fast: 700 };
+export const SPEEDS = { slow: 8000, normal: 5000, fast: 2500 }; // 게임 속 1시간이 걸리는 시간(밀리초)
 export const BY_ID = Object.fromEntries(COMPANIES.map(c => [c.id, c]));
 
 export let S = null;
