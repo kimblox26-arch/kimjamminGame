@@ -1,0 +1,9 @@
+{
+  "name": "kids-stock-playground",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "초등학생을 위한 주식 시뮬레이션 교육 게임 (의존성 없음)",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
