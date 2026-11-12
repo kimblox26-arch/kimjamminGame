@@ -14,12 +14,14 @@ import * as PL from './player.js';
 import * as FX from './fx.js';
 import * as N from './nature.js';
 import * as A from './audio.js';
+import * as D from './dam.js';
+import * as V from './village.js';
 import { makeSky } from './sky.js';
 
 const QUAL = {
-  ultra: { pr: 2, shadow: 4096, refr: 0.8, grass: 7000, flowers: 320, pine: 420, broad: 150, bloom: true, stones: 90, boulders: 12, msaa: 4, view: 40 },
-  high: { pr: 1.6, shadow: 2048, refr: 0.65, grass: 5200, flowers: 240, pine: 320, broad: 110, bloom: true, stones: 85, boulders: 11, msaa: 4, view: 34 },
-  perf: { pr: 1, shadow: 1536, refr: 0.5, grass: 3600, flowers: 160, pine: 220, broad: 80, bloom: true, stones: 75, boulders: 9, msaa: 2, view: 26, perf: true, lowPoly: true },
+  ultra: { pr: 2, shadow: 4096, refr: 1, grass: 13000, flowers: 600, pine: 520, broad: 180, bloom: true, stones: 160, boulders: 20, msaa: 4, view: 40 },
+  high: { pr: 1.6, shadow: 2048, refr: 0.85, grass: 9500, flowers: 450, pine: 400, broad: 140, bloom: true, stones: 140, boulders: 18, msaa: 4, view: 34 },
+  perf: { pr: 1, shadow: 1536, refr: 0.75, grass: 6500, flowers: 300, pine: 280, broad: 100, bloom: true, stones: 120, boulders: 15, msaa: 2, view: 26, perf: true, lowPoly: true },
 };
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -27,7 +29,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches;
 if (/ValleyDamApp/.test(navigator.userAgent)) $('apk').remove(); // 앱 안에서는 다운로드 링크 숨김
 let qKey = params.get('q');
 try { qKey = qKey || localStorage.getItem('valley.q'); } catch {}
-if (isTouch) Object.assign(QUAL.perf, { grass: 2800, flowers: 120, pine: 170, broad: 60, stones: 70, boulders: 8, view: 22 });
+if (isTouch) Object.assign(QUAL.perf, { grass: 5000, flowers: 220, pine: 220, broad: 80, stones: 100, boulders: 12, view: 22 });
 if (!QUAL[qKey]) qKey = isTouch ? 'perf' : 'ultra';
 const segBtns = [...document.querySelectorAll('#quality button')];
 const pickQ = k => { qKey = k; segBtns.forEach(b => { b.classList.toggle('on', b.dataset.q === k); b.setAttribute('aria-checked', b.dataset.q === k); }); };
@@ -37,7 +39,7 @@ let stoneGroup, innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = (v, t) => { $('progbar').style.width = Math.round(v * 100) + '%'; if (t) $('progtxt').textContent = t; };
-if (params.has('debug')) window.__dbg = { T, W, S, PL, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
+if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
 
 $('go').onclick = async () => {
   $('go').disabled = true; segBtns.forEach(b => b.disabled = true); $('go').textContent = '불러오는 중';
@@ -94,6 +96,8 @@ async function boot(q) {
   prog(0.2, '돌 놓는 중'); await frame();
   const sg = new THREE.Group(); scene.add(sg); stoneGroup = sg; scene.add(S.outlineMesh());
   S.spawnAll(sg, q.stones, q.boulders);
+  D.init(RAPIER, world, sg);
+  V.build(scene, RAPIER, world);
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
   prog(0.32, '숲 가꾸는 중'); await frame();
   N.buildTrees(scene, q.pine, q.broad);
@@ -108,7 +112,7 @@ async function boot(q) {
   W.init(); T.setSolidRef(W.solid); S.rasterize(); W.prefill();
   water = W.makeWaterMesh(refrRT); scene.add(water);
   water.material.uniforms.uProj.value = camera.projectionMatrix;
-  const WARM = 22 * 60;
+  const WARM = 30 * 60;
   for (let s = 0; s < WARM; s++) {
     if (s % 2 === 0) { world.step(); S.sync(); S.rasterize(); }
     W.step(1 / 60); if (s % 4 === 0) W.post(4 / 60);
@@ -150,7 +154,7 @@ function resize() {
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
   composer.setPixelRatio(pr); composer.setSize(w, h);
   // 굴절 텍스처는 화면(CSS) 해상도의 절반 아래로는 내리지 않음 → 물이 깨져 보이지 않게
-  const rs = Math.max(perf ? 0.55 : Q.refr, 0.5 / pr);
+  const rs = Math.max(perf ? 0.75 : Q.refr, 0.6 / pr);
   refrRT.setSize(Math.max(1, Math.round(w * pr * rs)), Math.max(1, Math.round(h * pr * rs)));
   fxaa.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
   water.material.uniforms.uRes.value.set(w * pr, h * pr);
@@ -215,11 +219,13 @@ $('bPause').onclick = () => { if (isTouch) showPause('일시정지', '계속'); 
 $('bPerf').onclick = () => setPerf(!perf);
 $('bRain').onclick = () => setRain(!rainOn);
 $('bSpeed').onclick = () => PL.cycleSpeed();
+$('bTime').onclick = () => setTimeScale(timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1);
 document.querySelectorAll('#bar [data-t]').forEach(b => b.onclick = () => PL.setTool(b.dataset.t));
 addEventListener('keydown', e => {
   if (!started || e.repeat) return;
-  if (e.code === 'Digit6') setRain(!rainOn);
-  if (e.code === 'Digit7') setPerf(!perf);
+  if (e.code === 'Digit7') setRain(!rainOn);
+  if (e.code === 'Digit8') setPerf(!perf);
+  if (e.code === 'KeyT') setTimeScale(timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1);
 });
 
 // ───── 게임 훅 ─────
@@ -230,8 +236,8 @@ const hooks = {
     tool(t) {
       document.querySelectorAll('#bar [data-t]').forEach(e => e.classList.toggle('on', e.dataset.t === t));
       $('tPrim').innerHTML = `<svg><use href="#i-${t}"/></svg>`;
-      $('tSec').innerHTML = `<svg><use href="#i-${t === 'shovel' ? 'pour' : 'throw'}"/></svg>`;
-      $('tSec').classList.toggle('hidden', !(t === 'hand' || t === 'shovel')); $('tRot').classList.toggle('hidden', t !== 'hand');
+      $('tSec').innerHTML = `<svg><use href="#i-${t === 'shovel' ? 'pour' : t === 'dam' ? 'turbine' : 'throw'}"/></svg>`;
+      $('tSec').classList.toggle('hidden', !(t === 'hand' || t === 'shovel' || t === 'dam')); $('tRot').classList.toggle('hidden', t !== 'hand');
       $('bSpeed').classList.toggle('hidden', !(t === 'shovel' || t === 'mud'));
     },
     speed(n) { const b = $('bSpeed'); $('spd').textContent = ['×1', '×3', '×8'][n]; b.classList.toggle('s1', n === 1); b.classList.toggle('s2', n === 2); },
@@ -239,6 +245,7 @@ const hooks = {
   },
   audio: A, fx: FX,
   edit(x, z, r) { N.onEdit(x, z, r); edits.push([x, z]); lastEdit = clock; },
+  damChanged() { S.touch(); },
   // 하늘에서 바위 떨어뜨리기
   dropRock(x, z) {
     const big = Math.random() < 0.12, r = big ? 0.55 + Math.random() * 0.35 : 0.14 + Math.pow(Math.random(), 1.4) * 0.32;
@@ -256,17 +263,19 @@ function ui(dt) {
   toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show');
   uiT -= dt; if (uiT > 0) return; uiT = 0.2;
   const st = W.state;
-  if (!ready && st.time > 38) { ready = true; W.saveBaseline(); }
+  if (!ready && st.time > 62) { ready = true; W.saveBaseline(); }
   const blocked = Math.max(0, Math.min(1, 1 - st.outSm / st.inflow));
   $('mPct').textContent = ready ? Math.round(blocked * 100) + '%' : '—';
   $('mFill').style.width = (ready ? blocked * 100 : 0).toFixed(1) + '%';
   $('mSub').textContent = ready ? `저수 ${st.stored.toFixed(1)} m³ · 하류 ${Math.max(0, st.outSm * 1000).toFixed(0)} L/s` : '물길이 흐르는 중';
+  const hh = Math.floor(sky_.tod), mm = Math.floor((sky_.tod - hh) * 60);
+  $('pw').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · 발전 ${elec.gen.toFixed(1)} kW · 배터리 ${Math.round(elec.batt / elec.cap * 100)}% · ${elec.lit > 0.5 ? '불 켜짐' : elec.want ? '전기 부족' : '불 꺼짐'}`;
   $('mud').style.width = Math.min(100, PL.P.bucket / 0.5 * 100) + '%';
   if (perf) $('fps').textContent = fpsV.toFixed(0) + ' fps';
 }
 
 // ───── 루프 ─────
-let cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
+let timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
 function loop(now) {
@@ -277,10 +286,11 @@ function loop(now) {
   const t0 = performance.now();
   fpsN++; fpsT += raw; if (fpsT > 0.5) { fpsV = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   if (paused) { render(); return; }
-  clock += dt; T.U.uTime.value = clock;
+  const dg = dt * timeScale; // 게임 시간 (배속 적용)
+  clock += dt; gclock += dg; T.U.uTime.value = gclock;
   PL.update(dt, clock);
-  physAcc += dt; let n = 0;
-  while (physAcc >= 1 / 60 && n < 4) {
+  physAcc += dg; let n = 0; const maxPhys = Math.min(8, 4 * timeScale);
+  while (physAcc >= 1 / 60 && n < maxPhys) {
     PL.prePhysics(1 / 60);
     S.waterForces(onSplash);
     for (const st of S.stones) if (!st.fixed && !st.body.isSleeping()) st.vyPrev = st.body.linvel().y; // 충돌 직전 낙하 속도
@@ -288,13 +298,15 @@ function loop(now) {
     events.drainContactForceEvents(onContact);
     physAcc -= 1 / 60; n++;
   }
-  if (n === 4) physAcc = 0;
+  if (n === maxPhys) physAcc = 0;
   S.sync(); S.rasterize();
-  waterAcc += Math.min(dt, 1 / 15); let m = 0;
-  const maxSteps = perf ? 2 : 3;
+  waterAcc += Math.min(dg, timeScale / 15); let m = 0;
+  const maxSteps = Math.min(10, (perf ? 2 : 3) * timeScale);
   while (waterAcc >= 1 / 60 && m < maxSteps) { W.step(1 / 60); waterAcc -= 1 / 60; m++; }
   if (m === maxSteps) waterAcc = Math.min(waterAcc, 1 / 60);
-  W.post(dt);
+  W.post(dg);
+  D.update(dg, FX.splash);
+  dayNight(dg); electricity(dt, dg);
   flushT += dt;
   if (clock - lastEdit < 0.3 || flushT > 0.25) { T.flushMesh(); flushT = 0; }
   if (T.physState.dirty) {
@@ -304,9 +316,9 @@ function loop(now) {
   if (!perf || frameN % 2 === 0) W.upload(); // 폰: 물 텍스처는 격프레임 갱신
   // 비: 계곡물이 불어남
   const st = W.state, rt = rainOn ? 1 : 0;
-  st.inflow += ((rainOn ? 0.42 : 0.2) - st.inflow) * Math.min(1, dt * 0.08);
-  T.U.uRain.value += (rt - T.U.uRain.value) * Math.min(1, dt * 0.15);
-  FX.update(dt, T.U.uRain.value);
+  st.inflow += ((rainOn ? 0.42 : 0.2) - st.inflow) * Math.min(1, dg * 0.08);
+  T.U.uRain.value += (rt - T.U.uRain.value) * Math.min(1, dg * 0.15);
+  FX.update(dg, T.U.uRain.value);
   N.setDownstream(Math.max(0, st.outSm / 0.2));
   N.cull(camera.position);
   audioUpdate();
@@ -314,6 +326,39 @@ function loop(now) {
   cpuMs = performance.now() - t0; // 화면 그리기 전까지의 계산 시간
   render();
 }
+// ───── 낮과 밤: 하루 10분(×1). 해가 지면 달빛, 별, 어두운 안개 ─────
+const sky_ = { tod: 9, len: 600, sunI: 3.3 };
+const stdMats = [];
+const cSun = new THREE.Color(), cWarm = new THREE.Color(1, 0.62, 0.36), cDay = new THREE.Color(1, 0.94, 0.86), cMoon = new THREE.Color(0.55, 0.66, 0.95);
+const fogDay = new THREE.Color().setRGB(0.68, 0.80, 0.94), fogDusk = new THREE.Color().setRGB(0.62, 0.48, 0.42), fogNight = new THREE.Color().setRGB(0.025, 0.035, 0.06);
+function dayNight(dg) {
+  sky_.tod = (sky_.tod + dg * 24 / sky_.len) % 24;
+  const a = (sky_.tod - 6) / 12 * Math.PI, el = Math.sin(a);
+  const day = THREE.MathUtils.smoothstep(el, -0.08, 0.16);
+  T.U.uDay.value = day;
+  const dir = T.U.uSunDir.value;
+  if (el > -0.04) dir.set(Math.cos(a) * 0.6, Math.max(el, 0.02) * 0.85, 0.42).normalize();
+  else dir.set(-Math.cos(a) * 0.5, Math.max(-el, 0.25) * 0.8, 0.45).normalize(); // 달
+  const low = 1 - THREE.MathUtils.smoothstep(el, 0.02, 0.35);
+  if (day > 0.02) { cSun.copy(cDay).lerp(cWarm, low); sky_.sunI = 3.3 * day; }
+  else { cSun.copy(cMoon); sky_.sunI = 0.35; }
+  sun.color.copy(cSun); T.U.uSunCol.value.copy(cSun).multiplyScalar(day > 0.02 ? 1 : 0.35);
+  scene.fog.color.copy(fogNight).lerp(fogDay, day).lerp(fogDusk, low * day * 0.6);
+  if (!stdMats.length) scene.traverse(o => { const m = o.material; if (m && m.isMeshStandardMaterial && !stdMats.includes(m)) stdMats.push(m); });
+  for (const m of stdMats) m.envMapIntensity = 0.75 * (0.12 + 0.88 * day);
+}
+// ───── 전기: 터빈 발전 → 배터리 → 밤에 가로등·오두막 불 ─────
+const elec = { batt: 0, cap: 20, gen: 0, lit: 0, want: false };
+function electricity(dt, dg) {
+  elec.gen = D.power() / 1000;
+  elec.want = T.U.uDay.value < 0.45;
+  const demand = elec.want ? V.demandKW() : 0, hours = dg * 24 / sky_.len;
+  elec.batt = Math.max(0, Math.min(elec.cap, elec.batt + (elec.gen - demand) * hours));
+  const on = elec.want && (elec.batt > 0.02 || elec.gen >= demand) ? 1 : 0;
+  elec.lit += (on - elec.lit) * Math.min(1, dt * 2.5);
+  V.setLit(elec.lit);
+}
+function setTimeScale(n) { timeScale = n; $('tsx').textContent = '×' + n; $('bTime').classList.toggle('on', n > 1); }
 function rebuildHF() {
   T.buildPhysics(RAPIER, world);
   for (const st of S.stones) {
@@ -373,8 +418,10 @@ function render() {
   sun.position.copy(sun.target.position).addScaledVector(T.U.uSunDir.value, 90);
   sun.target.updateMatrixWorld();
   const rain = T.U.uRain.value;
-  sun.intensity = 3.3 * (1 - rain * 0.75); hemi.intensity = 0.35 + rain * 0.25;
+  const day = T.U.uDay.value;
+  sun.intensity = sky_.sunI * (1 - rain * 0.75); hemi.intensity = (0.35 + rain * 0.25) * day + 0.05;
   scene.fog.density = 0.011 + rain * 0.012; gradePass.uniforms.uRain.value = rain;
+  renderer.toneMappingExposure = 0.92 + (1 - day) * 0.55;
   sky.position.copy(camera.position);
   renderer.shadowMap.needsUpdate = !perf || frameN % 3 === 0;
   // 굴절용 패스: 지형·돌만 (레이어 1)

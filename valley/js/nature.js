@@ -87,7 +87,7 @@ export function buildGrass(scene, count) {
   const mat = windMat({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.82 }, 0.08, false);
   const items = [];
   for (let t = 0; items.length < count && t < count * 40; t++) {
-    const x = -10 + rand() * 20, z = 6 + rand() * 28;
+    const x = -15 + rand() * 30, z = 6 + rand() * 62;
     const i = Math.round((x - X0) / CELL), j = Math.round((z - Z0) / CELL), g = grass[idx(i, j)];
     if (g < 0.35 || rand() > g) continue;
     items.push({ x, y: groundBil(x, z) - 0.02, z, ry: rand() * 6.283, s: 0.7 + rand() * 0.7, hsl: [0.2 + rand() * 0.07, 0.5 + rand() * 0.2, 0.42 + rand() * 0.2], cell: idx(i, j) });
@@ -100,7 +100,7 @@ export function buildFlowers(scene, count) {
   const head = new THREE.IcosahedronGeometry(0.028, 0).scale(1, 0.55, 1).translate(0, 0.3, 0);
   const cols = [0xffffff, 0xf4d03f, 0xb57edc, 0xff9fb2, 0xfff3c4], items = [];
   for (let t = 0; items.length < count && t < count * 60; t++) {
-    const x = -10 + rand() * 20, z = 6 + rand() * 28;
+    const x = -15 + rand() * 30, z = 6 + rand() * 62;
     const g = grass[idx(Math.round((x - X0) / CELL), Math.round((z - Z0) / CELL))];
     if (g < 0.6 || rand() > 0.5) continue;
     items.push({ x, y: groundBil(x, z), z, rx: (rand() - 0.5) * 0.3, ry: rand() * 6, rz: (rand() - 0.5) * 0.3, s: 0.6 + rand() * 0.8, col: cols[(rand() * cols.length) | 0], cell: idx(Math.round((x - X0) / CELL), Math.round((z - Z0) / CELL)) });
@@ -184,15 +184,15 @@ export function buildTrees(scene, nPine, nBroad) {
   const total = nPine + nBroad;
   for (let n = 0, t = 0; n < total && t < total * 30; t++) {
     const near = rand() < 0.5;
-    const x = near ? (rand() * 2 - 1) * 22 : (rand() * 2 - 1) * 65, z = near ? -4 + rand() * 45 : -45 + rand() * 135;
+    const x = near ? (rand() * 2 - 1) * 26 : (rand() * 2 - 1) * 65, z = near ? -4 + rand() * 80 : -45 + rand() * 170;
     const tt = terrainAt(x, z);
     const e = tt.d - tt.F;
     if (e < 0.8 || tt.y > 60) continue;
     const s = Math.hypot(terrainAt(x + 1, z).y - tt.y, terrainAt(x, z + 1).y - tt.y);
     if (s > 1.1) continue;
-    if (Math.abs(x) < 12 && z > 0 && z < 36 && e < 2.0) continue;
+    if (Math.abs(x) < 18 && z > 0 && z < 72 && e < 2.0) continue;
     const kind = n < nPine ? 0 : 1, v = (rand() * kinds[kind].length) | 0;
-    spots[kind][v].push({ x, y: tt.y - 0.2, z, s: 0.75 + rand() * 0.6, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2], near: Math.hypot(x, z - 17) < 30 });
+    spots[kind][v].push({ x, y: tt.y - 0.2, z, s: 0.75 + rand() * 0.6, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2], near: Math.hypot(x * 1.5, z - 36) < 48 });
     n++;
   }
   kinds.forEach((geos, kind) => geos.forEach((g, v) => {
@@ -253,7 +253,7 @@ let downMat, downMesh;
 // 바깥 지형(1m 격자 선형보간) 높이와 해석 높이 중 높은 쪽
 function surfY(x, z, off) {
   const t = terrainAt(x, z).y;
-  if (z >= 0 && z <= 36) return t + off;
+  if (z >= 0 && z <= 72) return t + off;
   const i = Math.floor(x), j = Math.floor(z), u = x - i, v = z - j;
   const a = terrainAt(i, j).y, b = terrainAt(i + 1, j).y, c = terrainAt(i, j + 1).y, d = terrainAt(i + 1, j + 1).y;
   return Math.max(t, a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) + off;
@@ -272,7 +272,7 @@ export function buildStreams(scene) {
   const mf = new THREE.Mesh(ribbon(fall, 1.25), flowMat(1.0, 2.2, 1)); scene.add(mf);
   // 하류 출구
   const dn = [];
-  for (let z = 35.8; z <= 89; z += 0.5) { const x = centerX(z); dn.push([x, surfY(x, z, 0.12), z, 1]); }
+  for (let z = 71.8; z <= 128; z += 0.5) { const x = centerX(z); dn.push([x, surfY(x, z, 0.12), z, 1]); }
   downMat = flowMat(0.45, 1.6, 0); downMesh = new THREE.Mesh(ribbon(dn, 1.3), downMat); scene.add(downMesh);
 }
 export function setDownstream(f) { downMat.uniforms.uOp.value = Math.min(1, f * 1.2); downMesh.visible = f > 0.03; downMat.uniforms.uFoam.value = 0.15 + 0.4 * f; }

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import * as T from './terrain.js';
 import * as W from './water.js';
 import * as S from './stones.js';
+import * as D from './dam.js';
 
 const LOAD_VIS = 0.3; // 삽에 보이는 흙더미 크기 기준 (담는 양 제한 없음)
 // 작업 속도: 0 보통 · 1 약간 빠르게 · 2 엄청 빠르게
@@ -78,6 +79,7 @@ function bindInput() {
     if (e.code === 'Digit3') setTool('pick');
     if (e.code === 'Digit4') setTool('mud');
     if (e.code === 'Digit5') setTool('drop');
+    if (e.code === 'Digit6') setTool('dam');
     if (e.code === 'KeyF') cycleSpeed();
     if (e.code === 'KeyE') primary();
     if (e.code === 'KeyQ') P.holdYaw += Math.PI / 6;
@@ -191,7 +193,7 @@ export function update(dt, time) {
   cc.computeColliderMovement(col, { x: dx * dt, y: P.vy * dt, z: dz * dt }, undefined, undefined, c => c !== held);
   const mv = cc.computedMovement();
   let nx = p.x + mv.x, ny = p.y + mv.y, nz = p.z + mv.z;
-  nx = THREE.MathUtils.clamp(nx, -9.5, 9.5); nz = THREE.MathUtils.clamp(nz, 5.5, 33);
+  nx = THREE.MathUtils.clamp(nx, -16.5, 16.5); nz = THREE.MathUtils.clamp(nz, 1.5, 70.5); // 투명 벽: 지형 끝 근처
   const gmin = T.groundAt(nx, nz) + 0.83 - 0.05; if (ny < gmin - 0.3) ny = gmin;
   body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
   P.grounded = cc.computedGrounded();
@@ -214,12 +216,12 @@ function aim() {
   camera.getWorldPosition(ray.o); camera.getWorldDirection(ray.d);
   const held = P.held?.collider;
   const r = new R.Ray(ray.o, ray.d);
-  const hit = world.castRay(r, P.tool === 'drop' ? 30 : 4.5, true, undefined, undefined, col, undefined, c => c !== held);
+  const hit = world.castRayAndGetNormal(r, P.tool === 'drop' ? 30 : P.tool === 'dam' ? 7 : 4.5, true, undefined, undefined, col, undefined, c => c !== held);
   P.target = null; P.aim = null;
   if (hit) {
     const toi = hit.timeOfImpact ?? hit.toi;
     const st = S.byHandle.get(hit.collider.handle);
-    P.aim = { dist: toi, point: ray.o.clone().addScaledVector(ray.d, toi), stone: st, terrain: hit.collider === T.getHF() };
+    P.aim = { dist: toi, point: ray.o.clone().addScaledVector(ray.d, toi), stone: st, terrain: hit.collider === T.getHF(), block: D.byHandle.get(hit.collider.handle), normal: hit.normal };
     if (st && toi < 3.2 + (st.rb || 0)) P.target = st;
   }
   const show = (P.tool === 'hand' || P.tool === 'pick') && !P.held ? P.target : null;
@@ -257,6 +259,24 @@ function specialUpdate(dt, time) {
     hooks.edit?.(a.point.x, a.point.z, SP.mudR + 0.25);
   }
 }
+// 댐 도구: 좌클릭 콘크리트 블록 놓기(위에 쌓기·옆에 잇기), 우클릭 블록에 수력발전 터빈 달기/떼기
+function damUpdate(dt, time) {
+  const a = P.aim, ok = a && a.dist < 7;
+  ring.visible = !!ok && !a.block; ring.scale.setScalar(2.4);
+  if (ok) { ring.position.set(a.point.x, a.point.y + 0.03, a.point.z); ring.material.color.setHex(0xd8d4c8); }
+  if (!ok) return;
+  if (btn.l && time - lastAct > 0.35) {
+    lastAct = time;
+    const b = D.place(a.point, P.yaw, a.block, a.normal);
+    if (b) { hooks.audio?.impact?.(0.6, false); hooks.fx?.dirt(b.x, b.y0 + 0.3, b.z, 8); hooks.damChanged?.(); }
+  } else if (btn.r && time - lastAct > 0.5) {
+    lastAct = time;
+    if (!a.block) { hooks.toast?.('댐 블록을 겨누고 터빈을 다세요'); return; }
+    const on = D.toggleTurbine(a.block);
+    hooks.toast?.(on ? '수력발전 터빈 설치 — 댐 위아래 물높이 차이로 전기를 만들어요' : '터빈을 뗐어요');
+    hooks.audio?.clink(); hooks.damChanged?.();
+  }
+}
 let swingT = -1;
 function pickUpdate(dt, time) {
   // 휘두르기 애니메이션: 들어올렸다가 내려찍기
@@ -270,6 +290,11 @@ function pickUpdate(dt, time) {
 }
 function strike(a) {
   if (!a || a.dist > 3.2) return;
+  if (a.block) { // 콘크리트 블록도 여러 번 찍으면 부서진다
+    const b = a.block; hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 12);
+    if (--b.hp > 0) { hooks.audio?.chip?.(); return; }
+    D.remove(b); hooks.audio?.crack?.(0.8); hooks.damChanged?.(); hooks.toast?.('댐 블록을 부쉈어요'); return;
+  }
   if (a.stone) {
     const st = a.stone;
     if (st.held || !S.stones.includes(st)) return;
@@ -285,8 +310,10 @@ function strike(a) {
   } else { hooks.audio?.clink(); hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 4); }
 }
 function toolUpdate(dt, time) {
+  ring.scale.setScalar(1);
   if (P.tool === 'pick') { ring.visible = false; pickUpdate(dt, time); return; }
   if (P.tool === 'drop' || P.tool === 'mud') { specialUpdate(dt, time); return; }
+  if (P.tool === 'dam') { damUpdate(dt, time); return; }
   const a = P.aim, ok = P.tool === 'shovel' && a && a.dist < 4.2;
   ring.visible = !!ok; ring.scale.setScalar(1);
   if (ok) {

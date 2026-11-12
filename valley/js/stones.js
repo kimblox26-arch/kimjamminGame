@@ -4,6 +4,7 @@ import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { physState, CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell } from './terrain.js';
 import * as W from './water.js';
+import * as D from './dam.js';
 import { GLSL_NOISE, rng } from './noise.js';
 
 const perlin = new ImprovedNoise();
@@ -180,7 +181,7 @@ export function spawnAll(group, count, nBoulders = 18) {
   const free = (x, z, r) => placed.every(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 > (pr + r + 0.05) ** 2);
   // 고정 큰 바위
   for (let n = 0, tries = 0; n < nBoulders && tries < 500; tries++) {
-    const z = 7.5 + rand() * 23, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
+    const z = 7.5 + rand() * 57, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
     let x = centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.5 + rand() * 0.4)); // 바닥 위에만 (벽에 뜨지 않게)
     const r = n < 4 ? 0.55 + rand() * 0.3 : 0.6 + rand() * 0.9;
     if (!free(x, z, r)) continue;
@@ -194,7 +195,7 @@ export function spawnAll(group, count, nBoulders = 18) {
   // 주울 수 있는 돌
   for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
     const nearDam = rand() < 0.45;
-    const z = nearDam ? 10 + rand() * 9 : 7.5 + rand() * 23;
+    const z = nearDam ? (rand() < 0.5 ? 10 : 46) + rand() * 9 : 7.5 + rand() * 57;
     const F = floorHalf(z);
     const x = centerX(z) + (rand() * 2 - 1) * F * 0.92;
     const r = 0.1 + 0.24 * Math.pow(rand(), 1.5);
@@ -249,6 +250,7 @@ export function rasterize(force) {
       }
     }
   }
+  D.rasterize();
   // 돌 위의 흙: 돌이 사라지면 바닥으로 떨어지고, 돌이 움직이면 같이 움직인다
   for (let j = 0; j <= NZ; j++) for (let i = SX0; i < SX1; i++) {
     const k = j * NXV + i;
@@ -261,6 +263,7 @@ export function rasterize(force) {
       W.ptop[k] = ground[k]; W.seal[k] = ground[k] - Math.min(loose[k], 0.5); W.kp[k] = W.KS;
     } else W.kp[k] = 0;
     if (W.sBot[k] >= 1e8 && fill[k] > 0) { const v = fill[k] * 0.38; fill[k] = 0; ground[k] += v; loose[k] += v; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); }
+    if (W.dam[k]) { W.ptop[k] = W.seal[k] = W.solid[k]; W.kp[k] = 0; }
     const c = cap[k]; if (c <= 0) continue;
     if (W.sBot[k] > 1e8) { cap[k] = 0; ground[k] += c; loose[k] += c; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); continue; }
     W.solid[k] += c;

@@ -11,13 +11,15 @@ export const seal = new Float32Array(NV), ptop = new Float32Array(NV), lev = new
 export const PHI = 0.38; let KP = 0.25;
 export const KS = 0.02; // 흙·진흙 투수계수(가는 모래 수준): 흙둑도 아주 조금씩 샌다
 export const kp = new Float32Array(NV); // 셀별 투수계수 (돌무더기≈KP, 흙≈KS)
+export const dam = new Uint8Array(NV); // 콘크리트 댐 칸 (물이 스미지 않음)
+export const pipes = []; // 수력발전 터빈 관 {a:[칸], b:[칸], area, Q, head, P}
 const ho = new Float32Array(NV), hp = new Float32Array(NV);
 const pL = new Float32Array(NV), pR = new Float32Array(NV), pU = new Float32Array(NV), pD = new Float32Array(NV);
 const fL = new Float32Array(NV), fR = new Float32Array(NV), fU = new Float32Array(NV), fD = new Float32Array(NV);
 export const vx = new Float32Array(NV), vz = new Float32Array(NV), foam = new Float32Array(NV), wet = new Float32Array(NV);
 export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
 const h0 = new Float32Array(NV);
-export const MEAS_J = 203; // z≈30.5 (하류 낙차 직전)
+export const MEAS_J = 325; // z=65 (하류 낙차 직전)
 export const state = { inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
 const src = [];
 
@@ -30,7 +32,7 @@ export function init() {
 export function beginSolid() {
   for (let j = 0; j < NZV; j++) {
     const b = idx(SX0, j), g = ground.subarray(b, b + SW);
-    solid.set(g, b); seal.set(g, b); ptop.set(g, b); sBot.fill(1e9, b, b + SW);
+    solid.set(g, b); seal.set(g, b); ptop.set(g, b); sBot.fill(1e9, b, b + SW); dam.fill(0, b, b + SW);
   }
 }
 
@@ -48,6 +50,7 @@ export function computeActive() {
 }
 function widen() {
   for (const k of src) { const j = (k / NXV) | 0, i = k % NXV; if (i < wlo[j]) wlo[j] = i; if (i > whi[j]) whi[j] = i; }
+  for (const p of pipes) for (const k of p.b) { const j = (k / NXV) | 0, i = k % NXV; if (i < wlo[j]) wlo[j] = i; if (i > whi[j]) whi[j] = i; }
   for (let j = 0; j < NZV; j++) {
     let a = SX1, b = SX0 - 1;
     for (let jj = Math.max(0, j - 1); jj <= Math.min(NZ, j + 1); jj++) if (wlo[jj] <= whi[jj]) { if (wlo[jj] < a) a = wlo[jj]; if (whi[jj] > b) b = whi[jj]; }
@@ -110,6 +113,23 @@ export function step(dt) {
   }
   const add = state.inflow * dt / (A * src.length);
   for (const k of src) h[k] += add;
+  // 수력발전: 댐 위쪽 물이 관(터빈)을 지나 아래로 흐른다. 유량 Q = Cd·A·√(2gΔH), 출력 P = ρgQΔH·η
+  for (const p of pipes) {
+    let la = 0, lb = 0, ha = 0;
+    for (const k of p.a) { la += lev[k]; ha += h[k]; }
+    for (const k of p.b) lb += lev[k];
+    la /= p.a.length; lb /= p.b.length;
+    const dH = la - lb; let Q = 0;
+    if (dH > 0.02 && ha > 0.01) {
+      Q = Math.min(0.8 * p.area * Math.sqrt(2 * G * dH), ha * A * 0.5 / dt);
+      const take = Q * dt / A;
+      for (const k of p.a) h[k] = Math.max(0, h[k] - take * h[k] / ha);
+      const put = Q * dt / (A * p.b.length);
+      for (const k of p.b) h[k] += put;
+    }
+    p.Q += (Q - p.Q) * Math.min(1, dt * 2); p.head = Math.max(0, dH);
+    p.P = 1000 * G * p.Q * p.head * 0.85;
+  }
   widen();
   state.outflow = out;
   const a = Math.min(1, dt * 0.6); state.outSm += (out - state.outSm) * a;
@@ -202,7 +222,8 @@ export function upload() {
       if (c < SW - 1 && h[k + 1] > 0.0008) best = Math.max(best, lev[k + 1]);
       if (j > 0 && h[k - NXV] > 0.0008) best = Math.max(best, lev[k - NXV]);
       if (j < NZ && h[k + NXV] > 0.0008) best = Math.max(best, lev[k + NXV]);
-      R = best > -1e8 ? Math.min(best, solid[k] + 0.03) - 0.006 : Math.min(solid[k], ground[k]) - 0.06;
+      R = dam[k] ? ground[k] - 0.1 // 콘크리트 댐 칸: 수면을 블록 속으로 숨겨 아래쪽에 얇은 막이 늘어지지 않게
+        : best > -1e8 ? Math.min(best, solid[k] + 0.03) - 0.006 : Math.min(solid[k], ground[k]) - 0.06;
     }
     dW[o] = R; dW[o + 1] = dep; dW[o + 2] = wet[k]; dW[o + 3] = foam[k];
     dV[o] = vx[k]; dV[o + 1] = vz[k]; dV[o + 2] = Math.min(1, sed[k] / (hk + 0.02) * 25); dV[o + 3] = 0;
@@ -264,7 +285,7 @@ export function makeWaterMesh(refrRT) {
     tV: { value: texV }, tN: { value: makeNormalTex() }, tRefr: { value: refrRT.texture }, tDepth: { value: refrRT.depthTexture },
     uRes: { value: new THREE.Vector2(1, 1) }, uProj: { value: new THREE.Matrix4() }, uNear: { value: 0.05 }, uFar: { value: 1200 }, uCheap: { value: 0 },
   });
-  const mat = new THREE.ShaderMaterial({ uniforms, fog: true, vertexShader: WATER_VS, fragmentShader: WATER_FS, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+  const mat = new THREE.ShaderMaterial({ uniforms, fog: true, transparent: true, vertexShader: WATER_VS, fragmentShader: WATER_FS, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   const m = new THREE.Mesh(g, mat);
   m.frustumCulled = false;
   return m;
@@ -324,7 +345,8 @@ vec3 ssr(vec3 wpos, vec3 n, out float hit){
       vec4 cb = uProj * vec4(vp + rd * b, 1.); uv = cb.xy / cb.w * 0.5 + 0.5;
       vec2 e = min(uv, 1. - uv);
       hit = smoothstep(0., 0.12, min(e.x, e.y)) * (1. - smoothstep(25., 45., t));
-      return texture2D(tRefr, uv).rgb;
+      vec2 bt = 1.2 / uRes;
+      return (texture2D(tRefr, uv).rgb * 2. + texture2D(tRefr, uv + vec2(bt.x, 0.)).rgb + texture2D(tRefr, uv - vec2(bt.x, 0.)).rgb + texture2D(tRefr, uv + vec2(0., bt.y)).rgb + texture2D(tRefr, uv - vec2(0., bt.y)).rgb) / 6.;
     }
     tp = t; t = t * GROW + 0.04;
   }
@@ -370,7 +392,7 @@ void main(){
     float sZ = linZ(texture2D(tDepth, suv + off).r);
     if (sZ < myZ) { off = vec2(0.); sZ = linZ(texture2D(tDepth, suv).r); }
     refr = texture2D(tRefr, suv + off).rgb;
-    thick = clamp(sZ - myZ, 0., 6.);
+    thick = depth / max(ndv, 0.2); // 깊이 버퍼 대신 시뮬레이션 수심 → 계단 무늬 없음
   } else thick = depth / max(ndv, 0.2);
   vec3 ab = exp(-thick * absC);
   vec3 col = uCheap < 0.5 ? refr*ab + scat*(1.-ab) : scat;
@@ -378,7 +400,7 @@ void main(){
   col = mix(col, refl, fres) + spec*smoothstep(0.,0.004,depth);
   alpha = max(alpha, fres*0.9);
   float vis = smoothstep(0.0008, 0.012, depth); // 아주 얇게 스며 나온 물도 젖은 막처럼 보이게
-  if (uCheap < 0.5) col = mix(refr, col, vis); else alpha *= vis;
+  alpha *= vis; // 얕은 물가는 실제 화면이 비치도록 투명하게
   float fo = w.a;
   float fnz = mix(nA.w, nB.w, wb)*0.6 + nC.w*0.4;
   float foamA = smoothstep(0.5, 0.85, fo*0.6 + fnz*0.7 - 0.2) * smoothstep(0.,0.02,depth);

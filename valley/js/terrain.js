@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { fbm, vnoise, sstep, clamp, GLSL_NOISE } from './noise.js';
 
-export const CELL = 0.15, NX = 160, NZ = 240, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
+export const CELL = 0.2, NX = 180, NZ = 360, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
 export const X0 = -NX * CELL / 2, Z0 = 0;
-export const SX0 = 20, SX1 = 140; // 물 시뮬레이션 열 범위 (x ±9 m) // 물 시뮬레이션 열 범위
+export const SX0 = 45, SX1 = 135; // 물 시뮬레이션 열 범위 (x ±9 m) // 물 시뮬레이션 열 범위
 export const SW = SX1 - SX0;
 export const idx = (i, j) => j * NXV + i;
 
@@ -17,6 +17,7 @@ export const U = {
   uSunDir: { value: new THREE.Vector3(-0.38, 0.82, 0.43).normalize() },
   uSunCol: { value: new THREE.Color(1.0, 0.93, 0.82) },
   uRain: { value: 0 },
+  uDay: { value: 1 },
 };
 
 export const centerX = z => 1.8 * Math.sin(z * 0.13 + 0.5) + 0.6 * Math.sin(z * 0.31 + 1.3);
@@ -25,9 +26,9 @@ export const chanW = z => 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
 export function baseY(z) {
   let y = 4.0 - z * 0.045;
   y += 3.2 * sstep(4.2, 2.8, z);       // 상류 절벽(폭포)
-  y -= 2.2 * sstep(31.6, 34.2, z);     // 하류 낙차
+  y -= 2.2 * sstep(66.2, 68.8, z);     // 하류 낙차
   if (z < 0) y += -z * 0.06;
-  if (z > 36) y -= (z - 36) * 0.07;
+  if (z > 72) y -= (z - 72) * 0.07;
   return y;
 }
 
@@ -378,7 +379,7 @@ export const getHF = () => hfCollider;
 
 // ───── 바깥 산 (1m 격자, 안쪽 영역은 비움) ─────
 export function buildOuter(material) {
-  const XA = -70, XB = 70, ZA = -50, ZB = 90, S = 1; // 안개 너머 안 보이는 곳은 만들지 않음
+  const XA = -70, XB = 70, ZA = -50, ZB = 130, S = 1; // 안개 너머 안 보이는 곳은 만들지 않음
   const nx = (XB - XA) / S + 1, nz = (ZB - ZA) / S + 1;
   const pos = new Float32Array(nx * nz * 3), mat = new Float32Array(nx * nz * 4);
   const ys = new Float32Array(nx * nz);
