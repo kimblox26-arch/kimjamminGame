@@ -272,13 +272,18 @@ export function makeWaterMesh(refrRT) {
 
 const WATER_VS = /* glsl */`
 uniform sampler2D tWater; uniform vec4 uWInfo; uniform vec2 uWSize;
-varying vec3 vWorld; varying vec2 vUv;
+varying vec3 vWorld; varying vec2 vUv; varying vec3 vNg;
 #include <fog_pars_vertex>
 void main(){
   vec2 c = (position.xz - uWInfo.xy) * uWInfo.z; vUv = (c + .5) / uWSize;
   vec4 w = texture2D(tWater, vUv);
   vec3 p = vec3(position.x, w.r, position.z);
   vWorld = p;
+  // 수면 법선은 꼭짓점에서 계산해 삼각형 위로 부드럽게 보간 (격자 모양으로 각지지 않게)
+  vec2 tx = 1.0 / uWSize;
+  float hL = texture2D(tWater, vUv - vec2(tx.x,0.)).r, hR = texture2D(tWater, vUv + vec2(tx.x,0.)).r;
+  float hD = texture2D(tWater, vUv - vec2(0.,tx.y)).r, hU = texture2D(tWater, vUv + vec2(0.,tx.y)).r;
+  vNg = vec3(clamp((hL-hR)*0.5*uWInfo.z, -3., 3.), 1.0, clamp((hD-hU)*0.5*uWInfo.z, -3., 3.));
   vec4 mvPosition = viewMatrix * vec4(p, 1.);
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -286,7 +291,7 @@ void main(){
 
 const WATER_FS = GLSL_NOISE + GLSL_SKY + /* glsl */`
 uniform sampler2D tV, tN, tRefr, tDepth; uniform vec2 uRes; uniform float uTime, uNear, uFar, uCheap; uniform vec3 uSunCol; uniform mat4 uProj;
-varying vec3 vWorld; varying vec2 vUv;
+varying vec3 vWorld; varying vec2 vUv; varying vec3 vNg;
 #include <fog_pars_fragment>
 float linZ(float d){ return uNear*uFar / (uFar - d*(uFar-uNear)); }
 // 화면 공간 반사: 물에 비친 계곡 벽·바위를 실제로 그린다
@@ -300,7 +305,7 @@ vec3 ssr(vec3 wpos, vec3 n, out float hit){
 #else
   const int STEPS = 22; const float GROW = 1.3;
 #endif
-  float t = 0.12;
+  float t = 0.12, tp = 0.;
   for (int i = 0; i < STEPS; i++) {
     vec3 p = vp + rd * t;
     vec4 c = uProj * vec4(p, 1.);
@@ -309,21 +314,26 @@ vec3 ssr(vec3 wpos, vec3 n, out float hit){
     if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) break;
     float sz = linZ(texture2D(tDepth, uv).r), pz = -p.z;
     if (pz > sz && pz - sz < 0.4 + t * 0.2) {
+      // 맞은 구간을 이분 탐색으로 다듬어 계단 모양 반사를 없앤다
+      float a = tp, b = t;
+      for (int k = 0; k < 5; k++) {
+        float m = (a + b) * 0.5; vec3 q = vp + rd * m; vec4 cq = uProj * vec4(q, 1.);
+        vec2 uq = cq.xy / cq.w * 0.5 + 0.5;
+        if (-q.z > linZ(texture2D(tDepth, uq).r)) b = m; else a = m;
+      }
+      vec4 cb = uProj * vec4(vp + rd * b, 1.); uv = cb.xy / cb.w * 0.5 + 0.5;
       vec2 e = min(uv, 1. - uv);
       hit = smoothstep(0., 0.12, min(e.x, e.y)) * (1. - smoothstep(25., 45., t));
       return texture2D(tRefr, uv).rgb;
     }
-    t = t * GROW + 0.04;
+    tp = t; t = t * GROW + 0.04;
   }
   return vec3(0.);
 }
 void main(){
   vec4 w = texture2D(tWater, vUv); vec4 v = texture2D(tV, vUv);
   float depth = w.g;
-  vec2 tx = 1.0 / uWSize;
-  float hL = texture2D(tWater, vUv - vec2(tx.x,0.)).r, hR = texture2D(tWater, vUv + vec2(tx.x,0.)).r;
-  float hD = texture2D(tWater, vUv - vec2(0.,tx.y)).r, hU = texture2D(tWater, vUv + vec2(0.,tx.y)).r;
-  vec3 n = normalize(vec3((hL-hR)*0.5*uWInfo.z, 1.0, (hD-hU)*0.5*uWInfo.z));
+  vec3 n = normalize(vNg);
   vec2 flow = v.xy; float sp = length(flow);
   float t = uTime*0.55; float p0 = fract(t), p1 = fract(t+0.5); float wb = abs(p0*2.-1.);
   vec2 bx = vWorld.xz*0.42;

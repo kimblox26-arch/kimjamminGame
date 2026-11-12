@@ -149,7 +149,8 @@ function resize() {
   const w = innerWidth, h = innerHeight, pr = renderer.getPixelRatio();
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
   composer.setPixelRatio(pr); composer.setSize(w, h);
-  const rs = perf ? 0.45 : Q.refr;
+  // 굴절 텍스처는 화면(CSS) 해상도의 절반 아래로는 내리지 않음 → 물이 깨져 보이지 않게
+  const rs = Math.max(perf ? 0.55 : Q.refr, 0.5 / pr);
   refrRT.setSize(Math.max(1, Math.round(w * pr * rs)), Math.max(1, Math.round(h * pr * rs)));
   fxaa.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
   water.material.uniforms.uRes.value.set(w * pr, h * pr);
@@ -158,18 +159,21 @@ function resize() {
 }
 
 // ───── 자동 해상도: 30fps를 지키도록 렌더 해상도를 조절 ─────
-const dyn = { scale: 1, avg: 33, t: 0, cool: 0, ceil: 1, lastUp: -99 };
-function dynRes(interval, dt) {
-  dyn.avg += (interval - dyn.avg) * 0.08; dyn.t += dt; dyn.cool -= dt;
+const dyn = { scale: 1, avg: 33, cpu: 8, t: 0, cool: 0, ceil: 1, lastUp: -99 };
+function dynRes(interval, dt, cpu) {
+  dyn.avg += (interval - dyn.avg) * 0.08; dyn.cpu += (cpu - dyn.cpu) * 0.08; dyn.t += dt; dyn.cool -= dt;
   if (dyn.t < 1.2 || dyn.cool > 0) return;
   dyn.t = 0;
+  // 계산(CPU)이 느려서 늦어진 경우엔 해상도를 내려도 소용없으니 화질은 그대로 둔다
+  const gpuBound = dyn.avg - dyn.cpu > 24;
   let s = dyn.scale;
-  if (dyn.avg > 50) s *= 0.75;
-  else if (dyn.avg > 37.5) s *= 0.88;
-  else if (dyn.avg < 34.5 && s < dyn.ceil) { s = Math.min(dyn.ceil, s * 1.07); dyn.lastUp = clock; }
+  if (gpuBound && dyn.avg > 50) s *= 0.8;
+  else if (gpuBound && dyn.avg > 37.5) s *= 0.9;
+  else if (dyn.avg < 34.5 && s < dyn.ceil) { s = Math.min(dyn.ceil, s * 1.08); dyn.lastUp = clock; }
+  else if (!gpuBound && s < 1 && dyn.avg < 40) s = Math.min(dyn.ceil, s * 1.04);
   else return;
-  if (s < dyn.scale && clock - dyn.lastUp < 3) dyn.ceil = Math.max(0.5, dyn.scale * 0.97); // 올렸다가 느려지면 그 위로는 안 올림
-  s = Math.max(0.5, Math.min(1, s));
+  if (s < dyn.scale && clock - dyn.lastUp < 3) dyn.ceil = Math.max(0.75, dyn.scale * 0.97); // 올렸다가 느려지면 그 위로는 안 올림
+  s = Math.max(0.75, Math.min(1, s)); // 너무 낮추면 픽셀처럼 깨지므로 75% 아래로는 내리지 않음
   if (Math.abs(s - dyn.scale) < 0.01) return;
   dyn.scale = s; dyn.cool = 1.5;
   renderer.setPixelRatio((perf ? perfPR() : basePR) * s);
@@ -262,14 +266,15 @@ function ui(dt) {
 }
 
 // ───── 루프 ─────
-let flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
+let cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
 function loop(now) {
   requestAnimationFrame(loop);
   if (now - last < FRAME_MS - 4) return; // 30fps 고정
   const raw = (now - last) / 1000; const dt = Math.min(0.07, raw); last = now;
-  if (!paused) dynRes(raw * 1000, dt);
+  if (!paused) dynRes(raw * 1000, dt, cpuMs);
+  const t0 = performance.now();
   fpsN++; fpsT += raw; if (fpsT > 0.5) { fpsV = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   if (paused) { render(); return; }
   clock += dt; T.U.uTime.value = clock;
@@ -294,7 +299,7 @@ function loop(now) {
   if (clock - lastEdit < 0.3 || flushT > 0.25) { T.flushMesh(); flushT = 0; }
   if (T.physState.dirty) {
     T.physState.t += dt;
-    if ((T.physState.t > 0.3 && clock - lastEdit > 0.2) || T.physState.t > 1.5) rebuildHF();
+    if ((T.physState.t > 0.3 && clock - lastEdit > 0.25) || T.physState.t > 3) rebuildHF(); // 계속 파는 중엔 3초마다만 다시 만듦
   }
   if (!perf || frameN % 2 === 0) W.upload(); // 폰: 물 텍스처는 격프레임 갱신
   // 비: 계곡물이 불어남
@@ -306,6 +311,7 @@ function loop(now) {
   N.cull(camera.position);
   audioUpdate();
   ui(dt);
+  cpuMs = performance.now() - t0; // 화면 그리기 전까지의 계산 시간
   render();
 }
 function rebuildHF() {

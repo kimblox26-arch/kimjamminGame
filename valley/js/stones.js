@@ -34,7 +34,8 @@ function stoneMaterial([c1, c2, c3, moss]) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying vec3 vWP; varying vec3 vWN; uniform vec3 uC1,uC2,uC3; uniform float uMoss, uTime, uRain; uniform vec3 uSunCol, uSunDir;\n' + GLSL_NOISE)
       .replace('#include <map_fragment>', /* glsl */`
-        float fade = 1. - smoothstep(4., 25., length(vViewPosition));
+        float sDet = 1. - smoothstep(0.008, 0.035, length(fwidth(vWP)));
+        float fade = (1. - smoothstep(4., 25., length(vViewPosition))) * sDet;
         #ifdef LITE
         float n1 = vnoise3(vOP*2.6), n2 = vnoise3(vOP*17.), n3 = 0.5;
 #else
@@ -66,7 +67,7 @@ function stoneMaterial([c1, c2, c3, moss]) {
 #endif
         diffuseColor.rgb *= alb;`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = sRough;')
-      .replace('#include <normal_fragment_maps>', 'normal = bumpN(-vViewPosition, normal, sH, 1.0);')
+      .replace('#include <normal_fragment_maps>', 'normal = bumpN(-vViewPosition, normal, sH, mix(0.3, 1., sDet));')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * sCaus * uSunCol * 0.9;');
   };
   return m;

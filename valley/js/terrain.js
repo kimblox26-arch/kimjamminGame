@@ -120,7 +120,7 @@ export function terrainMaterial() {
       .replace('#include <common>', '#include <common>\nvarying vec4 vMat; varying vec3 vWP; varying vec3 vWN; uniform float uTime; uniform vec3 uSunCol; uniform vec3 uSunDir; uniform float uRain;\n' + GLSL_NOISE)
       .replace('#include <map_fragment>', TERRAIN_ALBEDO)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')
-      .replace('#include <normal_fragment_maps>', 'normal = bumpN(-vViewPosition, normal, tH, 1.0);')
+      .replace('#include <normal_fragment_maps>', 'normal = bumpN(-vViewPosition, normal, tH, tBump);')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * tCaus * uSunCol * 0.9;');
   };
   return m;
@@ -128,7 +128,11 @@ export function terrainMaterial() {
 const TERRAIN_ALBEDO = /* glsl */`
 vec3 P = vWP; vec3 N = normalize(vWN);
 float slope = 1. - N.y;
-float fade = 1. - smoothstep(5., 35., length(vViewPosition));
+// 한 픽셀이 덮는 지면 크기(m): 해상도가 낮거나 멀면 잔무늬·굴곡을 줄여 픽셀 깨짐(2x2 블록)을 막는다
+float pxs = length(fwidth(P.xz)) + abs(fwidth(P.y)) * 0.5;
+float det = 1. - smoothstep(0.012, 0.05, pxs);
+float tBump = mix(0.3, 1., det);
+float fade = (1. - smoothstep(5., 35., length(vViewPosition))) * det;
 float sSoil = vMat.x, sLoose = vMat.y, sGrass = vMat.z, sDug = vMat.w;
 vec4 wd = waterAt(P.xz); float under = wd.r - P.y;
 float wet = clamp(max(wd.b*0.9, smoothstep(-0.06, 0.01, under)), 0., 1.);
@@ -161,7 +165,7 @@ if (rockW > 0.002) { // 암반 (3축 투영)
 if (gravW > 0.002) { // 가벼운 자갈
   float g1 = vnoise2(P.xz*9.), g2 = vnoise2(P.xz*23.);
   vec3 peb = mix(vec3(0.34,0.31,0.26), vec3(0.54,0.50,0.44), g1) * (0.8 + 0.3*g2);
-  alb += peb*gravW; tRough += 0.78*gravW; tH += (g1*0.012 + g2*0.006) * gravW;
+  alb += peb*gravW; tRough += 0.78*gravW; tH += (g1*0.012 + g2*0.006*fade) * gravW;
 }
 #else
 if (gravW > 0.002) { // 자갈: 큰 돌 + 잔자갈 + 모래
@@ -178,7 +182,7 @@ if (gravW > 0.002) { // 자갈: 큰 돌 + 잔자갈 + 모래
   vec3 peb = mix(mix(sand, cS, smoothstep(0.05, 0.35, domeS)), cB, inB);
   peb *= (0.9 + 0.2*vnoise2(P.xz*55.)*fade + 0.1) * mix(mix(0.6, 1., domeS), mix(0.55, 1.05, domeB), inB);
   alb += peb*gravW; tRough += 0.78*gravW;
-  tH += mix(domeS*0.012, 0.012 + domeB*0.05, inB) * gravW;
+  tH += mix(domeS*0.012*mix(0.3, 1., det), 0.012 + domeB*0.05, inB) * gravW;
 }
 #endif
 if (dirtW > 0.002) { // 흙 / 풀밭
