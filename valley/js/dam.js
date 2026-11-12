@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf } from './terrain.js';
 import * as W from './water.js';
 import { GLSL_NOISE } from './noise.js';
+import * as H from './hydro.js';
 
 export const blocks = [];
 export const byHandle = new Map();
@@ -28,7 +29,7 @@ function concreteMat() {
   };
   return m;
 }
-const MAT = concreteMat();
+export const MAT = concreteMat();
 const metal = new THREE.MeshStandardMaterial({ color: 0x5d6b73, roughness: 0.4, metalness: 0.8 });
 const accent = new THREE.MeshStandardMaterial({ color: 0xe0a92e, roughness: 0.5, metalness: 0.3 });
 const geoCache = new Map();
@@ -85,28 +86,9 @@ export function remove(b) {
   group.remove(b.mesh); blocks.splice(blocks.indexOf(b), 1);
 }
 
-// ───── 큰 댐 자동 건설: 계곡을 가로질러 높이 3 m 짜리 댐을 가운데부터 차례로 솟아오르게 ─────
-export function bigDam(zc) {
-  const cx = centerX(zc), bottom = groundAt(cx, zc), crest = bottom + 3.2, d = 2.4, w = 2.0, out = [];
-  // 양쪽으로 벽에 닿을 때까지(땅이 마루보다 높아질 때까지) 블록을 늘어놓는다
-  for (const side of [1, -1]) for (let n = side > 0 ? 0 : 1; n < 14; n++) {
-    const x = cx + side * n * w; const g = footMin(x, zc, 0, w, d);
-    if (g > crest - 0.3) { // 벽에 박히는 마지막 블록
-      out.push({ x, g, last: true }); break;
-    }
-    out.push({ x, g });
-  }
-  out.sort((a, b) => Math.abs(a.x - cx) - Math.abs(b.x - cx));
-  const made = [];
-  out.forEach((o, i) => {
-    const y0 = o.g - 0.6, h = Math.max(1, crest - y0);
-    made.push(addBlock({ x: o.x, z: zc, yaw: 0, y0, w, h, d, anim: 0.9, delay: i * 0.28, big: true }));
-  });
-  return { blocks: made, duration: out.length * 0.28 + 1, crest, cx };
-}
-
 // 물막이: 회전된 직사각형 안 칸은 블록 윗면까지 막히고, 콘크리트라 물이 스미지 않는다
 export function rasterize() {
+  H.rasterize();
   for (const b of blocks) {
     if (!b.ready) continue;
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw), rr = Math.hypot(b.w, b.d) / 2 + CELL;

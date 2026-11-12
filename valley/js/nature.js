@@ -218,7 +218,7 @@ function ribbon(path, width) {
   g.computeVertexNormals();
   return g;
 }
-function flowMat(foam, speed, fall) {
+export function flowMat(foam, speed, fall) {
   return new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
     uniforms: Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), U, { uFoam: { value: foam }, uSpeed: { value: speed }, uOp: { value: 1 }, uFall: { value: fall } }),

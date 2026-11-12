@@ -120,15 +120,16 @@ export function step(dt) {
     for (const k of p.b) lb += lev[k];
     la /= p.a.length; lb /= p.b.length;
     const dH = la - lb; let Q = 0;
-    if (dH > 0.02 && ha > 0.01) {
-      Q = Math.min(0.8 * p.area * Math.sqrt(2 * G * dH), ha * A * 0.5 / dt);
+    const want = p.qfn ? p.qfn(la, lb) : dH > 0.02 ? 0.8 * p.area * Math.sqrt(2 * G * dH) : 0; // 발전소 수차·수문은 자기 식(qfn)을 쓴다
+    if (want > 0 && ha > 0.01) {
+      Q = Math.min(want, ha * A * 0.5 / dt);
       const take = Q * dt / A;
       for (const k of p.a) h[k] = Math.max(0, h[k] - take * h[k] / ha);
       const put = Q * dt / (A * p.b.length);
       for (const k of p.b) h[k] += put;
     }
     p.Q += (Q - p.Q) * Math.min(1, dt * 2); p.head = Math.max(0, dH);
-    p.P = 1000 * G * p.Q * p.head * 0.85;
+    if (!p.qfn) p.P = 1000 * G * p.Q * p.head * 0.85;
   }
   widen();
   state.outflow = out;

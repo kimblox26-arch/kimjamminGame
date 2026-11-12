@@ -1,5 +1,5 @@
 // 실시간 합성 사운드 (WebAudio)
-let ctx, master, white, brown, river, riverHi, fall, wind, rain, on = false;
+let hum, motorS, ctx, master, white, brown, river, riverHi, fall, wind, rain, on = false;
 
 function noiseBuf(kind) {
   const n = ctx.sampleRate * 3, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
@@ -14,6 +14,18 @@ function loop(buf, type, freq, q) {
   s.connect(f).connect(g).connect(master); s.start(0, Math.random() * 2);
   return { g, f };
 }
+function osc(f, type, ftype, ff) {
+  const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
+  const fl = ctx.createBiquadFilter(); fl.type = ftype; fl.frequency.value = ff; fl.Q.value = 1.2;
+  const g = ctx.createGain(); g.gain.value = 0; o.connect(fl).connect(g).connect(master); o.start();
+  return { g, o };
+}
+export function machine(humLv, motorLv) {
+  if (!on) return;
+  hum.g.gain.setTargetAtTime(Math.min(0.12, humLv * 0.12), ctx.currentTime, 0.4);
+  motorS.g.gain.setTargetAtTime(Math.min(0.06, motorLv * 0.06), ctx.currentTime, 0.15);
+  motorS.o.frequency.setTargetAtTime(300 + motorLv * 80, ctx.currentTime, 0.2);
+}
 export function init() {
   if (ctx) { ctx.resume(); return; }
   ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -25,6 +37,8 @@ export function init() {
   fall = loop(brown, 'lowpass', 1100, 0.3);
   wind = loop(brown, 'bandpass', 380, 0.8);
   rain = loop(white, 'highpass', 1800, 0.4);
+  // 발전기 웅웅 소리(120 Hz) · 수문 모터 소리
+  hum = osc(120, 'sawtooth', 'lowpass', 420); motorS = osc(330, 'sawtooth', 'bandpass', 900);
   on = true; birds();
 }
 const T = (p, v, tc = 0.3) => p.setTargetAtTime(v, ctx.currentTime, tc);

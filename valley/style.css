@@ -48,6 +48,25 @@ h2 { font-size: 20px; margin-bottom: 18px; }
 #mud { display: block; height: 100%; width: 0; background: var(--mud); }
 .tb.spd b { font-size: 13px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .tb.spd.s1 { color: #ffd36b; } .tb.spd.s2 { color: #ff9b5c; background: rgba(255, 155, 92, .14); }
+#ctrl { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 120px); overflow: auto;
+  padding: 14px 16px; border-radius: 16px; background: rgba(10, 18, 28, .9); border: 1px solid var(--line); backdrop-filter: blur(10px); pointer-events: auto; font-size: 13px; }
+.ch { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; }
+.ch button { border: 1px solid var(--line); background: rgba(255, 255, 255, .06); border-radius: 8px; padding: 5px 12px; }
+.cg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.cg div { background: rgba(255, 255, 255, .05); border-radius: 8px; padding: 6px 8px; display: grid; }
+.cg span, .vals span { color: var(--muted); font-size: 11px; }
+.cg b { font-variant-numeric: tabular-nums; font-size: 14px; }
+.cs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.cu { background: rgba(255, 255, 255, .04); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.cu h4 { font-size: 13px; display: flex; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.cu .st { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: rgba(255, 90, 80, .2); color: #ff9a90; white-space: nowrap; }
+.cu .st[data-s="on"] { background: rgba(80, 230, 140, .2); color: #8ff0b6; }
+.cu .st[data-s="mid"] { background: rgba(255, 200, 80, .2); color: #ffd98a; }
+.cu label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); }
+.cu input[type=range] { width: 100%; accent-color: #ffcd78; }
+.vals { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.vals span { color: var(--text); font-size: 12px; }
+@media (max-width: 640px) { .cg { grid-template-columns: repeat(2, 1fr); } .cs { grid-template-columns: 1fr; } }
 #dayMenu { position: absolute; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: 14px;
   background: var(--glass-2); border: 1px solid var(--line); backdrop-filter: blur(8px); pointer-events: auto; max-width: calc(100vw - 32px); }
 #dayMenu button { border: 1px solid var(--line); background: rgba(255, 255, 255, .06); border-radius: 10px; padding: 8px 14px; font-size: 14px; font-weight: 700; }

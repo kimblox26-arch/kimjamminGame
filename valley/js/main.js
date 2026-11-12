@@ -1,4 +1,4 @@
-// 계곡 물막이 — 메인 루프
+// 계곡 — 메인 루프
 import * as THREE from 'three';
 import RAPIER from 'rapier';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -15,6 +15,7 @@ import * as FX from './fx.js';
 import * as N from './nature.js';
 import * as A from './audio.js';
 import * as D from './dam.js';
+import * as H from './hydro.js';
 import * as V from './village.js';
 import { makeSky } from './sky.js';
 
@@ -43,7 +44,7 @@ let stoneGroup, innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = (v, t) => { $('progbar').style.width = Math.round(v * 100) + '%'; if (t) $('progtxt').textContent = t; };
-if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
+if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, H, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
 
 // ───── 저장 / 불러오기 (브라우저 저장소) ─────
 const SAVE_KEY = 'valley.save.v1';
@@ -51,14 +52,37 @@ const encWater = a => { const n = T.SW * T.NZV, u = new Uint16Array(n); for (let
 function decWater(str, a) { if (!str) return; const bin = atob(str), by = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) by[i] = bin.charCodeAt(i); const u = new Uint16Array(by.buffer); for (let j = 0; j < T.NZV; j++) for (let c = 0; c < T.SW; c++) a[j * T.NXV + T.SX0 + c] = u[j * T.SW + c] / 10000; }
 let lastSave = 0;
 function saveGame(quiet) {
-  if (!started || D.building()) return false;
+  if (!started || D.building() || H.building()) return false;
   const c = camera.position;
   const data = { v: 1, at: Date.now(), t: T.snapshot(), st: S.serialize(), dm: D.serialize(), w: encWater(W.h), w0: encWater(W.h0),
-    tod: sky_.tod, batt: elec.batt, rain: rainOn, inflow: W.state.inflow, out: W.state.outSm, p: [c.x, c.z, PL.P.yaw, PL.P.pitch] };
+    hp: H.serialize(), tod: sky_.tod, batt: elec.batt, rain: rainOn, inflow: W.state.inflow, out: W.state.outSm, p: [c.x, c.z, PL.P.yaw, PL.P.pitch] };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); lastSave = clock; if (!quiet) hooks.toast('저장했어요'); updateSaveInfo(); return true; }
   catch (e) { if (!quiet) hooks.toast('저장 공간이 부족해요'); return false; }
 }
 function loadSave() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch { return null; } }
+// 제어실 화면 갱신
+const f1 = (v, n = 1) => (+v).toFixed(n);
+function ctrlUpdate() {
+  const p = H.plant, bed = T.groundAt(p.cx, p.zc), Sp = H.SPEC;
+  $('cStats').innerHTML = [
+    ['저수위', f1(p.level - bed, 2) + ' m'], ['하류 수위', f1(p.tail - bed, 2) + ' m'], ['유효 낙차', f1(p.head, 2) + ' m'],
+    ['계곡 유입', f1(W.state.inflow, 2) + ' m³/s'], ['총 발전', f1(p.P / 1000, 2) + ' kW'], ['모터 소비', f1(elec.motor || 0, 1) + ' kW'],
+    ['배터리', Math.round(elec.batt / elec.cap * 100) + '%' + (elec.diesel && (elec.motor || 0) > 0 ? ' · 비상 디젤' : '')], ['여수로 방류', f1(p.spillQ, 2) + ' m³/s'],
+  ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+  p.units.forEach((u, i) => {
+    const box = $('cU' + i);
+    box.querySelector('.st').textContent = u.state; box.querySelector('.st').dataset.s = u.sync ? 'on' : u.rpm > 20 ? 'mid' : 'off';
+    box.querySelector('.vals').innerHTML = `<span>가이드베인 ${Math.round(u.gate * 100)}%</span><span>${Math.round(u.rpm)} / ${Sp.sync} rpm</span><span>유량 ${f1(u.Q, 3)} m³/s</span><span>낙차 ${f1(Math.max(0, u.H ?? 0), 2)} m</span><span>효율 ${Math.round(u.eta * 100)}%</span><span>출력 ${f1(u.P / 1000, 2)} kW</span>`;
+    const sl = $('u' + i); if (document.activeElement !== sl) sl.value = Math.round(u.target * 100);
+  });
+  p.gates.forEach((g, i) => {
+    const box = $('cG' + i);
+    box.querySelector('.st').textContent = g.moving ? (g.target > g.open ? '모터 올리는 중' : '모터 내리는 중') : g.stalled ? '전기 부족 — 정지' : g.open > 0.01 ? '열림' : '닫힘';
+    box.querySelector('.st').dataset.s = g.moving ? 'mid' : g.stalled ? 'off' : g.open > 0.01 ? 'on' : 'off';
+    box.querySelector('.vals').innerHTML = `<span>실제 개도 ${Math.round(g.open * 100)}% (${f1(g.open * (Sp.sillDrop), 2)} m)</span><span>방류 ${f1(g.Q, 3)} m³/s</span><span>권양기 ${Sp.hoistKW} kW · ${Sp.gateRate * 100}%/s</span>`;
+    const sl = $('g' + i); if (document.activeElement !== sl) sl.value = Math.round(g.target * 100);
+  });
+}
 function updateSaveInfo() {
   const sv = loadSave(), el = $('saveInfo'); if (!el) return;
   el.textContent = sv ? `마지막 저장 ${new Date(sv.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '저장된 기록 없음';
@@ -126,7 +150,8 @@ async function boot(q, save) {
   const sg = new THREE.Group(); scene.add(sg); stoneGroup = sg; scene.add(S.outlineMesh());
   if (save) S.restore(save.st, sg); else S.spawnAll(sg, q.stones, q.boulders, keepOut);
   D.init(RAPIER, world, sg);
-  if (save) D.restore(save.dm);
+  H.init(sg, D.MAT, N.flowMat(1.0, 2.6, 1));
+  if (save) { D.restore(save.dm); H.restore(save.hp); }
   V.build(scene, RAPIER, world);
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
   prog(0.32, '숲 가꾸는 중'); await frame();
@@ -155,6 +180,7 @@ async function boot(q, save) {
     const p = save.p; PL.teleport(p[0], p[1]); PL.P.yaw = p[2]; PL.P.pitch = p[3];
     sky_.tod = save.tod ?? 9; elec.batt = save.batt ?? 0; ready = true; W.state.outSm = save.out ?? 0.2;
     if (save.rain) setRain(true);
+    if (H.plant?.ready) $('bCtrl').classList.remove('hidden');
   }
 
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType, samples: q.msaa }));
@@ -245,7 +271,7 @@ function showPause(title, btn) { paused = true; $('pauseT').textContent = title;
 function resume() { paused = false; $('pause').classList.add('hidden'); if (!isTouch) PL.lock($('gl')); }
 document.addEventListener('pointerlockchange', () => {
   if (!started || isTouch) return;
-  if (!document.pointerLockElement && !paused) showPause('일시정지', '계속');
+  if (!document.pointerLockElement && !paused && !ctrlOpen) showPause('일시정지', '계속');
 });
 $('resume').onclick = resume;
 $('pause').onclick = e => { if (e.target === $('pause')) resume(); };
@@ -266,19 +292,30 @@ $('dayFlow').onclick = () => { dayFrozen = !dayFrozen; $('dayFlow').textContent 
 $('bSave').onclick = () => saveGame();
 $('saveBtn').onclick = () => saveGame();
 // 큰 댐 자동 건설
-let bigJob = null;
 $('bBig').onclick = () => {
-  if (bigJob || D.building()) return;
+  if (H.plant) { hooks.toast(H.plant.ready ? '발전소는 하나만 지을 수 있어요 — 제어실을 열어 보세요' : '건설 중이에요'); return; }
   camera.getWorldDirection(camDir);
-  // 바라보는 쪽으로 7~9 m 앞(최소한 플레이어와 겹치지 않게), 집과 4 m 이상 떨어진 곳
+  // 바라보는 쪽으로 7~9 m 앞(플레이어와 겹치지 않게), 집과 4 m 이상 떨어진 곳
   const dirz = camDir.z >= 0 ? 1 : -1, aimZ = PL.P.aim?.point.z;
   let z = aimZ !== undefined && Math.abs(aimZ - camera.position.z) > 6 ? aimZ : camera.position.z + dirz * 8;
-  z = Math.max(9, Math.min(64, z));
-  for (let n = 0; n < 8 && V.cabins.some(c => Math.abs(c.position.z - z) < 4); n++) z += dirz * 2;
+  z = Math.max(9, Math.min(62, z));
+  for (let n = 0; n < 8 && V.cabins.some(c => Math.abs(c.position.z - z) < 6); n++) z += dirz * 2;
   if (Math.abs(z - camera.position.z) < 4) z = camera.position.z + dirz * 6;
-  bigJob = D.bigDam(z); A.rumble?.(bigJob.duration);
-  hooks.toast('큰 댐 건설 시작!');
+  const p = H.build(z); A.rumble?.(p.dur);
+  hooks.toast('계곡 수력발전소 건설 시작!');
 };
+// 제어실 패널
+let ctrlOpen = false;
+function setCtrl(on) {
+  ctrlOpen = on; $('ctrl').classList.toggle('hidden', !on);
+  if (on && document.pointerLockElement) document.exitPointerLock();
+}
+$('bCtrl').onclick = () => setCtrl(!ctrlOpen);
+$('ctrlX').onclick = () => { setCtrl(false); if (!isTouch) resume(); };
+['u0', 'u1', 'g0', 'g1'].forEach(id => $(id).oninput = e => {
+  const v = +e.target.value / 100, p = H.plant; if (!p) return;
+  if (id[0] === 'u') p.units[+id[1]].target = v; else p.gates[+id[1]].target = v;
+});
 document.querySelectorAll('#bar [data-t]').forEach(b => b.onclick = () => PL.setTool(b.dataset.t));
 addEventListener('keydown', e => {
   if (!started || e.repeat) return;
@@ -286,6 +323,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyO') setPerf(!perf);
   if (e.code === 'KeyN') toggleDayMenu();
   if (e.code === 'KeyK') saveGame();
+  if (e.code === 'KeyC' && H.plant?.ready) setCtrl(!ctrlOpen);
   if (e.code === 'KeyT') setTimeScale(timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1);
 });
 
@@ -331,9 +369,11 @@ function ui(dt) {
   $('mFill').style.width = (ready ? blocked * 100 : 0).toFixed(1) + '%';
   $('mSub').textContent = ready ? `저수 ${st.stored.toFixed(1)} m³ · 하류 ${Math.max(0, st.outSm * 1000).toFixed(0)} L/s` : '물길이 흐르는 중';
   const hh = Math.floor(sky_.tod), mm = Math.floor((sky_.tod - hh) * 60);
-  if (!bigJob) $('pw').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · 발전 ${elec.gen.toFixed(1)} kW · 배터리 ${Math.round(elec.batt / elec.cap * 100)}% · ${elec.lit > 0.5 ? '불 켜짐' : elec.want ? '전기 부족' : '불 꺼짐'}`;
+  if (H.building()) { const sg = H.plant.segs; $('pw').textContent = `수력발전소 건설 중… ${Math.round(sg.filter(x => x.ready).length / sg.length * 100)}%`; }
+  else $('pw').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · 발전 ${elec.gen.toFixed(1)} kW · 배터리 ${Math.round(elec.batt / elec.cap * 100)}% · ${elec.lit > 0.5 ? '불 켜짐' : elec.want ? '전기 부족' : '불 꺼짐'}`;
   $('mud').style.width = Math.min(100, PL.P.bucket / 0.5 * 100) + '%';
   if (perf) $('fps').textContent = fpsV.toFixed(0) + ' fps';
+  if (ctrlOpen && H.plant?.ready) ctrlUpdate();
 }
 
 // ───── 루프 ─────
@@ -369,15 +409,18 @@ function loop(now) {
   W.post(dg);
   D.update(dg, FX.splash, FX.dirt);
   if (D.building()) { S.touch(); shake = 0.05; }
-  if (bigJob) {
-    const done = bigJob.blocks.filter(b => b.ready).length;
-    if (done >= bigJob.blocks.length) { // 완공: 가운데 블록 두 개에 대형 터빈
-      const mid = [...bigJob.blocks].sort((a, b) => Math.abs(a.x - bigJob.cx) - Math.abs(b.x - bigJob.cx)).slice(0, 2);
-      for (const b of mid) D.toggleTurbine(b, -1);
-      S.touch(); A.chime(); hooks.toast('큰 댐 완공! 대형 터빈 2기 가동'); bigJob = null; saveGame(true);
-    } else $('pw').textContent = `큰 댐 건설 중… ${Math.round(done / bigJob.blocks.length * 100)}%`;
+  // 모터 전원: 배터리·발전 전기가 없으면 실제 발전소처럼 비상 디젤 발전기가 대신 돌린다(블랙 스타트)
+  elec.diesel = !(elec.batt > 0.05 || elec.gen > 0.5);
+  const hy = H.update(dg, true, FX.splash, FX.dirt);
+  elec.motor = hy.load;
+  if (H.plant) {
+    if (H.building()) shake = 0.05;
+    if (H.plant.changed) { S.touch(); H.plant.changed = false; }
+    if (H.plant.justDone) { H.plant.justDone = false; A.chime(); hooks.toast('수력발전소 완공! 제어실(C)에서 수차를 돌려 보세요'); $('bCtrl').classList.remove('hidden'); saveGame(true); }
+    const d = camera.position.distanceTo(new THREE.Vector3(H.plant.cx + 3, H.plant.crest, H.plant.zU + 4));
+    A.machine(H.plant.P / 8000 / (1 + d * d * 0.004), H.plant.gates.some(g => g.moving) ? 1 / (1 + d * d * 0.01) : 0);
   }
-  if (clock - lastSave > 90 && !D.building()) saveGame(true); // 자동 저장
+  if (clock - lastSave > 90 && !D.building() && !H.building()) saveGame(true); // 자동 저장
   dayNight(dg); electricity(dt, dg);
   flushT += dt;
   if (clock - lastEdit < 0.3 || flushT > 0.25) { T.flushMesh(); flushT = 0; }
@@ -422,9 +465,9 @@ function dayNight(dg) {
 // ───── 전기: 터빈 발전 → 배터리 → 밤에 가로등·오두막 불 ─────
 const elec = { batt: 0, cap: 20, gen: 0, lit: 0, want: false };
 function electricity(dt, dg) {
-  elec.gen = D.power() / 1000;
+  elec.gen = (D.power() + H.power()) / 1000;
   elec.want = T.U.uDay.value < 0.45;
-  const demand = elec.want ? V.demandKW() : 0, hours = dg * 24 / sky_.len;
+  const demand = (elec.want ? V.demandKW() : 0) + (elec.diesel ? 0 : elec.motor || 0), hours = dg * 24 / sky_.len;
   elec.batt = Math.max(0, Math.min(elec.cap, elec.batt + (elec.gen - demand) * hours));
   const on = elec.want && (elec.batt > 0.02 || elec.gen >= demand) ? 1 : 0;
   elec.lit += (on - elec.lit) * Math.min(1, dt * 2.5);

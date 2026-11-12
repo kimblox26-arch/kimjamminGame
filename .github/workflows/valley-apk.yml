@@ -50,9 +50,9 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: valley-apk
-          name: 계곡 물막이 Android APK
+          name: 계곡 Android APK
           body: |
-            계곡 물막이 안드로이드 앱 (빌드 ${{ github.run_number }}, 커밋 ${{ github.sha }}).
+            계곡 안드로이드 앱 (빌드 ${{ github.run_number }}, 커밋 ${{ github.sha }}).
             valley-dam.apk 를 받아 설치하세요. 설치 시 '출처를 알 수 없는 앱' 허용이 필요할 수 있습니다.
           files: valley-dam.apk
           make_latest: true
