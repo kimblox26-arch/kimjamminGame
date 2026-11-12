@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { groundAt, centerX, floorHalf } from './terrain.js';
 
 export const lamps = [], cabins = [];
-const sites = [], lampSites = [];
+export const sites = [], lampSites = [];
 // 지형 메시를 만들기 전에 호출: 집터를 평평하게 다지고, 돌이 놓이면 안 되는 자리를 돌려준다
 export function prepare() {
   // 계곡 바닥이 넓은 곳, 강에서 멀리(벽 쪽) — 땅은 깎지 않고 콘크리트 기초 위에 짓는다
