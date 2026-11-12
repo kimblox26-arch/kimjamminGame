@@ -80,6 +80,9 @@ function bindInput() {
     if (e.code === 'Digit4') setTool('mud');
     if (e.code === 'Digit5') setTool('drop');
     if (e.code === 'Digit6') setTool('dam');
+    if (e.code === 'Digit7') setTool('erase');
+    if (e.code === 'Digit8') setTool('flatten');
+    if (e.code === 'Digit9') setTool('carve');
     if (e.code === 'KeyF') cycleSpeed();
     if (e.code === 'KeyE') primary();
     if (e.code === 'KeyQ') P.holdYaw += Math.PI / 6;
@@ -103,7 +106,7 @@ function bindInput() {
 export function look(dx, dy) { P.yaw -= dx; P.pitch = THREE.MathUtils.clamp(P.pitch - dy, -1.45, 1.35); }
 export function setTool(t) {
   if (P.held && t !== 'hand') drop(0);
-  P.tool = t; shovel.visible = t === 'shovel' || t === 'mud'; pick.visible = t === 'pick'; hooks.ui?.tool(t);
+  P.tool = t; shovel.visible = t === 'shovel' || t === 'mud' || t === 'flatten'; pick.visible = t === 'pick' || t === 'carve'; hooks.ui?.tool(t);
 }
 export function cycleSpeed() { P.speed = (P.speed + 1) % SPEEDS.length; hooks.ui?.speed?.(P.speed); hooks.toast?.(`작업 속도: ${SPEEDS[P.speed].name}`); }
 export function toggleTool() { setTool(P.tool === 'hand' ? 'shovel' : P.tool === 'shovel' ? 'pick' : 'hand'); }
@@ -216,7 +219,7 @@ function aim() {
   camera.getWorldPosition(ray.o); camera.getWorldDirection(ray.d);
   const held = P.held?.collider;
   const r = new R.Ray(ray.o, ray.d);
-  const hit = world.castRayAndGetNormal(r, P.tool === 'drop' ? 30 : P.tool === 'dam' ? 7 : 4.5, true, undefined, undefined, col, undefined, c => c !== held);
+  const hit = world.castRayAndGetNormal(r, P.tool === 'drop' ? 30 : P.tool === 'dam' || P.tool === 'flatten' || P.tool === 'erase' ? 8 : 4.5, true, undefined, undefined, col, undefined, c => c !== held);
   P.target = null; P.aim = null;
   if (hit) {
     const toi = hit.timeOfImpact ?? hit.toi;
@@ -277,6 +280,40 @@ function damUpdate(dt, time) {
     hooks.audio?.clink(); hooks.damChanged?.();
   }
 }
+// 지우개(돌·바위·댐 블록 없애기) · 땅 평평하게 · 바위 깎기
+let flatTarget = null, prevL = false;
+function editUpdate(dt, time) {
+  const a = P.aim, tool = P.tool, SP = P.speed;
+  const ok = a && a.dist < 8;
+  const rad = tool === 'flatten' ? [0.9, 1.15, 1.5][SP] : tool === 'carve' ? [0.45, 0.55, 0.7][SP] : 0.4;
+  ring.visible = !!ok && tool !== 'erase'; ring.scale.setScalar(rad / 0.33);
+  if (ok) { ring.position.set(a.point.x, a.point.y + 0.03, a.point.z); ring.material.color.setHex(tool === 'carve' ? 0xb8c4d0 : 0xcfe8a8); }
+  const pressed = btn.l && !prevL; prevL = btn.l;
+  if (!btn.l) { flatTarget = null; return; }
+  if (!ok) return;
+  if (tool === 'erase') {
+    if (time - lastAct < 0.18) return;
+    lastAct = time;
+    if (a.stone && !a.stone.held) { const st = a.stone; hooks.fx?.chips?.(st.cx, st.cy, st.cz, 14); S.removeStone(st); hooks.audio?.whoosh(); }
+    else if (a.block) { const b = a.block; hooks.fx?.chips?.(b.x, b.y1, b.z, 16); D.remove(b); hooks.damChanged?.(); hooks.audio?.whoosh(); }
+    return;
+  }
+  if (tool === 'flatten') {
+    if (pressed || flatTarget === null) flatTarget = T.groundAt(a.point.x, a.point.z); // 처음 누른 곳 높이에 맞춘다
+    if (time - lastAct < 0.05) return;
+    lastAct = time;
+    T.flatten(a.point.x, a.point.z, rad, flatTarget, [0.02, 0.04, 0.08][SP], W);
+    if (Math.random() < 0.15) { hooks.fx?.dirt(a.point.x, a.point.y + 0.05, a.point.z, 4); hooks.audio?.dump(); }
+    hooks.edit?.(a.point.x, a.point.z, rad + 0.3);
+    return;
+  }
+  // 바위 깎기
+  if (time - lastAct < [0.14, 0.07, 0.035][SP]) return;
+  lastAct = time;
+  T.carve(a.point.x, a.point.z, rad, 0.05);
+  if (Math.random() < 0.5) { hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 6); hooks.audio?.chip?.(); }
+  hooks.edit?.(a.point.x, a.point.z, rad + 0.2);
+}
 let swingT = -1;
 function pickUpdate(dt, time) {
   // 휘두르기 애니메이션: 들어올렸다가 내려찍기
@@ -314,6 +351,7 @@ function toolUpdate(dt, time) {
   if (P.tool === 'pick') { ring.visible = false; pickUpdate(dt, time); return; }
   if (P.tool === 'drop' || P.tool === 'mud') { specialUpdate(dt, time); return; }
   if (P.tool === 'dam') { damUpdate(dt, time); return; }
+  if (P.tool === 'erase' || P.tool === 'flatten' || P.tool === 'carve') { editUpdate(dt, time); return; }
   const a = P.aim, ok = P.tool === 'shovel' && a && a.dist < 4.2;
   ring.visible = !!ok; ring.scale.setScalar(1);
   if (ok) {

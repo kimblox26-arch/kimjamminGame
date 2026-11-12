@@ -126,7 +126,7 @@ export function addStone(x, y, z, r, opts = {}) {
   const mesh = new THREE.Mesh(g, mat);
   mesh.castShadow = true; mesh.receiveShadow = true; mesh.layers.enable(1);
   const yaw = rand() * Math.PI * 2;
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler((rand() - 0.5) * (opts.fixed ? 0.3 : 0.2), yaw, (rand() - 0.5) * 0.2));
+  const q = opts.q ? new THREE.Quaternion(...opts.q) : new THREE.Quaternion().setFromEuler(new THREE.Euler((rand() - 0.5) * (opts.fixed ? 0.3 : 0.2), yaw, (rand() - 0.5) * 0.2));
   const fixed = !!opts.fixed;
   const bd = (fixed ? R.RigidBodyDesc.fixed() : R.RigidBodyDesc.dynamic().setLinearDamping(0.08).setAngularDamping(0.5).setCcdEnabled(true))
     .setTranslation(x, y, z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
@@ -176,8 +176,8 @@ export function trim(max, cam) {
   const cand = stones.filter(s => !s.held && !s.boulder).sort((a, b) => (a.r - b.r) * 4 - (((a.cx - cam.x) ** 2 + (a.cz - cam.z) ** 2) - ((b.cx - cam.x) ** 2 + (b.cz - cam.z) ** 2)) * 0.01);
   for (const st of cand) { if (stones.length <= max) break; removeStone(st); }
 }
-export function spawnAll(group, count, nBoulders = 18) {
-  const placed = [];
+export function spawnAll(group, count, nBoulders = 18, keepOut = []) {
+  const placed = keepOut.map(([x, z, r]) => [x, z, r]); // 집터·가로등 자리는 비워 둔다
   const free = (x, z, r) => placed.every(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 > (pr + r + 0.05) ** 2);
   // 고정 큰 바위
   for (let n = 0, tries = 0; n < nBoulders && tries < 500; tries++) {
@@ -325,4 +325,19 @@ export function setHighlight(st) {
   outline.visible = true; outline.geometry = st.mesh.geometry;
   outline.position.copy(st.mesh.position); outline.quaternion.copy(st.mesh.quaternion);
   outline.scale.setScalar(1 + 0.035 / st.r * 0.3 + 0.04);
+}
+
+// ───── 저장 / 불러오기 ─────
+export function serialize() {
+  return stones.map(st => {
+    const t = st.body.translation(), r = st.body.rotation();
+    return [st.seed, +st.r.toFixed(4), st.matIdx, st.boulder ? 1 : 0, st.fixed ? 1 : 0, +t.x.toFixed(3), +t.y.toFixed(3), +t.z.toFixed(3), +r.x.toFixed(4), +r.y.toFixed(4), +r.z.toFixed(4), +r.w.toFixed(4)];
+  });
+}
+export function restore(list, group) {
+  for (const [seed, r, mat, boulder, fixed, x, y, z, qx, qy, qz, qw] of list) {
+    const st = addStone(x, y, z, r, { seed, mat, fixed: !!fixed, q: [qx, qy, qz, qw] });
+    if (boulder) { st.boulder = true; if (!fixed) st.mass = st.vol * 2400; }
+    st.moved = true; group.add(st.mesh);
+  }
 }

@@ -45,12 +45,34 @@ const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = (v, t) => { $('progbar').style.width = Math.round(v * 100) + '%'; if (t) $('progtxt').textContent = t; };
 if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
 
-$('go').onclick = async () => {
-  $('go').disabled = true; segBtns.forEach(b => b.disabled = true); $('go').textContent = '불러오는 중';
+// ───── 저장 / 불러오기 (브라우저 저장소) ─────
+const SAVE_KEY = 'valley.save.v1';
+const encWater = a => { const n = T.SW * T.NZV, u = new Uint16Array(n); for (let j = 0; j < T.NZV; j++) for (let c = 0; c < T.SW; c++) u[j * T.SW + c] = Math.min(65535, Math.round(a[j * T.NXV + T.SX0 + c] * 10000)); let b = ''; const by = new Uint8Array(u.buffer); for (let i = 0; i < by.length; i += 8192) b += String.fromCharCode(...by.subarray(i, i + 8192)); return btoa(b); };
+function decWater(str, a) { if (!str) return; const bin = atob(str), by = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) by[i] = bin.charCodeAt(i); const u = new Uint16Array(by.buffer); for (let j = 0; j < T.NZV; j++) for (let c = 0; c < T.SW; c++) a[j * T.NXV + T.SX0 + c] = u[j * T.SW + c] / 10000; }
+let lastSave = 0;
+function saveGame(quiet) {
+  if (!started || D.building()) return false;
+  const c = camera.position;
+  const data = { v: 1, at: Date.now(), t: T.snapshot(), st: S.serialize(), dm: D.serialize(), w: encWater(W.h), w0: encWater(W.h0),
+    tod: sky_.tod, batt: elec.batt, rain: rainOn, inflow: W.state.inflow, out: W.state.outSm, p: [c.x, c.z, PL.P.yaw, PL.P.pitch] };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); lastSave = clock; if (!quiet) hooks.toast('저장했어요'); updateSaveInfo(); return true; }
+  catch (e) { if (!quiet) hooks.toast('저장 공간이 부족해요'); return false; }
+}
+function loadSave() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch { return null; } }
+function updateSaveInfo() {
+  const sv = loadSave(), el = $('saveInfo'); if (!el) return;
+  el.textContent = sv ? `마지막 저장 ${new Date(sv.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '저장된 기록 없음';
+}
+{ const sv = loadSave(); if (sv) { $('cont').classList.remove('hidden'); $('cont').title = new Date(sv.at).toLocaleString('ko-KR'); } }
+addEventListener('visibilitychange', () => { if (document.hidden) saveGame(true); });
+$('cont').onclick = () => start(loadSave());
+$('go').onclick = () => start(null);
+async function start(save) {
+  $('go').disabled = true; $('cont').disabled = true; segBtns.forEach(b => b.disabled = true); (save ? $('cont') : $('go')).textContent = '불러오는 중';
   document.querySelector('.load').classList.add('on');
   try { localStorage.setItem('valley.q', qKey); } catch {}
   A.init();
-  try { await boot(QUAL[qKey]); }
+  try { await boot(QUAL[qKey], save); }
   catch (e) { console.error(e); $('go').textContent = '오류: ' + e.message; return; }
   $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
   if (isTouch) $('touch').classList.remove('hidden');
@@ -59,10 +81,13 @@ $('go').onclick = async () => {
   requestAnimationFrame(loop);
 };
 
-async function boot(q) {
+async function boot(q, save) {
   Q = q;
   prog(0.03, '지형 만드는 중'); await frame();
   T.generate();
+  const keepOut = V.prepare(); // 집터 다지기 (돌이 박히지 않게 자리 비움)
+  T.remember();
+  if (save) T.restore(save.t);
   // 기본 화면 MSAA: 폰(타일 GPU)에서는 거의 공짜라 최적화 모드도 매끈하게
   renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, powerPreference: 'high-performance' });
   basePR = Math.min(devicePixelRatio, q.pr);
@@ -99,8 +124,9 @@ async function boot(q) {
 
   prog(0.2, '돌 놓는 중'); await frame();
   const sg = new THREE.Group(); scene.add(sg); stoneGroup = sg; scene.add(S.outlineMesh());
-  S.spawnAll(sg, q.stones, q.boulders);
+  if (save) S.restore(save.st, sg); else S.spawnAll(sg, q.stones, q.boulders, keepOut);
   D.init(RAPIER, world, sg);
+  if (save) D.restore(save.dm);
   V.build(scene, RAPIER, world);
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
   prog(0.32, '숲 가꾸는 중'); await frame();
@@ -113,10 +139,11 @@ async function boot(q) {
   const pr = renderer.getPixelRatio();
   refrRT = new THREE.WebGLRenderTarget(innerWidth * pr * q.refr, innerHeight * pr * q.refr, { type: THREE.HalfFloatType });
   refrRT.depthTexture = new THREE.DepthTexture(refrRT.width, refrRT.height);
-  W.init(); T.setSolidRef(W.solid); S.rasterize(); W.prefill();
+  W.init(); T.setSolidRef(W.solid); S.rasterize(true); W.prefill();
+  if (save) { decWater(save.w, W.h); decWater(save.w0, W.h0); W.computeActive(); W.state.time = 999; W.state.inflow = save.inflow ?? 0.2; }
   water = W.makeWaterMesh(refrRT); scene.add(water);
   water.material.uniforms.uProj.value = camera.projectionMatrix;
-  const WARM = 30 * 60;
+  const WARM = save ? 3 * 60 : 30 * 60;
   for (let s = 0; s < WARM; s++) {
     if (s % 2 === 0) { world.step(); S.sync(); S.rasterize(); }
     W.step(1 / 60); if (s % 4 === 0) W.post(4 / 60);
@@ -124,6 +151,11 @@ async function boot(q) {
   }
   W.upload();
   PL.init(RAPIER, world, camera, scene, hooks, { x: T.centerX(7.5) - 1.8, y: T.groundAt(T.centerX(7.5) - 1.8, 7.5) + 1.1, z: 7.5 });
+  if (save) {
+    const p = save.p; PL.teleport(p[0], p[1]); PL.P.yaw = p[2]; PL.P.pitch = p[3];
+    sky_.tod = save.tod ?? 9; elec.batt = save.batt ?? 0; ready = true; W.state.outSm = save.out ?? 0.2;
+    if (save.rain) setRain(true);
+  }
 
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType, samples: q.msaa }));
   composer.addPass(new RenderPass(scene, camera));
@@ -217,6 +249,7 @@ document.addEventListener('pointerlockchange', () => {
 });
 $('resume').onclick = resume;
 $('pause').onclick = e => { if (e.target === $('pause')) resume(); };
+updateSaveInfo();
 $('restart').onclick = () => location.reload();
 $('gl').addEventListener('click', () => { if (started && !isTouch && !document.pointerLockElement) resume(); });
 $('bPause').onclick = () => { if (isTouch) showPause('일시정지', '계속'); else document.exitPointerLock(); };
@@ -224,11 +257,35 @@ $('bPerf').onclick = () => setPerf(!perf);
 $('bRain').onclick = () => setRain(!rainOn);
 $('bSpeed').onclick = () => PL.cycleSpeed();
 $('bTime').onclick = () => setTimeScale(timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1);
+// 낮밤 정하기
+let dayFrozen = false;
+function toggleDayMenu() { $('dayMenu').classList.toggle('hidden'); }
+$('bDay').onclick = toggleDayMenu;
+document.querySelectorAll('#dayMenu [data-tod]').forEach(b => b.onclick = () => { sky_.tod = +b.dataset.tod; $('dayMenu').classList.add('hidden'); });
+$('dayFlow').onclick = () => { dayFrozen = !dayFrozen; $('dayFlow').textContent = dayFrozen ? '시간 흐름: 멈춤' : '시간 흐름: 켜짐'; $('dayFlow').classList.toggle('on', !dayFrozen); };
+$('bSave').onclick = () => saveGame();
+$('saveBtn').onclick = () => saveGame();
+// 큰 댐 자동 건설
+let bigJob = null;
+$('bBig').onclick = () => {
+  if (bigJob || D.building()) return;
+  camera.getWorldDirection(camDir);
+  // 바라보는 쪽으로 7~9 m 앞(최소한 플레이어와 겹치지 않게), 집과 4 m 이상 떨어진 곳
+  const dirz = camDir.z >= 0 ? 1 : -1, aimZ = PL.P.aim?.point.z;
+  let z = aimZ !== undefined && Math.abs(aimZ - camera.position.z) > 6 ? aimZ : camera.position.z + dirz * 8;
+  z = Math.max(9, Math.min(64, z));
+  for (let n = 0; n < 8 && V.cabins.some(c => Math.abs(c.position.z - z) < 4); n++) z += dirz * 2;
+  if (Math.abs(z - camera.position.z) < 4) z = camera.position.z + dirz * 6;
+  bigJob = D.bigDam(z); A.rumble?.(bigJob.duration);
+  hooks.toast('큰 댐 건설 시작!');
+};
 document.querySelectorAll('#bar [data-t]').forEach(b => b.onclick = () => PL.setTool(b.dataset.t));
 addEventListener('keydown', e => {
   if (!started || e.repeat) return;
-  if (e.code === 'Digit7') setRain(!rainOn);
-  if (e.code === 'Digit8') setPerf(!perf);
+  if (e.code === 'KeyB') setRain(!rainOn);
+  if (e.code === 'KeyO') setPerf(!perf);
+  if (e.code === 'KeyN') toggleDayMenu();
+  if (e.code === 'KeyK') saveGame();
   if (e.code === 'KeyT') setTimeScale(timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1);
 });
 
@@ -242,7 +299,8 @@ const hooks = {
       $('tPrim').innerHTML = `<svg><use href="#i-${t}"/></svg>`;
       $('tSec').innerHTML = `<svg><use href="#i-${t === 'shovel' ? 'pour' : t === 'dam' ? 'turbine' : 'throw'}"/></svg>`;
       $('tSec').classList.toggle('hidden', !(t === 'hand' || t === 'shovel' || t === 'dam')); $('tRot').classList.toggle('hidden', t !== 'hand');
-      $('bSpeed').classList.toggle('hidden', !(t === 'shovel' || t === 'mud'));
+      $('bSpeed').classList.toggle('hidden', !['shovel', 'mud', 'flatten', 'carve'].includes(t));
+      $('bBig').classList.toggle('hidden', t !== 'dam');
     },
     speed(n) { const b = $('bSpeed'); $('spd').textContent = ['×1', '×3', '×8'][n]; b.classList.toggle('s1', n === 1); b.classList.toggle('s2', n === 2); },
     prompt(t, on) { const el = $('tag'); if (el.textContent !== t) el.textContent = t; $('cross').classList.toggle('on', on); },
@@ -273,13 +331,13 @@ function ui(dt) {
   $('mFill').style.width = (ready ? blocked * 100 : 0).toFixed(1) + '%';
   $('mSub').textContent = ready ? `저수 ${st.stored.toFixed(1)} m³ · 하류 ${Math.max(0, st.outSm * 1000).toFixed(0)} L/s` : '물길이 흐르는 중';
   const hh = Math.floor(sky_.tod), mm = Math.floor((sky_.tod - hh) * 60);
-  $('pw').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · 발전 ${elec.gen.toFixed(1)} kW · 배터리 ${Math.round(elec.batt / elec.cap * 100)}% · ${elec.lit > 0.5 ? '불 켜짐' : elec.want ? '전기 부족' : '불 꺼짐'}`;
+  if (!bigJob) $('pw').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · 발전 ${elec.gen.toFixed(1)} kW · 배터리 ${Math.round(elec.batt / elec.cap * 100)}% · ${elec.lit > 0.5 ? '불 켜짐' : elec.want ? '전기 부족' : '불 꺼짐'}`;
   $('mud').style.width = Math.min(100, PL.P.bucket / 0.5 * 100) + '%';
   if (perf) $('fps').textContent = fpsV.toFixed(0) + ' fps';
 }
 
 // ───── 루프 ─────
-let timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
+let shake = 0, timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
 function loop(now) {
@@ -309,7 +367,17 @@ function loop(now) {
   while (waterAcc >= 1 / 60 && m < maxSteps) { W.step(1 / 60); waterAcc -= 1 / 60; m++; }
   if (m === maxSteps) waterAcc = Math.min(waterAcc, 1 / 60);
   W.post(dg);
-  D.update(dg, FX.splash);
+  D.update(dg, FX.splash, FX.dirt);
+  if (D.building()) { S.touch(); shake = 0.05; }
+  if (bigJob) {
+    const done = bigJob.blocks.filter(b => b.ready).length;
+    if (done >= bigJob.blocks.length) { // 완공: 가운데 블록 두 개에 대형 터빈
+      const mid = [...bigJob.blocks].sort((a, b) => Math.abs(a.x - bigJob.cx) - Math.abs(b.x - bigJob.cx)).slice(0, 2);
+      for (const b of mid) D.toggleTurbine(b, -1);
+      S.touch(); A.chime(); hooks.toast('큰 댐 완공! 대형 터빈 2기 가동'); bigJob = null; saveGame(true);
+    } else $('pw').textContent = `큰 댐 건설 중… ${Math.round(done / bigJob.blocks.length * 100)}%`;
+  }
+  if (clock - lastSave > 90 && !D.building()) saveGame(true); // 자동 저장
   dayNight(dg); electricity(dt, dg);
   flushT += dt;
   if (clock - lastEdit < 0.3 || flushT > 0.25) { T.flushMesh(); flushT = 0; }
@@ -336,7 +404,7 @@ const stdMats = [];
 const cSun = new THREE.Color(), cWarm = new THREE.Color(1, 0.62, 0.36), cDay = new THREE.Color(1, 0.94, 0.86), cMoon = new THREE.Color(0.55, 0.66, 0.95);
 const fogDay = new THREE.Color().setRGB(0.68, 0.80, 0.94), fogDusk = new THREE.Color().setRGB(0.62, 0.48, 0.42), fogNight = new THREE.Color().setRGB(0.025, 0.035, 0.06);
 function dayNight(dg) {
-  sky_.tod = (sky_.tod + dg * 24 / sky_.len) % 24;
+  if (!dayFrozen) sky_.tod = (sky_.tod + dg * 24 / sky_.len) % 24;
   const a = (sky_.tod - 6) / 12 * Math.PI, el = Math.sin(a);
   const day = THREE.MathUtils.smoothstep(el, -0.08, 0.16);
   T.U.uDay.value = day;
@@ -415,6 +483,7 @@ function audioUpdate() {
 }
 function render() {
   frameN++;
+  if (shake > 0) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake *= 0.85; if (shake < 0.002) shake = 0; } // 건설 진동
   camera.getWorldDirection(camDir);
   const tx = camera.position.x + camDir.x * 10, tz = camera.position.z + camDir.z * 10;
   const snap = 32 / sun.shadow.mapSize.x, sx = Math.round(tx / snap) * snap, sz = Math.round(tz / snap) * snap;

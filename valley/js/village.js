@@ -1,8 +1,21 @@
 // 전기를 쓰는 곳: 계곡 가로등과 오두막 (밤에 배터리/발전 전기로 불이 켜진다)
 import * as THREE from 'three';
-import { groundAt, centerX, floorHalf } from './terrain.js';
+import { groundAt, centerX, floorHalf, flattenPad } from './terrain.js';
 
 export const lamps = [], cabins = [];
+const sites = [], lampSites = [];
+// 지형 메시를 만들기 전에 호출: 집터를 평평하게 다지고, 돌이 놓이면 안 되는 자리를 돌려준다
+export function prepare() {
+  for (const [z, side] of [[12.5, -1], [39, 1], [60, -1]]) {
+    const x = centerX(z) + side * floorHalf(z) * 0.62, yaw = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    const y = flattenPad(x, z, 1.9, 1.7, yaw);
+    sites.push({ x, z, y, yaw, side });
+  }
+  for (let z = 9, n = 0; z < 69; z += 7.5, n++) {
+    const side = n % 2 ? -1 : 1; lampSites.push({ x: centerX(z) + side * floorHalf(z) * 0.78, z, side });
+  }
+  return [...sites.map(t => [t.x, t.z, 3.0]), ...lampSites.map(l => [l.x, l.z, 0.7])];
+}
 const glow = [], pools = [];
 let headMat, winMat;
 
@@ -28,8 +41,8 @@ export function build(scene, R, world) {
   const glowMat = new THREE.SpriteMaterial({ map: tex, color: 0xffc98a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 });
   const poolMat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffb870, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 });
   const poolGeo = new THREE.PlaneGeometry(7, 7).rotateX(-Math.PI / 2);
-  for (let z = 9, n = 0; z < 69; z += 7.5, n++) {
-    const side = n % 2 ? -1 : 1, x = centerX(z) + side * floorHalf(z) * 0.78, y = groundAt(x, z);
+  for (const { x, z, side } of lampSites) {
+    const y = groundAt(x, z);
     const g = new THREE.Group();
     g.add(new THREE.Mesh(pole, dark), new THREE.Mesh(arm, dark), new THREE.Mesh(head, headMat));
     g.children.forEach(m => { m.castShadow = true; });
@@ -45,9 +58,7 @@ export function build(scene, R, world) {
   const wood = new THREE.MeshStandardMaterial({ color: 0x7b5a3e, roughness: 0.85 });
   const roofM = new THREE.MeshStandardMaterial({ color: 0x4a3a33, roughness: 0.75 });
   winMat = new THREE.MeshStandardMaterial({ color: 0x1e2a33, emissive: 0xffd69a, emissiveIntensity: 0, roughness: 0.2 });
-  for (const [z, side] of [[12.5, -1], [39, 1], [60, -1]]) {
-    const F = floorHalf(z), x = centerX(z) + side * F * 0.86;
-    let y = 1e9; for (const [u, v] of [[-1.6, -1.4], [1.6, -1.4], [-1.6, 1.4], [1.6, 1.4], [0, 0]]) y = Math.min(y, groundAt(x + u, z + v));
+  for (const { x, z, y, side } of sites) {
     const h = new THREE.Group();
     const walls = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.3, 2.8).translate(0, 1.15, 0), wood);
     const roof = new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.4, 4).rotateY(Math.PI / 4).scale(1.05, 1, 0.92).translate(0, 3.0, 0), roofM);
@@ -57,7 +68,7 @@ export function build(scene, R, world) {
     const w3 = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6).rotateY(Math.PI / 2).translate(1.61, 1.35, 0), winMat);
     h.add(walls, roof, door, w1, w2, w3);
     h.children.forEach(m => { m.castShadow = true; m.receiveShadow = true; });
-    h.position.set(x, y - 0.1, z); h.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; // 문이 계곡을 향하게
+    h.position.set(x, y - 0.06, z); h.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; // 문이 계곡을 향하게
     scene.add(h);
     const sp = new THREE.Sprite(glowMat); sp.position.set(x - side * 1.6, y + 1.3, z); sp.scale.setScalar(2.4); scene.add(sp); glow.push(sp);
     fixedBox(R, world, x, y + 1.15, z, 1.6, 1.15, 1.4, h.rotation.y);

@@ -18,7 +18,7 @@ const pL = new Float32Array(NV), pR = new Float32Array(NV), pU = new Float32Arra
 const fL = new Float32Array(NV), fR = new Float32Array(NV), fU = new Float32Array(NV), fD = new Float32Array(NV);
 export const vx = new Float32Array(NV), vz = new Float32Array(NV), foam = new Float32Array(NV), wet = new Float32Array(NV);
 export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
-const h0 = new Float32Array(NV);
+export const h0 = new Float32Array(NV); // 저수량 기준 수심
 export const MEAS_J = 325; // z=65 (하류 낙차 직전)
 export const state = { inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
 const src = [];

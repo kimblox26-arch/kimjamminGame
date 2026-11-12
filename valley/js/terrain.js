@@ -289,6 +289,86 @@ export function dig(x, z, radius, depth, ctx) {
   markDirty(ci - r, ci + r, cj - r, cj + r); fixDirty();
   return vol;
 }
+// ───── 땅 평평하게: 목표 높이(target)로 흙을 깎거나 채운다 (암반 아래로는 안 깎음) ─────
+export function flatten(x, z, radius, target, rate, ctx) {
+  const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), r = Math.ceil(radius / CELL);
+  for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
+    if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
+    const dd = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / radius; if (dd >= 1) continue;
+    const k = idx(i, j), f = 1 - dd * dd;
+    let step = Math.max(-rate, Math.min(rate, target - ground[k])) * f;
+    if (Math.abs(step) < 1e-4) continue;
+    if (step > 0) { loose[k] += step; ground[k] += step; if (ctx && ctx.solid[k] < ground[k]) ctx.solid[k] = ground[k]; }
+    else {
+      let want = -step;
+      const a = Math.min(loose[k], want); loose[k] -= a; want -= a;
+      const b = Math.min(soil[k], want); soil[k] -= b;
+      ground[k] -= a + b;
+    }
+    grass[k] *= 0.6; dug[k] = Math.min(1, dug[k] + Math.abs(step) * 8);
+  }
+  markDirty(ci - r, ci + r, cj - r, cj + r); fixDirty();
+}
+// ───── 바위 깎기: 흙이든 암반이든 깎아 낸다 ─────
+export function carve(x, z, radius, depth) {
+  const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), r = Math.ceil(radius / CELL);
+  let vol = 0;
+  for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
+    if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
+    const dd = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / radius; if (dd >= 1) continue;
+    const k = idx(i, j); let want = depth * (1 - dd * dd);
+    const a = Math.min(loose[k], want); loose[k] -= a; want -= a;
+    const b = Math.min(soil[k], want); soil[k] -= b; want -= b;
+    bed[k] -= want; ground[k] -= a + b + want; vol += (a + b + want) * CELL * CELL;
+    grass[k] = 0;
+  }
+  markDirty(ci - r, ci + r, cj - r, cj + r); fixDirty();
+  return vol;
+}
+// 생성 직후: 집터를 평평하게 다진다 (회전된 직사각형 + 1 m 가장자리 완만하게)
+export function flattenPad(x, z, hw, hd, yaw) {
+  const c = Math.cos(yaw), s = Math.sin(yaw), rr = Math.hypot(hw, hd) + 1.2;
+  let sum = 0, n = 0;
+  const each = fn => {
+    const i0 = Math.max(1, Math.floor((x - rr - X0) / CELL)), i1 = Math.min(NX - 1, Math.ceil((x + rr - X0) / CELL));
+    const j0 = Math.max(1, Math.floor((z - rr - Z0) / CELL)), j1 = Math.min(NZ - 1, Math.ceil((z + rr - Z0) / CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const dx = X0 + i * CELL - x, dz = Z0 + j * CELL - z, lx = Math.abs(dx * c - dz * s), lz = Math.abs(dx * s + dz * c);
+      const e = Math.max(lx - hw, lz - hd, 0); if (e < 1.2) fn(idx(i, j), e);
+    }
+  };
+  each((k, e) => { if (e === 0) { sum += ground[k]; n++; } });
+  const h0 = sum / Math.max(1, n);
+  each((k, e) => {
+    const w = e === 0 ? 1 : 1 - sstep(0, 1.2, e), g = ground[k] + (h0 - ground[k]) * w;
+    ground[k] = g; if (bed[k] > g - 0.3) bed[k] = g - 0.3; soil[k] = g - bed[k]; if (e < 0.4) grass[k] *= 0.3;
+  });
+  return h0;
+}
+
+// ───── 저장: 처음 만든 지형과 달라진 칸만 기록 ─────
+let soil0 = null, bed0 = null, grass0 = null;
+export function remember() { soil0 = soil.slice(); bed0 = bed.slice(); grass0 = grass.slice(); }
+const q = v => Math.round(v * 1000);
+export function snapshot() {
+  const d = { s: [], b: [], l: [], c: [], f: [], g: [], u: [] };
+  for (let k = 0; k < NV; k++) {
+    if (Math.abs(soil[k] - soil0[k]) > 1e-4) d.s.push(k, q(soil[k]));
+    if (Math.abs(bed[k] - bed0[k]) > 1e-4) d.b.push(k, q(bed[k]));
+    if (loose[k] > 1e-4) d.l.push(k, q(loose[k]));
+    if (cap[k] > 1e-4) d.c.push(k, q(cap[k]));
+    if (fill[k] > 1e-4) d.f.push(k, q(fill[k]));
+    if (Math.abs(grass[k] - grass0[k]) > 0.01) d.g.push(k, Math.round(grass[k] * 100));
+    if (dug[k] > 0.01) d.u.push(k, Math.round(dug[k] * 100));
+  }
+  return d;
+}
+export function restore(d) {
+  const put = (arr, list, sc) => { for (let n = 0; n < list.length; n += 2) arr[list[n]] = list[n + 1] / sc; };
+  put(soil, d.s, 1000); put(bed, d.b, 1000); put(loose, d.l, 1000); put(cap, d.c, 1000); put(fill, d.f, 1000); put(grass, d.g, 100); put(dug, d.u, 100);
+  for (let k = 0; k < NV; k++) ground[k] = bed[k] + soil[k] + loose[k];
+}
+
 // 돌이 떨어진 충격: 흙이 눌려 움푹 패이고, 밀려난 흙이 가장자리에 둥글게 쌓인다(암반은 안 패임)
 export function impact(x, z, R, depth, ctx) {
   const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), r = Math.ceil(R * 1.6 / CELL);

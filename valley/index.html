@@ -6,7 +6,7 @@
 <title>계곡 물막이</title>
 <meta name="description" content="돌을 직접 주워 쌓고 진흙으로 틈을 메워 계곡물을 막는 물리 샌드박스">
 <link rel="stylesheet" href="./fonts.css">
-<link rel="stylesheet" href="./style.css?v=20261112g">
+<link rel="stylesheet" href="./style.css?v=20261112h">
 <script type="importmap">
 {
   "imports": {
@@ -30,6 +30,12 @@
   <symbol id="i-dam" viewBox="0 0 24 24"><path class="f" d="M6 4.5h7l3.5 15H2.5z"/><path d="M6 9h8.2M5 13.5h10.3M3.8 18h12.4"/><path d="M17.5 8.5c1.2 1.4 2 2.3 2 3.3a2 2 0 0 1-4 0c0-1 .8-1.9 2-3.3z"/></symbol>
   <symbol id="i-time" viewBox="0 0 24 24"><path class="f" d="M3.5 6.5v11l7.5-5.5zM12 6.5v11l7.5-5.5z"/></symbol>
   <symbol id="i-turbine" viewBox="0 0 24 24"><circle class="f" cx="12" cy="12" r="3"/><path d="M12 9c-1.5-3-1-5.5 1-6.5M15 12c3 -1.5 5.5-1 6.5 1M12 15c1.5 3 1 5.5-1 6.5M9 12c-3 1.5-5.5 1-6.5-1"/></symbol>
+  <symbol id="i-erase" viewBox="0 0 24 24"><path class="f" d="M14.5 4.5l5 5-8.5 8.5H6.5l-3-3z"/><path d="M9.5 9.5l5 5M11 18h9.5"/></symbol>
+  <symbol id="i-flat" viewBox="0 0 24 24"><path class="f" d="M3 15.5h18v3H3z"/><path d="M6 12.5c2-2.5 4-2.5 6 0s4 2.5 6 0M12 3v6M9.5 6.5L12 9l2.5-2.5"/></symbol>
+  <symbol id="i-carve" viewBox="0 0 24 24"><path class="f" d="M3 20l6.5-9 4 3 3-4 4.5 10z"/><path d="M14 3.5l5 5-2 2-5-5zM12 5.5l-3 3"/></symbol>
+  <symbol id="i-big" viewBox="0 0 24 24"><path class="f" d="M3 20h18l-2.5-11h-13z"/><path d="M5.5 9h13M4.5 14.5h15M12 9v11M7 4.5h10M12 2v2.5"/></symbol>
+  <symbol id="i-day" viewBox="0 0 24 24"><circle class="f" cx="9" cy="9" r="4"/><path d="M9 2v1.5M9 14.5V16M2 9h1.5M14.5 9H16M4 4l1 1M13 13l1 1M4 14l1-1M13 5l1-1"/><path class="f" d="M20.5 15.5A5.5 5.5 0 1 1 15 10a4.3 4.3 0 0 0 5.5 5.5z"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path class="f" d="M5 3.5h11l3.5 3.5v13.5H5z"/><path d="M8 3.5v5h7v-5M8 20.5v-6h8v6"/></symbol>
   <symbol id="i-rain" viewBox="0 0 24 24"><path class="f" d="M7 15.5a4 4 0 0 1-.3-8 5.5 5.5 0 0 1 10.6 1.4 3.3 3.3 0 0 1 .2 6.6z"/><path d="M8.5 18.5l-1 2.5M12.5 18.5l-1 2.5M16.5 18.5l-1 2.5"/></symbol>
   <symbol id="i-bolt" viewBox="0 0 24 24"><path class="f" d="M13.5 2.5L5 13.5h6l-1 8 8.5-11h-6z"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><rect class="f" x="7" y="5" width="3.4" height="14" rx="1"/><rect class="f" x="13.6" y="5" width="3.4" height="14" rx="1"/></symbol>
@@ -120,6 +126,7 @@
       <button data-q="perf" role="radio"><b>최적화</b><span>휴대폰</span></button>
     </div>
     <div class="actions">
+      <button id="cont" class="btn go hidden">이어하기</button>
       <button id="go" class="btn go">시작하기</button>
       <a id="apk" class="apk" href="https://github.com/kimblox26-arch/kimjamminGame/releases/download/valley-apk/valley-dam.apk" target="_blank" rel="noopener"><svg><use href="#i-android"/></svg>APK</a>
     </div>
@@ -131,6 +138,8 @@
   <div class="card small">
     <h2 id="pauseT">일시정지</h2>
     <button id="resume" class="btn">계속</button>
+    <button id="saveBtn" class="btn ghost">저장하기</button>
+    <p id="saveInfo" class="saveinfo"></p>
     <button id="restart" class="btn ghost">처음부터</button>
   </div>
 </section>
@@ -152,13 +161,23 @@
     <button class="tb" data-t="mud" title="진흙 무한 붓기 (4)"><svg><use href="#i-mud"/></svg><kbd>4</kbd></button>
     <button class="tb" data-t="drop" title="하늘에서 바위 떨어뜨리기 (5)"><svg><use href="#i-drop"/></svg><kbd>5</kbd></button>
     <button class="tb" data-t="dam" title="댐 · 수력발전 (6)"><svg><use href="#i-dam"/></svg><kbd>6</kbd></button>
+    <button class="tb" data-t="erase" title="돌·바위 없애기 (7)"><svg><use href="#i-erase"/></svg><kbd>7</kbd></button>
+    <button class="tb" data-t="flatten" title="땅 평평하게 (8)"><svg><use href="#i-flat"/></svg><kbd>8</kbd></button>
+    <button class="tb" data-t="carve" title="바위 깎기 (9)"><svg><use href="#i-carve"/></svg><kbd>9</kbd></button>
+    <button class="tb big hidden" id="bBig" title="큰 댐 자동 건설"><svg><use href="#i-big"/></svg><kbd>댐</kbd></button>
     <button class="tb spd hidden" id="bSpeed" title="작업 속도 (F)"><b id="spd">×1</b><kbd>F</kbd></button>
     <span class="sep"></span>
     <button class="tb" id="bTime" title="시간 배속 (T)"><svg><use href="#i-time"/></svg><kbd id="tsx">×1</kbd></button>
-    <button class="tb" id="bRain" title="비 (7)"><svg><use href="#i-rain"/></svg><kbd>7</kbd></button>
-    <button class="tb" id="bPerf" title="최적화 모드 (8)"><svg><use href="#i-bolt"/></svg><kbd>8</kbd></button>
+    <button class="tb" id="bDay" title="아침·낮·저녁·밤 (N)"><svg><use href="#i-day"/></svg><kbd>N</kbd></button>
+    <button class="tb" id="bRain" title="비 (B)"><svg><use href="#i-rain"/></svg><kbd>B</kbd></button>
+    <button class="tb" id="bPerf" title="최적화 모드 (O)"><svg><use href="#i-bolt"/></svg><kbd>O</kbd></button>
+    <button class="tb" id="bSave" title="저장 (K)"><svg><use href="#i-save"/></svg><kbd>K</kbd></button>
     <button class="tb" id="bPause" title="일시정지 (Esc)"><svg><use href="#i-pause"/></svg></button>
   </nav>
+  <div id="dayMenu" class="hidden">
+    <button data-tod="6.5">아침</button><button data-tod="12">낮</button><button data-tod="18.2">저녁</button><button data-tod="22">밤</button>
+    <button id="dayFlow" class="flow on">시간 흐름: 켜짐</button>
+  </div>
   <div id="fps"></div>
 </div>
 
@@ -172,6 +191,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261112g"></script>
+<script type="module" src="./js/main.js?v=20261112h"></script>
 </body>
 </html>
