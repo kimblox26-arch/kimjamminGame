@@ -9,13 +9,15 @@ export const h = new Float32Array(NV), solid = new Float32Array(NV), sBot = new 
 // 돌무더기 공극(틈): seal=공극 바닥(땅/진흙), ptop=공극 꼭대기(돌 윗면). 그 사이로 물이 스며 흐른다
 export const seal = new Float32Array(NV), ptop = new Float32Array(NV), lev = new Float32Array(NV);
 export const PHI = 0.38; let KP = 0.25;
+export const KS = 0.012; // 흙·진흙 투수계수(가는 모래 수준): 흙둑도 아주 조금씩 샌다
+export const kp = new Float32Array(NV); // 셀별 투수계수 (돌무더기≈KP, 흙≈KS)
 const ho = new Float32Array(NV), hp = new Float32Array(NV);
 const pL = new Float32Array(NV), pR = new Float32Array(NV), pU = new Float32Array(NV), pD = new Float32Array(NV);
 const fL = new Float32Array(NV), fR = new Float32Array(NV), fU = new Float32Array(NV), fD = new Float32Array(NV);
 export const vx = new Float32Array(NV), vz = new Float32Array(NV), foam = new Float32Array(NV), wet = new Float32Array(NV);
 export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
 const h0 = new Float32Array(NV);
-export const MEAS_J = 175; // z=35 (하류 낙차 직전)
+export const MEAS_J = 147; // z≈22 (하류 낙차 직전)
 export const state = { inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
 const src = [];
 
@@ -74,11 +76,11 @@ export function step(dt) {
       if (hk <= 0) { fL[k] = fR[k] = fU[k] = fD[k] = pL[k] = pR[k] = pU[k] = pD[k] = 0; continue; }
       const H = lev[k], o = ho[k], q = hp[k];
       let l = 0, r = 0, u = 0, d = 0, a = 0, b = 0, c = 0, e = 0;
-      if (i > SX0) { l = flux(fL[k], H, o, k - 1, kf, dt); if (q > 0 && H > lev[k - 1]) a = KP * q * (H - lev[k - 1]); }
-      if (i < SX1 - 1) { r = flux(fR[k], H, o, k + 1, kf, dt); if (q > 0 && H > lev[k + 1]) b = KP * q * (H - lev[k + 1]); }
-      if (j > 0) { u = flux(fU[k], H, o, k - NXV, kf, dt); if (q > 0 && H > lev[k - NXV]) c = KP * q * (H - lev[k - NXV]); }
-      if (j < NZ) { d = flux(fD[k], H, o, k + NXV, kf, dt); if (q > 0 && H > lev[k + NXV]) e = KP * q * (H - lev[k + NXV]); }
-      else { d = flux0(fD[k], o, o, kf, dt); e = KP * q * q; }
+      if (i > SX0) { l = flux(fL[k], H, o, k - 1, kf, dt); if (q > 0 && H > lev[k - 1]) a = kp[k] * q * (H - lev[k - 1]); }
+      if (i < SX1 - 1) { r = flux(fR[k], H, o, k + 1, kf, dt); if (q > 0 && H > lev[k + 1]) b = kp[k] * q * (H - lev[k + 1]); }
+      if (j > 0) { u = flux(fU[k], H, o, k - NXV, kf, dt); if (q > 0 && H > lev[k - NXV]) c = kp[k] * q * (H - lev[k - NXV]); }
+      if (j < NZ) { d = flux(fD[k], H, o, k + NXV, kf, dt); if (q > 0 && H > lev[k + NXV]) e = kp[k] * q * (H - lev[k + NXV]); }
+      else { d = flux0(fD[k], o, o, kf, dt); e = kp[k] * q * q; }
       const s = l + r + u + d + a + b + c + e;
       if (s > 0) { const K = Math.min(1, hk * A / (s * dt)); l *= K; r *= K; u *= K; d *= K; a *= K; b *= K; c *= K; e *= K; }
       fL[k] = l; fR[k] = r; fU[k] = u; fD[k] = d; pL[k] = a; pR[k] = b; pU[k] = c; pD[k] = e;
@@ -114,6 +116,7 @@ export function step(dt) {
   state.steps++; state.time += dt;
 }
 export function setPermeability(v) { KP = v; }
+export const getKP = () => KP;
 function flux(f0, H, o, n, kf, dt) {
   const dH = H - lev[n];
   return flux0(f0, dH > 0 ? o : ho[n], dH, kf, dt);
@@ -292,7 +295,7 @@ void main(){
   vec2 tx = 1.0 / uWSize;
   float hL = texture2D(tWater, vUv - vec2(tx.x,0.)).r, hR = texture2D(tWater, vUv + vec2(tx.x,0.)).r;
   float hD = texture2D(tWater, vUv - vec2(0.,tx.y)).r, hU = texture2D(tWater, vUv + vec2(0.,tx.y)).r;
-  vec3 n = normalize(vec3((hL-hR)/(2.*0.2), 1.0, (hD-hU)/(2.*0.2)));
+  vec3 n = normalize(vec3((hL-hR)*0.5*uWInfo.z, 1.0, (hD-hU)*0.5*uWInfo.z));
   vec2 flow = v.xy; float sp = length(flow);
   float t = uTime*0.55; float p0 = fract(t), p1 = fract(t+0.5); float wb = abs(p0*2.-1.);
   vec2 bx = vWorld.xz*0.42;

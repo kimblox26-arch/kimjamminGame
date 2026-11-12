@@ -76,6 +76,13 @@ export function step(wet) {
 export function lift() { burst({ dur: 0.12, freq: 700, q: 1, gain: 0.15, type: 'lowpass', buf: brown }); }
 export function whoosh() { burst({ dur: 0.35, freq: 600, q: 1.2, gain: 0.2, sweep: 3 }); }
 export function clink() { tone(2400, 0.15, 0.08, 'triangle'); tone(3600, 0.1, 0.04, 'triangle', 0.01); }
+export function chip() { tone(2600 + Math.random() * 800, 0.09, 0.1, 'triangle'); burst({ dur: 0.06, freq: 3500, q: 3, gain: 0.25 }); burst({ dur: 0.1, freq: 600, q: 1, gain: 0.2, type: 'lowpass', buf: brown }); }
+export function crack(s = 0.6) {
+  burst({ dur: 0.08, freq: 3000, q: 2, gain: 0.35 });
+  burst({ dur: 0.45 + s * 0.3, freq: 420, q: 0.8, gain: 0.5 * (0.5 + s), type: 'lowpass', buf: brown, delay: 0.02 });
+  tone(90 + Math.random() * 30, 0.35, 0.35 * (0.5 + s), 'sine', 0.02, 45);
+  for (let i = 0; i < 6; i++) burst({ dur: 0.04, freq: 1800 + Math.random() * 2500, q: 3, gain: 0.1, delay: 0.08 + Math.random() * 0.35 });
+}
 export function chime() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.6, 0.12, 'triangle', i * 0.11)); }
 function birds() {
   const sing = () => {

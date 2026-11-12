@@ -11,7 +11,7 @@ export const P = {
   holdYaw: 0, holdTilt: 0, bucket: 0, moved: 0, dug: 0, placed: 0, bob: 0, stepAcc: 0, target: null, aim: null, inWater: 0,
 };
 const keys = new Set(), btn = { l: false, r: false }, touchMove = { x: 0, y: 0 };
-let R, world, body, col, cc, camera, hooks, shovel, load, ring, lastAct = 0, farT = 0, lockEl;
+let R, world, body, col, cc, camera, hooks, shovel, pick, load, ring, lastAct = 0, farT = 0, lockEl;
 const fwd = new THREE.Vector3(), tmp = new THREE.Vector3(), qY = new THREE.Quaternion(), qT = new THREE.Quaternion(), qC = new THREE.Quaternion();
 
 export function init(_R, _world, _camera, scene, _hooks, startPos) {
@@ -23,6 +23,7 @@ export function init(_R, _world, _camera, scene, _hooks, startPos) {
   cc.setMaxSlopeClimbAngle(48 * Math.PI / 180); cc.setMinSlopeSlideAngle(55 * Math.PI / 180);
   cc.setApplyImpulsesToDynamicBodies(true); cc.setCharacterMass(70);
   buildShovel(); camera.add(shovel);
+  buildPick(); camera.add(pick);
   ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.36, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffe6a8, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
   ring.visible = false; scene.add(ring);
   bindInput();
@@ -49,11 +50,26 @@ function buildShovel() {
   shovel.visible = false;
 }
 
+function buildPick() {
+  pick = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6e4a2c, roughness: 0.75 });
+  const metal = new THREE.MeshStandardMaterial({ color: 0x7d8288, roughness: 0.35, metalness: 0.9 });
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.85, 12), wood); handle.position.y = 0.36;
+  const head = new THREE.Mesh(new THREE.TorusGeometry(0.21, 0.02, 8, 24, Math.PI * 0.85).scale(1, 0.55, 1), metal);
+  head.rotation.z = Math.PI * 0.075; head.position.y = 0.66;
+  const tip1 = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.07, 8), metal); tip1.position.set(0.205, 0.68, 0); tip1.rotation.z = -1.15;
+  const tip2 = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.07, 8), metal); tip2.position.set(-0.2, 0.62, 0); tip2.rotation.z = 1.45;
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.07, 12), metal); collar.position.y = 0.73;
+  pick.add(handle, head, tip1, tip2, collar);
+  pick.position.set(0.36, -0.55, -0.55); pick.rotation.set(-0.35, 0.1, 0.25);
+  pick.visible = false;
+}
 function bindInput() {
   addEventListener('keydown', e => {
     if (e.repeat) return; keys.add(e.code);
     if (e.code === 'Digit1') setTool('hand');
     if (e.code === 'Digit2') setTool('shovel');
+    if (e.code === 'Digit3') setTool('pick');
     if (e.code === 'KeyE') primary();
     if (e.code === 'KeyQ') P.holdYaw += Math.PI / 6;
     if (e.code === 'KeyR') P.holdTilt += Math.PI / 6;
@@ -76,9 +92,9 @@ function bindInput() {
 export function look(dx, dy) { P.yaw -= dx; P.pitch = THREE.MathUtils.clamp(P.pitch - dy, -1.45, 1.35); }
 export function setTool(t) {
   if (P.held && t !== 'hand') drop(0);
-  P.tool = t; shovel.visible = t === 'shovel'; hooks.ui?.tool(t);
+  P.tool = t; shovel.visible = t === 'shovel'; pick.visible = t === 'pick'; hooks.ui?.tool(t);
 }
-export function toggleTool() { setTool(P.tool === 'hand' ? 'shovel' : 'hand'); }
+export function toggleTool() { setTool(P.tool === 'hand' ? 'shovel' : P.tool === 'shovel' ? 'pick' : 'hand'); }
 export const touch = { move: touchMove, btn, primary: () => primary(), secondary: () => { if (P.tool === 'hand' && P.held) throwStone(); }, rotate: () => { P.holdYaw += Math.PI / 6; }, jump: () => { P.jumpReq = true; } };
 
 function primary() {
@@ -165,7 +181,7 @@ export function update(dt, time) {
   cc.computeColliderMovement(col, { x: dx * dt, y: P.vy * dt, z: dz * dt }, undefined, undefined, c => c !== held);
   const mv = cc.computedMovement();
   let nx = p.x + mv.x, ny = p.y + mv.y, nz = p.z + mv.z;
-  nx = THREE.MathUtils.clamp(nx, -12.5, 12.5); nz = THREE.MathUtils.clamp(nz, 5.5, 38);
+  nx = THREE.MathUtils.clamp(nx, -9.5, 9.5); nz = THREE.MathUtils.clamp(nz, 5.5, 25);
   const gmin = T.groundAt(nx, nz) + 0.83 - 0.05; if (ny < gmin - 0.3) ny = gmin;
   body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
   P.grounded = cc.computedGrounded();
@@ -196,14 +212,42 @@ function aim() {
     P.aim = { dist: toi, point: ray.o.clone().addScaledVector(ray.d, toi), stone: st, terrain: hit.collider === T.getHF() };
     if (st && toi < 3.2 + (st.rb || 0)) P.target = st;
   }
-  const show = P.tool === 'hand' && !P.held ? P.target : null;
+  const show = (P.tool === 'hand' || P.tool === 'pick') && !P.held ? P.target : null;
   S.setHighlight(show);
   let prompt = '';
-  if (P.tool === 'hand' && !P.held && P.target) prompt = kg(P.target.mass);
+  if ((P.tool === 'hand' || P.tool === 'pick') && !P.held && P.target) prompt = kg(P.target.mass);
   hooks.ui?.prompt(prompt, !!(P.held || P.target));
 }
 
+let swingT = -1;
+function pickUpdate(dt, time) {
+  // 휘두르기 애니메이션: 들어올렸다가 내려찍기
+  const k = swingT >= 0 ? Math.min(1, (time - swingT) / 0.42) : 1;
+  const rx = k < 0.45 ? -0.35 + 0.5 * (k / 0.45) : k < 0.7 ? 0.15 - 1.55 * ((k - 0.45) / 0.25) : -1.4 + 1.05 * ((k - 0.7) / 0.3);
+  pick.rotation.x = k >= 1 ? -0.35 : rx;
+  if (!btn.l || time - lastAct < 0.5) return;
+  lastAct = time; swingT = time;
+  const a = P.aim;
+  setTimeout(() => strike(a), 210); // 내려찍는 순간
+}
+function strike(a) {
+  if (!a || a.dist > 3.2) return;
+  if (a.stone) {
+    const st = a.stone;
+    if (st.held || !S.stones.includes(st)) return;
+    st.hp ??= Math.ceil(1 + Math.cbrt(st.mass) * 0.45);
+    st.hp--;
+    hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 10);
+    if (st.hp > 0) { hooks.audio?.chip?.(); return; }
+    camera.getWorldDirection(fwd);
+    const parts = S.split(st, fwd);
+    hooks.audio?.crack?.(Math.min(1, st.r * 1.5));
+    hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 26);
+    hooks.toast?.(parts.length ? `${parts.length}조각으로 깨졌어요` : '부서졌어요');
+  } else { hooks.audio?.clink(); hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 4); }
+}
 function toolUpdate(dt, time) {
+  if (P.tool === 'pick') { ring.visible = false; pickUpdate(dt, time); return; }
   const a = P.aim, ok = P.tool === 'shovel' && a && a.dist < 4.2;
   ring.visible = !!ok;
   if (ok) {

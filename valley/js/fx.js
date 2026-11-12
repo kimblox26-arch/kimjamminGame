@@ -97,6 +97,15 @@ export function dirt(x, y, z, n) {
   }
   for (let k = 0; k < n; k++) drops.emit(x, y + 0.05, z, (Math.random() - 0.5) * 0.6, 0.3 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6, 1.4, 0.12 + Math.random() * 0.1, 0.45, 0.37, 0.28, 0.25, 0.35);
 }
+// 곡괭이에 튀는 돌 조각 + 돌가루
+export function chips(x, y, z, n) {
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * 6.283, sp = 0.8 + Math.random() * 2.2;
+    const g = 0.45 + Math.random() * 0.3;
+    drops.emit(x, y, z, Math.cos(a) * sp, 1 + Math.random() * 2.5, Math.sin(a) * sp, 0.5 + Math.random() * 0.4, 0.02 + Math.random() * 0.03, g, g * 0.97, g * 0.92, 0.95);
+  }
+  for (let k = 0; k < n / 3; k++) mist.emit(x, y, z, (Math.random() - 0.5) * 0.5, 0.2 + Math.random() * 0.3, (Math.random() - 0.5) * 0.5, 1.2, 0.18, 0.75, 0.72, 0.68, 0.3, 0.35);
+}
 export function splash(x, y, z, s) {
   const n = Math.round(10 + s * 40);
   for (let k = 0; k < n; k++) {

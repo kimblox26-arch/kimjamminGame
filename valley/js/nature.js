@@ -87,7 +87,7 @@ export function buildGrass(scene, count) {
   const mat = windMat({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.82 }, 0.08, false);
   const items = [];
   for (let t = 0; items.length < count && t < count * 40; t++) {
-    const x = -13 + rand() * 26, z = 6 + rand() * 33;
+    const x = -10 + rand() * 20, z = 6 + rand() * 20;
     const i = Math.round((x - X0) / CELL), j = Math.round((z - Z0) / CELL), g = grass[idx(i, j)];
     if (g < 0.35 || rand() > g) continue;
     items.push({ x, y: groundBil(x, z) - 0.02, z, ry: rand() * 6.283, s: 0.7 + rand() * 0.7, hsl: [0.2 + rand() * 0.07, 0.5 + rand() * 0.2, 0.42 + rand() * 0.2], cell: idx(i, j) });
@@ -100,7 +100,7 @@ export function buildFlowers(scene, count) {
   const head = new THREE.IcosahedronGeometry(0.028, 0).scale(1, 0.55, 1).translate(0, 0.3, 0);
   const cols = [0xffffff, 0xf4d03f, 0xb57edc, 0xff9fb2, 0xfff3c4], items = [];
   for (let t = 0; items.length < count && t < count * 60; t++) {
-    const x = -13 + rand() * 26, z = 6 + rand() * 33;
+    const x = -10 + rand() * 20, z = 6 + rand() * 20;
     const g = grass[idx(Math.round((x - X0) / CELL), Math.round((z - Z0) / CELL))];
     if (g < 0.6 || rand() > 0.5) continue;
     items.push({ x, y: groundBil(x, z), z, rx: (rand() - 0.5) * 0.3, ry: rand() * 6, rz: (rand() - 0.5) * 0.3, s: 0.6 + rand() * 0.8, col: cols[(rand() * cols.length) | 0], cell: idx(Math.round((x - X0) / CELL), Math.round((z - Z0) / CELL)) });
@@ -184,15 +184,15 @@ export function buildTrees(scene, nPine, nBroad) {
   const total = nPine + nBroad;
   for (let n = 0, t = 0; n < total && t < total * 30; t++) {
     const near = rand() < 0.5;
-    const x = near ? (rand() * 2 - 1) * 26 : (rand() * 2 - 1) * 75, z = near ? -5 + rand() * 50 : -55 + rand() * 160;
+    const x = near ? (rand() * 2 - 1) * 22 : (rand() * 2 - 1) * 65, z = near ? -4 + rand() * 36 : -45 + rand() * 130;
     const tt = terrainAt(x, z);
     const e = tt.d - tt.F;
     if (e < 0.8 || tt.y > 60) continue;
     const s = Math.hypot(terrainAt(x + 1, z).y - tt.y, terrainAt(x, z + 1).y - tt.y);
     if (s > 1.1) continue;
-    if (Math.abs(x) < 15 && z > 0 && z < 40 && e < 2.0) continue;
+    if (Math.abs(x) < 12 && z > 0 && z < 27 && e < 2.0) continue;
     const kind = n < nPine ? 0 : 1, v = (rand() * kinds[kind].length) | 0;
-    spots[kind][v].push({ x, y: tt.y - 0.2, z, s: 0.75 + rand() * 0.6, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2], near: Math.hypot(x, z - 20) < 35 });
+    spots[kind][v].push({ x, y: tt.y - 0.2, z, s: 0.75 + rand() * 0.6, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2], near: Math.hypot(x, z - 13) < 28 });
     n++;
   }
   kinds.forEach((geos, kind) => geos.forEach((g, v) => {
@@ -253,7 +253,7 @@ let downMat, downMesh;
 // 바깥 지형(1m 격자 선형보간) 높이와 해석 높이 중 높은 쪽
 function surfY(x, z, off) {
   const t = terrainAt(x, z).y;
-  if (z >= 0 && z <= 40) return t + off;
+  if (z >= 0 && z <= 27) return t + off;
   const i = Math.floor(x), j = Math.floor(z), u = x - i, v = z - j;
   const a = terrainAt(i, j).y, b = terrainAt(i + 1, j).y, c = terrainAt(i, j + 1).y, d = terrainAt(i + 1, j + 1).y;
   return Math.max(t, a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) + off;
@@ -261,7 +261,7 @@ function surfY(x, z, off) {
 export function buildStreams(scene) {
   // 상류: 절벽 위 물길
   const up = [];
-  for (let z = -55; z <= 2.95; z += 0.5) { const x = centerX(z); up.push([x, surfY(x, z, 0.13), z, 1]); }
+  for (let z = -45; z <= 2.95; z += 0.5) { const x = centerX(z); up.push([x, surfY(x, z, 0.13), z, 1]); }
   const mu = new THREE.Mesh(ribbon(up, 1.3), flowMat(0.25, 1.4, 0)); scene.add(mu);
   // 폭포
   const fall = [], x0 = centerX(2.95), y0 = terrainAt(x0, 2.95).y + 0.13, yEnd = terrainAt(centerX(4.6), 4.6).y + 0.25;
@@ -272,7 +272,7 @@ export function buildStreams(scene) {
   const mf = new THREE.Mesh(ribbon(fall, 1.25), flowMat(1.0, 2.2, 1)); scene.add(mf);
   // 하류 출구
   const dn = [];
-  for (let z = 39.7; z <= 108; z += 0.5) { const x = centerX(z); dn.push([x, surfY(x, z, 0.12), z, 1]); }
+  for (let z = 26.8; z <= 88; z += 0.5) { const x = centerX(z); dn.push([x, surfY(x, z, 0.12), z, 1]); }
   downMat = flowMat(0.45, 1.6, 0); downMesh = new THREE.Mesh(ribbon(dn, 1.3), downMat); scene.add(downMesh);
 }
 export function setDownstream(f) { downMat.uniforms.uOp.value = Math.min(1, f * 1.2); downMesh.visible = f > 0.03; downMat.uniforms.uFoam.value = 0.15 + 0.4 * f; }

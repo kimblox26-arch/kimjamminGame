@@ -120,9 +120,9 @@ export function addStone(x, y, z, r, opts = {}) {
   const seed = opts.seed ?? ((rand() * 1e9) | 0);
   const detail = (r > 0.5 ? 5 : r > 0.2 ? 4 : 3) - (lowPoly ? 1 : 0);
   const { g, ext } = rockGeometry(r, seed, detail);
-  const mat = mats[opts.mat ?? Math.floor(rand() * mats.length)];
+  const matIdx = opts.mat ?? Math.floor(rand() * mats.length), mat = mats[matIdx];
   const mesh = new THREE.Mesh(g, mat);
-  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.castShadow = true; mesh.receiveShadow = true; mesh.layers.enable(1);
   const yaw = rand() * Math.PI * 2;
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler((rand() - 0.5) * (opts.fixed ? 0.3 : 0.2), yaw, (rand() - 0.5) * 0.2));
   const fixed = !!opts.fixed;
@@ -136,17 +136,44 @@ export function addStone(x, y, z, r, opts = {}) {
   cd.setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS).setContactForceEventThreshold(vol * 2400 * 9.81 * 6 + 60);
   const collider = world.createCollider(cd, body);
   mesh.position.set(x, y, z); mesh.quaternion.copy(q);
-  const st = { mesh, body, collider, ext: ext.map(e => e * 1.04), r, fixed, vol, mass: fixed ? vol * 2400 : body.mass(), boulder: fixed, lastHit: 0, above: true, surf: -100, held: false, moved: false, seed };
+  const st = { mesh, body, collider, ext: ext.map(e => e * 1.04), r, fixed, vol, mass: fixed ? vol * 2400 : body.mass(), boulder: fixed, lastHit: 0, above: true, surf: -100, held: false, moved: false, seed, matIdx };
   stones.push(st); byHandle.set(collider.handle, st);
   return st;
 }
 
+export function removeStone(st) {
+  world.removeRigidBody(st.body);
+  byHandle.delete(st.collider.handle);
+  const i = stones.indexOf(st); if (i >= 0) stones.splice(i, 1);
+  st.mesh.parent?.remove(st.mesh); st.mesh.geometry.dispose();
+  needRaster = true;
+}
+// 곡괭이로 깨기: 부피를 나눠 2~4개 조각 돌로 쪼갠다 (아주 작은 돌은 부스러져 사라짐)
+export function split(st, dir) {
+  const t = st.body.translation(), parent = st.mesh.parent, out = [];
+  if (st.r < 0.09) { removeStone(st); return out; }
+  const n = st.r > 0.5 ? 4 : st.r > 0.22 ? 3 : 2;
+  const rr = st.r * Math.cbrt(1 / n);
+  const a0 = rand() * 6.283;
+  removeStone(st);
+  for (let i = 0; i < n; i++) {
+    const a = a0 + i / n * 6.283, off = st.r * 0.5;
+    const fx = t.x + Math.cos(a) * off, fz = t.z + Math.sin(a) * off, fr = rr * (0.85 + rand() * 0.25);
+    const f = addStone(fx, Math.max(t.y + (i % 2 ? 0.1 : -0.05) * st.r, groundAt(fx, fz) + fr * 0.7), fz, fr, { mat: st.matIdx });
+    parent.add(f.mesh);
+    const k = 1.2 / Math.sqrt(Math.max(1, f.mass / 40));
+    f.body.setLinvel({ x: Math.cos(a) * k + dir.x * 0.6, y: 1.2 * k, z: Math.sin(a) * k + dir.z * 0.6 }, true);
+    f.body.setAngvel({ x: (rand() - 0.5) * 4, y: (rand() - 0.5) * 4, z: (rand() - 0.5) * 4 }, true);
+    f.moved = true; out.push(f);
+  }
+  return out;
+}
 export function spawnAll(group, count, nBoulders = 18) {
   const placed = [];
   const free = (x, z, r) => placed.every(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 > (pr + r + 0.05) ** 2);
   // 고정 큰 바위
   for (let n = 0, tries = 0; n < nBoulders && tries < 500; tries++) {
-    const z = 7 + rand() * 30, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
+    const z = 7.5 + rand() * 16, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
     let x = centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.75 + rand() * 0.45));
     const r = n < 4 ? 0.55 + rand() * 0.3 : 0.6 + rand() * 0.9;
     if (!free(x, z, r)) continue;
@@ -160,7 +187,7 @@ export function spawnAll(group, count, nBoulders = 18) {
   // 주울 수 있는 돌
   for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
     const nearDam = rand() < 0.45;
-    const z = nearDam ? 15 + rand() * 14 : 8 + rand() * 27;
+    const z = nearDam ? 10 + rand() * 9 : 7.5 + rand() * 15.5;
     const F = floorHalf(z);
     const x = centerX(z) + (rand() * 2 - 1) * F * 0.92;
     const r = 0.1 + 0.24 * Math.pow(rand(), 1.5);
@@ -218,10 +245,15 @@ export function rasterize(force) {
   // 돌 위의 흙: 돌이 사라지면 바닥으로 떨어지고, 돌이 움직이면 같이 움직인다
   for (let j = 0; j <= NZ; j++) for (let i = SX0; i < SX1; i++) {
     const k = j * NXV + i;
-    if (W.sBot[k] < 1e8) { // 돌 기둥: 땅(+진흙) ~ 돌 윗면 사이가 공극
-      W.ptop[k] = W.solid[k];
-      W.seal[k] = Math.min(W.solid[k], ground[k] + fill[k]);
-    } else if (fill[k] > 0) { const v = fill[k] * 0.38; fill[k] = 0; ground[k] += v; loose[k] += v; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); }
+    if (W.sBot[k] < 1e8 && W.solid[k] > ground[k] + 0.01) {
+      // 돌 기둥: (돌 밑 흙) + (틈을 메운 진흙: 느리게) + (빈 틈: 빠르게) 로 물이 스며 흐른다
+      const top = W.solid[k], lz = Math.min(loose[k], 0.5), mud = Math.min(fill[k], top - ground[k]), open = Math.max(0, top - ground[k] - mud);
+      W.ptop[k] = top; W.seal[k] = ground[k] - lz;
+      W.kp[k] = (W.KS * (lz + mud) + W.getKP() * open) / Math.max(1e-4, lz + mud + open);
+    } else if (loose[k] > 0.02) { // 부어 놓은 흙더미도 물이 스민다
+      W.ptop[k] = ground[k]; W.seal[k] = ground[k] - Math.min(loose[k], 0.5); W.kp[k] = W.KS;
+    } else W.kp[k] = 0;
+    if (W.sBot[k] >= 1e8 && fill[k] > 0) { const v = fill[k] * 0.38; fill[k] = 0; ground[k] += v; loose[k] += v; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); }
     const c = cap[k]; if (c <= 0) continue;
     if (W.sBot[k] > 1e8) { cap[k] = 0; ground[k] += c; loose[k] += c; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); continue; }
     W.solid[k] += c;

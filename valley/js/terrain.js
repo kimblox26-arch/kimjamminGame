@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { fbm, vnoise, sstep, clamp, GLSL_NOISE } from './noise.js';
 
-export const CELL = 0.2, NX = 150, NZ = 200, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
+export const CELL = 0.15, NX = 160, NZ = 180, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
 export const X0 = -NX * CELL / 2, Z0 = 0;
-export const SX0 = 25, SX1 = 126; // 물 시뮬레이션 열 범위
+export const SX0 = 20, SX1 = 140; // 물 시뮬레이션 열 범위 (x ±9 m) // 물 시뮬레이션 열 범위
 export const SW = SX1 - SX0;
 export const idx = (i, j) => j * NXV + i;
 
@@ -19,15 +19,15 @@ export const U = {
   uRain: { value: 0 },
 };
 
-export const centerX = z => 2.2 * Math.sin(z * 0.09 + 0.5) + 0.8 * Math.sin(z * 0.23 + 1.3);
-export const floorHalf = z => 5.6 + 2.2 * Math.sin(z * 0.11 + 2.29); // z≈22 에서 가장 좁음
+export const centerX = z => 1.8 * Math.sin(z * 0.13 + 0.5) + 0.6 * Math.sin(z * 0.31 + 1.3);
+export const floorHalf = z => 5.0 + 1.9 * Math.sin(z * 0.17 + 2.33); // z≈14 에서 가장 좁음
 export const chanW = z => 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
 export function baseY(z) {
   let y = 4.0 - z * 0.045;
   y += 3.2 * sstep(4.2, 2.8, z);       // 상류 절벽(폭포)
-  y -= 2.6 * sstep(35.5, 38.6, z);     // 하류 낙차
+  y -= 2.2 * sstep(23.2, 25.8, z);     // 하류 낙차
   if (z < 0) y += -z * 0.06;
-  if (z > 40) y -= (z - 40) * 0.07;
+  if (z > 27) y -= (z - 27) * 0.07;
   return y;
 }
 
@@ -361,7 +361,7 @@ export const getHF = () => hfCollider;
 
 // ───── 바깥 산 (1m 격자, 안쪽 영역은 비움) ─────
 export function buildOuter(material) {
-  const XA = -80, XB = 80, ZA = -60, ZB = 110, S = 1; // 안개 너머 안 보이는 곳은 만들지 않음
+  const XA = -70, XB = 70, ZA = -50, ZB = 90, S = 1; // 안개 너머 안 보이는 곳은 만들지 않음
   const nx = (XB - XA) / S + 1, nz = (ZB - ZA) / S + 1;
   const pos = new Float32Array(nx * nz * 3), mat = new Float32Array(nx * nz * 4);
   const ys = new Float32Array(nx * nz);

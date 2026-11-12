@@ -17,9 +17,9 @@ import * as A from './audio.js';
 import { makeSky } from './sky.js';
 
 const QUAL = {
-  ultra: { pr: 2, shadow: 4096, refr: 0.75, grass: 9000, flowers: 400, pine: 520, broad: 180, bloom: true, stones: 120, boulders: 18, msaa: 4, view: 45 },
-  high: { pr: 1.5, shadow: 2048, refr: 0.6, grass: 6500, flowers: 300, pine: 400, broad: 140, bloom: true, stones: 110, boulders: 16, msaa: 4, view: 38 },
-  perf: { pr: 1, shadow: 1024, refr: 0.45, grass: 4500, flowers: 200, pine: 260, broad: 90, bloom: true, stones: 90, boulders: 12, msaa: 2, view: 26, perf: true, lowPoly: true },
+  ultra: { pr: 2, shadow: 4096, refr: 0.8, grass: 7000, flowers: 320, pine: 420, broad: 150, bloom: true, stones: 90, boulders: 12, msaa: 4, view: 40 },
+  high: { pr: 1.6, shadow: 2048, refr: 0.65, grass: 5200, flowers: 240, pine: 320, broad: 110, bloom: true, stones: 85, boulders: 11, msaa: 4, view: 34 },
+  perf: { pr: 1, shadow: 1536, refr: 0.5, grass: 3600, flowers: 160, pine: 220, broad: 80, bloom: true, stones: 75, boulders: 9, msaa: 2, view: 26, perf: true, lowPoly: true },
 };
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -27,7 +27,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches;
 if (/ValleyDamApp/.test(navigator.userAgent)) $('apk').remove(); // 앱 안에서는 다운로드 링크 숨김
 let qKey = params.get('q');
 try { qKey = qKey || localStorage.getItem('valley.q'); } catch {}
-if (isTouch) Object.assign(QUAL.perf, { grass: 3200, flowers: 140, pine: 200, broad: 70, stones: 80, boulders: 10, view: 22 });
+if (isTouch) Object.assign(QUAL.perf, { grass: 2800, flowers: 120, pine: 170, broad: 60, stones: 70, boulders: 8, view: 22 });
 if (!QUAL[qKey]) qKey = isTouch ? 'perf' : 'ultra';
 const segBtns = [...document.querySelectorAll('#quality button')];
 const pickQ = k => { qKey = k; segBtns.forEach(b => { b.classList.toggle('on', b.dataset.q === k); b.setAttribute('aria-checked', b.dataset.q === k); }); };
@@ -57,7 +57,8 @@ async function boot(q) {
   Q = q;
   prog(0.03, '지형 만드는 중'); await frame();
   T.generate();
-  renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: false, powerPreference: 'high-performance' });
+  // 기본 화면 MSAA: 폰(타일 GPU)에서는 거의 공짜라 최적화 모드도 매끈하게
+  renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, powerPreference: 'high-performance' });
   basePR = Math.min(devicePixelRatio, q.pr);
   renderer.setPixelRatio(basePR);
   renderer.setSize(innerWidth, innerHeight);
@@ -71,7 +72,7 @@ async function boot(q) {
   sky = makeSky(); scene.add(sky);
   sun = new THREE.DirectionalLight(0xfff0dc, 3.3); sun.castShadow = true;
   sun.shadow.mapSize.set(q.shadow, q.shadow);
-  Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 140 });
+  Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 120 });
   sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.035; sun.shadow.radius = 2;
   scene.add(sun, sun.target);
   hemi = new THREE.HemisphereLight(0xbcd6ff, 0x4d4030, 0.35); scene.add(hemi);
@@ -106,14 +107,14 @@ async function boot(q) {
   refrRT.depthTexture = new THREE.DepthTexture(refrRT.width, refrRT.height);
   W.init(); T.setSolidRef(W.solid); S.rasterize(); W.prefill();
   water = W.makeWaterMesh(refrRT); scene.add(water);
-  const WARM = 22 * 60;
+  const WARM = 18 * 60;
   for (let s = 0; s < WARM; s++) {
     if (s % 2 === 0) { world.step(); S.sync(); S.rasterize(); }
     W.step(1 / 60); if (s % 4 === 0) W.post(4 / 60);
     if (s % 150 === 0) { prog(0.4 + 0.5 * s / WARM, '계곡물 흘려보내는 중'); await frame(); }
   }
   W.upload();
-  PL.init(RAPIER, world, camera, scene, hooks, { x: T.centerX(12) - 2.6, y: T.groundAt(T.centerX(12) - 2.6, 12) + 1.1, z: 12 });
+  PL.init(RAPIER, world, camera, scene, hooks, { x: T.centerX(9) - 2.4, y: T.groundAt(T.centerX(9) - 2.4, 9) + 1.1, z: 9 });
 
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType, samples: q.msaa }));
   composer.addPass(new RenderPass(scene, camera));
@@ -176,7 +177,7 @@ function dynRes(interval, dt) {
 
 // ───── 최적화 모드 / 비 ─────
 // 최적화 모드(고화질 유지): 내부 해상도↓ + FXAA, 굴절 저해상도, 풀 60%, 그림자 2048·격프레임 갱신
-const perfPR = () => Math.min(devicePixelRatio, 1.15);
+const perfPR = () => Math.min(devicePixelRatio, 1.3);
 function setPerf(on) {
   perf = on; $('bPerf').classList.toggle('on', on); $('fps').classList.toggle('hidden', !on);
   renderer.setPixelRatio((on ? perfPR() : basePR) * dyn.scale);
@@ -184,10 +185,10 @@ function setPerf(on) {
   fxaa.enabled = on;
   if (bloom) bloom.enabled = !on;
   innerMesh.castShadow = !on; // 폰: 지형 그림자 생략
-  N.setDensity(on ? 0.6 : 1, on ? Math.min(26, Q.view) : Q.view);
+  N.setDensity(on ? 0.75 : 1, on ? Math.min(26, Q.view) : Q.view);
   // 가벼운 셰이더 (자갈 무늬·물속 빛무늬·돌 결 단순화)
   for (const m of [tmat, ...S.mats, water.material]) { m.defines = m.defines || {}; if (on) m.defines.LITE = ''; else delete m.defines.LITE; m.needsUpdate = true; }
-  const ms = on ? 1024 : Q.shadow;
+  const ms = on ? 1536 : Q.shadow;
   if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   resize();
   try { localStorage.setItem('valley.perf', on ? '1' : '0'); } catch {}
@@ -211,8 +212,8 @@ $('bRain').onclick = () => setRain(!rainOn);
 document.querySelectorAll('#bar [data-t]').forEach(b => b.onclick = () => PL.setTool(b.dataset.t));
 addEventListener('keydown', e => {
   if (!started || e.repeat) return;
-  if (e.code === 'Digit3') setRain(!rainOn);
-  if (e.code === 'Digit4') setPerf(!perf);
+  if (e.code === 'Digit4') setRain(!rainOn);
+  if (e.code === 'Digit5') setPerf(!perf);
 });
 
 // ───── 게임 훅 ─────
@@ -222,7 +223,7 @@ const hooks = {
   ui: {
     tool(t) {
       document.querySelectorAll('#bar [data-t]').forEach(e => e.classList.toggle('on', e.dataset.t === t));
-      $('tPrim').innerHTML = `<svg><use href="#i-${t === 'hand' ? 'hand' : 'shovel'}"/></svg>`;
+      $('tPrim').innerHTML = `<svg><use href="#i-${t}"/></svg>`;
     },
     prompt(t, on) { const el = $('tag'); if (el.textContent !== t) el.textContent = t; $('cross').classList.toggle('on', on); },
   },
@@ -236,7 +237,7 @@ function ui(dt) {
   toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show');
   uiT -= dt; if (uiT > 0) return; uiT = 0.2;
   const st = W.state;
-  if (!ready && st.time > 40) { ready = true; W.saveBaseline(); }
+  if (!ready && st.time > 30) { ready = true; W.saveBaseline(); }
   const blocked = Math.max(0, Math.min(1, 1 - st.outSm / st.inflow));
   $('mPct').textContent = ready ? Math.round(blocked * 100) + '%' : '—';
   $('mFill').style.width = (ready ? blocked * 100 : 0).toFixed(1) + '%';
@@ -346,7 +347,7 @@ function render() {
   frameN++;
   camera.getWorldDirection(camDir);
   const tx = camera.position.x + camDir.x * 10, tz = camera.position.z + camDir.z * 10;
-  const snap = 44 / sun.shadow.mapSize.x, sx = Math.round(tx / snap) * snap, sz = Math.round(tz / snap) * snap;
+  const snap = 32 / sun.shadow.mapSize.x, sx = Math.round(tx / snap) * snap, sz = Math.round(tz / snap) * snap;
   sun.target.position.set(sx, T.groundAt(sx, sz), sz);
   sun.position.copy(sun.target.position).addScaledVector(T.U.uSunDir.value, 90);
   sun.target.updateMatrixWorld();
