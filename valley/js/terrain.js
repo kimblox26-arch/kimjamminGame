@@ -55,9 +55,11 @@ export function terrainAt(x, z) {
 export const bed = new Float32Array(NV), soil = new Float32Array(NV), loose = new Float32Array(NV);
 export const ground = new Float32Array(NV), grass = new Float32Array(NV), dug = new Float32Array(NV);
 export const cap = new Float32Array(NV); // 돌 위에 얹힌 흙
+export const fill = new Float32Array(NV); // 돌 틈(공극)을 메운 진흙 높이
+const PHI = 0.38;
 let solidRef = null;
 export function setSolidRef(a) { solidRef = a; }
-const vh = k => (cap[k] > 0.002 && solidRef ? Math.max(ground[k], solidRef[k]) : ground[k]);
+const vh = k => (cap[k] > 0.002 && solidRef ? Math.max(ground[k], solidRef[k]) : ground[k] + fill[k]);
 
 export function generate() {
   const ox = [], oz = [];
@@ -205,7 +207,7 @@ function writeRegion(i0, i1, j0, j1) {
     const u = vh(idx(i, Math.max(0, j - 1))), d = vh(idx(i, Math.min(NZ, j + 1)));
     let nx = (l - r) / (2 * CELL), nz = (u - d) / (2 * CELL), il = 1 / Math.hypot(nx, 1, nz);
     nor[k * 3] = nx * il; nor[k * 3 + 1] = il; nor[k * 3 + 2] = nz * il;
-    mat[k * 4] = soil[k]; mat[k * 4 + 1] = loose[k] + cap[k]; mat[k * 4 + 2] = grass[k]; mat[k * 4 + 3] = dug[k];
+    mat[k * 4] = soil[k]; mat[k * 4 + 1] = loose[k] + cap[k] + fill[k]; mat[k * 4 + 2] = grass[k]; mat[k * 4 + 3] = dug[k];
   }
 }
 function markDirty(i0, i1, j0, j1) {
@@ -237,6 +239,7 @@ export function dig(x, z, radius, depth, ctx) {
     const dd = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / radius; if (dd >= 1) continue;
     const k = idx(i, j); let want = depth * (1 - dd * dd);
     if (cap[k] > 0) { const c = Math.min(cap[k], want); cap[k] -= c; want -= c; vol += c * CELL * CELL; if (ctx) ctx.solid[k] -= c; dug[k] = Math.min(1, dug[k] + c * 12); if (want <= 0) continue; }
+    if (fill[k] > 0) { const c = Math.min(fill[k] * PHI, want); fill[k] -= c / PHI; want -= c; vol += c * CELL * CELL; if (want <= 0) continue; }
     const fromL = Math.min(loose[k], want); loose[k] -= fromL; want -= fromL;
     const fromS = Math.min(soil[k], want); soil[k] -= fromS;
     const got = fromL + fromS; if (got <= 0) continue;
@@ -264,7 +267,15 @@ function put(k, add, ctx) {
   const room = ctx ? ctx.sBot[k] - 0.01 - ground[k] : 1e9;
   const below = Math.max(0, Math.min(add, room));
   loose[k] += below; ground[k] += below;
-  if (ctx) { if (ctx.solid[k] < ground[k]) ctx.solid[k] = ground[k]; if (add > below) { cap[k] += add - below; ctx.solid[k] += add - below; } }
+  if (ctx) {
+    if (ctx.solid[k] < ground[k]) ctx.solid[k] = ground[k];
+    let rest = add - below;
+    if (rest > 0) { // 돌 틈을 진흙으로 먼저 메우고, 다 차면 돌 위에 얹힌다
+      const room2 = Math.max(0, ctx.ptop[k] - ground[k] - fill[k]), f = Math.min(rest / PHI, room2);
+      fill[k] += f; rest -= f * PHI;
+      if (rest > 0) { cap[k] += rest; ctx.solid[k] += rest; }
+    }
+  }
   if (add > 0.003) grass[k] = 0;
 }
 const surf = (k, ctx) => (ctx && (cap[k] > 0 || ctx.sBot[k] < 1e8) ? ctx.solid[k] : ground[k]);

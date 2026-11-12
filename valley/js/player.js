@@ -95,7 +95,6 @@ function primary() {
   qY.setFromAxisAngle(tmp.set(0, 1, 0), P.yaw);
   t.qOff = qY.clone().invert().multiply(qC);
   P.holdDist = THREE.MathUtils.clamp(P.aim?.dist ?? 1.7, 1.2, 2.2);
-  hooks.toast?.(`돌을 들었어요 · ${Math.round(t.mass)} kg`);
   hooks.audio?.lift();
 }
 function drop(speed) {
@@ -137,7 +136,7 @@ export function prePhysics(dt) {
   t.body.setAngvel({ x: qe.x / s * w, y: qe.y / s * w, z: qe.z / s * w }, true);
   const dist = Math.hypot(tx - p.x, ty - p.y, tz - p.z);
   farT = dist > 1.6 ? farT + dt : 0;
-  if (farT > 0.6) { drop(0); hooks.toast?.('돌이 걸려서 놓쳤어요'); }
+  if (farT > 0.6) { drop(0); hooks.toast?.('돌을 놓쳤어요'); }
 }
 
 export function update(dt, time) {
@@ -199,10 +198,7 @@ function aim() {
   const show = P.tool === 'hand' && !P.held ? P.target : null;
   S.setHighlight(show);
   let prompt = '';
-  if (P.tool === 'hand') {
-    if (P.held) prompt = '클릭/E 내려놓기 · 우클릭 던지기 · 휠 거리 · Q/R 회전';
-    else if (P.target) prompt = P.target.mass > MAX_LIFT ? `너무 무거워요 (${Math.round(P.target.mass)} kg)` : `클릭/E 줍기 · ${Math.round(P.target.mass)} kg`;
-  } else if (P.aim && P.aim.dist < 4.2) prompt = '좌클릭 흙 파기 · 우클릭 흙 붓기';
+  if (P.tool === 'hand' && !P.held && P.target) prompt = P.target.mass > MAX_LIFT ? `${Math.round(P.target.mass)} kg · 무거움` : `${Math.round(P.target.mass)} kg`;
   hooks.ui?.prompt(prompt, !!(P.held || P.target));
 }
 
@@ -222,16 +218,16 @@ function toolUpdate(dt, time) {
   if (!ok) return;
   if (btn.l && time - lastAct > 0.26) {
     lastAct = time;
-    if (P.bucket >= BUCKET_CAP - 0.001) { hooks.toast?.('삽(양동이)이 가득 찼어요 — 우클릭으로 부으세요'); return; }
+    if (P.bucket >= BUCKET_CAP - 0.001) { hooks.toast?.('진흙이 가득 찼어요'); return; }
     const depth = 0.075 * Math.min(1, (BUCKET_CAP - P.bucket) / 0.02);
     const v = T.dig(a.point.x, a.point.z, 0.38, depth, W);
-    if (v < 0.0004) { hooks.toast?.('단단한 바위라 팔 수 없어요'); hooks.audio?.clink(); return; }
+    if (v < 0.0004) { hooks.toast?.('바위는 팔 수 없어요'); hooks.audio?.clink(); return; }
     P.bucket = Math.min(BUCKET_CAP, P.bucket + v); P.dug += v;
     hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z), a.point.z, 14);
     hooks.audio?.dig(); hooks.edit?.(a.point.x, a.point.z, 0.45);
   } else if (btn.r && time - lastAct > 0.2) {
     lastAct = time;
-    if (P.bucket < 0.0005) { hooks.toast?.('흙이 없어요 — 좌클릭으로 먼저 파세요'); return; }
+    if (P.bucket < 0.0005) { hooks.toast?.('진흙이 없어요'); return; }
     const amt = Math.min(P.bucket, 0.022);
     const used = T.deposit(a.point.x, a.point.z, 0.34, amt, W);
     P.bucket = Math.max(0, P.bucket - used);

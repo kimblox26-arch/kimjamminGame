@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>계곡 물막이 — 돌과 흙으로 계곡물을 막아라</title>
-<meta name="description" content="돌을 직접 주워 쌓고 흙을 파서 메워 계곡물을 막는 초고화질 물리 샌드박스 게임">
-<link rel="stylesheet" href="./style.css?v=20261111a">
+<title>계곡 물막이</title>
+<meta name="description" content="돌을 직접 주워 쌓고 진흙으로 틈을 메워 계곡물을 막는 물리 샌드박스">
+<link rel="stylesheet" href="./style.css?v=20261112a">
 <script type="importmap">
 {
   "imports": {
@@ -19,82 +19,69 @@
 <body>
 <canvas id="gl"></canvas>
 
-<!-- 시작 화면 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12.5V6.2a1.4 1.4 0 0 1 2.8 0V11m0-5.8V4.4a1.4 1.4 0 0 1 2.8 0V11m0-5.2a1.4 1.4 0 0 1 2.8 0V11.5m0-3.6a1.4 1.4 0 0 1 2.8 0v5.6A7.5 7.5 0 0 1 11.7 21h-.6a6.3 6.3 0 0 1-5.2-2.8l-2.6-4a1.5 1.5 0 0 1 2.4-1.8L8 14.6"/></symbol>
+  <symbol id="i-shovel" viewBox="0 0 24 24"><path d="M9.5 2.5h5M12 2.5v9.5"/><path d="M8 12h8v4.5a4 4 0 0 1-8 0z"/></symbol>
+  <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 15.5a4 4 0 0 1-.3-8 5.5 5.5 0 0 1 10.6 1.4 3.3 3.3 0 0 1 .2 6.6z"/><path d="M8.5 18.5l-1 2M12.5 18.5l-1 2M16.5 18.5l-1 2"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2.5L5 13.5h6l-1 8 8.5-11h-6z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5.5v13M15 5.5v13"/></symbol>
+  <symbol id="i-jump" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-throw" viewBox="0 0 24 24"><path d="M5 19L19 5M10 5h9v9"/></symbol>
+  <symbol id="i-rot" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15"/></symbol>
+</svg>
+
 <section id="start" class="screen">
   <div class="card">
-    <div class="badge">물리 샌드박스 · 초고화질</div>
     <h1>계곡 물막이</h1>
-    <p class="lead">맑은 계곡물이 흘러갑니다. <b>돌을 직접 주워 쌓고</b>, <b>삽으로 흙을 파서</b> 돌 틈을 메워 물길을 막아보세요.<br>
-      돌 사이 틈으로는 물이 새고, 흙만 쌓은 둑은 물살에 쓸려갑니다. 돌과 흙을 함께 써야 튼튼한 둑이 됩니다.</p>
-    <div class="keys">
-      <div><kbd>W A S D</kbd> 이동 · <kbd>Shift</kbd> 달리기 · <kbd>Space</kbd> 점프</div>
-      <div><kbd>1</kbd> 손 — <kbd>클릭</kbd>/<kbd>E</kbd> 돌 줍기·내려놓기, <kbd>우클릭</kbd> 던지기, <kbd>휠</kbd> 거리, <kbd>Q</kbd>/<kbd>R</kbd> 돌 돌리기</div>
-      <div><kbd>2</kbd> 삽 — <kbd>좌클릭</kbd> 흙 파기, <kbd>우클릭</kbd> 흙 붓기 (돌 틈에 부으면 틈이 메워져요)</div>
+    <p class="sub">돌을 쌓고 진흙으로 틈을 메워 계곡물을 막아보세요</p>
+    <div class="seg" id="quality" role="radiogroup" aria-label="그래픽">
+      <button data-q="ultra" role="radio">초고화질</button>
+      <button data-q="high" role="radio">고화질</button>
+      <button data-q="perf" role="radio">최적화</button>
     </div>
-    <div class="row">
-      <label>그래픽 품질
-        <select id="quality">
-          <option value="ultra">초고화질</option>
-          <option value="high">고화질</option>
-          <option value="low">보통 (저사양)</option>
-        </select>
-      </label>
-      <button id="go" class="btn">계곡으로 들어가기</button>
-    </div>
-    <p id="loadmsg" class="load"></p>
+    <button id="go" class="btn">시작</button>
+    <div class="prog"><div id="progbar"></div></div>
   </div>
 </section>
 
-<!-- 일시정지 -->
 <section id="pause" class="screen hidden">
   <div class="card small">
     <h2 id="pauseT">일시정지</h2>
-    <p id="pauseP">화면을 클릭하면 계속합니다.</p>
-    <button id="resume" class="btn">계속하기</button>
+    <button id="resume" class="btn">계속</button>
     <button id="restart" class="btn ghost">처음부터</button>
   </div>
 </section>
 
-<!-- HUD -->
 <div id="hud" class="hidden">
-  <div id="goal">
-    <div class="stage" id="gStage">준비</div>
-    <div class="gtext" id="gText">물이 흐르기 시작했어요</div>
-    <div class="meter"><div id="gBlock"></div><span id="gPct">—</span></div>
-    <div class="hold"><div id="gHold"></div></div>
-  </div>
-  <div id="stats">
-    <div><span>상류 유입</span><b id="sIn">0</b> L/s</div>
-    <div><span>하류 유량</span><b id="sOut">0</b> L/s</div>
-    <div><span>저수량</span><b id="sVol">0</b> m³</div>
-    <div><span>최대 수심</span><b id="sDep">0</b> cm</div>
-    <div><span>옮긴 돌</span><b id="sStones">0</b> 개</div>
-    <div><span>쓸려간 흙</span><b id="sEro">0</b> L</div>
+  <div id="meter">
+    <div class="mtop"><span>막은 물</span><b id="mPct">—</b></div>
+    <div class="mbar"><div id="mFill"></div></div>
+    <div class="msub" id="mSub"></div>
   </div>
   <div id="cross"></div>
-  <div id="prompt"></div>
+  <div id="tag"></div>
   <div id="toast"></div>
-  <div id="tools">
-    <div class="tool on" data-t="hand"><kbd>1</kbd> ✋ 손</div>
-    <div class="tool" data-t="shovel"><kbd>2</kbd> 🪏 삽
-      <div class="bucket"><div id="bucket"></div></div>
-    </div>
-  </div>
+  <nav id="bar">
+    <button class="tb on" data-t="hand" title="손 (1)"><svg><use href="#i-hand"/></svg><kbd>1</kbd></button>
+    <button class="tb" data-t="shovel" title="삽 · 진흙 (2)"><svg><use href="#i-shovel"/></svg><kbd>2</kbd><i class="mud"><i id="mud"></i></i></button>
+    <span class="sep"></span>
+    <button class="tb" id="bRain" title="비 (3)"><svg><use href="#i-rain"/></svg><kbd>3</kbd></button>
+    <button class="tb" id="bPerf" title="최적화 모드 (4)"><svg><use href="#i-bolt"/></svg><kbd>4</kbd></button>
+    <button class="tb" id="bPause" title="일시정지 (Esc)"><svg><use href="#i-pause"/></svg></button>
+  </nav>
   <div id="fps"></div>
 </div>
 
-<!-- 터치 조작 -->
 <div id="touch" class="hidden">
   <div id="joy"><div id="knob"></div></div>
   <div id="tbtns">
-    <button id="tPrim">줍기</button>
-    <button id="tSec">던지기</button>
-    <button id="tTool">삽</button>
-    <button id="tRot">회전</button>
-    <button id="tJump">점프</button>
+    <button id="tSec" class="rb"><svg><use href="#i-throw"/></svg></button>
+    <button id="tRot" class="rb"><svg><use href="#i-rot"/></svg></button>
+    <button id="tJump" class="rb"><svg><use href="#i-jump"/></svg></button>
+    <button id="tPrim" class="rb big"><svg><use href="#i-hand"/></svg></button>
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261111a"></script>
+<script type="module" src="./js/main.js?v=20261112a"></script>
 </body>
 </html>

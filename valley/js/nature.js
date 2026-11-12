@@ -76,7 +76,7 @@ export function buildGrass(scene, count) {
     c.setHSL(0.2 + rand() * 0.07, 0.5 + rand() * 0.2, 0.42 + rand() * 0.2); m.setColorAt(n, c);
     grassInst.pos.push(x, z, j * (NX + 1) + i); n++;
   }
-  m.count = n; grassInst.mesh = m; scene.add(m);
+  m.count = n; grassInst.mesh = m; grassInst.full = n; scene.add(m);
 }
 function groundBil(x, z) {
   const fx = (x - X0) / CELL, fz = (z - Z0) / CELL, i = fx | 0, j = fz | 0, u = fx - i, v = fz - j;
@@ -98,6 +98,12 @@ export function onEdit(x, z, r) {
 }
 
 // ───── 꽃 ─────
+const flowerInst = [];
+// 최적화 모드: 풀·꽃 밀도 줄이기 (무작위 배치라 앞부분만 그려도 고르게 줄어든다)
+export function setDensity(f) {
+  if (grassInst.mesh) grassInst.mesh.count = Math.round(grassInst.full * f);
+  for (const [m, n] of flowerInst) m.count = Math.round(n * f);
+}
 export function buildFlowers(scene, count) {
   const stem = new THREE.CylinderGeometry(0.004, 0.005, 0.3, 4).translate(0, 0.15, 0);
   const head = new THREE.IcosahedronGeometry(0.028, 0).scale(1, 0.55, 1).translate(0, 0.3, 0);
@@ -112,7 +118,7 @@ export function buildFlowers(scene, count) {
     d.position.set(x, groundBil(x, z), z); d.scale.setScalar(0.6 + rand() * 0.8); d.rotation.set((rand() - 0.5) * 0.3, rand() * 6, (rand() - 0.5) * 0.3); d.updateMatrix();
     ms.setMatrixAt(n, d.matrix); mh.setMatrixAt(n, d.matrix); c.setHex(cols[(rand() * cols.length) | 0]); mh.setColorAt(n, c); n++;
   }
-  ms.count = mh.count = n; ms.receiveShadow = mh.receiveShadow = true;
+  ms.count = mh.count = n; ms.receiveShadow = mh.receiveShadow = true; flowerInst.push([ms, n], [mh, n]);
   scene.add(ms, mh);
 }
 

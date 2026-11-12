@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, ground, loose, markDirtyCell } from './terrain.js';
+import { CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell } from './terrain.js';
 import * as W from './water.js';
 import { GLSL_NOISE, rng } from './noise.js';
 
@@ -113,7 +113,7 @@ export function addStone(x, y, z, r, opts = {}) {
   if (!fixed) cd.setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS).setContactForceEventThreshold(vol * 2400 * 9.81 * 6 + 60);
   const collider = world.createCollider(cd, body);
   mesh.position.set(x, y, z); mesh.quaternion.copy(q);
-  const st = { mesh, body, collider, ext: ext.map(e => e * 0.98), r, fixed, vol, mass: fixed ? Infinity : body.mass(), lastHit: 0, above: true, surf: -100, held: false, moved: false, seed };
+  const st = { mesh, body, collider, ext: ext.map(e => e * 1.04), r, fixed, vol, mass: fixed ? Infinity : body.mass(), lastHit: 0, above: true, surf: -100, held: false, moved: false, seed };
   stones.push(st); byHandle.set(collider.handle, st);
   return st;
 }
@@ -192,8 +192,13 @@ export function rasterize() {
   }
   // 돌 위의 흙: 돌이 사라지면 바닥으로 떨어지고, 돌이 움직이면 같이 움직인다
   for (let j = 0; j <= NZ; j++) for (let i = SX0; i < SX1; i++) {
-    const k = j * NXV + i, c = cap[k]; if (c <= 0) continue;
-    if (W.sBot[k] > 1e8) { cap[k] = 0; ground[k] += c; loose[k] += c; W.solid[k] = Math.max(W.solid[k], ground[k]); markDirtyCell(i, j); continue; }
+    const k = j * NXV + i;
+    if (W.sBot[k] < 1e8) { // 돌 기둥: 땅(+진흙) ~ 돌 윗면 사이가 공극
+      W.ptop[k] = W.solid[k];
+      W.seal[k] = Math.min(W.solid[k], ground[k] + fill[k]);
+    } else if (fill[k] > 0) { const v = fill[k] * 0.38; fill[k] = 0; ground[k] += v; loose[k] += v; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j); }
+    const c = cap[k]; if (c <= 0) continue;
+    if (W.sBot[k] > 1e8) { cap[k] = 0; ground[k] += c; loose[k] += c; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j); continue; }
     W.solid[k] += c;
     if (Math.abs(W.solid[k] - lastVis[k]) > 0.01) { lastVis[k] = W.solid[k]; markDirtyCell(i, j); }
   }
