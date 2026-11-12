@@ -17,9 +17,9 @@ import * as A from './audio.js';
 import { makeSky } from './sky.js';
 
 const QUAL = {
-  ultra: { pr: 2, shadow: 4096, refr: 0.75, grass: 16000, flowers: 700, pine: 1300, broad: 450, bloom: true, stones: 170, msaa: 4 },
-  high: { pr: 1.5, shadow: 2048, refr: 0.6, grass: 9000, flowers: 450, pine: 800, broad: 280, bloom: true, stones: 150, msaa: 4 },
-  perf: { pr: 1, shadow: 2048, refr: 0.5, grass: 7000, flowers: 350, pine: 600, broad: 200, bloom: true, stones: 140, msaa: 2, perf: true },
+  ultra: { pr: 2, shadow: 4096, refr: 0.75, grass: 9000, flowers: 400, pine: 520, broad: 180, bloom: true, stones: 120, boulders: 18, msaa: 4, view: 45 },
+  high: { pr: 1.5, shadow: 2048, refr: 0.6, grass: 6500, flowers: 300, pine: 400, broad: 140, bloom: true, stones: 110, boulders: 16, msaa: 4, view: 38 },
+  perf: { pr: 1, shadow: 1024, refr: 0.45, grass: 4500, flowers: 200, pine: 260, broad: 90, bloom: true, stones: 90, boulders: 12, msaa: 2, view: 26, perf: true },
 };
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -32,7 +32,7 @@ const segBtns = [...document.querySelectorAll('#quality button')];
 const pickQ = k => { qKey = k; segBtns.forEach(b => { b.classList.toggle('on', b.dataset.q === k); b.setAttribute('aria-checked', b.dataset.q === k); }); };
 segBtns.forEach(b => b.onclick = () => pickQ(b.dataset.q)); pickQ(qKey);
 
-let fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
+let tmat, fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = v => { $('progbar').style.width = Math.round(v * 100) + '%'; };
@@ -64,19 +64,19 @@ async function boot(q) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.92;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(new THREE.Color().setRGB(0.68, 0.80, 0.94), 0.0058);
+  scene.fog = new THREE.FogExp2(new THREE.Color().setRGB(0.68, 0.80, 0.94), 0.011);
   camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 1500);
   scene.add(camera);
   sky = makeSky(); scene.add(sky);
   sun = new THREE.DirectionalLight(0xfff0dc, 3.3); sun.castShadow = true;
   sun.shadow.mapSize.set(q.shadow, q.shadow);
-  Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 180 });
+  Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 140 });
   sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.035; sun.shadow.radius = 2;
   scene.add(sun, sun.target);
   hemi = new THREE.HemisphereLight(0xbcd6ff, 0x4d4030, 0.35); scene.add(hemi);
   const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene(); es.add(makeSky());
   scene.environment = pm.fromScene(es, 0, 0.1, 1000).texture;
-  const tm = T.terrainMaterial();
+  const tm = T.terrainMaterial(); tmat = tm;
   const inner = T.buildMesh(tm); inner.layers.enable(1); scene.add(inner);
   const outer = T.buildOuter(tm); outer.castShadow = false; scene.add(outer);
   sun.layers.enable(1); hemi.layers.enable(1);
@@ -91,7 +91,7 @@ async function boot(q) {
 
   prog(0.2); await frame();
   const sg = new THREE.Group(); scene.add(sg); scene.add(S.outlineMesh());
-  S.spawnAll(sg, q.stones);
+  S.spawnAll(sg, q.stones, q.boulders);
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
   prog(0.32); await frame();
   N.buildTrees(scene, q.pine, q.broad);
@@ -105,7 +105,7 @@ async function boot(q) {
   refrRT.depthTexture = new THREE.DepthTexture(refrRT.width, refrRT.height);
   W.init(); T.setSolidRef(W.solid); S.rasterize(); W.prefill();
   water = W.makeWaterMesh(refrRT); scene.add(water);
-  const WARM = 30 * 60;
+  const WARM = 22 * 60;
   for (let s = 0; s < WARM; s++) {
     if (s % 2 === 0) { world.step(); S.sync(); S.rasterize(); }
     W.step(1 / 60); if (s % 4 === 0) W.post(4 / 60);
@@ -181,8 +181,11 @@ function setPerf(on) {
   renderer.setPixelRatio((on ? perfPR() : basePR) * dyn.scale);
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) { rt.samples = on ? 0 : Q.msaa; rt.dispose(); }
   fxaa.enabled = on;
-  N.setDensity(on ? 0.6 : 1);
-  const ms = on ? Math.min(2048, Q.shadow) : Q.shadow;
+  if (bloom) bloom.enabled = !on;
+  N.setDensity(on ? 0.6 : 1, on ? Math.min(26, Q.view) : Q.view);
+  // 가벼운 셰이더 (자갈 무늬·물속 빛무늬·돌 결 단순화)
+  for (const m of [tmat, ...S.mats, water.material]) { m.defines = m.defines || {}; if (on) m.defines.LITE = ''; else delete m.defines.LITE; m.needsUpdate = true; }
+  const ms = on ? 1024 : Q.shadow;
   if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   resize();
   try { localStorage.setItem('valley.perf', on ? '1' : '0'); } catch {}
@@ -231,7 +234,7 @@ function ui(dt) {
   toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show');
   uiT -= dt; if (uiT > 0) return; uiT = 0.2;
   const st = W.state;
-  if (!ready && st.time > 55) { ready = true; W.saveBaseline(); }
+  if (!ready && st.time > 40) { ready = true; W.saveBaseline(); }
   const blocked = Math.max(0, Math.min(1, 1 - st.outSm / st.inflow));
   $('mPct').textContent = ready ? Math.round(blocked * 100) + '%' : '—';
   $('mFill').style.width = (ready ? blocked * 100 : 0).toFixed(1) + '%';
@@ -282,6 +285,7 @@ function loop(now) {
   T.U.uRain.value += (rt - T.U.uRain.value) * Math.min(1, dt * 0.15);
   FX.update(dt, T.U.uRain.value);
   N.setDownstream(Math.max(0, st.outSm / 0.2));
+  N.cull(camera.position);
   audioUpdate();
   ui(dt);
   render();
@@ -340,21 +344,20 @@ function render() {
   frameN++;
   camera.getWorldDirection(camDir);
   const tx = camera.position.x + camDir.x * 10, tz = camera.position.z + camDir.z * 10;
-  const snap = 60 / sun.shadow.mapSize.x, sx = Math.round(tx / snap) * snap, sz = Math.round(tz / snap) * snap;
+  const snap = 44 / sun.shadow.mapSize.x, sx = Math.round(tx / snap) * snap, sz = Math.round(tz / snap) * snap;
   sun.target.position.set(sx, T.groundAt(sx, sz), sz);
   sun.position.copy(sun.target.position).addScaledVector(T.U.uSunDir.value, 90);
   sun.target.updateMatrixWorld();
   const rain = T.U.uRain.value;
   sun.intensity = 3.3 * (1 - rain * 0.75); hemi.intensity = 0.35 + rain * 0.25;
-  scene.fog.density = 0.0058 + rain * 0.012; gradePass.uniforms.uRain.value = rain;
+  scene.fog.density = 0.011 + rain * 0.012; gradePass.uniforms.uRain.value = rain;
   sky.position.copy(camera.position);
   renderer.shadowMap.needsUpdate = !perf || frameN % 2 === 0;
-  if (!perf) {
-    camera.layers.set(1);
-    renderer.setRenderTarget(refrRT); renderer.render(scene, camera);
-    camera.layers.set(0);
-    renderer.setRenderTarget(null);
-  }
+  // 굴절용 패스: 지형·돌만 (레이어 1)
+  camera.layers.set(1);
+  renderer.setRenderTarget(refrRT); renderer.render(scene, camera);
+  camera.layers.set(0);
+  renderer.setRenderTarget(null);
   composer.render();
 }
 

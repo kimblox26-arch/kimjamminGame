@@ -15,7 +15,7 @@ const fL = new Float32Array(NV), fR = new Float32Array(NV), fU = new Float32Arra
 export const vx = new Float32Array(NV), vz = new Float32Array(NV), foam = new Float32Array(NV), wet = new Float32Array(NV);
 export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
 const h0 = new Float32Array(NV);
-export const MEAS_J = 262;
+export const MEAS_J = 175; // z=35 (하류 낙차 직전)
 export const state = { inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
 const src = [];
 
@@ -298,9 +298,17 @@ void main(){
   vec2 bx = vWorld.xz*0.42;
   vec2 uvA = bx - flow*p0*0.55, uvB = bx - flow*p1*0.55 + vec2(0.37,0.71);
   vec4 nA = texture2D(tN, uvA), nB = texture2D(tN, uvB);
+#ifdef LITE
+  vec4 nC = nA, nD = nB;
+#else
   vec4 nC = texture2D(tN, vWorld.xz*1.3 - flow*p0*1.6 + 0.5), nD = texture2D(tN, vWorld.xz*1.3 - flow*p1*1.6 + 0.2);
+#endif
   vec2 dn = mix(nA.xy, nB.xy, wb)*2.-1.; vec2 dn2 = mix(nC.xy, nD.xy, wb)*2.-1.;
+#ifdef LITE
+  vec4 nS = vec4(0.5);
+#else
   vec4 nS = texture2D(tN, vWorld.xz*0.9 + vec2(uTime*0.03, uTime*0.021));
+#endif
   dn += (nS.xy*2.-1.)*0.5 + dn2*(0.25+sp*0.6);
   float rainR = uRain * smoothstep(0.75,0.95, vnoise2(vWorld.xz*9. + floor(uTime*6.)*7.3));
   float str = (0.10 + sp*0.32) * smoothstep(0.,0.03,depth) + rainR*0.4;

@@ -35,24 +35,35 @@ function stoneMaterial([c1, c2, c3, moss]) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vOP; varying vec3 vWP; varying vec3 vWN; uniform vec3 uC1,uC2,uC3; uniform float uMoss, uTime, uRain; uniform vec3 uSunCol, uSunDir;\n' + GLSL_NOISE)
       .replace('#include <map_fragment>', /* glsl */`
         float fade = 1. - smoothstep(4., 25., length(vViewPosition));
+        #ifdef LITE
+        float n1 = vnoise3(vOP*2.6), n2 = vnoise3(vOP*17.), n3 = 0.5;
+#else
         float n1 = fbm3(vOP*2.6), n2 = vnoise3(vOP*17.), n3 = mix(0.5, vnoise3(vOP*60.), fade);
+#endif
         vec3 alb = mix(uC1, uC2, smoothstep(0.25,0.75,n1));
         alb *= 0.86 + 0.22*n2;
         alb = mix(alb, uC3, smoothstep(0.78, 0.9, n3)*0.35);
         alb = mix(alb, vec3(0.86,0.84,0.8), smoothstep(0.84, 0.95, vnoise3(vOP*45.+3.))*0.3*fade);
+        #ifdef LITE
+        float vein = 0.;
+#else
         float vein = smoothstep(0.02, 0.0, abs(fbm3(vOP*1.4+7.)-0.5)) * smoothstep(0.55, 0.7, vnoise3(vOP*0.9+11.));
+#endif
         alb = mix(alb, vec3(0.8,0.78,0.74), vein*0.35);
         vec3 WN = normalize(vWN);
-        float mossA = uMoss * smoothstep(0.35,0.85,WN.y) * smoothstep(0.42,0.62, fbm3(vOP*3.3+2.));
+        float mossA = uMoss * smoothstep(0.35,0.85,WN.y) * smoothstep(0.42,0.62, vnoise3(vOP*3.3+2.)*0.7 + vnoise3(vOP*7.+1.)*0.3);
         alb = mix(alb, mix(vec3(0.16,0.25,0.06), vec3(0.30,0.36,0.10), n2), mossA);
-        alb = mix(alb, vec3(0.62,0.66,0.48), smoothstep(0.7,0.82,fbm3(vOP*5.+9.))*0.35*(1.-mossA));
+        alb = mix(alb, vec3(0.62,0.66,0.48), smoothstep(0.7,0.82,vnoise3(vOP*5.+9.))*0.35*(1.-mossA));
         float sH = n1*0.025 + n2*0.005*fade + n3*0.0012 + mossA*vnoise3(vOP*90.)*0.002*fade - vein*0.002;
         vec4 wd = waterAt(vWP.xz); float under = wd.r - vWP.y;
         float wet = clamp(max(smoothstep(-0.05, 0.0, under), wd.b*smoothstep(0.25,0.0,vWP.y-wd.r)*0.7) + uRain*0.6, 0., 1.);
         alb *= mix(1., 0.48, wet);
         alb = mix(alb, alb*vec3(0.78,0.92,0.88), smoothstep(0.,0.3,under));
         float sRough = mix(mix(0.78, 0.95, mossA), 0.16, wet*(1.-mossA*0.6));
-        float sCaus = under > 0. ? caustic(vWP.xz, uTime)*smoothstep(0.,0.05,under)*exp(-under*1.6)*max(WN.y,0.)*max(uSunDir.y,0.) : 0.;
+        float sCaus = 0.;
+#ifndef LITE
+        if (under > 0.) sCaus = caustic(vWP.xz, uTime)*smoothstep(0.,0.05,under)*exp(-under*1.6)*max(WN.y,0.)*max(uSunDir.y,0.);
+#endif
         diffuseColor.rgb *= alb;`)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = sRough;')
       .replace('#include <normal_fragment_maps>', 'normal = bumpN(-vViewPosition, normal, sH, 1.0);')
@@ -60,7 +71,7 @@ function stoneMaterial([c1, c2, c3, moss]) {
   };
   return m;
 }
-const mats = PALETTE.map(stoneMaterial);
+export const mats = PALETTE.map(stoneMaterial);
 
 // ───── 바위 형상 ─────
 function rockGeometry(r, seed, detail) {
@@ -129,12 +140,12 @@ export function addStone(x, y, z, r, opts = {}) {
   return st;
 }
 
-export function spawnAll(group, count) {
+export function spawnAll(group, count, nBoulders = 18) {
   const placed = [];
   const free = (x, z, r) => placed.every(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 > (pr + r + 0.05) ** 2);
   // 고정 큰 바위
-  for (let n = 0, tries = 0; n < 26 && tries < 500; tries++) {
-    const z = 7 + rand() * 50, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
+  for (let n = 0, tries = 0; n < nBoulders && tries < 500; tries++) {
+    const z = 7 + rand() * 30, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
     let x = centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.75 + rand() * 0.45));
     const r = n < 4 ? 0.55 + rand() * 0.3 : 0.6 + rand() * 0.9;
     if (!free(x, z, r)) continue;
@@ -148,7 +159,7 @@ export function spawnAll(group, count) {
   // 주울 수 있는 돌
   for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
     const nearDam = rand() < 0.45;
-    const z = nearDam ? 24 + rand() * 20 : 9 + rand() * 44;
+    const z = nearDam ? 15 + rand() * 14 : 8 + rand() * 27;
     const F = floorHalf(z);
     const x = centerX(z) + (rand() * 2 - 1) * F * 0.92;
     const r = 0.1 + 0.24 * Math.pow(rand(), 1.5);

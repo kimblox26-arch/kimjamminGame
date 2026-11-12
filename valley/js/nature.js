@@ -57,69 +57,79 @@ function windMat(params, amp, foliage) {
   return m;
 }
 
-const grassInst = { mesh: null, pos: [] };
-export function buildGrass(scene, count) {
-  const geo = bladeClump();
-  const mat = windMat({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.82 }, 0.08, false);
-  const m = new THREE.InstancedMesh(geo, mat, count);
-  m.receiveShadow = true; m.castShadow = false; m.frustumCulled = false;
-  const d = new THREE.Object3D(), c = new THREE.Color();
-  let n = 0;
-  for (let t = 0; n < count && t < count * 40; t++) {
-    const x = -19 + rand() * 38, z = 6 + rand() * 52;
-    const i = Math.round((x - X0) / CELL), j = Math.round((z - Z0) / CELL);
-    const g = grass[idx(i, j)];
-    if (g < 0.35 || rand() > g) continue;
-    d.position.set(x, groundBil(x, z) - 0.02, z); d.rotation.set(0, rand() * 6.283, 0);
-    d.scale.setScalar(0.7 + rand() * 0.7); d.updateMatrix();
-    m.setMatrixAt(n, d.matrix);
-    c.setHSL(0.2 + rand() * 0.07, 0.5 + rand() * 0.2, 0.42 + rand() * 0.2); m.setColorAt(n, c);
-    grassInst.pos.push(x, z, j * (NX + 1) + i); n++;
-  }
-  m.count = n; grassInst.mesh = m; grassInst.full = n; scene.add(m);
-}
 function groundBil(x, z) {
   const fx = (x - X0) / CELL, fz = (z - Z0) / CELL, i = fx | 0, j = fz | 0, u = fx - i, v = fz - j;
   const a = ground[idx(i, j)], b = ground[idx(i + 1, j)], c = ground[idx(i, j + 1)], d = ground[idx(i + 1, j + 1)];
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
-// 땅을 파거나 흙을 부으면 그 자리 풀을 없애고 높이 다시 맞추기
-const zero = new THREE.Matrix4().makeScale(0, 0, 0), mtx = new THREE.Matrix4(), pp = new THREE.Vector3(), qq = new THREE.Quaternion(), ss = new THREE.Vector3();
-export function onEdit(x, z, r) {
-  const m = grassInst.mesh; if (!m) return;
-  const P = grassInst.pos; let ch = false;
-  for (let n = 0; n < m.count; n++) {
-    const dx = P[n * 3] - x, dz = P[n * 3 + 1] - z; if (dx * dx + dz * dz > (r + 0.3) ** 2) continue;
-    if (grass[P[n * 3 + 2]] < 0.2) m.setMatrixAt(n, zero);
-    else { m.getMatrixAt(n, mtx); mtx.decompose(pp, qq, ss); pp.y = groundBil(P[n * 3], P[n * 3 + 1]) - 0.02; mtx.compose(pp, qq, ss); m.setMatrixAt(n, mtx); }
-    ch = true;
+// 구역(타일)별 InstancedMesh: 화면 밖 구역은 자동으로 빠지고, 먼 구역은 거리로 끈다
+const TILE = 6, chunks = [];
+let viewDist = 40, density = 1;
+function chunked(scene, geo, mat, items, kind, shadow, tile = TILE) {
+  const tiles = new Map();
+  for (const it of items) { const key = Math.floor(it.x / tile) + ',' + Math.floor(it.z / tile); (tiles.get(key) || tiles.set(key, []).get(key)).push(it); }
+  const d = new THREE.Object3D(), c = new THREE.Color();
+  for (const list of tiles.values()) {
+    const m = new THREE.InstancedMesh(geo, mat, list.length);
+    let cx = 0, cz = 0;
+    list.forEach((it, n) => {
+      d.position.set(it.x, it.y, it.z); d.rotation.set(it.rx || 0, it.ry, it.rz || 0); d.scale.setScalar(it.s); d.updateMatrix();
+      m.setMatrixAt(n, d.matrix); if (it.col !== undefined) { c.setHex(it.col); m.setColorAt(n, c); } else if (it.hsl) { c.setHSL(...it.hsl); m.setColorAt(n, c); }
+      cx += it.x; cz += it.z;
+    });
+    m.computeBoundingSphere(); m.receiveShadow = true; m.castShadow = !!shadow;
+    scene.add(m);
+    chunks.push({ m, list, full: list.length, kind, cx: cx / list.length, cz: cz / list.length });
   }
-  if (ch) m.instanceMatrix.needsUpdate = true;
 }
-
-// ───── 꽃 ─────
-const flowerInst = [];
-// 최적화 모드: 풀·꽃 밀도 줄이기 (무작위 배치라 앞부분만 그려도 고르게 줄어든다)
-export function setDensity(f) {
-  if (grassInst.mesh) grassInst.mesh.count = Math.round(grassInst.full * f);
-  for (const [m, n] of flowerInst) m.count = Math.round(n * f);
+export function buildGrass(scene, count) {
+  const geo = bladeClump();
+  const mat = windMat({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.82 }, 0.08, false);
+  const items = [];
+  for (let t = 0; items.length < count && t < count * 40; t++) {
+    const x = -13 + rand() * 26, z = 6 + rand() * 33;
+    const i = Math.round((x - X0) / CELL), j = Math.round((z - Z0) / CELL), g = grass[idx(i, j)];
+    if (g < 0.35 || rand() > g) continue;
+    items.push({ x, y: groundBil(x, z) - 0.02, z, ry: rand() * 6.283, s: 0.7 + rand() * 0.7, hsl: [0.2 + rand() * 0.07, 0.5 + rand() * 0.2, 0.42 + rand() * 0.2], cell: idx(i, j) });
+  }
+  // 무작위 순서 유지 → 밀도를 줄일 때 앞부분만 그려도 고르게 줄어든다
+  chunked(scene, geo, mat, items, 'grass');
 }
 export function buildFlowers(scene, count) {
   const stem = new THREE.CylinderGeometry(0.004, 0.005, 0.3, 4).translate(0, 0.15, 0);
   const head = new THREE.IcosahedronGeometry(0.028, 0).scale(1, 0.55, 1).translate(0, 0.3, 0);
-  const ms = new THREE.InstancedMesh(stem, new THREE.MeshStandardMaterial({ color: 0x3d5a1e, roughness: 0.8 }), count);
-  const mh = new THREE.InstancedMesh(head, new THREE.MeshStandardMaterial({ roughness: 0.6 }), count);
-  const d = new THREE.Object3D(), c = new THREE.Color(), cols = [0xffffff, 0xf4d03f, 0xb57edc, 0xff9fb2, 0xfff3c4];
-  let n = 0;
-  for (let t = 0; n < count && t < count * 60; t++) {
-    const x = -19 + rand() * 38, z = 6 + rand() * 52;
+  const cols = [0xffffff, 0xf4d03f, 0xb57edc, 0xff9fb2, 0xfff3c4], items = [];
+  for (let t = 0; items.length < count && t < count * 60; t++) {
+    const x = -13 + rand() * 26, z = 6 + rand() * 33;
     const g = grass[idx(Math.round((x - X0) / CELL), Math.round((z - Z0) / CELL))];
     if (g < 0.6 || rand() > 0.5) continue;
-    d.position.set(x, groundBil(x, z), z); d.scale.setScalar(0.6 + rand() * 0.8); d.rotation.set((rand() - 0.5) * 0.3, rand() * 6, (rand() - 0.5) * 0.3); d.updateMatrix();
-    ms.setMatrixAt(n, d.matrix); mh.setMatrixAt(n, d.matrix); c.setHex(cols[(rand() * cols.length) | 0]); mh.setColorAt(n, c); n++;
+    items.push({ x, y: groundBil(x, z), z, rx: (rand() - 0.5) * 0.3, ry: rand() * 6, rz: (rand() - 0.5) * 0.3, s: 0.6 + rand() * 0.8, col: cols[(rand() * cols.length) | 0], cell: idx(Math.round((x - X0) / CELL), Math.round((z - Z0) / CELL)) });
   }
-  ms.count = mh.count = n; ms.receiveShadow = mh.receiveShadow = true; flowerInst.push([ms, n], [mh, n]);
-  scene.add(ms, mh);
+  chunked(scene, stem, new THREE.MeshStandardMaterial({ color: 0x3d5a1e, roughness: 0.8 }), items.map(it => ({ ...it, col: undefined })), 'flower');
+  chunked(scene, head, new THREE.MeshStandardMaterial({ roughness: 0.6 }), items, 'flower');
+}
+// 최적화 모드: 풀·꽃 밀도 / 보이는 거리
+export function setDensity(f, dist) { density = f; if (dist) viewDist = dist; for (const c of chunks) if (c.kind !== 'tree') c.m.count = Math.round(c.full * f); }
+export function cull(cam) {
+  for (const c of chunks) {
+    const lim = c.kind === 'tree' ? 110 : viewDist + TILE;
+    c.m.visible = (c.cx - cam.x) ** 2 + (c.cz - cam.z) ** 2 < lim * lim;
+  }
+}
+// 땅을 파거나 흙을 부으면 그 자리 풀을 없애고 높이 다시 맞추기
+const zero = new THREE.Matrix4().makeScale(0, 0, 0), mtx = new THREE.Matrix4(), pp = new THREE.Vector3(), qq = new THREE.Quaternion(), ss = new THREE.Vector3();
+export function onEdit(x, z, r) {
+  for (const c of chunks) {
+    if (c.kind === 'tree' || (c.cx - x) ** 2 + (c.cz - z) ** 2 > (TILE + r) ** 2) continue;
+    let ch = false;
+    c.list.forEach((it, n) => {
+      if ((it.x - x) ** 2 + (it.z - z) ** 2 > (r + 0.3) ** 2) return;
+      if (grass[it.cell] < 0.2) c.m.setMatrixAt(n, zero);
+      else { c.m.getMatrixAt(n, mtx); mtx.decompose(pp, qq, ss); pp.y = groundBil(it.x, it.z) - (c.kind === 'grass' ? 0.02 : 0); mtx.compose(pp, qq, ss); c.m.setMatrixAt(n, mtx); }
+      ch = true;
+    });
+    if (ch) c.m.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // ───── 나무 ─────
@@ -169,32 +179,25 @@ function broadGeo(seed) {
 export function buildTrees(scene, nPine, nBroad) {
   const pineMat = windMat({ vertexColors: true, roughness: 0.88 }, 0.12, true);
   const broadMat = windMat({ vertexColors: true, roughness: 0.8 }, 0.1, true);
-  const kinds = [[pineGeo(1), pineGeo(2), pineGeo(3)], [broadGeo(4), broadGeo(5)]];
+  const kinds = [[pineGeo(1), pineGeo(2)], [broadGeo(4)]];
   const spots = [[[], [], []], [[], []]];
   const total = nPine + nBroad;
   for (let n = 0, t = 0; n < total && t < total * 30; t++) {
-    const near = rand() < 0.4;
-    const x = near ? (rand() * 2 - 1) * 30 : (rand() * 2 - 1) * 140, z = near ? -5 + rand() * 75 : -100 + rand() * 260;
+    const near = rand() < 0.5;
+    const x = near ? (rand() * 2 - 1) * 26 : (rand() * 2 - 1) * 75, z = near ? -5 + rand() * 50 : -55 + rand() * 160;
     const tt = terrainAt(x, z);
     const e = tt.d - tt.F;
     if (e < 0.8 || tt.y > 60) continue;
     const s = Math.hypot(terrainAt(x + 1, z).y - tt.y, terrainAt(x, z + 1).y - tt.y);
     if (s > 1.1) continue;
-    if (Math.abs(x) < 22 && z > 0 && z < 60 && e < 2.0) continue;
+    if (Math.abs(x) < 15 && z > 0 && z < 40 && e < 2.0) continue;
     const kind = n < nPine ? 0 : 1, v = (rand() * kinds[kind].length) | 0;
-    spots[kind][v].push([x, tt.y - 0.2, z, 0.75 + rand() * 0.6, rand() * 6.283, Math.hypot(x, z - 30) < 50]);
+    spots[kind][v].push({ x, y: tt.y - 0.2, z, s: 0.75 + rand() * 0.6, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2], near: Math.hypot(x, z - 20) < 35 });
     n++;
   }
-  const d = new THREE.Object3D(), c = new THREE.Color();
   kinds.forEach((geos, kind) => geos.forEach((g, v) => {
-    const list = spots[kind][v];
-    for (const near of [true, false]) {
-      const L = list.filter(s => s[5] === near); if (!L.length) continue;
-      const m = new THREE.InstancedMesh(g, kind ? broadMat : pineMat, L.length);
-      L.forEach((s, i) => { d.position.set(s[0], s[1], s[2]); d.rotation.set(0, s[4], 0); d.scale.setScalar(s[3]); d.updateMatrix(); m.setMatrixAt(i, d.matrix); c.setHSL(0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2); m.setColorAt(i, c); });
-      m.castShadow = near; m.receiveShadow = true; m.frustumCulled = false;
-      scene.add(m);
-    }
+    const list = spots[kind][v], mat = kind ? broadMat : pineMat;
+    for (const near of [true, false]) chunked(scene, g, mat, list.filter(it => it.near === near), 'tree', near, 30);
   }));
 }
 
@@ -248,7 +251,7 @@ let downMat, downMesh;
 // 바깥 지형(1m 격자 선형보간) 높이와 해석 높이 중 높은 쪽
 function surfY(x, z, off) {
   const t = terrainAt(x, z).y;
-  if (z >= 0 && z <= 60) return t + off;
+  if (z >= 0 && z <= 40) return t + off;
   const i = Math.floor(x), j = Math.floor(z), u = x - i, v = z - j;
   const a = terrainAt(i, j).y, b = terrainAt(i + 1, j).y, c = terrainAt(i, j + 1).y, d = terrainAt(i + 1, j + 1).y;
   return Math.max(t, a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) + off;
@@ -256,7 +259,7 @@ function surfY(x, z, off) {
 export function buildStreams(scene) {
   // 상류: 절벽 위 물길
   const up = [];
-  for (let z = -40; z <= 2.95; z += 0.5) { const x = centerX(z); up.push([x, surfY(x, z, 0.13), z, 1]); }
+  for (let z = -55; z <= 2.95; z += 0.5) { const x = centerX(z); up.push([x, surfY(x, z, 0.13), z, 1]); }
   const mu = new THREE.Mesh(ribbon(up, 1.3), flowMat(0.25, 1.4, 0)); scene.add(mu);
   // 폭포
   const fall = [], x0 = centerX(2.95), y0 = terrainAt(x0, 2.95).y + 0.13, yEnd = terrainAt(centerX(4.6), 4.6).y + 0.25;
@@ -267,7 +270,7 @@ export function buildStreams(scene) {
   const mf = new THREE.Mesh(ribbon(fall, 1.25), flowMat(1.0, 2.2, 1)); scene.add(mf);
   // 하류 출구
   const dn = [];
-  for (let z = 59.7; z <= 140; z += 0.5) { const x = centerX(z); dn.push([x, surfY(x, z, 0.12), z, 1]); }
+  for (let z = 39.7; z <= 108; z += 0.5) { const x = centerX(z); dn.push([x, surfY(x, z, 0.12), z, 1]); }
   downMat = flowMat(0.45, 1.6, 0); downMesh = new THREE.Mesh(ribbon(dn, 1.3), downMat); scene.add(downMesh);
 }
 export function setDownstream(f) { downMat.uniforms.uOp.value = Math.min(1, f * 1.2); downMesh.visible = f > 0.03; downMat.uniforms.uFoam.value = 0.15 + 0.4 * f; }

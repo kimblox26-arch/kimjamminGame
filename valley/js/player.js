@@ -165,7 +165,7 @@ export function update(dt, time) {
   cc.computeColliderMovement(col, { x: dx * dt, y: P.vy * dt, z: dz * dt }, undefined, undefined, c => c !== held);
   const mv = cc.computedMovement();
   let nx = p.x + mv.x, ny = p.y + mv.y, nz = p.z + mv.z;
-  nx = THREE.MathUtils.clamp(nx, -17, 17); nz = THREE.MathUtils.clamp(nz, 5.5, 57);
+  nx = THREE.MathUtils.clamp(nx, -12.5, 12.5); nz = THREE.MathUtils.clamp(nz, 5.5, 38);
   const gmin = T.groundAt(nx, nz) + 0.83 - 0.05; if (ny < gmin - 0.3) ny = gmin;
   body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
   P.grounded = cc.computedGrounded();

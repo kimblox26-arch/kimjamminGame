@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { fbm, vnoise, sstep, clamp, GLSL_NOISE } from './noise.js';
 
-export const CELL = 0.2, NX = 220, NZ = 300, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
+export const CELL = 0.2, NX = 150, NZ = 200, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
 export const X0 = -NX * CELL / 2, Z0 = 0;
-export const SX0 = 45, SX1 = 176; // 물 시뮬레이션 열 범위
+export const SX0 = 25, SX1 = 126; // 물 시뮬레이션 열 범위
 export const SW = SX1 - SX0;
 export const idx = (i, j) => j * NXV + i;
 
@@ -20,14 +20,14 @@ export const U = {
 };
 
 export const centerX = z => 2.2 * Math.sin(z * 0.09 + 0.5) + 0.8 * Math.sin(z * 0.23 + 1.3);
-export const floorHalf = z => 5.6 + 2.2 * Math.sin(z * 0.075 + 2.2);
+export const floorHalf = z => 5.6 + 2.2 * Math.sin(z * 0.11 + 2.29); // z≈22 에서 가장 좁음
 export const chanW = z => 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
 export function baseY(z) {
   let y = 4.0 - z * 0.045;
   y += 3.2 * sstep(4.2, 2.8, z);       // 상류 절벽(폭포)
-  y -= 2.6 * sstep(55.5, 58.6, z);     // 하류 낙차
+  y -= 2.6 * sstep(35.5, 38.6, z);     // 하류 낙차
   if (z < 0) y += -z * 0.06;
-  if (z > 60) y -= (z - 60) * 0.07;
+  if (z > 40) y -= (z - 40) * 0.07;
   return y;
 }
 
@@ -131,7 +131,11 @@ vec3 alb = vec3(0.); float tH = 0., tRough = 0.;
 if (rockW > 0.002) { // 암반 (3축 투영)
   vec3 tw = pow(abs(N), vec3(4.)); tw /= tw.x + tw.y + tw.z;
   vec2 rp = P.zy*tw.x + P.xz*tw.y + P.xy*tw.z;
+#ifdef LITE
+  float rn = fbm2(rp*0.5);
+#else
   float rn = fbm2(P.zy*0.5)*tw.x + fbm2(P.xz*0.5)*tw.y + fbm2(P.xy*0.5)*tw.z;
+#endif
   float rn2 = vnoise2(rp*2.1 + 4.)*0.6 + vnoise2(rp*4.3)*0.4;
   float strata = sin(P.y*5. + rn*9. + rn2*3.)*.5+.5;
   vec3 rock = mix(vec3(0.19,0.18,0.165), vec3(0.42,0.40,0.36), rn) * (0.86 + 0.14*strata) * (0.8 + 0.35*rn2);
@@ -140,6 +144,13 @@ if (rockW > 0.002) { // 암반 (3축 투영)
   alb += rock*rockW; tRough += 0.86*rockW;
   tH += (rn*0.22 + rn2*0.05 + strata*0.008 - cr*0.015 + vnoise2(rp*15.)*0.006*fade) * rockW;
 }
+#ifdef LITE
+if (gravW > 0.002) { // 가벼운 자갈
+  float g1 = vnoise2(P.xz*9.), g2 = vnoise2(P.xz*23.);
+  vec3 peb = mix(vec3(0.34,0.31,0.26), vec3(0.54,0.50,0.44), g1) * (0.8 + 0.3*g2);
+  alb += peb*gravW; tRough += 0.78*gravW; tH += (g1*0.012 + g2*0.006) * gravW;
+}
+#else
 if (gravW > 0.002) { // 자갈: 큰 돌 + 잔자갈 + 모래
   vec3 vb = voronoi(P.xz*4.2), vs = voronoi(P.xz*13.);
   float big = step(0.68, hash12(vec2(vb.y, 7.1)));
@@ -156,6 +167,7 @@ if (gravW > 0.002) { // 자갈: 큰 돌 + 잔자갈 + 모래
   alb += peb*gravW; tRough += 0.78*gravW;
   tH += mix(domeS*0.012, 0.012 + domeB*0.05, inB) * gravW;
 }
+#endif
 if (dirtW > 0.002) { // 흙 / 풀밭
   float fb = fbm2(P.xz*0.9);
   vec3 dirt = mix(vec3(0.27,0.19,0.12), vec3(0.42,0.31,0.20), vnoise2(P.xz*3.));
@@ -174,7 +186,9 @@ alb = mix(alb, alb*vec3(0.7,0.85,0.6), smoothstep(0.3,0.0,abs(under))*rockW*0.6)
 alb *= mix(1., 0.5, wet); tRough = mix(tRough, 0.2, wet*0.85);
 alb = mix(alb, alb*vec3(0.78,0.92,0.88), smoothstep(0.,0.3,under));
 float tCaus = 0.;
+#ifndef LITE
 if (under > 0. && under < 3.) tCaus = caustic(P.xz, uTime) * smoothstep(0.,0.06,under) * exp(-under*1.6) * max(N.y,0.) * max(uSunDir.y,0.) * (1.-0.7*uRain);
+#endif
 diffuseColor.rgb *= alb;
 `;
 
@@ -200,8 +214,7 @@ export function buildMesh(material) {
   geo.setAttribute('aMat', new THREE.BufferAttribute(mat, 4));
   geo.setIndex(new THREE.BufferAttribute(ind, 1));
   writeRegion(0, NX, 0, NZ);
-  geo.boundingBox = new THREE.Box3(new THREE.Vector3(X0, -10, 0), new THREE.Vector3(-X0, 40, NZ * CELL));
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 5, 30), 45);
+  geo.computeBoundingBox(); geo.computeBoundingSphere();
   mesh = new THREE.Mesh(geo, material);
   mesh.receiveShadow = true; mesh.castShadow = true;
   return mesh;
@@ -348,7 +361,7 @@ export const getHF = () => hfCollider;
 
 // ───── 바깥 산 (1m 격자, 안쪽 영역은 비움) ─────
 export function buildOuter(material) {
-  const XA = -150, XB = 150, ZA = -120, ZB = 180, S = 1;
+  const XA = -80, XB = 80, ZA = -60, ZB = 110, S = 1; // 안개 너머 안 보이는 곳은 만들지 않음
   const nx = (XB - XA) / S + 1, nz = (ZB - ZA) / S + 1;
   const pos = new Float32Array(nx * nz * 3), mat = new Float32Array(nx * nz * 4);
   const ys = new Float32Array(nx * nz);
