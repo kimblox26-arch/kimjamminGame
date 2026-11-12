@@ -52,6 +52,8 @@ h2 { font-size: 20px; margin-bottom: 18px; }
   padding: 14px 16px; border-radius: 16px; background: rgba(10, 18, 28, .9); border: 1px solid var(--line); backdrop-filter: blur(10px); pointer-events: auto; font-size: 13px; }
 .ch { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; }
 .ch button { border: 1px solid var(--line); background: rgba(255, 255, 255, .06); border-radius: 8px; padding: 5px 12px; }
+.ch button.demo { border-color: rgba(255, 120, 100, .5); color: #ffb4a8; }
+.ch button.demo.arm { background: #c0392b; color: #fff; }
 .cg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
 .cg div { background: rgba(255, 255, 255, .05); border-radius: 8px; padding: 6px 8px; display: grid; }
 .cg span, .vals span { color: var(--muted); font-size: 11px; }

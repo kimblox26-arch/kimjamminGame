@@ -150,7 +150,7 @@ async function boot(q, save) {
   const sg = new THREE.Group(); scene.add(sg); stoneGroup = sg; scene.add(S.outlineMesh());
   if (save) S.restore(save.st, sg); else S.spawnAll(sg, q.stones, q.boulders, keepOut);
   D.init(RAPIER, world, sg);
-  H.init(sg, D.MAT, N.flowMat(1.0, 2.6, 1));
+  H.init(sg, D.MAT, N.flowMat(1.0, 2.6, 1), RAPIER, world);
   if (save) { D.restore(save.dm); H.restore(save.hp); }
   V.build(scene, RAPIER, world);
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
@@ -299,7 +299,7 @@ $('bBig').onclick = () => {
   const dirz = camDir.z >= 0 ? 1 : -1;
   let z = camera.position.z + dirz * 6;
   for (let n = 0; n < 10 && V.cabins.some(c => Math.abs(c.position.z - z) < 4.5); n++) z += dirz * 1.5;
-  z = Math.max(8, Math.min(64, z));
+  z = Math.max(13, Math.min(64, z)); // 물이 고일 저수지가 생기도록 수원(z≈5)에서 8 m 이상 떨어뜨린다
   const p = H.build(z); A.rumble?.(p.dur);
   hooks.toast('계곡 수력발전소 건설 시작!');
 };
@@ -310,6 +310,17 @@ function setCtrl(on) {
   if (on && document.pointerLockElement) document.exitPointerLock();
 }
 $('bCtrl').onclick = () => setCtrl(!ctrlOpen);
+// 댐 철거: 두 번 눌러 확인 (지우개로 댐을 겨눠도 됨)
+let demoArm = 0;
+function demolishPlant() {
+  if (!H.plant || H.plant.demo) return;
+  if (H.building()) { hooks.toast('건설이 끝난 뒤에 철거할 수 있어요'); return; }
+  if (clock - demoArm > 3) { demoArm = clock; $('ctrlDemo').classList.add('arm'); $('ctrlDemo').textContent = '정말 철거?'; hooks.toast('한 번 더 누르면 댐을 철거해요 — 고인 물이 한꺼번에 흘러내려가요'); return; }
+  demoArm = 0; $('ctrlDemo').classList.remove('arm'); $('ctrlDemo').textContent = '댐 철거';
+  H.demolish(); A.rumble?.(2.5); shake = 0.06; setCtrl(false); $('bCtrl').classList.add('hidden');
+  hooks.toast('댐 철거 중…');
+}
+$('ctrlDemo').onclick = demolishPlant;
 $('ctrlX').onclick = () => { setCtrl(false); if (!isTouch) resume(); };
 ['u0', 'u1', 'g0', 'g1'].forEach(id => $(id).oninput = e => {
   const v = +e.target.value / 100, p = H.plant; if (!p) return;
@@ -329,6 +340,8 @@ addEventListener('keydown', e => {
 // ───── 게임 훅 ─────
 let toastT = 0, lastToast = '';
 const hooks = {
+  ownsPlant: h => H.owns(h),
+  demolishPlant: () => demolishPlant(),
   toast(t) { if (t === lastToast && toastT > 0.6) return; lastToast = t; const el = $('toast'); el.textContent = t; el.classList.add('show'); toastT = 1.8; },
   ui: {
     tool(t) {
@@ -410,11 +423,13 @@ function loop(now) {
   if (D.building()) { S.touch(); shake = 0.05; }
   // 모터 전원: 배터리·발전 전기가 없으면 실제 발전소처럼 비상 디젤 발전기가 대신 돌린다(블랙 스타트)
   elec.diesel = !(elec.batt > 0.05 || elec.gen > 0.5);
+  const hadPlant = !!H.plant;
   const hy = H.update(dg, true, FX.splash, FX.dirt, (pos, body) => { A.snap(body); FX.dirt(pos.x, pos.y, pos.z, body ? 5 : 2); if (body) shake = Math.max(shake, 0.025); });
   elec.motor = hy.load;
+  if (hadPlant && !H.plant) { S.touch(); hooks.toast('댐을 철거했어요'); saveGame(true); }
   if (H.plant) {
     if (H.plant.changed) { S.touch(); H.plant.changed = false; }
-    if (H.plant.justDone) { H.plant.justDone = false; A.chime(); hooks.toast('수력발전소 완공! 제어실(C)에서 수차를 돌려 보세요'); $('bCtrl').classList.remove('hidden'); saveGame(true); }
+    if (H.plant.justDone) { H.plant.justDone = false; A.chime(); setTimeScale(4); hooks.toast('수력발전소 완공! 담수 시작 — 시간 ×4로 물을 채우는 중 (T로 바꿀 수 있어요) · 제어실(C)'); $('bCtrl').classList.remove('hidden'); saveGame(true); }
     const d = camera.position.distanceTo(new THREE.Vector3(H.plant.cx + 3, H.plant.crest, H.plant.zU + 4));
     A.machine(H.plant.P / 8000 / (1 + d * d * 0.004), H.plant.gates.some(g => g.moving) ? 1 / (1 + d * d * 0.01) : 0);
   }

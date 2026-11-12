@@ -7,7 +7,20 @@ import * as W from './water.js';
 const G = 9.81;
 export let plant = null;
 let group, MAT, sheetMat;
-export function init(g, concrete, flowMat) { group = g; MAT = concrete; sheetMat = flowMat; }
+let RAP, world;
+export function init(g, concrete, flowMat, rapier, w) { group = g; MAT = concrete; sheetMat = flowMat; RAP = rapier; world = w; }
+// 충돌체 (플레이어·돌이 댐을 통과하지 못하게) — 모두 고정 바디
+const colliderOf = new Set();
+function fixedHull(pts) {
+  const b = world.createRigidBody(RAP.RigidBodyDesc.fixed());
+  const d = RAP.ColliderDesc.convexHull(new Float32Array(pts)); if (!d) { world.removeRigidBody(b); return; }
+  const c = world.createCollider(d.setFriction(0.9), b); plant.bodies.push(b); colliderOf.add(c.handle);
+}
+function fixedBox(x, y, z, hx, hy, hz) {
+  const b = world.createRigidBody(RAP.RigidBodyDesc.fixed().setTranslation(x, y, z));
+  const c = world.createCollider(RAP.ColliderDesc.cuboid(hx, hy, hz).setFriction(0.9), b); plant.bodies.push(b); colliderOf.add(c.handle);
+}
+export const owns = h => colliderOf.has(h);
 
 // ── 기계 사양 (소수력 발전소 수준) ──
 export const SPEC = {
@@ -54,7 +67,7 @@ function sliceGeo(Hs, ya, yb, w) {
 const DROP = 5, FALL = 0.38, LAYER = 0.75;
 export function build(zc, instant = false) {
   const cx = centerX(zc), bed = groundAt(cx, zc), crest = bed + 3.4, zU = zc - 0.6;
-  const p = plant = { zc, cx, crest, zU, segs: [], gates: [], units: [], ready: false, t: 0, level: bed, tail: bed, head: 0, spillQ: 0, P: 0, load: 0, msg: '', queue: [] };
+  const p = plant = { zc, cx, crest, zU, segs: [], gates: [], units: [], ready: false, t: 0, level: bed, tail: bed, head: 0, spillQ: 0, P: 0, load: 0, msg: '', queue: [], objs: [], bodies: [] };
   // 1) 댐 몸체: 폭 2 m 칸을 가운데부터 양쪽 벽까지
   const w = 2.0, list = [];
   for (const side of [1, -1]) for (let n = side > 0 ? 0 : 1; n < 14; n++) {
@@ -75,8 +88,12 @@ export function build(zc, instant = false) {
       const ya = Hs * L / n, yb = Hs * (L + 1) / n;
       const m = new THREE.Mesh(sliceGeo(Hs, ya, yb, w), MAT); m.castShadow = m.receiveShadow = true; m.layers.enable(1);
       m.rotation.y = -Math.PI / 2; m.position.set(o.x + w / 2 - 0.01, y0, zU);
-      group.add(m);
-      seg.layers.push({ mesh: m, yb });
+      group.add(m); p.objs.push(m);
+      // 이 층의 충돌체 꼭짓점 (사다리꼴 기둥 8점, 월드 좌표)
+      const toe = 1.2 + 0.75 * Hs, xr = y => toe - (toe - 1.2) * (y / Hs), pts = [];
+      for (const xx of [o.x - w / 2, o.x + w / 2]) for (const [u, y] of [[0, ya], [0, yb], [xr(yb), yb], [xr(ya), ya]]) pts.push(xx, y0 + y, zU + u);
+      seg.layers.push({ mesh: m, yb, pts });
+      if (instant) fixedHull(pts);
     }
     maxL = Math.max(maxL, n);
     p.segs.push(seg);
@@ -86,7 +103,7 @@ export function build(zc, instant = false) {
   let t = 0;
   for (let L = 0; L < maxL; L++) for (const seg of p.segs) {
     const ly = seg.layers[L]; if (!ly) continue;
-    queue(ly.mesh, t, () => { seg.builtH = ly.yb; p.changed = true; if (L === seg.layers.length - 1) seg.ready = true; });
+    queue(ly.mesh, t, () => { seg.builtH = ly.yb; p.changed = true; fixedHull(ly.pts); if (L === seg.layers.length - 1) seg.ready = true; });
     t += 0.11;
   }
   p.bodyEnd = t + FALL;
@@ -191,6 +208,13 @@ function commission(instant) {
     }
     prev = [x, y, z];
   }
+  p.objs.push(...group.children.slice(n0));
+  // 부속 설비 충돌체: 교각·데크·마루 난간·발전소·변압기
+  for (const x of xs) fixedBox(x, (deckY + sill) / 2, zU + 0.7, 0.18, (deckY - sill + 0.2) / 2, 0.7);
+  fixedBox((xs[0] + xs[2]) / 2, deckY + 0.12, zU + 0.7, (xs[2] - xs[0]) / 2 + 0.2, 0.13, 0.8);
+  for (const zz of [zU + 0.05, zU + 1.15]) fixedBox((x0 + x1) / 2, crest + 0.5, zz, (x1 - x0) / 2, 0.5, 0.04);
+  fixedBox(px, gy + 1.8, pz, 2.7, 1.85, 1.9);
+  fixedBox(px + 3.3, gy + 0.8, pz, 0.5, 0.55, 0.45);
   if (instant) { p.ready = true; return; }
   // 새로 생긴 부품들을 순서대로 떨어뜨려 조립 (방류 물살·케이블은 마지막에 보이게)
   let t = (p.bodyEnd ?? 0) + 0.4;
@@ -230,6 +254,16 @@ export function rasterize() {
 // 매 프레임: 건설 애니메이션 · 모터 · 발전기 · 표시
 export function update(dt, energyOK, fx, dirt, snap) {
   const p = plant; if (!p) return { load: 0 };
+  if (p.demo) {
+    const d = p.demo; d.t += dt; let left = 0;
+    for (const it of d.list) {
+      const k = (d.t - it.t0) / 0.5; if (k < 0) { left++; continue; }
+      if (k < 1) { left++; it.o.position.y = it.y + k * k * 6; it.o.scale.setScalar(Math.max(0.01, 1 - k)); if (dirt && Math.random() < 0.15) dirt(it.o.position.x, it.y, it.o.position.z, 2); }
+      else if (it.o.parent) group.remove(it.o);
+    }
+    if (!left) { for (const it of d.list) if (it.o.parent) group.remove(it.o); plant = null; return { load: 0, removed: true }; }
+    return { load: 0 };
+  }
   if (!p.ready) {
     p.t += dt;
     let left = 0;
@@ -292,9 +326,24 @@ export function update(dt, energyOK, fx, dirt, snap) {
   return { load };
 }
 export const power = () => (plant && plant.ready ? plant.P : 0);
-export const building = () => !!plant && !plant.ready;
+// 철거: 충돌체·물막이·관을 바로 없애고, 부품은 위쪽부터 하나씩 떠올라 사라진다
+export function demolish() {
+  const p = plant; if (!p || p.demo) return false;
+  for (const b of p.bodies) world.removeRigidBody(b);
+  colliderOf.clear(); p.bodies = [];
+  for (const g of p.gates) W.pipes.splice(W.pipes.indexOf(g.pipe), 1);
+  for (const u of p.units) W.pipes.splice(W.pipes.indexOf(u.pipe), 1);
+  for (const sg of p.segs) sg.builtH = 0;
+  for (const g of p.gates) g.moving = false;
+  p.P = 0; p.ready = false; p.queue = [];
+  const objs = [...p.objs].sort((a, b) => b.position.y - a.position.y);
+  p.demo = { t: 0, list: objs.map((o, i) => ({ o, t0: i * 0.035, y: o.position.y })) };
+  p.changed = true;
+  return true;
+}
+export const building = () => !!plant && !plant.ready && !plant.demo;
 export function serialize() {
-  return plant && plant.ready ? { zc: plant.zc, g: plant.gates.map(g => [g.target, g.open]), u: plant.units.map(u => [u.target, u.gate]) } : null;
+  return plant && plant.ready && !plant.demo ? { zc: plant.zc, g: plant.gates.map(g => [g.target, g.open]), u: plant.units.map(u => [u.target, u.gate]) } : null;
 }
 export function restore(o) {
   if (!o) return;

@@ -8,10 +8,16 @@ const sites = [], lampSites = [];
 export function prepare() {
   // 계곡 바닥이 넓은 곳, 강에서 멀리(벽 쪽) — 땅은 깎지 않고 콘크리트 기초 위에 짓는다
   for (const [z, side] of [[29, 1], [37, -1], [64, 1]]) {
-    const F = floorHalf(z), x = centerX(z) + side * F * 0.8, yaw = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-    let gmin = 1e9, gmax = -1e9;
-    for (const u of [-1.7, 0, 1.7]) for (const v of [-1.5, 0, 1.5]) { const g = groundAt(x + v, z + u); gmin = Math.min(gmin, g); gmax = Math.max(gmax, g); }
-    sites.push({ x, z, y: gmax + 0.08, base: gmin - 0.25, yaw, side });
+    const F = floorHalf(z), yaw = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    // 가장 평평한 자리를 골라, 바닥은 땅 높이 아래쪽에 맞춘다 (높이 떠 보이지 않게, 오르막 쪽은 땅에 살짝 묻힘)
+    let best = null;
+    for (let f = 0.5; f <= 0.9; f += 0.05) {
+      const x = centerX(z) + side * F * f; let gmin = 1e9, gmax = -1e9;
+      for (const u of [-1.7, 0, 1.7]) for (const v of [-1.5, 0, 1.5]) { const g = groundAt(x + v, z + u); gmin = Math.min(gmin, g); gmax = Math.max(gmax, g); }
+      if (!best || gmax - gmin < best.d - 0.05) best = { x, gmin, gmax, d: gmax - gmin };
+    }
+    const { x, gmin, gmax } = best;
+    sites.push({ x, z, y: gmin + (gmax - gmin) * 0.25 + 0.05, base: gmin - 0.25, yaw, side });
   }
   for (let z = 9, n = 0; z < 69; z += 7.5, n++) {
     const side = n % 2 ? -1 : 1; lampSites.push({ x: centerX(z) + side * floorHalf(z) * 0.78, z, side });

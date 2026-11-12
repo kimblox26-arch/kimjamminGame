@@ -224,7 +224,7 @@ function aim() {
   if (hit) {
     const toi = hit.timeOfImpact ?? hit.toi;
     const st = S.byHandle.get(hit.collider.handle);
-    P.aim = { dist: toi, point: ray.o.clone().addScaledVector(ray.d, toi), stone: st, terrain: hit.collider === T.getHF(), block: D.byHandle.get(hit.collider.handle), normal: hit.normal };
+    P.aim = { dist: toi, point: ray.o.clone().addScaledVector(ray.d, toi), stone: st, terrain: hit.collider === T.getHF(), block: D.byHandle.get(hit.collider.handle), plant: hooks.ownsPlant?.(hit.collider.handle), normal: hit.normal };
     if (st && toi < 3.2 + (st.rb || 0)) P.target = st;
   }
   const show = (P.tool === 'hand' || P.tool === 'pick') && !P.held ? P.target : null;
@@ -296,6 +296,7 @@ function editUpdate(dt, time) {
     lastAct = time;
     if (a.stone && !a.stone.held) { const st = a.stone; hooks.fx?.chips?.(st.cx, st.cy, st.cz, 14); S.removeStone(st); hooks.audio?.whoosh(); }
     else if (a.block) { const b = a.block; hooks.fx?.chips?.(b.x, b.y1, b.z, 16); D.remove(b); hooks.damChanged?.(); hooks.audio?.whoosh(); }
+    else if (a.plant && pressed) hooks.demolishPlant?.();
     return;
   }
   if (tool === 'flatten') {
