@@ -34,6 +34,10 @@ if (!QUAL[qKey]) qKey = isTouch ? 'perf' : 'ultra';
 const segBtns = [...document.querySelectorAll('#quality button')];
 const pickQ = k => { qKey = k; segBtns.forEach(b => { b.classList.toggle('on', b.dataset.q === k); b.setAttribute('aria-checked', b.dataset.q === k); }); };
 segBtns.forEach(b => b.onclick = () => pickQ(b.dataset.q)); pickQ(qKey);
+// 시작 화면 시차(패럴랙스): 마우스/손가락 위치에 따라 산·댐·강이 서로 다른 깊이로 움직인다
+const lays = [...document.querySelectorAll('#start .lay')];
+const parallax = (px, py) => { for (const l of lays) { const d = +l.dataset.d; l.style.transform = `translate(${(-px * d).toFixed(1)}px, ${(-py * d * 0.5).toFixed(1)}px)`; } };
+addEventListener('pointermove', e => { if (!started) parallax(e.clientX / innerWidth - 0.5, e.clientY / innerHeight - 0.5); });
 
 let stoneGroup, innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
 let started = false, paused = false, perf = false, rainOn = false;
