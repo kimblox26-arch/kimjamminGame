@@ -44,38 +44,64 @@ function profileGeo(H, w, top = 0) {
   return g;
 }
 
+// 댐 단면 한 층(높이 ya~yb)의 사다리꼴 조각: 레고 블록처럼 위에서 떨어져 끼워진다
+function sliceGeo(Hs, ya, yb, w) {
+  const toe = 1.2 + 0.75 * Hs, xr = y => toe - (toe - 1.2) * (y / Hs);
+  const sh = new THREE.Shape();
+  sh.moveTo(0, ya); sh.lineTo(0, yb); sh.lineTo(xr(yb), yb); sh.lineTo(xr(ya), ya); sh.lineTo(0, ya);
+  return new THREE.ExtrudeGeometry(sh, { depth: w - 0.02, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 1 });
+}
+const DROP = 5, FALL = 0.38, LAYER = 0.75;
 export function build(zc, instant = false) {
   const cx = centerX(zc), bed = groundAt(cx, zc), crest = bed + 3.4, zU = zc - 0.6;
-  const p = plant = { zc, cx, crest, zU, segs: [], gates: [], units: [], ready: false, t: 0, level: bed, tail: bed, head: 0, spillQ: 0, P: 0, load: 0, msg: '' };
-  const sill = crest - SPEC.sillDrop;
-  // 1) 댐 몸체: 폭 2 m 블록을 가운데부터 양쪽 벽까지
+  const p = plant = { zc, cx, crest, zU, segs: [], gates: [], units: [], ready: false, t: 0, level: bed, tail: bed, head: 0, spillQ: 0, P: 0, load: 0, msg: '', queue: [] };
+  // 1) 댐 몸체: 폭 2 m 칸을 가운데부터 양쪽 벽까지
   const w = 2.0, list = [];
   for (const side of [1, -1]) for (let n = side > 0 ? 0 : 1; n < 14; n++) {
-    const x = cx + side * (n * w - (side > 0 ? 0 : 0));
+    const x = cx + side * n * w;
     let g = 1e9; for (const dz of [0, 1.2, 2.5, 3.5]) for (const dx of [-w / 2, 0, w / 2]) g = Math.min(g, groundAt(x + dx, zc + dz - 0.6));
     list.push({ x, g });
     if (g > crest - 0.2) break; // 계곡 벽에 박히면 끝
   }
   list.sort((a, b) => Math.abs(a.x - cx) - Math.abs(b.x - cx));
-  list.forEach((o, i) => {
-    const y0 = o.g - 0.7, H = crest - y0;
+  let maxL = 0;
+  for (const o of list) {
+    const y0 = Math.min(o.g - 0.7, crest - 0.6), H = crest - y0; // 벽에 박히는 끝 칸도 높이는 최소 0.6 m
     const spill = Math.abs(o.x - cx) < 0.5 || Math.abs(o.x - (cx - w)) < 0.5; // 가운데 두 칸 = 여수로
-    const top = spill ? SPEC.sillDrop : 0;
-    const geo = profileGeo(H - top, w);
-    const m = new THREE.Mesh(geo, MAT); m.castShadow = m.receiveShadow = true; m.layers.enable(1);
-    m.rotation.y = -Math.PI / 2; m.position.set(o.x + w / 2, y0 - (instant ? 0 : H + 0.1), zU);
-    group.add(m);
-    p.segs.push({ x: o.x, w, y0, H, top: crest - top, mesh: m, spill, t: instant ? 1 : -i * 0.3, ready: instant, toe: zU + 1.2 + 0.75 * (H - top) });
-  });
-  p.dur = list.length * 0.3 + 1;
-  if (instant) commission();
+    const Hs = H - (spill ? SPEC.sillDrop : 0);
+    const seg = { x: o.x, w, y0, H, top: crest - (spill ? SPEC.sillDrop : 0), spill, layers: [], builtH: instant ? Hs : 0, toe: zU + 1.2 + 0.75 * Hs, ready: instant };
+    const n = Math.max(1, Math.round(Hs / LAYER));
+    for (let L = 0; L < n; L++) {
+      const ya = Hs * L / n, yb = Hs * (L + 1) / n;
+      const m = new THREE.Mesh(sliceGeo(Hs, ya, yb, w), MAT); m.castShadow = m.receiveShadow = true; m.layers.enable(1);
+      m.rotation.y = -Math.PI / 2; m.position.set(o.x + w / 2 - 0.01, y0, zU);
+      group.add(m);
+      seg.layers.push({ mesh: m, yb });
+    }
+    maxL = Math.max(maxL, n);
+    p.segs.push(seg);
+  }
+  if (instant) { commission(true); return p; }
+  // 조립 순서: 아래층부터, 같은 층은 가운데 칸부터 바깥으로
+  let t = 0;
+  for (let L = 0; L < maxL; L++) for (const seg of p.segs) {
+    const ly = seg.layers[L]; if (!ly) continue;
+    queue(ly.mesh, t, () => { seg.builtH = ly.yb; p.changed = true; if (L === seg.layers.length - 1) seg.ready = true; });
+    t += 0.11;
+  }
+  p.bodyEnd = t + FALL;
   return p;
 }
-
+// 대기열에 넣기: 위에서 떨어져(중력처럼 빨라지며) 제자리에 '딸깍' 끼워지고 살짝 튄다
+function queue(obj, t0, onLand) {
+  const ty = obj.position.y;
+  obj.position.y = ty + DROP; obj.visible = false;
+  plant.queue.push({ obj, ty, t0, onLand, landed: false });
+}
 // 2) 부속 설비: 완공 직후 설치
-function commission() {
+function commission(instant) {
   const p = plant, { cx, crest, zU } = p, sill = crest - SPEC.sillDrop, zD = zU + 1.2;
-  p.ready = true;
+  const n0 = group.children.length;
   const sp = p.segs.filter(s => s.spill).sort((a, b) => a.x - b.x);
   // 교각 + 권양기 데크 + 수직 리프트 수문 + 전동 권양기
   const deckY = crest + 1.4;
@@ -165,6 +191,14 @@ function commission() {
     }
     prev = [x, y, z];
   }
+  if (instant) { p.ready = true; return; }
+  // 새로 생긴 부품들을 순서대로 떨어뜨려 조립 (방류 물살·케이블은 마지막에 보이게)
+  let t = (p.bodyEnd ?? 0) + 0.4;
+  for (const o of group.children.slice(n0)) {
+    if (o === undefined || o.isLine || p.gates.some(g => g.sheet === o)) { if (o?.isLine) { o.visible = false; p.lines = (p.lines || []).concat(o); } continue; }
+    queue(o, t, null); t += 0.07;
+  }
+  p.assembleEnd = t + FALL + 0.3;
 }
 const cellsAt = (x, z, r) => {
   const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), out = [];
@@ -178,12 +212,12 @@ function qUnit(u, H) { u.H = H; if (H < SPEC.Hmin || u.gate < 0.01) return 0; re
 export function rasterize() {
   if (!plant) return;
   for (const s of plant.segs) {
-    if (!s.ready) continue;
+    if (s.builtH <= 0) continue;
     const i0 = Math.max(SX0, Math.ceil((s.x - s.w / 2 - X0) / CELL)), i1 = Math.min(SX1 - 1, Math.floor((s.x + s.w / 2 - X0) / CELL));
     const j0 = Math.max(0, Math.ceil((plant.zU - Z0) / CELL)), j1 = Math.min(NZ, Math.floor((s.toe - Z0) / CELL));
     for (let j = j0; j <= j1; j++) {
       const z = Z0 + j * CELL, lz = z - plant.zU;
-      const top = lz <= 1.2 ? plant.crest : plant.crest - (lz - 1.2) / 0.75 - (s.spill ? SPEC.sillDrop : 0);
+      const top = Math.min(s.y0 + s.builtH, lz <= 1.2 ? plant.crest : plant.crest - (lz - 1.2) / 0.75 - (s.spill ? SPEC.sillDrop : 0));
       for (let i = i0; i <= i1; i++) {
         const k = j * NXV + i;
         if (top > W.solid[k]) W.solid[k] = top;
@@ -194,19 +228,26 @@ export function rasterize() {
 }
 
 // 매 프레임: 건설 애니메이션 · 모터 · 발전기 · 표시
-export function update(dt, energyOK, fx, dirt) {
+export function update(dt, energyOK, fx, dirt, snap) {
   const p = plant; if (!p) return { load: 0 };
   if (!p.ready) {
-    let all = true;
-    for (const s of p.segs) {
-      if (s.ready) continue; all = false;
-      s.t += dt; if (s.t < 0) continue;
-      const k = Math.min(1, s.t / 0.9), e = 1 - Math.pow(1 - k, 3), H = s.H;
-      s.mesh.position.y = s.y0 - (H + 0.1) * (1 - e);
-      if (dirt && Math.random() < 0.5) dirt(s.x + (Math.random() - 0.5) * s.w, groundAt(s.x, p.zc) + 0.1, p.zc + Math.random() * 2, 3);
-      if (k >= 1) { s.ready = true; s.mesh.position.y = s.y0; p.changed = true; }
+    p.t += dt;
+    let left = 0;
+    for (const q of p.queue) {
+      if (q.done) continue; left++;
+      if (p.t < q.t0) continue;
+      q.obj.visible = true;
+      const k = (p.t - q.t0) / FALL;
+      if (k < 1) q.obj.position.y = q.ty + DROP * (1 - k * k); // 점점 빨라지며 떨어짐
+      else {
+        if (!q.landed) { q.landed = true; q.onLand?.(); if (snap) snap(q.obj.getWorldPosition(new THREE.Vector3()), !!q.onLand); }
+        const b = (p.t - q.t0 - FALL) / 0.18; // 딸깍 튕김
+        q.obj.position.y = q.ty + (b < 1 ? Math.sin(b * Math.PI) * 0.06 * (1 - b) : 0);
+        if (b >= 1) { q.obj.position.y = q.ty; q.done = true; }
+      }
     }
-    if (all) { commission(); p.changed = true; p.justDone = true; }
+    if (!left && p.assembleEnd !== undefined) { p.ready = true; p.queue = []; for (const l of p.lines || []) l.visible = true; p.justDone = true; p.changed = true; }
+    else if (!left && p.bodyEnd !== undefined && p.assembleEnd === undefined) { commission(false); }
     return { load: 0 };
   }
   let load = 0;

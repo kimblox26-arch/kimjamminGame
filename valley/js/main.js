@@ -295,12 +295,11 @@ $('saveBtn').onclick = () => saveGame();
 $('bBig').onclick = () => {
   if (H.plant) { hooks.toast(H.plant.ready ? '발전소는 하나만 지을 수 있어요 — 제어실을 열어 보세요' : '건설 중이에요'); return; }
   camera.getWorldDirection(camDir);
-  // 바라보는 쪽으로 7~9 m 앞(플레이어와 겹치지 않게), 집과 4 m 이상 떨어진 곳
-  const dirz = camDir.z >= 0 ? 1 : -1, aimZ = PL.P.aim?.point.z;
-  let z = aimZ !== undefined && Math.abs(aimZ - camera.position.z) > 6 ? aimZ : camera.position.z + dirz * 8;
-  z = Math.max(9, Math.min(62, z));
-  for (let n = 0; n < 8 && V.cabins.some(c => Math.abs(c.position.z - z) < 6); n++) z += dirz * 2;
-  if (Math.abs(z - camera.position.z) < 4) z = camera.position.z + dirz * 6;
+  // 지금 서 있는 곳에서 바라보는 쪽으로 6 m 앞 (집과 겹치면 조금 더 앞으로)
+  const dirz = camDir.z >= 0 ? 1 : -1;
+  let z = camera.position.z + dirz * 6;
+  for (let n = 0; n < 10 && V.cabins.some(c => Math.abs(c.position.z - z) < 4.5); n++) z += dirz * 1.5;
+  z = Math.max(8, Math.min(64, z));
   const p = H.build(z); A.rumble?.(p.dur);
   hooks.toast('계곡 수력발전소 건설 시작!');
 };
@@ -411,10 +410,9 @@ function loop(now) {
   if (D.building()) { S.touch(); shake = 0.05; }
   // 모터 전원: 배터리·발전 전기가 없으면 실제 발전소처럼 비상 디젤 발전기가 대신 돌린다(블랙 스타트)
   elec.diesel = !(elec.batt > 0.05 || elec.gen > 0.5);
-  const hy = H.update(dg, true, FX.splash, FX.dirt);
+  const hy = H.update(dg, true, FX.splash, FX.dirt, (pos, body) => { A.snap(body); FX.dirt(pos.x, pos.y, pos.z, body ? 5 : 2); if (body) shake = Math.max(shake, 0.025); });
   elec.motor = hy.load;
   if (H.plant) {
-    if (H.building()) shake = 0.05;
     if (H.plant.changed) { S.touch(); H.plant.changed = false; }
     if (H.plant.justDone) { H.plant.justDone = false; A.chime(); hooks.toast('수력발전소 완공! 제어실(C)에서 수차를 돌려 보세요'); $('bCtrl').classList.remove('hidden'); saveGame(true); }
     const d = camera.position.distanceTo(new THREE.Vector3(H.plant.cx + 3, H.plant.crest, H.plant.zU + 4));

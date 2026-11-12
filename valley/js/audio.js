@@ -102,6 +102,10 @@ export function rumble(dur = 4) { // 큰 공사 소리
   for (let t = 0; t < dur; t += 0.35) burst({ dur: 0.6, freq: 160 + Math.random() * 80, q: 0.7, gain: 0.3, type: 'lowpass', buf: brown, delay: t });
   for (let t = 0.2; t < dur; t += 0.9) { tone(70, 0.4, 0.2, 'sine', t, 50); burst({ dur: 0.05, freq: 2600, q: 4, gain: 0.08, delay: t + 0.1 }); }
 }
+export function snap(big) { // 레고 블록 끼워지는 '딸깍'
+  tone(big ? 1700 : 2300, 0.05, 0.12, 'square'); burst({ dur: 0.04, freq: 4200, q: 6, gain: 0.12 });
+  if (big) burst({ dur: 0.18, freq: 260, q: 1, gain: 0.25, type: 'lowpass', buf: brown, delay: 0.01 });
+}
 export function chime() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.6, 0.12, 'triangle', i * 0.11)); }
 function birds() {
   const sing = () => {

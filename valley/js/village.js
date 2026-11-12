@@ -1,15 +1,17 @@
 // 전기를 쓰는 곳: 계곡 가로등과 오두막 (밤에 배터리/발전 전기로 불이 켜진다)
 import * as THREE from 'three';
-import { groundAt, centerX, floorHalf, flattenPad } from './terrain.js';
+import { groundAt, centerX, floorHalf } from './terrain.js';
 
 export const lamps = [], cabins = [];
 const sites = [], lampSites = [];
 // 지형 메시를 만들기 전에 호출: 집터를 평평하게 다지고, 돌이 놓이면 안 되는 자리를 돌려준다
 export function prepare() {
-  for (const [z, side] of [[12.5, -1], [39, 1], [60, -1]]) {
-    const x = centerX(z) + side * floorHalf(z) * 0.62, yaw = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-    const y = flattenPad(x, z, 1.9, 1.7, yaw);
-    sites.push({ x, z, y, yaw, side });
+  // 계곡 바닥이 넓은 곳, 강에서 멀리(벽 쪽) — 땅은 깎지 않고 콘크리트 기초 위에 짓는다
+  for (const [z, side] of [[29, 1], [37, -1], [64, 1]]) {
+    const F = floorHalf(z), x = centerX(z) + side * F * 0.8, yaw = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    let gmin = 1e9, gmax = -1e9;
+    for (const u of [-1.7, 0, 1.7]) for (const v of [-1.5, 0, 1.5]) { const g = groundAt(x + v, z + u); gmin = Math.min(gmin, g); gmax = Math.max(gmax, g); }
+    sites.push({ x, z, y: gmax + 0.08, base: gmin - 0.25, yaw, side });
   }
   for (let z = 9, n = 0; z < 69; z += 7.5, n++) {
     const side = n % 2 ? -1 : 1; lampSites.push({ x: centerX(z) + side * floorHalf(z) * 0.78, z, side });
@@ -58,7 +60,8 @@ export function build(scene, R, world) {
   const wood = new THREE.MeshStandardMaterial({ color: 0x7b5a3e, roughness: 0.85 });
   const roofM = new THREE.MeshStandardMaterial({ color: 0x4a3a33, roughness: 0.75 });
   winMat = new THREE.MeshStandardMaterial({ color: 0x1e2a33, emissive: 0xffd69a, emissiveIntensity: 0, roughness: 0.2 });
-  for (const { x, z, y, side } of sites) {
+  const plinthM = new THREE.MeshStandardMaterial({ color: 0x8f8a82, roughness: 0.9 });
+  for (const { x, z, y, base, side } of sites) {
     const h = new THREE.Group();
     const walls = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.3, 2.8).translate(0, 1.15, 0), wood);
     const roof = new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.4, 4).rotateY(Math.PI / 4).scale(1.05, 1, 0.92).translate(0, 3.0, 0), roofM);
@@ -66,12 +69,13 @@ export function build(scene, R, world) {
     const w1 = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.6).translate(-0.95, 1.35, 1.41), winMat);
     const w2 = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.6).translate(0.95, 1.35, 1.41), winMat);
     const w3 = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6).rotateY(Math.PI / 2).translate(1.61, 1.35, 0), winMat);
-    h.add(walls, roof, door, w1, w2, w3);
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(3.5, y - base + 0.02, 3.1).translate(0, -(y - base) / 2, 0), plinthM); // 기초
+    h.add(walls, roof, door, w1, w2, w3, plinth);
     h.children.forEach(m => { m.castShadow = true; m.receiveShadow = true; });
-    h.position.set(x, y - 0.06, z); h.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; // 문이 계곡을 향하게
+    h.position.set(x, y, z); h.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2; // 문이 계곡을 향하게
     scene.add(h);
     const sp = new THREE.Sprite(glowMat); sp.position.set(x - side * 1.6, y + 1.3, z); sp.scale.setScalar(2.4); scene.add(sp); glow.push(sp);
-    fixedBox(R, world, x, y + 1.15, z, 1.6, 1.15, 1.4, h.rotation.y);
+    fixedBox(R, world, x, (base + y + 2.3) / 2, z, 1.7, (y + 2.3 - base) / 2, 1.5, h.rotation.y); // 기초까지 포함
     cabins.push(h);
   }
 }
