@@ -168,26 +168,32 @@ export function split(st, dir) {
   }
   return out;
 }
+// 돌이 너무 많아지면 멀리 있는 작은 돌부터 치운다 (성능 유지)
+export function trim(max, cam) {
+  if (stones.length <= max) return;
+  const cand = stones.filter(s => !s.held && !s.boulder).sort((a, b) => (a.r - b.r) * 4 - (((a.cx - cam.x) ** 2 + (a.cz - cam.z) ** 2) - ((b.cx - cam.x) ** 2 + (b.cz - cam.z) ** 2)) * 0.01);
+  for (const st of cand) { if (stones.length <= max) break; removeStone(st); }
+}
 export function spawnAll(group, count, nBoulders = 18) {
   const placed = [];
   const free = (x, z, r) => placed.every(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 > (pr + r + 0.05) ** 2);
   // 고정 큰 바위
   for (let n = 0, tries = 0; n < nBoulders && tries < 500; tries++) {
-    const z = 7.5 + rand() * 16, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
-    let x = centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.75 + rand() * 0.45));
+    const z = 7.5 + rand() * 23, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
+    let x = centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.5 + rand() * 0.4)); // 바닥 위에만 (벽에 뜨지 않게)
     const r = n < 4 ? 0.55 + rand() * 0.3 : 0.6 + rand() * 0.9;
     if (!free(x, z, r)) continue;
     placed.push([x, z, r]);
     let gy = groundAt(x, z), gmin = gy;
     for (const [ox, oz] of [[r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, -r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, r * 0.7]]) gmin = Math.min(gmin, groundAt(x + ox, z + oz));
-    if (gy - gmin > r * 0.9) continue;
+    if (gy - gmin > r * 0.45) continue;
     const st = addStone(x, gmin + r * 0.22, z, r, { fixed: true, mat: [0, 1, 4, 5][n % 4] });
     group.add(st.mesh); n++;
   }
   // 주울 수 있는 돌
   for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
     const nearDam = rand() < 0.45;
-    const z = nearDam ? 10 + rand() * 9 : 7.5 + rand() * 15.5;
+    const z = nearDam ? 10 + rand() * 9 : 7.5 + rand() * 23;
     const F = floorHalf(z);
     const x = centerX(z) + (rand() * 2 - 1) * F * 0.92;
     const r = 0.1 + 0.24 * Math.pow(rand(), 1.5);

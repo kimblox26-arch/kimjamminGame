@@ -70,6 +70,8 @@ function bindInput() {
     if (e.code === 'Digit1') setTool('hand');
     if (e.code === 'Digit2') setTool('shovel');
     if (e.code === 'Digit3') setTool('pick');
+    if (e.code === 'Digit4') setTool('mud');
+    if (e.code === 'Digit5') setTool('drop');
     if (e.code === 'KeyE') primary();
     if (e.code === 'KeyQ') P.holdYaw += Math.PI / 6;
     if (e.code === 'KeyR') P.holdTilt += Math.PI / 6;
@@ -92,7 +94,7 @@ function bindInput() {
 export function look(dx, dy) { P.yaw -= dx; P.pitch = THREE.MathUtils.clamp(P.pitch - dy, -1.45, 1.35); }
 export function setTool(t) {
   if (P.held && t !== 'hand') drop(0);
-  P.tool = t; shovel.visible = t === 'shovel'; pick.visible = t === 'pick'; hooks.ui?.tool(t);
+  P.tool = t; shovel.visible = t === 'shovel' || t === 'mud'; pick.visible = t === 'pick'; hooks.ui?.tool(t);
 }
 export function toggleTool() { setTool(P.tool === 'hand' ? 'shovel' : P.tool === 'shovel' ? 'pick' : 'hand'); }
 export const touch = { move: touchMove, btn, primary: () => primary(), secondary: () => { if (P.tool === 'hand' && P.held) throwStone(); }, rotate: () => { P.holdYaw += Math.PI / 6; }, jump: () => { P.jumpReq = true; } };
@@ -181,7 +183,7 @@ export function update(dt, time) {
   cc.computeColliderMovement(col, { x: dx * dt, y: P.vy * dt, z: dz * dt }, undefined, undefined, c => c !== held);
   const mv = cc.computedMovement();
   let nx = p.x + mv.x, ny = p.y + mv.y, nz = p.z + mv.z;
-  nx = THREE.MathUtils.clamp(nx, -9.5, 9.5); nz = THREE.MathUtils.clamp(nz, 5.5, 25);
+  nx = THREE.MathUtils.clamp(nx, -9.5, 9.5); nz = THREE.MathUtils.clamp(nz, 5.5, 33);
   const gmin = T.groundAt(nx, nz) + 0.83 - 0.05; if (ny < gmin - 0.3) ny = gmin;
   body.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
   P.grounded = cc.computedGrounded();
@@ -204,7 +206,7 @@ function aim() {
   camera.getWorldPosition(ray.o); camera.getWorldDirection(ray.d);
   const held = P.held?.collider;
   const r = new R.Ray(ray.o, ray.d);
-  const hit = world.castRay(r, 4.5, true, undefined, undefined, col, undefined, c => c !== held);
+  const hit = world.castRay(r, P.tool === 'drop' ? 30 : 4.5, true, undefined, undefined, col, undefined, c => c !== held);
   P.target = null; P.aim = null;
   if (hit) {
     const toi = hit.timeOfImpact ?? hit.toi;
@@ -219,6 +221,31 @@ function aim() {
   hooks.ui?.prompt(prompt, !!(P.held || P.target));
 }
 
+// 진흙 무한 붓기 / 하늘에서 바위 떨어뜨리기
+function specialUpdate(dt, time) {
+  const a = P.aim, drop = P.tool === 'drop', ok = a && a.dist < (drop ? 30 : 4.5);
+  ring.visible = !!ok;
+  if (ok) {
+    ring.position.set(a.point.x, a.point.y + 0.03, a.point.z);
+    ring.scale.setScalar(drop ? 1.8 : 1);
+    ring.material.color.setHex(drop ? 0xffa45c : 0x9fe39a);
+  }
+  if (!drop) { // 삽에 진흙이 늘 가득
+    load.visible = true; load.scale.setScalar(1.2);
+    const busy = time - lastAct < 0.2;
+    shovel.rotation.x += ((busy ? -0.3 : -0.9) - shovel.rotation.x) * Math.min(1, dt * 14);
+  }
+  if (!ok || !(btn.l || btn.r)) return;
+  if (drop && time - lastAct > 0.45) { lastAct = time; hooks.dropRock?.(a.point.x, a.point.z); }
+  else if (!drop && time - lastAct > 0.12) {
+    lastAct = time;
+    T.deposit(a.point.x, a.point.z, 0.36, 0.03, W);
+    const ws = W.sample(a.point.x, a.point.z);
+    if (ws && ws.h > 0.02) hooks.fx?.splash(a.point.x, ws.surf, a.point.z, 0.4); else hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z) + 0.3, a.point.z, 6);
+    if (Math.random() < 0.5) hooks.audio?.dump();
+    hooks.edit?.(a.point.x, a.point.z, 0.6);
+  }
+}
 let swingT = -1;
 function pickUpdate(dt, time) {
   // 휘두르기 애니메이션: 들어올렸다가 내려찍기
@@ -248,8 +275,9 @@ function strike(a) {
 }
 function toolUpdate(dt, time) {
   if (P.tool === 'pick') { ring.visible = false; pickUpdate(dt, time); return; }
+  if (P.tool === 'drop' || P.tool === 'mud') { specialUpdate(dt, time); return; }
   const a = P.aim, ok = P.tool === 'shovel' && a && a.dist < 4.2;
-  ring.visible = !!ok;
+  ring.visible = !!ok; ring.scale.setScalar(1);
   if (ok) {
     ring.position.set(a.point.x, a.point.y + 0.03, a.point.z);
     ring.material.color.setHex(btn.r ? 0x9fe39a : 0xffe6a8);

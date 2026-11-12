@@ -9,7 +9,7 @@ export const h = new Float32Array(NV), solid = new Float32Array(NV), sBot = new 
 // 돌무더기 공극(틈): seal=공극 바닥(땅/진흙), ptop=공극 꼭대기(돌 윗면). 그 사이로 물이 스며 흐른다
 export const seal = new Float32Array(NV), ptop = new Float32Array(NV), lev = new Float32Array(NV);
 export const PHI = 0.38; let KP = 0.25;
-export const KS = 0.012; // 흙·진흙 투수계수(가는 모래 수준): 흙둑도 아주 조금씩 샌다
+export const KS = 0.02; // 흙·진흙 투수계수(가는 모래 수준): 흙둑도 아주 조금씩 샌다
 export const kp = new Float32Array(NV); // 셀별 투수계수 (돌무더기≈KP, 흙≈KS)
 const ho = new Float32Array(NV), hp = new Float32Array(NV);
 const pL = new Float32Array(NV), pR = new Float32Array(NV), pU = new Float32Array(NV), pD = new Float32Array(NV);
@@ -17,7 +17,7 @@ const fL = new Float32Array(NV), fR = new Float32Array(NV), fU = new Float32Arra
 export const vx = new Float32Array(NV), vz = new Float32Array(NV), foam = new Float32Array(NV), wet = new Float32Array(NV);
 export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
 const h0 = new Float32Array(NV);
-export const MEAS_J = 147; // z≈22 (하류 낙차 직전)
+export const MEAS_J = 203; // z≈30.5 (하류 낙차 직전)
 export const state = { inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
 const src = [];
 
@@ -136,7 +136,7 @@ export function post(dt) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
     for (let i = i0; i <= i1; i++) {
       const k = j * NXV + i, hk = ho[k];
-      if (h[k] > 0.004) wet[k] = 1;
+      if (h[k] > 0.0008) wet[k] = 1;
       if (j < MEAS_J) { const dv = h[k] - h0[k]; if (dv > 0) st += dv; }
       if (hk <= 0.004) continue;
       const sp = Math.hypot(vx[k], vz[k]);
@@ -167,7 +167,7 @@ export function post(dt) {
   // 마른 곳: 젖음·거품 서서히 줄이기 (8프레임에 나눠 전체를 훑음)
   phase = (phase + 1) & 7;
   for (let j = 1 + phase; j < NZ; j += 8) for (let i = SX0 + 1; i < SX1 - 1; i++) {
-    const k = j * NXV + i; if (h[k] > 0.004) continue;
+    const k = j * NXV + i; if (h[k] > 0.0008) continue;
     if (wet[k] > 0) wet[k] = Math.max(0, wet[k] - dt * 8 / 45);
     if (foam[k] > 0) foam[k] *= 0.4;
     if (sed[k] > 0) { loose[k] += sed[k]; ground[k] += sed[k]; sed[k] = 0; markDirtyCell(i, j); }
@@ -195,13 +195,13 @@ export function upload() {
   for (let j = 0; j < NZV; j++) for (let c = 0; c < SW; c++) {
     const k = j * NXV + SX0 + c, o = (j * SW + c) * 4, hk = h[k];
     let R, dep = 0;
-    if (hk > 0.003) { R = lev[k]; dep = lev[k] - seal[k]; }
+    if (hk > 0.0008) { dep = lev[k] - seal[k]; R = lev[k] + Math.max(0, 0.003 - dep); }
     else {
       let best = -1e9;
-      if (c > 0 && h[k - 1] > 0.003) best = Math.max(best, lev[k - 1]);
-      if (c < SW - 1 && h[k + 1] > 0.003) best = Math.max(best, lev[k + 1]);
-      if (j > 0 && h[k - NXV] > 0.003) best = Math.max(best, lev[k - NXV]);
-      if (j < NZ && h[k + NXV] > 0.003) best = Math.max(best, lev[k + NXV]);
+      if (c > 0 && h[k - 1] > 0.0008) best = Math.max(best, lev[k - 1]);
+      if (c < SW - 1 && h[k + 1] > 0.0008) best = Math.max(best, lev[k + 1]);
+      if (j > 0 && h[k - NXV] > 0.0008) best = Math.max(best, lev[k - NXV]);
+      if (j < NZ && h[k + NXV] > 0.0008) best = Math.max(best, lev[k + NXV]);
       R = best > -1e8 ? Math.min(best, solid[k] + 0.03) - 0.006 : Math.min(solid[k], ground[k]) - 0.06;
     }
     dW[o] = R; dW[o + 1] = dep; dW[o + 2] = wet[k]; dW[o + 3] = foam[k];
@@ -262,9 +262,9 @@ export function makeWaterMesh(refrRT) {
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 3, 30), 45);
   const uniforms = Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), U, {
     tV: { value: texV }, tN: { value: makeNormalTex() }, tRefr: { value: refrRT.texture }, tDepth: { value: refrRT.depthTexture },
-    uRes: { value: new THREE.Vector2(1, 1) }, uNear: { value: 0.05 }, uFar: { value: 1200 }, uCheap: { value: 0 },
+    uRes: { value: new THREE.Vector2(1, 1) }, uProj: { value: new THREE.Matrix4() }, uNear: { value: 0.05 }, uFar: { value: 1200 }, uCheap: { value: 0 },
   });
-  const mat = new THREE.ShaderMaterial({ uniforms, fog: true, vertexShader: WATER_VS, fragmentShader: WATER_FS });
+  const mat = new THREE.ShaderMaterial({ uniforms, fog: true, vertexShader: WATER_VS, fragmentShader: WATER_FS, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   const m = new THREE.Mesh(g, mat);
   m.frustumCulled = false;
   return m;
@@ -285,10 +285,38 @@ void main(){
 }`;
 
 const WATER_FS = GLSL_NOISE + GLSL_SKY + /* glsl */`
-uniform sampler2D tV, tN, tRefr, tDepth; uniform vec2 uRes; uniform float uTime, uNear, uFar, uCheap; uniform vec3 uSunCol;
+uniform sampler2D tV, tN, tRefr, tDepth; uniform vec2 uRes; uniform float uTime, uNear, uFar, uCheap; uniform vec3 uSunCol; uniform mat4 uProj;
 varying vec3 vWorld; varying vec2 vUv;
 #include <fog_pars_fragment>
 float linZ(float d){ return uNear*uFar / (uFar - d*(uFar-uNear)); }
+// 화면 공간 반사: 물에 비친 계곡 벽·바위를 실제로 그린다
+vec3 ssr(vec3 wpos, vec3 n, out float hit){
+  hit = 0.;
+  vec3 vp = (viewMatrix * vec4(wpos, 1.)).xyz;
+  vec3 vn = normalize((viewMatrix * vec4(n, 0.)).xyz);
+  vec3 rd = normalize(reflect(normalize(vp), vn));
+#ifdef LITE
+  const int STEPS = 12; const float GROW = 1.45;
+#else
+  const int STEPS = 22; const float GROW = 1.3;
+#endif
+  float t = 0.12;
+  for (int i = 0; i < STEPS; i++) {
+    vec3 p = vp + rd * t;
+    vec4 c = uProj * vec4(p, 1.);
+    if (c.w <= 0.) break;
+    vec2 uv = c.xy / c.w * 0.5 + 0.5;
+    if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) break;
+    float sz = linZ(texture2D(tDepth, uv).r), pz = -p.z;
+    if (pz > sz && pz - sz < 0.4 + t * 0.2) {
+      vec2 e = min(uv, 1. - uv);
+      hit = smoothstep(0., 0.12, min(e.x, e.y)) * (1. - smoothstep(25., 45., t));
+      return texture2D(tRefr, uv).rgb;
+    }
+    t = t * GROW + 0.04;
+  }
+  return vec3(0.);
+}
 void main(){
   vec4 w = texture2D(tWater, vUv); vec4 v = texture2D(tV, vUv);
   float depth = w.g;
@@ -307,11 +335,7 @@ void main(){
   vec4 nC = texture2D(tN, vWorld.xz*1.3 - flow*p0*1.6 + 0.5), nD = texture2D(tN, vWorld.xz*1.3 - flow*p1*1.6 + 0.2);
 #endif
   vec2 dn = mix(nA.xy, nB.xy, wb)*2.-1.; vec2 dn2 = mix(nC.xy, nD.xy, wb)*2.-1.;
-#ifdef LITE
-  vec4 nS = vec4(0.5);
-#else
   vec4 nS = texture2D(tN, vWorld.xz*0.9 + vec2(uTime*0.03, uTime*0.021));
-#endif
   dn += (nS.xy*2.-1.)*0.5 + dn2*(0.25+sp*0.6);
   float rainR = uRain * smoothstep(0.75,0.95, vnoise2(vWorld.xz*9. + floor(uTime*6.)*7.3));
   float str = (0.10 + sp*0.32) * smoothstep(0.,0.03,depth) + rainR*0.4;
@@ -322,6 +346,7 @@ void main(){
   vec3 Rv = reflect(-V, n); Rv.y = abs(Rv.y);
   vec3 wallC = mix(vec3(0.06,0.08,0.05), vec3(0.15,0.17,0.16), uRain);
   vec3 refl = mix(wallC, skyCol(Rv), smoothstep(0.08, 0.5, Rv.y));
+  if (uCheap < 0.5 && depth > 0.0005) { float hit; vec3 sc = ssr(vWorld, normalize(mix(n, vec3(0.,1.,0.), 0.55)), hit); refl = mix(refl, sc, hit); }
   float sdot = max(dot(Rv, uSunDir), 0.);
   vec3 spec = uSunCol * (pow(sdot, 900.)*28. + pow(sdot, 90.)*1.3) * (1.-uRain*0.9);
   float mud = v.z;
@@ -340,9 +365,9 @@ void main(){
   vec3 ab = exp(-thick * absC);
   vec3 col = uCheap < 0.5 ? refr*ab + scat*(1.-ab) : scat;
   if (uCheap > 0.5) alpha = 1. - dot(ab, vec3(0.3333));
-  col = mix(col, refl, fres) + spec*smoothstep(0.,0.01,depth);
+  col = mix(col, refl, fres) + spec*smoothstep(0.,0.004,depth);
   alpha = max(alpha, fres*0.9);
-  float vis = smoothstep(0.004, 0.03, depth); // 아주 얇은 물막은 보이지 않게
+  float vis = smoothstep(0.0008, 0.012, depth); // 아주 얇게 스며 나온 물도 젖은 막처럼 보이게
   if (uCheap < 0.5) col = mix(refr, col, vis); else alpha *= vis;
   float fo = w.a;
   float fnz = mix(nA.w, nB.w, wb)*0.6 + nC.w*0.4;

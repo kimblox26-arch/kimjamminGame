@@ -33,11 +33,11 @@ const segBtns = [...document.querySelectorAll('#quality button')];
 const pickQ = k => { qKey = k; segBtns.forEach(b => { b.classList.toggle('on', b.dataset.q === k); b.setAttribute('aria-checked', b.dataset.q === k); }); };
 segBtns.forEach(b => b.onclick = () => pickQ(b.dataset.q)); pickQ(qKey);
 
-let innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
+let stoneGroup, innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = (v, t) => { $('progbar').style.width = Math.round(v * 100) + '%'; if (t) $('progtxt').textContent = t; };
-if (params.has('debug')) window.__dbg = { T, W, S, PL, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
+if (params.has('debug')) window.__dbg = { T, W, S, PL, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
 
 $('go').onclick = async () => {
   $('go').disabled = true; segBtns.forEach(b => b.disabled = true); $('go').textContent = '불러오는 중';
@@ -92,7 +92,7 @@ async function boot(q) {
   S.initPhysics(RAPIER, world, q.lowPoly);
 
   prog(0.2, '돌 놓는 중'); await frame();
-  const sg = new THREE.Group(); scene.add(sg); scene.add(S.outlineMesh());
+  const sg = new THREE.Group(); scene.add(sg); stoneGroup = sg; scene.add(S.outlineMesh());
   S.spawnAll(sg, q.stones, q.boulders);
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
   prog(0.32, '숲 가꾸는 중'); await frame();
@@ -107,14 +107,15 @@ async function boot(q) {
   refrRT.depthTexture = new THREE.DepthTexture(refrRT.width, refrRT.height);
   W.init(); T.setSolidRef(W.solid); S.rasterize(); W.prefill();
   water = W.makeWaterMesh(refrRT); scene.add(water);
-  const WARM = 18 * 60;
+  water.material.uniforms.uProj.value = camera.projectionMatrix;
+  const WARM = 22 * 60;
   for (let s = 0; s < WARM; s++) {
     if (s % 2 === 0) { world.step(); S.sync(); S.rasterize(); }
     W.step(1 / 60); if (s % 4 === 0) W.post(4 / 60);
     if (s % 150 === 0) { prog(0.4 + 0.5 * s / WARM, '계곡물 흘려보내는 중'); await frame(); }
   }
   W.upload();
-  PL.init(RAPIER, world, camera, scene, hooks, { x: T.centerX(9) - 2.4, y: T.groundAt(T.centerX(9) - 2.4, 9) + 1.1, z: 9 });
+  PL.init(RAPIER, world, camera, scene, hooks, { x: T.centerX(7.5) - 1.8, y: T.groundAt(T.centerX(7.5) - 1.8, 7.5) + 1.1, z: 7.5 });
 
   composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth * pr, innerHeight * pr, { type: THREE.HalfFloatType, samples: q.msaa }));
   composer.addPass(new RenderPass(scene, camera));
@@ -212,8 +213,8 @@ $('bRain').onclick = () => setRain(!rainOn);
 document.querySelectorAll('#bar [data-t]').forEach(b => b.onclick = () => PL.setTool(b.dataset.t));
 addEventListener('keydown', e => {
   if (!started || e.repeat) return;
-  if (e.code === 'Digit4') setRain(!rainOn);
-  if (e.code === 'Digit5') setPerf(!perf);
+  if (e.code === 'Digit6') setRain(!rainOn);
+  if (e.code === 'Digit7') setPerf(!perf);
 });
 
 // ───── 게임 훅 ─────
@@ -224,11 +225,22 @@ const hooks = {
     tool(t) {
       document.querySelectorAll('#bar [data-t]').forEach(e => e.classList.toggle('on', e.dataset.t === t));
       $('tPrim').innerHTML = `<svg><use href="#i-${t}"/></svg>`;
+      $('tSec').innerHTML = `<svg><use href="#i-${t === 'shovel' ? 'pour' : 'throw'}"/></svg>`;
+      $('tSec').classList.toggle('hidden', !(t === 'hand' || t === 'shovel')); $('tRot').classList.toggle('hidden', t !== 'hand');
     },
     prompt(t, on) { const el = $('tag'); if (el.textContent !== t) el.textContent = t; $('cross').classList.toggle('on', on); },
   },
   audio: A, fx: FX,
   edit(x, z, r) { N.onEdit(x, z, r); edits.push([x, z]); lastEdit = clock; },
+  // 하늘에서 바위 떨어뜨리기
+  dropRock(x, z) {
+    const big = Math.random() < 0.12, r = big ? 0.55 + Math.random() * 0.35 : 0.14 + Math.pow(Math.random(), 1.4) * 0.32;
+    const st = S.addStone(x + (Math.random() - 0.5) * 0.4, T.groundAt(x, z) + 9 + Math.random() * 3, z + (Math.random() - 0.5) * 0.4, r);
+    stoneGroup.add(st.mesh); st.moved = true;
+    st.body.setAngvel({ x: (Math.random() - 0.5) * 3, y: (Math.random() - 0.5) * 3, z: (Math.random() - 0.5) * 3 }, true);
+    S.trim(Q.perf || isTouch ? 150 : 240, camera.position);
+    A.whoosh();
+  },
 };
 let edits = [], lastEdit = -10, clock = 0, ready = false;
 
@@ -237,7 +249,7 @@ function ui(dt) {
   toastT -= dt; if (toastT <= 0) $('toast').classList.remove('show');
   uiT -= dt; if (uiT > 0) return; uiT = 0.2;
   const st = W.state;
-  if (!ready && st.time > 30) { ready = true; W.saveBaseline(); }
+  if (!ready && st.time > 38) { ready = true; W.saveBaseline(); }
   const blocked = Math.max(0, Math.min(1, 1 - st.outSm / st.inflow));
   $('mPct').textContent = ready ? Math.round(blocked * 100) + '%' : '—';
   $('mFill').style.width = (ready ? blocked * 100 : 0).toFixed(1) + '%';

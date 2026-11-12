@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { fbm, vnoise, sstep, clamp, GLSL_NOISE } from './noise.js';
 
-export const CELL = 0.15, NX = 160, NZ = 180, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
+export const CELL = 0.15, NX = 160, NZ = 240, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
 export const X0 = -NX * CELL / 2, Z0 = 0;
 export const SX0 = 20, SX1 = 140; // 물 시뮬레이션 열 범위 (x ±9 m) // 물 시뮬레이션 열 범위
 export const SW = SX1 - SX0;
@@ -25,9 +25,9 @@ export const chanW = z => 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
 export function baseY(z) {
   let y = 4.0 - z * 0.045;
   y += 3.2 * sstep(4.2, 2.8, z);       // 상류 절벽(폭포)
-  y -= 2.2 * sstep(23.2, 25.8, z);     // 하류 낙차
+  y -= 2.2 * sstep(31.6, 34.2, z);     // 하류 낙차
   if (z < 0) y += -z * 0.06;
-  if (z > 27) y -= (z - 27) * 0.07;
+  if (z > 36) y -= (z - 36) * 0.07;
   return y;
 }
 
@@ -77,6 +77,14 @@ export function generate() {
   };
   for (let i = 0; i < NXV; i++) for (const j of [0, NZ]) ground[idx(i, j)] = edgeLerp(X0 + i * CELL, j * CELL, true);
   for (let j = 0; j < NZV; j++) for (const i of [0, NX]) ground[idx(i, j)] = edgeLerp(X0 + i * CELL, j * CELL, false);
+  // 흙 두께·풀 덮임을 살짝 흐리게 해서 경계가 삼각형 모양으로 튀지 않게
+  for (let pass = 0; pass < 2; pass++) for (const arr of [soil, grass]) {
+    const src = arr.slice();
+    for (let j = 1; j < NZ; j++) for (let i = 1; i < NX; i++) {
+      const k = idx(i, j);
+      arr[k] = (src[k] * 4 + src[k - 1] + src[k + 1] + src[k - NXV] + src[k + NXV]) / 8;
+    }
+  }
   // 경사가 급하면 흙 없음(암반)
   for (let j = 0; j < NZV; j++) for (let i = 0; i < NXV; i++) {
     const k = idx(i, j);
@@ -124,8 +132,9 @@ float fade = 1. - smoothstep(5., 35., length(vViewPosition));
 float sSoil = vMat.x, sLoose = vMat.y, sGrass = vMat.z, sDug = vMat.w;
 vec4 wd = waterAt(P.xz); float under = wd.r - P.y;
 float wet = clamp(max(wd.b*0.9, smoothstep(-0.06, 0.01, under)), 0., 1.);
-float rockW = max(1. - smoothstep(0.03, 0.10, sSoil + sLoose), smoothstep(0.38, 0.62, slope));
-float gravW = (1. - smoothstep(0.24, 0.40, sSoil)) * (1. - rockW);
+float bn = vnoise2(P.xz*0.9 + P.y*0.3) - 0.5;
+float rockW = max(1. - smoothstep(0.03, 0.10, sSoil + sLoose + bn*0.08), smoothstep(0.36, 0.64, slope + bn*0.22));
+float gravW = (1. - smoothstep(0.22, 0.42, sSoil + bn*0.1)) * (1. - rockW);
 float dirtW = max(0., 1. - rockW - gravW);
 vec3 alb = vec3(0.); float tH = 0., tRough = 0.;
 if (rockW > 0.002) { // 암반 (3축 투영)
@@ -142,7 +151,11 @@ if (rockW > 0.002) { // 암반 (3축 투영)
   rock = mix(rock, vec3(0.30,0.36,0.18), smoothstep(0.6,0.75,vnoise2(rp*1.6 + P.y))*0.5*smoothstep(0.7,0.2,slope));
   float cr = 0.;
   alb += rock*rockW; tRough += 0.86*rockW;
+#ifdef LITE
+  tH += (rn*0.22 + rn2*0.03) * rockW;
+#else
   tH += (rn*0.22 + rn2*0.05 + strata*0.008 - cr*0.015 + vnoise2(rp*15.)*0.006*fade) * rockW;
+#endif
 }
 #ifdef LITE
 if (gravW > 0.002) { // 가벼운 자갈

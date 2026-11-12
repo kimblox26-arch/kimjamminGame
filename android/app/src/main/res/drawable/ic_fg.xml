@@ -1,10 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#6CC6E0" android:pathData="M26,66 q7,-5 14,0 t14,0 t14,0 t14,0 v14 h-56 z" />
-    <path android:fillColor="#7C8287" android:pathData="M30,62 a11,8 0 1,0 22,0 a11,8 0 1,0 -22,0 z" />
-    <path android:fillColor="#9AA0A6" android:pathData="M50,63 a12,8.5 0 1,0 24,0 a12,8.5 0 1,0 -24,0 z" />
-    <path android:fillColor="#B9BEC2" android:pathData="M40,51 a10,7.5 0 1,0 20,0 a10,7.5 0 1,0 -20,0 z" />
-    <path android:fillColor="#9A6A43" android:pathData="M38,58 h32 v4 h-32 z" />
+    <!-- 계곡물 -->
+    <path android:pathData="M50,54 C47,64 40,70 33,78 C29,82 27,86 26,90 H82 C80,86 77,82 73,78 C66,70 60,64 58,54 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="54" android:endX="0" android:endY="90">
+                <item android:offset="0" android:color="#FFA8DCE6" />
+                <item android:offset="1" android:color="#FF3A8CA6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:strokeColor="#CCFFFFFF" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M53,58 C51,66 47,71 43,76 M56,60 C58,67 62,72 66,77" />
+    <!-- 돌 둑 + 진흙 -->
+    <path android:fillColor="#FF7A8086" android:pathData="M38,74 a8,5.5 0 1,0 16,0 a8,5.5 0 1,0 -16,0 z" />
+    <path android:fillColor="#FF9AA1A7" android:pathData="M52,75 a9,6 0 1,0 18,0 a9,6 0 1,0 -18,0 z" />
+    <path android:fillColor="#FFB8BEC3" android:pathData="M45,67.5 a7,4.8 0 1,0 14,0 a7,4.8 0 1,0 -14,0 z" />
+    <path android:fillColor="#FF8C9399" android:pathData="M58,68 a6.5,4.4 0 1,0 13,0 a6.5,4.4 0 1,0 -13,0 z" />
+    <path android:strokeColor="#FF8A5A36" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M44,72 q5,-2 9,0 M57,73 q5,-2 9,0" />
+    <!-- 곡괭이 -->
+    <path android:strokeColor="#FF6E4A2C" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M70,58 L82,40" />
+    <path android:fillColor="#FFCFD5DA" android:pathData="M70,36 C76,33 84,33 90,38 C86,37 82,37.5 79,39 Z" />
 </vector>
