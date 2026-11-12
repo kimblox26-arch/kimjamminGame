@@ -210,6 +210,7 @@ $('gl').addEventListener('click', () => { if (started && !isTouch && !document.p
 $('bPause').onclick = () => { if (isTouch) showPause('일시정지', '계속'); else document.exitPointerLock(); };
 $('bPerf').onclick = () => setPerf(!perf);
 $('bRain').onclick = () => setRain(!rainOn);
+$('bSpeed').onclick = () => PL.cycleSpeed();
 document.querySelectorAll('#bar [data-t]').forEach(b => b.onclick = () => PL.setTool(b.dataset.t));
 addEventListener('keydown', e => {
   if (!started || e.repeat) return;
@@ -227,7 +228,9 @@ const hooks = {
       $('tPrim').innerHTML = `<svg><use href="#i-${t}"/></svg>`;
       $('tSec').innerHTML = `<svg><use href="#i-${t === 'shovel' ? 'pour' : 'throw'}"/></svg>`;
       $('tSec').classList.toggle('hidden', !(t === 'hand' || t === 'shovel')); $('tRot').classList.toggle('hidden', t !== 'hand');
+      $('bSpeed').classList.toggle('hidden', !(t === 'shovel' || t === 'mud'));
     },
+    speed(n) { const b = $('bSpeed'); $('spd').textContent = ['×1', '×3', '×8'][n]; b.classList.toggle('s1', n === 1); b.classList.toggle('s2', n === 2); },
     prompt(t, on) { const el = $('tag'); if (el.textContent !== t) el.textContent = t; $('cross').classList.toggle('on', on); },
   },
   audio: A, fx: FX,
@@ -254,7 +257,7 @@ function ui(dt) {
   $('mPct').textContent = ready ? Math.round(blocked * 100) + '%' : '—';
   $('mFill').style.width = (ready ? blocked * 100 : 0).toFixed(1) + '%';
   $('mSub').textContent = ready ? `저수 ${st.stored.toFixed(1)} m³ · 하류 ${Math.max(0, st.outSm * 1000).toFixed(0)} L/s` : '물길이 흐르는 중';
-  $('mud').style.width = Math.min(100, PL.P.bucket / 0.3 * 100) + '%';
+  $('mud').style.width = Math.min(100, PL.P.bucket / 0.5 * 100) + '%';
   if (perf) $('fps').textContent = fpsV.toFixed(0) + ' fps';
 }
 

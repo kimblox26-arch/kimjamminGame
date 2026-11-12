@@ -45,6 +45,8 @@ h2 { font-size: 20px; margin-bottom: 18px; }
 .tb kbd { position: absolute; top: 3px; right: 5px; font: 600 9px/1 ui-monospace, monospace; color: var(--muted); opacity: .7; }
 .tb .mud { position: absolute; left: 9px; right: 9px; bottom: 5px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .12); overflow: hidden; }
 #mud { display: block; height: 100%; width: 0; background: var(--mud); }
+.tb.spd b { font-size: 13px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tb.spd.s1 { color: #ffd36b; } .tb.spd.s2 { color: #ff9b5c; background: rgba(255, 155, 92, .14); }
 .sep { width: 1px; height: 26px; background: var(--line); margin: 0 3px; }
 #fps { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--muted); opacity: .6; }
 

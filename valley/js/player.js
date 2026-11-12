@@ -4,11 +4,17 @@ import * as T from './terrain.js';
 import * as W from './water.js';
 import * as S from './stones.js';
 
-const BUCKET_CAP = 0.3;
+const LOAD_VIS = 0.3; // 삽에 보이는 흙더미 크기 기준 (담는 양 제한 없음)
+// 작업 속도: 0 보통 · 1 약간 빠르게 · 2 엄청 빠르게
+export const SPEEDS = [
+  { name: '보통', dig: 0.26, depth: 0.075, digR: 0.38, dump: 0.2, dumpAmt: 0.022, mud: 0.12, mudAmt: 0.03, mudR: 0.36, fx: 1 },
+  { name: '약간 빠르게', dig: 0.12, depth: 0.085, digR: 0.42, dump: 0.09, dumpAmt: 0.04, mud: 0.06, mudAmt: 0.05, mudR: 0.42, fx: 0.6 },
+  { name: '엄청 빠르게', dig: 0.04, depth: 0.11, digR: 0.5, dump: 0.035, dumpAmt: 0.09, mud: 0.03, mudAmt: 0.12, mudR: 0.5, fx: 0.3 },
+];
 const kg = m => (m >= 1000 ? (m / 1000).toFixed(1) + ' t' : Math.round(m) + ' kg');
 export const P = {
   yaw: Math.PI, pitch: -0.25, vy: 0, grounded: false, tool: 'hand', held: null, holdDist: 1.7,
-  holdYaw: 0, holdTilt: 0, bucket: 0, moved: 0, dug: 0, placed: 0, bob: 0, stepAcc: 0, target: null, aim: null, inWater: 0,
+  holdYaw: 0, holdTilt: 0, speed: 0, bucket: 0, moved: 0, dug: 0, placed: 0, bob: 0, stepAcc: 0, target: null, aim: null, inWater: 0,
 };
 const keys = new Set(), btn = { l: false, r: false }, touchMove = { x: 0, y: 0 };
 let R, world, body, col, cc, camera, hooks, shovel, pick, load, ring, lastAct = 0, farT = 0, lockEl;
@@ -72,6 +78,7 @@ function bindInput() {
     if (e.code === 'Digit3') setTool('pick');
     if (e.code === 'Digit4') setTool('mud');
     if (e.code === 'Digit5') setTool('drop');
+    if (e.code === 'KeyF') cycleSpeed();
     if (e.code === 'KeyE') primary();
     if (e.code === 'KeyQ') P.holdYaw += Math.PI / 6;
     if (e.code === 'KeyR') P.holdTilt += Math.PI / 6;
@@ -96,6 +103,7 @@ export function setTool(t) {
   if (P.held && t !== 'hand') drop(0);
   P.tool = t; shovel.visible = t === 'shovel' || t === 'mud'; pick.visible = t === 'pick'; hooks.ui?.tool(t);
 }
+export function cycleSpeed() { P.speed = (P.speed + 1) % SPEEDS.length; hooks.ui?.speed?.(P.speed); hooks.toast?.(`작업 속도: ${SPEEDS[P.speed].name}`); }
 export function toggleTool() { setTool(P.tool === 'hand' ? 'shovel' : P.tool === 'shovel' ? 'pick' : 'hand'); }
 export const touch = { move: touchMove, btn, primary: () => primary(), secondary: () => { if (P.tool === 'hand' && P.held) throwStone(); }, rotate: () => { P.holdYaw += Math.PI / 6; }, jump: () => { P.jumpReq = true; } };
 
@@ -237,13 +245,16 @@ function specialUpdate(dt, time) {
   }
   if (!ok || !(btn.l || btn.r)) return;
   if (drop && time - lastAct > 0.45) { lastAct = time; hooks.dropRock?.(a.point.x, a.point.z); }
-  else if (!drop && time - lastAct > 0.12) {
+  else if (!drop && time - lastAct > SPEEDS[P.speed].mud) {
+    const SP = SPEEDS[P.speed];
     lastAct = time;
-    T.deposit(a.point.x, a.point.z, 0.36, 0.03, W);
-    const ws = W.sample(a.point.x, a.point.z);
-    if (ws && ws.h > 0.02) hooks.fx?.splash(a.point.x, ws.surf, a.point.z, 0.4); else hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z) + 0.3, a.point.z, 6);
-    if (Math.random() < 0.5) hooks.audio?.dump();
-    hooks.edit?.(a.point.x, a.point.z, 0.6);
+    T.deposit(a.point.x, a.point.z, SP.mudR, SP.mudAmt, W);
+    if (Math.random() < SP.fx) {
+      const ws = W.sample(a.point.x, a.point.z);
+      if (ws && ws.h > 0.02) hooks.fx?.splash(a.point.x, ws.surf, a.point.z, 0.4); else hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z) + 0.3, a.point.z, 6);
+      if (Math.random() < 0.5) hooks.audio?.dump();
+    }
+    hooks.edit?.(a.point.x, a.point.z, SP.mudR + 0.25);
   }
 }
 let swingT = -1;
@@ -287,26 +298,26 @@ function toolUpdate(dt, time) {
   const tgtRx = busy ? (btn.r ? -0.3 : -1.35) : -0.9;
   shovel.rotation.x += (tgtRx - shovel.rotation.x) * Math.min(1, dt * 14);
   shovel.position.y += ((busy ? -0.36 : -0.42) - shovel.position.y) * Math.min(1, dt * 14);
-  load.visible = P.bucket > 0.002; load.scale.setScalar(0.5 + Math.min(1, P.bucket / BUCKET_CAP) * 0.7);
+  load.visible = P.bucket > 0.002; load.scale.setScalar(0.5 + Math.min(1, P.bucket / LOAD_VIS) * 0.7);
+  const SP = SPEEDS[P.speed];
   if (!ok) return;
-  if (btn.l && time - lastAct > 0.26) {
+  if (btn.l && time - lastAct > SP.dig) {
     lastAct = time;
-    if (P.bucket >= BUCKET_CAP - 0.001) { hooks.toast?.('진흙이 가득 찼어요'); return; }
-    const depth = 0.075 * Math.min(1, (BUCKET_CAP - P.bucket) / 0.02);
-    const v = T.dig(a.point.x, a.point.z, 0.38, depth, W);
+    const v = T.dig(a.point.x, a.point.z, SP.digR, SP.depth, W);
     if (v < 0.0004) { hooks.toast?.('바위는 팔 수 없어요'); hooks.audio?.clink(); return; }
-    P.bucket = Math.min(BUCKET_CAP, P.bucket + v); P.dug += v;
-    hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z), a.point.z, 14);
-    hooks.audio?.dig(); hooks.edit?.(a.point.x, a.point.z, 0.45);
-  } else if (btn.r && time - lastAct > 0.2) {
+    P.bucket += v; P.dug += v; // 삽에 담는 양 제한 없음
+    if (Math.random() < SP.fx) hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z), a.point.z, 14);
+    if (Math.random() < SP.fx) hooks.audio?.dig();
+    hooks.edit?.(a.point.x, a.point.z, SP.digR + 0.07);
+  } else if (btn.r && time - lastAct > SP.dump) {
     lastAct = time;
     if (P.bucket < 0.0005) { hooks.toast?.('진흙이 없어요'); return; }
-    const amt = Math.min(P.bucket, 0.022);
-    const used = T.deposit(a.point.x, a.point.z, 0.34, amt, W);
+    const amt = Math.min(P.bucket, SP.dumpAmt);
+    const used = T.deposit(a.point.x, a.point.z, 0.34 + P.speed * 0.06, amt, W);
     P.bucket = Math.max(0, P.bucket - used);
     if (used > 0) {
       const y = T.groundAt(a.point.x, a.point.z);
-      hooks.fx?.dirt(a.point.x, y + 0.4, a.point.z, 10); hooks.audio?.dump();
+      if (Math.random() < SP.fx) { hooks.fx?.dirt(a.point.x, y + 0.4, a.point.z, 10); hooks.audio?.dump(); }
       const ws = W.sample(a.point.x, a.point.z); if (ws && ws.h > 0.02) hooks.fx?.splash(a.point.x, ws.surf, a.point.z, 0.6);
       hooks.edit?.(a.point.x, a.point.z, 0.6);
     }
