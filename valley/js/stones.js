@@ -2,11 +2,12 @@
 import * as THREE from 'three';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell } from './terrain.js';
+import { physState, CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell } from './terrain.js';
 import * as W from './water.js';
 import { GLSL_NOISE, rng } from './noise.js';
 
 const perlin = new ImprovedNoise();
+const T_rev = () => physState.rev;
 export const stones = [];
 export const byHandle = new Map();
 let R, world;
@@ -92,6 +93,16 @@ function rockGeometry(r, seed, detail) {
 }
 
 export function initPhysics(RAPIER, w) { R = RAPIER; world = w; }
+// 큰 바위: 평소엔 고정된 지형처럼 있다가 손으로 잡으면 움직이는 돌이 된다
+export function makeDynamic(st) {
+  if (!st.fixed) return;
+  st.body.setBodyType(R.RigidBodyType.Dynamic, true);
+  st.body.setLinearDamping(0.1); st.body.setAngularDamping(0.6);
+  st.body.setAdditionalMass(0, true);
+  st.fixed = false; needRaster = true;
+}
+let needRaster = true, lastRev = -1;
+export function touch() { needRaster = true; }
 
 export function addStone(x, y, z, r, opts = {}) {
   const seed = opts.seed ?? ((rand() * 1e9) | 0);
@@ -110,10 +121,10 @@ export function addStone(x, y, z, r, opts = {}) {
   let cd = R.ColliderDesc.convexHull(new Float32Array(pts)) || R.ColliderDesc.ball(r);
   cd.setDensity(2400).setFriction(0.85).setRestitution(0.06);
   const vol = 4 / 3 * Math.PI * ext[0] * ext[1] * ext[2] * 0.8;
-  if (!fixed) cd.setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS).setContactForceEventThreshold(vol * 2400 * 9.81 * 6 + 60);
+  cd.setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS).setContactForceEventThreshold(vol * 2400 * 9.81 * 6 + 60);
   const collider = world.createCollider(cd, body);
   mesh.position.set(x, y, z); mesh.quaternion.copy(q);
-  const st = { mesh, body, collider, ext: ext.map(e => e * 1.04), r, fixed, vol, mass: fixed ? Infinity : body.mass(), lastHit: 0, above: true, surf: -100, held: false, moved: false, seed };
+  const st = { mesh, body, collider, ext: ext.map(e => e * 1.04), r, fixed, vol, mass: fixed ? vol * 2400 : body.mass(), boulder: fixed, lastHit: 0, above: true, surf: -100, held: false, moved: false, seed };
   stones.push(st); byHandle.set(collider.handle, st);
   return st;
 }
@@ -151,7 +162,9 @@ export function spawnAll(group, count) {
 // ───── 물막이 래스터화 ─────
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix3(), _e = new THREE.Matrix4();
 const order = [];
-export function rasterize() {
+export function rasterize(force) {
+  if (!force && !needRaster && T_rev() === lastRev) return false;
+  needRaster = false; lastRev = T_rev();
   W.beginSolid();
   order.length = 0;
   for (const st of stones) {
@@ -196,9 +209,9 @@ export function rasterize() {
     if (W.sBot[k] < 1e8) { // 돌 기둥: 땅(+진흙) ~ 돌 윗면 사이가 공극
       W.ptop[k] = W.solid[k];
       W.seal[k] = Math.min(W.solid[k], ground[k] + fill[k]);
-    } else if (fill[k] > 0) { const v = fill[k] * 0.38; fill[k] = 0; ground[k] += v; loose[k] += v; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j); }
+    } else if (fill[k] > 0) { const v = fill[k] * 0.38; fill[k] = 0; ground[k] += v; loose[k] += v; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); }
     const c = cap[k]; if (c <= 0) continue;
-    if (W.sBot[k] > 1e8) { cap[k] = 0; ground[k] += c; loose[k] += c; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j); continue; }
+    if (W.sBot[k] > 1e8) { cap[k] = 0; ground[k] += c; loose[k] += c; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); continue; }
     W.solid[k] += c;
     if (Math.abs(W.solid[k] - lastVis[k]) > 0.01) { lastVis[k] = W.solid[k]; markDirtyCell(i, j); }
   }
@@ -242,6 +255,7 @@ export function waterForces(cb) {
 export function sync() {
   for (const st of stones) {
     if (st.fixed || st.body.isSleeping()) continue;
+    needRaster = true;
     const t = st.body.translation(), r = st.body.rotation();
     st.mesh.position.set(t.x, t.y, t.z); st.mesh.quaternion.set(r.x, r.y, r.z, r.w);
     if (t.y < -20) { st.body.setTranslation({ x: 0, y: 8, z: 30 }, true); st.body.setLinvel({ x: 0, y: 0, z: 0 }, true); }

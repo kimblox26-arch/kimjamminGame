@@ -32,19 +32,47 @@ export function beginSolid() {
   }
 }
 
+// 물이 있는 곳 주변만 계산(행마다 활성 열 범위) — 계곡 대부분은 말라 있어 연산이 크게 준다
+const lo = new Int32Array(NZV).fill(SX0), hi = new Int32Array(NZV).fill(SX1 - 1);
+const wlo = new Int32Array(NZV), whi = new Int32Array(NZV);
+export function computeActive() {
+  for (let j = 0; j < NZV; j++) {
+    let a = SX1, b = SX0 - 1;
+    for (let i = SX0; i < SX1; i++) if (h[j * NXV + i] > 0) { if (i < a) a = i; b = i; }
+    wlo[j] = a; whi[j] = b;
+  }
+  lo.fill(SX0); hi.fill(SX1 - 1);
+  widen();
+}
+function widen() {
+  for (const k of src) { const j = (k / NXV) | 0, i = k % NXV; if (i < wlo[j]) wlo[j] = i; if (i > whi[j]) whi[j] = i; }
+  for (let j = 0; j < NZV; j++) {
+    let a = SX1, b = SX0 - 1;
+    for (let jj = Math.max(0, j - 1); jj <= Math.min(NZ, j + 1); jj++) if (wlo[jj] <= whi[jj]) { if (wlo[jj] < a) a = wlo[jj]; if (whi[jj] > b) b = whi[jj]; }
+    const nl = a > b ? SX1 : Math.max(SX0, a - 2), nh = a > b ? SX0 - 1 : Math.min(SX1 - 1, b + 2);
+    // 범위에서 빠지는 셀은 남은 흐름을 지운다
+    for (let i = lo[j]; i <= hi[j]; i++) if (i < nl || i > nh) { const k = j * NXV + i; fL[k] = fR[k] = fU[k] = fD[k] = pL[k] = pR[k] = pU[k] = pD[k] = vx[k] = vz[k] = 0; }
+    lo[j] = nl; hi[j] = nh;
+  }
+}
 export function step(dt) {
   const kf = dt * G;
   // 수위: 공극이 차기 전엔 seal + h/φ, 다 차면 돌 위로 흐름
-  for (let j = 0; j < NZV; j++) for (let i = SX0; i < SX1; i++) {
-    const k = j * NXV + i, hk = h[k], cp = PHI * (ptop[k] - seal[k]);
-    if (cp > 1e-4) {
-      if (hk <= cp) { lev[k] = seal[k] + hk / PHI; ho[k] = 0; hp[k] = hk / PHI; }
-      else { lev[k] = solid[k] + hk - cp; ho[k] = hk - cp; hp[k] = ptop[k] - seal[k]; }
-    } else { lev[k] = solid[k] + hk; ho[k] = hk; hp[k] = 0; }
+  for (let j = 0; j < NZV; j++) {
+    const i1 = Math.min(SX1 - 1, hi[j] + 1);
+    for (let i = Math.max(SX0, lo[j] - 1); i <= i1; i++) {
+      const k = j * NXV + i, hk = h[k], cp = PHI * (ptop[k] - seal[k]);
+      if (cp > 1e-4) {
+        if (hk <= cp) { lev[k] = seal[k] + hk / PHI; ho[k] = 0; hp[k] = hk / PHI; }
+        else { lev[k] = solid[k] + hk - cp; ho[k] = hk - cp; hp[k] = ptop[k] - seal[k]; }
+      } else { lev[k] = solid[k] + hk; ho[k] = hk; hp[k] = 0; }
+    }
   }
   for (let j = 0; j < NZV; j++) {
-    for (let i = SX0; i < SX1; i++) {
-      const k = j * NXV + i, hk = h[k], H = lev[k], o = ho[k], q = hp[k];
+    for (let i = lo[j]; i <= hi[j]; i++) {
+      const k = j * NXV + i, hk = h[k];
+      if (hk <= 0) { fL[k] = fR[k] = fU[k] = fD[k] = pL[k] = pR[k] = pU[k] = pD[k] = 0; continue; }
+      const H = lev[k], o = ho[k], q = hp[k];
       let l = 0, r = 0, u = 0, d = 0, a = 0, b = 0, c = 0, e = 0;
       if (i > SX0) { l = flux(fL[k], H, o, k - 1, kf, dt); if (q > 0 && H > lev[k - 1]) a = KP * q * (H - lev[k - 1]); }
       if (i < SX1 - 1) { r = flux(fR[k], H, o, k + 1, kf, dt); if (q > 0 && H > lev[k + 1]) b = KP * q * (H - lev[k + 1]); }
@@ -58,14 +86,15 @@ export function step(dt) {
   }
   let out = 0;
   for (let j = 0; j < NZV; j++) {
-    for (let i = SX0; i < SX1; i++) {
+    let wa = SX1, wb = SX0 - 1;
+    for (let i = lo[j]; i <= hi[j]; i++) {
       const k = j * NXV + i;
       const inL = i > SX0 ? fR[k - 1] : 0, inR = i < SX1 - 1 ? fL[k + 1] : 0;
       const inU = j > 0 ? fD[k - NXV] : 0, inD = j < NZ ? fU[k + NXV] : 0;
       const sin = (i > SX0 ? pR[k - 1] : 0) + (i < SX1 - 1 ? pL[k + 1] : 0) + (j > 0 ? pD[k - NXV] : 0) + (j < NZ ? pU[k + NXV] : 0);
       const ho0 = h[k];
       let hn = ho0 + dt * (inL + inR + inU + inD + sin - fL[k] - fR[k] - fU[k] - fD[k] - pL[k] - pR[k] - pU[k] - pD[k]) / A;
-      if (hn < 0) hn = 0;
+      if (hn < 1e-7) hn = 0; else { if (i < wa) wa = i; wb = i; }
       h[k] = hn;
       const ha = Math.max(0, (ho0 + hn) * 0.5 - PHI * (ptop[k] - seal[k]));
       if (ha > 0.003) {
@@ -74,10 +103,12 @@ export function step(dt) {
         vx[k] = ux; vz[k] = uz;
       } else { vx[k] = 0; vz[k] = 0; }
     }
-    if (j === MEAS_J) for (let i = SX0; i < SX1; i++) { const k = j * NXV + i; out += fD[k] + pD[k] - fU[k + NXV] - pU[k + NXV]; }
+    wlo[j] = wa; whi[j] = wb;
+    if (j === MEAS_J) for (let i = lo[j]; i <= hi[j]; i++) { const k = j * NXV + i; out += fD[k] + pD[k] - fU[k + NXV] - pU[k + NXV]; }
   }
   const add = state.inflow * dt / (A * src.length);
   for (const k of src) h[k] += add;
+  widen();
   state.outflow = out;
   const a = Math.min(1, dt * 0.6); state.outSm += (out - state.outSm) * a;
   state.steps++; state.time += dt;
@@ -94,15 +125,18 @@ function flux0(f0, hf, dH, kf, dt) {
   return f > 0 ? f : 0;
 }
 
-// 침식(부어 놓은 흙만) · 거품 · 젖음 — 프레임당 한 번
+// 침식(부어 놓은 흙만) · 거품 · 젖음 — 프레임당 한 번, 물 있는 곳만
+let phase = 0;
 export function post(dt) {
-  let mx = 0;
-  for (let j = 1; j < NZ; j++) for (let i = SX0 + 1; i < SX1 - 1; i++) {
-    const k = j * NXV + i, hk = ho[k];
-    const sp = Math.hypot(vx[k], vz[k]);
-    if (h[k] > 0.004) wet[k] = 1;
-    if (hk > 0.004) {
-      wet[k] = 1;
+  let mx = 0, st = 0;
+  for (let j = 1; j < NZ; j++) {
+    const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
+    for (let i = i0; i <= i1; i++) {
+      const k = j * NXV + i, hk = ho[k];
+      if (h[k] > 0.004) wet[k] = 1;
+      if (j < MEAS_J) { const dv = h[k] - h0[k]; if (dv > 0) st += dv; }
+      if (hk <= 0.004) continue;
+      const sp = Math.hypot(vx[k], vz[k]);
       const cp = 0.008 * Math.max(0, sp - 0.6) * Math.min(hk, 0.3) / 0.3;
       if (sed[k] < cp && (loose[k] > 0 || cap[k] > 0)) {
         let e = (cp - sed[k]) * 0.5 * dt;
@@ -119,24 +153,22 @@ export function post(dt) {
       const tgt = Math.min(1, sstep(0.9, 2.2, sp) + sstep(0.15, 0.6, grad) * sstep(0.3, 0.8, sp) * 0.7);
       foam[k] += (tgt - foam[k]) * Math.min(1, dt * (tgt > foam[k] ? 4 : 0.8));
       if (j < MEAS_J && hk > mx) mx = hk;
-    } else {
-      if (h[k] <= 0.004) wet[k] = Math.max(0, wet[k] - dt / 45);
-      foam[k] *= 0.9;
-      if (sed[k] > 0) { loose[k] += sed[k]; ground[k] += sed[k]; sed[k] = 0; markDirtyCell(i, j); }
+      // 퇴적물 이류(반 라그랑지)
+      const px = i - vx[k] * dt / CELL, pz = j - vz[k] * dt / CELL;
+      const ii = Math.max(SX0, Math.min(SX1 - 2, px | 0)), jj = Math.max(0, Math.min(NZ - 1, pz | 0));
+      const u = Math.min(1, Math.max(0, px - ii)), v = Math.min(1, Math.max(0, pz - jj)), b = jj * NXV + ii;
+      sed2[k] = (sed[b] * (1 - u) + sed[b + 1] * u) * (1 - v) + (sed[b + NXV] * (1 - u) + sed[b + NXV + 1] * u) * v;
     }
+    for (let i = i0; i <= i1; i++) { const k = j * NXV + i; if (ho[k] > 0.004) sed[k] = sed2[k]; }
   }
-  // 퇴적물 이류(반 라그랑지)
-  sed2.set(sed);
-  for (let j = 1; j < NZ; j++) for (let i = SX0 + 1; i < SX1 - 1; i++) {
-    const k = j * NXV + i; if (h[k] <= 0.004) continue;
-    const px = i - vx[k] * dt / CELL, pz = j - vz[k] * dt / CELL;
-    const ii = Math.max(SX0, Math.min(SX1 - 2, px | 0)), jj = Math.max(0, Math.min(NZ - 1, pz | 0));
-    const u = Math.min(1, Math.max(0, px - ii)), v = Math.min(1, Math.max(0, pz - jj)), b = jj * NXV + ii;
-    sed2[k] = (sed[b] * (1 - u) + sed[b + 1] * u) * (1 - v) + (sed[b + NXV] * (1 - u) + sed[b + NXV + 1] * u) * v;
+  // 마른 곳: 젖음·거품 서서히 줄이기 (8프레임에 나눠 전체를 훑음)
+  phase = (phase + 1) & 7;
+  for (let j = 1 + phase; j < NZ; j += 8) for (let i = SX0 + 1; i < SX1 - 1; i++) {
+    const k = j * NXV + i; if (h[k] > 0.004) continue;
+    if (wet[k] > 0) wet[k] = Math.max(0, wet[k] - dt * 8 / 45);
+    if (foam[k] > 0) foam[k] *= 0.4;
+    if (sed[k] > 0) { loose[k] += sed[k]; ground[k] += sed[k]; sed[k] = 0; markDirtyCell(i, j); }
   }
-  sed.set(sed2);
-  let st = 0;
-  for (let j = 0; j < MEAS_J; j++) for (let i = SX0; i < SX1; i++) { const k = j * NXV + i, dv = h[k] - h0[k]; if (dv > 0) st += dv; }
   state.stored = st * A;
   state.maxDepth = mx;
 }
@@ -322,7 +354,8 @@ export function prefill() {
     for (let i = SX0; i < SX1; i++) {
       const k = idx(i, j); let d = lev[k] - solid[k];
       if (Math.abs(X0 + i * CELL - cx) < 0.6 && z > 4.5) d = Math.max(d, 0.17 - Math.max(0, solid[k] - (baseY(z) - 0.42)));
-      h[k] = d > 1.5 ? 0 : d;
+      h[k] = d > 1.5 || Math.abs(X0 + i * CELL - cx) > 2.6 ? 0 : d;
     }
   }
+  computeActive();
 }

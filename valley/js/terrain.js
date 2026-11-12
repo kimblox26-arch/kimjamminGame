@@ -124,49 +124,58 @@ float fade = 1. - smoothstep(5., 35., length(vViewPosition));
 float sSoil = vMat.x, sLoose = vMat.y, sGrass = vMat.z, sDug = vMat.w;
 vec4 wd = waterAt(P.xz); float under = wd.r - P.y;
 float wet = clamp(max(wd.b*0.9, smoothstep(-0.06, 0.01, under)), 0., 1.);
-// 암반 (경사면은 세로 좌표로 투영)
-vec3 tw = pow(abs(N), vec3(4.)); tw /= tw.x + tw.y + tw.z;
-vec2 rp = P.zy*tw.x + P.xz*tw.y + P.xy*tw.z;
-float rn = fbm2(P.zy*0.5)*tw.x + fbm2(P.xz*0.5)*tw.y + fbm2(P.xy*0.5)*tw.z;
-float rn2 = fbm2(P.zy*2.1+4.)*tw.x + fbm2(P.xz*2.1+4.)*tw.y + fbm2(P.xy*2.1+4.)*tw.z;
-float strata = sin(P.y*5. + rn*9. + rn2*3.)*.5+.5;
-vec3 rock = mix(vec3(0.19,0.18,0.165), vec3(0.42,0.40,0.36), rn) * (0.86 + 0.14*strata) * (0.8 + 0.35*rn2);
-rock = mix(rock, vec3(0.30,0.36,0.18), smoothstep(0.6,0.75,fbm2(rp*1.6 + P.y))*0.5*smoothstep(0.7,0.2,slope));
-float cr = smoothstep(0.018, 0.0, abs(vnoise2(rp*2.6) - 0.5)) * (0.2 + 0.8*fade);
-rock *= 1. - cr*0.22;
-float rockH = rn*0.22 + rn2*0.05 + strata*0.008 - cr*0.015 + vnoise2(rp*15.)*0.006*fade;
-// 자갈: 큰 돌 + 잔자갈 + 모래
-vec3 vb = voronoi(P.xz*4.2), vs = voronoi(P.xz*13.);
-float big = step(0.68, hash12(vec2(vb.y, 7.1)));
-float domeB = sqrt(max(0., 1. - vb.x*vb.x*2.3)) * smoothstep(0.0, 0.07, vb.z);
-float domeS = sqrt(max(0., 1. - vs.x*vs.x*2.3)) * smoothstep(0.0, 0.1, vs.z);
-float inB = big * smoothstep(0.08, 0.2, domeB);
-vec3 sand = mix(vec3(0.44,0.39,0.31), vec3(0.55,0.49,0.39), vnoise2(P.xz*30.));
-vec3 cB = mix(vec3(0.40,0.39,0.37), vec3(0.66,0.62,0.55), hash12(vec2(vb.y,1.3)));
-cB = mix(cB, vec3(0.26,0.25,0.24), step(0.8, hash12(vec2(vb.y,5.2)))); cB = mix(cB, vec3(0.56,0.45,0.35), step(0.88, hash12(vec2(vb.y,3.7)))*0.8);
-vec3 cS = mix(vec3(0.36,0.35,0.33), vec3(0.62,0.58,0.51), hash12(vec2(vs.y,2.1)));
-cS = mix(cS, vec3(0.5,0.4,0.32), step(0.85, hash12(vec2(vs.y,9.3)))*0.7);
-vec3 peb = mix(mix(sand, cS, smoothstep(0.05, 0.35, domeS)), cB, inB);
-peb *= (0.9 + 0.2*vnoise2(P.xz*55.)*fade + 0.1) * mix(mix(0.6, 1., domeS), mix(0.55, 1.05, domeB), inB);
-float pebH = mix(domeS*0.012, 0.012 + domeB*0.05, inB);
-vec3 dirt = mix(vec3(0.27,0.19,0.12), vec3(0.42,0.31,0.20), fbm2(P.xz*3.));
-float dirtH = vnoise2(P.xz*28.)*0.006*fade + fbm2(P.xz*7.)*0.02;
-vec3 gr = mix(vec3(0.16,0.25,0.06), vec3(0.32,0.38,0.11), fbm2(P.xz*0.9));
-gr = mix(gr, vec3(0.40,0.35,0.16), smoothstep(0.55,0.8,fbm2(P.xz*2.1+5.))*0.6);
 float rockW = max(1. - smoothstep(0.03, 0.10, sSoil + sLoose), smoothstep(0.38, 0.62, slope));
 float gravW = (1. - smoothstep(0.24, 0.40, sSoil)) * (1. - rockW);
 float dirtW = max(0., 1. - rockW - gravW);
-vec3 alb = rock*rockW + peb*gravW + mix(dirt, gr, sGrass)*dirtW;
-float tH = rockH*rockW + pebH*gravW + dirtH*dirtW;
-float tRough = 0.86*rockW + 0.78*gravW + 0.95*dirtW;
+vec3 alb = vec3(0.); float tH = 0., tRough = 0.;
+if (rockW > 0.002) { // 암반 (3축 투영)
+  vec3 tw = pow(abs(N), vec3(4.)); tw /= tw.x + tw.y + tw.z;
+  vec2 rp = P.zy*tw.x + P.xz*tw.y + P.xy*tw.z;
+  float rn = fbm2(P.zy*0.5)*tw.x + fbm2(P.xz*0.5)*tw.y + fbm2(P.xy*0.5)*tw.z;
+  float rn2 = vnoise2(rp*2.1 + 4.)*0.6 + vnoise2(rp*4.3)*0.4;
+  float strata = sin(P.y*5. + rn*9. + rn2*3.)*.5+.5;
+  vec3 rock = mix(vec3(0.19,0.18,0.165), vec3(0.42,0.40,0.36), rn) * (0.86 + 0.14*strata) * (0.8 + 0.35*rn2);
+  rock = mix(rock, vec3(0.30,0.36,0.18), smoothstep(0.6,0.75,vnoise2(rp*1.6 + P.y))*0.5*smoothstep(0.7,0.2,slope));
+  float cr = smoothstep(0.018, 0.0, abs(vnoise2(rp*2.6) - 0.5)) * (0.2 + 0.8*fade);
+  rock *= 1. - cr*0.1;
+  alb += rock*rockW; tRough += 0.86*rockW;
+  tH += (rn*0.22 + rn2*0.05 + strata*0.008 - cr*0.015 + vnoise2(rp*15.)*0.006*fade) * rockW;
+}
+if (gravW > 0.002) { // 자갈: 큰 돌 + 잔자갈 + 모래
+  vec3 vb = voronoi(P.xz*4.2), vs = voronoi(P.xz*13.);
+  float big = step(0.68, hash12(vec2(vb.y, 7.1)));
+  float domeB = sqrt(max(0., 1. - vb.x*vb.x*2.3)) * smoothstep(0.0, 0.07, vb.z);
+  float domeS = sqrt(max(0., 1. - vs.x*vs.x*2.3)) * smoothstep(0.0, 0.1, vs.z);
+  float inB = big * smoothstep(0.08, 0.2, domeB);
+  vec3 sand = mix(vec3(0.44,0.39,0.31), vec3(0.55,0.49,0.39), vnoise2(P.xz*30.));
+  vec3 cB = mix(vec3(0.40,0.39,0.37), vec3(0.66,0.62,0.55), hash12(vec2(vb.y,1.3)));
+  cB = mix(cB, vec3(0.26,0.25,0.24), step(0.8, hash12(vec2(vb.y,5.2)))); cB = mix(cB, vec3(0.56,0.45,0.35), step(0.88, hash12(vec2(vb.y,3.7)))*0.8);
+  vec3 cS = mix(vec3(0.36,0.35,0.33), vec3(0.62,0.58,0.51), hash12(vec2(vs.y,2.1)));
+  cS = mix(cS, vec3(0.5,0.4,0.32), step(0.85, hash12(vec2(vs.y,9.3)))*0.7);
+  vec3 peb = mix(mix(sand, cS, smoothstep(0.05, 0.35, domeS)), cB, inB);
+  peb *= (0.9 + 0.2*vnoise2(P.xz*55.)*fade + 0.1) * mix(mix(0.6, 1., domeS), mix(0.55, 1.05, domeB), inB);
+  alb += peb*gravW; tRough += 0.78*gravW;
+  tH += mix(domeS*0.012, 0.012 + domeB*0.05, inB) * gravW;
+}
+if (dirtW > 0.002) { // 흙 / 풀밭
+  float fb = fbm2(P.xz*0.9);
+  vec3 dirt = mix(vec3(0.27,0.19,0.12), vec3(0.42,0.31,0.20), vnoise2(P.xz*3.));
+  vec3 gr = mix(vec3(0.16,0.25,0.06), vec3(0.32,0.38,0.11), fb);
+  gr = mix(gr, vec3(0.40,0.35,0.16), smoothstep(0.55,0.8,vnoise2(P.xz*2.1+5.))*0.6);
+  alb += mix(dirt, gr, sGrass)*dirtW; tRough += 0.95*dirtW;
+  tH += (vnoise2(P.xz*28.)*0.006*fade + fb*0.02) * dirtW;
+}
 float fresh = clamp(max(sDug*1.2, sLoose*10.), 0., 1.) * (1. - rockW*0.7);
-vec3 fd = mix(vec3(0.23,0.15,0.09), vec3(0.34,0.24,0.15), vnoise2(P.xz*9.));
-float fdH = fbm2(P.xz*9.)*0.03 + vnoise2(P.xz*40.)*0.006*fade;
-alb = mix(alb, fd, fresh); tH = mix(tH, fdH, fresh);
+if (fresh > 0.002) {
+  vec3 fd = mix(vec3(0.23,0.15,0.09), vec3(0.34,0.24,0.15), vnoise2(P.xz*9.));
+  float fdH = fbm2(P.xz*9.)*0.03 + vnoise2(P.xz*40.)*0.006*fade;
+  alb = mix(alb, fd, fresh); tH = mix(tH, fdH, fresh);
+}
 alb = mix(alb, alb*vec3(0.7,0.85,0.6), smoothstep(0.3,0.0,abs(under))*rockW*0.6);
 alb *= mix(1., 0.5, wet); tRough = mix(tRough, 0.2, wet*0.85);
 alb = mix(alb, alb*vec3(0.78,0.92,0.88), smoothstep(0.,0.3,under));
-float tCaus = under > 0. ? caustic(P.xz, uTime) * smoothstep(0.,0.06,under) * exp(-under*1.6) * max(N.y,0.) * max(uSunDir.y,0.) * (1.-0.7*uRain) : 0.;
+float tCaus = 0.;
+if (under > 0. && under < 3.) tCaus = caustic(P.xz, uTime) * smoothstep(0.,0.06,under) * exp(-under*1.6) * max(N.y,0.) * max(uSunDir.y,0.) * (1.-0.7*uRain);
 diffuseColor.rgb *= alb;
 `;
 
@@ -174,7 +183,7 @@ diffuseColor.rgb *= alb;
 export let mesh, geo;
 export const diag = new Uint8Array(NX * NZ); // 사각형마다 대각선 방향 (경사를 따라)
 const dirty = { i0: 1e9, i1: -1, j0: 1e9, j1: -1 };
-export const physState = { dirty: false, t: 0 };
+export const physState = { dirty: false, t: 0, rev: 0 };
 
 export function buildMesh(material) {
   geo = new THREE.BufferGeometry();
@@ -210,12 +219,13 @@ function writeRegion(i0, i1, j0, j1) {
     mat[k * 4] = soil[k]; mat[k * 4 + 1] = loose[k] + cap[k] + fill[k]; mat[k * 4 + 2] = grass[k]; mat[k * 4 + 3] = dug[k];
   }
 }
-function markDirty(i0, i1, j0, j1) {
+function markDirty(i0, i1, j0, j1, phys = true) {
   dirty.i0 = Math.min(dirty.i0, i0); dirty.i1 = Math.max(dirty.i1, i1);
   dirty.j0 = Math.min(dirty.j0, j0); dirty.j1 = Math.max(dirty.j1, j1);
-  physState.dirty = true;
+  physState.rev++; if (phys) physState.dirty = true;
 }
-export function markDirtyCell(i, j) { markDirty(Math.max(0, i - 1), Math.min(NX, i + 1), Math.max(0, j - 1), Math.min(NZ, j + 1)); }
+// phys=false: 보이는 메시만 갱신(침식 등 작은 변화는 물리 높이장을 다시 만들지 않음)
+export function markDirtyCell(i, j, phys = false) { markDirty(Math.max(0, i - 1), Math.min(NX, i + 1), Math.max(0, j - 1), Math.min(NZ, j + 1), phys); }
 export function flushMesh() {
   if (dirty.i1 < 0) return false;
   const i0 = Math.max(0, dirty.i0 - 1), i1 = Math.min(NX, dirty.i1 + 1), j0 = Math.max(0, dirty.j0 - 1), j1 = Math.min(NZ, dirty.j1 + 1);

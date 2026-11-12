@@ -4,7 +4,8 @@ import * as T from './terrain.js';
 import * as W from './water.js';
 import * as S from './stones.js';
 
-const MAX_LIFT = 320, BUCKET_CAP = 0.3;
+const BUCKET_CAP = 0.3;
+const kg = m => (m >= 1000 ? (m / 1000).toFixed(1) + ' t' : Math.round(m) + ' kg');
 export const P = {
   yaw: Math.PI, pitch: -0.25, vy: 0, grounded: false, tool: 'hand', held: null, holdDist: 1.7,
   holdYaw: 0, holdTilt: 0, bucket: 0, moved: 0, dug: 0, placed: 0, bob: 0, stepAcc: 0, target: null, aim: null, inWater: 0,
@@ -70,7 +71,7 @@ function bindInput() {
     if (!document.pointerLockElement) return;
     look(e.movementX * 0.0022, e.movementY * 0.0022);
   });
-  addEventListener('wheel', e => { if (P.held) P.holdDist = THREE.MathUtils.clamp(P.holdDist - Math.sign(e.deltaY) * 0.15, 1.0, 3.0); }, { passive: true });
+  addEventListener('wheel', e => { if (P.held) P.holdDist = THREE.MathUtils.clamp(P.holdDist - Math.sign(e.deltaY) * 0.15, P.held.rb * 1.2 + 0.8, 3.0 + P.held.rb); }, { passive: true });
 }
 export function look(dx, dy) { P.yaw -= dx; P.pitch = THREE.MathUtils.clamp(P.pitch - dy, -1.45, 1.35); }
 export function setTool(t) {
@@ -84,8 +85,8 @@ function primary() {
   if (P.tool !== 'hand') return;
   if (P.held) { drop(0); return; }
   const t = P.target;
-  if (!t || t.fixed) return;
-  if (t.mass > MAX_LIFT) { hooks.toast?.(`너무 무거워요! (${Math.round(t.mass)} kg)`); return; }
+  if (!t) return;
+  if (t.fixed) S.makeDynamic(t); // 큰 바위도 들 수 있다 (무거울수록 느리게 움직임)
   P.held = t; t.held = true; t.moved = true;
   t.body.setGravityScale(0, true); t.body.setAngularDamping(4);
   t.body.resetForces(true);
@@ -94,7 +95,7 @@ function primary() {
   const r = t.body.rotation(); qC.set(r.x, r.y, r.z, r.w);
   qY.setFromAxisAngle(tmp.set(0, 1, 0), P.yaw);
   t.qOff = qY.clone().invert().multiply(qC);
-  P.holdDist = THREE.MathUtils.clamp(P.aim?.dist ?? 1.7, 1.2, 2.2);
+  P.holdDist = Math.max(THREE.MathUtils.clamp(P.aim?.dist ?? 1.7, 1.2, 2.2), t.rb * 1.2 + 0.8);
   hooks.audio?.lift();
 }
 function drop(speed) {
@@ -121,7 +122,7 @@ export function prePhysics(dt) {
   let ty = cp.y + fwd.y * P.holdDist - 0.1;
   ty = Math.max(ty, T.groundAt(tx, tz) + t.ext[1] * 0.6);
   const p = t.body.translation();
-  const k = THREE.MathUtils.clamp(70 / t.mass, 0.35, 1);
+  const k = THREE.MathUtils.clamp(Math.pow(70 / t.mass, 0.35), 0.18, 1);
   let vx = (tx - p.x) * 11 * k, vy = (ty - p.y) * 11 * k, vz = (tz - p.z) * 11 * k;
   const vm = Math.hypot(vx, vy, vz), vmax = 7 * k + 1;
   if (vm > vmax) { vx *= vmax / vm; vy *= vmax / vm; vz *= vmax / vm; }
@@ -135,8 +136,8 @@ export function prePhysics(dt) {
   const w = Math.min(ang * 7 * k, 8);
   t.body.setAngvel({ x: qe.x / s * w, y: qe.y / s * w, z: qe.z / s * w }, true);
   const dist = Math.hypot(tx - p.x, ty - p.y, tz - p.z);
-  farT = dist > 1.6 ? farT + dt : 0;
-  if (farT > 0.6) { drop(0); hooks.toast?.('돌을 놓쳤어요'); }
+  farT = dist > 1.6 + (t.rb || 0) ? farT + dt : 0;
+  if (farT > (t.mass > 1000 ? 2.5 : 0.6)) { drop(0); hooks.toast?.('돌을 놓쳤어요'); }
 }
 
 export function update(dt, time) {
@@ -153,7 +154,7 @@ export function update(dt, time) {
   const feet = p.y - 0.83;
   P.inWater = ws && ws.h > 0.01 ? Math.max(0, ws.surf - feet) : 0;
   let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 5.2 : 3.0;
-  if (P.held) speed *= 1 - Math.min(0.55, P.held.mass / 450);
+  if (P.held) speed *= 1 - Math.min(0.6, Math.pow(P.held.mass / 3000, 0.5) * 0.6);
   if (P.inWater > 0.08) speed *= 0.62;
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
   const dx = (-sy * mz + cy * mx) * speed, dz = (-cy * mz - sy * mx) * speed;
@@ -193,12 +194,12 @@ function aim() {
     const toi = hit.timeOfImpact ?? hit.toi;
     const st = S.byHandle.get(hit.collider.handle);
     P.aim = { dist: toi, point: ray.o.clone().addScaledVector(ray.d, toi), stone: st, terrain: hit.collider === T.getHF() };
-    if (st && !st.fixed && toi < 3.2) P.target = st;
+    if (st && toi < 3.2 + (st.rb || 0)) P.target = st;
   }
   const show = P.tool === 'hand' && !P.held ? P.target : null;
   S.setHighlight(show);
   let prompt = '';
-  if (P.tool === 'hand' && !P.held && P.target) prompt = P.target.mass > MAX_LIFT ? `${Math.round(P.target.mass)} kg · 무거움` : `${Math.round(P.target.mass)} kg`;
+  if (P.tool === 'hand' && !P.held && P.target) prompt = kg(P.target.mass);
   hooks.ui?.prompt(prompt, !!(P.held || P.target));
 }
 

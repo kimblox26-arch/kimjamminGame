@@ -74,7 +74,9 @@ async function boot(q) {
   const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene(); es.add(makeSky());
   scene.environment = pm.fromScene(es, 0, 0.1, 1000).texture;
   const tm = T.terrainMaterial();
-  scene.add(T.buildMesh(tm)); scene.add(T.buildOuter(tm));
+  const inner = T.buildMesh(tm); inner.layers.enable(1); scene.add(inner);
+  const outer = T.buildOuter(tm); outer.castShadow = false; scene.add(outer);
+  sun.layers.enable(1); hemi.layers.enable(1);
 
   prog(0.12); await frame();
   await RAPIER.init();
@@ -87,6 +89,7 @@ async function boot(q) {
   prog(0.2); await frame();
   const sg = new THREE.Group(); scene.add(sg); scene.add(S.outlineMesh());
   S.spawnAll(sg, q.stones);
+  S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
   prog(0.32); await frame();
   N.buildTrees(scene, q.pine, q.broad);
   N.buildGrass(scene, q.grass);
@@ -145,10 +148,29 @@ function resize() {
   FX.setScale(h * pr / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
 }
 
+// ───── 자동 해상도: 30fps를 지키도록 렌더 해상도를 조절 ─────
+const dyn = { scale: 1, avg: 33, t: 0, cool: 0, ceil: 1, lastUp: -99 };
+function dynRes(interval, dt) {
+  dyn.avg += (interval - dyn.avg) * 0.08; dyn.t += dt; dyn.cool -= dt;
+  if (dyn.t < 1.2 || dyn.cool > 0) return;
+  dyn.t = 0;
+  let s = dyn.scale;
+  if (dyn.avg > 50) s *= 0.75;
+  else if (dyn.avg > 37.5) s *= 0.88;
+  else if (dyn.avg < 34.5 && s < dyn.ceil) { s = Math.min(dyn.ceil, s * 1.07); dyn.lastUp = clock; }
+  else return;
+  if (s < dyn.scale && clock - dyn.lastUp < 3) dyn.ceil = Math.max(0.5, dyn.scale * 0.97); // 올렸다가 느려지면 그 위로는 안 올림
+  s = Math.max(0.5, Math.min(1, s));
+  if (Math.abs(s - dyn.scale) < 0.01) return;
+  dyn.scale = s; dyn.cool = 1.5;
+  renderer.setPixelRatio((perf ? Math.min(devicePixelRatio, 1) * 0.75 : basePR) * s);
+  resize();
+}
+
 // ───── 최적화 모드 / 비 ─────
 function setPerf(on) {
   perf = on; $('bPerf').classList.toggle('on', on); $('fps').classList.toggle('hidden', !on);
-  renderer.setPixelRatio(on ? Math.min(devicePixelRatio, 1) * 0.75 : basePR);
+  renderer.setPixelRatio((on ? Math.min(devicePixelRatio, 1) * 0.75 : basePR) * dyn.scale);
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) { rt.samples = on ? 0 : Q.msaa; rt.dispose(); }
   if (bloom) bloom.enabled = !on;
   const wm = water.material; wm.uniforms.uCheap.value = on ? 1 : 0; wm.transparent = on; wm.needsUpdate = true;
@@ -212,31 +234,35 @@ function ui(dt) {
 }
 
 // ───── 루프 ─────
-let last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
+let flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
+const FRAME_MS = 1000 / 30;
 function loop(now) {
   requestAnimationFrame(loop);
-  const raw = (now - last) / 1000; const dt = Math.min(0.05, raw); last = now;
+  if (now - last < FRAME_MS - 4) return; // 30fps 고정
+  const raw = (now - last) / 1000; const dt = Math.min(0.07, raw); last = now;
+  if (!paused) dynRes(raw * 1000, dt);
   fpsN++; fpsT += raw; if (fpsT > 0.5) { fpsV = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   if (paused) { render(); return; }
   clock += dt; T.U.uTime.value = clock;
   PL.update(dt, clock);
   physAcc += dt; let n = 0;
-  while (physAcc >= 1 / 60 && n < 3) {
+  while (physAcc >= 1 / 60 && n < 4) {
     PL.prePhysics(1 / 60);
     S.waterForces(onSplash);
     world.step(events);
     events.drainContactForceEvents(onContact);
     physAcc -= 1 / 60; n++;
   }
-  if (n === 3) physAcc = 0;
+  if (n === 4) physAcc = 0;
   S.sync(); S.rasterize();
-  waterAcc += Math.min(dt, 1 / 30); let m = 0;
-  const maxSteps = perf ? 2 : 4;
-  while (waterAcc >= 1 / 120 && m < maxSteps) { W.step(1 / 120); waterAcc -= 1 / 120; m++; }
-  if (m === maxSteps) waterAcc = Math.min(waterAcc, 1 / 120);
+  waterAcc += Math.min(dt, 1 / 15); let m = 0;
+  const maxSteps = perf ? 2 : 3;
+  while (waterAcc >= 1 / 60 && m < maxSteps) { W.step(1 / 60); waterAcc -= 1 / 60; m++; }
+  if (m === maxSteps) waterAcc = Math.min(waterAcc, 1 / 60);
   W.post(dt);
-  T.flushMesh();
+  flushT += dt;
+  if (clock - lastEdit < 0.3 || flushT > 0.25) { T.flushMesh(); flushT = 0; }
   if (T.physState.dirty) {
     T.physState.t += dt;
     if ((T.physState.t > 0.3 && clock - lastEdit > 0.2) || T.physState.t > 1.5) rebuildHF();
@@ -300,9 +326,9 @@ function render() {
   sky.position.copy(camera.position);
   renderer.shadowMap.needsUpdate = !perf || frameN % 3 === 0;
   if (!perf) {
-    water.visible = false;
+    camera.layers.set(1);
     renderer.setRenderTarget(refrRT); renderer.render(scene, camera);
-    water.visible = true;
+    camera.layers.set(0);
     renderer.setRenderTarget(null);
   }
   composer.render();
