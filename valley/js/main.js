@@ -19,7 +19,7 @@ import { makeSky } from './sky.js';
 const QUAL = {
   ultra: { pr: 2, shadow: 4096, refr: 0.75, grass: 9000, flowers: 400, pine: 520, broad: 180, bloom: true, stones: 120, boulders: 18, msaa: 4, view: 45 },
   high: { pr: 1.5, shadow: 2048, refr: 0.6, grass: 6500, flowers: 300, pine: 400, broad: 140, bloom: true, stones: 110, boulders: 16, msaa: 4, view: 38 },
-  perf: { pr: 1, shadow: 1024, refr: 0.45, grass: 4500, flowers: 200, pine: 260, broad: 90, bloom: true, stones: 90, boulders: 12, msaa: 2, view: 26, perf: true },
+  perf: { pr: 1, shadow: 1024, refr: 0.45, grass: 4500, flowers: 200, pine: 260, broad: 90, bloom: true, stones: 90, boulders: 12, msaa: 2, view: 26, perf: true, lowPoly: true },
 };
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -27,20 +27,21 @@ const isTouch = matchMedia('(pointer: coarse)').matches;
 if (/ValleyDamApp/.test(navigator.userAgent)) $('apk').remove(); // 앱 안에서는 다운로드 링크 숨김
 let qKey = params.get('q');
 try { qKey = qKey || localStorage.getItem('valley.q'); } catch {}
+if (isTouch) Object.assign(QUAL.perf, { grass: 3200, flowers: 140, pine: 200, broad: 70, stones: 80, boulders: 10, view: 22 });
 if (!QUAL[qKey]) qKey = isTouch ? 'perf' : 'ultra';
 const segBtns = [...document.querySelectorAll('#quality button')];
 const pickQ = k => { qKey = k; segBtns.forEach(b => { b.classList.toggle('on', b.dataset.q === k); b.setAttribute('aria-checked', b.dataset.q === k); }); };
 segBtns.forEach(b => b.onclick = () => pickQ(b.dataset.q)); pickQ(qKey);
 
-let tmat, fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
+let innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
-const prog = v => { $('progbar').style.width = Math.round(v * 100) + '%'; };
+const prog = (v, t) => { $('progbar').style.width = Math.round(v * 100) + '%'; if (t) $('progtxt').textContent = t; };
 if (params.has('debug')) window.__dbg = { T, W, S, PL, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
 
 $('go').onclick = async () => {
   $('go').disabled = true; segBtns.forEach(b => b.disabled = true); $('go').textContent = '불러오는 중';
-  document.querySelector('.prog').classList.add('on');
+  document.querySelector('.load').classList.add('on');
   try { localStorage.setItem('valley.q', qKey); } catch {}
   A.init();
   try { await boot(QUAL[qKey]); }
@@ -54,7 +55,7 @@ $('go').onclick = async () => {
 
 async function boot(q) {
   Q = q;
-  prog(0.03); await frame();
+  prog(0.03, '지형 만드는 중'); await frame();
   T.generate();
   renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: false, powerPreference: 'high-performance' });
   basePR = Math.min(devicePixelRatio, q.pr);
@@ -77,23 +78,23 @@ async function boot(q) {
   const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene(); es.add(makeSky());
   scene.environment = pm.fromScene(es, 0, 0.1, 1000).texture;
   const tm = T.terrainMaterial(); tmat = tm;
-  const inner = T.buildMesh(tm); inner.layers.enable(1); scene.add(inner);
+  const inner = T.buildMesh(tm); inner.layers.enable(1); scene.add(inner); innerMesh = inner;
   const outer = T.buildOuter(tm); outer.castShadow = false; scene.add(outer);
   sun.layers.enable(1); hemi.layers.enable(1);
 
-  prog(0.12); await frame();
+  prog(0.12, '물리 엔진 준비'); await frame();
   await RAPIER.init();
   world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
   if ('numSolverIterations' in world.integrationParameters) world.integrationParameters.numSolverIterations = 8;
   events = new RAPIER.EventQueue(true);
   T.buildPhysics(RAPIER, world);
-  S.initPhysics(RAPIER, world);
+  S.initPhysics(RAPIER, world, q.lowPoly);
 
-  prog(0.2); await frame();
+  prog(0.2, '돌 놓는 중'); await frame();
   const sg = new THREE.Group(); scene.add(sg); scene.add(S.outlineMesh());
   S.spawnAll(sg, q.stones, q.boulders);
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
-  prog(0.32); await frame();
+  prog(0.32, '숲 가꾸는 중'); await frame();
   N.buildTrees(scene, q.pine, q.broad);
   N.buildGrass(scene, q.grass);
   N.buildFlowers(scene, q.flowers);
@@ -109,7 +110,7 @@ async function boot(q) {
   for (let s = 0; s < WARM; s++) {
     if (s % 2 === 0) { world.step(); S.sync(); S.rasterize(); }
     W.step(1 / 60); if (s % 4 === 0) W.post(4 / 60);
-    if (s % 150 === 0) { prog(0.4 + 0.5 * s / WARM); await frame(); }
+    if (s % 150 === 0) { prog(0.4 + 0.5 * s / WARM, '계곡물 흘려보내는 중'); await frame(); }
   }
   W.upload();
   PL.init(RAPIER, world, camera, scene, hooks, { x: T.centerX(12) - 2.6, y: T.groundAt(T.centerX(12) - 2.6, 12) + 1.1, z: 12 });
@@ -123,7 +124,7 @@ async function boot(q) {
   scene.traverse(o => { const m = o.material; if (m && m.isMeshStandardMaterial) m.envMapIntensity = 0.75; });
   let saved = null; try { saved = localStorage.getItem('valley.perf'); } catch {}
   setPerf(saved === null ? !!q.perf : saved === '1');
-  prog(0.95); await frame();
+  prog(0.95, '마무리'); await frame();
   PL.update(1 / 60, 0);
   renderer.compile(scene, camera);
   prog(1);
@@ -175,13 +176,14 @@ function dynRes(interval, dt) {
 
 // ───── 최적화 모드 / 비 ─────
 // 최적화 모드(고화질 유지): 내부 해상도↓ + FXAA, 굴절 저해상도, 풀 60%, 그림자 2048·격프레임 갱신
-const perfPR = () => Math.min(devicePixelRatio, 1.25);
+const perfPR = () => Math.min(devicePixelRatio, 1.15);
 function setPerf(on) {
   perf = on; $('bPerf').classList.toggle('on', on); $('fps').classList.toggle('hidden', !on);
   renderer.setPixelRatio((on ? perfPR() : basePR) * dyn.scale);
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) { rt.samples = on ? 0 : Q.msaa; rt.dispose(); }
   fxaa.enabled = on;
   if (bloom) bloom.enabled = !on;
+  innerMesh.castShadow = !on; // 폰: 지형 그림자 생략
   N.setDensity(on ? 0.6 : 1, on ? Math.min(26, Q.view) : Q.view);
   // 가벼운 셰이더 (자갈 무늬·물속 빛무늬·돌 결 단순화)
   for (const m of [tmat, ...S.mats, water.material]) { m.defines = m.defines || {}; if (on) m.defines.LITE = ''; else delete m.defines.LITE; m.needsUpdate = true; }
@@ -278,7 +280,7 @@ function loop(now) {
     T.physState.t += dt;
     if ((T.physState.t > 0.3 && clock - lastEdit > 0.2) || T.physState.t > 1.5) rebuildHF();
   }
-  W.upload();
+  if (!perf || frameN % 2 === 0) W.upload(); // 폰: 물 텍스처는 격프레임 갱신
   // 비: 계곡물이 불어남
   const st = W.state, rt = rainOn ? 1 : 0;
   st.inflow += ((rainOn ? 0.42 : 0.2) - st.inflow) * Math.min(1, dt * 0.08);
@@ -352,13 +354,14 @@ function render() {
   sun.intensity = 3.3 * (1 - rain * 0.75); hemi.intensity = 0.35 + rain * 0.25;
   scene.fog.density = 0.011 + rain * 0.012; gradePass.uniforms.uRain.value = rain;
   sky.position.copy(camera.position);
-  renderer.shadowMap.needsUpdate = !perf || frameN % 2 === 0;
+  renderer.shadowMap.needsUpdate = !perf || frameN % 3 === 0;
   // 굴절용 패스: 지형·돌만 (레이어 1)
   camera.layers.set(1);
   renderer.setRenderTarget(refrRT); renderer.render(scene, camera);
   camera.layers.set(0);
   renderer.setRenderTarget(null);
-  composer.render();
+  // 최적화 모드: 후처리 없이 화면에 바로 그림 (톤매핑은 렌더러가 처리) → 폰 발열·대역폭 감소
+  if (perf) renderer.render(scene, camera); else composer.render();
 }
 
 // ───── 터치 ─────

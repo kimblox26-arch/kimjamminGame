@@ -350,6 +350,8 @@ void main(){
   col = mix(col, foamC, foamA*0.9);
   gl_FragColor = vec4(col, max(alpha, foamA*0.9));
   #include <fog_fragment>
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
 
 // 웅덩이를 미리 채워(우선순위 범람) 시작 안정화 시간을 줄인다

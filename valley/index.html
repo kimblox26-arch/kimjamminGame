@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>계곡 물막이</title>
 <meta name="description" content="돌을 직접 주워 쌓고 진흙으로 틈을 메워 계곡물을 막는 물리 샌드박스">
-<link rel="stylesheet" href="./style.css?v=20261112a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap">
+<link rel="stylesheet" href="./style.css?v=20261112b">
 <script type="importmap">
 {
   "imports": {
@@ -31,18 +33,53 @@
   <symbol id="i-rot" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4v4.5H15"/></symbol>
 </svg>
 
-<section id="start" class="screen">
-  <div class="card">
+<section id="start">
+  <svg class="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fb2d9"/><stop offset=".55" stop-color="#cfe2ea"/><stop offset="1" stop-color="#e9efe6"/></linearGradient>
+      <radialGradient id="sun" cx="0.72" cy="0.18" r="0.35"><stop offset="0" stop-color="#fff6dc" stop-opacity=".95"/><stop offset="1" stop-color="#fff6dc" stop-opacity="0"/></radialGradient>
+      <linearGradient id="river" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fd3df"/><stop offset="1" stop-color="#3e8fa6"/></linearGradient>
+      <linearGradient id="fogg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e9efe6" stop-opacity="0"/><stop offset="1" stop-color="#e9efe6" stop-opacity=".85"/></linearGradient>
+      <pattern id="pines" width="46" height="80" patternUnits="userSpaceOnUse"><path d="M23 6 L36 40 H29 L40 70 H6 L17 40 H10 Z" fill="#2f5546"/></pattern>
+    </defs>
+    <rect width="1600" height="900" fill="url(#sky)"/>
+    <rect width="1600" height="900" fill="url(#sun)"/>
+    <path d="M0 470 L170 300 L300 390 L470 220 L620 360 L760 260 L900 380 L1060 210 L1220 350 L1380 250 L1600 400 V900 H0Z" fill="#8fa9a6" opacity=".7"/>
+    <rect y="380" width="1600" height="140" fill="url(#fogg)"/>
+    <path d="M0 560 L120 430 L260 520 L380 400 L520 530 L640 470 L760 560 L880 470 L1000 540 L1140 420 L1290 520 L1420 440 L1600 540 V900 H0Z" fill="#4b7464"/>
+    <path d="M0 640 C140 560 260 600 380 560 C470 530 560 600 640 610 L700 900 H0Z" fill="#33584a"/>
+    <path d="M1600 630 C1460 560 1350 600 1230 560 C1130 530 1030 610 960 620 L900 900 H1600Z" fill="#33584a"/>
+    <rect x="0" y="520" width="560" height="120" fill="url(#pines)" opacity=".85" transform="skewY(4)"/>
+    <rect x="1080" y="470" width="520" height="130" fill="url(#pines)" opacity=".85" transform="skewY(-4)"/>
+    <path d="M740 600 C700 680 640 720 560 780 C500 830 470 870 450 900 H1150 C1120 860 1060 820 1000 780 C900 720 850 680 820 600Z" fill="#6b5a45"/>
+    <path id="rv" d="M770 600 C740 680 690 730 630 790 C590 830 570 870 560 900 H1040 C1020 860 980 830 940 790 C870 730 820 680 795 600Z" fill="url(#river)"/>
+    <g class="flow" fill="none" stroke="#eaf8fb" stroke-linecap="round">
+      <path d="M782 610 C760 690 720 740 670 800 C640 840 625 870 615 900" stroke-width="3" stroke-dasharray="18 60"/>
+      <path d="M790 615 C780 700 760 760 760 820 C760 850 765 880 770 900" stroke-width="2.5" stroke-dasharray="12 70"/>
+      <path d="M786 612 C800 690 850 740 900 800 C930 840 950 870 960 900" stroke-width="3" stroke-dasharray="20 64"/>
+    </g>
+    <g class="dam">
+      <ellipse cx="660" cy="812" rx="44" ry="26" fill="#8d9296"/><ellipse cx="740" cy="822" rx="52" ry="30" fill="#a3a8ac"/>
+      <ellipse cx="830" cy="818" rx="48" ry="28" fill="#7d8287"/><ellipse cx="915" cy="812" rx="44" ry="25" fill="#9aa0a5"/>
+      <ellipse cx="700" cy="790" rx="34" ry="20" fill="#b6bbbf"/><ellipse cx="790" cy="794" rx="38" ry="21" fill="#8f9498"/><ellipse cx="872" cy="790" rx="34" ry="19" fill="#aab0b4"/>
+      <path d="M690 808 q20 -10 40 0 M780 812 q24 -10 46 0 M865 806 q20 -9 38 0" stroke="#7a5537" stroke-width="7" stroke-linecap="round" fill="none"/>
+    </g>
+    <g class="mist"><ellipse cx="300" cy="560" rx="260" ry="26" fill="#fff" opacity=".25"/><ellipse cx="1250" cy="520" rx="300" ry="30" fill="#fff" opacity=".22"/></g>
+  </svg>
+  <div class="panel">
+    <p class="eyebrow">계곡 40 m · 유량 200 L/s · 돌 120개</p>
     <h1>계곡 물막이</h1>
-    <p class="sub">돌을 쌓고 진흙으로 틈을 메워 계곡물을 막아보세요</p>
-    <div class="seg" id="quality" role="radiogroup" aria-label="그래픽">
-      <button data-q="ultra" role="radio">초고화질</button>
-      <button data-q="high" role="radio">고화질</button>
-      <button data-q="perf" role="radio">최적화</button>
+    <p class="sub">돌과 바위를 쌓고, 진흙으로 틈을 메워 흐르는 계곡물을 막아보세요.</p>
+    <div class="qual" id="quality" role="radiogroup" aria-label="그래픽 품질">
+      <button data-q="ultra" role="radio"><b>초고화질</b><span>PC · 그래픽카드</span></button>
+      <button data-q="high" role="radio"><b>고화질</b><span>노트북</span></button>
+      <button data-q="perf" role="radio"><b>최적화</b><span>휴대폰 · 발열 적게</span></button>
     </div>
-    <button id="go" class="btn">시작</button>
-    <a id="apk" class="apk" href="https://github.com/kimblox26-arch/kimjamminGame/releases/download/valley-apk/valley-dam.apk" target="_blank" rel="noopener"><svg><use href="#i-android"/></svg>안드로이드 APK 다운로드</a>
-    <div class="prog"><div id="progbar"></div></div>
+    <div class="actions">
+      <button id="go" class="btn">시작하기</button>
+      <a id="apk" class="apk" href="https://github.com/kimblox26-arch/kimjamminGame/releases/download/valley-apk/valley-dam.apk" target="_blank" rel="noopener"><svg><use href="#i-android"/></svg>APK</a>
+    </div>
+    <div class="load"><div class="prog"><div id="progbar"></div></div><span id="progtxt"></span></div>
   </div>
 </section>
 
@@ -84,6 +121,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261112a"></script>
+<script type="module" src="./js/main.js?v=20261112b"></script>
 </body>
 </html>

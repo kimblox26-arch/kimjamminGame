@@ -103,7 +103,8 @@ function rockGeometry(r, seed, detail) {
   return { g, ext };
 }
 
-export function initPhysics(RAPIER, w) { R = RAPIER; world = w; }
+let lowPoly = false;
+export function initPhysics(RAPIER, w, low) { R = RAPIER; world = w; lowPoly = !!low; }
 // 큰 바위: 평소엔 고정된 지형처럼 있다가 손으로 잡으면 움직이는 돌이 된다
 export function makeDynamic(st) {
   if (!st.fixed) return;
@@ -117,7 +118,7 @@ export function touch() { needRaster = true; }
 
 export function addStone(x, y, z, r, opts = {}) {
   const seed = opts.seed ?? ((rand() * 1e9) | 0);
-  const detail = r > 0.5 ? 5 : r > 0.2 ? 4 : 3;
+  const detail = (r > 0.5 ? 5 : r > 0.2 ? 4 : 3) - (lowPoly ? 1 : 0);
   const { g, ext } = rockGeometry(r, seed, detail);
   const mat = mats[opts.mat ?? Math.floor(rand() * mats.length)];
   const mesh = new THREE.Mesh(g, mat);

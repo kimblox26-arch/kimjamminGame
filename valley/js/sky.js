@@ -37,6 +37,8 @@ void main(){
     c = mix(c, cc*1.15, cl*smoothstep(0.,0.15,d.y));
   }
   gl_FragColor = vec4(c,1.);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`,
   });
   const m = new THREE.Mesh(new THREE.SphereGeometry(900, 48, 24), mat);

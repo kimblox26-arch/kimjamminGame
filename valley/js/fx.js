@@ -26,6 +26,8 @@ class Points {
         void main(){ vec2 c = gl_PointCoord*2.-1.; float d = dot(c,c); if(d>1.) discard;
         gl_FragColor = vec4(vC.rgb*uSunCol, vC.a*(1.-d)*(1.-d));
         #include <fog_fragment>
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
         }`,
     });
     this.obj = new THREE.Points(g, this.mat); this.obj.frustumCulled = false;

@@ -244,6 +244,8 @@ function flowMat(foam, speed, fall) {
         float a = uOp * edge * mix(0.82, 1.0, f) * (uFall>0.5 ? (0.55 + 0.45*st) : 1.);
         gl_FragColor = vec4(col, a);
         #include <fog_fragment>
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
       }`,
   });
 }
