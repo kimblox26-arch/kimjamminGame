@@ -15,6 +15,8 @@ index.html 을 로컬 웹서버로 열면 바로 실행됩니다.
 
 > 🖐 **새 게임: HAND VR** — 웹캠으로 내 손을 인식해 게임 속 손을 그대로 움직이는 VR 스타일 게임은 [`handvr/`](handvr/README.md) 에 있습니다. (`http://localhost:8080/handvr/`)
 
+> 📚 **영어숙제 노트** — 숙제 체크·단어장·퀴즈·말하기 연습 웹앱(폰에 설치 가능)은 [`gplum/`](gplum/) 에 있습니다. (`http://localhost:8080/gplum/`)
+
 ---
 
 ## 1. 무엇이 들어있나
