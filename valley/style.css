@@ -117,11 +117,11 @@ svg.emblem { width: clamp(64px, 8.5vw, 96px); height: auto; flex: none; filter: 
 .word { animation: rise .9s .08s cubic-bezier(.2, .8, .2, 1) both; min-width: 0; }
 @keyframes rise { from { transform: translateY(14px); opacity: 0; } }
 #start h1 { font-family: "VDTitle", "Black Han Sans", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; font-weight: 400;
-  font-size: clamp(44px, 6vw, 76px); line-height: .98; white-space: nowrap; letter-spacing: .01em; margin: 0;
+  font-size: clamp(56px, 8vw, 96px); line-height: .92; white-space: nowrap; letter-spacing: .04em; letter-spacing: .01em; margin: 0;
   background: linear-gradient(180deg, #ffffff 10%, #e3f2ff 55%, #9fd3ef 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 3px 0 rgba(10, 20, 40, .55)) drop-shadow(0 10px 22px rgba(0, 0, 0, .35)); }
-.en { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-family: "VDLatin", "Bebas Neue", system-ui, sans-serif; font-size: 17px; letter-spacing: .5em; color: #ffcd78; }
-.en::before, .en::after { content: ""; height: 1px; flex: 1; max-width: 46px; background: linear-gradient(90deg, transparent, #ffcd78); }
+.en { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-family: "VDLatin", "Bebas Neue", system-ui, sans-serif; font-size: 18px; letter-spacing: .62em; color: #9fe0e6; }
+.en::before, .en::after { content: none; }
 .en::after { transform: scaleX(-1); }
 .tag { color: #ecdccc; font-size: 15px; line-height: 1.6; margin: 0; text-shadow: 0 1px 8px rgba(0, 0, 0, .5); animation: rise .9s .16s both; }
 .qual { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 460px; animation: rise .9s .22s both; }
@@ -146,7 +146,7 @@ svg.emblem { width: clamp(64px, 8.5vw, 96px); height: auto; flex: none; filter: 
 @media (max-height: 480px) {
   .hero { gap: 9px; }
   svg.emblem { width: 54px; }
-  #start h1 { font-size: 38px; }
+  #start h1 { font-size: 46px; }
   .en { font-size: 13px; margin-top: 4px; }
   .tag { font-size: 12.5px; line-height: 1.45; }
   .tag br { display: none; }

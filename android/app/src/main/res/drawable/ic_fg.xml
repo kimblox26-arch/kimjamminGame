@@ -3,42 +3,20 @@
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- 육각 엠블럼: 산 · 아치 댐 · 물 · 번개(수력발전) -->
-    <group android:translateX="20.4" android:translateY="20.4" android:scaleX="0.7" android:scaleY="0.7">
-        <path android:pathData="M48,3 L87,24.5 V71.5 L48,93 L9,71.5 V24.5Z">
+    <!-- 계곡 로고: 해 · 두 산 사이 계곡 · 흐르는 물 (적응형 아이콘 안전 영역 안) -->
+    <group android:translateX="18" android:translateY="18" android:scaleX="0.75" android:scaleY="0.75">
+        <path android:fillColor="#FFFFD36B" android:pathData="M66,27 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+        <path android:fillColor="#FFE8F3EF" android:pathData="M-4,78 L30,30 L52,62 L44,78Z" />
+        <path android:fillColor="#FFFFFFFF" android:pathData="M30,30 L38,41.5 L33,40 L28,45 L24,38.6Z" />
+        <path android:fillColor="#FFB8DDD6" android:pathData="M40,78 L66,42 L100,78Z" />
+        <path android:pathData="M-2,76 C14,70 26,82 46,75 S78,68 98,75 V98 H-2Z">
             <aapt:attr name="android:fillColor">
-                <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="96" android:endY="96">
-                    <item android:offset="0" android:color="#FFFFE3A1" />
-                    <item android:offset="0.5" android:color="#FFE3A64A" />
-                    <item android:offset="1" android:color="#FF8A5A24" />
+                <gradient android:type="linear" android:startX="0" android:startY="70" android:endX="0" android:endY="98">
+                    <item android:offset="0" android:color="#FF8FE6F3" />
+                    <item android:offset="1" android:color="#FF3AA9C9" />
                 </gradient>
             </aapt:attr>
         </path>
-        <group>
-            <clip-path android:pathData="M48,6 L84,26 V70 L48,90 L12,70 V26Z" />
-            <path android:pathData="M0,0h96v96h-96z">
-                <aapt:attr name="android:fillColor">
-                    <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="0" android:endY="96">
-                        <item android:offset="0" android:color="#FF1B2C52" />
-                        <item android:offset="0.62" android:color="#FF3B3F6A" />
-                        <item android:offset="1" android:color="#FFD98C62" />
-                    </gradient>
-                </aapt:attr>
-            </path>
-            <path android:fillColor="#FF26294A" android:pathData="M8,56 L26,38 L36,46 L50,30 L64,44 L74,36 L90,52 V96 H8Z" />
-            <path android:fillColor="#FFE8DCCD" android:pathData="M16,62 Q48,56 80,62 L76,78 Q48,74 20,78Z" />
-            <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:pathData="M16,62 Q48,56 80,62" />
-            <path android:fillColor="#FFBFE9F6" android:pathData="M44,61 L52,61 L53,77 L43,77Z" />
-            <path android:pathData="M8,80 Q48,74 88,80 V96 H8Z">
-                <aapt:attr name="android:fillColor">
-                    <gradient android:type="linear" android:startX="0" android:startY="76" android:endX="0" android:endY="96">
-                        <item android:offset="0" android:color="#FF8FE3F2" />
-                        <item android:offset="1" android:color="#FF2A86A8" />
-                    </gradient>
-                </aapt:attr>
-            </path>
-            <path android:strokeColor="#FFE6FBFF" android:strokeWidth="1.6" android:strokeLineCap="round" android:pathData="M22,86 q8,-3 16,0 M52,88 q9,-3 18,0" />
-            <path android:fillColor="#FFFFD25A" android:strokeColor="#FF7A4A12" android:strokeWidth="1.2" android:strokeLineJoin="round" android:pathData="M51,14 L40,34 H48 L44,50 L58,28 H50 L55,14Z" />
-        </group>
+        <path android:strokeColor="#FFE6FBFF" android:strokeWidth="2.6" android:strokeLineCap="round" android:pathData="M8,84 C18,80 26,87 38,83 M56,86 C66,82 74,88 86,84" />
     </group>
 </vector>

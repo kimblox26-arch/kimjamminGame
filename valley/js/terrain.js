@@ -132,7 +132,7 @@ float slope = 1. - N.y;
 // 한 픽셀이 덮는 지면 크기(m): 해상도가 낮거나 멀면 잔무늬·굴곡을 줄여 픽셀 깨짐(2x2 블록)을 막는다
 float pxs = length(fwidth(P.xz)) + abs(fwidth(P.y)) * 0.5;
 float det = 1. - smoothstep(0.012, 0.05, pxs);
-float tBump = mix(0.3, 1., det);
+float tBump = mix(0.15, 0.85, det) * (1. - 0.6 * smoothstep(0.35, 0.7, slope)); // 가파른 벽은 굴곡을 줄인다
 float fade = (1. - smoothstep(5., 35., length(vViewPosition))) * det;
 float sSoil = vMat.x, sLoose = vMat.y, sGrass = vMat.z, sDug = vMat.w;
 vec4 wd = waterAt(P.xz); float under = wd.r - P.y;
@@ -142,25 +142,22 @@ float rockW = max(1. - smoothstep(0.03, 0.10, sSoil + sLoose + bn*0.08), smooths
 float gravW = (1. - smoothstep(0.22, 0.42, sSoil + bn*0.1)) * (1. - rockW);
 float dirtW = max(0., 1. - rockW - gravW);
 vec3 alb = vec3(0.); float tH = 0., tRough = 0.;
-if (rockW > 0.002) { // 암반 (3축 투영)
-  vec3 tw = pow(abs(N), vec3(4.)); tw /= tw.x + tw.y + tw.z;
-  vec2 rp = P.zy*tw.x + P.xz*tw.y + P.xy*tw.z;
+if (rockW > 0.002) { // 암반: 3D 노이즈(방향 왜곡 없음) — 경사면에서도 무늬가 찌그러지거나 픽셀처럼 깨지지 않게
+  vec3 q = P * 0.45;
 #ifdef LITE
-  float rn = fbm2(rp*0.5);
+  float rn = vnoise3(q) * 0.65 + vnoise3(q * 2.3 + 7.1) * 0.35;
+  float rn2 = 0.5;
 #else
-  float rn = fbm2(P.zy*0.5)*tw.x + fbm2(P.xz*0.5)*tw.y + fbm2(P.xy*0.5)*tw.z;
+  float rn = vnoise3(q) * 0.55 + vnoise3(q * 2.3 + 7.1) * 0.3 + vnoise3(q * 5.2 + 3.7) * 0.15;
+  float rn2 = mix(0.5, vnoise3(P * 2.4 + 11.3), det);
 #endif
-  float rn2 = vnoise2(rp*2.1 + 4.)*0.6 + vnoise2(rp*4.3)*0.4;
-  float strata = sin(P.y*5. + rn*9. + rn2*3.)*.5+.5;
-  vec3 rock = mix(vec3(0.19,0.18,0.165), vec3(0.42,0.40,0.36), rn) * (0.86 + 0.14*strata) * (0.8 + 0.35*rn2);
-  rock = mix(rock, vec3(0.30,0.36,0.18), smoothstep(0.6,0.75,vnoise2(rp*1.6 + P.y))*0.5*smoothstep(0.7,0.2,slope));
-  float cr = 0.;
-  alb += rock*rockW; tRough += 0.86*rockW;
-#ifdef LITE
-  tH += (rn*0.22 + rn2*0.03) * rockW;
-#else
-  tH += (rn*0.22 + rn2*0.05 + strata*0.008 - cr*0.015 + vnoise2(rp*15.)*0.006*fade) * rockW;
-#endif
+  vec3 rock = mix(vec3(0.17, 0.165, 0.15), vec3(0.45, 0.43, 0.39), smoothstep(0.15, 0.85, rn)) * (0.86 + 0.24 * rn2);
+  rock *= 0.78 + 0.32 * vnoise3(P * 0.16 + 2.3); // 큰 얼룩(명암)
+  rock *= 0.94 + 0.06 * sin(P.y * 2.6 + rn * 3.5); // 아주 옅은 지층
+  float moss = smoothstep(0.58, 0.72, vnoise3(P * 0.9 + 5.)) * smoothstep(0.75, 0.3, slope);
+  rock = mix(rock, vec3(0.28, 0.34, 0.17), moss * 0.45);
+  alb += rock * rockW; tRough += 0.86 * rockW;
+  tH += (rn * 0.06 + rn2 * 0.01 * fade) * rockW; // 굴곡은 얕게
 }
 #ifdef LITE
 if (gravW > 0.002) { // 가벼운 자갈
