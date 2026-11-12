@@ -1,0 +1,58 @@
+name: Valley APK
+
+on:
+  push:
+    paths:
+      - 'valley/**'
+      - 'vendor/**'
+      - 'android/**'
+      - '.github/workflows/valley-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # 같은 서명 키를 계속 써야 앱을 지우지 않고 업데이트할 수 있다
+      - uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: valley-debug-keystore
+
+      - name: Copy game into app assets
+        run: |
+          A=android/app/src/main/assets
+          rm -rf "$A" && mkdir -p "$A/vendor"
+          cp -r valley "$A/valley"
+          rm -f "$A/valley/README.md"
+          cp -r vendor/three vendor/rapier "$A/vendor/"
+
+      - name: Build APK
+        working-directory: android
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - run: cp android/app/build/outputs/apk/release/app-release.apk valley-dam.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: valley-apk
+          name: 계곡 물막이 Android APK
+          body: |
+            계곡 물막이 안드로이드 앱 (빌드 ${{ github.run_number }}, 커밋 ${{ github.sha }}).
+            valley-dam.apk 를 받아 설치하세요. 설치 시 '출처를 알 수 없는 앱' 허용이 필요할 수 있습니다.
+          files: valley-dam.apk
+          make_latest: true

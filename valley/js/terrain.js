@@ -136,8 +136,7 @@ if (rockW > 0.002) { // 암반 (3축 투영)
   float strata = sin(P.y*5. + rn*9. + rn2*3.)*.5+.5;
   vec3 rock = mix(vec3(0.19,0.18,0.165), vec3(0.42,0.40,0.36), rn) * (0.86 + 0.14*strata) * (0.8 + 0.35*rn2);
   rock = mix(rock, vec3(0.30,0.36,0.18), smoothstep(0.6,0.75,vnoise2(rp*1.6 + P.y))*0.5*smoothstep(0.7,0.2,slope));
-  float cr = smoothstep(0.018, 0.0, abs(vnoise2(rp*2.6) - 0.5)) * (0.2 + 0.8*fade);
-  rock *= 1. - cr*0.1;
+  float cr = 0.;
   alb += rock*rockW; tRough += 0.86*rockW;
   tH += (rn*0.22 + rn2*0.05 + strata*0.008 - cr*0.015 + vnoise2(rp*15.)*0.006*fade) * rockW;
 }
@@ -258,6 +257,27 @@ export function dig(x, z, radius, depth, ctx) {
   }
   markDirty(ci - r, ci + r, cj - r, cj + r); fixDirty();
   return vol;
+}
+// 돌이 떨어진 충격: 흙이 눌려 움푹 패이고, 밀려난 흙이 가장자리에 둥글게 쌓인다(암반은 안 패임)
+export function impact(x, z, R, depth, ctx) {
+  const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), r = Math.ceil(R * 1.6 / CELL);
+  let removed = 0, wsum = 0; const rim = [];
+  for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
+    if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
+    const k = idx(i, j), d = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / R;
+    if (d < 1) {
+      let want = depth * (1 - d * d);
+      const a = Math.min(loose[k], want); loose[k] -= a; want -= a;
+      const b = Math.min(soil[k], want); soil[k] -= b;
+      const got = a + b; if (got <= 0) continue;
+      ground[k] -= got; removed += got;
+      dug[k] = Math.min(1, dug[k] + got * 18); grass[k] *= 0.1;
+    } else if (d < 1.6) { const w = Math.max(0, 1 - Math.abs(d - 1.25) / 0.35); if (w > 0) { rim.push(k, w); wsum += w; } }
+  }
+  // 절반은 다져지고 절반은 가장자리로 밀려난다
+  if (wsum > 0) for (let n = 0; n < rim.length; n += 2) put(rim[n], removed * 0.5 * rim[n + 1] / wsum, ctx);
+  markDirty(ci - r, ci + r, cj - r, cj + r); fixDirty();
+  return removed * CELL * CELL;
 }
 export function deposit(x, z, radius, vol, ctx) {
   const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), r = Math.ceil(radius / CELL);

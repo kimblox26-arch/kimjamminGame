@@ -6,6 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import * as T from './terrain.js';
 import * as W from './water.js';
 import * as S from './stones.js';
@@ -23,6 +24,7 @@ const QUAL = {
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const isTouch = matchMedia('(pointer: coarse)').matches;
+if (/ValleyDamApp/.test(navigator.userAgent)) $('apk').remove(); // 앱 안에서는 다운로드 링크 숨김
 let qKey = params.get('q');
 try { qKey = qKey || localStorage.getItem('valley.q'); } catch {}
 if (!QUAL[qKey]) qKey = isTouch ? 'perf' : 'ultra';
@@ -30,7 +32,7 @@ const segBtns = [...document.querySelectorAll('#quality button')];
 const pickQ = k => { qKey = k; segBtns.forEach(b => { b.classList.toggle('on', b.dataset.q === k); b.setAttribute('aria-checked', b.dataset.q === k); }); };
 segBtns.forEach(b => b.onclick = () => pickQ(b.dataset.q)); pickQ(qKey);
 
-let renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
+let fxaa, renderer, scene, camera, composer, refrRT, water, sky, sun, hemi, world, events, Q, bloom, gradePass, basePR;
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = v => { $('progbar').style.width = Math.round(v * 100) + '%'; };
@@ -58,6 +60,7 @@ async function boot(q) {
   basePR = Math.min(devicePixelRatio, q.pr);
   renderer.setPixelRatio(basePR);
   renderer.setSize(innerWidth, innerHeight);
+  if (!renderer.extensions.has('OES_texture_float_linear')) W.useHalfFloat();
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.92;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
   scene = new THREE.Scene();
@@ -115,6 +118,7 @@ async function boot(q) {
   composer.addPass(new RenderPass(scene, camera));
   if (q.bloom) { bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.2, 0.55, 0.95); composer.addPass(bloom); }
   composer.addPass(new OutputPass());
+  fxaa = new ShaderPass(FXAAShader); fxaa.enabled = false; composer.addPass(fxaa);
   gradePass = new ShaderPass(GRADE); composer.addPass(gradePass);
   scene.traverse(o => { const m = o.material; if (m && m.isMeshStandardMaterial) m.envMapIntensity = 0.75; });
   let saved = null; try { saved = localStorage.getItem('valley.perf'); } catch {}
@@ -142,7 +146,9 @@ function resize() {
   const w = innerWidth, h = innerHeight, pr = renderer.getPixelRatio();
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
   composer.setPixelRatio(pr); composer.setSize(w, h);
-  refrRT.setSize(Math.max(1, Math.round(w * pr * Q.refr)), Math.max(1, Math.round(h * pr * Q.refr)));
+  const rs = perf ? 0.45 : Q.refr;
+  refrRT.setSize(Math.max(1, Math.round(w * pr * rs)), Math.max(1, Math.round(h * pr * rs)));
+  fxaa.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
   water.material.uniforms.uRes.value.set(w * pr, h * pr);
   water.material.uniforms.uNear.value = camera.near; water.material.uniforms.uFar.value = camera.far;
   FX.setScale(h * pr / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
@@ -163,19 +169,20 @@ function dynRes(interval, dt) {
   s = Math.max(0.5, Math.min(1, s));
   if (Math.abs(s - dyn.scale) < 0.01) return;
   dyn.scale = s; dyn.cool = 1.5;
-  renderer.setPixelRatio((perf ? Math.min(devicePixelRatio, 1) * 0.75 : basePR) * s);
+  renderer.setPixelRatio((perf ? perfPR() : basePR) * s);
   resize();
 }
 
 // ───── 최적화 모드 / 비 ─────
+// 최적화 모드(고화질 유지): 내부 해상도↓ + FXAA, 굴절 저해상도, 풀 60%, 그림자 2048·격프레임 갱신
+const perfPR = () => Math.min(devicePixelRatio, 1.25);
 function setPerf(on) {
   perf = on; $('bPerf').classList.toggle('on', on); $('fps').classList.toggle('hidden', !on);
-  renderer.setPixelRatio((on ? Math.min(devicePixelRatio, 1) * 0.75 : basePR) * dyn.scale);
+  renderer.setPixelRatio((on ? perfPR() : basePR) * dyn.scale);
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) { rt.samples = on ? 0 : Q.msaa; rt.dispose(); }
-  if (bloom) bloom.enabled = !on;
-  const wm = water.material; wm.uniforms.uCheap.value = on ? 1 : 0; wm.transparent = on; wm.needsUpdate = true;
-  N.setDensity(on ? 0.35 : 1);
-  const ms = on ? 1024 : Q.shadow;
+  fxaa.enabled = on;
+  N.setDensity(on ? 0.6 : 1);
+  const ms = on ? Math.min(2048, Q.shadow) : Q.shadow;
   if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   resize();
   try { localStorage.setItem('valley.perf', on ? '1' : '0'); } catch {}
@@ -250,6 +257,7 @@ function loop(now) {
   while (physAcc >= 1 / 60 && n < 4) {
     PL.prePhysics(1 / 60);
     S.waterForces(onSplash);
+    for (const st of S.stones) if (!st.fixed && !st.body.isSleeping()) st.vyPrev = st.body.linvel().y; // 충돌 직전 낙하 속도
     world.step(events);
     events.drainContactForceEvents(onContact);
     physAcc -= 1 / 60; n++;
@@ -293,14 +301,30 @@ function onSplash(st, speed, surf) {
   A.splash(s / (1 + d * d * 0.02));
 }
 function onContact(e) {
-  const st = S.byHandle.get(e.collider1()) || S.byHandle.get(e.collider2());
+  const c1 = e.collider1(), c2 = e.collider2();
+  const st = S.byHandle.get(c1) || S.byHandle.get(c2);
   if (!st || st.fixed || clock - st.lastHit < 0.12) return;
   st.lastHit = clock;
+  const other = st.collider.handle === c1 ? c2 : c1, hf = T.getHF();
+  if (hf && other === hf.handle && (st.vyPrev || 0) < -1.8 && !st.held) dent(st, -st.vyPrev);
   const f = e.totalForceMagnitude() / (st.mass * 9.81);
   let s = Math.min(1, Math.max(0.08, (f - 6) / 40)) * Math.min(1, Math.max(0.3, st.mass / 40));
   const d = camera.position.distanceTo(st.mesh.position);
   s /= 1 + d * d * 0.03;
   if (s > 0.02) A.impact(s, st.surf > st.cy);
+}
+// 돌이 땅에 떨어지면 흙이 패인 자국이 남는다
+function dent(st, v) {
+  const Rh = Math.max(st.ext[0], st.ext[2]) * 0.8;
+  const depth = Math.min(0.16, 0.0015 * v * v * Math.cbrt(st.mass / 20));
+  if (depth < 0.006) return;
+  const moved = T.impact(st.cx, st.cz, Rh, depth, W);
+  st.vyPrev = 0;
+  if (moved < 1e-4) return;
+  N.onEdit(st.cx, st.cz, Rh * 1.6); edits.push([st.cx, st.cz]); S.touch();
+  const n = Math.min(24, 4 + Math.round(moved * 900));
+  const ws = W.sample(st.cx, st.cz);
+  if (ws && ws.h > 0.02) FX.splash(st.cx, ws.surf, st.cz, Math.min(1, v / 6)); else FX.dirt(st.cx, st.cy - st.hy, st.cz, n);
 }
 function audioUpdate() {
   const c = camera.position; let flow = 0, turb = 0;
@@ -324,7 +348,7 @@ function render() {
   sun.intensity = 3.3 * (1 - rain * 0.75); hemi.intensity = 0.35 + rain * 0.25;
   scene.fog.density = 0.0058 + rain * 0.012; gradePass.uniforms.uRain.value = rain;
   sky.position.copy(camera.position);
-  renderer.shadowMap.needsUpdate = !perf || frameN % 3 === 0;
+  renderer.shadowMap.needsUpdate = !perf || frameN % 2 === 0;
   if (!perf) {
     camera.layers.set(1);
     renderer.setRenderTarget(refrRT); renderer.render(scene, camera);

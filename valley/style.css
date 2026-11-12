@@ -26,6 +26,9 @@ h2 { font-size: 20px; margin-bottom: 18px; }
 .btn { width: 100%; border: 0; border-radius: 12px; padding: 13px; font-size: 16px; font-weight: 700; color: #06120c; background: linear-gradient(180deg, var(--accent), var(--accent-2)); }
 .btn:disabled { opacity: .55; cursor: wait; }
 .btn.ghost { margin-top: 8px; background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 600; }
+.apk { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 9px; }
+.apk:hover, .apk:focus-visible { color: var(--text); background: rgba(255, 255, 255, .06); outline: none; }
+.apk svg { width: 18px; height: 18px; }
 .prog { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .08); margin-top: 16px; overflow: hidden; opacity: 0; transition: opacity .2s; }
 .prog.on { opacity: 1; }
 #progbar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }

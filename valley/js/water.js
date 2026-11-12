@@ -180,6 +180,13 @@ export const texW = new THREE.DataTexture(dW, SW, NZV, THREE.RGBAFormat, THREE.F
 export const texV = new THREE.DataTexture(dV, SW, NZV, THREE.RGBAFormat, THREE.FloatType);
 for (const t of [texW, texV]) { t.magFilter = t.minFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; }
 U.tWater.value = texW;
+// 일부 모바일 GPU는 float 텍스처 선형 보간을 못 함 → half-float 로 대체 (첫 렌더 전에 호출)
+let half = null;
+export function useHalfFloat() {
+  half = [new Uint16Array(dW.length), new Uint16Array(dV.length)];
+  texW.image.data = half[0]; texV.image.data = half[1];
+  texW.type = texV.type = THREE.HalfFloatType;
+}
 
 export function upload() {
   for (let j = 0; j < NZV; j++) for (let c = 0; c < SW; c++) {
@@ -197,6 +204,7 @@ export function upload() {
     dW[o] = R; dW[o + 1] = dep; dW[o + 2] = wet[k]; dW[o + 3] = foam[k];
     dV[o] = vx[k]; dV[o + 1] = vz[k]; dV[o + 2] = Math.min(1, sed[k] / (hk + 0.02) * 25); dV[o + 3] = 0;
   }
+  if (half) { const f = THREE.DataUtils.toHalfFloat, a = half[0], b = half[1]; for (let n = 0; n < dW.length; n++) { a[n] = f(dW[n]); b[n] = f(dV[n]); } }
   texW.needsUpdate = true; texV.needsUpdate = true;
 }
 
