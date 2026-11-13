@@ -23,10 +23,12 @@ export const U = {
 export const centerX = z => 1.8 * Math.sin(z * 0.13 + 0.5) + 0.6 * Math.sin(z * 0.31 + 1.3);
 export const floorHalf = z => 5.0 + 1.9 * Math.sin(z * 0.17 + 2.33); // z≈14 에서 가장 좁음
 export const chanW = z => 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
+export const FALL_Z = 50.5, FALL_H = 1.0; // 작은 폭포: 바위 턱 위치·높이
 export function baseY(z) {
   let y = 4.0 - z * 0.045;
   y += 3.2 * sstep(4.2, 2.8, z);       // 상류 절벽(폭포)
   y -= 2.2 * sstep(66.2, 68.8, z);     // 하류 낙차
+  y -= FALL_H * sstep(-0.2, 0.2, z - FALL_Z); // 작은 폭포 (암반 턱)
   if (z < 0) y += -z * 0.06;
   if (z > 72) y -= (z - 72) * 0.07;
   return y;
@@ -41,14 +43,19 @@ export function terrainAt(x, z) {
   const pz = Math.exp(-((z - 6.4) ** 2) / 5) * Math.exp(-((x - centerX(6.4)) ** 2) / 6);
   y -= 0.75 * pz;
   y += 0.05 * Math.max(0, d - w) + 0.13 * fbm(x * 0.35, z * 0.35, 4) * (1 - ch * 0.7) + 0.035 * fbm(x * 1.7, z * 1.7, 3);
+  // 작은 폭포 아래 소(웅덩이)
+  const pool = Math.exp(-((z - FALL_Z - 0.9) ** 2) / 0.6) * Math.exp(-((x - cx) ** 2) / 1.6);
+  y -= 0.5 * pool;
+  // 기슭: 3~4 m 바위 턱 위로 완만한 숲 비탈 (거대한 협곡 벽 없음)
   const e = Math.max(0, d - F);
   const rough = fbm(x * 0.17 + 7, z * 0.17, 5);
-  y += (15 * (1 - Math.exp(-e / 6.5)) + 0.25 * e + e * e * 0.004) * (1 + 0.35 * rough);
-  y += sstep(0, 3, e) * 1.6 * Math.abs(fbm(x * 0.55, z * 0.55, 4)) + sstep(10, 60, e) * 25 * fbm(x * 0.03, z * 0.03, 4);
+  y += (4.4 * (1 - Math.exp(-e / 1.0)) + 0.16 * e + e * e * 0.0015) * (1 + 0.2 * rough);
+  y += sstep(0, 3, e) * 1.2 * Math.abs(fbm(x * 0.55, z * 0.55, 4)) + sstep(10, 60, e) * 6 * fbm(x * 0.03, z * 0.03, 4);
   let soil = 0.14 + 0.9 * sstep(w * 1.0, w * 2.6, d) * (1 - sstep(F - 0.3, F + 2.2, d));
   soil *= 0.75 + 0.5 * (vnoise(x * 0.5, z * 0.5) * 0.5 + 0.5);
   soil += sstep(F + 2, F + 6, d) * 0.35 * Math.max(0, fbm(x * 0.3 + 3, z * 0.3, 3) + 0.1);
   soil *= 1 - pz;
+  soil *= 1 - sstep(1.4, 0.3, Math.abs(z - FALL_Z - 0.4)) * (1 - sstep(w, w * 2.5, d)) * 0.9; // 폭포 턱·소는 암반
   const grass = sstep(w * 1.5, w * 2.5, d) * sstep(0.2, 0.0, fbm(x * 0.4 - 4, z * 0.4, 3) - 0.25);
   return { y, soil, grass, d, w, F };
 }
@@ -320,6 +327,22 @@ export function carve(x, z, radius, depth) {
     grass[k] = 0;
   }
   markDirty(ci - r, ci + r, cj - r, cj + r); fixDirty();
+  return vol;
+}
+// 사각형 구덩이: 바닥 y 까지 흙·암반을 깎는다 (가장자리는 가파른 바위 절개면)
+export function cutRect(xa, xb, za, zb, y) {
+  const i0 = Math.max(1, Math.floor((xa - 1.2 - X0) / CELL)), i1 = Math.min(NX - 1, Math.ceil((xb + 1.2 - X0) / CELL));
+  const j0 = Math.max(1, Math.floor((za - 1.2 - Z0) / CELL)), j1 = Math.min(NZ - 1, Math.ceil((zb + 1.2 - Z0) / CELL));
+  let vol = 0;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const x = X0 + i * CELL, z = Z0 + j * CELL, e = Math.max(xa - x, x - xb, za - z, z - zb, 0);
+    const k = idx(i, j), t = y + e * 4; if (ground[k] <= t) continue;
+    let want = ground[k] - t; vol += want * CELL * CELL;
+    const a = Math.min(loose[k], want); loose[k] -= a; want -= a;
+    const b = Math.min(soil[k], want); soil[k] -= b; want -= b;
+    bed[k] -= want; ground[k] = t; grass[k] = 0; cap[k] = 0; fill[k] = 0;
+  }
+  markDirty(i0, i1, j0, j1); fixDirty();
   return vol;
 }
 // 생성 직후: 집터를 평평하게 다진다 (회전된 직사각형 + 1 m 가장자리 완만하게)

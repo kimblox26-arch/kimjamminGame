@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
-import { CELL, NX, NZ, X0, Z0, idx, grass, ground, terrainAt, centerX, chanW, floorHalf, U } from './terrain.js';
+import { CELL, NX, NZ, X0, Z0, idx, grass, ground, terrainAt, centerX, chanW, floorHalf, U, FALL_Z } from './terrain.js';
 import { GLSL_NOISE, rng } from './noise.js';
 import { GLSL_SKY } from './sky.js';
 
@@ -275,4 +275,19 @@ export function buildStreams(scene) {
   for (let z = 71.8; z <= 128; z += 0.5) { const x = centerX(z); dn.push([x, surfY(x, z, 0.12), z, 1]); }
   downMat = flowMat(0.45, 1.6, 0); downMesh = new THREE.Mesh(ribbon(dn, 1.3), downMat); scene.add(downMesh);
 }
+// 작은 폭포: 바위 턱에서 떨어지는 물줄기 (물 시뮬레이션의 유량에 따라 굵기·투명도)
+let sfMat, sfMesh;
+export const smallFall = { x: 0, y: 0, z: 0, yb: 0 };
+export function buildSmallFall(scene) {
+  const z0 = FALL_Z - 0.25, x0 = centerX(z0), y0 = terrainAt(x0, z0).y + 0.1, yEnd = terrainAt(centerX(FALL_Z + 0.7), FALL_Z + 0.7).y + 0.35;
+  const pts = [];
+  for (let t = 0; t <= 0.8; t += 0.03) {
+    const z = z0 + 1.4 * t, y = y0 - 4.9 * t * t;
+    if (y < yEnd) { pts.push([centerX(z), yEnd, z, 1.25]); break; }
+    pts.push([centerX(z), y, z, 1 + t * 0.6]);
+  }
+  sfMat = flowMat(1.0, 2.4, 1); sfMesh = new THREE.Mesh(ribbon(pts, 1.0), sfMat); scene.add(sfMesh);
+  Object.assign(smallFall, { x: x0, y: y0, z: pts[pts.length - 1][2], yb: yEnd - 0.2 });
+}
+export function setSmallFall(f) { sfMat.uniforms.uOp.value = Math.min(1, f * 1.3); sfMesh.visible = f > 0.04; }
 export function setDownstream(f) { downMat.uniforms.uOp.value = Math.min(1, f * 1.2); downMesh.visible = f > 0.03; downMat.uniforms.uFoam.value = 0.15 + 0.4 * f; }

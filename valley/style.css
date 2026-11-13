@@ -69,12 +69,15 @@ h2 { font-size: 20px; margin-bottom: 18px; }
 .vals { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-variant-numeric: tabular-nums; }
 .vals span { color: var(--text); font-size: 12px; }
 @media (max-width: 640px) { .cg { grid-template-columns: repeat(2, 1fr); } .cs { grid-template-columns: 1fr; } }
-#dayMenu { position: absolute; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: 14px;
+#dayMenu, #timeMenu { position: absolute; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: 14px;
   background: var(--glass-2); border: 1px solid var(--line); backdrop-filter: blur(8px); pointer-events: auto; max-width: calc(100vw - 32px); }
-#dayMenu button { border: 1px solid var(--line); background: rgba(255, 255, 255, .06); border-radius: 10px; padding: 8px 14px; font-size: 14px; font-weight: 700; }
-#dayMenu button:hover { background: rgba(255, 255, 255, .12); }
+#dayMenu button, #timeMenu button { border: 1px solid var(--line); background: rgba(255, 255, 255, .06); border-radius: 10px; padding: 8px 14px; font-size: 14px; font-weight: 700; }
+#dayMenu button:hover, #timeMenu button:hover { background: rgba(255, 255, 255, .12); }
 #dayMenu .flow { font-weight: 600; color: var(--muted); }
 #dayMenu .flow.on { color: #9fe3b8; }
+#timeMenu { max-width: calc(100vw - 32px); justify-content: center; }
+#timeMenu button { padding: 8px 11px; }
+#timeMenu button.on { background: rgba(159, 227, 184, .22); border-color: rgba(159, 227, 184, .6); color: #c9f5d8; }
 .tb.big { color: #ffcd78; }
 .saveinfo { font-size: 12px; color: var(--muted); margin-top: 10px; }
 .actions #cont:not(.hidden) + #go { flex: .8; background: rgba(10, 18, 36, .55); color: var(--text); box-shadow: none; border: 1px solid rgba(255, 255, 255, .2); }

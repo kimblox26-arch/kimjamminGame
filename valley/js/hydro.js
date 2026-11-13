@@ -1,7 +1,7 @@
 // 큰 댐 = 실제 소수력 발전소: 중력식 콘크리트 댐 · 여수로 수직 리프트 수문(전동 권양기) ·
 // 취수구(스크린) · 수압관 · 발전소(프랜시스 수차 + 동기 발전기 2기) · 방수로 · 변압기 · 송전선
 import * as THREE from 'three';
-import { CELL, NXV, X0, Z0, SX0, SX1, NZ, groundAt, centerX, floorHalf } from './terrain.js';
+import { CELL, NXV, X0, Z0, SX0, SX1, NZ, groundAt, centerX, floorHalf, cutRect } from './terrain.js';
 import * as W from './water.js';
 
 const G = 9.81;
@@ -154,8 +154,14 @@ function commission(instant) {
     mesh(new THREE.BoxGeometry(x1 - x0, 0.05, 0.05), steel, (x0 + x1) / 2, crest + 0.95, zz);
     for (let x = x0; x <= x1; x += 1.5) mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.95, 6), steel, x, crest + 0.48, zz);
   }
-  // 발전소: 오른쪽 기슭, 댐 아래
-  const px = cx + Math.min(4.6, floorHalf(zD + 3) * 0.7 + 1.4), pz = zD + 3.0, gy = Math.min(groundAt(px, pz), groundAt(px - 2, pz), groundAt(px + 2, pz)) - 0.2;
+  // 발전소: 오른쪽 기슭 바위를 깨서 파낸 자리 안에 (지하식에 가까운 반지하 발전소)
+  const pz = zD + 3.0, cxp = centerX(pz), F2 = floorHalf(pz), px = cxp + F2 + 2.0, gy = groundAt(cxp + F2 - 0.8, pz) - 0.1;
+  p.pit = { xa: cxp + F2 - 0.8, xb: px + 4.0, za: pz - 2.2, zb: pz + 3.5, y: gy };
+  if (instant) cutRect(p.pit.xa, p.pit.xb, p.pit.za, p.pit.zb, gy);
+  else {
+    let top = gy; for (let x = p.pit.xa; x <= p.pit.xb; x += 0.5) for (let z = p.pit.za; z <= p.pit.zb; z += 0.5) top = Math.max(top, groundAt(x, z));
+    p.cut = { t0: p.t + 0.1, n: 0, N: 9, top };
+  }
   const hall = new THREE.Group(); hall.position.set(px, gy, pz); group.add(hall);
   mesh(new THREE.BoxGeometry(5.2, 0.5, 3.6), MAT, 0, 0.25, 0, hall);
   mesh(new THREE.BoxGeometry(5.2, 3.0, 0.2), wall, 0, 2.0, -1.7, hall);
@@ -186,11 +192,11 @@ function commission(instant) {
     const a = new THREE.Vector3(ix, crest - 1.6, zD + 0.6), bpt = new THREE.Vector3(px + ux, gy + 0.55, pz - 1.8);
     const pen = mesh(new THREE.CylinderGeometry(0.22, 0.22, a.distanceTo(bpt), 16), steel, (a.x + bpt.x) / 2, (a.y + bpt.y) / 2, (a.z + bpt.z) / 2);
     pen.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), bpt.clone().sub(a).normalize());
-    u.pipe = { a: cellsAt(ix, zU - 0.7, 1), b: cellsAt(cx + 1.6, pz + 2.6, 1), area: 0, Q: 0, head: 0, P: 0, qfn: (la, lb) => qUnit(u, la - lb) };
+    u.pipe = { a: cellsAt(ix, zU - 0.7, 1), b: cellsAt(centerX(pz + 2.6) + 0.3, pz + 2.6, 1), area: 0, Q: 0, head: 0, P: 0, qfn: (la, lb) => qUnit(u, la - lb) };
     W.pipes.push(u.pipe);
     p.units.push(u);
   }
-  p.hall = hall; p.tailOut = [cx + 1.6, pz + 2.6];
+  p.hall = hall; p.tailOut = [centerX(pz + 2.6) + 0.3, pz + 2.6];
   // 변압기 + 송전선 (발전소 → 하류 쪽 마을)
   const tr = new THREE.Group(); tr.position.set(px + 3.3, gy + 0.3, pz); group.add(tr);
   mesh(new THREE.BoxGeometry(0.9, 1.0, 0.7), paintB, 0, 0.5, 0, tr);
@@ -217,7 +223,7 @@ function commission(instant) {
   fixedBox(px + 3.3, gy + 0.8, pz, 0.5, 0.55, 0.45);
   if (instant) { p.ready = true; return; }
   // 새로 생긴 부품들을 순서대로 떨어뜨려 조립 (방류 물살·케이블은 마지막에 보이게)
-  let t = (p.bodyEnd ?? 0) + 0.4;
+  let t = Math.max(p.t, p.bodyEnd ?? 0) + 0.4 + 0.22 * 9; // 바위를 다 깬 뒤 조립
   for (const o of group.children.slice(n0)) {
     if (o === undefined || o.isLine || p.gates.some(g => g.sheet === o)) { if (o?.isLine) { o.visible = false; p.lines = (p.lines || []).concat(o); } continue; }
     queue(o, t, null); t += 0.07;
@@ -252,7 +258,7 @@ export function rasterize() {
 }
 
 // 매 프레임: 건설 애니메이션 · 모터 · 발전기 · 표시
-export function update(dt, energyOK, fx, dirt, snap) {
+export function update(dt, energyOK, fx, dirt, snap, onCut) {
   const p = plant; if (!p) return { load: 0 };
   if (p.demo) {
     const d = p.demo; d.t += dt; let left = 0;
@@ -266,6 +272,15 @@ export function update(dt, energyOK, fx, dirt, snap) {
   }
   if (!p.ready) {
     p.t += dt;
+    // 발전소 자리 바위 깨기: 조금씩 깊게 파 내려간다
+    const c = p.cut;
+    if (c && c.n < c.N && p.t >= c.t0 + c.n * 0.22) {
+      const P = p.pit, k = ++c.n / c.N;
+      cutRect(P.xa, P.xb, P.za, P.zb, c.top - (c.top - P.y) * k);
+      const x = P.xa + Math.random() * (P.xb - P.xa), z = P.za + Math.random() * (P.zb - P.za);
+      onCut?.(x, groundAt(x, z) + 0.3, z, (P.xa + P.xb) / 2, (P.za + P.zb) / 2);
+      p.changed = true;
+    }
     let left = 0;
     for (const q of p.queue) {
       if (q.done) continue; left++;

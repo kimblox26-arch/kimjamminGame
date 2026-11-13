@@ -158,7 +158,7 @@ async function boot(q, save) {
   N.buildTrees(scene, q.pine, q.broad);
   N.buildGrass(scene, q.grass);
   N.buildFlowers(scene, q.flowers);
-  N.buildStreams(scene);
+  N.buildStreams(scene); N.buildSmallFall(scene);
   FX.init(scene, camera);
 
   const pr = renderer.getPixelRatio();
@@ -282,10 +282,12 @@ $('bPause').onclick = () => { if (isTouch) showPause('일시정지', '계속'); 
 $('bPerf').onclick = () => setPerf(!perf);
 $('bRain').onclick = () => setRain(!rainOn);
 $('bSpeed').onclick = () => PL.cycleSpeed();
-$('bTime').onclick = () => setTimeScale(timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1);
+const SCALES = [1, 2, 4, 10, 20, 30, 50, 100];
+$('bTime').onclick = () => { $('timeMenu').classList.toggle('hidden'); $('dayMenu').classList.add('hidden'); };
+document.querySelectorAll('#timeMenu [data-ts]').forEach(b => b.onclick = () => { setTimeScale(+b.dataset.ts); $('timeMenu').classList.add('hidden'); });
 // 낮밤 정하기
 let dayFrozen = false;
-function toggleDayMenu() { $('dayMenu').classList.toggle('hidden'); }
+function toggleDayMenu() { $('dayMenu').classList.toggle('hidden'); $('timeMenu').classList.add('hidden'); }
 $('bDay').onclick = toggleDayMenu;
 document.querySelectorAll('#dayMenu [data-tod]').forEach(b => b.onclick = () => { sky_.tod = +b.dataset.tod; $('dayMenu').classList.add('hidden'); });
 $('dayFlow').onclick = () => { dayFrozen = !dayFrozen; $('dayFlow').textContent = dayFrozen ? '시간 흐름: 멈춤' : '시간 흐름: 켜짐'; $('dayFlow').classList.toggle('on', !dayFrozen); };
@@ -334,7 +336,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyN') toggleDayMenu();
   if (e.code === 'KeyK') saveGame();
   if (e.code === 'KeyC' && H.plant?.ready) setCtrl(!ctrlOpen);
-  if (e.code === 'KeyT') setTimeScale(timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1);
+  if (e.code === 'KeyT') { setTimeScale(SCALES[(SCALES.indexOf(timeScale) + 1) % SCALES.length]); hooks.toast('시간 ×' + timeScale); }
 });
 
 // ───── 게임 훅 ─────
@@ -401,9 +403,10 @@ function loop(now) {
   fpsN++; fpsT += raw; if (fpsT > 0.5) { fpsV = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   if (paused) { render(); return; }
   const dg = dt * timeScale; // 게임 시간 (배속 적용)
-  clock += dt; gclock += dg; T.U.uTime.value = gclock;
+  const dv = Math.min(dg, dt * 2), da = Math.min(dg, dt * 4); // 화면 효과·애니메이션은 너무 빨라지지 않게
+  clock += dt; gclock += dv; T.U.uTime.value = gclock;
   PL.update(dt, clock);
-  physAcc += dg; let n = 0; const maxPhys = Math.min(8, 4 * timeScale);
+  physAcc += dg; let n = 0; const maxPhys = Math.min(perf ? 4 : 8, 4 * timeScale);
   while (physAcc >= 1 / 60 && n < maxPhys) {
     PL.prePhysics(1 / 60);
     S.waterForces(onSplash);
@@ -415,21 +418,23 @@ function loop(now) {
   if (n === maxPhys) physAcc = 0;
   S.sync(); S.rasterize();
   waterAcc += Math.min(dg, timeScale / 15); let m = 0;
-  const maxSteps = Math.min(10, (perf ? 2 : 3) * timeScale);
+  const maxSteps = Math.min(perf ? 6 : 10, (perf ? 2 : 3) * timeScale);
   while (waterAcc >= 1 / 60 && m < maxSteps) { W.step(1 / 60); waterAcc -= 1 / 60; m++; }
   if (m === maxSteps) waterAcc = Math.min(waterAcc, 1 / 60);
-  W.post(dg);
-  D.update(dg, FX.splash, FX.dirt);
+  W.fastFill(timeScale > 1 ? Math.max(0, dg - m / 60) : 0, m / 60); // 배속: 계산이 못 따라간 시간만큼 고인 물이 차오름
+  W.post(da);
+  D.update(da, FX.splash, FX.dirt);
   if (D.building()) { S.touch(); shake = 0.05; }
   // 모터 전원: 배터리·발전 전기가 없으면 실제 발전소처럼 비상 디젤 발전기가 대신 돌린다(블랙 스타트)
   elec.diesel = !(elec.batt > 0.05 || elec.gen > 0.5);
   const hadPlant = !!H.plant;
-  const hy = H.update(dg, true, FX.splash, FX.dirt, (pos, body) => { A.snap(body); FX.dirt(pos.x, pos.y, pos.z, body ? 5 : 2); if (body) shake = Math.max(shake, 0.025); });
+  const hy = H.update(da, true, FX.splash, FX.dirt, (pos, body) => { A.snap(body); FX.dirt(pos.x, pos.y, pos.z, body ? 5 : 2); if (body) shake = Math.max(shake, 0.025); },
+    (x, y, z, cx, cz) => { A.crack(0.7); FX.chips(x, y, z, 22); FX.dirt(x, y, z, 12); hooks.edit(cx, cz, 6); shake = Math.max(shake, 0.045); }); // 발전소 자리 바위 깨기
   elec.motor = hy.load;
   if (hadPlant && !H.plant) { S.touch(); hooks.toast('댐을 철거했어요'); saveGame(true); }
   if (H.plant) {
     if (H.plant.changed) { S.touch(); H.plant.changed = false; }
-    if (H.plant.justDone) { H.plant.justDone = false; A.chime(); setTimeScale(4); hooks.toast('수력발전소 완공! 담수 시작 — 시간 ×4로 물을 채우는 중 (T로 바꿀 수 있어요) · 제어실(C)'); $('bCtrl').classList.remove('hidden'); saveGame(true); }
+    if (H.plant.justDone) { H.plant.justDone = false; A.chime(); setTimeScale(10); hooks.toast('수력발전소 완공! 담수 시작 — 시간 ×10으로 물을 채우는 중 · 제어실(C)'); $('bCtrl').classList.remove('hidden'); saveGame(true); }
     const d = camera.position.distanceTo(new THREE.Vector3(H.plant.cx + 3, H.plant.crest, H.plant.zU + 4));
     A.machine(H.plant.P / 8000 / (1 + d * d * 0.004), H.plant.gates.some(g => g.moving) ? 1 / (1 + d * d * 0.01) : 0);
   }
@@ -446,7 +451,9 @@ function loop(now) {
   const st = W.state, rt = rainOn ? 1 : 0;
   st.inflow += ((rainOn ? 0.42 : 0.2) - st.inflow) * Math.min(1, dg * 0.08);
   T.U.uRain.value += (rt - T.U.uRain.value) * Math.min(1, dg * 0.15);
-  FX.update(dg, T.U.uRain.value);
+  { const sf = N.smallFall, s = W.sample(sf.x, sf.z - 1.2), f = s ? Math.min(1, s.h * Math.hypot(s.vx, s.vz) / 0.1) : 0;
+    N.setSmallFall(f); FX.fall2.x = sf.x; FX.fall2.y = sf.yb; FX.fall2.z = sf.z; FX.fall2.f = f; }
+  FX.update(dv, T.U.uRain.value);
   N.setDownstream(Math.max(0, st.outSm / 0.2));
   N.cull(camera.position);
   audioUpdate();
@@ -486,7 +493,7 @@ function electricity(dt, dg) {
   elec.lit += (on - elec.lit) * Math.min(1, dt * 2.5);
   V.setLit(elec.lit);
 }
-function setTimeScale(n) { timeScale = n; $('tsx').textContent = '×' + n; $('bTime').classList.toggle('on', n > 1); }
+function setTimeScale(n) { timeScale = n; $('tsx').textContent = '×' + n; $('bTime').classList.toggle('on', n > 1); document.querySelectorAll('#timeMenu [data-ts]').forEach(b => b.classList.toggle('on', +b.dataset.ts === n)); }
 function rebuildHF() {
   T.buildPhysics(RAPIER, world);
   for (const st of S.stones) {
@@ -534,7 +541,8 @@ function audioUpdate() {
     const sp = Math.hypot(s.vx, s.vz), w = 1 / (1 + (dx * dx + dz * dz) * 0.15);
     flow += s.open * sp * w; turb += W.foam[s.k] * w;
   }
-  const fd = Math.hypot(c.x - T.centerX(4.4), c.z - 4.4, c.y - T.groundAt(T.centerX(4.4), 4.4));
+  const sf = N.smallFall, fd = Math.min(Math.hypot(c.x - T.centerX(4.4), c.z - 4.4, c.y - T.groundAt(T.centerX(4.4), 4.4)),
+    Math.hypot(c.x - sf.x, c.z - sf.z, c.y - sf.yb) * 1.8 / Math.sqrt(Math.max(0.02, FX.fall2.f)));
   A.update({ flow: flow * 1.6, turb: turb * 0.5, fallDist: fd, rain: T.U.uRain.value });
 }
 function render() {

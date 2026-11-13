@@ -197,6 +197,30 @@ export function post(dt) {
   state.maxDepth = mx;
 }
 export function saveBaseline() { h0.set(h); }
+// 빠른 배속: 물 계산이 못 따라간 시간(sec)만큼, 고인 물(깊고 잔잔한 칸)이 지금 차오르는 속도를 그대로 이어서 더한다
+// (차오르는 속도는 실제 계산된 시간 simDt 동안의 고인 물 부피 변화로 잰다 — 넘치기 시작하면 0 이 되어 멈춤)
+let pondPrev = -1, pondRate = 0;
+const pond = [];
+export function fastFill(sec, simDt) {
+  pond.length = 0; let vol = 0;
+  for (let j = 1; j < MEAS_J; j++) for (let i = Math.max(SX0 + 1, lo[j]); i <= Math.min(SX1 - 2, hi[j]); i++) {
+    const k = j * NXV + i;
+    if (h[k] > 0.3 && vx[k] * vx[k] + vz[k] * vz[k] < 0.03 && solid[k] - ground[k] < 0.01) { pond.push(k); vol += h[k]; }
+  }
+  vol *= A;
+  if (pondPrev >= 0 && simDt > 0) {
+    const r = Math.max(0, Math.min(state.inflow, (vol - pondPrev) / simDt));
+    pondRate += (r - pondRate) * Math.min(1, simDt * 0.5);
+  }
+  let add = 0;
+  if (sec > 0 && pond.length >= 20 && pondRate > 1e-4) {
+    const dh = Math.min(0.04, pondRate * sec / (pond.length * A));
+    for (const k of pond) h[k] += dh;
+    add = dh * pond.length * A;
+  }
+  if (simDt > 0 || add > 0) pondPrev = vol + add;
+  return add;
+}
 
 // ───── 데이터 텍스처 ─────
 const dW = new Float32Array(SW * NZV * 4), dV = new Float32Array(SW * NZV * 4);
