@@ -190,7 +190,7 @@ function bankSlump(k, e, cp) {
 }
 let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004, CPK = 0.008, CPM = 0, BEDF = 1; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
 export function post(dt) {
-  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.05; CPM = 0.05; BEDF = 0.45; } // 바다 모래: 조류 물살의 지형 변화 가속 (해안 모델의 MORFAC 처럼) // 모래는 잘 쓸려 간다
+  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.05; CPM = 0.05; BEDF = 0.7; } // 바다 모래: 조류 물살의 지형 변화 가속 (해안 모델의 MORFAC 처럼) // 모래는 잘 쓸려 간다
   let mx = 0, st = 0;
   for (let j = Math.max(1, JL + 2); j < Math.min(NZ, JM - 1); j++) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
