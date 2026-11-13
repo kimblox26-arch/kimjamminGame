@@ -166,7 +166,8 @@ export function addStone(x, y, z, r, opts = {}) {
   cd.setActiveEvents(R.ActiveEvents.CONTACT_FORCE_EVENTS).setContactForceEventThreshold(vol * 2400 * 9.81 * 6 + 60);
   const collider = world.createCollider(cd, body);
   mesh.position.set(x, y, z); mesh.quaternion.copy(q);
-  const st = { mesh, body, collider, ext: ext.map(e => e * 1.04), r, fixed, vol, mass: fixed ? vol * 2400 : body.mass(), boulder: fixed, lastHit: 0, above: true, surf: -100, held: false, moved: false, seed, matIdx };
+  const ex = ext.map(e => e * 1.04);
+  const st = { cx: x, cy: y, cz: z, hy: ex[1], rb: Math.max(...ex), mesh, body, collider, ext: ex, r, fixed, vol, mass: fixed ? vol * 2400 : body.mass(), boulder: fixed, lastHit: 0, above: true, surf: -100, held: false, moved: false, seed, matIdx };
   stones.push(st); byHandle.set(collider.handle, st);
   return st;
 }
@@ -313,7 +314,7 @@ const lastVis = new Float32Array(W.solid.length);
 const DIRS = Array.from({ length: 8 }, (_, n) => [Math.cos(n * Math.PI / 4), Math.sin(n * Math.PI / 4)]);
 export function waterForces(cb) {
   for (const st of stones) {
-    if (st.fixed || st.held) continue;
+    if (st.fixed || st.held || !Number.isFinite(st.cy)) continue;
     const bot = st.cy - st.hy, top = st.cy + st.hy, Rh = Math.max(st.ext[0], st.ext[2]);
     let fx = 0, fz = 0, wetN = 0, sv = 0, svx = 0, svz = 0;
     for (const [dx, dz] of DIRS) {
@@ -348,6 +349,7 @@ export function sync() {
     if (st.fixed || st.body.isSleeping()) continue;
     needRaster = true;
     const t = st.body.translation(), r = st.body.rotation();
+    if (!Number.isFinite(t.x + t.y + t.z)) { st.body.setTranslation({ x: st.mesh.position.x, y: st.mesh.position.y + 0.3, z: st.mesh.position.z }, true); st.body.setLinvel({ x: 0, y: 0, z: 0 }, true); st.body.setAngvel({ x: 0, y: 0, z: 0 }, true); st.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true); st.body.resetForces(true); continue; } // 혹시 모를 NaN 복구
     st.mesh.position.set(t.x, t.y, t.z); st.mesh.quaternion.set(r.x, r.y, r.z, r.w);
     if (t.y < -20) { st.body.setTranslation({ x: 0, y: 8, z: 30 }, true); st.body.setLinvel({ x: 0, y: 0, z: 0 }, true); }
   }

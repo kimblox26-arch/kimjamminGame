@@ -329,7 +329,7 @@ export function upload() {
 // 위치에서 수면/속도 조회 (게임플레이용)
 export function sample(x, z) {
   const i = Math.round((x - X0) / CELL), j = Math.round((z - Z0) / CELL);
-  if (i < SX0 || i >= SX1 || j < 0 || j > NZ) return null;
+  if (!(i >= SX0 && i < SX1 && j >= 0 && j <= NZ)) return null; // NaN 좌표도 거른다
   const k = idx(i, j);
   return { h: h[k], open: ho[k], surf: lev[k], solid: solid[k], vx: vx[k], vz: vz[k], k };
 }
