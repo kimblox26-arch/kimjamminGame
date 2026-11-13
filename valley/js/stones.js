@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { physState, CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell } from './terrain.js';
+import { physState, CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell, MODE } from './terrain.js';
 import * as W from './water.js';
 import * as D from './dam.js';
 import { GLSL_NOISE, rng } from './noise.js';
@@ -181,8 +181,8 @@ export function spawnAll(group, count, nBoulders = 18, keepOut = []) {
   const free = (x, z, r) => placed.every(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 > (pr + r + 0.05) ** 2);
   // 고정 큰 바위
   for (let n = 0, tries = 0; n < nBoulders && tries < 500; tries++) {
-    const z = 7.5 + rand() * 57, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
-    let x = centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.5 + rand() * 0.4)); // 바닥 위에만 (벽에 뜨지 않게)
+    const sea = MODE === 'sea', z = sea ? 20 + rand() * 34 : 7.5 + rand() * 57, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
+    let x = sea ? (rand() * 2 - 1) * 6.6 : centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.5 + rand() * 0.4)); // 바닥 위에만 (벽에 뜨지 않게)
     const r = n < 4 ? 0.55 + rand() * 0.3 : 0.6 + rand() * 0.9;
     if (!free(x, z, r)) continue;
     placed.push([x, z, r]);
@@ -195,7 +195,7 @@ export function spawnAll(group, count, nBoulders = 18, keepOut = []) {
   // 주울 수 있는 돌
   for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
     const nearDam = rand() < 0.45;
-    const z = nearDam ? (rand() < 0.5 ? 10 : 46) + rand() * 9 : 7.5 + rand() * 57;
+    const z = MODE === 'sea' ? 15 + rand() * 30 : nearDam ? (rand() < 0.5 ? 10 : 46) + rand() * 9 : 7.5 + rand() * 57;
     const F = floorHalf(z);
     const x = centerX(z) + (rand() * 2 - 1) * F * 0.92;
     const r = 0.1 + 0.24 * Math.pow(rand(), 1.5);

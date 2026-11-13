@@ -117,18 +117,19 @@ export function splash(x, y, z, s) {
 
 let acc = 0;
 export const fall2 = { x: 0, y: 0, z: 0, f: 0 }; // 작은 폭포 아래 물보라
+export const opt = { fall: true }; // 바다에서는 계곡 폭포 물안개 없음
 export function update(dt, rainAmt) {
   // 폭포 물안개
   acc += dt;
   const fx = centerX(4.3), fy = terrainAt(fx, 5).y + 0.35;
   while (acc > 0.025) {
     acc -= 0.025;
-    mist.emit(fx + (Math.random() - 0.5) * 1.2, fy, 4.3 + Math.random() * 0.8, (Math.random() - 0.5) * 0.5, 0.25 + Math.random() * 0.5, 0.3 + Math.random() * 0.5, 2.5, 0.35 + Math.random() * 0.3, 0.92, 0.96, 1, 0.12, 0.35);
+    if (opt.fall) mist.emit(fx + (Math.random() - 0.5) * 1.2, fy, 4.3 + Math.random() * 0.8, (Math.random() - 0.5) * 0.5, 0.25 + Math.random() * 0.5, 0.3 + Math.random() * 0.5, 2.5, 0.35 + Math.random() * 0.3, 0.92, 0.96, 1, 0.12, 0.35);
     if (Math.random() < fall2.f * 0.8) {
       mist.emit(fall2.x + (Math.random() - 0.5) * 0.9, fall2.y, fall2.z + Math.random() * 0.4, (Math.random() - 0.5) * 0.4, 0.2 + Math.random() * 0.35, 0.2 + Math.random() * 0.4, 1.8, 0.25 + Math.random() * 0.2, 0.92, 0.96, 1, 0.1, 0.3);
       drops.emit(fall2.x + (Math.random() - 0.5) * 0.8, fall2.y, fall2.z + Math.random() * 0.3, (Math.random() - 0.5) * 1.2, 0.8 + Math.random() * 1.5, Math.random() * 1.0, 0.6, 0.025, 0.85, 0.92, 0.95, 0.7);
     }
-    drops.emit(fx + (Math.random() - 0.5) * 1.0, fy, 4.4 + Math.random() * 0.4, (Math.random() - 0.5) * 1.5, 1 + Math.random() * 2, (Math.random()) * 1.2, 0.7, 0.03, 0.85, 0.92, 0.95, 0.7);
+    if (opt.fall) drops.emit(fx + (Math.random() - 0.5) * 1.0, fy, 4.4 + Math.random() * 0.4, (Math.random() - 0.5) * 1.5, 1 + Math.random() * 2, (Math.random()) * 1.2, 0.7, 0.03, 0.85, 0.92, 0.95, 0.7);
     if (Math.random() < 0.35) {
       const c = camera.position;
       motes.emit(c.x + (Math.random() - 0.5) * 14, c.y + (Math.random() - 0.3) * 4, c.z + (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.1, 6, 0.012, 1, 0.95, 0.75, 0.35 * (1 - rainAmt));

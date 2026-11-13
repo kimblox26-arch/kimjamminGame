@@ -20,9 +20,13 @@ export const U = {
   uDay: { value: 1 },
 };
 
-export const centerX = z => 1.8 * Math.sin(z * 0.13 + 0.5) + 0.6 * Math.sin(z * 0.31 + 1.3);
-export const floorHalf = z => 5.0 + 1.9 * Math.sin(z * 0.17 + 2.33); // z≈14 에서 가장 좁음
-export const chanW = z => 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
+// 장소: 'valley' 계곡 / 'sea' 바다 (지형을 만들기 전에 정한다)
+export let MODE = 'valley';
+export function setMode(m) { MODE = m === 'sea' ? 'sea' : 'valley'; }
+export const noTree = []; // 나무를 심지 않을 자리 [x, z, r]
+export const centerX = z => MODE === 'sea' ? 0 : 1.8 * Math.sin(z * 0.13 + 0.5) + 0.6 * Math.sin(z * 0.31 + 1.3);
+export const floorHalf = z => MODE === 'sea' ? 7.2 : 5.0 + 1.9 * Math.sin(z * 0.17 + 2.33); // z≈14 에서 가장 좁음
+export const chanW = z => MODE === 'sea' ? 7 : 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
 export const FALL_Z = 50.5, FALL_H = 1.0; // 작은 폭포: 바위 턱 위치·높이
 export function baseY(z) {
   let y = 4.0 - z * 0.045;
@@ -34,8 +38,33 @@ export function baseY(z) {
   return y;
 }
 
+// 바다: 모래언덕(z<14) → 모래사장(물가 z≈38) → 얕은 만(z 72 에서 수심 약 1 m) · 양쪽은 바위 곶, 만 입구 너머 먼바다
+export const SEA_Y = 0;
+const reefs = [[-4.2, 49, 1.5, 1.3], [4.6, 57, 1.1, 1.0], [-1.5, 63, 0.8, 0.6], [6.2, 31, 0.9, 0.9]];
+function seaTerrainAt(x, z) {
+  let y = 2.2 - 2.6 * sstep(14, 46, z) - 0.9 * sstep(40, 80, z) - 2.5 * sstep(80, 130, z);
+  if (z < 14) y += (14 - z) * 0.06;
+  const land = sstep(24, 12, z);
+  y += 0.4 * fbm(x * 0.22, z * 0.22, 4) * land + 0.035 * fbm(x * 1.4, z * 1.4, 3) + 0.05 * fbm(x * 0.5 + 9, z * 0.5, 3) * (1 - land);
+  // 바위 곶: |x| > 8.3 (만 입구 너머 z>80 에서는 바다로 잠긴다)
+  const ax = Math.abs(x), wob = 0.9 * fbm(z * 0.13 + (x > 0 ? 5 : 0), 3.7, 3), hx = ax - 8.3 - wob;
+  const arm = sstep(-0.2, 1.6, hx) * sstep(88, 76, z);
+  const rough = fbm(x * 0.21 + 3, z * 0.21, 5);
+  let rock = arm * (3.6 + 1.6 * rough + 0.12 * Math.max(0, hx) + 0.6 * Math.abs(fbm(x * 0.6, z * 0.6, 4)));
+  rock += sstep(14, 40, ax) * 3 * (1 + fbm(x * 0.04, z * 0.04, 3)) * sstep(100, 70, z); // 바깥 언덕
+  // 만 안의 갯바위
+  let reef = 0;
+  for (const [rx, rz, r, hgt] of reefs) { const d = Math.hypot(x - rx, (z - rz) * 1.2) / r; if (d < 1.6) reef = Math.max(reef, hgt * (1 - sstep(0.3, 1.6, d)) * (1 + 0.35 * fbm(x * 1.1, z * 1.1, 3))); }
+  const yr = Math.max(y, y + rock, y + reef * 1.0 + (reef > 0 ? 0.6 * Math.max(0, -y) : 0));
+  const rocky = Math.max(sstep(0.05, 0.6, rock), sstep(0.05, 0.3, reef));
+  y = yr;
+  let soil = (1.6 - 0.3 * land) * (1 - rocky); // 모래 두께
+  const grass = land * sstep(-0.1, 0.25, fbm(x * 0.4 - 4, z * 0.4, 3)) * (1 - rocky) + rocky * arm * 0.6 * sstep(4.5, 5.5, y) * sstep(0, 0.3, fbm(x * 0.3, z * 0.3, 3));
+  return { y, soil, grass, d: y > 1.9 ? 2.5 + y : 0, w: 7, F: 0 };
+}
 // 해석적 지형 함수
 export function terrainAt(x, z) {
+  if (MODE === 'sea') return seaTerrainAt(x, z);
   const cx = centerX(z), d = Math.abs(x - cx), F = floorHalf(z), w = chanW(z);
   let y = baseY(z);
   const ch = 1 - sstep(w * 0.5, w * 1.3, d);
@@ -119,6 +148,7 @@ export function groundAt(x, z) {
 // ───── 재질 ─────
 export function terrainMaterial() {
   const m = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0 });
+  if (MODE === 'sea') m.defines = { SEA: '' };
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader
@@ -192,7 +222,11 @@ if (gravW > 0.002) { // 자갈: 큰 돌 + 잔자갈 + 모래
 #endif
 if (dirtW > 0.002) { // 흙 / 풀밭
   float fb = fbm2(P.xz*0.9);
+#ifdef SEA
+  vec3 dirt = mix(vec3(0.60,0.53,0.40), vec3(0.78,0.70,0.54), vnoise2(P.xz*3.)) * (0.95 + 0.06*sin(P.x*0.4 + P.z*5.2 + vnoise2(P.xz*1.3)*5.)); // 모래 (물결무늬)
+#else
   vec3 dirt = mix(vec3(0.27,0.19,0.12), vec3(0.42,0.31,0.20), vnoise2(P.xz*3.));
+#endif
   vec3 gr = mix(vec3(0.16,0.25,0.06), vec3(0.32,0.38,0.11), fb);
   gr = mix(gr, vec3(0.40,0.35,0.16), smoothstep(0.55,0.8,vnoise2(P.xz*2.1+5.))*0.6);
   alb += mix(dirt, gr, sGrass)*dirtW; tRough += 0.95*dirtW;
@@ -200,7 +234,11 @@ if (dirtW > 0.002) { // 흙 / 풀밭
 }
 float fresh = clamp(max(sDug*1.2, sLoose*10.), 0., 1.) * (1. - rockW*0.7);
 if (fresh > 0.002) {
+#ifdef SEA
+  vec3 fd = mix(vec3(0.52,0.45,0.33), vec3(0.64,0.56,0.42), vnoise2(P.xz*9.));
+#else
   vec3 fd = mix(vec3(0.23,0.15,0.09), vec3(0.34,0.24,0.15), vnoise2(P.xz*9.));
+#endif
   float fdH = fbm2(P.xz*9.)*0.03 + vnoise2(P.xz*40.)*0.006*fade;
   alb = mix(alb, fd, fresh); tH = mix(tH, fdH, fresh);
 }

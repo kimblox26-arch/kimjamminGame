@@ -1,11 +1,28 @@
 // 전기를 쓰는 곳: 계곡 가로등과 오두막 (밤에 배터리/발전 전기로 불이 켜진다)
 import * as THREE from 'three';
-import { groundAt, centerX, floorHalf } from './terrain.js';
+import { groundAt, centerX, floorHalf, MODE } from './terrain.js';
 
 export const lamps = [], cabins = [];
 export const sites = [], lampSites = [];
 // 지형 메시를 만들기 전에 호출: 집터를 평평하게 다지고, 돌이 놓이면 안 되는 자리를 돌려준다
+function flatSpot(x0, z, xs) {
+  let best = null;
+  for (const dx of xs) {
+    const x = x0 + dx; let gmin = 1e9, gmax = -1e9;
+    for (const u of [-1.7, 0, 1.7]) for (const v of [-1.5, 0, 1.5]) { const g = groundAt(x + v, z + u); gmin = Math.min(gmin, g); gmax = Math.max(gmax, g); }
+    if (!best || gmax - gmin < best.d - 0.05) best = { x, gmin, gmax, d: gmax - gmin };
+  }
+  return best;
+}
 export function prepare() {
+  if (MODE === 'sea') { // 바다: 모래언덕 위 집 세 채(바다를 바라봄) · 해변 산책길 가로등
+    for (const [x0, z] of [[-4.5, 8], [4.2, 10], [0.2, 3.2]]) {
+      const { x, gmin, gmax } = flatSpot(x0, z, [-1.5, -0.75, 0, 0.75, 1.5]);
+      sites.push({ x, z, y: gmin + (gmax - gmin) * 0.25 + 0.05, base: gmin - 0.25, yaw: 0, side: 1 });
+    }
+    for (const [x, z] of [[-6.4, 17], [-2.2, 17.6], [2.2, 17.6], [6.4, 17], [-7.2, 11], [7.4, 13]]) lampSites.push({ x, z, side: x < 0 ? 1 : -1 });
+    return [...sites.map(t => [t.x, t.z, 3.0]), ...lampSites.map(l => [l.x, l.z, 0.7])];
+  }
   // 계곡 바닥이 넓은 곳, 강에서 멀리(벽 쪽) — 땅은 깎지 않고 콘크리트 기초 위에 짓는다
   for (const [z, side] of [[29, 1], [37, -1], [64, 1]]) {
     const F = floorHalf(z), yaw = side > 0 ? -Math.PI / 2 : Math.PI / 2;

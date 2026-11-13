@@ -163,3 +163,8 @@ svg.emblem { width: clamp(64px, 8.5vw, 96px); height: auto; flex: none; filter: 
   .shade { background: linear-gradient(180deg, rgba(6, 10, 22, .7), rgba(6, 10, 22, .25) 60%, rgba(6, 10, 22, .6)); }
   .qual span { display: none; }
 }
+
+/* 장소 고르기 · 바다 모드 */
+#mapSel { margin-bottom: 8px; }
+#mapSel button.on { background: rgba(120, 200, 230, .2); border-color: rgba(140, 215, 240, .65); }
+body.sea #bBig { display: none !important; }

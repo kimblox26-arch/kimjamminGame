@@ -1,6 +1,6 @@
 // 얕은 물 시뮬레이션(가상 파이프 + 마찰) · 침식 · 물 표면 렌더링
 import * as THREE from 'three';
-import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, diag, centerX, baseY, markDirtyCell } from './terrain.js';
+import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, soil, bed, diag, centerX, baseY, markDirtyCell, MODE, SEA_Y } from './terrain.js';
 import { GLSL_NOISE, sstep } from './noise.js';
 import { GLSL_SKY } from './sky.js';
 
@@ -20,10 +20,26 @@ export const vx = new Float32Array(NV), vz = new Float32Array(NV), foam = new Fl
 export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
 export const h0 = new Float32Array(NV); // 저수량 기준 수심
 export const MEAS_J = 325; // z=65 (하류 낙차 직전)
-export const state = { inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
+export const state = { tide: 0, inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
 const src = [];
+// 바다: 만 입구(z=72)에서 들어오는 파도 — 주기가 다른 너울 세 개가 겹쳐 파도 무리(세트)가 생긴다
+export const WAVES = [[0.13, 6.5, 0], [0.07, 4.3, 1.7], [0.05, 9.1, 0.4]]; // [진폭 m, 주기 s, 위상]
+export const seaEta = t => { let e = 0; for (const [a, T, p] of WAVES) e += a * Math.sin(2 * Math.PI * t / T + p); return e; };
+export const seaLevel = () => SEA_Y + state.tide + seaEta(state.time);
+// 바다는 z≈57 까지만 계산하고, 그 너머(만 입구 쪽)는 들어오는 파도를 식으로 그린다 (폰에서 가볍게)
+export let JM = NZ;
+const C_SEA = 3.2; // 파도 속도 m/s (얕은 바다 √(g·h))
+function seaBoundary() {
+  const t = state.time, base = SEA_Y + state.tide;
+  for (let j = JM - 1; j <= NZ; j++) {
+    const dz = (j - JM) * CELL; let e = 0;
+    for (const [a, T, p] of WAVES) e += a * Math.sin(2 * Math.PI * (t / T + dz / (C_SEA * T)) + p);
+    for (let i = SX0; i < SX1; i++) { const k = j * NXV + i; h[k] = Math.max(0, base + e - solid[k]); }
+  }
+}
 
 export function init() {
+  if (MODE === 'sea') { JM = Math.round(57 / CELL); state.inflow = 0; state.outSm = 0; beginSolid(); return; }
   const zs = 5.2, cx = centerX(zs);
   for (let j = Math.round(zs / CELL) - 2; j <= Math.round(zs / CELL) + 2; j++)
     for (let i = SX0; i < SX1; i++) { const x = X0 + i * CELL; if (Math.abs(x - cx) < 0.7) src.push(idx(i, j)); }
@@ -61,9 +77,10 @@ function widen() {
   }
 }
 export function step(dt) {
-  const kf = dt * G;
+  const kf = dt * G, sea = MODE === 'sea';
+  if (sea) seaBoundary();
   // 수위: 공극이 차기 전엔 seal + h/φ, 다 차면 돌 위로 흐름
-  for (let j = 0; j < NZV; j++) {
+  for (let j = 0; j <= JM; j++) {
     const i1 = Math.min(SX1 - 1, hi[j] + 1);
     for (let i = Math.max(SX0, lo[j] - 1); i <= i1; i++) {
       const k = j * NXV + i, hk = h[k], cp = PHI * (ptop[k] - seal[k]);
@@ -73,7 +90,7 @@ export function step(dt) {
       } else { lev[k] = solid[k] + hk; ho[k] = hk; hp[k] = 0; }
     }
   }
-  for (let j = 0; j < NZV; j++) {
+  for (let j = 0; j <= JM; j++) {
     for (let i = lo[j]; i <= hi[j]; i++) {
       const k = j * NXV + i, hk = h[k];
       if (hk <= 0) { fL[k] = fR[k] = fU[k] = fD[k] = pL[k] = pR[k] = pU[k] = pD[k] = 0; continue; }
@@ -82,21 +99,21 @@ export function step(dt) {
       if (i > SX0) { l = flux(fL[k], H, o, k - 1, kf, dt); if (q > 0 && H > lev[k - 1]) a = kp[k] * q * (H - lev[k - 1]); }
       if (i < SX1 - 1) { r = flux(fR[k], H, o, k + 1, kf, dt); if (q > 0 && H > lev[k + 1]) b = kp[k] * q * (H - lev[k + 1]); }
       if (j > 0) { u = flux(fU[k], H, o, k - NXV, kf, dt); if (q > 0 && H > lev[k - NXV]) c = kp[k] * q * (H - lev[k - NXV]); }
-      if (j < NZ) { d = flux(fD[k], H, o, k + NXV, kf, dt); if (q > 0 && H > lev[k + NXV]) e = kp[k] * q * (H - lev[k + NXV]); }
-      else { d = flux0(fD[k], o, o, kf, dt); e = kp[k] * q * q; }
+      if (j < JM) { d = flux(fD[k], H, o, k + NXV, kf, dt); if (q > 0 && H > lev[k + NXV]) e = kp[k] * q * (H - lev[k + NXV]); }
+      else if (!sea) { d = flux0(fD[k], o, o, kf, dt); e = kp[k] * q * q; }
       const s = l + r + u + d + a + b + c + e;
       if (s > 0) { const K = Math.min(1, hk * A / (s * dt)); l *= K; r *= K; u *= K; d *= K; a *= K; b *= K; c *= K; e *= K; }
       fL[k] = l; fR[k] = r; fU[k] = u; fD[k] = d; pL[k] = a; pR[k] = b; pU[k] = c; pD[k] = e;
     }
   }
   let out = 0;
-  for (let j = 0; j < NZV; j++) {
+  for (let j = 0; j <= JM; j++) {
     let wa = SX1, wb = SX0 - 1;
     for (let i = lo[j]; i <= hi[j]; i++) {
       const k = j * NXV + i;
       const inL = i > SX0 ? fR[k - 1] : 0, inR = i < SX1 - 1 ? fL[k + 1] : 0;
-      const inU = j > 0 ? fD[k - NXV] : 0, inD = j < NZ ? fU[k + NXV] : 0;
-      const sin = (i > SX0 ? pR[k - 1] : 0) + (i < SX1 - 1 ? pL[k + 1] : 0) + (j > 0 ? pD[k - NXV] : 0) + (j < NZ ? pU[k + NXV] : 0);
+      const inU = j > 0 ? fD[k - NXV] : 0, inD = j < JM ? fU[k + NXV] : 0;
+      const sin = (i > SX0 ? pR[k - 1] : 0) + (i < SX1 - 1 ? pL[k + 1] : 0) + (j > 0 ? pD[k - NXV] : 0) + (j < JM ? pU[k + NXV] : 0);
       const ho0 = h[k];
       let hn = ho0 + dt * (inL + inR + inU + inD + sin - fL[k] - fR[k] - fU[k] - fD[k] - pL[k] - pR[k] - pU[k] - pD[k]) / A;
       if (hn < 1e-7) hn = 0; else { if (i < wa) wa = i; wb = i; }
@@ -151,9 +168,12 @@ function flux0(f0, hf, dH, kf, dt) {
 
 // 침식(부어 놓은 흙만) · 거품 · 젖음 — 프레임당 한 번, 물 있는 곳만
 let phase = 0;
+const SEA = () => MODE === 'sea';
+let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
 export function post(dt) {
+  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 0.8; } // 모래는 잘 쓸려 간다
   let mx = 0, st = 0;
-  for (let j = 1; j < NZ; j++) {
+  for (let j = 1; j < Math.min(NZ, JM - 1); j++) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
     for (let i = i0; i <= i1; i++) {
       const k = j * NXV + i, hk = ho[k];
@@ -161,16 +181,25 @@ export function post(dt) {
       if (j < MEAS_J) { const dv = h[k] - h0[k]; if (dv > 0) st += dv; }
       if (hk <= 0.004) continue;
       const sp = Math.hypot(vx[k], vz[k]);
-      const cp = 0.008 * Math.max(0, sp - 0.6) * Math.min(hk, 0.3) / 0.3;
-      if (sed[k] < cp && (loose[k] > 0 || cap[k] > 0)) {
-        let e = (cp - sed[k]) * 0.5 * dt;
+      // 물살이 깎는 재료: 덮인 흙·쌓인 흙/모래 → 원래 흙(바다는 모래) → 암반(아주 느리게). 돌이 덮은 곳·댐은 안 깎임
+      const top = cap[k] > 0 || loose[k] > 0 ? 0 : soil[k] > 0.001 ? 1 : 2;
+      const vc = top === 0 ? VC0 : top === 1 ? VC1 : 1.6, kr = top === 0 ? 1 : top === 1 ? KR1 : 0.004;
+      const cp = 0.008 * Math.max(0, sp - vc) * Math.min(hk, 0.3) / 0.3;
+      const armored = dam[k] || (cap[k] <= 0 && solid[k] - ground[k] > 0.01);
+      if (sed[k] < cp && !armored) {
+        let e = (cp - sed[k]) * 0.5 * kr * dt;
         if (cap[k] > 0) { e = Math.min(cap[k], e); cap[k] -= e; solid[k] -= e; }
-        else { e = Math.min(loose[k], e); loose[k] -= e; ground[k] -= e; }
+        else {
+          if (top === 0) { e = Math.min(loose[k], e); loose[k] -= e; }
+          else if (top === 1) { e = Math.min(soil[k], e); soil[k] -= e; }
+          else bed[k] -= e;
+          ground[k] -= e; if (solid[k] > ground[k] + e - 1e-6 && solid[k] - ground[k] < e + 1e-4) { solid[k] = ground[k]; seal[k] = ptop[k] = ground[k]; }
+        }
         sed[k] += e; state.eroded += e * A;
-        if (e > 2e-5) markDirtyCell(i, j);
+        if (e > 2e-5) markDirtyCell(i, j, false, false);
       } else if (sed[k] > cp) {
         const dd = (sed[k] - cp) * 0.5 * dt;
-        sed[k] -= dd; loose[k] += dd; ground[k] += dd; if (dd > 2e-5) markDirtyCell(i, j);
+        sed[k] -= dd; loose[k] += dd; ground[k] += dd; if (solid[k] < ground[k]) { solid[k] = seal[k] = ptop[k] = ground[k]; } if (dd > 2e-5) markDirtyCell(i, j, false, false);
       }
       const dHx = lev[k + 1] - lev[k - 1], dHz = lev[k + NXV] - lev[k - NXV];
       const grad = Math.hypot(dHx, dHz) / (2 * CELL);
@@ -445,6 +474,10 @@ void main(){
 
 // 웅덩이를 미리 채워(우선순위 범람) 시작 안정화 시간을 줄인다
 export function prefill() {
+  if (MODE === 'sea') {
+    for (let j = 0; j <= NZ; j++) for (let i = SX0; i < SX1; i++) { const k = idx(i, j); h[k] = Math.max(0, SEA_Y - solid[k]); }
+    computeActive(); return;
+  }
   const lev = new Float32Array(NV).fill(Infinity), heap = [];
   const push = (v, k) => { heap.push([v, k]); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
   const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, r = l + 1; let m = c; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } } return top; };

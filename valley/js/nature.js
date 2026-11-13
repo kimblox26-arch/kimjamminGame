@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
-import { CELL, NX, NZ, X0, Z0, idx, grass, ground, terrainAt, centerX, chanW, floorHalf, U, FALL_Z } from './terrain.js';
+import { CELL, NX, NZ, X0, Z0, idx, grass, ground, terrainAt, centerX, chanW, floorHalf, U, FALL_Z, noTree } from './terrain.js';
 import { GLSL_NOISE, rng } from './noise.js';
 import { GLSL_SKY } from './sky.js';
 
@@ -191,6 +191,7 @@ export function buildTrees(scene, nPine, nBroad) {
     const s = Math.hypot(terrainAt(x + 1, z).y - tt.y, terrainAt(x, z + 1).y - tt.y);
     if (s > 1.1) continue;
     if (Math.abs(x) < 18 && z > 0 && z < 72 && e < 2.0) continue;
+    if (noTree.some(([nx, nz, r]) => (x - nx) ** 2 + (z - nz) ** 2 < (r + 1.6) ** 2)) continue; // 집·가로등 자리
     const kind = n < nPine ? 0 : 1, v = (rand() * kinds[kind].length) | 0;
     spots[kind][v].push({ x, y: tt.y - 0.2, z, s: 0.75 + rand() * 0.6, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2], near: Math.hypot(x * 1.5, z - 36) < 48 });
     n++;
@@ -289,5 +290,27 @@ export function buildSmallFall(scene) {
   sfMat = flowMat(1.0, 2.4, 1); sfMesh = new THREE.Mesh(ribbon(pts, 1.0), sfMat); scene.add(sfMesh);
   Object.assign(smallFall, { x: x0, y: y0, z: pts[pts.length - 1][2], yb: yEnd - 0.2 });
 }
-export function setSmallFall(f) { sfMat.uniforms.uOp.value = Math.min(1, f * 1.3); sfMesh.visible = f > 0.04; }
-export function setDownstream(f) { downMat.uniforms.uOp.value = Math.min(1, f * 1.2); downMesh.visible = f > 0.03; downMat.uniforms.uFoam.value = 0.15 + 0.4 * f; }
+export function setSmallFall(f) { if (!sfMat) return; sfMat.uniforms.uOp.value = Math.min(1, f * 1.3); sfMesh.visible = f > 0.04; }
+export function setDownstream(f) { if (!downMat) return; downMat.uniforms.uOp.value = Math.min(1, f * 1.2); downMesh.visible = f > 0.03; downMat.uniforms.uFoam.value = 0.15 + 0.4 * f; }
+// ───── 바다: 만 입구 너머 먼바다 (물 계산 경계와 같은 파도 식으로 이어진다) ─────
+export const oceanU = { uT: { value: 0 }, uSea: { value: 0 } };
+export function buildOcean(scene, waves, c, z0, zStart) {
+  const g = new THREE.PlaneGeometry(420, 380, 140, 130).rotateX(-Math.PI / 2).translate(0, 0, zStart + 190);
+  const m = new THREE.MeshStandardMaterial({ color: 0x1d5560, roughness: 0.07, metalness: 0, envMapIntensity: 1.2 });
+  const f = n => n.toFixed(4);
+  const terms = waves.map(([a, T, p]) => {
+    const ph = `6.2832 * (uT / ${f(T)} + dz / ${f(c * T)}) + ${f(p)}`;
+    return `e += ${f(a)} * sin(${ph}); dd += ${f(a * 6.2832 / (c * T))} * cos(${ph});`;
+  }).join('\n');
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uT = oceanU.uT; sh.uniforms.uSea = oceanU.uSea;
+    sh.vertexShader = 'uniform float uT, uSea;\n' + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', `float dz = position.z - ${f(z0)}; float e = 0., dd = 0.;
+${terms}
+float ch = 0.03 * sin(position.x * 0.9 + uT * 1.3) * cos(position.z * 0.6 - uT * 0.9);
+vec3 objectNormal = normalize(vec3(-0.027 * cos(position.x * 0.9 + uT * 1.3) * cos(position.z * 0.6 - uT * 0.9), 1.0, -dd + 0.018 * sin(position.x * 0.9 + uT * 1.3) * sin(position.z * 0.6 - uT * 0.9)));`)
+      .replace('#include <begin_vertex>', 'vec3 transformed = vec3(position.x, uSea + e + ch, position.z);');
+  };
+  const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
+  return mesh;
+}
