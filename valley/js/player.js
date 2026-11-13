@@ -12,8 +12,14 @@ export const SPEEDS = [
   { name: '약간 빠르게', dig: 0.12, depth: 0.085, digR: 0.42, dump: 0.09, dumpAmt: 0.04, mud: 0.06, mudAmt: 0.05, mudR: 0.42, fx: 0.6 },
   { name: '엄청 빠르게', dig: 0.04, depth: 0.11, digR: 0.5, dump: 0.035, dumpAmt: 0.09, mud: 0.03, mudAmt: 0.12, mudR: 0.5, fx: 0.3 },
 ];
-// 삽 자세: 손잡이가 위·뒤(내 손 쪽), 날은 앞·아래. 파기 = 날을 더 세워 찍기, 붓기 = 날을 옆으로 뒤집기
-const SH = { idle: 1.05, dig: 0.55, dump: 1.25, dumpZ: -1.2 };
+// 삽 동작: 파기 = 날 쪽으로 쑥 찔러 넣기, 붓기 = 손잡이를 축으로 날을 옆으로 뒤집기
+const SH = { idle: [0, 0, 0], dig: [-0.16, 0.18, 0], dump: [0.02, -0.15, 1.7] }; // [앞으로 밀기 m, 숙이기, 뒤집기]
+function shPose(kind, dt) {
+  const [push, tilt, roll] = SH[kind], k = Math.min(1, dt * 14);
+  shInner.position.y += (push - shInner.position.y) * k;
+  shInner.rotation.x += (tilt - shInner.rotation.x) * k;
+  shInner.rotation.y += (roll - shInner.rotation.y) * k;
+}
 const PAINTS = [0xd94a3a, 0xf0b429, 0xf4f1e8, 0x3f8f5a, 0x2f6fd1, 0x8b4fc4, 0x2a2a2a];
 const kg = m => (m >= 1000 ? (m / 1000).toFixed(1) + ' t' : Math.round(m) + ' kg');
 export const P = {
@@ -21,7 +27,7 @@ export const P = {
   holdYaw: 0, holdTilt: 0, speed: 0, bucket: 0, moved: 0, dug: 0, placed: 0, pour: 0, paint: 0xd94a3a, snap: false, bob: 0, stepAcc: 0, target: null, aim: null, inWater: 0,
 };
 const keys = new Set(), btn = { l: false, r: false }, touchMove = { x: 0, y: 0 };
-let R, world, body, col, cc, camera, hooks, shovel, pick, load, ring, lastAct = 0, farT = 0, lockEl;
+let shInner, R, world, body, col, cc, camera, hooks, shovel, pick, load, ring, lastAct = 0, farT = 0, lockEl;
 const fwd = new THREE.Vector3(), tmp = new THREE.Vector3(), qY = new THREE.Quaternion(), qT = new THREE.Quaternion(), qC = new THREE.Quaternion();
 
 export function init(_R, _world, _camera, scene, _hooks, startPos) {
@@ -54,9 +60,12 @@ function buildShovel() {
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.1, 10), metal); neck.position.y = 0.03;
   load = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 10).scale(1, 0.45, 0.8), new THREE.MeshStandardMaterial({ color: 0x4a3322, roughness: 1 }));
   load.position.set(0, -0.1, 0.035); load.visible = false;
-  shovel.add(handle, grip, blade, neck, load);
+  shInner = new THREE.Group(); shInner.add(handle, grip, blade, neck, load); shovel.add(shInner);
   shovel.traverse(o => { o.castShadow = false; });
-  shovel.position.set(0.3, -0.4, -0.6); shovel.rotation.set(SH.idle, -0.3, -0.12);
+  // 1인칭 자세: 손잡이 끝은 오른쪽 아래(손), 삽날은 화면 아래 가운데 앞쪽 땅을 향함. 날의 오목한 면이 위를 보게
+  const G = new THREE.Vector3(0.34, -0.3, -0.3), N = new THREE.Vector3(0.08, -0.52, -1.0);
+  const Y = G.clone().sub(N).normalize(), Z = new THREE.Vector3(0, 1, 0).addScaledVector(Y, -Y.y).normalize(), X = new THREE.Vector3().crossVectors(Y, Z);
+  shovel.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z)); shovel.position.copy(N);
   shovel.visible = false;
 }
 
@@ -254,8 +263,7 @@ function specialUpdate(dt, time) {
   if (!drop) { // 삽에 진흙이 늘 가득
     load.visible = true; load.scale.setScalar(1.2);
     const busy = time - lastAct < 0.2;
-    shovel.rotation.x += ((busy ? SH.dump : SH.idle) - shovel.rotation.x) * Math.min(1, dt * 14);
-    shovel.rotation.z += ((busy ? SH.dumpZ : -0.12) - shovel.rotation.z) * Math.min(1, dt * 14);
+    shPose(busy ? 'dump' : 'idle', dt);
   }
   if (!ok || !(btn.l || btn.r)) return;
   if (drop && time - lastAct > 0.45) { lastAct = time; hooks.dropRock?.(a.point.x, a.point.z); }
@@ -392,10 +400,7 @@ function toolUpdate(dt, time) {
   }
   // 삽 애니메이션
   const busy = time - lastAct < 0.25;
-  const tgtRx = busy ? (btn.r ? SH.dump : SH.dig) : SH.idle, tgtRz = busy && btn.r ? SH.dumpZ : -0.12;
-  shovel.rotation.x += (tgtRx - shovel.rotation.x) * Math.min(1, dt * 14);
-  shovel.rotation.z += (tgtRz - shovel.rotation.z) * Math.min(1, dt * 14);
-  shovel.position.y += ((busy && !btn.r ? -0.5 : -0.4) - shovel.position.y) * Math.min(1, dt * 14);
+  shPose(busy ? (btn.r ? 'dump' : 'dig') : 'idle', dt);
   load.visible = P.bucket > 0.002; load.scale.setScalar(0.5 + Math.min(1, P.bucket / LOAD_VIS) * 0.7);
   const SP = SPEEDS[P.speed];
   if (!ok) return;
