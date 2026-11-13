@@ -187,9 +187,9 @@ function bankSlump(k, e) {
     if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
   }
 }
-let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
+let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
 export function post(dt) {
-  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 0.8; } // 모래는 잘 쓸려 간다
+  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.012; } // 모래는 잘 쓸려 간다
   let mx = 0, st = 0;
   for (let j = Math.max(1, JL + 2); j < Math.min(NZ, JM - 1); j++) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
@@ -219,6 +219,18 @@ export function post(dt) {
       } else if (sed[k] > cp) {
         const dd = (sed[k] - cp) * 0.5 * dt;
         sed[k] -= dd; loose[k] += dd; ground[k] += dd; if (solid[k] < ground[k]) { solid[k] = seal[k] = ptop[k] = ground[k]; } if (dd > 2e-5) markDirtyCell(i, j, false, false);
+      }
+      // 옆 둑 깎기: 빠른 물살이 물길 옆 벽을 파고들어 물길이 넓어진다
+      if (sp > vc && !armored) {
+        const rate = KL * (sp - vc) * Math.min(hk, 0.5) * dt;
+        for (const n of [k - 1, k + 1, k - NXV, k + NXV]) {
+          const d = ground[n] - ground[k]; if (d < 0.05 || dam[n] || solid[n] - ground[n] > 0.01) continue;
+          const kn = loose[n] > 0 ? 1 : soil[n] > 0.001 ? KR1 : 0.004;
+          let m = Math.min(d * 0.5, rate * kn * Math.min(1, d / 0.3)); if (m <= 1e-7) continue;
+          const a = Math.min(loose[n], m); loose[n] -= a; const b = Math.min(soil[n], m - a); soil[n] -= b; bed[n] -= m - a - b;
+          ground[n] -= m; solid[n] = seal[n] = ptop[n] = ground[n]; sed[k] += m; state.eroded += m * A;
+          if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
+        }
       }
       const dHx = lev[k + 1] - lev[k - 1], dHz = lev[k + NXV] - lev[k - NXV];
       const grad = Math.hypot(dHx, dHz) / (2 * CELL);
