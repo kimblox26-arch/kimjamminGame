@@ -15,12 +15,12 @@ function flatSpot(x0, z, xs) {
   return best;
 }
 export function prepare() {
-  if (MODE === 'sea') { // 바다: 모래언덕 위 집 세 채(바다를 바라봄) · 해변 산책길 가로등
-    for (const [x0, z] of [[-4.5, 8], [4.2, 10], [0.2, 3.2]]) {
+  if (MODE === 'sea') { // 바다: 사주 위 집 세 채(바다를 바라봄) · 가로등
+    for (const [x0, z, yaw] of [[-13, 38.5, 0], [12.5, 33.5, Math.PI], [-7.5, 34, Math.PI]]) {
       const { x, gmin, gmax } = flatSpot(x0, z, [-1.5, -0.75, 0, 0.75, 1.5]);
-      sites.push({ x, z, y: gmin + (gmax - gmin) * 0.25 + 0.05, base: gmin - 0.25, yaw: 0, side: 1 });
+      sites.push({ x, z, y: gmin + (gmax - gmin) * 0.25 + 0.05, base: gmin - 0.25, yaw, side: 1 });
     }
-    for (const [x, z] of [[-6.4, 17], [-2.2, 17.6], [2.2, 17.6], [6.4, 17], [-7.2, 11], [7.4, 13]]) lampSites.push({ x, z, side: x < 0 ? 1 : -1 });
+    for (const [x, z] of [[-16, 35], [-10.5, 37.5], [-4.8, 38.6], [5, 33.6], [10.5, 37], [16, 35.5]]) lampSites.push({ x, z, side: z > 36 ? 1 : -1 });
     return [...sites.map(t => [t.x, t.z, 3.0]), ...lampSites.map(l => [l.x, l.z, 0.7])];
   }
   // 계곡 바닥이 넓은 곳, 강에서 멀리(벽 쪽) — 땅은 깎지 않고 콘크리트 기초 위에 짓는다

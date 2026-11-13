@@ -292,25 +292,30 @@ export function buildSmallFall(scene) {
 }
 export function setSmallFall(f) { if (!sfMat) return; sfMat.uniforms.uOp.value = Math.min(1, f * 1.3); sfMesh.visible = f > 0.04; }
 export function setDownstream(f) { if (!downMat) return; downMat.uniforms.uOp.value = Math.min(1, f * 1.2); downMesh.visible = f > 0.03; downMat.uniforms.uFoam.value = 0.15 + 0.4 * f; }
-// ───── 바다: 만 입구 너머 먼바다 (물 계산 경계와 같은 파도 식으로 이어진다) ─────
-export const oceanU = { uT: { value: 0 }, uSea: { value: 0 } };
-export function buildOcean(scene, waves, c, z0, zStart) {
-  const g = new THREE.PlaneGeometry(420, 380, 140, 130).rotateX(-Math.PI / 2).translate(0, 0, zStart + 190);
+// ───── 바다: 계산 범위 밖의 넓은 바다 (물 계산 경계와 같은 파도 식으로 이어진다) ─────
+export const oceanU = { uT: { value: 0 }, uSeaA: { value: 0 }, uSeaB: { value: 0 } };
+export function buildOcean(scene, wavesA, wavesB, c, zA, zB, zMid, hole) {
+  // 물 계산 영역(hole: x0,x1,z0,z1)만 비운 큰 판 네 조각
+  const [hx0, hx1, hz0, hz1] = hole, R = 260, parts = [[-R, hx0, -R + 36, R + 36], [hx1, R, -R + 36, R + 36], [hx0, hx1, hz1, R + 36], [hx0, hx1, -R + 36, hz0]];
+  const geos = parts.map(([x0, x1, z0, z1]) => {
+    const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0, Math.max(2, Math.round((x1 - x0) / 3)), Math.max(2, Math.round((z1 - z0) / 3)));
+    return g.rotateX(-Math.PI / 2).translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
+  });
   const m = new THREE.MeshStandardMaterial({ color: 0x1d5560, roughness: 0.07, metalness: 0, envMapIntensity: 1.2 });
   const f = n => n.toFixed(4);
-  const terms = waves.map(([a, T, p]) => {
-    const ph = `6.2832 * (uT / ${f(T)} + dz / ${f(c * T)}) + ${f(p)}`;
+  const terms = (W, D) => W.map(([a, T, p]) => {
+    const ph = `6.2832 * (uT / ${f(T)} + ${D} / ${f(c * T)}) + ${f(p)}`;
     return `e += ${f(a)} * sin(${ph}); dd += ${f(a * 6.2832 / (c * T))} * cos(${ph});`;
   }).join('\n');
   m.onBeforeCompile = sh => {
-    sh.uniforms.uT = oceanU.uT; sh.uniforms.uSea = oceanU.uSea;
-    sh.vertexShader = 'uniform float uT, uSea;\n' + sh.vertexShader
-      .replace('#include <beginnormal_vertex>', `float dz = position.z - ${f(z0)}; float e = 0., dd = 0.;
-${terms}
+    Object.assign(sh.uniforms, oceanU);
+    sh.vertexShader = 'uniform float uT, uSeaA, uSeaB;\n' + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', `float e = 0., dd = 0., lv;
+if (position.z < ${f(zMid)}) { float dz = ${f(zA)} - position.z; ${terms(wavesA, 'dz')} dd = -dd; lv = uSeaA; }
+else { float dz = position.z - ${f(zB)}; ${terms(wavesB, 'dz')} lv = uSeaB; }
 float ch = 0.03 * sin(position.x * 0.9 + uT * 1.3) * cos(position.z * 0.6 - uT * 0.9);
 vec3 objectNormal = normalize(vec3(-0.027 * cos(position.x * 0.9 + uT * 1.3) * cos(position.z * 0.6 - uT * 0.9), 1.0, -dd + 0.018 * sin(position.x * 0.9 + uT * 1.3) * sin(position.z * 0.6 - uT * 0.9)));`)
-      .replace('#include <begin_vertex>', 'vec3 transformed = vec3(position.x, uSea + e + ch, position.z);');
+      .replace('#include <begin_vertex>', 'vec3 transformed = vec3(position.x, lv + e + ch, position.z);');
   };
-  const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
-  return mesh;
+  for (const g of geos) { const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh); }
 }

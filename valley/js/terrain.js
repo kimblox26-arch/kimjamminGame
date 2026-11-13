@@ -25,7 +25,7 @@ export let MODE = 'valley';
 export function setMode(m) { MODE = m === 'sea' ? 'sea' : 'valley'; }
 export const noTree = []; // 나무를 심지 않을 자리 [x, z, r]
 export const centerX = z => MODE === 'sea' ? 0 : 1.8 * Math.sin(z * 0.13 + 0.5) + 0.6 * Math.sin(z * 0.31 + 1.3);
-export const floorHalf = z => MODE === 'sea' ? 7.2 : 5.0 + 1.9 * Math.sin(z * 0.17 + 2.33); // z≈14 에서 가장 좁음
+export const floorHalf = z => MODE === 'sea' ? 8 : 5.0 + 1.9 * Math.sin(z * 0.17 + 2.33); // z≈14 에서 가장 좁음
 export const chanW = z => MODE === 'sea' ? 7 : 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
 export const FALL_Z = 50.5, FALL_H = 1.0; // 작은 폭포: 바위 턱 위치·높이
 export function baseY(z) {
@@ -38,29 +38,47 @@ export function baseY(z) {
   return y;
 }
 
-// 바다: 모래언덕(z<14) → 모래사장(물가 z≈38) → 얕은 만(z 72 에서 수심 약 1 m) · 양쪽은 바위 곶, 만 입구 너머 먼바다
-export const SEA_Y = 0;
-const reefs = [[-4.2, 49, 1.5, 1.3], [4.6, 57, 1.1, 1.0], [-1.5, 63, 0.8, 0.6], [6.2, 31, 0.9, 0.9]];
+// 바다: 가운데 모래 땅(사주, z≈36)을 사이에 두고 양쪽(남쪽 z<26, 북쪽 z>46)이 바다.
+// 가운데(x≈0)가 가장 좁은 목(폭 약 12 m). 양 옆(|x|≈9.3)에는 바다로 뻗은 돌 방파제.
+export const SEA_Y = 0, ISTH_Z = 36;
+const reefs = [[-4.0, 19, 1.2, 1.0], [5.2, 53, 1.0, 0.9], [2.5, 16.5, 0.7, 0.6]];
+const halfW = x => 10 - 4 * Math.exp(-x * x / 18) + 1.6 * fbm(x * 0.05, 1.3, 3) * sstep(12, 26, Math.abs(x));
 function seaTerrainAt(x, z) {
-  let y = 2.2 - 2.6 * sstep(14, 46, z) - 0.9 * sstep(40, 80, z) - 2.5 * sstep(80, 130, z);
-  if (z < 14) y += (14 - z) * 0.06;
-  const land = sstep(24, 12, z);
-  y += 0.4 * fbm(x * 0.22, z * 0.22, 4) * land + 0.035 * fbm(x * 1.4, z * 1.4, 3) + 0.05 * fbm(x * 0.5 + 9, z * 0.5, 3) * (1 - land);
-  // 바위 곶: |x| > 8.3 (만 입구 너머 z>80 에서는 바다로 잠긴다)
-  const ax = Math.abs(x), wob = 0.9 * fbm(z * 0.13 + (x > 0 ? 5 : 0), 3.7, 3), hx = ax - 8.3 - wob;
-  const arm = sstep(-0.2, 1.6, hx) * sstep(88, 76, z);
-  const rough = fbm(x * 0.21 + 3, z * 0.21, 5);
-  let rock = arm * (3.6 + 1.6 * rough + 0.12 * Math.max(0, hx) + 0.6 * Math.abs(fbm(x * 0.6, z * 0.6, 4)));
-  rock += sstep(14, 40, ax) * 3 * (1 + fbm(x * 0.04, z * 0.04, 3)) * sstep(100, 70, z); // 바깥 언덕
-  // 만 안의 갯바위
+  const dzc = Math.abs(z - ISTH_Z), sd = dzc - halfW(x); // 물가까지 거리 (음수 = 땅)
+  let y;
+  if (sd < 0) y = 1.5 * (1 - Math.exp(0.08 * sd)) + 0.55 * Math.exp(-((z - ISTH_Z) ** 2) / 6);
+  else y = -0.12 * sd - 1.2 * sstep(4, 16, sd) - 2.5 * sstep(16, 60, sd);
+  const land = sstep(0.5, -2.5, sd);
+  y += 0.32 * fbm(x * 0.22, z * 0.22, 4) * land + 0.03 * fbm(x * 1.4, z * 1.4, 3) + 0.05 * fbm(x * 0.5 + 9, z * 0.5, 3) * (1 - land);
+  // 방파제 (사석 둑)
+  const jd = Math.abs(Math.abs(x) - 9.3), jet = (1 - sstep(0.5, 1.5, jd)) * sstep(24, 22, dzc) * sstep(-3, -1, sd);
+  const yj = 1.3 + 0.25 * fbm(x * 1.3, z * 1.3, 3);
+  // 갯바위
   let reef = 0;
-  for (const [rx, rz, r, hgt] of reefs) { const d = Math.hypot(x - rx, (z - rz) * 1.2) / r; if (d < 1.6) reef = Math.max(reef, hgt * (1 - sstep(0.3, 1.6, d)) * (1 + 0.35 * fbm(x * 1.1, z * 1.1, 3))); }
-  const yr = Math.max(y, y + rock, y + reef * 1.0 + (reef > 0 ? 0.6 * Math.max(0, -y) : 0));
-  const rocky = Math.max(sstep(0.05, 0.6, rock), sstep(0.05, 0.3, reef));
-  y = yr;
-  let soil = (1.6 - 0.3 * land) * (1 - rocky); // 모래 두께
-  const grass = land * sstep(-0.1, 0.25, fbm(x * 0.4 - 4, z * 0.4, 3)) * (1 - rocky) + rocky * arm * 0.6 * sstep(4.5, 5.5, y) * sstep(0, 0.3, fbm(x * 0.3, z * 0.3, 3));
-  return { y, soil, grass, d: y > 1.9 ? 2.5 + y : 0, w: 7, F: 0 };
+  for (const [rx, rz, r, hgt] of reefs) { const d = Math.hypot(x - rx, (z - rz) * 1.2) / r; if (d < 1.6) reef = Math.max(reef, (hgt + 0.6 * Math.max(0, -y)) * (1 - sstep(0.3, 1.6, d)) * (1 + 0.3 * fbm(x * 1.1, z * 1.1, 3))); }
+  const yr = Math.max(y + reef, y + (yj - y) * jet);
+  const rocky = Math.max(sstep(0.1, 0.5, jet), sstep(0.05, 0.3, reef));
+  y = Math.max(y, yr);
+  const soil = 3.0 * (1 - rocky); // 모래 두께 (그 아래는 암반)
+  const grass = land * sstep(0.7, 1.1, y) * sstep(-0.1, 0.25, fbm(x * 0.4 - 4, z * 0.4, 3)) * (1 - rocky);
+  return { y, soil, grass, d: y > 0.95 && !rocky ? 2.5 + y : 0, w: 7, F: 0 };
+}
+// 물길 긋기: (x,z) 둘레 반지름 r 은 바닥 높이 bottom 까지 평평하게, 그 바깥은 무너지지 않는 비탈(약 37°)로 판다
+export function trench(x, z, r, bottom) {
+  const SL = 0.75, ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL);
+  const R = r + 3.2, n = Math.ceil(R / CELL); // 비탈은 바깥 3.2 m 까지 (높이 2.4 m 둑까지 덮음)
+  let vol = 0;
+  for (let j = cj - n; j <= cj + n; j++) for (let i = ci - n; i <= ci + n; i++) {
+    if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
+    const d = Math.hypot((i - ci) * CELL, (j - cj) * CELL); if (d >= R) continue;
+    const k = idx(i, j), t = bottom + Math.max(0, d - r) * SL; if (ground[k] <= t) continue;
+    let want = ground[k] - t; vol += want * CELL * CELL;
+    const a = Math.min(loose[k], want); loose[k] -= a; want -= a;
+    const b = Math.min(soil[k], want); soil[k] -= b; want -= b;
+    bed[k] -= want; ground[k] = t; grass[k] = 0; dug[k] = Math.max(dug[k], 1 - d / R);
+  }
+  markDirty(ci - n, ci + n, cj - n, cj + n); fixDirty();
+  return vol;
 }
 // 해석적 지형 함수
 export function terrainAt(x, z) {

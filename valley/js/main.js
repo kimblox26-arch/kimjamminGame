@@ -169,7 +169,7 @@ async function boot(q, save) {
   N.buildTrees(scene, q.pine, q.broad);
   N.buildGrass(scene, q.grass);
   N.buildFlowers(scene, q.flowers);
-  if (SEA()) N.buildOcean(scene, W.WAVES, 3.2, W.JM * T.CELL, 71.6); else { N.buildStreams(scene); N.buildSmallFall(scene); }
+  if (SEA()) N.buildOcean(scene, W.WAVES_A, W.WAVES_B, W.C_SEA, W.SEA_ZA, W.SEA_ZB, T.ISTH_Z, [T.X0 + T.SX0 * T.CELL, T.X0 + (T.SX1 - 1) * T.CELL, 0, T.NZ * T.CELL]); else { N.buildStreams(scene); N.buildSmallFall(scene); }
   FX.init(scene, camera); FX.opt.fall = !SEA();
 
   const pr = renderer.getPixelRatio();
@@ -186,9 +186,9 @@ async function boot(q, save) {
     if (s % 150 === 0) { prog(0.4 + 0.5 * s / WARM, SEA() ? '바닷물 채우는 중' : '계곡물 흘려보내는 중'); await frame(); }
   }
   W.upload();
-  const sp = SEA() ? [1.5, 24] : [T.centerX(7.5) - 1.8, 7.5];
+  const sp = SEA() ? [-4.5, 36.5] : [T.centerX(7.5) - 1.8, 7.5];
   PL.init(RAPIER, world, camera, scene, hooks, { x: sp[0], y: T.groundAt(sp[0], sp[1]) + 1.1, z: sp[1] });
-  if (SEA() && !save) PL.P.yaw = Math.PI; // 바다를 바라보며 시작
+  if (SEA() && !save) PL.P.yaw = -Math.PI / 2; // 사주를 따라 바라보며 시작 (양쪽이 바다)
   if (save) {
     const p = save.p; PL.teleport(p[0], p[1]); PL.P.yaw = p[2]; PL.P.pitch = p[3];
     sky_.tod = save.tod ?? 9; elec.batt = save.batt ?? 0; ready = true; W.state.outSm = save.out ?? 0.2;
@@ -392,10 +392,10 @@ function ui(dt) {
   const st = W.state;
   if (!ready && st.time > 62) { ready = true; W.saveBaseline(); }
   if (SEA()) {
-    const rising = Math.cos(2 * Math.PI * (sky_.tod - 4) / 12.42) > 0;
-    $('mPct').textContent = rising ? '밀물 ↑' : '썰물 ↓';
-    $('mFill').style.width = ((st.tide + 0.35) / 0.7 * 100).toFixed(1) + '%';
-    $('mSub').textContent = `해수면 ${st.tide >= 0 ? '+' : ''}${st.tide.toFixed(2)} m · 파도에 옮겨진 모래 ${st.eroded.toFixed(1)} m³`;
+    const sg = v => (v >= 0 ? '+' : '') + v.toFixed(2), dh = st.tideA - st.tideB;
+    $('mPct').textContent = `수위 차 ${Math.abs(dh).toFixed(2)} m ${dh > 0.02 ? '↑' : dh < -0.02 ? '↓' : ''}`;
+    $('mFill').style.width = Math.min(100, Math.abs(dh) / 0.5 * 100).toFixed(1) + '%';
+    $('mSub').textContent = `남쪽 바다 ${sg(st.tideA)} m · 북쪽 바다 ${sg(st.tideB)} m · 물살에 옮겨진 모래 ${st.eroded.toFixed(1)} m³`;
   } else {
   const blocked = Math.max(0, Math.min(1, 1 - st.outSm / st.inflow));
   $('mPct').textContent = ready ? Math.round(blocked * 100) + '%' : '—';
@@ -471,9 +471,9 @@ function loop(now) {
   // 비: 계곡물이 불어남
   const st = W.state, rt = rainOn ? 1 : 0;
   st.inflow += ((SEA() ? 0 : rainOn ? 0.42 : 0.2) - st.inflow) * Math.min(1, dg * 0.08);
-  if (SEA()) { // 밀물·썰물(반나절 주기 ±0.35 m) · 먼바다 파도
-    st.tide = 0.35 * Math.sin(2 * Math.PI * (sky_.tod - 4) / 12.42);
-    N.oceanU.uT.value = st.time; N.oceanU.uSea.value = T.SEA_Y + st.tide;
+  if (SEA()) { // 밀물·썰물(반나절 주기 ±0.35 m) — 북쪽 바다는 3시간 늦게 차서, 두 바다 사이에 수위 차(최대 약 0.48 m)가 생긴다
+    st.tideA = 0.35 * Math.sin(2 * Math.PI * (sky_.tod - 4) / 12.42); st.tideB = 0.35 * Math.sin(2 * Math.PI * (sky_.tod - 7) / 12.42);
+    N.oceanU.uT.value = st.time; N.oceanU.uSeaA.value = T.SEA_Y + st.tideA; N.oceanU.uSeaB.value = T.SEA_Y + st.tideB;
   }
   // 물살에 깎이고 쌓인 땅: 가끔 물리 높이장도 다시 만든다
   erodeT += dt; if (erodeT > 4) { erodeT = 0; if (Math.abs(st.eroded - erodeLast) > 0.02) { erodeLast = st.eroded; T.physState.dirty = true; } }
@@ -568,7 +568,7 @@ function audioUpdate() {
     const sp = Math.hypot(s.vx, s.vz), w = 1 / (1 + (dx * dx + dz * dz) * 0.15);
     flow += s.open * sp * w; turb += W.foam[s.k] * w;
   }
-  const sf = N.smallFall, fd = SEA() ? Math.max(2.5, Math.abs(c.z - 38)) * (1.6 - 0.9 * Math.max(0, Math.sin(2 * Math.PI * W.state.time / 6.5))) : Math.min(Math.hypot(c.x - T.centerX(4.4), c.z - 4.4, c.y - T.groundAt(T.centerX(4.4), 4.4)),
+  const sf = N.smallFall, fd = SEA() ? Math.max(2.5, Math.min(Math.abs(c.z - 26), Math.abs(c.z - 46))) * (1.6 - 0.9 * Math.max(0, Math.sin(2 * Math.PI * W.state.time / 6.5))) : Math.min(Math.hypot(c.x - T.centerX(4.4), c.z - 4.4, c.y - T.groundAt(T.centerX(4.4), 4.4)),
     Math.hypot(c.x - sf.x, c.z - sf.z, c.y - sf.yb) * 1.8 / Math.sqrt(Math.max(0.02, FX.fall2.f)));
   A.update({ flow: flow * 1.6, turb: turb * 0.5, fallDist: fd, rain: T.U.uRain.value });
 }

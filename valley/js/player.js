@@ -33,6 +33,10 @@ export function init(_R, _world, _camera, scene, _hooks, startPos) {
   buildPick(); camera.add(pick);
   ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.36, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffe6a8, transparent: true, opacity: 0.7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }));
   ring.visible = false; scene.add(ring);
+  // 물길 긋기: 시작점 표시 · 미리보기 선
+  tr.mark = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8).translate(0, 0.6, 0), new THREE.MeshBasicMaterial({ color: 0x7fd4ff }));
+  tr.line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0x7fd4ff, transparent: true, opacity: 0.85, depthTest: false }));
+  tr.mark.visible = tr.line.visible = false; scene.add(tr.mark, tr.line);
   bindInput();
 }
 export const playerCollider = () => col;
@@ -83,6 +87,7 @@ function bindInput() {
     if (e.code === 'Digit7') setTool('erase');
     if (e.code === 'Digit8') setTool('flatten');
     if (e.code === 'Digit9') setTool('carve');
+    if (e.code === 'Digit0') setTool('trench');
     if (e.code === 'KeyF') cycleSpeed();
     if (e.code === 'KeyE') primary();
     if (e.code === 'KeyQ') P.holdYaw += Math.PI / 6;
@@ -106,6 +111,7 @@ function bindInput() {
 export function look(dx, dy) { P.yaw -= dx; P.pitch = THREE.MathUtils.clamp(P.pitch - dy, -1.45, 1.35); }
 export function setTool(t) {
   if (P.held && t !== 'hand') drop(0);
+  if (t !== 'trench' && tr.a) { tr.a = null; tr.mark.visible = tr.line.visible = false; }
   P.tool = t; shovel.visible = t === 'shovel' || t === 'mud' || t === 'flatten'; pick.visible = t === 'pick' || t === 'carve'; hooks.ui?.tool(t);
 }
 export function cycleSpeed() { P.speed = (P.speed + 1) % SPEEDS.length; hooks.ui?.speed?.(P.speed); hooks.toast?.(`작업 속도: ${SPEEDS[P.speed].name}`); }
@@ -219,7 +225,7 @@ function aim() {
   camera.getWorldPosition(ray.o); camera.getWorldDirection(ray.d);
   const held = P.held?.collider;
   const r = new R.Ray(ray.o, ray.d);
-  const hit = world.castRayAndGetNormal(r, P.tool === 'drop' ? 30 : P.tool === 'dam' || P.tool === 'flatten' || P.tool === 'erase' ? 8 : 4.5, true, undefined, undefined, col, undefined, c => c !== held);
+  const hit = world.castRayAndGetNormal(r, P.tool === 'drop' ? 30 : P.tool === 'trench' ? 16 : P.tool === 'dam' || P.tool === 'flatten' || P.tool === 'erase' ? 8 : 4.5, true, undefined, undefined, col, undefined, c => c !== held);
   P.target = null; P.aim = null;
   if (hit) {
     const toi = hit.timeOfImpact ?? hit.toi;
@@ -282,6 +288,38 @@ function damUpdate(dt, time) {
 }
 // 지우개(돌·바위·댐 블록 없애기) · 땅 평평하게 · 바위 깎기
 let flatTarget = null, prevL = false;
+// ───── 물길 긋기: 두 점을 찍으면 그 사이를 좁고 길게 판다 (바다에서는 바닥이 해수면보다 낮게 — 두 바다가 이어진다) ─────
+const tr = { a: null, job: null, mark: null, line: null, prev: false };
+function trenchBottom(x, z, u) {
+  const j = tr.job, g = j.ga + (j.gb - j.ga) * u - 0.35; // 두 끝 땅 높이를 잇는 바닥
+  return T.MODE === 'sea' ? Math.min(g, T.SEA_Y - 0.3) : g;
+}
+function trenchUpdate(dt, time) {
+  const a = P.aim, ok = a && a.dist < 16;
+  ring.visible = !!ok; ring.scale.setScalar(1.2);
+  if (ok) { ring.position.set(a.point.x, a.point.y + 0.03, a.point.z); ring.material.color.setHex(0x7fd4ff); }
+  if (tr.a && ok) { const p = tr.line.geometry.attributes.position; p.setXYZ(0, tr.a.x, tr.a.y + 0.15, tr.a.z); p.setXYZ(1, a.point.x, a.point.y + 0.15, a.point.z); p.needsUpdate = true; tr.line.visible = true; }
+  const pressed = btn.l && !tr.prev; tr.prev = btn.l;
+  if (pressed && ok && !tr.job) {
+    if (!tr.a) { tr.a = a.point.clone(); tr.mark.position.copy(tr.a); tr.mark.visible = true; hooks.toast?.('물길 시작점 — 끝점을 누르세요'); hooks.audio?.clink?.(); }
+    else {
+      const b = a.point.clone(), len = Math.hypot(b.x - tr.a.x, b.z - tr.a.z);
+      if (len > 0.5) { tr.job = { a: tr.a, b, len, s: 0, ga: T.groundAt(tr.a.x, tr.a.z), gb: T.groundAt(b.x, b.z), snd: 0 }; hooks.toast?.(`물길 파는 중 (${len.toFixed(1)} m)`); }
+      tr.a = null; tr.mark.visible = tr.line.visible = false;
+    }
+  }
+  const j = tr.job; if (!j) return;
+  const s1 = Math.min(j.len, j.s + dt * 7); // 초당 7 m
+  for (let s = j.s; s <= s1; s += 0.15) {
+    const u = s / j.len, x = j.a.x + (j.b.x - j.a.x) * u, z = j.a.z + (j.b.z - j.a.z) * u;
+    T.trench(x, z, 0.4, trenchBottom(x, z, u));
+    if (Math.random() < 0.08) hooks.fx?.dirt(x, T.groundAt(x, z) + 0.2, z, 4);
+  }
+  const u = s1 / j.len; hooks.edit?.(j.a.x + (j.b.x - j.a.x) * u, j.a.z + (j.b.z - j.a.z) * u, 1.2);
+  j.snd -= dt; if (j.snd <= 0) { j.snd = 0.16; hooks.audio?.dig(); }
+  j.s = s1 + 1e-6;
+  if (s1 >= j.len) { tr.job = null; hooks.toast?.(T.MODE === 'sea' ? '물길 완성 — 두 바다 수위 차로 물살이 생기면 점점 넓고 깊어져요' : '물길 완성'); }
+}
 function editUpdate(dt, time) {
   const a = P.aim, tool = P.tool, SP = P.speed;
   const ok = a && a.dist < 8;
@@ -353,6 +391,7 @@ function toolUpdate(dt, time) {
   if (P.tool === 'drop' || P.tool === 'mud') { specialUpdate(dt, time); return; }
   if (P.tool === 'dam') { damUpdate(dt, time); return; }
   if (P.tool === 'erase' || P.tool === 'flatten' || P.tool === 'carve') { editUpdate(dt, time); return; }
+  if (P.tool === 'trench') { trenchUpdate(dt, time); return; }
   const a = P.aim, ok = P.tool === 'shovel' && a && a.dist < 4.2;
   ring.visible = !!ok; ring.scale.setScalar(1);
   if (ok) {
