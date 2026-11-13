@@ -63,7 +63,7 @@ function buildShovel() {
   shInner = new THREE.Group(); shInner.add(handle, grip, blade, neck, load); shovel.add(shInner);
   shovel.traverse(o => { o.castShadow = false; });
   // 1인칭 자세: 손잡이 끝은 오른쪽 아래(손), 삽날은 화면 아래 가운데 앞쪽 땅을 향함. 날의 오목한 면이 위를 보게
-  const G = new THREE.Vector3(0.34, -0.3, -0.3), N = new THREE.Vector3(0.08, -0.52, -1.0);
+  const G = new THREE.Vector3(0.36, -0.22, -0.28), N = new THREE.Vector3(0.1, -0.3, -1.0);
   const Y = G.clone().sub(N).normalize(), Z = new THREE.Vector3(0, 1, 0).addScaledVector(Y, -Y.y).normalize(), X = new THREE.Vector3().crossVectors(Y, Z);
   shovel.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z)); shovel.position.copy(N);
   shovel.visible = false;
