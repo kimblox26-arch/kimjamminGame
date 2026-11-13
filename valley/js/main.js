@@ -95,7 +95,7 @@ function updateSaveInfo() {
 }
 // 메인화면 영상: 재생되면 그림 배경 대신 보여 주고, 게임을 시작하면 멈춰 메모리를 비운다
 const sVid = $('startVid');
-if (sVid) { sVid.addEventListener('playing', () => $('start').classList.add('vid')); sVid.play?.().catch(() => {}); }
+if (sVid) { const vOn = () => $('start').classList.add('vid'); sVid.addEventListener('playing', vOn); sVid.addEventListener('timeupdate', vOn, { once: true }); if (!sVid.paused && sVid.currentTime > 0) vOn(); sVid.play?.().catch(() => {}); }
 function refreshCont() { const sv = loadSave(); $('cont').classList.toggle('hidden', !sv); if (sv) $('cont').title = new Date(sv.at).toLocaleString('ko-KR'); }
 const mapBtns = [...document.querySelectorAll('#mapSel button')];
 const pickMap = k => { mapKey = k; mapBtns.forEach(b => { b.classList.toggle('on', b.dataset.m === k); b.setAttribute('aria-checked', b.dataset.m === k); }); $('start').dataset.map = k; refreshCont(); };
