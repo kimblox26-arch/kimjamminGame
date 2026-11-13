@@ -44,7 +44,7 @@ let stoneGroup, innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = (v, t) => { $('progbar').style.width = Math.round(v * 100) + '%'; if (t) $('progtxt').textContent = t; };
-if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, H, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); },
+if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, H, N, get scene() { return scene; }, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); },
   capFrame(fps = 30) { if (!capNow) capNow = last; capNow += 1000 / fps; loop(capNow); }, setCam(f) { camRig = f; }, setTimeScale: n => setTimeScale(n), get dayFrozen() { return dayFrozen; }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
 
 // ───── 저장 / 불러오기 (브라우저 저장소) ─────
@@ -175,7 +175,7 @@ async function boot(q, save) {
   N.buildTrees(scene, q.pine, q.broad);
   N.buildGrass(scene, q.grass);
   N.buildFlowers(scene, q.flowers);
-  if (SEA()) N.buildOcean(scene, W.WAVES_A, W.WAVES_B, W.C_SEA, W.SEA_ZA, W.SEA_ZB, T.ISTH_Z, [T.X0 + T.SX0 * T.CELL, T.X0 + (T.SX1 - 1) * T.CELL, W.SEA_ZA, W.SEA_ZB]); // 먼바다 판은 방파제 사이(계산하는 물)만 비운다 else { N.buildStreams(scene); N.buildSmallFall(scene); }
+  if (SEA()) N.buildOcean(scene, W.WAVES_A, W.WAVES_B, W.C_SEA, W.SEA_ZA, W.SEA_ZB, T.ISTH_Z, [T.X0 + T.SX0 * T.CELL, T.X0 + (T.SX1 - 1) * T.CELL, W.SEA_ZA, W.SEA_ZB]); else { N.buildStreams(scene); N.buildSmallFall(scene); } // 바다: 먼바다 판은 방파제 사이(계산하는 물)만 비운다
   FX.init(scene, camera); FX.opt.fall = !SEA();
 
   const pr = renderer.getPixelRatio();
