@@ -213,7 +213,7 @@ export function update(dt, time) {
   let dx = (-sy * mz + cy * mx) * speed, dz = (-cy * mz - sy * mx) * speed;
   if (P.swim) {
     dx += ws.vx * 0.6; dz += ws.vz * 0.6; // 물살에 떠밀림
-    const target = ws.surf - 0.6; // 눈이 물 위로 살짝 나오는 높이
+    const target = ws.surf - 0.48; // 눈이 물 위로 20cm 쯤 나오는 높이 (파도에 잠기지 않게)
     P.vy += ((target - p.y) * 7 - P.vy * 3) * dt;
     if (keys.has('Space') || P.jumpReq) P.vy = Math.max(P.vy, 2.6); // 위로 차고 올라가기 (기슭으로 나오기)
     P.grounded = false;
