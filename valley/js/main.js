@@ -120,7 +120,7 @@ async function boot(q, save) {
   prog(0.03, '지형 만드는 중'); await frame();
   T.generate();
   const keepOut = V.prepare(); // 집터 다지기 (돌이 박히지 않게 자리 비움)
-  T.noTree.push(...keepOut);
+  T.noTree.push(...keepOut, ...(SEA() ? [[-4.5, 36.5, 2.5], [0, 36, 5], [0, 31, 3.5], [0, 41, 3.5]] : [[T.centerX(7.5) - 1.8, 7.5, 2]])); // 시작 자리 · 물길 파기 좋은 사주 목
   T.remember();
   if (save) T.restore(save.t);
   // 기본 화면 MSAA: 폰(타일 GPU)에서는 거의 공짜라 최적화 모드도 매끈하게
