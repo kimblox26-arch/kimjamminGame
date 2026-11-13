@@ -13,7 +13,7 @@ export const SPEEDS = [
   { name: '엄청 빠르게', dig: 0.04, depth: 0.11, digR: 0.5, dump: 0.035, dumpAmt: 0.09, mud: 0.03, mudAmt: 0.12, mudR: 0.5, fx: 0.3 },
 ];
 // 삽 동작: 파기 = 날 쪽으로 쑥 찔러 넣기, 붓기 = 손잡이를 축으로 날을 옆으로 뒤집기
-const SH = { idle: [0, 0, 0], dig: [-0.16, 0.18, 0], dump: [0.02, -0.15, 1.7] }; // [앞으로 밀기 m, 숙이기, 뒤집기]
+const SH = { idle: [0, 0, 0], dig: [-0.14, 0.04, 0], dump: [0.02, -0.05, 1.6] }; // [앞으로 밀기 m, 숙이기, 뒤집기]
 function shPose(kind, dt) {
   const [push, tilt, roll] = SH[kind], k = Math.min(1, dt * 14);
   shInner.position.y += (push - shInner.position.y) * k;
@@ -64,7 +64,7 @@ function buildShovel() {
   shovel.traverse(o => { o.castShadow = false; });
   // 1인칭 자세: 손잡이 끝은 오른쪽 아래(손), 삽날은 화면 아래 가운데 앞쪽 땅을 향함. 날의 오목한 면이 위를 보게
   const G = new THREE.Vector3(0.36, -0.22, -0.28), N = new THREE.Vector3(0.1, -0.3, -1.0);
-  const Y = G.clone().sub(N).normalize(), Z = new THREE.Vector3(0, 1, 0).addScaledVector(Y, -Y.y).normalize(), X = new THREE.Vector3().crossVectors(Y, Z);
+  const Y = G.clone().sub(N).normalize(), Z = new THREE.Vector3(0, 1, 0.8); Z.addScaledVector(Y, -Z.dot(Y)).normalize(); const X = new THREE.Vector3().crossVectors(Y, Z);
   shovel.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z)); shovel.position.copy(N);
   shovel.visible = false;
 }
