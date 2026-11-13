@@ -263,7 +263,7 @@ function specialUpdate(dt, time) {
     if (Math.random() < SP.fx) {
       const ws = W.sample(a.point.x, a.point.z);
       if (ws && ws.h > 0.02) hooks.fx?.splash(a.point.x, ws.surf, a.point.z, 0.4); else hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z) + 0.3, a.point.z, 6);
-      if (Math.random() < 0.5) hooks.audio?.dump();
+      if (Math.random() < 0.5) (hooks.audio?.pour ? hooks.audio.pour(P.pour) : hooks.audio?.dump());
     }
     hooks.edit?.(a.point.x, a.point.z, SP.mudR + 0.25);
   }
@@ -296,10 +296,10 @@ function paintUpdate(dt, time) {
   if (!btn.l || !ok || time - lastAct < 0.12) return;
   lastAct = time;
   const c = new THREE.Color(P.paint);
-  if (a.stone && !a.stone.held) { if (a.stone.paint !== P.paint || !(a.stone.paintWet > 0)) { S.paint(a.stone, P.paint, true); hooks.audio?.dump?.(); } }
+  if (a.stone && !a.stone.held) { if (a.stone.paint !== P.paint || !(a.stone.paintWet > 0)) { S.paint(a.stone, P.paint, true); hooks.audio?.brush?.(); } }
   else if (a.block) { D.paint(a.block, P.paint); }
   else T.paintAt(a.point.x, a.point.z, 0.4, [c.r, c.g, c.b]);
-  if (Math.random() < 0.3) hooks.audio?.step?.(true);
+  if (Math.random() < 0.4) hooks.audio?.brush?.();
 }
 function editUpdate(dt, time) {
   const a = P.aim, tool = P.tool, SP = P.speed;

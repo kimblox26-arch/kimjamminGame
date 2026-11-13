@@ -174,3 +174,6 @@ body.sea #bBig { display: none !important; }
 .menu button.on { background: rgba(159, 227, 184, .22); border-color: rgba(159, 227, 184, .6); color: #c9f5d8; }
 #paintMenu button { width: 34px; height: 34px; padding: 0; border-radius: 50%; background: var(--c); border: 2px solid rgba(255, 255, 255, .25); }
 #paintMenu button.on { border-color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, .35); background: var(--c); }
+
+/* 촬영 모드: 화면 위 표시 숨김 */
+body.capture #hud, body.capture #touch, body.capture #toast { display: none !important; }

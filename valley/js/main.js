@@ -44,7 +44,8 @@ let stoneGroup, innerMesh, tmat, fxaa, renderer, scene, camera, composer, refrRT
 let started = false, paused = false, perf = false, rainOn = false;
 const frame = () => new Promise(r => requestAnimationFrame(() => r()));
 const prog = (v, t) => { $('progbar').style.width = Math.round(v * 100) + '%'; if (t) $('progtxt').textContent = t; };
-if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, H, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
+if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, H, get sky() { return sky_; }, get elec() { return elec; }, get cam() { return camera; }, get paused() { return paused; }, run() { paused = false; $('pause').classList.add('hidden'); },
+  capFrame(fps = 30) { if (!capNow) capNow = last; capNow += 1000 / fps; loop(capNow); }, setCam(f) { camRig = f; }, setTimeScale: n => setTimeScale(n), get dayFrozen() { return dayFrozen; }, get hooks() { return hooks; }, setPerf: v => setPerf(v), setRain: v => setRain(v) };
 
 // ───── 저장 / 불러오기 (브라우저 저장소) ─────
 // 장소별 저장 칸
@@ -111,6 +112,7 @@ async function start(save) {
   $('start').classList.add('hidden'); $('hud').classList.remove('hidden');
   if (isTouch) $('touch').classList.remove('hidden');
   started = true;
+  if (CAPTURE) document.body.classList.add('capture');
   if (isTouch) resume(); else showPause('준비 완료', '시작');
   requestAnimationFrame(loop);
 };
@@ -309,6 +311,9 @@ document.querySelectorAll('#dayMenu [data-tod]').forEach(b => b.onclick = () => 
 $('dayFlow').onclick = () => { dayFrozen = !dayFrozen; $('dayFlow').textContent = dayFrozen ? '시간 흐름: 멈춤' : '시간 흐름: 켜짐'; $('dayFlow').classList.toggle('on', !dayFrozen); };
 $('bSave').onclick = () => saveGame();
 $('saveBtn').onclick = () => saveGame();
+// 배경음악 켜기·끄기 (M)
+const musicLabel = () => { $('musicBtn').textContent = A.musicOn() ? '배경음악: 켜짐' : '배경음악: 꺼짐'; };
+$('musicBtn').onclick = () => { A.setMusic(!A.musicOn()); musicLabel(); }; musicLabel();
 // 큰 댐 자동 건설
 $('bBig').onclick = () => {
   if (H.plant) { hooks.toast(H.plant.ready ? '발전소는 하나만 지을 수 있어요 — 제어실을 열어 보세요' : '건설 중이에요'); return; }
@@ -351,6 +356,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyO') setPerf(!perf);
   if (e.code === 'KeyN') toggleDayMenu();
   if (e.code === 'KeyK') saveGame();
+  if (e.code === 'KeyM') { A.setMusic(!A.musicOn()); musicLabel(); hooks.toast(A.musicOn() ? '배경음악 켜짐' : '배경음악 꺼짐'); }
   if (e.code === 'KeyC' && H.plant?.ready) setCtrl(!ctrlOpen);
   if (e.code === 'KeyT') { setTimeScale(SCALES[(SCALES.indexOf(timeScale) + 1) % SCALES.length]); hooks.toast('시간 ×' + timeScale); }
 });
@@ -419,11 +425,14 @@ let erodeT = 0, erodeLast = 0, cemT = 0;
 let shake = 0, timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
+// 촬영 모드(?capture): 화면을 한 장씩 정확한 시간 간격으로 진행 (메인화면 영상 만들기용)
+const CAPTURE = params.has('capture');
+let capNow = 0, camRig = null;
 function loop(now) {
-  requestAnimationFrame(loop);
+  if (!CAPTURE) requestAnimationFrame(loop);
   if (now - last < FRAME_MS - 4) return; // 30fps 고정
   const raw = (now - last) / 1000; const dt = Math.min(0.07, raw); last = now;
-  if (!paused) dynRes(raw * 1000, dt, cpuMs);
+  if (!paused && !CAPTURE) dynRes(raw * 1000, dt, cpuMs);
   const t0 = performance.now();
   fpsN++; fpsT += raw; if (fpsT > 0.5) { fpsV = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   if (paused) { render(); return; }
@@ -431,6 +440,7 @@ function loop(now) {
   const dv = Math.min(dg, dt * 2), da = Math.min(dg, dt * 4); // 화면 효과·애니메이션은 너무 빨라지지 않게
   clock += dt; gclock += dv; T.U.uTime.value = gclock;
   PL.update(dt, clock);
+  if (camRig) { const r = camRig(clock); camera.position.set(r.p[0], r.p[1], r.p[2]); camera.lookAt(r.l[0], r.l[1], r.l[2]); camera.updateMatrixWorld(); }
   physAcc += dg; let n = 0; const maxPhys = Math.min(perf ? 4 : 8, 4 * timeScale);
   while (physAcc >= 1 / 60 && n < maxPhys) {
     PL.prePhysics(1 / 60);
@@ -578,7 +588,9 @@ function audioUpdate() {
   }
   const sf = N.smallFall, fd = SEA() ? Math.max(2.5, Math.min(Math.abs(c.z - 21), Math.abs(c.z - 51))) * (1.6 - 0.9 * Math.max(0, Math.sin(2 * Math.PI * W.state.time / 6.5))) : Math.min(Math.hypot(c.x - T.centerX(4.4), c.z - 4.4, c.y - T.groundAt(T.centerX(4.4), 4.4)),
     Math.hypot(c.x - sf.x, c.z - sf.z, c.y - sf.yb) * 1.8 / Math.sqrt(Math.max(0.02, FX.fall2.f)));
-  A.update({ flow: flow * 1.6, turb: turb * 0.5, fallDist: fd, rain: T.U.uRain.value });
+  const night = Math.min(1, Math.max(0, (Math.abs(sky_.tod - 12) - 6.3) / 1.2));
+  const surf = SEA() ? Math.min(1, Math.max(0, 1.15 - Math.min(Math.abs(c.z - 21), Math.abs(c.z - 51)) / 14)) : 0;
+  A.update({ flow: flow * 1.6, turb: turb * 0.5, fallDist: fd, rain: T.U.uRain.value, night, surf, sea: SEA(), mood: night > 0.5 ? 'night' : SEA() ? 'sea' : 'day', dt: 1 / 30 });
 }
 function render() {
   frameN++;
