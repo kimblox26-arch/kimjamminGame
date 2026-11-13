@@ -1,6 +1,6 @@
 // 얕은 물 시뮬레이션(가상 파이프 + 마찰) · 침식 · 물 표면 렌더링
 import * as THREE from 'three';
-import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, soil, bed, gfr, cem, cure, diag, centerX, baseY, markDirtyCell, MODE, SEA_Y, ISTH_Z } from './terrain.js';
+import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, soil, bed, gfr, cem, cure, grass, diag, centerX, baseY, markDirtyCell, MODE, SEA_Y, ISTH_Z } from './terrain.js';
 import { GLSL_NOISE, sstep } from './noise.js';
 import { GLSL_SKY } from './sky.js';
 
@@ -14,6 +14,7 @@ export const kp = new Float32Array(NV); // 셀별 투수계수 (돌무더기≈K
 export const core = new Uint8Array(NV); // 큰 돌의 속(단단한 바위): 물이 스미지 못하고 돌아 흐른다
 export const dam = new Uint8Array(NV); // 콘크리트 댐 칸 (물이 스미지 않음)
 export const pipes = []; // 수력발전 터빈 관 {a:[칸], b:[칸], area, Q, head, P}
+export const obstacles = []; // 물이 못 지나가는 건물 {x, z, hw, hd, yaw, top}
 const ho = new Float32Array(NV), hp = new Float32Array(NV);
 const pL = new Float32Array(NV), pR = new Float32Array(NV), pU = new Float32Array(NV), pD = new Float32Array(NV);
 const fL = new Float32Array(NV), fR = new Float32Array(NV), fU = new Float32Array(NV), fD = new Float32Array(NV);
@@ -22,7 +23,7 @@ export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
 const vxm = new Float32Array(NV), vzm = new Float32Array(NV); // 10초 평균 물살 (파도처럼 왔다 갔다 하는 흐름은 0 에 가깝다)
 export const h0 = new Float32Array(NV); // 저수량 기준 수심
 export const MEAS_J = 325; // z=65 (하류 낙차 직전)
-export const state = { tide: 0, tideA: 0, tideB: 0, inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
+export const state = { grassGone: [], tide: 0, tideA: 0, tideB: 0, inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
 const src = [];
 // 바다: 양쪽 바다에서 사주로 밀려오는 파도 — 주기가 다른 너울 세 개가 겹쳐 파도 무리(세트)가 생긴다
 export const WAVES_A = [[0.12, 6.1, 0.3], [0.06, 4.1, 2.2], [0.05, 8.7, 1.1]]; // 남쪽 바다 [진폭 m, 주기 s, 위상]
@@ -202,6 +203,10 @@ export function post(dt) {
       if (j < MEAS_J) { const dv = h[k] - h0[k]; if (dv > 0) st += dv; }
       if (hk <= 0.004) continue;
       const sp = Math.hypot(vx[k], vz[k]);
+      if (grass[k] > 0.02) { // 물살에 풀이 뜯기고, 물에 오래 잠긴 풀은 시든다
+        const g0 = grass[k]; grass[k] = Math.max(0, g0 - ((sp > 0.35 ? (sp - 0.35) * 0.5 : 0) + (hk > 0.05 ? 0.012 : 0)) * dt);
+        if (g0 >= 0.2 && grass[k] < 0.2) state.grassGone.push(k); if ((g0 * 10 | 0) !== (grass[k] * 10 | 0)) markDirtyCell(i, j, false, false);
+      }
       vxm[k] += (vx[k] - vxm[k]) * Math.min(1, dt / 10); vzm[k] += (vz[k] - vzm[k]) * Math.min(1, dt / 10);
       const sm = Math.hypot(vxm[k], vzm[k]);
       // 물살이 깎는 재료: 덮인 흙·쌓인 흙/모래 → 원래 흙(바다는 모래) → 암반(아주 느리게). 돌이 덮은 곳·댐은 안 깎임
@@ -256,7 +261,7 @@ export function post(dt) {
   phase = (phase + 1) & 7;
   for (let j = 1 + phase; j < NZ; j += 8) for (let i = SX0 + 1; i < SX1 - 1; i++) {
     const k = j * NXV + i; if (h[k] > 0.0008) continue;
-    if (wet[k] > 0) wet[k] = Math.max(0, wet[k] - dt * 8 / 45);
+    if (wet[k] > 0) wet[k] = Math.max(0, wet[k] - dt * 8 / 90); // 젖은 땅은 1분 반에 걸쳐 마른다
     if (foam[k] > 0) foam[k] *= 0.4;
     if (sed[k] > 0) { loose[k] += sed[k]; ground[k] += sed[k]; sed[k] = 0; markDirtyCell(i, j); }
   }

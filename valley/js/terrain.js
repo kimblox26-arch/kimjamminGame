@@ -499,6 +499,17 @@ export function cureStep(dg, dt) {
   if (flushAcc > 0.5 && box.i1 >= 0) { flushAcc = 0; markDirty(Math.max(0, box.i0 - 1), Math.min(NX, box.i1 + 1), Math.max(0, box.j0 - 1), Math.min(NZ, box.j1 + 1), false, true); fixDirty(); box.i0 = box.j0 = 1e9; box.i1 = box.j1 = -1; }
 }
 export const curingCount = () => curing.size;
+// 밟기: 발자국 자리의 풀이 조금씩 눕고 닳는다 (풀 포기가 사라질 만큼 닳으면 true)
+export function trample(x, z) {
+  const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL); let gone = false;
+  for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) {
+    if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
+    const k = idx(i, j), g0 = grass[k]; if (g0 <= 0.02) continue;
+    grass[k] = g0 * (i === ci && j === cj ? 0.9 : 0.96); if (g0 >= 0.2 && grass[k] < 0.2) gone = true;
+  }
+  markDirty(ci - 1, ci + 1, cj - 1, cj + 1, false, false); fixDirty();
+  return gone;
+}
 // 땅에 페인트 칠하기
 export function paintAt(x, z, r, rgb) {
   const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), n = Math.ceil(r / CELL);

@@ -1,6 +1,7 @@
 // 전기를 쓰는 곳: 계곡 가로등과 오두막 (밤에 배터리/발전 전기로 불이 켜진다)
 import * as THREE from 'three';
 import { groundAt, centerX, floorHalf, MODE } from './terrain.js';
+import * as W from './water.js';
 
 export const lamps = [], cabins = [];
 export const sites = [], lampSites = [];
@@ -99,6 +100,7 @@ export function build(scene, R, world) {
     scene.add(h);
     const sp = new THREE.Sprite(glowMat); sp.position.set(x - side * 1.6, y + 1.3, z); sp.scale.setScalar(2.4); scene.add(sp); glow.push(sp);
     fixedBox(R, world, x, (base + y + 2.3) / 2, z, 1.7, (y + 2.3 - base) / 2, 1.5, h.rotation.y); // 기초까지 포함
+    W.obstacles.push({ x, z, hw: 1.8, hd: 1.6, yaw: h.rotation.y, top: y + 2.9 }); // 물이 집 안으로 들어오지 않게
     cabins.push(h);
   }
 }

@@ -290,6 +290,17 @@ export function rasterize(force) {
     }
   }
   D.rasterize();
+  // 건물(집·발전소): 바닥부터 지붕 높이까지 물이 못 들어오는 벽
+  for (const o of W.obstacles) {
+    const c = Math.cos(o.yaw), s = Math.sin(o.yaw), R = Math.hypot(o.hw, o.hd);
+    const i0 = Math.max(SX0, Math.floor((o.x - R - X0) / CELL)), i1 = Math.min(SX1 - 1, Math.ceil((o.x + R - X0) / CELL));
+    const j0 = Math.max(0, Math.floor((o.z - R - Z0) / CELL)), j1 = Math.min(NZ, Math.ceil((o.z + R - Z0) / CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const dx = X0 + i * CELL - o.x, dz = Z0 + j * CELL - o.z;
+      if (Math.abs(dx * c - dz * s) > o.hw || Math.abs(dx * s + dz * c) > o.hd) continue;
+      const k = j * NXV + i; if (W.solid[k] < o.top) W.solid[k] = o.top; W.dam[k] = 1;
+    }
+  }
   // 돌 위의 흙: 돌이 사라지면 바닥으로 떨어지고, 돌이 움직이면 같이 움직인다
   for (let j = 0; j <= NZ; j++) for (let i = SX0; i < SX1; i++) {
     const k = j * NXV + i;

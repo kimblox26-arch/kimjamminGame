@@ -220,6 +220,7 @@ function commission(instant) {
   fixedBox((xs[0] + xs[2]) / 2, deckY + 0.12, zU + 0.7, (xs[2] - xs[0]) / 2 + 0.2, 0.13, 0.8);
   for (const zz of [zU + 0.05, zU + 1.15]) fixedBox((x0 + x1) / 2, crest + 0.5, zz, (x1 - x0) / 2, 0.5, 0.04);
   fixedBox(px, gy + 1.8, pz, 2.7, 1.85, 1.9);
+  W.obstacles.push(p.hallObs = { x: px, z: pz, hw: 2.7, hd: 1.9, yaw: 0, top: gy + 3.8 }, p.trObs = { x: px + 3.3, z: pz, hw: 0.5, hd: 0.45, yaw: 0, top: gy + 1.4 }); // 발전소 건물엔 물이 못 들어감
   fixedBox(px + 3.3, gy + 0.8, pz, 0.5, 0.55, 0.45);
   if (instant) { p.ready = true; return; }
   // 새로 생긴 부품들을 순서대로 떨어뜨려 조립 (방류 물살·케이블은 마지막에 보이게)
@@ -349,6 +350,7 @@ export function demolish() {
   for (const g of p.gates) W.pipes.splice(W.pipes.indexOf(g.pipe), 1);
   for (const u of p.units) W.pipes.splice(W.pipes.indexOf(u.pipe), 1);
   for (const sg of p.segs) sg.builtH = 0;
+  for (const o of [p.hallObs, p.trObs]) { const i = W.obstacles.indexOf(o); if (i >= 0) W.obstacles.splice(i, 1); }
   for (const g of p.gates) g.moving = false;
   p.P = 0; p.ready = false; p.queue = [];
   const objs = [...p.objs].sort((a, b) => b.position.y - a.position.y);

@@ -368,6 +368,7 @@ addEventListener('keydown', e => {
 // ───── 게임 훅 ─────
 let toastT = 0, lastToast = '';
 const hooks = {
+  grass(x, z) { N.onEdit(x, z, 0.5); },
   ownsPlant: h => H.owns(h),
   demolishPlant: () => demolishPlant(),
   toast(t) { if (t === lastToast && toastT > 0.6) return; lastToast = t; const el = $('toast'); el.textContent = t; el.classList.add('show'); toastT = 1.8; },
@@ -427,7 +428,7 @@ function ui(dt) {
 }
 
 // ───── 루프 ─────
-let erodeT = 0, erodeLast = 0, cemT = 0, lastImpact = 0;
+let erodeT = 0, erodeLast = 0, cemT = 0, lastImpact = 0, grassT = 0;
 let shake = 0, timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
@@ -499,6 +500,8 @@ function loop(now) {
     N.oceanU.uT.value = st.time; N.oceanU.uSeaA.value = T.SEA_Y + st.tideA; N.oceanU.uSeaB.value = T.SEA_Y + st.tideB;
   }
   // 물살에 깎이고 쌓인 땅: 가끔 물리 높이장도 다시 만든다
+  // 물살에 뜯기거나 물에 잠겨 시든 풀 포기 치우기 (0.5초마다 조금씩)
+  grassT += dt; if (grassT > 0.5 && st.grassGone.length) { grassT = 0; for (const k of st.grassGone.splice(0, 40)) N.onEdit(T.X0 + (k % T.NXV) * T.CELL, T.Z0 + ((k / T.NXV) | 0) * T.CELL, 0.25); }
   erodeT += dt; if (erodeT > 4) { erodeT = 0; if (Math.abs(st.eroded - erodeLast) > 0.02) { erodeLast = st.eroded; T.physState.dirty = true; } }
   T.U.uRain.value += (rt - T.U.uRain.value) * Math.min(1, dg * 0.15);
   if (!SEA()) { const sf = N.smallFall, s = W.sample(sf.x, sf.z - 1.2), f = s ? Math.min(1, s.h * Math.hypot(s.vx, s.vz) / 0.1) : 0;

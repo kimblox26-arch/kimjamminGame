@@ -201,13 +201,27 @@ export function update(dt, time) {
   const ws = W.sample(p.x, p.z);
   const feet = p.y - 0.83;
   P.inWater = ws && ws.h > 0.01 ? Math.max(0, ws.surf - feet) : 0;
+  // 수영: 가슴보다 깊은 물에서는 떠서 헤엄친다 (머리는 물 위, 물살에 떠밀림)
+  const depth = ws && ws.h > 0.01 ? ws.surf - T.groundAt(p.x, p.z) : 0;
+  const wasSwim = P.swim; P.swim = depth > (P.swim ? 0.95 : 1.15) && !P.held;
+  if (P.swim && !wasSwim) { hooks.audio?.splash?.(0.5); hooks.fx?.splash(p.x, ws.surf, p.z, 0.5); hooks.toast?.('수영 중 — 점프로 위로 헤엄쳐 올라가요'); }
   let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 5.2 : 3.0;
+  if (P.swim) speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 2.3 : 1.5;
   if (P.held) speed *= 1 - Math.min(0.6, Math.pow(P.held.mass / 3000, 0.5) * 0.6);
-  if (P.inWater > 0.08) speed *= 0.62;
+  else if (P.inWater > 0.08) speed *= 0.62;
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
-  const dx = (-sy * mz + cy * mx) * speed, dz = (-cy * mz - sy * mx) * speed;
-  P.vy -= 9.81 * dt;
-  if (P.grounded && (keys.has('Space') || P.jumpReq)) { P.vy = 4.3; P.grounded = false; hooks.audio?.jump?.(); }
+  let dx = (-sy * mz + cy * mx) * speed, dz = (-cy * mz - sy * mx) * speed;
+  if (P.swim) {
+    dx += ws.vx * 0.6; dz += ws.vz * 0.6; // 물살에 떠밀림
+    const target = ws.surf - 0.6; // 눈이 물 위로 살짝 나오는 높이
+    P.vy += ((target - p.y) * 7 - P.vy * 3) * dt;
+    if (keys.has('Space') || P.jumpReq) P.vy = Math.max(P.vy, 2.6); // 위로 차고 올라가기 (기슭으로 나오기)
+    P.grounded = false;
+  } else {
+    if (P.inWater > 0.3) { dx += (ws?.vx || 0) * 0.2; dz += (ws?.vz || 0) * 0.2; } // 허리까지 오면 물살에 조금 밀림
+    P.vy -= 9.81 * dt;
+    if (P.grounded && (keys.has('Space') || P.jumpReq)) { P.vy = 4.3; P.grounded = false; hooks.audio?.jump?.(); }
+  }
   P.jumpReq = false;
   const held = P.held?.collider;
   cc.computeColliderMovement(col, { x: dx * dt, y: P.vy * dt, z: dz * dt }, undefined, undefined, c => c !== held);
@@ -219,9 +233,15 @@ export function update(dt, time) {
   P.grounded = cc.computedGrounded();
   if (P.grounded && P.vy < 0) P.vy = -0.5;
   const hs = Math.hypot(mv.x, mv.z) / dt;
-  if (P.grounded && hs > 0.4) {
+  if (P.swim && Math.hypot(mx, mz) > 0.1) { // 헤엄치는 물소리·물보라
+    P.bob += dt * 3; P.stepAcc += dt;
+    if (P.stepAcc > 0.9) { P.stepAcc = 0; hooks.audio?.splash?.(0.25); hooks.fx?.splash(nx + (Math.random() - 0.5) * 0.6, ws.surf, nz + (Math.random() - 0.5) * 0.6, 0.25); }
+  } else if (P.grounded && hs > 0.4) {
     P.bob += dt * hs * 2.1; P.stepAcc += hs * dt;
-    if (P.stepAcc > (speed > 4 ? 0.85 : 0.7)) { P.stepAcc = 0; hooks.audio?.step(P.inWater > 0.03); if (P.inWater > 0.03) hooks.fx?.splash(nx, feet + P.inWater, nz, 0.4); }
+    if (P.stepAcc > (speed > 4 ? 0.85 : 0.7)) {
+      P.stepAcc = 0; hooks.audio?.step(P.inWater > 0.03); if (P.inWater > 0.03) hooks.fx?.splash(nx, feet + P.inWater, nz, 0.4);
+      else if (T.trample(nx, nz)) hooks.grass?.(nx, nz); // 자주 밟은 풀은 눕고 닳아 길이 생긴다
+    }
   }
   // 카메라
   camera.position.set(nx, ny + 0.72 + Math.sin(P.bob * 2) * 0.025, nz);
