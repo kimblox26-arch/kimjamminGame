@@ -120,7 +120,7 @@ async function boot(q, save) {
   prog(0.03, '지형 만드는 중'); await frame();
   T.generate();
   const keepOut = V.prepare(); // 집터 다지기 (돌이 박히지 않게 자리 비움)
-  T.noTree.push(...keepOut, ...(SEA() ? [[-4.5, 36.5, 2.5], [0, 36, 5], [0, 31, 3.5], [0, 41, 3.5]] : [[T.centerX(7.5) - 1.8, 7.5, 2]])); // 시작 자리 · 물길 파기 좋은 사주 목
+  T.noTree.push(...keepOut, ...(SEA() ? [[-4.5, 36.5, 2.5]] : [[T.centerX(7.5) - 1.8, 7.5, 2]])); // 시작 자리 · 물길 파기 좋은 사주 목
   T.remember();
   if (save) T.restore(save.t);
   // 기본 화면 MSAA: 폰(타일 GPU)에서는 거의 공짜라 최적화 모드도 매끈하게
@@ -271,7 +271,7 @@ function setPerf(on) {
   innerMesh.castShadow = !on; // 폰: 지형 그림자 생략
   N.setDensity(on ? 0.75 : 1, on ? Math.min(26, Q.view) : Q.view);
   // 가벼운 셰이더 (자갈 무늬·물속 빛무늬·돌 결 단순화)
-  for (const m of [tmat, ...S.mats, water.material]) { m.defines = m.defines || {}; if (on) m.defines.LITE = ''; else delete m.defines.LITE; m.needsUpdate = true; }
+  for (const m of [tmat, ...S.mats, ...S.paintMats, water.material]) { m.defines = m.defines || {}; if (on) m.defines.LITE = ''; else delete m.defines.LITE; m.needsUpdate = true; }
   const ms = on ? 1536 : Q.shadow;
   if (sun.shadow.mapSize.x !== ms) { sun.shadow.mapSize.set(ms, ms); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   resize();
@@ -296,6 +296,9 @@ $('bPerf').onclick = () => setPerf(!perf);
 $('bRain').onclick = () => setRain(!rainOn);
 $('bSpeed').onclick = () => PL.cycleSpeed();
 const SCALES = [1, 2, 4, 10, 20, 30, 50, 100];
+// 붓기 재료 · 페인트 색 고르기
+document.querySelectorAll('#pourMenu [data-p]').forEach(b => b.onclick = () => { PL.P.pour = +b.dataset.p; document.querySelectorAll('#pourMenu [data-p]').forEach(x => x.classList.toggle('on', x === b)); });
+document.querySelectorAll('#paintMenu [data-c]').forEach(b => { b.style.setProperty('--c', b.dataset.c); b.onclick = () => { PL.P.paint = parseInt(b.dataset.c.slice(1), 16); document.querySelectorAll('#paintMenu [data-c]').forEach(x => x.classList.toggle('on', x === b)); }; });
 $('bTime').onclick = () => { $('timeMenu').classList.toggle('hidden'); $('dayMenu').classList.add('hidden'); };
 document.querySelectorAll('#timeMenu [data-ts]').forEach(b => b.onclick = () => { setTimeScale(+b.dataset.ts); $('timeMenu').classList.add('hidden'); });
 // 낮밤 정하기
@@ -366,6 +369,7 @@ const hooks = {
       $('tSec').classList.toggle('hidden', !(t === 'hand' || t === 'shovel' || t === 'dam')); $('tRot').classList.toggle('hidden', t !== 'hand');
       $('bSpeed').classList.toggle('hidden', !['shovel', 'mud', 'flatten', 'carve'].includes(t));
       $('bBig').classList.toggle('hidden', t !== 'dam');
+      $('pourMenu').classList.toggle('hidden', t !== 'mud'); $('paintMenu').classList.toggle('hidden', t !== 'paint');
     },
     speed(n) { const b = $('bSpeed'); $('spd').textContent = ['×1', '×3', '×8'][n]; b.classList.toggle('s1', n === 1); b.classList.toggle('s2', n === 2); },
     prompt(t, on) { const el = $('tag'); if (el.textContent !== t) el.textContent = t; $('cross').classList.toggle('on', on); },
@@ -411,7 +415,7 @@ function ui(dt) {
 }
 
 // ───── 루프 ─────
-let erodeT = 0, erodeLast = 0;
+let erodeT = 0, erodeLast = 0, cemT = 0;
 let shake = 0, timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
@@ -461,6 +465,9 @@ function loop(now) {
   }
   if (clock - lastSave > 90 && !D.building() && !H.building()) saveGame(true); // 자동 저장
   dayNight(dg); electricity(dt, dg);
+  // 시멘트가 굳고 페인트가 마른다 · 굳은 시멘트에 박힌 돌은 붙잡힌다
+  T.cureStep(dg, dt); S.paintStep(dg); D.paintStep(dg);
+  cemT += dt; if (cemT > 1) { cemT = 0; if (S.cementCheck()) hooks.toast('시멘트가 굳어 돌이 단단히 붙었어요'); }
   flushT += dt;
   if (clock - lastEdit < 0.3 || flushT > 0.25) { T.flushMesh(); flushT = 0; }
   if (T.physState.dirty) {
@@ -541,6 +548,7 @@ function onContact(e) {
   if (!st || st.fixed || clock - st.lastHit < 0.12) return;
   st.lastHit = clock;
   const other = st.collider.handle === c1 ? c2 : c1, hf = T.getHF();
+  if (st.quiet > performance.now()) return; // 막 깨진 조각
   if (hf && other === hf.handle && (st.vyPrev || 0) < -1.8 && !st.held) dent(st, -st.vyPrev);
   const f = e.totalForceMagnitude() / (st.mass * 9.81);
   let s = Math.min(1, Math.max(0.08, (f - 6) / 40)) * Math.min(1, Math.max(0.3, st.mass / 40));
@@ -568,7 +576,7 @@ function audioUpdate() {
     const sp = Math.hypot(s.vx, s.vz), w = 1 / (1 + (dx * dx + dz * dz) * 0.15);
     flow += s.open * sp * w; turb += W.foam[s.k] * w;
   }
-  const sf = N.smallFall, fd = SEA() ? Math.max(2.5, Math.min(Math.abs(c.z - 26), Math.abs(c.z - 46))) * (1.6 - 0.9 * Math.max(0, Math.sin(2 * Math.PI * W.state.time / 6.5))) : Math.min(Math.hypot(c.x - T.centerX(4.4), c.z - 4.4, c.y - T.groundAt(T.centerX(4.4), 4.4)),
+  const sf = N.smallFall, fd = SEA() ? Math.max(2.5, Math.min(Math.abs(c.z - 21), Math.abs(c.z - 51))) * (1.6 - 0.9 * Math.max(0, Math.sin(2 * Math.PI * W.state.time / 6.5))) : Math.min(Math.hypot(c.x - T.centerX(4.4), c.z - 4.4, c.y - T.groundAt(T.centerX(4.4), 4.4)),
     Math.hypot(c.x - sf.x, c.z - sf.z, c.y - sf.yb) * 1.8 / Math.sqrt(Math.max(0.02, FX.fall2.f)));
   A.update({ flow: flow * 1.6, turb: turb * 0.5, fallDist: fd, rain: T.U.uRain.value });
 }

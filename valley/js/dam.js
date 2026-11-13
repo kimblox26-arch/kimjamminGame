@@ -163,12 +163,17 @@ export function update(dt, fx, dirt) {
   }
 }
 export const building = () => blocks.some(b => !b.ready);
+// 페인트: 블록 색 (젖은 동안 반짝이고 40초 동안 마른다)
+const pCache = new Map();
+const pMat = (hex, wet) => { const key = hex + (wet ? 'w' : 'd'); if (!pCache.has(key)) pCache.set(key, new THREE.MeshStandardMaterial({ color: hex, roughness: wet ? 0.12 : 0.6 })); return pCache.get(key); };
+export function paint(b, hex, wet = true) { if (b.paint === hex && b.paintWet > 0) return; b.paint = hex; b.paintWet = wet ? 1 : 0; b.mesh.material = pMat(hex, wet); }
+export function paintStep(dg) { for (const b of blocks) if (b.paintWet > 0 && (b.paintWet -= dg / 40) <= 0) { b.paintWet = 0; b.mesh.material = pMat(b.paint, false); } }
 export const power = () => W.pipes.reduce((s, p) => s + p.P, 0); // W
 
 // ───── 저장 / 불러오기 ─────
 export function serialize() {
-  return blocks.filter(b => b.ready).map(b => ({ x: b.x, z: b.z, yaw: b.yaw, y0: b.y0, w: b.w, h: b.h, d: b.d, big: b.big, tb: b.turbine ? b.turbine.sign : 0 }));
+  return blocks.filter(b => b.ready).map(b => ({ x: b.x, z: b.z, yaw: b.yaw, y0: b.y0, w: b.w, h: b.h, d: b.d, big: b.big, tb: b.turbine ? b.turbine.sign : 0, pt: b.paint || 0 }));
 }
 export function restore(list) {
-  for (const o of list || []) { const b = addBlock(o); if (o.tb) toggleTurbine(b, o.tb); }
+  for (const o of list || []) { const b = addBlock(o); if (o.tb) toggleTurbine(b, o.tb); if (o.pt) paint(b, o.pt, false); }
 }

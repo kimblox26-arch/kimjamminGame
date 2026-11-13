@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { physState, CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell, MODE } from './terrain.js';
+import { physState, CELL, NXV, X0, Z0, SX0, SX1, NZ, U, groundAt, centerX, floorHalf, chanW, cap, fill, ground, loose, markDirtyCell, MODE, gfr, cem, cure } from './terrain.js';
 import * as W from './water.js';
 import * as D from './dam.js';
 import { GLSL_NOISE, rng } from './noise.js';
@@ -74,6 +74,34 @@ function stoneMaterial([c1, c2, c3, moss]) {
   return m;
 }
 export const mats = PALETTE.map(stoneMaterial);
+// 페인트 칠한 돌: 색마다 젖은(반짝)·마른 재질 하나씩
+export const paintMats = []; const paintCache = new Map();
+function paintMat(hex, wet) {
+  const key = hex + (wet ? 'w' : 'd'); if (paintCache.has(key)) return paintCache.get(key);
+  const c = new THREE.Color(hex), m = stoneMaterial([c.clone().multiplyScalar(0.8).getHex(), hex, c.clone().lerp(new THREE.Color(1, 1, 1), 0.15).getHex(), 0]);
+  m.roughness = wet ? 0.12 : 0.62; m.defines = { ...(mats[0].defines || {}) }; m.customProgramCacheKey = () => 'paint' + key;
+  paintCache.set(key, m); paintMats.push(m); return m;
+}
+export function paint(st, hex, wet = true) { st.paint = hex; st.paintWet = wet ? 1 : 0; st.mesh.material = paintMat(hex, wet); }
+export function paintStep(dg) { for (const st of stones) if (st.paintWet > 0 && (st.paintWet -= dg / 40) <= 0) { st.paintWet = 0; st.mesh.material = paintMat(st.paint, false); } }
+// 시멘트에 박혀 굳은 돌은 움직이지 않는다
+export function cementCheck() {
+  let n = 0;
+  for (const st of stones) {
+    if (st.fixed || st.held || st.cy === undefined) continue;
+    const v = st.body.linvel(); if (v.x * v.x + v.y * v.y + v.z * v.z > 0.01) continue;
+    const bot = st.cy - st.hy, rr = st.rb * 0.7;
+    let hard = 0, tot = 0;
+    for (let dz = -rr; dz <= rr + 1e-6; dz += rr) for (let dx = -rr; dx <= rr + 1e-6; dx += rr) {
+      const i = Math.round((st.cx + dx - X0) / CELL), j = Math.round((st.cz + dz - Z0) / CELL); if (i < 1 || j < 1 || j >= NZ) continue;
+      const k = j * NXV + i; tot++;
+      const top = ground[k] + fill[k] + cap[k]; // 시멘트 면 높이
+      if (cem[k] * cure[k] > 0.5 && top > bot + 0.03) hard++;
+    }
+    if (tot && hard >= 2) { st.body.setBodyType(R.RigidBodyType.Fixed, true); st.fixed = true; st.cemented = true; needRaster = true; n++; }
+  }
+  return n;
+}
 
 // ───── 바위 형상 ─────
 function rockGeometry(r, seed, detail) {
@@ -151,21 +179,28 @@ export function removeStone(st) {
   needRaster = true;
 }
 // 곡괭이로 깨기: 부피를 나눠 2~4개 조각 돌로 쪼갠다 (아주 작은 돌은 부스러져 사라짐)
-export function split(st, dir) {
+export function split(st, dir, player) {
   const t = st.body.translation(), parent = st.mesh.parent, out = [];
   if (st.r < 0.09) { removeStone(st); return out; }
   const n = st.r > 0.5 ? 4 : st.r > 0.22 ? 3 : 2;
-  const rr = st.r * Math.cbrt(1 / n);
-  const a0 = rand() * 6.283;
+  const rr = st.r * Math.cbrt(1 / n) * 0.92;
+  // 조각끼리 겹치지 않는 거리 (겹치면 물리엔진이 서로 세게 밀어내 날아가 버림)
+  const d = rr * 1.12 / Math.sin(Math.PI / n);
+  let a0 = rand() * 6.283;
+  if (player) a0 = Math.atan2(player.z - t.z, player.x - t.x) + Math.PI / n; // 플레이어 쪽으로는 조각을 두지 않는다
+  const paintHex = st.paint, wet = st.paintWet > 0;
   removeStone(st);
   for (let i = 0; i < n; i++) {
-    const a = a0 + i / n * 6.283, off = st.r * 0.5;
-    const fx = t.x + Math.cos(a) * off, fz = t.z + Math.sin(a) * off, fr = rr * (0.85 + rand() * 0.25);
-    const f = addStone(fx, Math.max(t.y + (i % 2 ? 0.1 : -0.05) * st.r, groundAt(fx, fz) + fr * 0.7), fz, fr, { mat: st.matIdx });
+    const a = a0 + i / n * 6.283, fr = rr * (0.9 + rand() * 0.1);
+    let fx = t.x + Math.cos(a) * d, fz = t.z + Math.sin(a) * d;
+    if (player) { const px = fx - player.x, pz = fz - player.z, pd = Math.hypot(px, pz), need = 0.36 + fr * 1.1; if (pd < need) { fx = player.x + px / (pd || 1) * need; fz = player.z + pz / (pd || 1) * need; } }
+    let gy = groundAt(fx, fz); for (const [ox, oz] of [[fr, 0], [-fr, 0], [0, fr], [0, -fr]]) gy = Math.max(gy, groundAt(fx + ox, fz + oz));
+    const f = addStone(fx, Math.max(t.y, gy + fr * 1.08), fz, fr, { mat: st.matIdx });
+    if (paintHex) paint(f, paintHex, wet);
     parent.add(f.mesh);
-    const k = 1.2 / Math.sqrt(Math.max(1, f.mass / 40));
-    f.body.setLinvel({ x: Math.cos(a) * k + dir.x * 0.6, y: 1.2 * k, z: Math.sin(a) * k + dir.z * 0.6 }, true);
-    f.body.setAngvel({ x: (rand() - 0.5) * 4, y: (rand() - 0.5) * 4, z: (rand() - 0.5) * 4 }, true);
+    f.body.setLinvel({ x: Math.cos(a) * 0.35 + dir.x * 0.25, y: 0.3, z: Math.sin(a) * 0.35 + dir.z * 0.25 }, true);
+    f.body.setAngvel({ x: (rand() - 0.5) * 1.5, y: (rand() - 0.5) * 1.5, z: (rand() - 0.5) * 1.5 }, true);
+    f.quiet = performance.now() + 1200; // 막 생긴 조각의 충돌로 땅이 패이지 않게
     f.moved = true; out.push(f);
   }
   return out;
@@ -181,7 +216,7 @@ export function spawnAll(group, count, nBoulders = 18, keepOut = []) {
   const free = (x, z, r) => placed.every(([px, pz, pr]) => (px - x) ** 2 + (pz - z) ** 2 > (pr + r + 0.05) ** 2);
   // 고정 큰 바위
   for (let n = 0, tries = 0; n < nBoulders && tries < 500; tries++) {
-    const sea = MODE === 'sea', z = sea ? 17 + rand() * 38 : 7.5 + rand() * 57, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
+    const sea = MODE === 'sea', z = sea ? 12 + rand() * 48 : 7.5 + rand() * 57, F = floorHalf(z), side = rand() < 0.5 ? -1 : 1;
     let x = sea ? (rand() * 2 - 1) * 7.6 : centerX(z) + side * (n < 4 ? chanW(z) * (0.6 + rand() * 0.6) : F * (0.5 + rand() * 0.4)); // 바닥 위에만 (벽에 뜨지 않게)
     const r = n < 4 ? 0.55 + rand() * 0.3 : 0.6 + rand() * 0.9;
     if (!free(x, z, r)) continue;
@@ -195,7 +230,7 @@ export function spawnAll(group, count, nBoulders = 18, keepOut = []) {
   // 주울 수 있는 돌
   for (let n = 0, tries = 0; n < count && tries < count * 30; tries++) {
     const nearDam = rand() < 0.45;
-    const z = MODE === 'sea' ? 22 + rand() * 28 : nearDam ? (rand() < 0.5 ? 10 : 46) + rand() * 9 : 7.5 + rand() * 57;
+    const z = MODE === 'sea' ? 18 + rand() * 36 : nearDam ? (rand() < 0.5 ? 10 : 46) + rand() * 9 : 7.5 + rand() * 57;
     const F = floorHalf(z);
     const x = centerX(z) + (rand() * 2 - 1) * F * 0.92;
     const r = 0.1 + 0.24 * Math.pow(rand(), 1.5);
@@ -209,6 +244,8 @@ export function spawnAll(group, count, nBoulders = 18, keepOut = []) {
 // ───── 물막이 래스터화 ─────
 const _q = new THREE.Quaternion(), _m = new THREE.Matrix3(), _e = new THREE.Matrix4();
 const order = [];
+const KG = 0.12; // 자갈 투수계수 (흙 0.02 · 돌무더기 0.25 사이)
+const matKp = k => (W.KS * (1 - gfr[k]) + KG * gfr[k]) * (1 - Math.min(1, cem[k] * cure[k] * 1.6));
 export function rasterize(force) {
   if (!force && !needRaster && T_rev() === lastRev) return false;
   needRaster = false; lastRev = T_rev();
@@ -258,9 +295,9 @@ export function rasterize(force) {
       // 돌 기둥: (돌 밑 흙) + (틈을 메운 진흙: 느리게) + (빈 틈: 빠르게) 로 물이 스며 흐른다
       const top = W.solid[k], lz = Math.min(loose[k], 0.5), mud = Math.min(fill[k], top - ground[k]), open = Math.max(0, top - ground[k] - mud);
       W.ptop[k] = top; W.seal[k] = ground[k] - lz;
-      W.kp[k] = (W.KS * (lz + mud) + W.getKP() * open) / Math.max(1e-4, lz + mud + open);
-    } else if (loose[k] > 0.02) { // 부어 놓은 흙더미도 물이 스민다
-      W.ptop[k] = ground[k]; W.seal[k] = ground[k] - Math.min(loose[k], 0.5); W.kp[k] = W.KS;
+      W.kp[k] = (matKp(k) * (lz + mud) + W.getKP() * open) / Math.max(1e-4, lz + mud + open);
+    } else if (loose[k] > 0.02) { // 부어 놓은 흙더미도 물이 스민다 (자갈은 잘 스미고, 굳은 시멘트는 안 스민다)
+      W.ptop[k] = ground[k]; W.seal[k] = ground[k] - Math.min(loose[k], 0.5); W.kp[k] = matKp(k);
     } else W.kp[k] = 0;
     if (W.sBot[k] >= 1e8 && fill[k] > 0) { const v = fill[k] * 0.38; fill[k] = 0; ground[k] += v; loose[k] += v; W.solid[k] = W.seal[k] = W.ptop[k] = ground[k]; markDirtyCell(i, j, true); }
     if (W.dam[k]) { W.ptop[k] = W.seal[k] = W.solid[k]; W.kp[k] = 0; }
@@ -331,12 +368,13 @@ export function setHighlight(st) {
 export function serialize() {
   return stones.map(st => {
     const t = st.body.translation(), r = st.body.rotation();
-    return [st.seed, +st.r.toFixed(4), st.matIdx, st.boulder ? 1 : 0, st.fixed ? 1 : 0, +t.x.toFixed(3), +t.y.toFixed(3), +t.z.toFixed(3), +r.x.toFixed(4), +r.y.toFixed(4), +r.z.toFixed(4), +r.w.toFixed(4)];
+    return [st.seed, +st.r.toFixed(4), st.matIdx, st.boulder ? 1 : 0, st.fixed ? 1 : 0, +t.x.toFixed(3), +t.y.toFixed(3), +t.z.toFixed(3), +r.x.toFixed(4), +r.y.toFixed(4), +r.z.toFixed(4), +r.w.toFixed(4), st.paint || 0, st.cemented ? 1 : 0];
   });
 }
 export function restore(list, group) {
-  for (const [seed, r, mat, boulder, fixed, x, y, z, qx, qy, qz, qw] of list) {
+  for (const [seed, r, mat, boulder, fixed, x, y, z, qx, qy, qz, qw, pnt, cmt] of list) {
     const st = addStone(x, y, z, r, { seed, mat, fixed: !!fixed, q: [qx, qy, qz, qw] });
+    if (pnt) paint(st, pnt, false); if (cmt) st.cemented = true;
     if (boulder) { st.boulder = true; if (!fixed) st.mass = st.vol * 2400; }
     st.moved = true; group.add(st.mesh);
   }

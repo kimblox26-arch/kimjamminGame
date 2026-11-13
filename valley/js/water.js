@@ -1,6 +1,6 @@
 // 얕은 물 시뮬레이션(가상 파이프 + 마찰) · 침식 · 물 표면 렌더링
 import * as THREE from 'three';
-import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, soil, bed, diag, centerX, baseY, markDirtyCell, MODE, SEA_Y, ISTH_Z } from './terrain.js';
+import { CELL, NX, NZ, NXV, NZV, NV, X0, Z0, SX0, SX1, SW, idx, U, ground, loose, cap, soil, bed, gfr, cem, cure, diag, centerX, baseY, markDirtyCell, MODE, SEA_Y, ISTH_Z } from './terrain.js';
 import { GLSL_NOISE, sstep } from './noise.js';
 import { GLSL_SKY } from './sky.js';
 
@@ -29,7 +29,7 @@ export const WAVES_B = [[0.13, 6.5, 0], [0.07, 4.3, 1.7], [0.05, 9.1, 0.4]]; // 
 export const C_SEA = 4.2; // 파도 속도 m/s (√(g·h), 수심 약 1.8 m)
 // 계산 범위: 남쪽 바다 z≥14 (JL), 북쪽 바다 z≤58 (JM). 그 너머는 들어오는 파도를 식으로 그린다 (폰에서 가볍게)
 export let JL = 0, JM = NZ;
-export const SEA_ZA = 17, SEA_ZB = 55;
+export const SEA_ZA = 13, SEA_ZB = 59;
 const etaAt = (W, t, d) => { let e = 0; for (const [a, T, p] of W) e += a * Math.sin(2 * Math.PI * (t / T + d / (C_SEA * T)) + p); return e; };
 export const seaLevelA = () => SEA_Y + state.tideA, seaLevelB = () => SEA_Y + state.tideB;
 function seaBoundary() {
@@ -176,11 +176,11 @@ const SEA = () => MODE === 'sea';
 const MAXB = 0.17;
 function bankSlump(k, e, cp) {
   let ex = 0;
-  for (const n of [k - 1, k + 1, k - NXV, k + NXV]) { const d = ground[n] - ground[k] - MAXB; if (d > 0 && !dam[n] && solid[n] - ground[n] <= 0.01) ex += d; }
+  for (const n of [k - 1, k + 1, k - NXV, k + NXV]) { const d = ground[n] - ground[k] - MAXB; if (d > 0 && !dam[n] && solid[n] - ground[n] <= 0.01 && cem[n] * cure[n] <= 0.4) ex += d; }
   if (ex <= 0) return;
   const budget = Math.min(ex * 0.3, e * 0.7, Math.max(0, cp - sed[k])); // 물살이 실어 갈 수 있는 만큼만
   for (const n of [k - 1, k + 1, k - NXV, k + NXV]) {
-    const d = ground[n] - ground[k] - MAXB; if (d <= 0 || dam[n] || solid[n] - ground[n] > 0.01) continue;
+    const d = ground[n] - ground[k] - MAXB; if (d <= 0 || dam[n] || solid[n] - ground[n] > 0.01 || cem[n] * cure[n] > 0.4) continue;
     const mv = budget * d / ex, a = Math.min(loose[n], mv), b = Math.min(soil[n], mv - a), m = a + b;
     if (m <= 1e-7) continue;
     loose[n] -= a; soil[n] -= b; ground[n] -= m; solid[n] = seal[n] = ptop[n] = ground[n];
@@ -204,9 +204,9 @@ export function post(dt) {
       const sm = Math.hypot(vxm[k], vzm[k]);
       // 물살이 깎는 재료: 덮인 흙·쌓인 흙/모래 → 원래 흙(바다는 모래) → 암반(아주 느리게). 돌이 덮은 곳·댐은 안 깎임
       const top = cap[k] > 0 || loose[k] > 0 ? 0 : soil[k] > 0.001 ? 1 : 2;
-      const vc = top === 0 ? VC0 : top === 1 ? VC1 : 1.6, kr = top === 0 ? 1 : top === 1 ? KR1 : 0.004;
+      const vc = top === 0 ? VC0 + (1.1 - VC0) * gfr[k] : top === 1 ? VC1 : 1.6, kr = top === 0 ? 1 : top === 1 ? KR1 : 0.004; // 자갈은 무거워 잘 안 쓸림
       const cp = (CPK * Math.max(0, sp - vc) + CPM * Math.max(0, sm - vc)) * Math.min(hk, 0.3) / 0.3; // 순간 물살 + 한 방향으로 오래 흐르는 물살(조류·강)
-      const armored = dam[k] || (cap[k] <= 0 && solid[k] - ground[k] > 0.01);
+      const armored = dam[k] || (cap[k] <= 0 && solid[k] - ground[k] > 0.01) || cem[k] * cure[k] > 0.4; // 굳은 시멘트는 안 깎임
       if (sed[k] < cp * BEDF && !armored) {
         let e = (cp * BEDF - sed[k]) * 0.5 * kr * dt; // 바닥은 운반량의 일부까지만 — 나머지는 옆 둑을 깎는 데 쓰여 물길이 넓어진다
         if (cap[k] > 0) { e = Math.min(cap[k], e); cap[k] -= e; solid[k] -= e; }
@@ -228,7 +228,7 @@ export function post(dt) {
         let room = cp - sed[k]; // 물살이 더 실어 갈 수 있는 양
         for (let q = 0; q < 4 && room > 1e-7; q++) {
           const n = q === 0 ? k - 1 : q === 1 ? k + 1 : q === 2 ? k - NXV : k + NXV, vt = Math.abs(q < 2 ? vzm[k] : vxm[k]);
-          const d = ground[n] - ground[k]; if (vt <= vc || d < 0.05 || dam[n] || solid[n] - ground[n] > 0.01) continue;
+          const d = ground[n] - ground[k]; if (vt <= vc || d < 0.05 || dam[n] || solid[n] - ground[n] > 0.01 || cem[n] * cure[n] > 0.4) continue;
           const kn = loose[n] > 0 ? 1 : soil[n] > 0.001 ? KR1 : 0.004;
           let m = Math.min(d * 0.5, room, KL * (vt - vc) * Math.min(hk, 0.5) * dt * kn * Math.min(1, d / 0.3)); if (m <= 1e-7) continue;
           room -= m;

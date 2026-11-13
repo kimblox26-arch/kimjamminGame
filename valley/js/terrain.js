@@ -38,11 +38,11 @@ export function baseY(z) {
   return y;
 }
 
-// 바다: 가운데 모래 땅(사주, z≈36)을 사이에 두고 양쪽(남쪽 z<26, 북쪽 z>46)이 바다.
-// 가운데(x≈0)가 가장 좁은 목(폭 약 12 m). 양 옆(|x|≈9.3)에는 바다로 뻗은 돌 방파제.
+// 바다: 가운데 넓은 모래 땅(사주, z≈36)을 사이에 두고 양쪽(남쪽 z<20, 북쪽 z>52)이 바다.
+// 가운데(x≈0)가 가장 좁은 목(폭 약 24 m). 양 옆(|x|≈9.3)에는 바다로 뻗은 돌 방파제.
 export const SEA_Y = 0, ISTH_Z = 36;
-const reefs = [[-4.0, 19, 1.2, 1.0], [5.2, 53, 1.0, 0.9], [2.5, 16.5, 0.7, 0.6]];
-const halfW = x => 10 - 4 * Math.exp(-x * x / 18) + 1.6 * fbm(x * 0.05, 1.3, 3) * sstep(12, 26, Math.abs(x));
+const reefs = [[-4.0, 14, 1.2, 1.0], [5.2, 58, 1.0, 0.9], [2.5, 11.5, 0.7, 0.6]];
+const halfW = x => 16 - 4 * Math.exp(-x * x / 30) + 2 * fbm(x * 0.05, 1.3, 3) * sstep(12, 26, Math.abs(x)); // 사주 폭: 가운데 약 24 m, 양옆 약 32 m
 function seaTerrainAt(x, z) {
   const dzc = Math.abs(z - ISTH_Z), sd = dzc - halfW(x); // 물가까지 거리 (음수 = 땅)
   let y;
@@ -51,7 +51,7 @@ function seaTerrainAt(x, z) {
   const land = sstep(0.5, -2.5, sd);
   y += 0.32 * fbm(x * 0.22, z * 0.22, 4) * land + 0.03 * fbm(x * 1.4, z * 1.4, 3) + 0.05 * fbm(x * 0.5 + 9, z * 0.5, 3) * (1 - land);
   // 방파제 (사석 둑)
-  const jd = Math.abs(Math.abs(x) - 9.3), jet = (1 - sstep(0.5, 1.5, jd)) * sstep(24, 22, dzc) * sstep(-3, -1, sd);
+  const jd = Math.abs(Math.abs(x) - 9.3), jet = (1 - sstep(0.5, 1.5, jd)) * sstep(27, 25, dzc) * sstep(-3, -1, sd);
   const yj = 1.3 + 0.25 * fbm(x * 1.3, z * 1.3, 3);
   // 갯바위
   let reef = 0;
@@ -110,6 +110,11 @@ export function terrainAt(x, z) {
 export const bed = new Float32Array(NV), soil = new Float32Array(NV), loose = new Float32Array(NV);
 export const ground = new Float32Array(NV), grass = new Float32Array(NV), dug = new Float32Array(NV);
 export const cap = new Float32Array(NV); // 돌 위에 얹힌 흙
+// 부은 재료의 성분: 자갈 비율 · 시멘트 비율 · 시멘트 굳기(0 젖음 → 1 다 굳음) / 페인트 색·양·젖음
+export const gfr = new Float32Array(NV), cem = new Float32Array(NV), cure = new Float32Array(NV);
+export const pcol = new Float32Array(NV * 3), pamt = new Float32Array(NV), pwet = new Float32Array(NV);
+const curing = new Set(), drying = new Set();
+export const CURE_T = 90, PAINT_T = 40; // 시멘트가 다 굳는 시간 · 페인트가 마르는 시간 (게임 초)
 export const fill = new Float32Array(NV); // 돌 틈(공극)을 메운 진흙 높이
 const PHI = 0.38;
 let solidRef = null;
@@ -170,10 +175,10 @@ export function terrainMaterial() {
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 aMat; varying vec4 vMat; varying vec3 vWP; varying vec3 vWN;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvMat=aMat; vWP=(modelMatrix*vec4(transformed,1.)).xyz; vWN=normalize(mat3(modelMatrix)*objectNormal);');
+      .replace('#include <common>', '#include <common>\nattribute vec4 aMat; attribute vec4 aMat2; attribute vec4 aPaint; varying vec4 vMat; varying vec4 vMat2; varying vec4 vPaint; varying vec3 vWP; varying vec3 vWN;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvMat=aMat; vMat2=aMat2; vPaint=aPaint; vWP=(modelMatrix*vec4(transformed,1.)).xyz; vWN=normalize(mat3(modelMatrix)*objectNormal);');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec4 vMat; varying vec3 vWP; varying vec3 vWN; uniform float uTime; uniform vec3 uSunCol; uniform vec3 uSunDir; uniform float uRain;\n' + GLSL_NOISE)
+      .replace('#include <common>', '#include <common>\nvarying vec4 vMat; varying vec4 vMat2; varying vec4 vPaint; varying vec3 vWP; varying vec3 vWN; uniform float uTime; uniform vec3 uSunCol; uniform vec3 uSunDir; uniform float uRain;\n' + GLSL_NOISE)
       .replace('#include <map_fragment>', TERRAIN_ALBEDO)
       .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = tRough;')
       .replace('#include <normal_fragment_maps>', 'normal = bumpN(-vViewPosition, normal, tH, tBump);')
@@ -260,6 +265,21 @@ if (fresh > 0.002) {
   float fdH = fbm2(P.xz*9.)*0.03 + vnoise2(P.xz*40.)*0.006*fade;
   alb = mix(alb, fd, fresh); tH = mix(tH, fdH, fresh);
 }
+// 자갈 · 시멘트(젖음 → 굳음) · 페인트(젖어 반짝 → 마름)
+float gW = clamp(vMat2.x, 0., 1.) * smoothstep(0.0, 0.04, sLoose);
+if (gW > 0.01) {
+  float g1 = vnoise2(P.xz*14.), g2 = vnoise2(P.xz*31. + 3.);
+  vec3 gc = mix(vec3(0.30,0.29,0.27), vec3(0.62,0.59,0.54), g1) * (0.75 + 0.35*g2);
+  alb = mix(alb, gc, gW); tRough = mix(tRough, 0.75, gW); tH = mix(tH, g1*0.022 + g2*0.008*fade, gW);
+}
+float cW = clamp(vMat2.y + vMat2.z, 0., 1.) * smoothstep(0.0, 0.03, sLoose);
+if (cW > 0.01) {
+  float dry = vMat2.z / max(1e-3, vMat2.y + vMat2.z);
+  vec3 cc = mix(vec3(0.26,0.26,0.25), vec3(0.60,0.60,0.57), dry) * (0.94 + 0.08*vnoise2(P.xz*25.));
+  alb = mix(alb, cc, cW); tRough = mix(tRough, mix(0.15, 0.9, dry), cW); tH = mix(tH, vnoise2(P.xz*40.)*0.002, cW);
+}
+float pA = clamp(vPaint.a, 0., 1.);
+if (pA > 0.01) { alb = mix(alb, vPaint.rgb, pA); tRough = mix(tRough, mix(0.7, 0.1, vMat2.w), pA); }
 alb = mix(alb, alb*vec3(0.7,0.85,0.6), smoothstep(0.3,0.0,abs(under))*rockW*0.6);
 alb *= mix(1., 0.5, wet); tRough = mix(tRough, 0.2, wet*0.85);
 alb = mix(alb, alb*vec3(0.78,0.92,0.88), smoothstep(0.,0.3,under));
@@ -290,6 +310,8 @@ export function buildMesh(material) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   geo.setAttribute('aMat', new THREE.BufferAttribute(mat, 4));
+  geo.setAttribute('aMat2', new THREE.BufferAttribute(new Float32Array(NV * 4), 4));
+  geo.setAttribute('aPaint', new THREE.BufferAttribute(new Float32Array(NV * 4), 4));
   geo.setIndex(new THREE.BufferAttribute(ind, 1));
   writeRegion(0, NX, 0, NZ);
   geo.computeBoundingBox(); geo.computeBoundingSphere();
@@ -298,7 +320,7 @@ export function buildMesh(material) {
   return mesh;
 }
 function writeRegion(i0, i1, j0, j1) {
-  const pos = geo.attributes.position.array, nor = geo.attributes.normal.array, mat = geo.attributes.aMat.array;
+  const pos = geo.attributes.position.array, nor = geo.attributes.normal.array, mat = geo.attributes.aMat.array, m2 = geo.attributes.aMat2.array, pa = geo.attributes.aPaint.array;
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const k = idx(i, j);
     pos[k * 3 + 1] = vh(k);
@@ -307,6 +329,8 @@ function writeRegion(i0, i1, j0, j1) {
     let nx = (l - r) / (2 * CELL), nz = (u - d) / (2 * CELL), il = 1 / Math.hypot(nx, 1, nz);
     nor[k * 3] = nx * il; nor[k * 3 + 1] = il; nor[k * 3 + 2] = nz * il;
     mat[k * 4] = soil[k]; mat[k * 4 + 1] = loose[k] + cap[k] + fill[k]; mat[k * 4 + 2] = grass[k]; mat[k * 4 + 3] = dug[k];
+    m2[k * 4] = gfr[k]; m2[k * 4 + 1] = cem[k] * (1 - cure[k]); m2[k * 4 + 2] = cem[k] * cure[k]; m2[k * 4 + 3] = pwet[k];
+    pa[k * 4] = pcol[k * 3]; pa[k * 4 + 1] = pcol[k * 3 + 1]; pa[k * 4 + 2] = pcol[k * 3 + 2]; pa[k * 4 + 3] = pamt[k];
   }
 }
 function markDirty(i0, i1, j0, j1, phys = true) {
@@ -422,12 +446,36 @@ export function flattenPad(x, z, hw, hd, yaw) {
   return h0;
 }
 
+// ───── 시멘트 굳히기 · 페인트 말리기 (게임 시간) ─────
+let flushAcc = 0;
+const box = { i0: 1e9, i1: -1, j0: 1e9, j1: -1 };
+const grow = k => { const i = k % NXV, j = (k / NXV) | 0; if (i < box.i0) box.i0 = i; if (i > box.i1) box.i1 = i; if (j < box.j0) box.j0 = j; if (j > box.j1) box.j1 = j; };
+export function cureStep(dg, dt) {
+  for (const k of curing) { cure[k] = Math.min(1, cure[k] + dg / CURE_T); grow(k); if (cure[k] >= 1 || cem[k] <= 0) curing.delete(k); }
+  for (const k of drying) { pwet[k] = Math.max(0, pwet[k] - dg / PAINT_T); grow(k); if (pwet[k] <= 0) drying.delete(k); }
+  flushAcc += dt;
+  if (flushAcc > 0.5 && box.i1 >= 0) { flushAcc = 0; markDirty(Math.max(0, box.i0 - 1), Math.min(NX, box.i1 + 1), Math.max(0, box.j0 - 1), Math.min(NZ, box.j1 + 1), false, true); fixDirty(); box.i0 = box.j0 = 1e9; box.i1 = box.j1 = -1; }
+}
+export const curingCount = () => curing.size;
+// 땅에 페인트 칠하기
+export function paintAt(x, z, r, rgb) {
+  const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), n = Math.ceil(r / CELL);
+  for (let j = cj - n; j <= cj + n; j++) for (let i = ci - n; i <= ci + n; i++) {
+    if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
+    const d = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / r; if (d >= 1) continue;
+    const k = idx(i, j), a = 1 - d * d * 0.6;
+    if (a < pamt[k] && pcol[k * 3] === rgb[0] && pcol[k * 3 + 1] === rgb[1] && pcol[k * 3 + 2] === rgb[2]) continue;
+    pcol[k * 3] = rgb[0]; pcol[k * 3 + 1] = rgb[1]; pcol[k * 3 + 2] = rgb[2]; pamt[k] = Math.max(a, pamt[k] * 0.5); pwet[k] = 1; drying.add(k);
+  }
+  markDirty(ci - n - 1, ci + n + 1, cj - n - 1, cj + n + 1, false, false); fixDirty();
+}
+
 // ───── 저장: 처음 만든 지형과 달라진 칸만 기록 ─────
 let soil0 = null, bed0 = null, grass0 = null;
 export function remember() { soil0 = soil.slice(); bed0 = bed.slice(); grass0 = grass.slice(); }
 const q = v => Math.round(v * 1000);
 export function snapshot() {
-  const d = { s: [], b: [], l: [], c: [], f: [], g: [], u: [] };
+  const d = { s: [], b: [], l: [], c: [], f: [], g: [], u: [], gr: [], cm: [], cu: [], p: [] };
   for (let k = 0; k < NV; k++) {
     if (Math.abs(soil[k] - soil0[k]) > 1e-4) d.s.push(k, q(soil[k]));
     if (Math.abs(bed[k] - bed0[k]) > 1e-4) d.b.push(k, q(bed[k]));
@@ -436,12 +484,19 @@ export function snapshot() {
     if (fill[k] > 1e-4) d.f.push(k, q(fill[k]));
     if (Math.abs(grass[k] - grass0[k]) > 0.01) d.g.push(k, Math.round(grass[k] * 100));
     if (dug[k] > 0.01) d.u.push(k, Math.round(dug[k] * 100));
+    if (gfr[k] > 0.01) d.gr.push(k, Math.round(gfr[k] * 100));
+    if (cem[k] > 0.01) { d.cm.push(k, Math.round(cem[k] * 100)); d.cu.push(k, Math.round(cure[k] * 100)); }
+    if (pamt[k] > 0.01) d.p.push(k, (Math.round(pcol[k * 3] * 255) << 16) | (Math.round(pcol[k * 3 + 1] * 255) << 8) | Math.round(pcol[k * 3 + 2] * 255), Math.round(pamt[k] * 100));
   }
   return d;
 }
 export function restore(d) {
   const put = (arr, list, sc) => { for (let n = 0; n < list.length; n += 2) arr[list[n]] = list[n + 1] / sc; };
   put(soil, d.s, 1000); put(bed, d.b, 1000); put(loose, d.l, 1000); put(cap, d.c, 1000); put(fill, d.f, 1000); put(grass, d.g, 100); put(dug, d.u, 100);
+  put(gfr, d.gr || [], 100); put(cem, d.cm || [], 100); put(cure, d.cu || [], 100);
+  for (let k = 0; k < NV; k++) if (cem[k] > 0 && cure[k] < 1) curing.add(k);
+  const pl = d.p || [];
+  for (let n = 0; n < pl.length; n += 3) { const k = pl[n], c = pl[n + 1]; pcol[k * 3] = (c >> 16 & 255) / 255; pcol[k * 3 + 1] = (c >> 8 & 255) / 255; pcol[k * 3 + 2] = (c & 255) / 255; pamt[k] = pl[n + 2] / 100; }
   for (let k = 0; k < NV; k++) ground[k] = bed[k] + soil[k] + loose[k];
 }
 
@@ -466,7 +521,7 @@ export function impact(x, z, R, depth, ctx) {
   markDirty(ci - r, ci + r, cj - r, cj + r); fixDirty();
   return removed * CELL * CELL;
 }
-export function deposit(x, z, radius, vol, ctx) {
+export function deposit(x, z, radius, vol, ctx, kind = 0) { // kind: 0 진흙 · 1 자갈 · 2 시멘트
   const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), r = Math.ceil(radius / CELL);
   let wsum = 0; const cells = [];
   for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
@@ -474,13 +529,21 @@ export function deposit(x, z, radius, vol, ctx) {
     const dd = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / radius; if (dd >= 1) continue;
     const w = 1 - dd * dd; cells.push(idx(i, j), w); wsum += w;
   }
-  for (let n = 0; n < cells.length; n += 2) put(cells[n], vol * cells[n + 1] / wsum / (CELL * CELL), ctx);
+  for (let n = 0; n < cells.length; n += 2) put(cells[n], vol * cells[n + 1] / wsum / (CELL * CELL), ctx, kind);
   slump(ci, cj, r + 3, ctx);
   markDirty(ci - r - 4, ci + r + 4, cj - r - 4, cj + r + 4); fixDirty();
   return vol;
 }
 // 높이 add 만큼 흙을 셀 k 에 놓기: 돌이 있으면 돌 틈(아래)을 먼저 채우고 남으면 돌 위에 얹는다
-function put(k, add, ctx) {
+function put(k, add, ctx, kind = 0) {
+  const A0 = loose[k] + cap[k] + fill[k] * PHI, tot = A0 + add;
+  if (tot > 1e-6) { // 성분 섞기 (새로 부은 시멘트는 굳기를 처음부터)
+    gfr[k] = (gfr[k] * A0 + (kind === 1 ? add : 0)) / tot;
+    const c0 = cem[k] * A0, cn = kind === 2 ? add : 0;
+    if (c0 + cn > 0) cure[k] = cure[k] * c0 / (c0 + cn);
+    cem[k] = (c0 + cn) / tot;
+    if (kind === 2) curing.add(k);
+  }
   const room = ctx ? ctx.sBot[k] - 0.01 - ground[k] : 1e9;
   const below = Math.max(0, Math.min(add, room));
   loose[k] += below; ground[k] += below;
@@ -558,6 +621,8 @@ export function buildOuter(material) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aMat', new THREE.BufferAttribute(mat, 4));
+  g.setAttribute('aMat2', new THREE.BufferAttribute(new Float32Array(nx * nz * 4), 4));
+  g.setAttribute('aPaint', new THREE.BufferAttribute(new Float32Array(nx * nz * 4), 4));
   g.setIndex(ind); g.computeVertexNormals();
   const m = new THREE.Mesh(g, material); m.receiveShadow = true; m.castShadow = true;
   return m;

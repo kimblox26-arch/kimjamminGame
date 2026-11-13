@@ -6,7 +6,7 @@
 <title>계곡</title>
 <meta name="description" content="계곡물을 막고 수력발전소를 지어 마을에 불을 밝히는 물리 샌드박스">
 <link rel="stylesheet" href="./fonts.css">
-<link rel="stylesheet" href="./style.css?v=20261113c">
+<link rel="stylesheet" href="./style.css?v=20261113d">
 <script type="importmap">
 {
   "imports": {
@@ -32,7 +32,7 @@
   <symbol id="i-turbine" viewBox="0 0 24 24"><circle class="f" cx="12" cy="12" r="3"/><path d="M12 9c-1.5-3-1-5.5 1-6.5M15 12c3 -1.5 5.5-1 6.5 1M12 15c1.5 3 1 5.5-1 6.5M9 12c-3 1.5-5.5 1-6.5-1"/></symbol>
   <symbol id="i-erase" viewBox="0 0 24 24"><path class="f" d="M14.5 4.5l5 5-8.5 8.5H6.5l-3-3z"/><path d="M9.5 9.5l5 5M11 18h9.5"/></symbol>
   <symbol id="i-flat" viewBox="0 0 24 24"><path class="f" d="M3 15.5h18v3H3z"/><path d="M6 12.5c2-2.5 4-2.5 6 0s4 2.5 6 0M12 3v6M9.5 6.5L12 9l2.5-2.5"/></symbol>
-  <symbol id="i-trench" viewBox="0 0 24 24"><circle class="f" cx="5" cy="18" r="2"/><circle class="f" cx="19" cy="6" r="2"/><path d="M6.5 16.5c3-1 2-5 5-6s4-2 6-3"/><path d="M4 21c3-1.2 5 .8 8-.4s5-.6 8-1.6" stroke-dasharray="2 2"/></symbol>
+  <symbol id="i-paint" viewBox="0 0 24 24"><rect class="f" x="4" y="3" width="13" height="6" rx="1.5"/><path d="M17 6h2.5v5H11v3"/><rect x="9.5" y="14" width="3" height="7" rx="1"/></symbol>
   <symbol id="i-carve" viewBox="0 0 24 24"><path class="f" d="M3 20l6.5-9 4 3 3-4 4.5 10z"/><path d="M14 3.5l5 5-2 2-5-5zM12 5.5l-3 3"/></symbol>
   <symbol id="i-big" viewBox="0 0 24 24"><path class="f" d="M3 20h18l-2.5-11h-13z"/><path d="M5.5 9h13M4.5 14.5h15M12 9v11M7 4.5h10M12 2v2.5"/></symbol>
   <symbol id="i-day" viewBox="0 0 24 24"><circle class="f" cx="9" cy="9" r="4"/><path d="M9 2v1.5M9 14.5V16M2 9h1.5M14.5 9H16M4 4l1 1M13 13l1 1M4 14l1-1M13 5l1-1"/><path class="f" d="M20.5 15.5A5.5 5.5 0 1 1 15 10a4.3 4.3 0 0 0 5.5 5.5z"/></symbol>
@@ -161,13 +161,13 @@
     <button class="tb on" data-t="hand" title="손 (1)"><svg><use href="#i-hand"/></svg><kbd>1</kbd></button>
     <button class="tb" data-t="shovel" title="삽 · 진흙 (2)"><svg><use href="#i-shovel"/></svg><kbd>2</kbd><i class="mud"><i id="mud"></i></i></button>
     <button class="tb" data-t="pick" title="곡괭이 · 바위 깨기 (3)"><svg><use href="#i-pick"/></svg><kbd>3</kbd></button>
-    <button class="tb" data-t="mud" title="진흙 무한 붓기 (4)"><svg><use href="#i-mud"/></svg><kbd>4</kbd></button>
+    <button class="tb" data-t="mud" title="붓기 — 진흙 · 자갈 · 시멘트 (4)"><svg><use href="#i-mud"/></svg><kbd>4</kbd></button>
     <button class="tb" data-t="drop" title="하늘에서 바위 떨어뜨리기 (5)"><svg><use href="#i-drop"/></svg><kbd>5</kbd></button>
     <button class="tb" data-t="dam" title="댐 · 수력발전 (6)"><svg><use href="#i-dam"/></svg><kbd>6</kbd></button>
     <button class="tb" data-t="erase" title="돌·바위 없애기 (7)"><svg><use href="#i-erase"/></svg><kbd>7</kbd></button>
     <button class="tb" data-t="flatten" title="땅 평평하게 (8)"><svg><use href="#i-flat"/></svg><kbd>8</kbd></button>
     <button class="tb" data-t="carve" title="바위 깎기 (9)"><svg><use href="#i-carve"/></svg><kbd>9</kbd></button>
-    <button class="tb" data-t="trench" title="물길 긋기 — 두 점을 누르면 그 사이를 팜 (0)"><svg><use href="#i-trench"/></svg><kbd>0</kbd></button>
+    <button class="tb" data-t="paint" title="페인트 — 돌·댐 블록·땅 칠하기 (0)"><svg><use href="#i-paint"/></svg><kbd>0</kbd></button>
     <button class="tb big hidden" id="bBig" title="수력발전소(큰 댐) 자동 건설"><svg><use href="#i-big"/></svg><kbd>댐</kbd></button>
     <button class="tb big hidden" id="bCtrl" title="발전소 제어실 (C)"><svg><use href="#i-ctrl"/></svg><kbd>C</kbd></button>
     <button class="tb spd hidden" id="bSpeed" title="작업 속도 (F)"><b id="spd">×1</b><kbd>F</kbd></button>
@@ -189,6 +189,8 @@
       <div class="cu" id="cG1"><h4>여수로 2번 수문 <span class="st"></span></h4><label>수문 목표 개도<input type="range" id="g1" min="0" max="100" step="1" value="0"></label><div class="vals"></div></div>
     </div>
   </div>
+  <div id="pourMenu" class="hidden menu"><button data-p="0" class="on">진흙</button><button data-p="1">자갈</button><button data-p="2">시멘트</button></div>
+  <div id="paintMenu" class="hidden menu"><button data-c="#d94a3a" class="on"></button><button data-c="#f0b429"></button><button data-c="#f4f1e8"></button><button data-c="#3f8f5a"></button><button data-c="#2f6fd1"></button><button data-c="#8b4fc4"></button><button data-c="#2a2a2a"></button></div>
   <div id="timeMenu" class="hidden"><button data-ts="1" class="on">×1</button><button data-ts="2">×2</button><button data-ts="4">×4</button><button data-ts="10">×10</button><button data-ts="20">×20</button><button data-ts="30">×30</button><button data-ts="50">×50</button><button data-ts="100">×100</button></div>
   <div id="dayMenu" class="hidden">
     <button data-tod="6.5">아침</button><button data-tod="12">낮</button><button data-tod="18.2">저녁</button><button data-tod="22">밤</button>
@@ -207,6 +209,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261113c"></script>
+<script type="module" src="./js/main.js?v=20261113d"></script>
 </body>
 </html>
