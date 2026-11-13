@@ -223,7 +223,7 @@ if (gravW > 0.002) { // 자갈: 큰 돌 + 잔자갈 + 모래
 if (dirtW > 0.002) { // 흙 / 풀밭
   float fb = fbm2(P.xz*0.9);
 #ifdef SEA
-  vec3 dirt = mix(vec3(0.60,0.53,0.40), vec3(0.78,0.70,0.54), vnoise2(P.xz*3.)) * (0.95 + 0.06*sin(P.x*0.4 + P.z*5.2 + vnoise2(P.xz*1.3)*5.)); // 모래 (물결무늬)
+  vec3 dirt = mix(vec3(0.36,0.29,0.18), vec3(0.47,0.39,0.25), vnoise2(P.xz*3.)) * (0.93 + 0.08*sin(P.x*0.4 + P.z*5.2 + vnoise2(P.xz*1.3)*5.)) * (0.92 + 0.12*vnoise2(P.xz*40.)); // 모래 (물결무늬·알갱이)
 #else
   vec3 dirt = mix(vec3(0.27,0.19,0.12), vec3(0.42,0.31,0.20), vnoise2(P.xz*3.));
 #endif
@@ -235,7 +235,7 @@ if (dirtW > 0.002) { // 흙 / 풀밭
 float fresh = clamp(max(sDug*1.2, sLoose*10.), 0., 1.) * (1. - rockW*0.7);
 if (fresh > 0.002) {
 #ifdef SEA
-  vec3 fd = mix(vec3(0.52,0.45,0.33), vec3(0.64,0.56,0.42), vnoise2(P.xz*9.));
+  vec3 fd = mix(vec3(0.30,0.24,0.15), vec3(0.40,0.33,0.21), vnoise2(P.xz*9.));
 #else
   vec3 fd = mix(vec3(0.23,0.15,0.09), vec3(0.34,0.24,0.15), vnoise2(P.xz*9.));
 #endif
