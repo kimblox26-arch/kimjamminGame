@@ -6,7 +6,7 @@
 <title>계곡</title>
 <meta name="description" content="계곡물을 막고 수력발전소를 지어 마을에 불을 밝히는 물리 샌드박스">
 <link rel="stylesheet" href="./fonts.css">
-<link rel="stylesheet" href="./style.css?v=20261113d">
+<link rel="stylesheet" href="./style.css?v=20261113e">
 <script type="importmap">
 {
   "imports": {
@@ -119,12 +119,14 @@
       </svg>
       <div class="word"><h1>계곡</h1><p class="en">VALLEY</p></div>
     </div>
-    <p class="tag">돌과 진흙으로 계곡물을 막고, 수력발전소를 지어 <br>밤이 오기 전에 마을에 불을 밝히세요.</p>
+    <p class="tag">돌·자갈·시멘트로 계곡물을 막고 수력발전소를 지어 마을에 불을 밝히세요.<br>물살은 흙과 바위를 깎고, 바다에서는 밀물과 썰물이 물길을 냅니다.</p>
+    <p class="lbl">장소</p>
     <div class="qual map" id="mapSel" role="radiogroup" aria-label="장소">
-      <button data-m="valley" role="radio"><b>계곡</b><span>산골 물길</span></button>
-      <button data-m="sea" role="radio"><b>바다</b><span>파도 · 모래사장</span></button>
+      <button data-m="valley" role="radio"><svg class="mi" viewBox="0 0 40 40" aria-hidden="true"><path d="M2 32 L13 12 L20 22 L26 14 L38 32Z" fill="#5e7f6a"/><path d="M13 12 L16.5 18 L13.5 17 L11 20Z" fill="#e8f3ef"/><path d="M18 32 C20 27 17 25 20 21 C22 25 25 27 23 32Z" fill="#7fc8e8"/></svg><span class="mt"><b>계곡</b><span>산골 물길 · 댐 · 수력발전</span></span></button>
+      <button data-m="sea" role="radio"><svg class="mi" viewBox="0 0 40 40" aria-hidden="true"><path d="M2 22 C8 18 12 26 18 22 S28 18 38 22 V32 H2Z" fill="#3f8fb8"/><path d="M2 27 C8 24 12 30 18 27 S28 24 38 27" stroke="#dff4ff" stroke-width="2" fill="none"/><path d="M8 18 C14 12 26 12 32 18Z" fill="#e3cc98"/><circle cx="31" cy="9" r="4" fill="#ffd38a"/></svg><span class="mt"><b>바다</b><span>양쪽 바다 · 사주 · 밀물·썰물</span></span></button>
     </div>
-    <div class="qual" id="quality" role="radiogroup" aria-label="그래픽 품질">
+    <p class="lbl">그래픽</p>
+    <div class="qual q3" id="quality" role="radiogroup" aria-label="그래픽 품질">
       <button data-q="ultra" role="radio"><b>초고화질</b><span>PC</span></button>
       <button data-q="high" role="radio"><b>고화질</b><span>노트북</span></button>
       <button data-q="perf" role="radio"><b>최적화</b><span>휴대폰</span></button>
@@ -164,7 +166,6 @@
     <button class="tb" data-t="shovel" title="삽 · 진흙 (2)"><svg><use href="#i-shovel"/></svg><kbd>2</kbd><i class="mud"><i id="mud"></i></i></button>
     <button class="tb" data-t="pick" title="곡괭이 · 바위 깨기 (3)"><svg><use href="#i-pick"/></svg><kbd>3</kbd></button>
     <button class="tb" data-t="mud" title="붓기 — 진흙 · 자갈 · 시멘트 (4)"><svg><use href="#i-mud"/></svg><kbd>4</kbd></button>
-    <button class="tb" data-t="drop" title="하늘에서 바위 떨어뜨리기 (5)"><svg><use href="#i-drop"/></svg><kbd>5</kbd></button>
     <button class="tb" data-t="dam" title="댐 · 수력발전 (6)"><svg><use href="#i-dam"/></svg><kbd>6</kbd></button>
     <button class="tb" data-t="erase" title="돌·바위 없애기 (7)"><svg><use href="#i-erase"/></svg><kbd>7</kbd></button>
     <button class="tb" data-t="flatten" title="땅 평평하게 (8)"><svg><use href="#i-flat"/></svg><kbd>8</kbd></button>
@@ -211,6 +212,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261113d"></script>
+<script type="module" src="./js/main.js?v=20261113e"></script>
 </body>
 </html>

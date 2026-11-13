@@ -52,7 +52,7 @@ if (params.has('debug')) window.__dbg = { T, W, S, PL, D, V, H, get sky() { retu
 let mapKey = params.get('map');
 try { mapKey = mapKey || localStorage.getItem('valley.map'); } catch {}
 if (mapKey !== 'sea') mapKey = 'valley';
-const saveKey = () => mapKey === 'sea' ? 'valley.save.sea.v1' : 'valley.save.v1';
+const saveKey = () => mapKey === 'sea' ? 'valley.save.sea.v1' : 'valley.save.v2'; // v2: 넓어진 계곡
 const SEA = () => T.MODE === 'sea';
 const encWater = a => { const n = T.SW * T.NZV, u = new Uint16Array(n); for (let j = 0; j < T.NZV; j++) for (let c = 0; c < T.SW; c++) u[j * T.SW + c] = Math.min(65535, Math.round(a[j * T.NXV + T.SX0 + c] * 10000)); let b = ''; const by = new Uint8Array(u.buffer); for (let i = 0; i < by.length; i += 8192) b += String.fromCharCode(...by.subarray(i, i + 8192)); return btoa(b); };
 function decWater(str, a) { if (!str) return; const bin = atob(str), by = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) by[i] = bin.charCodeAt(i); const u = new Uint16Array(by.buffer); for (let j = 0; j < T.NZV; j++) for (let c = 0; c < T.SW; c++) a[j * T.NXV + T.SX0 + c] = u[j * T.SW + c] / 10000; }
@@ -60,7 +60,7 @@ let lastSave = 0;
 function saveGame(quiet) {
   if (!started || D.building() || H.building()) return false;
   const c = camera.position;
-  const data = { v: 1, at: Date.now(), t: T.snapshot(), st: S.serialize(), dm: D.serialize(), w: encWater(W.h), w0: encWater(W.h0),
+  const data = { v: 1, sw: T.SW, at: Date.now(), t: T.snapshot(), st: S.serialize(), dm: D.serialize(), w: encWater(W.h), w0: encWater(W.h0),
     hp: H.serialize(), tod: sky_.tod, batt: elec.batt, rain: rainOn, inflow: W.state.inflow, out: W.state.outSm, p: [c.x, c.z, PL.P.yaw, PL.P.pitch] };
   try { localStorage.setItem(saveKey(), JSON.stringify(data)); lastSave = clock; if (!quiet) hooks.toast('저장했어요'); updateSaveInfo(); return true; }
   catch (e) { if (!quiet) hooks.toast('저장 공간이 부족해요'); return false; }
@@ -182,7 +182,7 @@ async function boot(q, save) {
   refrRT = new THREE.WebGLRenderTarget(innerWidth * pr * q.refr, innerHeight * pr * q.refr, { type: THREE.HalfFloatType });
   refrRT.depthTexture = new THREE.DepthTexture(refrRT.width, refrRT.height);
   W.init(); T.setSolidRef(W.solid); S.rasterize(true); W.prefill();
-  if (save) { decWater(save.w, W.h); decWater(save.w0, W.h0); W.computeActive(); W.state.time = 999; W.state.inflow = save.inflow ?? 0.2; }
+  if (save && (save.sw ?? 90) === T.SW) { decWater(save.w, W.h); decWater(save.w0, W.h0); W.computeActive(); W.state.time = 999; W.state.inflow = save.inflow ?? 0.2; }
   water = W.makeWaterMesh(refrRT); scene.add(water);
   water.material.uniforms.uProj.value = camera.projectionMatrix;
   const WARM = save ? 3 * 60 : 30 * 60;
@@ -382,6 +382,8 @@ const hooks = {
       $('pourMenu').classList.toggle('hidden', t !== 'mud'); $('paintMenu').classList.toggle('hidden', t !== 'paint');
     },
     speed(n) { const b = $('bSpeed'); $('spd').textContent = ['×1', '×3', '×8'][n]; b.classList.toggle('s1', n === 1); b.classList.toggle('s2', n === 2); },
+    pour(n) { document.querySelectorAll('#pourMenu [data-p]').forEach(x => x.classList.toggle('on', +x.dataset.p === n)); },
+    paint(hex) { document.querySelectorAll('#paintMenu [data-c]').forEach(x => x.classList.toggle('on', parseInt(x.dataset.c.slice(1), 16) === hex)); },
     prompt(t, on) { const el = $('tag'); if (el.textContent !== t) el.textContent = t; $('cross').classList.toggle('on', on); },
   },
   audio: A, fx: FX,

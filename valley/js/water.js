@@ -11,6 +11,7 @@ export const seal = new Float32Array(NV), ptop = new Float32Array(NV), lev = new
 export const PHI = 0.38; let KP = 0.25;
 export const KS = 0.02; // 흙·진흙 투수계수(가는 모래 수준): 흙둑도 아주 조금씩 샌다
 export const kp = new Float32Array(NV); // 셀별 투수계수 (돌무더기≈KP, 흙≈KS)
+export const core = new Uint8Array(NV); // 큰 돌의 속(단단한 바위): 물이 스미지 못하고 돌아 흐른다
 export const dam = new Uint8Array(NV); // 콘크리트 댐 칸 (물이 스미지 않음)
 export const pipes = []; // 수력발전 터빈 관 {a:[칸], b:[칸], area, Q, head, P}
 const ho = new Float32Array(NV), hp = new Float32Array(NV);
@@ -41,6 +42,7 @@ function seaBoundary() {
   }
 }
 export function init() {
+  allocTex(); lo.fill(SX0); hi.fill(SX1 - 1);
   if (MODE === 'sea') { JL = Math.round(SEA_ZA / CELL); JM = Math.round(SEA_ZB / CELL); state.inflow = 0; state.outSm = 0; beginSolid(); return; }
   const zs = 5.2, cx = centerX(zs);
   for (let j = Math.round(zs / CELL) - 2; j <= Math.round(zs / CELL) + 2; j++)
@@ -50,7 +52,7 @@ export function init() {
 export function beginSolid() {
   for (let j = 0; j < NZV; j++) {
     const b = idx(SX0, j), g = ground.subarray(b, b + SW);
-    solid.set(g, b); seal.set(g, b); ptop.set(g, b); sBot.fill(1e9, b, b + SW); dam.fill(0, b, b + SW);
+    solid.set(g, b); seal.set(g, b); ptop.set(g, b); sBot.fill(1e9, b, b + SW); dam.fill(0, b, b + SW); core.fill(0, b, b + SW);
   }
 }
 
@@ -188,9 +190,9 @@ function bankSlump(k, e, cp) {
     if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
   }
 }
-let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004, CPK = 0.008, CPM = 0, BEDF = 1; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
+let VC0 = 0.5, VC1 = 0.55, KR1 = 0.5, KL = 0.02, CPK = 0.008, CPM = 0.03, BEDF = 0.75, VCR = 1.3, KRR = 0.02; // 계곡: 흙은 0.55 m/s, 바위는 1.3 m/s 넘는 물살에 깎임 // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
 export function post(dt) {
-  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.05; CPM = 0.05; BEDF = 0.7; } // 바다 모래: 조류 물살의 지형 변화 가속 (해안 모델의 MORFAC 처럼) // 모래는 잘 쓸려 간다
+  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.05; CPM = 0.05; BEDF = 0.7; VCR = 1.6; KRR = 0.004; } // 바다 모래: 조류 물살의 지형 변화 가속 (해안 모델의 MORFAC 처럼) // 모래는 잘 쓸려 간다
   let mx = 0, st = 0;
   for (let j = Math.max(1, JL + 2); j < Math.min(NZ, JM - 1); j++) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
@@ -204,7 +206,7 @@ export function post(dt) {
       const sm = Math.hypot(vxm[k], vzm[k]);
       // 물살이 깎는 재료: 덮인 흙·쌓인 흙/모래 → 원래 흙(바다는 모래) → 암반(아주 느리게). 돌이 덮은 곳·댐은 안 깎임
       const top = cap[k] > 0 || loose[k] > 0 ? 0 : soil[k] > 0.001 ? 1 : 2;
-      const vc = top === 0 ? VC0 + (1.1 - VC0) * gfr[k] : top === 1 ? VC1 : 1.6, kr = top === 0 ? 1 : top === 1 ? KR1 : 0.004; // 자갈은 무거워 잘 안 쓸림
+      const vc = top === 0 ? VC0 + (1.1 - VC0) * gfr[k] : top === 1 ? VC1 : VCR, kr = top === 0 ? 1 : top === 1 ? KR1 : KRR; // 자갈은 무거워 잘 안 쓸림
       const cp = (CPK * Math.max(0, sp - vc) + CPM * Math.max(0, sm - vc)) * Math.min(hk, 0.3) / 0.3; // 순간 물살 + 한 방향으로 오래 흐르는 물살(조류·강)
       const armored = dam[k] || (cap[k] <= 0 && solid[k] - ground[k] > 0.01) || cem[k] * cure[k] > 0.4; // 굳은 시멘트는 안 깎임
       if (sed[k] < cp * BEDF && !armored) {
@@ -229,7 +231,7 @@ export function post(dt) {
         for (let q = 0; q < 4 && room > 1e-7; q++) {
           const n = q === 0 ? k - 1 : q === 1 ? k + 1 : q === 2 ? k - NXV : k + NXV, vt = Math.abs(q < 2 ? vzm[k] : vxm[k]);
           const d = ground[n] - ground[k]; if (vt <= vc || d < 0.05 || dam[n] || solid[n] - ground[n] > 0.01 || cem[n] * cure[n] > 0.4) continue;
-          const kn = loose[n] > 0 ? 1 : soil[n] > 0.001 ? KR1 : 0.004;
+          const kn = loose[n] > 0 ? 1 : soil[n] > 0.001 ? KR1 : KRR;
           let m = Math.min(d * 0.5, room, KL * (vt - vc) * Math.min(hk, 0.5) * dt * kn * Math.min(1, d / 0.3)); if (m <= 1e-7) continue;
           room -= m;
           const a = Math.min(loose[n], m); loose[n] -= a; const b = Math.min(soil[n], m - a); soil[n] -= b; bed[n] -= m - a - b;
@@ -292,14 +294,20 @@ export function fastFill(sec, simDt) {
 }
 
 // ───── 데이터 텍스처 ─────
-const dW = new Float32Array(SW * NZV * 4), dV = new Float32Array(SW * NZV * 4);
-export const texW = new THREE.DataTexture(dW, SW, NZV, THREE.RGBAFormat, THREE.FloatType);
-export const texV = new THREE.DataTexture(dV, SW, NZV, THREE.RGBAFormat, THREE.FloatType);
-for (const t of [texW, texV]) { t.magFilter = t.minFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; }
-U.tWater.value = texW;
+// 장소마다 계산 폭(SW)이 달라서, 장소를 정한 뒤 만든다
+let dW, dV; export let texW, texV;
+function allocTex() {
+  if (texW && texW.image.width === SW) return;
+  dW = new Float32Array(SW * NZV * 4); dV = new Float32Array(SW * NZV * 4);
+  texW = new THREE.DataTexture(dW, SW, NZV, THREE.RGBAFormat, THREE.FloatType);
+  texV = new THREE.DataTexture(dV, SW, NZV, THREE.RGBAFormat, THREE.FloatType);
+  for (const t of [texW, texV]) { t.magFilter = t.minFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; }
+  U.tWater.value = texW;
+}
 // 일부 모바일 GPU는 float 텍스처 선형 보간을 못 함 → half-float 로 대체 (첫 렌더 전에 호출)
 let half = null;
 export function useHalfFloat() {
+  allocTex();
   half = [new Uint16Array(dW.length), new Uint16Array(dV.length)];
   texW.image.data = half[0]; texV.image.data = half[1];
   texW.type = texV.type = THREE.HalfFloatType;

@@ -155,8 +155,8 @@ function commission(instant) {
     for (let x = x0; x <= x1; x += 1.5) mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.95, 6), steel, x, crest + 0.48, zz);
   }
   // 발전소: 오른쪽 기슭 바위를 깨서 파낸 자리 안에 (지하식에 가까운 반지하 발전소)
-  const pz = zD + 3.0, cxp = centerX(pz), F2 = floorHalf(pz), px = cxp + F2 + 2.0, gy = groundAt(cxp + F2 - 0.8, pz) - 0.1;
-  p.pit = { xa: cxp + F2 - 0.8, xb: px + 4.0, za: pz - 2.2, zb: pz + 3.5, y: gy };
+  const pz = zD + 3.0, cxp = centerX(pz), F2 = floorHalf(pz), px = Math.min(cxp + F2 + 2.0, 12.5), gy = groundAt(cxp + F2 - 0.8, pz) - 0.1;
+  p.pit = { xa: Math.min(cxp + F2 - 0.8, px - 3.0), xb: px + 4.0, za: pz - 2.2, zb: pz + 3.5, y: gy };
   if (instant) cutRect(p.pit.xa, p.pit.xb, p.pit.za, p.pit.zb, gy);
   else {
     let top = gy; for (let x = p.pit.xa; x <= p.pit.xb; x += 0.5) for (let z = p.pit.za; z <= p.pit.zb; z += 0.5) top = Math.max(top, groundAt(x, z));

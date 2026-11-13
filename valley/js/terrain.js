@@ -4,8 +4,8 @@ import { fbm, vnoise, sstep, clamp, GLSL_NOISE } from './noise.js';
 
 export const CELL = 0.2, NX = 180, NZ = 360, NXV = NX + 1, NZV = NZ + 1, NV = NXV * NZV;
 export const X0 = -NX * CELL / 2, Z0 = 0;
-export const SX0 = 45, SX1 = 135; // 물 시뮬레이션 열 범위 (x ±9 m) // 물 시뮬레이션 열 범위
-export const SW = SX1 - SX0;
+// 물 시뮬레이션 열 범위: 계곡 x ±13 m (넓은 계곡 바닥) · 바다 x ±9 m (방파제 사이, 폰에서 가볍게)
+export let SX0 = 25, SX1 = 155, SW = 130;
 export const idx = (i, j) => j * NXV + i;
 
 // 모든 셰이더가 공유하는 유니폼
@@ -22,10 +22,14 @@ export const U = {
 
 // 장소: 'valley' 계곡 / 'sea' 바다 (지형을 만들기 전에 정한다)
 export let MODE = 'valley';
-export function setMode(m) { MODE = m === 'sea' ? 'sea' : 'valley'; }
+export function setMode(m) {
+  MODE = m === 'sea' ? 'sea' : 'valley';
+  [SX0, SX1] = MODE === 'sea' ? [45, 135] : [25, 155]; SW = SX1 - SX0;
+  U.uWInfo.value.x = X0 + SX0 * CELL; U.uWSize.value.x = SW;
+}
 export const noTree = []; // 나무를 심지 않을 자리 [x, z, r]
 export const centerX = z => MODE === 'sea' ? 0 : 1.8 * Math.sin(z * 0.13 + 0.5) + 0.6 * Math.sin(z * 0.31 + 1.3);
-export const floorHalf = z => MODE === 'sea' ? 8 : 5.0 + 1.9 * Math.sin(z * 0.17 + 2.33); // z≈14 에서 가장 좁음
+export const floorHalf = z => MODE === 'sea' ? 8 : 7.6 + 2.0 * Math.sin(z * 0.17 + 2.33); // 계곡 바닥 반폭 5.6~9.6 m (z≈14 에서 가장 좁음)
 export const chanW = z => MODE === 'sea' ? 7 : 1.05 + 0.35 * Math.sin(z * 0.13 + 0.7);
 export const FALL_Z = 50.5, FALL_H = 1.0; // 작은 폭포: 바위 턱 위치·높이
 export function baseY(z) {
@@ -362,6 +366,7 @@ export function dig(x, z, radius, depth, ctx) {
     if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
     const dd = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / radius; if (dd >= 1) continue;
     const k = idx(i, j); let want = depth * (1 - dd * dd);
+    if (hardAt(k)) continue; // 굳은 시멘트는 곡괭이로만
     if (cap[k] > 0) { const c = Math.min(cap[k], want); cap[k] -= c; want -= c; vol += c * CELL * CELL; if (ctx) ctx.solid[k] -= c; dug[k] = Math.min(1, dug[k] + c * 12); if (want <= 0) continue; }
     if (fill[k] > 0) { const c = Math.min(fill[k] * PHI, want); fill[k] -= c / PHI; want -= c; vol += c * CELL * CELL; if (want <= 0) continue; }
     const fromL = Math.min(loose[k], want); loose[k] -= fromL; want -= fromL;
@@ -380,6 +385,7 @@ export function flatten(x, z, radius, target, rate, ctx) {
     if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
     const dd = Math.hypot((i - ci) * CELL, (j - cj) * CELL) / radius; if (dd >= 1) continue;
     const k = idx(i, j), f = 1 - dd * dd;
+    if (hardAt(k)) continue;
     let step = Math.max(-rate, Math.min(rate, target - ground[k])) * f;
     if (Math.abs(step) < 1e-4) continue;
     if (step > 0) { loose[k] += step; ground[k] += step; if (ctx && ctx.solid[k] < ground[k]) ctx.solid[k] = ground[k]; }
@@ -450,8 +456,28 @@ export function flattenPad(x, z, hw, hd, yaw) {
 let flushAcc = 0;
 const box = { i0: 1e9, i1: -1, j0: 1e9, j1: -1 };
 const grow = k => { const i = k % NXV, j = (k / NXV) | 0; if (i < box.i0) box.i0 = i; if (i > box.i1) box.i1 = i; if (j < box.j0) box.j0 = j; if (j > box.j1) box.j1 = j; };
+export const hardAt = k => cem[k] * cure[k] > 0.5 && (loose[k] > 0.005 || fill[k] > 0.005 || cap[k] > 0.005);
+export function hardNear(x, z) { const i = Math.round((x - X0) / CELL), j = Math.round((z - Z0) / CELL); return i > 0 && j > 0 && i < NX && j < NZ && hardAt(idx(i, j)); }
+const NB = [1, -1, NXV, -NXV];
 export function cureStep(dg, dt) {
-  for (const k of curing) { cure[k] = Math.min(1, cure[k] + dg / CURE_T); grow(k); if (cure[k] >= 1 || cem[k] <= 0) curing.delete(k); }
+  const flow = Math.min(1, dg * 3);
+  for (const k of curing) {
+    cure[k] = Math.min(1, cure[k] + dg / CURE_T); grow(k);
+    // 아직 묽은 시멘트(굳기 35% 전)는 낮은 쪽으로 흘러 퍼지며 평평해진다
+    if (cure[k] < 0.35 && cem[k] > 0.4 && loose[k] > 0.004 && !(solidRef && solidRef[k] > ground[k] + 0.01)) {
+      for (const o of NB) {
+        const n = k + o, d = ground[k] - ground[n] - 0.02; if (d <= 0 || (solidRef && solidRef[n] > ground[n] + 0.01)) continue;
+        const mv = Math.min(loose[k] * 0.5, d * 0.35 * flow); if (mv < 1e-5) continue;
+        const A0 = loose[n] + cap[n] + fill[n] * PHI, tot = A0 + mv;
+        gfr[n] = gfr[n] * A0 / tot; cure[n] = cem[n] * A0 + mv > 0 ? Math.min(cure[n], cure[k]) : 0; cem[n] = (cem[n] * A0 + mv) / tot;
+        loose[k] -= mv; ground[k] -= mv; loose[n] += mv; ground[n] += mv; grass[n] = 0;
+        if (solidRef && solidRef[n] < ground[n]) solidRef[n] = ground[n];
+        if (solidRef && Math.abs(solidRef[k] - ground[k] - mv) < 1e-3) solidRef[k] = ground[k];
+        curing.add(n); grow(n); physState.dirty = true;
+      }
+    }
+    if (cure[k] >= 1 || cem[k] <= 0) curing.delete(k);
+  }
   for (const k of drying) { pwet[k] = Math.max(0, pwet[k] - dg / PAINT_T); grow(k); if (pwet[k] <= 0) drying.delete(k); }
   flushAcc += dt;
   if (flushAcc > 0.5 && box.i1 >= 0) { flushAcc = 0; markDirty(Math.max(0, box.i0 - 1), Math.min(NX, box.i1 + 1), Math.max(0, box.j0 - 1), Math.min(NZ, box.j1 + 1), false, true); fixDirty(); box.i0 = box.j0 = 1e9; box.i1 = box.j1 = -1; }

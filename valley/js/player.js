@@ -12,6 +12,7 @@ export const SPEEDS = [
   { name: '약간 빠르게', dig: 0.12, depth: 0.085, digR: 0.42, dump: 0.09, dumpAmt: 0.04, mud: 0.06, mudAmt: 0.05, mudR: 0.42, fx: 0.6 },
   { name: '엄청 빠르게', dig: 0.04, depth: 0.11, digR: 0.5, dump: 0.035, dumpAmt: 0.09, mud: 0.03, mudAmt: 0.12, mudR: 0.5, fx: 0.3 },
 ];
+const PAINTS = [0xd94a3a, 0xf0b429, 0xf4f1e8, 0x3f8f5a, 0x2f6fd1, 0x8b4fc4, 0x2a2a2a];
 const kg = m => (m >= 1000 ? (m / 1000).toFixed(1) + ' t' : Math.round(m) + ' kg');
 export const P = {
   yaw: Math.PI, pitch: -0.25, vy: 0, grounded: false, tool: 'hand', held: null, holdDist: 1.7,
@@ -77,13 +78,12 @@ function bindInput() {
     if (e.code === 'Digit1') setTool('hand');
     if (e.code === 'Digit2') setTool('shovel');
     if (e.code === 'Digit3') setTool('pick');
-    if (e.code === 'Digit4') setTool('mud');
-    if (e.code === 'Digit5') setTool('drop');
+    if (e.code === 'Digit4') { if (P.tool === 'mud') { P.pour = (P.pour + 1) % 3; hooks.ui?.pour?.(P.pour); hooks.toast?.(`붓기: ${['진흙', '자갈', '시멘트'][P.pour]}`); } else setTool('mud'); }
     if (e.code === 'Digit6') setTool('dam');
     if (e.code === 'Digit7') setTool('erase');
     if (e.code === 'Digit8') setTool('flatten');
     if (e.code === 'Digit9') setTool('carve');
-    if (e.code === 'Digit0') setTool('paint');
+    if (e.code === 'Digit0') { if (P.tool === 'paint') { const i = (PAINTS.indexOf(P.paint) + 1) % PAINTS.length; P.paint = PAINTS[i]; hooks.ui?.paint?.(P.paint); hooks.toast?.('페인트 색 바꿈'); } else setTool('paint'); }
     if (e.code === 'KeyF') cycleSpeed();
     if (e.code === 'KeyE') primary();
     if (e.code === 'KeyQ') P.holdYaw += Math.PI / 6;
@@ -364,6 +364,9 @@ function strike(a) {
     hooks.audio?.crack?.(Math.min(1, st.r * 1.5));
     hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 26);
     hooks.toast?.(parts.length ? `${parts.length}조각으로 깨졌어요` : '부서졌어요');
+  } else if (a.terrain && T.hardNear(a.point.x, a.point.z)) { // 굳은 시멘트 깨기
+    T.carve(a.point.x, a.point.z, 0.3, 0.1); hooks.edit?.(a.point.x, a.point.z, 0.5);
+    hooks.audio?.chip?.(); hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 14);
   } else { hooks.audio?.clink(); hooks.fx?.chips?.(a.point.x, a.point.y, a.point.z, 4); }
 }
 function toolUpdate(dt, time) {
@@ -395,7 +398,7 @@ function toolUpdate(dt, time) {
   if (btn.l && time - lastAct > SP.dig) {
     lastAct = time;
     const v = T.dig(a.point.x, a.point.z, SP.digR, SP.depth, W);
-    if (v < 0.0004) { hooks.toast?.('바위는 팔 수 없어요'); hooks.audio?.clink(); return; }
+    if (v < 0.0004) { hooks.toast?.(T.hardNear(a.point.x, a.point.z) ? '굳은 시멘트는 곡괭이로 깨야 해요' : '바위는 팔 수 없어요'); hooks.audio?.clink(); return; }
     P.bucket += v; P.dug += v; // 삽에 담는 양 제한 없음
     if (Math.random() < SP.fx) hooks.fx?.dirt(a.point.x, T.groundAt(a.point.x, a.point.z), a.point.z, 14);
     if (Math.random() < SP.fx) hooks.audio?.dig();

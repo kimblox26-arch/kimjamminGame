@@ -181,3 +181,15 @@ body.sea #bBig { display: none !important; }
 
 /* 촬영 모드: 화면 위 표시 숨김 */
 body.capture #hud, body.capture #touch, body.capture #toast { display: none !important; }
+
+/* 메인화면: 장소 카드 · 작은 제목 · 그래픽 선택 */
+.hero .lbl { margin: 2px 0 -8px; font-size: 11px; letter-spacing: .18em; color: rgba(255, 236, 214, .7); font-weight: 700; animation: rise .9s .2s both; }
+#mapSel { grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
+#mapSel button { flex-direction: row; align-items: center; gap: 10px; padding: 12px; border-radius: 16px; background: rgba(8, 14, 28, .45); backdrop-filter: blur(6px); }
+#mapSel button .mi { width: 40px; height: 40px; flex: none; border-radius: 10px; background: rgba(255, 255, 255, .06); }
+#mapSel button .mt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; text-align: left; font-size: 14px; color: var(--text, #fff); }
+#mapSel button b { font-size: 16px; }
+#mapSel button .mt span { font-size: 11px; line-height: 1.35; color: var(--muted); }
+#mapSel button.on { border-color: rgba(140, 215, 240, .8); background: rgba(70, 150, 190, .22); box-shadow: 0 0 0 1px rgba(140, 215, 240, .4) inset, 0 8px 24px rgba(0, 0, 0, .25); }
+.qual.q3 button { padding: 7px 10px; background: rgba(8, 14, 28, .4); }
+@media (max-width: 420px) { #mapSel button .mt span { display: none; } }

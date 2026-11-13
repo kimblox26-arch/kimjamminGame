@@ -284,6 +284,7 @@ export function rasterize(force) {
         const sq = Math.sqrt(disc), bot = st.cy + (-B - sq) / M[1], top = st.cy + (-B + sq) / M[1];
         const k = j * NXV + i;
         if (pass === 0 && bot < W.sBot[k]) W.sBot[k] = bot;
+        if (pass === 0 && st.r >= 0.25 && top - bot > st.hy * 1.1) W.core[k] = 1; // 큰 돌의 두꺼운 가운데
         if (bot <= W.solid[k] + 0.12 && top > W.solid[k]) W.solid[k] = top;
       }
     }
@@ -296,7 +297,7 @@ export function rasterize(force) {
       // 돌 기둥: (돌 밑 흙) + (틈을 메운 진흙: 느리게) + (빈 틈: 빠르게) 로 물이 스며 흐른다
       const top = W.solid[k], lz = Math.min(loose[k], 0.5), mud = Math.min(fill[k], top - ground[k]), open = Math.max(0, top - ground[k] - mud);
       W.ptop[k] = top; W.seal[k] = ground[k] - lz;
-      W.kp[k] = (matKp(k) * (lz + mud) + W.getKP() * open) / Math.max(1e-4, lz + mud + open);
+      W.kp[k] = (matKp(k) * (lz + mud) + (W.core[k] ? 0 : W.getKP()) * open) / Math.max(1e-4, lz + mud + open);
     } else if (loose[k] > 0.02) { // 부어 놓은 흙더미도 물이 스민다 (자갈은 잘 스미고, 굳은 시멘트는 안 스민다)
       W.ptop[k] = ground[k]; W.seal[k] = ground[k] - Math.min(loose[k], 0.5); W.kp[k] = matKp(k);
     } else W.kp[k] = 0;
