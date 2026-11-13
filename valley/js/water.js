@@ -38,7 +38,7 @@ function seaBoundary() {
   for (let j = 0; j <= NZ; j++) {
     if (j > JL + 1 && j < JM - 1) continue;
     const south = j <= JL + 1, e = south ? seaLevelA() + etaAt(WAVES_A, t, (JL - j) * CELL) : seaLevelB() + etaAt(WAVES_B, t, (j - JM) * CELL);
-    for (let i = SX0; i < SX1; i++) { const k = j * NXV + i; h[k] = Math.max(0, e - solid[k]); }
+    for (let i = SX0; i < SX1; i++) { const k = j * NXV + i; h[k] = Math.max(0, e - solid[k]); lev[k] = solid[k] + h[k]; ho[k] = h[k]; }
   }
 }
 export function init() {
@@ -317,7 +317,7 @@ export function upload() {
   for (let j = 0; j < NZV; j++) for (let c = 0; c < SW; c++) {
     const k = j * NXV + SX0 + c, o = (j * SW + c) * 4, hk = h[k];
     let R, dep = 0;
-    if (hk > 0.0008) { dep = lev[k] - seal[k]; R = lev[k] + Math.max(0, 0.003 - dep); }
+    if (hk > 0.0008) { dep = ho[k] > 0 ? ho[k] : lev[k] - seal[k]; R = lev[k] + Math.max(0, 0.003 - dep); }
     else {
       let best = -1e9;
       if (c > 0 && h[k - 1] > 0.0008) best = Math.max(best, lev[k - 1]);
@@ -499,9 +499,10 @@ void main(){
   vec3 ab = exp(-thick * absC);
   vec3 col = uCheap < 0.5 ? refr*ab + scat*(1.-ab) : scat;
   if (uCheap > 0.5) alpha = 1. - dot(ab, vec3(0.3333));
-  col = mix(col, refl, fres) + spec*smoothstep(0.,0.004,depth);
-  alpha = max(alpha, fres*0.9);
-  float vis = smoothstep(0.0008, 0.012, depth); // 아주 얇게 스며 나온 물도 젖은 막처럼 보이게
+  float thinK = smoothstep(0.004, 0.06, depth); // 얇은 물막은 반사를 줄인다
+  col = mix(col, refl, fres * (0.2 + 0.8 * thinK)) + spec*smoothstep(0.,0.004,depth)*(0.3 + 0.7 * thinK);
+  alpha = max(alpha, fres*0.9*thinK);
+  float vis = smoothstep(0.001, 0.025, depth); // 아주 얇게 스며 나온 물은 젖은 모래처럼 거의 투명하게
   alpha *= vis; // 얕은 물가는 실제 화면이 비치도록 투명하게
   float fo = w.a;
   float fnz = mix(nA.w, nB.w, wb)*0.6 + nC.w*0.4;

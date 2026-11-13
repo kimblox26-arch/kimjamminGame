@@ -298,6 +298,7 @@ export function rasterize(force) {
       const top = W.solid[k], lz = Math.min(loose[k], 0.5), mud = Math.min(fill[k], top - ground[k]), open = Math.max(0, top - ground[k] - mud);
       W.ptop[k] = top; W.seal[k] = ground[k] - lz;
       W.kp[k] = (matKp(k) * (lz + mud) + (W.core[k] ? 0 : W.getKP()) * open) / Math.max(1e-4, lz + mud + open);
+      if (W.core[k]) { W.seal[k] = W.ptop[k] = top; W.kp[k] = 0; }
     } else if (loose[k] > 0.02) { // 부어 놓은 흙더미도 물이 스민다 (자갈은 잘 스미고, 굳은 시멘트는 안 스민다)
       W.ptop[k] = ground[k]; W.seal[k] = ground[k] - Math.min(loose[k], 0.5); W.kp[k] = matKp(k);
     } else W.kp[k] = 0;
@@ -339,6 +340,7 @@ export function waterForces(cb) {
     const fy = 1000 * 9.81 * st.vol * sub;
     const fh = Math.hypot(fx, fz), wake = fh > st.mass * 9.81 * 0.3;
     st.body.resetForces(false);
+    if (!Number.isFinite(fx + fy + fz)) continue;
     if (st.body.isSleeping() && !wake) { st.forced = false; continue; }
     st.body.addForce({ x: fx, y: fy, z: fz }, wake);
     st.forced = true;
@@ -346,14 +348,16 @@ export function waterForces(cb) {
 }
 
 export function sync() {
+  let gone = null;
   for (const st of stones) {
     if (st.fixed || st.body.isSleeping()) continue;
     needRaster = true;
     const t = st.body.translation(), r = st.body.rotation();
-    if (!Number.isFinite(t.x + t.y + t.z)) { st.body.setTranslation({ x: st.mesh.position.x, y: st.mesh.position.y + 0.3, z: st.mesh.position.z }, true); st.body.setLinvel({ x: 0, y: 0, z: 0 }, true); st.body.setAngvel({ x: 0, y: 0, z: 0 }, true); st.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true); st.body.resetForces(true); continue; } // 혹시 모를 NaN 복구
+    // 파도·물살에 밀려 지형 밖으로 떨어졌거나 계산이 망가진 돌은 없앤다
+    if (!Number.isFinite(t.x + t.y + t.z + r.x + r.y + r.z + r.w) || t.y < -12 || Math.abs(t.x) > 40 || t.z < -15 || t.z > 87) { if (!st.held) (gone ||= []).push(st); continue; }
     st.mesh.position.set(t.x, t.y, t.z); st.mesh.quaternion.set(r.x, r.y, r.z, r.w);
-    if (t.y < -20) { st.body.setTranslation({ x: 0, y: 8, z: 30 }, true); st.body.setLinvel({ x: 0, y: 0, z: 0 }, true); }
   }
+  if (gone) for (const st of gone) removeStone(st);
 }
 
 // 선택 외곽선
