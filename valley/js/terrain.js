@@ -269,18 +269,34 @@ if (fresh > 0.002) {
   float fdH = fbm2(P.xz*9.)*0.03 + vnoise2(P.xz*40.)*0.006*fade;
   alb = mix(alb, fd, fresh); tH = mix(tH, fdH, fresh);
 }
-// 자갈 · 시멘트(젖음 → 굳음) · 페인트(젖어 반짝 → 마름)
-float gW = clamp(vMat2.x, 0., 1.) * smoothstep(0.0, 0.04, sLoose);
+// 부은 재료: 진흙(젖어 번들) · 자갈(알갱이 조약돌) · 시멘트(젖음: 짙고 매끈 → 굳음: 밝고 꺼칠) · 페인트
+float poured = smoothstep(0.0, 0.03, sLoose);
+float gW = clamp(vMat2.x, 0., 1.) * poured, cW = clamp(vMat2.y + vMat2.z, 0., 1.) * poured;
+float mW = max(0., poured * (1. - gW - cW)) * fresh;
+tRough = mix(tRough, 0.42, mW * 0.8); // 진흙은 젖어서 살짝 번들
 if (gW > 0.01) {
+#ifdef LITE
   float g1 = vnoise2(P.xz*14.), g2 = vnoise2(P.xz*31. + 3.);
   vec3 gc = mix(vec3(0.30,0.29,0.27), vec3(0.62,0.59,0.54), g1) * (0.75 + 0.35*g2);
-  alb = mix(alb, gc, gW); tRough = mix(tRough, 0.75, gW); tH = mix(tH, g1*0.022 + g2*0.008*fade, gW);
+  float gH = g1*0.022;
+#else
+  vec3 vg = voronoi(P.xz*12.);
+  float peb = sqrt(max(0., 1. - vg.x*vg.x*2.4)) * smoothstep(0.0, 0.08, vg.z);
+  vec3 gc = mix(vec3(0.34,0.33,0.31), vec3(0.70,0.67,0.61), hash12(vec2(vg.y, 1.7)));
+  gc = mix(gc, vec3(0.56,0.43,0.31), step(0.78, hash12(vec2(vg.y, 4.1))) * 0.8); // 갈색 조약돌
+  gc = mix(gc, vec3(0.22,0.22,0.23), step(0.9, hash12(vec2(vg.y, 7.3))) * 0.8);  // 검은 조약돌
+  gc *= mix(0.35, 1.05, peb) * (0.92 + 0.12 * vnoise2(P.xz*70.)*fade);           // 알갱이 사이 그늘
+  float gH = peb * 0.035;
+#endif
+  alb = mix(alb, gc, gW); tRough = mix(tRough, 0.7, gW); tH = mix(tH, gH, gW);
 }
-float cW = clamp(vMat2.y + vMat2.z, 0., 1.) * smoothstep(0.0, 0.03, sLoose);
 if (cW > 0.01) {
   float dry = vMat2.z / max(1e-3, vMat2.y + vMat2.z);
-  vec3 cc = mix(vec3(0.26,0.26,0.25), vec3(0.60,0.60,0.57), dry) * (0.94 + 0.08*vnoise2(P.xz*25.));
-  alb = mix(alb, cc, cW); tRough = mix(tRough, mix(0.15, 0.9, dry), cW); tH = mix(tH, vnoise2(P.xz*40.)*0.002, cW);
+  float speck = vnoise2(P.xz*90.) * fade, trowel = 0.5 + 0.5 * sin(P.x*7. + vnoise2(P.xz*1.5)*6.);
+  vec3 wetC = vec3(0.20,0.20,0.20) * (0.95 + 0.1 * trowel);
+  vec3 dryC = mix(vec3(0.58,0.58,0.55), vec3(0.70,0.69,0.66), speck) * (0.96 + 0.06 * trowel);
+  dryC = mix(dryC, vec3(0.38,0.37,0.35), step(0.86, vnoise2(P.xz*45.)) * 0.6 * fade); // 모래알 박힌 자국
+  alb = mix(alb, mix(wetC, dryC, dry), cW); tRough = mix(tRough, mix(0.08, 0.88, dry), cW); tH = mix(tH, speck * 0.0025 * dry, cW);
 }
 float pA = clamp(vPaint.a, 0., 1.);
 if (pA > 0.01) { alb = mix(alb, vPaint.rgb, pA); tRough = mix(tRough, mix(0.7, 0.1, vMat2.w), pA); }
@@ -348,7 +364,7 @@ export function flushMesh() {
   if (dirty.i1 < 0) return false;
   const i0 = Math.max(0, dirty.i0 - 1), i1 = Math.min(NX, dirty.i1 + 1), j0 = Math.max(0, dirty.j0 - 1), j1 = Math.min(NZ, dirty.j1 + 1);
   writeRegion(i0, i1, j0, j1);
-  for (const n of ['position', 'normal', 'aMat']) {
+  for (const n of ['position', 'normal', 'aMat', 'aMat2', 'aPaint']) { // 자갈·시멘트·페인트 정보도 함께 올린다
     const a = geo.attributes[n]; a.clearUpdateRanges?.(); const s = a.itemSize;
     a.addUpdateRange ? a.addUpdateRange(idx(0, j0) * s, (j1 - j0 + 1) * NXV * s) : null;
     a.needsUpdate = true;

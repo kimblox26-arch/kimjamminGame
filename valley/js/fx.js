@@ -106,6 +106,16 @@ export function chips(x, y, z, n) {
   }
   for (let k = 0; k < n / 3; k++) mist.emit(x, y, z, (Math.random() - 0.5) * 0.5, 0.2 + Math.random() * 0.3, (Math.random() - 0.5) * 0.5, 1.2, 0.18, 0.75, 0.72, 0.68, 0.3, 0.35);
 }
+// 물보라: 빠르게 부딪히는 물살(여울·폭포 아래·부서지는 파도)이 물방울을 흩뿌린다
+export function spray(x, y, z, vx, vz, s) {
+  const n = Math.round(3 + s * 9);
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * 6.283, r = Math.random() * 0.25;
+    drops.emit(x + Math.cos(a) * r, y + 0.02, z + Math.sin(a) * r, vx * (0.3 + Math.random() * 0.5) + (Math.random() - 0.5) * 0.8, (0.8 + Math.random() * 1.8) * (0.5 + s * 0.8), vz * (0.3 + Math.random() * 0.5) + (Math.random() - 0.5) * 0.8,
+      0.4 + Math.random() * 0.4, 0.02 + Math.random() * 0.03, 0.88, 0.94, 0.97, 0.75);
+  }
+  if (Math.random() < 0.3 + s * 0.4) mist.emit(x, y + 0.08, z, vx * 0.2, 0.2 + Math.random() * 0.3, vz * 0.2, 1.1, 0.16 + s * 0.12, 0.92, 0.96, 1, 0.1, 0.3);
+}
 export function splash(x, y, z, s) {
   const n = Math.round(10 + s * 40);
   for (let k = 0; k < n; k++) {

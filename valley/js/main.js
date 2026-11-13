@@ -503,6 +503,15 @@ function loop(now) {
   T.U.uRain.value += (rt - T.U.uRain.value) * Math.min(1, dg * 0.15);
   if (!SEA()) { const sf = N.smallFall, s = W.sample(sf.x, sf.z - 1.2), f = s ? Math.min(1, s.h * Math.hypot(s.vx, s.vz) / 0.1) : 0;
     N.setSmallFall(f); FX.fall2.x = sf.x; FX.fall2.y = sf.yb; FX.fall2.z = sf.z; FX.fall2.f = f; }
+  // 물보라: 카메라 근처의 거품 많고 빠른 물살에서 물방울이 튄다
+  { const c = camera.position; let shots = 0;
+    for (let n = 0; n < (perf ? 14 : 28) && shots < 4; n++) {
+      const a = Math.random() * 6.283, r = 1.5 + Math.random() * 11, x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r, s = W.sample(x, z);
+      if (!s || s.open < 0.02) continue;
+      const sp = Math.hypot(s.vx, s.vz), fo = W.foam[s.k];
+      if (fo < 0.5 || sp < 0.9) continue;
+      FX.spray(x, s.surf, z, s.vx, s.vz, Math.min(1, (sp - 0.9) * 0.6 + (fo - 0.5))); shots++;
+    } }
   FX.update(dv, T.U.uRain.value);
   N.setDownstream(Math.max(0, st.outSm / 0.2));
   N.cull(camera.position);
