@@ -188,9 +188,9 @@ function bankSlump(k, e, cp) {
     if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
   }
 }
-let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004, CPK = 0.008, CPM = 0; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
+let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004, CPK = 0.008, CPM = 0, BEDF = 1; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
 export function post(dt) {
-  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.03; CPM = 0.05; } // 바다 모래: 조류 물살의 지형 변화 가속 (해안 모델의 MORFAC 처럼) // 모래는 잘 쓸려 간다
+  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.05; CPM = 0.05; BEDF = 0.45; } // 바다 모래: 조류 물살의 지형 변화 가속 (해안 모델의 MORFAC 처럼) // 모래는 잘 쓸려 간다
   let mx = 0, st = 0;
   for (let j = Math.max(1, JL + 2); j < Math.min(NZ, JM - 1); j++) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
@@ -207,8 +207,8 @@ export function post(dt) {
       const vc = top === 0 ? VC0 : top === 1 ? VC1 : 1.6, kr = top === 0 ? 1 : top === 1 ? KR1 : 0.004;
       const cp = (CPK * Math.max(0, sp - vc) + CPM * Math.max(0, sm - vc)) * Math.min(hk, 0.3) / 0.3; // 순간 물살 + 한 방향으로 오래 흐르는 물살(조류·강)
       const armored = dam[k] || (cap[k] <= 0 && solid[k] - ground[k] > 0.01);
-      if (sed[k] < cp && !armored) {
-        let e = (cp - sed[k]) * 0.5 * kr * dt;
+      if (sed[k] < cp * BEDF && !armored) {
+        let e = (cp * BEDF - sed[k]) * 0.5 * kr * dt; // 바닥은 운반량의 일부까지만 — 나머지는 옆 둑을 깎는 데 쓰여 물길이 넓어진다
         if (cap[k] > 0) { e = Math.min(cap[k], e); cap[k] -= e; solid[k] -= e; }
         else {
           if (top === 0) { e = Math.min(loose[k], e); loose[k] -= e; }
