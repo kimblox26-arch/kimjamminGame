@@ -205,7 +205,9 @@ export function fastFill(sec, simDt) {
   pond.length = 0; let vol = 0;
   for (let j = 1; j < MEAS_J; j++) for (let i = Math.max(SX0 + 1, lo[j]); i <= Math.min(SX1 - 2, hi[j]); i++) {
     const k = j * NXV + i;
-    if (h[k] > 0.3 && vx[k] * vx[k] + vz[k] * vz[k] < 0.03 && solid[k] - ground[k] < 0.01) { pond.push(k); vol += h[k]; }
+    if (h[k] < 0.02 || vx[k] * vx[k] + vz[k] * vz[k] > 0.03) continue;
+    vol += h[k]; // 잔잔한 물 전체(얕은 가장자리 포함)로 차오르는 속도를 재고, 수면이 고르게 오르도록 같은 칸들에 더한다
+    if (solid[k] - ground[k] < 0.01) pond.push(k);
   }
   vol *= A;
   if (pondPrev >= 0 && simDt > 0) {
@@ -213,8 +215,10 @@ export function fastFill(sec, simDt) {
     pondRate += (r - pondRate) * Math.min(1, simDt * 0.5);
   }
   let add = 0;
-  if (sec > 0 && pond.length >= 20 && pondRate > 1e-4) {
-    const dh = Math.min(0.04, pondRate * sec / (pond.length * A));
+  // 유입-하류 유출(전체 물 수지)과 고인 물 증가 속도 중 큰 쪽 (하류 물이 빠지는 동안엔 앞의 값이 작게 나옴)
+  const rate = Math.min(state.inflow, Math.max(pondRate, state.inflow - state.outSm));
+  if (sec > 0 && pond.length >= 40 && rate > 1e-4) {
+    const dh = Math.min(0.04, rate * sec / (pond.length * A));
     for (const k of pond) h[k] += dh;
     add = dh * pond.length * A;
   }
