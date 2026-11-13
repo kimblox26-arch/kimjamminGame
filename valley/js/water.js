@@ -385,7 +385,7 @@ export function makeWaterMesh(refrRT) {
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 3, 30), 45);
   const uniforms = Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), U, {
     tV: { value: texV }, tN: { value: makeNormalTex() }, tRefr: { value: refrRT.texture }, tDepth: { value: refrRT.depthTexture },
-    uRes: { value: new THREE.Vector2(1, 1) }, uProj: { value: new THREE.Matrix4() }, uNear: { value: 0.05 }, uFar: { value: 1200 }, uCheap: { value: 0 },
+    uRes: { value: new THREE.Vector2(1, 1) }, uProj: { value: new THREE.Matrix4() }, uNear: { value: 0.05 }, uFar: { value: 1200 }, uCheap: { value: 0 }, uCore: { value: MODE === 'sea' ? new THREE.Vector4(-8.6, 8.6, SEA_ZA, SEA_ZB) : new THREE.Vector4(0, 0, 0, 0) },
   });
   const mat = new THREE.ShaderMaterial({ uniforms, fog: true, transparent: true, vertexShader: WATER_VS, fragmentShader: WATER_FS, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
   const m = new THREE.Mesh(g, mat);
@@ -413,7 +413,7 @@ void main(){
 }`;
 
 const WATER_FS = GLSL_NOISE + GLSL_SKY + /* glsl */`
-uniform sampler2D tV, tN, tRefr, tDepth; uniform vec2 uRes; uniform float uTime, uNear, uFar, uCheap; uniform vec3 uSunCol; uniform mat4 uProj;
+uniform sampler2D tV, tN, tRefr, tDepth; uniform vec2 uRes; uniform float uTime, uNear, uFar, uCheap; uniform vec3 uSunCol; uniform mat4 uProj; uniform vec4 uCore;
 varying vec3 vWorld; varying vec2 vUv; varying vec3 vNg;
 #include <fog_pars_fragment>
 float linZ(float d){ return uNear*uFar / (uFar - d*(uFar-uNear)); }
@@ -511,6 +511,8 @@ void main(){
   foamA = max(foamA, edge);
   vec3 foamC = vec3(0.92,0.95,0.96) * (0.35 + 0.65*max(uSunDir.y,0.)) * uSunCol;
   col = mix(col, foamC, foamA*0.9);
+  // 바다: 계산하는 물(방파제 사이)을 벗어나면 서서히 투명해져 먼바다 판으로 이어진다
+  if (uCore.y > uCore.x) { vec2 o = max(vec2(uCore.x - vWorld.x, uCore.z - vWorld.z), vec2(vWorld.x - uCore.y, vWorld.z - uCore.w)); float fade = 1. - smoothstep(0., 3., max(max(o.x, o.y), 0.)); alpha *= fade; foamA *= fade; }
   gl_FragColor = vec4(col, max(alpha, foamA*0.9));
   #include <fog_fragment>
   #include <tonemapping_fragment>

@@ -175,7 +175,7 @@ async function boot(q, save) {
   N.buildTrees(scene, q.pine, q.broad);
   N.buildGrass(scene, q.grass);
   N.buildFlowers(scene, q.flowers);
-  if (SEA()) N.buildOcean(scene, W.WAVES_A, W.WAVES_B, W.C_SEA, W.SEA_ZA, W.SEA_ZB, T.ISTH_Z, [T.X0 + T.SX0 * T.CELL, T.X0 + (T.SX1 - 1) * T.CELL, 0, T.NZ * T.CELL]); else { N.buildStreams(scene); N.buildSmallFall(scene); }
+  if (SEA()) N.buildOcean(scene, W.WAVES_A, W.WAVES_B, W.C_SEA, W.SEA_ZA, W.SEA_ZB, T.ISTH_Z, [T.X0 + T.SX0 * T.CELL, T.X0 + (T.SX1 - 1) * T.CELL, W.SEA_ZA, W.SEA_ZB]); // 먼바다 판은 방파제 사이(계산하는 물)만 비운다 else { N.buildStreams(scene); N.buildSmallFall(scene); }
   FX.init(scene, camera); FX.opt.fall = !SEA();
 
   const pr = renderer.getPixelRatio();
