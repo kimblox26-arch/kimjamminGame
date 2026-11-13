@@ -12,6 +12,8 @@ export const SPEEDS = [
   { name: '약간 빠르게', dig: 0.12, depth: 0.085, digR: 0.42, dump: 0.09, dumpAmt: 0.04, mud: 0.06, mudAmt: 0.05, mudR: 0.42, fx: 0.6 },
   { name: '엄청 빠르게', dig: 0.04, depth: 0.11, digR: 0.5, dump: 0.035, dumpAmt: 0.09, mud: 0.03, mudAmt: 0.12, mudR: 0.5, fx: 0.3 },
 ];
+// 삽 자세: 손잡이가 위·뒤(내 손 쪽), 날은 앞·아래. 파기 = 날을 더 세워 찍기, 붓기 = 날을 옆으로 뒤집기
+const SH = { idle: 1.05, dig: 0.55, dump: 1.25, dumpZ: -1.2 };
 const PAINTS = [0xd94a3a, 0xf0b429, 0xf4f1e8, 0x3f8f5a, 0x2f6fd1, 0x8b4fc4, 0x2a2a2a];
 const kg = m => (m >= 1000 ? (m / 1000).toFixed(1) + ' t' : Math.round(m) + ' kg');
 export const P = {
@@ -54,7 +56,7 @@ function buildShovel() {
   load.position.set(0, -0.1, 0.035); load.visible = false;
   shovel.add(handle, grip, blade, neck, load);
   shovel.traverse(o => { o.castShadow = false; });
-  shovel.position.set(0.34, -0.42, -0.62); shovel.rotation.set(-0.9, 0.25, 0.15);
+  shovel.position.set(0.3, -0.4, -0.6); shovel.rotation.set(SH.idle, -0.3, -0.12);
   shovel.visible = false;
 }
 
@@ -252,7 +254,8 @@ function specialUpdate(dt, time) {
   if (!drop) { // 삽에 진흙이 늘 가득
     load.visible = true; load.scale.setScalar(1.2);
     const busy = time - lastAct < 0.2;
-    shovel.rotation.x += ((busy ? -0.3 : -0.9) - shovel.rotation.x) * Math.min(1, dt * 14);
+    shovel.rotation.x += ((busy ? SH.dump : SH.idle) - shovel.rotation.x) * Math.min(1, dt * 14);
+    shovel.rotation.z += ((busy ? SH.dumpZ : -0.12) - shovel.rotation.z) * Math.min(1, dt * 14);
   }
   if (!ok || !(btn.l || btn.r)) return;
   if (drop && time - lastAct > 0.45) { lastAct = time; hooks.dropRock?.(a.point.x, a.point.z); }
@@ -389,9 +392,10 @@ function toolUpdate(dt, time) {
   }
   // 삽 애니메이션
   const busy = time - lastAct < 0.25;
-  const tgtRx = busy ? (btn.r ? -0.3 : -1.35) : -0.9;
+  const tgtRx = busy ? (btn.r ? SH.dump : SH.dig) : SH.idle, tgtRz = busy && btn.r ? SH.dumpZ : -0.12;
   shovel.rotation.x += (tgtRx - shovel.rotation.x) * Math.min(1, dt * 14);
-  shovel.position.y += ((busy ? -0.36 : -0.42) - shovel.position.y) * Math.min(1, dt * 14);
+  shovel.rotation.z += (tgtRz - shovel.rotation.z) * Math.min(1, dt * 14);
+  shovel.position.y += ((busy && !btn.r ? -0.5 : -0.4) - shovel.position.y) * Math.min(1, dt * 14);
   load.visible = P.bucket > 0.002; load.scale.setScalar(0.5 + Math.min(1, P.bucket / LOAD_VIS) * 0.7);
   const SP = SPEEDS[P.speed];
   if (!ok) return;

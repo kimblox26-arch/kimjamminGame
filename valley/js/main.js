@@ -427,7 +427,7 @@ function ui(dt) {
 }
 
 // ───── 루프 ─────
-let erodeT = 0, erodeLast = 0, cemT = 0;
+let erodeT = 0, erodeLast = 0, cemT = 0, lastImpact = 0;
 let shake = 0, timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
@@ -561,7 +561,10 @@ function onSplash(st, speed, surf) {
 function onContact(e) {
   const c1 = e.collider1(), c2 = e.collider2();
   const st = S.byHandle.get(c1) || S.byHandle.get(c2);
-  if (!st || st.fixed || clock - st.lastHit < 0.12) return;
+  if (!st || st.fixed || clock - st.lastHit < 0.3) return;
+  // 물살에 살짝 흔들리며 닿는 정도는 소리 없음 (실제로 부딪혀 움직일 때만)
+  const lv = st.body.linvel(), spd = Math.hypot(lv.x, lv.y, lv.z);
+  if (spd < 0.45 && (st.vyPrev || 0) > -0.9 && !st.held) return;
   st.lastHit = clock;
   const other = st.collider.handle === c1 ? c2 : c1, hf = T.getHF();
   if (st.quiet > performance.now()) return; // 막 깨진 조각
@@ -570,7 +573,7 @@ function onContact(e) {
   let s = Math.min(1, Math.max(0.08, (f - 6) / 40)) * Math.min(1, Math.max(0.3, st.mass / 40));
   const d = camera.position.distanceTo(st.mesh.position);
   s /= 1 + d * d * 0.03;
-  if (s > 0.02) A.impact(s, st.surf > st.cy);
+  if (s > 0.05 && clock - lastImpact > 0.07) { lastImpact = clock; A.impact(s, st.surf > st.cy); }
 }
 // 돌이 땅에 떨어지면 흙이 패인 자국이 남는다
 function dent(st, v) {

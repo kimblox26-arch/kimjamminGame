@@ -98,13 +98,18 @@ def save(name, x, q=5, rate=SR):
 
 # ───────── 환경음 (모노 반복 소리: 게임에서 두 번 겹쳐 좌우로 넓힌다) ─────────
 def river(sec=22):
+    """계곡물: 쏴아 하는 넓은 잡음 + 빠르게 출렁이는 재잘거림 + 낮은 꼬르륵 (맑은 '띵' 음은 넣지 않음)"""
     n = int((sec + 1.5) * SR)
-    base = spectral(n, 1.6, 90, 1800) * (0.55 + 0.45 * smooth_noise(n, 0.7))
-    chatter = band(white(n), 1500, 5500) * (smooth_noise(n, 9) ** 2) * 0.35
-    y = base + chatter
-    for _ in range(int(sec * 38)):  # 돌 사이로 흐르는 물의 꼬르륵 거품
-        f0 = rng.uniform(260, 1600) * (1 if rng.random() < 0.8 else 0.6)
-        add(y, bubble(f0, rng.uniform(0.012, 0.05)) * rng.uniform(0.05, 0.35), rng.uniform(0, sec + 1.4))
+    base = spectral(n, 1.2, 150, 5000) * (0.6 + 0.4 * smooth_noise(n, 0.7))
+    babble = 0
+    for lo, hi, rate in ((300, 900, 14), (800, 2200, 22), (2000, 6000, 35)):  # 대역마다 다르게 출렁여 물이 재잘거리는 느낌
+        babble = babble + band(white(n), lo, hi) * smooth_noise(n, rate) ** 2.5
+    y = base + babble * 0.9
+    fz = np.zeros(n)  # 아주 짧은 거품 터짐 (음이 아니라 '치직' 하는 질감)
+    idx = rng.integers(0, n, int(sec * 220)); fz[idx] = rng.uniform(-1, 1, len(idx))
+    y += band(fz, 1200, 7000) * 0.6
+    for _ in range(int(sec * 5)):  # 낮은 꼬르륵
+        add(y, bubble(rng.uniform(90, 320), rng.uniform(0.04, 0.09), 2.5) * rng.uniform(0.15, 0.4), rng.uniform(0, sec + 1.4))
     return norm(loopify(y))
 
 def fall(sec=20):
@@ -112,8 +117,8 @@ def fall(sec=20):
     roar = spectral(n, 0.9, 120, 9000) * (0.8 + 0.2 * smooth_noise(n, 2))
     rumble = spectral(n, 2.0, 30, 220) * 0.9
     y = roar + rumble
-    for _ in range(int(sec * 90)):
-        add(y, bubble(rng.uniform(400, 2400), rng.uniform(0.006, 0.02)) * rng.uniform(0.05, 0.2), rng.uniform(0, sec + 1.4))
+    fz = np.zeros(n); idx = rng.integers(0, n, int(sec * 600)); fz[idx] = rng.uniform(-1, 1, len(idx))
+    y += band(fz, 800, 8000) * 0.5
     return norm(loopify(y))
 
 def waves(sec=39):
@@ -203,20 +208,23 @@ def motor(sec=3):  # 권양기 모터 · 기어
 
 # ───────── 효과음 ─────────
 def hit(v):
-    f0 = rng.uniform(900, 2400); r = [1, 2.32, 4.25, 6.63, 9.38]
-    y = modal([f0 * k * rng.uniform(0.97, 1.03) for k in r], [1, 0.6, 0.4, 0.25, 0.15], [0.05, 0.03, 0.02, 0.012, 0.008], 0.35)
-    y += band(white(len(y)), 2000, 9000) * env(len(y), 0.0005, 0.01, 6) * 1.5
+    """돌끼리 부딪힘: 울리지 않는 짧은 '딱' (돌은 금속처럼 오래 울리지 않는다)"""
+    n = int(0.25 * SR)
+    y = band(white(n), 700, 7000) * env(n, 0.0004, 0.012, 7) * 1.4
+    f0 = rng.uniform(600, 1500)
+    y += modal([f0 * k * rng.uniform(0.9, 1.1) for k in (1, 1.9, 3.1)], [0.35, 0.2, 0.1], [0.006, 0.004, 0.003], 0.25)
+    y += band(white(n), 120, 900) * env(n, 0.001, 0.03, 5) * 0.8
     if v >= 4:  # 큰 바위: 쿵
-        y += modal([rng.uniform(80, 140)], [2.5], [0.09], 0.35) + band(white(len(y)), 60, 600) * env(len(y), 0.002, 0.15) * 1.2
+        y += modal([rng.uniform(60, 110)], [1.6], [0.06], 0.25) + band(white(n), 50, 400) * env(n, 0.002, 0.12) * 1.2
     return norm(y, 0.85)
 
 def splash(v):
     y = np.zeros(int(1.2 * SR)); s = 0.6 + 0.2 * v
     add(y, band(white(int(0.25 * SR)), 400, 6000) * env(int(0.25 * SR), 0.003, 0.15, 5) * s, 0)
-    for _ in range(int(25 * s)):
-        add(y, bubble(rng.uniform(300, 2000), rng.uniform(0.02, 0.07)) * rng.uniform(0.1, 0.5), rng.uniform(0.02, 0.35))
-    for _ in range(int(14 * s)):  # 다시 떨어지는 물방울
-        add(y, bubble(rng.uniform(1500, 4000), 0.012) * rng.uniform(0.05, 0.2), rng.uniform(0.25, 0.9))
+    for _ in range(int(10 * s)):  # 낮은 거품 '꿀럭'
+        add(y, bubble(rng.uniform(150, 600), rng.uniform(0.03, 0.07), 2.5) * rng.uniform(0.1, 0.35), rng.uniform(0.02, 0.3))
+    drops = np.zeros(len(y)); idx = rng.integers(int(0.2 * SR), int(0.9 * SR), int(40 * s)); drops[idx] = rng.uniform(-1, 1, len(idx))
+    y += band(drops, 1000, 6000) * 0.5  # 다시 떨어지는 물방울 (짧게 톡톡)
     return norm(y, 0.85)
 
 def grains(dur, rate, lo, hi, glen=(0.002, 0.008)):
@@ -280,7 +288,7 @@ def step(kind):
     n = int(0.22 * SR)
     if kind == 'wet':
         y = band(white(n), 500, 5000) * env(n, 0.005, 0.15, 4)
-        for _ in range(5): add(y, bubble(rng.uniform(500, 1500), 0.03) * 0.3, rng.uniform(0, 0.08))
+        for _ in range(3): add(y, bubble(rng.uniform(150, 450), 0.04, 2.5) * 0.25, rng.uniform(0, 0.08))
     else:
         y = grains(0.18, 1400, 1500, 8000, (0.001, 0.004)) * env(int(0.18 * SR), 0.01, 0.15, 3)
         y = np.concatenate([y, np.zeros(n - len(y))]) + band(white(n), 60, 300) * env(n, 0.003, 0.06) * 0.5
