@@ -173,11 +173,11 @@ const SEA = () => MODE === 'sea';
 // 물길 바닥이 깎여 둑이 가팔라지면 젖은 흙·모래가 무너져 물길로 흘러든다 (안식각 약 40°) → 물길이 넓어진다
 // 무너지는 양은 바닥이 깎인 양(e)에 비례 (바닥이 깎인 만큼 둑 밑이 파여 무너짐) — 물길이 메워지지 않고 깊어지며 넓어진다
 const MAXB = 0.17;
-function bankSlump(k, e) {
+function bankSlump(k, e, cp) {
   let ex = 0;
   for (const n of [k - 1, k + 1, k - NXV, k + NXV]) { const d = ground[n] - ground[k] - MAXB; if (d > 0 && !dam[n] && solid[n] - ground[n] <= 0.01) ex += d; }
   if (ex <= 0) return;
-  const budget = Math.min(ex * 0.3, e * 0.7);
+  const budget = Math.min(ex * 0.3, e * 0.7, Math.max(0, cp - sed[k])); // 물살이 실어 갈 수 있는 만큼만
   for (const n of [k - 1, k + 1, k - NXV, k + NXV]) {
     const d = ground[n] - ground[k] - MAXB; if (d <= 0 || dam[n] || solid[n] - ground[n] > 0.01) continue;
     const mv = budget * d / ex, a = Math.min(loose[n], mv), b = Math.min(soil[n], mv - a), m = a + b;
@@ -187,9 +187,9 @@ function bankSlump(k, e) {
     if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
   }
 }
-let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
+let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004, CPK = 0.008; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
 export function post(dt) {
-  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.012; } // 모래는 잘 쓸려 간다
+  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.02; CPK = 0.04; } // 바다 모래: 지형 변화 가속(해안 모델의 MORFAC 처럼 운반량 ×5) // 모래는 잘 쓸려 간다
   let mx = 0, st = 0;
   for (let j = Math.max(1, JL + 2); j < Math.min(NZ, JM - 1); j++) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
@@ -202,7 +202,7 @@ export function post(dt) {
       // 물살이 깎는 재료: 덮인 흙·쌓인 흙/모래 → 원래 흙(바다는 모래) → 암반(아주 느리게). 돌이 덮은 곳·댐은 안 깎임
       const top = cap[k] > 0 || loose[k] > 0 ? 0 : soil[k] > 0.001 ? 1 : 2;
       const vc = top === 0 ? VC0 : top === 1 ? VC1 : 1.6, kr = top === 0 ? 1 : top === 1 ? KR1 : 0.004;
-      const cp = 0.008 * Math.max(0, sp - vc) * Math.min(hk, 0.3) / 0.3;
+      const cp = CPK * Math.max(0, sp - vc) * Math.min(hk, 0.3) / 0.3;
       const armored = dam[k] || (cap[k] <= 0 && solid[k] - ground[k] > 0.01);
       if (sed[k] < cp && !armored) {
         let e = (cp - sed[k]) * 0.5 * kr * dt;
@@ -215,18 +215,20 @@ export function post(dt) {
         }
         sed[k] += e; state.eroded += e * A;
         if (e > 2e-5) markDirtyCell(i, j, false, false);
-        if (e > 1e-6) bankSlump(k, e);
+        if (e > 1e-6) bankSlump(k, e, cp);
       } else if (sed[k] > cp) {
         const dd = (sed[k] - cp) * 0.5 * dt;
         sed[k] -= dd; loose[k] += dd; ground[k] += dd; if (solid[k] < ground[k]) { solid[k] = seal[k] = ptop[k] = ground[k]; } if (dd > 2e-5) markDirtyCell(i, j, false, false);
       }
-      // 옆 둑 깎기: 빠른 물살이 물길 옆 벽을 파고들어 물길이 넓어진다
-      if (sp > vc && !armored) {
-        const rate = KL * (sp - vc) * Math.min(hk, 0.5) * dt;
-        for (const n of [k - 1, k + 1, k - NXV, k + NXV]) {
-          const d = ground[n] - ground[k]; if (d < 0.05 || dam[n] || solid[n] - ground[n] > 0.01) continue;
+      // 옆 둑 깎기: 둑과 나란히 흐르는 빠른 물살이 옆 벽을 파고들어 물길이 넓어진다 (밀려 올라오는 파도는 거의 안 깎음)
+      if (sp > vc && !armored && sed[k] < cp) {
+        let room = cp - sed[k]; // 물살이 더 실어 갈 수 있는 양
+        for (let q = 0; q < 4 && room > 1e-7; q++) {
+          const n = q === 0 ? k - 1 : q === 1 ? k + 1 : q === 2 ? k - NXV : k + NXV, vt = Math.abs(q < 2 ? vz[k] : vx[k]);
+          const d = ground[n] - ground[k]; if (vt <= vc || d < 0.05 || dam[n] || solid[n] - ground[n] > 0.01) continue;
           const kn = loose[n] > 0 ? 1 : soil[n] > 0.001 ? KR1 : 0.004;
-          let m = Math.min(d * 0.5, rate * kn * Math.min(1, d / 0.3)); if (m <= 1e-7) continue;
+          let m = Math.min(d * 0.5, room, KL * (vt - vc) * Math.min(hk, 0.5) * dt * kn * Math.min(1, d / 0.3)); if (m <= 1e-7) continue;
+          room -= m;
           const a = Math.min(loose[n], m); loose[n] -= a; const b = Math.min(soil[n], m - a); soil[n] -= b; bed[n] -= m - a - b;
           ground[n] -= m; solid[n] = seal[n] = ptop[n] = ground[n]; sed[k] += m; state.eroded += m * A;
           if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
