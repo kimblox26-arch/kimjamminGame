@@ -95,7 +95,11 @@ h2 { font-size: 20px; margin-bottom: 18px; }
 /* ───── 시작 화면 ───── */
 #start { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; overflow: hidden; background: #0d1830;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-#start .scene { position: absolute; inset: -3%; width: 106%; height: 106%; }
+#start .scene { position: absolute; inset: -3%; width: 106%; height: 106%; transition: opacity 1.2s; }
+/* 메인화면 영상 (게임 화면을 촬영해 만든 것). 재생되면 그림 배경이 사라진다 */
+#start .bgvid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.2s; }
+#start.vid .bgvid { opacity: 1; }
+#start.vid .scene { opacity: 0; }
 .scene .lay { transition: transform .6s cubic-bezier(.2, .7, .2, 1); will-change: transform; }
 .stars circle { animation: twinkle 3.6s ease-in-out infinite; }
 @keyframes twinkle { 50% { opacity: .25; } }
