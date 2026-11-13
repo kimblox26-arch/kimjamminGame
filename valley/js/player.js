@@ -291,7 +291,7 @@ let flatTarget = null, prevL = false;
 // ───── 물길 긋기: 두 점을 찍으면 그 사이를 좁고 길게 판다 (바다에서는 바닥이 해수면보다 낮게 — 두 바다가 이어진다) ─────
 const tr = { a: null, job: null, mark: null, line: null, prev: false };
 function trenchBottom(x, z, u) {
-  const j = tr.job, g = j.ga + (j.gb - j.ga) * u - 0.35; // 두 끝 땅 높이를 잇는 바닥
+  const j = tr.job, g = j.ga + (j.gb - j.ga) * u - 0.12; // 두 끝 땅 높이를 잇는 바닥
   return T.MODE === 'sea' ? Math.min(g, T.SEA_Y - 0.3) : g;
 }
 function trenchUpdate(dt, time) {
@@ -301,10 +301,10 @@ function trenchUpdate(dt, time) {
   if (tr.a && ok) { const p = tr.line.geometry.attributes.position; p.setXYZ(0, tr.a.x, tr.a.y + 0.15, tr.a.z); p.setXYZ(1, a.point.x, a.point.y + 0.15, a.point.z); p.needsUpdate = true; tr.line.visible = true; }
   const pressed = btn.l && !tr.prev; tr.prev = btn.l;
   if (pressed && ok && !tr.job) {
-    if (!tr.a) { tr.a = a.point.clone(); tr.mark.position.copy(tr.a); tr.mark.visible = true; hooks.toast?.('물길 시작점 — 끝점을 누르세요'); hooks.audio?.clink?.(); }
+    if (!tr.a) { tr.a = a.point.clone(); tr.mark.position.copy(tr.a); tr.mark.visible = true; hooks.toast?.('선 시작점 — 끝점을 누르세요'); hooks.audio?.clink?.(); }
     else {
       const b = a.point.clone(), len = Math.hypot(b.x - tr.a.x, b.z - tr.a.z);
-      if (len > 0.5) { tr.job = { a: tr.a, b, len, s: 0, ga: T.groundAt(tr.a.x, tr.a.z), gb: T.groundAt(b.x, b.z), snd: 0 }; hooks.toast?.(`물길 파는 중 (${len.toFixed(1)} m)`); }
+      if (len > 0.5) { tr.job = { a: tr.a, b, len, s: 0, ga: T.groundAt(tr.a.x, tr.a.z), gb: T.groundAt(b.x, b.z), snd: 0 }; hooks.toast?.(`선 긋는 중 (${len.toFixed(1)} m)`); }
       tr.a = null; tr.mark.visible = tr.line.visible = false;
     }
   }
@@ -312,13 +312,13 @@ function trenchUpdate(dt, time) {
   const s1 = Math.min(j.len, j.s + dt * 7); // 초당 7 m
   for (let s = j.s; s <= s1; s += 0.15) {
     const u = s / j.len, x = j.a.x + (j.b.x - j.a.x) * u, z = j.a.z + (j.b.z - j.a.z) * u;
-    T.trench(x, z, 0.4, trenchBottom(x, z, u));
-    if (Math.random() < 0.08) hooks.fx?.dirt(x, T.groundAt(x, z) + 0.2, z, 4);
+    T.trench(x, z, 0.1, trenchBottom(x, z, u), 0.35, 6); // 나뭇가지로 긋듯 가는 홈
+    if (Math.random() < 0.03) hooks.fx?.dirt(x, T.groundAt(x, z) + 0.15, z, 2);
   }
   const u = s1 / j.len; hooks.edit?.(j.a.x + (j.b.x - j.a.x) * u, j.a.z + (j.b.z - j.a.z) * u, 1.2);
-  j.snd -= dt; if (j.snd <= 0) { j.snd = 0.16; hooks.audio?.dig(); }
+  j.snd -= dt; if (j.snd <= 0) { j.snd = 0.12; hooks.audio?.step(false); } // 사각사각
   j.s = s1 + 1e-6;
-  if (s1 >= j.len) { tr.job = null; hooks.toast?.(T.MODE === 'sea' ? '물길 완성 — 두 바다 수위 차로 물살이 생기면 점점 넓고 깊어져요' : '물길 완성'); }
+  if (s1 >= j.len) { tr.job = null; hooks.toast?.(T.MODE === 'sea' ? '선을 그었어요 — 바닷물이 흘러들며 점점 넓고 깊은 물길이 돼요' : '선을 그었어요'); }
 }
 function editUpdate(dt, time) {
   const a = P.aim, tool = P.tool, SP = P.speed;

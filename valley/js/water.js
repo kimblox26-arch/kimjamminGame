@@ -171,15 +171,20 @@ function flux0(f0, hf, dH, kf, dt) {
 let phase = 0;
 const SEA = () => MODE === 'sea';
 // 물길 바닥이 깎여 둑이 가팔라지면 젖은 흙·모래가 무너져 물길로 흘러든다 (안식각 약 40°) → 물길이 넓어진다
+// 무너지는 양은 바닥이 깎인 양(e)에 비례 (바닥이 깎인 만큼 둑 밑이 파여 무너짐) — 물길이 메워지지 않고 깊어지며 넓어진다
 const MAXB = 0.17;
-function bankSlump(k) {
+function bankSlump(k, e) {
+  let ex = 0;
+  for (const n of [k - 1, k + 1, k - NXV, k + NXV]) { const d = ground[n] - ground[k] - MAXB; if (d > 0 && !dam[n] && solid[n] - ground[n] <= 0.01) ex += d; }
+  if (ex <= 0) return;
+  const budget = Math.min(ex * 0.3, e * 0.7);
   for (const n of [k - 1, k + 1, k - NXV, k + NXV]) {
-    const diff = ground[n] - ground[k]; if (diff <= MAXB || dam[n] || solid[n] - ground[n] > 0.01) continue;
-    const mv = (diff - MAXB) * 0.3, a = Math.min(loose[n], mv), b = Math.min(soil[n], mv - a), m = a + b;
-    if (m <= 1e-6) continue;
+    const d = ground[n] - ground[k] - MAXB; if (d <= 0 || dam[n] || solid[n] - ground[n] > 0.01) continue;
+    const mv = budget * d / ex, a = Math.min(loose[n], mv), b = Math.min(soil[n], mv - a), m = a + b;
+    if (m <= 1e-7) continue;
     loose[n] -= a; soil[n] -= b; ground[n] -= m; solid[n] = seal[n] = ptop[n] = ground[n];
-    loose[k] += m; ground[k] += m; if (solid[k] < ground[k]) solid[k] = seal[k] = ptop[k] = ground[k];
-    markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
+    sed[k] += m; // 무너진 모래는 바로 물에 실려 간다
+    if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
   }
 }
 let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
@@ -210,7 +215,7 @@ export function post(dt) {
         }
         sed[k] += e; state.eroded += e * A;
         if (e > 2e-5) markDirtyCell(i, j, false, false);
-        if (e > 1e-6) bankSlump(k);
+        if (e > 1e-6) bankSlump(k, e);
       } else if (sed[k] > cp) {
         const dd = (sed[k] - cp) * 0.5 * dt;
         sed[k] -= dd; loose[k] += dd; ground[k] += dd; if (solid[k] < ground[k]) { solid[k] = seal[k] = ptop[k] = ground[k]; } if (dd > 2e-5) markDirtyCell(i, j, false, false);

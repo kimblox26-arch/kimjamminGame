@@ -63,10 +63,10 @@ function seaTerrainAt(x, z) {
   const grass = land * sstep(0.7, 1.1, y) * sstep(-0.1, 0.25, fbm(x * 0.4 - 4, z * 0.4, 3)) * (1 - rocky);
   return { y, soil, grass, d: y > 0.95 && !rocky ? 2.5 + y : 0, w: 7, F: 0 };
 }
-// 물길 긋기: (x,z) 둘레 반지름 r 은 바닥 높이 bottom 까지 평평하게, 그 바깥은 무너지지 않는 비탈(약 37°)로 판다
-export function trench(x, z, r, bottom) {
-  const SL = 0.75, ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL);
-  const R = r + 3.2, n = Math.ceil(R / CELL); // 비탈은 바깥 3.2 m 까지 (높이 2.4 m 둑까지 덮음)
+// 물길 긋기: (x,z) 둘레 반지름 r 은 바닥 높이 bottom 까지, 그 바깥 R 까지는 기울기 SL 비탈로 판다
+// (나뭇가지로 그은 선: r 0.1 m · R 0.35 m · 아주 가파름 → 가늘고 깊은 홈. 물이 흐르면 둑이 무너지며 넓어진다)
+export function trench(x, z, r, bottom, R = r + 0.25, SL = 6) {
+  const ci = Math.round((x - X0) / CELL), cj = Math.round((z - Z0) / CELL), n = Math.ceil(R / CELL);
   let vol = 0;
   for (let j = cj - n; j <= cj + n; j++) for (let i = ci - n; i <= ci + n; i++) {
     if (i < 1 || j < 1 || i >= NX || j >= NZ) continue;
