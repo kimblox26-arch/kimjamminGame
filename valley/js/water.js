@@ -18,6 +18,7 @@ const pL = new Float32Array(NV), pR = new Float32Array(NV), pU = new Float32Arra
 const fL = new Float32Array(NV), fR = new Float32Array(NV), fU = new Float32Array(NV), fD = new Float32Array(NV);
 export const vx = new Float32Array(NV), vz = new Float32Array(NV), foam = new Float32Array(NV), wet = new Float32Array(NV);
 export const sed = new Float32Array(NV); const sed2 = new Float32Array(NV);
+const vxm = new Float32Array(NV), vzm = new Float32Array(NV); // 10초 평균 물살 (파도처럼 왔다 갔다 하는 흐름은 0 에 가깝다)
 export const h0 = new Float32Array(NV); // 저수량 기준 수심
 export const MEAS_J = 325; // z=65 (하류 낙차 직전)
 export const state = { tide: 0, tideA: 0, tideB: 0, inflow: 0.2, outflow: 0.2, outSm: 0.2, time: 0, stored: 0, maxDepth: 0, steps: 0, eroded: 0 };
@@ -187,9 +188,9 @@ function bankSlump(k, e, cp) {
     if (m > 2e-5) markDirtyCell(n % NXV, (n / NXV) | 0, false, false);
   }
 }
-let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004, CPK = 0.008; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
+let VC0 = 0.6, VC1 = 0.9, KR1 = 0.15, KL = 0.004, CPK = 0.008, CPM = 0; // 임계 유속(쌓인 흙, 원래 흙) · 원래 흙 깎임 계수
 export function post(dt) {
-  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.02; CPK = 0.04; } // 바다 모래: 지형 변화 가속(해안 모델의 MORFAC 처럼 운반량 ×5) // 모래는 잘 쓸려 간다
+  if (SEA()) { VC0 = 0.28; VC1 = 0.32; KR1 = 1.0; KL = 0.03; CPM = 0.05; } // 바다 모래: 조류 물살의 지형 변화 가속 (해안 모델의 MORFAC 처럼) // 모래는 잘 쓸려 간다
   let mx = 0, st = 0;
   for (let j = Math.max(1, JL + 2); j < Math.min(NZ, JM - 1); j++) {
     const i0 = Math.max(SX0 + 1, lo[j]), i1 = Math.min(SX1 - 2, hi[j]);
@@ -199,10 +200,12 @@ export function post(dt) {
       if (j < MEAS_J) { const dv = h[k] - h0[k]; if (dv > 0) st += dv; }
       if (hk <= 0.004) continue;
       const sp = Math.hypot(vx[k], vz[k]);
+      vxm[k] += (vx[k] - vxm[k]) * Math.min(1, dt / 10); vzm[k] += (vz[k] - vzm[k]) * Math.min(1, dt / 10);
+      const sm = Math.hypot(vxm[k], vzm[k]);
       // 물살이 깎는 재료: 덮인 흙·쌓인 흙/모래 → 원래 흙(바다는 모래) → 암반(아주 느리게). 돌이 덮은 곳·댐은 안 깎임
       const top = cap[k] > 0 || loose[k] > 0 ? 0 : soil[k] > 0.001 ? 1 : 2;
       const vc = top === 0 ? VC0 : top === 1 ? VC1 : 1.6, kr = top === 0 ? 1 : top === 1 ? KR1 : 0.004;
-      const cp = CPK * Math.max(0, sp - vc) * Math.min(hk, 0.3) / 0.3;
+      const cp = (CPK * Math.max(0, sp - vc) + CPM * Math.max(0, sm - vc)) * Math.min(hk, 0.3) / 0.3; // 순간 물살 + 한 방향으로 오래 흐르는 물살(조류·강)
       const armored = dam[k] || (cap[k] <= 0 && solid[k] - ground[k] > 0.01);
       if (sed[k] < cp && !armored) {
         let e = (cp - sed[k]) * 0.5 * kr * dt;
@@ -221,10 +224,10 @@ export function post(dt) {
         sed[k] -= dd; loose[k] += dd; ground[k] += dd; if (solid[k] < ground[k]) { solid[k] = seal[k] = ptop[k] = ground[k]; } if (dd > 2e-5) markDirtyCell(i, j, false, false);
       }
       // 옆 둑 깎기: 둑과 나란히 흐르는 빠른 물살이 옆 벽을 파고들어 물길이 넓어진다 (밀려 올라오는 파도는 거의 안 깎음)
-      if (sp > vc && !armored && sed[k] < cp) {
+      if (sm > vc && !armored && sed[k] < cp) {
         let room = cp - sed[k]; // 물살이 더 실어 갈 수 있는 양
         for (let q = 0; q < 4 && room > 1e-7; q++) {
-          const n = q === 0 ? k - 1 : q === 1 ? k + 1 : q === 2 ? k - NXV : k + NXV, vt = Math.abs(q < 2 ? vz[k] : vx[k]);
+          const n = q === 0 ? k - 1 : q === 1 ? k + 1 : q === 2 ? k - NXV : k + NXV, vt = Math.abs(q < 2 ? vzm[k] : vxm[k]);
           const d = ground[n] - ground[k]; if (vt <= vc || d < 0.05 || dam[n] || solid[n] - ground[n] > 0.01) continue;
           const kn = loose[n] > 0 ? 1 : soil[n] > 0.001 ? KR1 : 0.004;
           let m = Math.min(d * 0.5, room, KL * (vt - vc) * Math.min(hk, 0.5) * dt * kn * Math.min(1, d / 0.3)); if (m <= 1e-7) continue;
