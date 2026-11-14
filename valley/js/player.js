@@ -24,7 +24,7 @@ const PAINTS = [0xd94a3a, 0xf0b429, 0xf4f1e8, 0x3f8f5a, 0x2f6fd1, 0x8b4fc4, 0x2a
 const kg = m => (m >= 1000 ? (m / 1000).toFixed(1) + ' t' : Math.round(m) + ' kg');
 export const P = {
   yaw: Math.PI, pitch: -0.25, vy: 0, grounded: false, tool: 'hand', held: null, holdDist: 1.7,
-  holdYaw: 0, holdTilt: 0, speed: 0, bucket: 0, moved: 0, dug: 0, placed: 0, pour: 0, paint: 0xd94a3a, snap: false, bob: 0, stepAcc: 0, target: null, aim: null, inWater: 0,
+  holdYaw: 0, holdTilt: 0, speed: 0, bucket: 0, moved: 0, dug: 0, placed: 0, eye: 0.72, diveT: 0, pour: 0, paint: 0xd94a3a, snap: false, bob: 0, stepAcc: 0, target: null, aim: null, inWater: 0,
 };
 const keys = new Set(), btn = { l: false, r: false }, touchMove = { x: 0, y: 0 };
 let shInner, R, world, body, col, cc, camera, hooks, shovel, pick, load, ring, lastAct = 0, farT = 0, lockEl;
@@ -213,7 +213,9 @@ export function update(dt, time) {
   let dx = (-sy * mz + cy * mx) * speed, dz = (-cy * mz - sy * mx) * speed;
   if (P.swim) {
     // 잠수: 아래를 보며 앞으로 헤엄치면 물속으로, 가만히 있으면 천천히 떠오른다
-    const under = p.y + 0.72 < ws.surf - 0.08, vDive = mz * speed * Math.sin(P.pitch) * 1.4;
+    const vDive = mz * speed * Math.sin(P.pitch) * 1.4;
+    P.diveT = Math.max(0, Math.min(1, (P.diveT || 0) + (vDive < -0.15 ? dt * 1.5 : -dt * 0.6))); // 잠수할수록 몸을 눕혀 눈이 낮아진다
+    const under = p.y + P.eye < ws.surf - 0.08;
     if (under || vDive < -0.15) {
       const k = Math.max(0.35, Math.cos(P.pitch)); dx *= k; dz *= k;
       P.vy += ((vDive + 0.3) - P.vy) * Math.min(1, dt * 3);
@@ -226,6 +228,7 @@ export function update(dt, time) {
     dx += ws.vx * 0.6; dz += ws.vz * 0.6; // 물살에 떠밀림
     P.grounded = false;
   } else {
+    P.diveT = Math.max(0, (P.diveT || 0) - dt * 2);
     if (P.inWater > 0.3) { dx += (ws?.vx || 0) * 0.2; dz += (ws?.vz || 0) * 0.2; } // 허리까지 오면 물살에 조금 밀림
     P.vy -= 9.81 * dt;
     if (P.grounded && (keys.has('Space') || P.jumpReq)) { P.vy = 4.3; P.grounded = false; hooks.audio?.jump?.(); }
@@ -252,7 +255,8 @@ export function update(dt, time) {
     }
   }
   // 카메라
-  camera.position.set(nx, ny + 0.72 + Math.sin(P.bob * 2) * 0.025, nz);
+  P.eye = 0.72 - 1.25 * (P.diveT || 0); // 서 있을 때 0.72 m, 엎드려 헤엄치면 -0.53 m
+  camera.position.set(nx, ny + P.eye + Math.sin(P.bob * 2) * 0.025, nz);
   camera.rotation.set(P.pitch, P.yaw, Math.sin(P.bob) * 0.006, 'YXZ');
   camera.updateMatrixWorld();
   aim();
