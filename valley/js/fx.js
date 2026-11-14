@@ -59,14 +59,14 @@ class Points {
   }
 }
 
-let drops, mist, motes, clods, clodData, rain, rainPos, camera;
+let drops, mist, motes, bits, clods, clodData, rain, rainPos, camera;
 const CL = 160;
 const dm = new THREE.Object3D();
 
 export function init(scene, cam) {
   camera = cam;
-  drops = new Points(1500); mist = new Points(900); motes = new Points(220, THREE.AdditiveBlending);
-  scene.add(drops.obj, mist.obj, motes.obj);
+  drops = new Points(1500); mist = new Points(900); motes = new Points(220, THREE.AdditiveBlending); bits = new Points(300);
+  scene.add(drops.obj, mist.obj, motes.obj, bits.obj);
   const cg = new THREE.DodecahedronGeometry(0.035, 0);
   clods = new THREE.InstancedMesh(cg, new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1 }), CL);
   clods.castShadow = true; clods.frustumCulled = false;
@@ -116,6 +116,14 @@ export function spray(x, y, z, vx, vz, s) {
   }
   if (Math.random() < 0.3 + s * 0.4) mist.emit(x, y + 0.08, z, vx * 0.2, 0.2 + Math.random() * 0.3, vz * 0.2, 1.1, 0.16 + s * 0.12, 0.92, 0.96, 1, 0.1, 0.3);
 }
+// 물살에 뽑힌 풀잎·흙 부스러기가 물 위로 떠내려간다
+export function uproot(x, y, z, vx, vz) {
+  for (let k = 0; k < 5; k++) {
+    const g = Math.random() < 0.75;
+    bits.emit(x + (Math.random() - 0.5) * 0.3, y + 0.01, z + (Math.random() - 0.5) * 0.3, vx * (0.8 + Math.random() * 0.3), 0, vz * (0.8 + Math.random() * 0.3),
+      2.5 + Math.random() * 2, 0.035 + Math.random() * 0.03, g ? 0.32 : 0.36, g ? 0.48 : 0.27, g ? 0.16 : 0.16, 0.95);
+  }
+}
 export function splash(x, y, z, s) {
   const n = Math.round(10 + s * 40);
   for (let k = 0; k < n; k++) {
@@ -145,7 +153,7 @@ export function update(dt, rainAmt) {
       motes.emit(c.x + (Math.random() - 0.5) * 14, c.y + (Math.random() - 0.3) * 4, c.z + (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.1, 6, 0.012, 1, 0.95, 0.75, 0.35 * (1 - rainAmt));
     }
   }
-  drops.update(dt, 9.8, 0.3); mist.update(dt, -0.05, 0.6); motes.update(dt, 0, 0);
+  drops.update(dt, 9.8, 0.3); mist.update(dt, -0.05, 0.6); motes.update(dt, 0, 0); bits.update(dt, 0, 0.15);
   // 흙덩이
   for (let i = 0; i < CL; i++) {
     const d = clodData[i];

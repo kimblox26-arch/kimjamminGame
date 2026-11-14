@@ -193,3 +193,7 @@ body.capture #hud, body.capture #touch, body.capture #toast { display: none !imp
 #mapSel button.on { border-color: rgba(140, 215, 240, .8); background: rgba(70, 150, 190, .22); box-shadow: 0 0 0 1px rgba(140, 215, 240, .4) inset, 0 8px 24px rgba(0, 0, 0, .25); }
 .qual.q3 button { padding: 7px 10px; background: rgba(8, 14, 28, .4); }
 @media (max-width: 420px) { #mapSel button .mt span { display: none; } }
+
+/* 물속 */
+#underFx { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s; background: radial-gradient(ellipse at 50% 25%, rgba(60, 160, 170, .08), rgba(3, 28, 38, .5)); }
+body.under #underFx { opacity: 1; }

@@ -204,7 +204,7 @@ export function update(dt, time) {
   // 수영: 가슴보다 깊은 물에서는 떠서 헤엄친다 (머리는 물 위, 물살에 떠밀림)
   const depth = ws && ws.h > 0.01 ? ws.surf - T.groundAt(p.x, p.z) : 0;
   const wasSwim = P.swim; P.swim = depth > (P.swim ? 0.95 : 1.15) && !P.held;
-  if (P.swim && !wasSwim) { hooks.audio?.splash?.(0.5); hooks.fx?.splash(p.x, ws.surf, p.z, 0.5); hooks.toast?.('수영 중 — 점프로 위로 헤엄쳐 올라가요'); }
+  if (P.swim && !wasSwim) { hooks.audio?.splash?.(0.5); hooks.fx?.splash(p.x, ws.surf, p.z, 0.5); hooks.toast?.('수영 중 — 아래를 보며 앞으로 가면 잠수, 점프로 떠올라요'); }
   let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 5.2 : 3.0;
   if (P.swim) speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 2.3 : 1.5;
   if (P.held) speed *= 1 - Math.min(0.6, Math.pow(P.held.mass / 3000, 0.5) * 0.6);
@@ -212,10 +212,18 @@ export function update(dt, time) {
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw);
   let dx = (-sy * mz + cy * mx) * speed, dz = (-cy * mz - sy * mx) * speed;
   if (P.swim) {
+    // 잠수: 아래를 보며 앞으로 헤엄치면 물속으로, 가만히 있으면 천천히 떠오른다
+    const under = p.y + 0.72 < ws.surf - 0.08, vDive = mz * speed * Math.sin(P.pitch) * 1.4;
+    if (under || vDive < -0.15) {
+      const k = Math.max(0.35, Math.cos(P.pitch)); dx *= k; dz *= k;
+      P.vy += ((vDive + 0.3) - P.vy) * Math.min(1, dt * 3);
+      if (keys.has('Space') || P.jumpReq) P.vy = Math.max(P.vy, 1.8);
+    } else {
+      const target = ws.surf - 0.48; // 눈이 물 위로 20cm 쯤 나오는 높이 (파도에 잠기지 않게)
+      P.vy += ((target - p.y) * 7 - P.vy * 3) * dt;
+      if (keys.has('Space') || P.jumpReq) P.vy = Math.max(P.vy, 2.6); // 위로 차고 올라가기 (기슭으로 나오기)
+    }
     dx += ws.vx * 0.6; dz += ws.vz * 0.6; // 물살에 떠밀림
-    const target = ws.surf - 0.48; // 눈이 물 위로 20cm 쯤 나오는 높이 (파도에 잠기지 않게)
-    P.vy += ((target - p.y) * 7 - P.vy * 3) * dt;
-    if (keys.has('Space') || P.jumpReq) P.vy = Math.max(P.vy, 2.6); // 위로 차고 올라가기 (기슭으로 나오기)
     P.grounded = false;
   } else {
     if (P.inWater > 0.3) { dx += (ws?.vx || 0) * 0.2; dz += (ws?.vz || 0) * 0.2; } // 허리까지 오면 물살에 조금 밀림

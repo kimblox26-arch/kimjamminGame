@@ -173,6 +173,9 @@ async function boot(q, save) {
   S.stones.forEach(st => st.mesh.layers.enable(1)); // 굴절 패스에는 지형·돌만 그린다
   prog(0.32, '숲 가꾸는 중'); await frame();
   N.buildTrees(scene, q.pine, q.broad);
+  // 계곡 바닥 나무 몸통: 부딪히면 막힘
+  for (const it of N.floorTrees) { it.body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(it.x, it.y + 1.5, it.z)); world.createCollider(RAPIER.ColliderDesc.cylinder(1.5, 0.16 * it.s / 0.8), it.body); }
+  if (H.plant) clearTreesForPlant(H.plant);
   N.buildGrass(scene, q.grass);
   N.buildFlowers(scene, q.flowers);
   if (SEA()) N.buildOcean(scene, W.WAVES_A, W.WAVES_B, W.C_SEA, W.SEA_ZA, W.SEA_ZB, T.ISTH_Z, [T.X0 + T.SX0 * T.CELL, T.X0 + (T.SX1 - 1) * T.CELL, W.SEA_ZA, W.SEA_ZB]); else { N.buildStreams(scene); N.buildSmallFall(scene); } // 바다: 먼바다 판은 방파제 사이(계산하는 물)만 비운다
@@ -327,9 +330,11 @@ $('bBig').onclick = () => {
   let z = camera.position.z + dirz * 6;
   for (let n = 0; n < 10 && V.cabins.some(c => Math.abs(c.position.z - z) < 4.5); n++) z += dirz * 1.5;
   z = Math.max(13, Math.min(64, z)); // 물이 고일 저수지가 생기도록 수원(z≈5)에서 8 m 이상 떨어뜨린다
-  const p = H.build(z); A.rumble?.(p.dur);
+  const p = H.build(z); A.rumble?.(p.dur); clearTreesForPlant(p);
   hooks.toast('계곡 수력발전소 건설 시작!');
 };
+// 댐·발전소 자리에 있던 나무는 치운다
+function clearTreesForPlant(p) { for (const it of N.clearTreesIn(-30, 30, p.zU - 1.5, p.zU + 8.5)) if (it.body) { world.removeRigidBody(it.body); it.body = null; } }
 // 제어실 패널
 let ctrlOpen = false;
 function setCtrl(on) {
@@ -428,7 +433,7 @@ function ui(dt) {
 }
 
 // ───── 루프 ─────
-let erodeT = 0, erodeLast = 0, cemT = 0, lastImpact = 0, grassT = 0;
+let erodeT = 0, erodeLast = 0, cemT = 0, lastImpact = 0, grassT = 0, underwater = false;
 let shake = 0, timeScale = 1, gclock = 0, cpuMs = 8, flushT = 0, last = performance.now(), physAcc = 0, waterAcc = 0, fpsV = 60, fpsN = 0, fpsT = 0, frameN = 0;
 const camDir = new THREE.Vector3();
 const FRAME_MS = 1000 / 30;
@@ -501,7 +506,7 @@ function loop(now) {
   }
   // 물살에 깎이고 쌓인 땅: 가끔 물리 높이장도 다시 만든다
   // 물살에 뜯기거나 물에 잠겨 시든 풀 포기 치우기 (0.5초마다 조금씩)
-  grassT += dt; if (grassT > 0.5 && st.grassGone.length) { grassT = 0; for (const k of st.grassGone.splice(0, 40)) N.onEdit(T.X0 + (k % T.NXV) * T.CELL, T.Z0 + ((k / T.NXV) | 0) * T.CELL, 0.25); }
+  grassT += dt; if (grassT > 0.5 && st.grassGone.length) { grassT = 0; for (const k of st.grassGone.splice(0, 40)) { const x = T.X0 + (k % T.NXV) * T.CELL, z = T.Z0 + ((k / T.NXV) | 0) * T.CELL, s = W.sample(x, z); N.onEdit(x, z, 0.25); if (s && s.h > 0.02 && Math.hypot(s.vx, s.vz) > 0.35 && (x - camera.position.x) ** 2 + (z - camera.position.z) ** 2 < 600) FX.uproot(x, s.surf, z, s.vx, s.vz); } }
   erodeT += dt; if (erodeT > 4) { erodeT = 0; if (Math.abs(st.eroded - erodeLast) > 0.02) { erodeLast = st.eroded; T.physState.dirty = true; } }
   T.U.uRain.value += (rt - T.U.uRain.value) * Math.min(1, dg * 0.15);
   if (!SEA()) { const sf = N.smallFall, s = W.sample(sf.x, sf.z - 1.2), f = s ? Math.min(1, s.h * Math.hypot(s.vx, s.vz) / 0.1) : 0;
@@ -626,6 +631,10 @@ function render() {
   const day = T.U.uDay.value;
   sun.intensity = sky_.sunI * (1 - rain * 0.75); hemi.intensity = (0.35 + rain * 0.25) * day + 0.05;
   scene.fog.density = 0.011 + rain * 0.012; gradePass.uniforms.uRain.value = rain;
+  // 물속: 푸른 안개 · 화면 색 · 먹먹한 소리
+  { const cs = W.sample(camera.position.x, camera.position.z), u = !!(cs && cs.h > 0.05 && camera.position.y < cs.surf - 0.02);
+    if (u) { scene.fog.density = 0.24; scene.fog.color.setRGB(0.05, 0.19, 0.22).multiplyScalar(0.3 + 0.7 * day); }
+    if (u !== underwater) { underwater = u; document.body.classList.toggle('under', u); A.underwater(u); } }
   renderer.toneMappingExposure = 0.92 + (1 - day) * 0.55;
   sky.position.copy(camera.position);
   renderer.shadowMap.needsUpdate = !perf || frameN % 3 === 0;

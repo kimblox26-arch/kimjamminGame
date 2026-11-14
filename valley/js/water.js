@@ -307,7 +307,7 @@ function allocTex() {
   texW = new THREE.DataTexture(dW, SW, NZV, THREE.RGBAFormat, THREE.FloatType);
   texV = new THREE.DataTexture(dV, SW, NZV, THREE.RGBAFormat, THREE.FloatType);
   for (const t of [texW, texV]) { t.magFilter = t.minFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; }
-  U.tWater.value = texW;
+  U.tWater.value = texW; U.tVel.value = texV;
 }
 // 일부 모바일 GPU는 float 텍스처 선형 보간을 못 함 → half-float 로 대체 (첫 렌더 전에 호출)
 let half = null;

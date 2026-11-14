@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
-import { CELL, NX, NZ, X0, Z0, idx, grass, ground, terrainAt, centerX, chanW, floorHalf, U, FALL_Z, noTree } from './terrain.js';
+import { CELL, NX, NZ, X0, Z0, idx, grass, ground, terrainAt, centerX, chanW, floorHalf, U, FALL_Z, noTree, MODE } from './terrain.js';
 import { GLSL_NOISE, rng } from './noise.js';
 import { GLSL_SKY } from './sky.js';
 
@@ -41,13 +41,29 @@ function windMat(params, amp, foliage) {
   const m = new THREE.MeshStandardMaterial(params);
   m.onBeforeCompile = sh => {
     sh.uniforms.uTime = U.uTime; sh.uniforms.uRain = U.uRain;
+    if (!foliage) Object.assign(sh.uniforms, { tWater: U.tWater, tVel: U.tVel, uWInfo: U.uWInfo, uWSize: U.uWSize });
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uRain; varying vec3 vWP2;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uRain; varying vec3 vWP2;' + (foliage ? '' : '\nuniform sampler2D tWater, tVel; uniform vec4 uWInfo; uniform vec2 uWSize;'))
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         ${WIND_VS}
         float hh = ${foliage ? 'max(position.y-1.0,0.)*0.05' : 'uv.y*uv.y'};
         float gust = 1. + uRain*1.5;
-        transformed.x += wv*${amp}*hh*gust; transformed.z += wv*${amp * 0.6}*hh*gust;`)
+        transformed.x += wv*${amp}*hh*gust; transformed.z += wv*${amp * 0.6}*hh*gust;
+        ${foliage ? '' : `{ // 물에 잠긴 풀: 물살 쪽으로 눕고, 잔잔한 물에서는 천천히 흔들린다
+          vec3 bw = (instanceMatrix * vec4(0., 0., 0., 1.)).xyz;
+          vec2 wuv = vec2(((bw.x - uWInfo.x) * uWInfo.z + 0.5) / uWSize.x, ((bw.z - uWInfo.y) * uWInfo.z + 0.5) / uWSize.y);
+          vec4 wd = texture2D(tWater, wuv); vec2 wv2 = texture2D(tVel, wuv).xy;
+          float sub = clamp((wd.r - bw.y) * 6., 0., 1.) * step(0.005, wd.g) * step(0., wuv.x) * step(wuv.x, 1.);
+          if (sub > 0.) {
+            float sp = length(wv2), bend = clamp(sp * 0.9 + 0.12, 0., 1.25) * sub;
+            vec3 dirW = vec3(sp > 0.02 ? wv2 / sp : vec2(sin(uTime * 0.7 + bw.x), cos(uTime * 0.6 + bw.z)) * 0.3, 0.).xzy;
+            float s2 = dot(instanceMatrix[0].xyz, instanceMatrix[0].xyz);
+            vec3 dirL = transpose(mat3(instanceMatrix)) * vec3(dirW.x, 0., dirW.z) / s2;
+            float flick = 0.85 + 0.15 * sin(uTime * (3. + sp * 6.) + bw.x * 3. + bw.z * 2.);
+            transformed.xz += dirL.xz * bend * hh * 0.55 * flick;
+            transformed.y *= 1. - 0.55 * bend * hh;
+          }
+        }`}`)
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWP2 = (modelMatrix * instanceMatrix * vec4(transformed,1.)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWP2;\n' + GLSL_NOISE)
@@ -81,6 +97,17 @@ function chunked(scene, geo, mat, items, kind, shadow, tile = TILE) {
     scene.add(m);
     chunks.push({ m, list, full: list.length, kind, cx: cx / list.length, cz: cz / list.length });
   }
+}
+export const floorTrees = [];
+// 사각형 안 나무 치우기 (댐·발전소 자리) — 치운 나무 목록을 돌려준다
+export function clearTreesIn(xa, xb, za, zb) {
+  const out = [], zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  for (const c of chunks) {
+    if (c.kind !== 'tree') continue; let ch = false;
+    c.list.forEach((it, n) => { if (!it.gone && it.x > xa && it.x < xb && it.z > za && it.z < zb) { it.gone = true; c.m.setMatrixAt(n, zero); out.push(it); ch = true; } });
+    if (ch) c.m.instanceMatrix.needsUpdate = true;
+  }
+  return out;
 }
 export function buildGrass(scene, count) {
   const geo = bladeClump();
@@ -195,6 +222,16 @@ export function buildTrees(scene, nPine, nBroad) {
     const kind = n < nPine ? 0 : 1, v = (rand() * kinds[kind].length) | 0;
     spots[kind][v].push({ x, y: tt.y - 0.2, z, s: 0.75 + rand() * 0.6, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.3, 0.45 + rand() * 0.2], near: Math.hypot(x * 1.5, z - 36) < 48 });
     n++;
+  }
+  // 계곡 바닥 나무: 물길과 기슭 사이에 띄엄띄엄 (몸통에 부딪힘, 댐을 지으면 그 자리 나무는 치움)
+  if (MODE === 'valley') for (let n = 0, t = 0; n < 16 && t < 400; t++) {
+    const z = 8 + rand() * 60, side = rand() < 0.5 ? -1 : 1, F = floorHalf(z), w = chanW(z) * 2.8;
+    const x = centerX(z) + side * (w + rand() * Math.max(0.2, F * 0.92 - w));
+    if (Math.abs(z - FALL_Z) < 2.5) continue;
+    if (noTree.some(([nx, nz, r]) => (x - nx) ** 2 + (z - nz) ** 2 < (r + 2.2) ** 2)) continue;
+    if (floorTrees.some(o => (o.x - x) ** 2 + (o.z - z) ** 2 < 9)) continue;
+    const kind = rand() < 0.6 ? 1 : 0, v = (rand() * kinds[kind].length) | 0, it = { x, y: terrainAt(x, z).y - 0.15, z, s: 0.6 + rand() * 0.35, ry: rand() * 6.283, hsl: [0.25 + rand() * 0.06, 0.32, 0.42 + rand() * 0.2], near: true };
+    spots[kind][v].push(it); floorTrees.push(it); n++;
   }
   kinds.forEach((geos, kind) => geos.forEach((g, v) => {
     const list = spots[kind][v], mat = kind ? broadMat : pineMat;

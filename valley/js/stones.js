@@ -337,7 +337,7 @@ export function waterForces(cb) {
       fx -= dx * d * d; fz -= dz * d * d; wetN++; sv += s.surf; svx += s.vx; svz += s.vz;
     }
     const wasAbove = st.above;
-    if (!wetN) { st.above = true; st.surf = -100; if (st.forced) { st.body.resetForces(false); st.forced = false; } continue; }
+    if (!wetN) { st.above = true; st.surf = -100; if (st.forced) { st.body.resetForces(false); st.body.resetTorques(false); st.forced = false; } if (st.wetF) { st.wetF = false; st.collider.setFriction(0.85); } continue; }
     const surf = sv / wetN; st.surf = surf;
     const sub = Math.min(1, Math.max(0, (surf - bot) / (top - bot)));
     const lv = st.body.linvel();
@@ -346,14 +346,19 @@ export function waterForces(cb) {
     const P = 1000 * 9.81 * 0.5 * (2 * Math.PI * Rh / 8) * 0.6;
     fx *= P; fz *= P;
     const rx = svx / wetN - lv.x, rz = svz / wetN - lv.z, rs = Math.hypot(rx, rz);
-    const Ad = 2 * Rh * (top - bot) * sub, Fd = 0.5 * 1000 * 0.9 * Ad * rs;
+    // 물살 힘: 끌림(거친 돌 Cd 1.05) + 들림(물살이 돌 위를 지나며 위로 들어 올림, CL 0.45) — 돌 윗부분에 걸려 굴러간다
+    const Ad = 2 * Rh * (top - bot) * sub, Fd = 0.5 * 1000 * 1.05 * Ad * rs;
     fx += Fd * rx; fz += Fd * rz;
-    const fy = 1000 * 9.81 * st.vol * sub;
-    const fh = Math.hypot(fx, fz), wake = fh > st.mass * 9.81 * 0.3;
-    st.body.resetForces(false);
+    const lift = sub > 0.3 ? 0.5 * 1000 * 0.45 * Math.PI * Rh * Rh * rs * rs * Math.min(1, sub * 1.5) : 0;
+    const fy = 1000 * 9.81 * st.vol * sub + lift;
+    const fh = Math.hypot(fx, fz), wake = fh + lift > st.mass * 9.81 * 0.15;
+    // 젖은 돌은 물속에서 미끄럽다
+    const wetF = sub > 0.4; if (wetF !== !!st.wetF) { st.wetF = wetF; st.collider.setFriction(wetF ? 0.55 : 0.85); }
+    st.body.resetForces(false); st.body.resetTorques(false);
     if (!Number.isFinite(fx + fy + fz)) continue;
     if (st.body.isSleeping() && !wake) { st.forced = false; continue; }
-    st.body.addForce({ x: fx, y: fy, z: fz }, wake);
+    st.body.addForce({ x: 0, y: fy, z: 0 }, wake);
+    st.body.addForceAtPoint({ x: fx, y: 0, z: fz }, { x: st.cx, y: st.cy + st.hy * 0.55, z: st.cz }, wake);
     st.forced = true;
   }
 }

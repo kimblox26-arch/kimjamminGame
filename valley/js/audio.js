@@ -81,7 +81,9 @@ export function init() {
   if (ctx) { ctx.resume(); return; }
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
-  master = ctx.createGain(); master.gain.value = 0.9; master.connect(comp).connect(ctx.destination);
+  master = ctx.createGain(); master.gain.value = 0.9;
+  uw = ctx.createBiquadFilter(); uw.type = 'lowpass'; uw.frequency.value = 20000; uw.Q.value = 0.7; // 물속: 소리가 먹먹하게
+  master.connect(uw).connect(comp).connect(ctx.destination);
   white = noiseBuf(0); brown = noiseBuf(1);
   river = loop(brown, 'lowpass', 700, 0.4);
   riverHi = loop(white, 'bandpass', 2400, 0.6);
@@ -188,4 +190,6 @@ function birds() {
   };
   setTimeout(sing, 1500);
 }
+let uw;
+export function underwater(on) { if (uw) uw.frequency.setTargetAtTime(on ? 520 : 20000, ctx.currentTime, 0.08); }
 export function setMuted(m) { if (master) master.gain.value = m ? 0 : 0.9; }

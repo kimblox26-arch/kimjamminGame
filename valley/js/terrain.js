@@ -11,7 +11,7 @@ export const idx = (i, j) => j * NXV + i;
 // 모든 셰이더가 공유하는 유니폼
 export const U = {
   uTime: { value: 0 },
-  tWater: { value: null },
+  tWater: { value: null }, tVel: { value: null },
   uWInfo: { value: new THREE.Vector4(X0 + SX0 * CELL, Z0, 1 / CELL, 0) },
   uWSize: { value: new THREE.Vector2(SW, NZV) },
   uSunDir: { value: new THREE.Vector3(-0.38, 0.82, 0.43).normalize() },
