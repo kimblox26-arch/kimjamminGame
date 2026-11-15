@@ -5,20 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>HAND VR — 손으로 하는 웹 VR</title>
 <meta name="description" content="웹캠이 내 손을 인식해 화면 속 3D 손이 그대로 움직이는 웹 VR">
-<link rel="stylesheet" href="./style.css?v=20261108a">
+<link rel="stylesheet" href="./style.css?v=20261115a">
 <!-- 업데이트하면 v 값을 바꿔서, 브라우저에 남은 옛 파일 대신 새 파일을 받게 한다 -->
 <script type="importmap">
 {
   "imports": {
     "three": "../vendor/three/three.module.min.js",
     "three/addons/": "../vendor/three/addons/",
-    "./js/finger-pose.js": "./js/finger-pose.js?v=20261108a",
-    "./js/hand-rig.js": "./js/hand-rig.js?v=20261108a",
-    "./js/hands.js": "./js/hands.js?v=20261108a",
-    "./js/scan.js": "./js/scan.js?v=20261108a",
-    "./js/skin.js": "./js/skin.js?v=20261108a",
-    "./js/tracking.js": "./js/tracking.js?v=20261108a",
-    "./js/world.js": "./js/world.js?v=20261108a"
+    "./js/finger-pose.js": "./js/finger-pose.js?v=20261115a",
+    "./js/hand-rig.js": "./js/hand-rig.js?v=20261115a",
+    "./js/hands.js": "./js/hands.js?v=20261115a",
+    "./js/scan.js": "./js/scan.js?v=20261115a",
+    "./js/skin.js": "./js/skin.js?v=20261115a",
+    "./js/tracking.js": "./js/tracking.js?v=20261115a",
+    "./js/world.js": "./js/world.js?v=20261115a"
   }
 }
 </script>
@@ -26,6 +26,7 @@
 <body>
 
 <canvas id="gl"></canvas>
+<canvas id="tt-canvas"></canvas>
 <video id="cam" playsinline muted autoplay></video>
 
 <!-- ───────── 시작 화면 ───────── -->
@@ -80,7 +81,7 @@
   </div>
   <div id="toast"></div>
   <div id="preview-box" class="glass"><canvas id="preview" width="320" height="180"></canvas><div class="pv-label">카메라 (거울 화면)</div></div>
-  <div id="top-btns"><button id="land-btn" class="glass"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="10" width="19" height="10" rx="2"/><path d="M5.5 13.5v3"/><path d="M5 6.5a9.5 9.5 0 0 1 13.5-1.2"/><path d="M18.8 2.6v2.9h-2.9"/></svg><span>가로</span></button><button id="help-btn" class="glass"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6"/><path d="M12 17h.01"/></svg><span>도움말 (H)</span></button></div>
+  <div id="top-btns"><button id="tt-btn" class="glass"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg><span>틱톡 (T)</span></button><button id="rec-btn" class="glass"><span class="dot"></span><span>녹화 (R)</span></button><button id="land-btn" class="glass"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="10" width="19" height="10" rx="2"/><path d="M5.5 13.5v3"/><path d="M5 6.5a9.5 9.5 0 0 1 13.5-1.2"/><path d="M18.8 2.6v2.9h-2.9"/></svg><span>가로</span></button><button id="help-btn" class="glass"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6"/><path d="M12 17h.01"/></svg><span>도움말 (H)</span></button></div>
 
   <div id="help" class="glass hidden">
     <h2>도움말</h2>
@@ -101,6 +102,7 @@
           <tr><td>K</td><td>손 거리·손 스캔 다시 하기</td></tr>
           <tr><td>X</td><td>왼손·오른손 바꾸기 (손이 뒤집혀 보이면)</td></tr>
           <tr><td>Q</td><td>화질: 자동(기기 성능에 맞춤) → 고품질 → 보통(빠름)</td></tr>
+          <tr><td>T / R</td><td>틱톡 모드(9:16 세로 + 얼굴 캠) / 녹화 시작·멈춤 → 영상 파일 저장</td></tr>
           <tr><td>V / H</td><td>카메라 화면 / 도움말</td></tr>
           <tr><td>가로 버튼</td><td>휴대폰: 전체 화면 + 가로 고정 (아이폰은 직접 가로로 돌리기)</td></tr>
         </table>
@@ -110,6 +112,6 @@
   </div>
 </div>
 
-<script type="module" src="./js/main.js?v=20261108a"></script>
+<script type="module" src="./js/main.js?v=20261115a"></script>
 </body>
 </html>

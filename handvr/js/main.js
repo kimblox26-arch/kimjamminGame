@@ -73,13 +73,22 @@ const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, 
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.22, 0.55, 3.0));
 composer.addPass(new OutputPass());
+// 틱톡 모드면 9:16 세로 화면, 아니면 창 전체
+const TT_W = 720, TT_H = 1280;
+const tt = { on: false, rec: null, chunks: [], t0: 0 };
+function viewSize() {
+  if (!tt.on) return [innerWidth, innerHeight];
+  const h = Math.min(innerHeight, innerWidth * 16 / 9);
+  return [Math.round(h * 9 / 16), Math.round(h)];
+}
 function applyQuality() {
   if (settings.quality === 'high') qLevel = 4;
   else if (settings.quality === 'normal') qLevel = 2;
   const L = LEVELS[qLevel], pr = Math.min(devicePixelRatio, L.pr);
+  const [w, h] = viewSize();
   renderer.setPixelRatio(pr);
-  renderer.setSize(innerWidth, innerHeight);
-  if (L.post) { composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight); }
+  renderer.setSize(w, h);
+  if (L.post) { composer.setPixelRatio(pr); composer.setSize(w, h); }
   world.setShadowQuality(...L.shadow);
 }
 applyQuality();
@@ -105,6 +114,8 @@ addEventListener('keydown', e => {
     case 'KeyX': settings.swap = !settings.swap; toast('왼손 ↔ 오른손 바꿈'); save(); break;
     case 'KeyV': settings.preview = !settings.preview; save(); break;
     case 'KeyH': $('#help').classList.toggle('hidden'); break;
+    case 'KeyT': toggleTikTok(); break;
+    case 'KeyR': if (tt.on) toggleRec(); break;
   }
 });
 $('#help-btn').addEventListener('click', () => $('#help').classList.toggle('hidden'));
@@ -121,7 +132,8 @@ $('#land-btn').addEventListener('click', () => {
 });
 // 가로로 넓은 화면은 시야각을 조금 좁혀서 손이 작고 늘어져 보이지 않게
 function fitCamera() {
-  camera.aspect = innerWidth / innerHeight;
+  const [w, h] = viewSize();
+  camera.aspect = w / h;
   camera.fov = camera.aspect > 1.05 ? 56 : 70;
   camera.updateProjectionMatrix();
 }
@@ -129,7 +141,89 @@ fitCamera();
 addEventListener('resize', () => {
   fitCamera();
   applyQuality();
+  layoutTikTok();
 });
+
+// ───────── 틱톡 모드: 9:16 세로 화면 + 얼굴 캠 + 녹화 ─────────
+const ttc = $('#tt-canvas'), tctx = ttc.getContext('2d');
+ttc.width = TT_W; ttc.height = TT_H;
+function toggleTikTok() {
+  if (tt.rec) stopRec();
+  tt.on = !tt.on;
+  document.body.classList.toggle('tt', tt.on);
+  $('#tt-btn').classList.toggle('on', tt.on);
+  fitCamera(); applyQuality(); layoutTikTok();
+  toast(tt.on ? '틱톡 모드 — 빨간 버튼(R)으로 녹화' : '틱톡 모드 끔');
+}
+function layoutTikTok() {
+  if (!tt.on) return;
+  const [w, h] = viewSize();
+  Object.assign(ttc.style, { width: w + 'px', height: h + 'px' });
+}
+function drawTikTok() {
+  const g = tctx, W = TT_W, H = TT_H;
+  g.drawImage(renderer.domElement, 0, 0, W, H);
+  // 오른쪽 아래 동그란 얼굴 캠 (거울)
+  const v = tracker.video;
+  if (v.readyState >= 2 && v.videoWidth) {
+    const r = 120, cx = W - r - 30, cy = H - r - 190, s = Math.min(v.videoWidth, v.videoHeight);
+    g.save();
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.closePath();
+    g.lineWidth = 10; g.strokeStyle = '#fff'; g.stroke(); g.clip();
+    g.translate(cx + r, cy - r); g.scale(-1, 1);
+    g.drawImage(v, (v.videoWidth - s) / 2, (v.videoHeight - s) / 2, s, s, 0, 0, r * 2, r * 2);
+    g.restore();
+  }
+  // 워터마크
+  g.font = '900 40px system-ui, sans-serif';
+  g.textAlign = 'left'; g.textBaseline = 'top';
+  g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.35)'; g.fillStyle = '#fff';
+  g.strokeText('HAND VR', 30, 34); g.fillText('HAND VR', 30, 34);
+  // 녹화 중 표시
+  if (tt.rec) {
+    const sec = Math.floor((performance.now() - tt.t0) / 1000);
+    const txt = `REC ${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+    g.font = '700 32px system-ui, sans-serif'; g.textAlign = 'right';
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(W - 270, 30, 240, 52);
+    g.fillStyle = sec % 2 ? '#ff3b5c' : '#ff8a9e';
+    g.beginPath(); g.arc(W - 246, 56, 10, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#fff'; g.fillText(txt, W - 44, 40);
+  }
+}
+function pickMime() {
+  for (const m of ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'])
+    if (window.MediaRecorder?.isTypeSupported?.(m)) return m;
+  return '';
+}
+function toggleRec() { tt.rec ? stopRec() : startRec(); }
+function startRec() {
+  if (!window.MediaRecorder || !ttc.captureStream) { toast('이 브라우저는 화면 녹화를 지원하지 않아요', 3000); return; }
+  const mime = pickMime();
+  let rec;
+  try { rec = new MediaRecorder(ttc.captureStream(30), { ...(mime && { mimeType: mime }), videoBitsPerSecond: 6e6 }); }
+  catch (e) { toast('녹화를 시작하지 못했어요: ' + e.message, 3000); return; }
+  tt.chunks = [];
+  rec.ondataavailable = e => { if (e.data.size) tt.chunks.push(e.data); };
+  rec.onstop = () => {
+    const type = rec.mimeType || mime || 'video/webm';
+    const blob = new Blob(tt.chunks, { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `handvr-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast('녹화 저장됨! 틱톡에 올려 보세요', 3000);
+  };
+  rec.start(1000);
+  tt.rec = rec; tt.t0 = performance.now();
+  $('#rec-btn').classList.add('on');
+}
+function stopRec() {
+  tt.rec?.stop(); tt.rec = null;
+  $('#rec-btn').classList.remove('on');
+}
+$('#tt-btn').addEventListener('click', toggleTikTok);
+$('#rec-btn').addEventListener('click', toggleRec);
 
 // ───────── 시작 화면 ─────────
 for (const [name, hex] of [['auto', null], ...Object.entries(SKIN_TONES)]) {
@@ -342,6 +436,7 @@ function frame(now) {
   if (playing) updateHud(now);
   autoQuality(now);
   if (LEVELS[qLevel].post) composer.render(); else renderer.render(scene, camera);
+  if (tt.on) drawTikTok(); // 렌더 직후 같은 프레임에서 복사해야 WebGL 화면이 비지 않는다
 }
 requestAnimationFrame(frame);
 

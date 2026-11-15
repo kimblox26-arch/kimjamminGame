@@ -99,3 +99,17 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe6ff; col
   .hero-hand { width: 76px; }
   .sub { margin: 2px 0 10px; }
 }
+
+/* ── 틱톡 모드: 9:16 세로 화면 ── */
+#tt-canvas { display: none; }
+body.tt { background: #0b0d12; }
+body.tt #gl, body.tt #tt-canvas { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+body.tt #tt-canvas { display: block; position: fixed; }
+body.tt #chips, body.tt #preview-box { display: none !important; }
+#rec-btn { display: none !important; }
+body.tt #rec-btn { display: inline-flex !important; }
+#rec-btn .dot { width: 12px; height: 12px; border-radius: 50%; background: #ff3b5c; }
+#rec-btn.on { background: #ff3b5c; color: #fff; }
+#rec-btn.on .dot { background: #fff; animation: blink 1s steps(2) infinite; }
+#tt-btn.on { background: #111; color: #fff; }
+@keyframes blink { 50% { opacity: .2; } }
