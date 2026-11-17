@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>수능 감독관: AI 안경을 찾아라</title>
+<meta name="description" content="수능 시험장에서 AI 안경을 쓴 부정행위 학생을 찾아내는 3D 웹 게임">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css?v=20261117b">
+<script type="importmap">
+{ "imports": {
+  "three": "../vendor/three/three.module.min.js",
+  "three/addons/": "../vendor/three/addons/",
+  "./js/data.js": "./js/data.js?v=20261117b",
+  "./js/audio.js": "./js/audio.js?v=20261117b",
+  "./js/world.js": "./js/world.js?v=20261117b"
+} }
+</script>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="labels"></div>
+<div id="flash"></div>
+<div id="glassFx"><i></i><i></i><i></i><i></i><span>AI GLASS · ONLINE</span></div>
+
+<!-- 메인 화면 -->
+<section id="menu" class="screen">
+  <div class="menu-card">
+    <div class="logo">
+      <span class="logo-sub">2027학년도 대학수학능력시험</span>
+      <h1>수능 감독관</h1>
+      <h2>AI 안경을 찾아라!</h2>
+    </div>
+    <div class="mode-row">
+      <button id="mTeacher" class="mode t"><i data-ic="teacher"></i><b>선생님 모드</b><small>감독관이 되어 AI 안경 부정행위 학생을 잡아라</small></button>
+      <button id="mStudent" class="mode s"><i data-ic="student"></i><b>학생 모드</b><small>AI 안경으로 몰래 문제를 풀어라 (들키면 퇴실!)</small></button>
+    </div>
+    <div class="menu-foot">
+      <button id="mSettings" class="pill"><i data-ic="gear"></i>설정</button>
+      <span class="coinbox"><i data-ic="coin"></i><b id="mCoins">0</b></span>
+    </div>
+  </div>
+</section>
+
+<!-- 게임 HUD -->
+<div id="hud" class="hidden">
+  <div id="topbar">
+    <div id="hearts"></div>
+    <div id="periodBox"><div><b id="periodName">제1교시 국어</b><span id="clockTxt">08:40</span></div><div id="pbar"><i></i></div></div>
+    <div class="coinbox" id="coinBox"><i data-ic="coin"></i><b id="coins">0</b></div>
+    <button id="btnSet" class="icbtn" aria-label="설정"><i data-ic="gear"></i></button>
+  </div>
+  <div id="remain" class="hidden"></div>
+
+  <!-- 선생님 모드 조작 -->
+  <div id="tctl">
+    <button id="btnChat" class="icbtn" aria-label="말하기"><i data-ic="chat"></i></button>
+    <div id="chatLog"></div>
+    <div id="chatBar" class="hidden"><input id="chatIn" maxlength="60" placeholder="학생들에게 말하기..." autocomplete="off"><button id="chatSend" class="icbtn" aria-label="보내기"><i data-ic="send"></i></button></div>
+    <div id="joy"><div id="knob"></div></div>
+    <button id="btnJump" class="rbtn" aria-label="점프"><i data-ic="jump"></i></button>
+    <button id="btnAtk" class="rbtn big" aria-label="공격"><i id="atkIc" data-ic="attack"></i><span id="atkCd"></span></button>
+    <div id="hotbar"></div>
+    <button id="btnResult" class="pill go hidden">결과 보기</button>
+  </div>
+
+  <!-- 학생 모드 조작 -->
+  <div id="sctl" class="hidden">
+    <div id="suspBox"><i data-ic="eye"></i><div id="suspBar"><i></i></div><span id="watchTxt">의심도</span></div>
+    <div id="exam">
+      <div class="ex-head"><b id="exSubj">국어 영역</b><span id="exNo">1번</span><span id="exScore"></span></div>
+      <div class="ex-btns">
+        <button id="btnAsk" class="pill ai"><i data-ic="ai"></i>AI 안경에게 묻기</button>
+        <button id="btnSolve" class="pill solve"><i data-ic="pencil"></i>문제 풀기</button>
+      </div>
+      <p id="exQ"></p>
+      <div id="exChoices"></div>
+      <div id="exAns"></div>
+    </div>
+    <div id="aiPanel" class="hidden">
+      <div class="ai-head"><i data-ic="ai"></i><b>AI GLASS</b><button id="aiClose" class="x" aria-label="닫기"><i data-ic="close"></i></button></div>
+      <div id="aiLog"></div>
+      <div class="ai-in"><input id="aiIn" placeholder="아무거나 물어보세요 (문제, 계산, 번역...)" autocomplete="off"><button id="aiSend" aria-label="보내기"><i data-ic="send"></i></button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 무기 상점 -->
+<div id="shop" class="hidden">
+  <button id="shopExit" class="pill"><i data-ic="exit"></i>나가기</button>
+  <div class="shop-head"><b>감독관 책상 · 무기 상점</b><span id="shopCoins" class="coinbox"></span></div>
+  <div id="shopCards"></div>
+</div>
+
+<!-- 입실 애니메이션 -->
+<div id="cine" class="hidden"><div class="bar top"></div><div class="bar bot"></div><div id="cineTxt"></div><button id="skip" class="pill">건너뛰기</button></div>
+
+<div id="banner"></div>
+<div id="toasts"></div>
+<div id="modal" class="hidden"><div class="mbox" id="mbox"></div></div>
+
+<!-- 설정 -->
+<div id="settings" class="hidden">
+  <div class="mbox">
+    <h3><i data-ic="gear"></i>설정</h3>
+    <label class="row"><span>소리</span><input type="checkbox" id="optSound" class="sw"></label>
+    <label class="row"><span>음성 (선생님·학생 목소리)</span><input type="checkbox" id="optVoice" class="sw"></label>
+    <div class="row"><span>그래픽</span><div class="seg"><button data-q="low">저</button><button data-q="mid">중</button><button data-q="high">최고</button></div></div>
+    <button id="btnHack" class="pill hackbtn"><i data-ic="hack"></i>해킹</button>
+    <div id="hackPwBox" class="hidden"><input id="hackPw" type="password" placeholder="비밀번호" autocomplete="off"><button id="hackOk" class="pill">확인</button><p id="hackMsg"></p></div>
+    <div class="row2"><button id="btnHome" class="pill">메인 화면으로</button><button id="setClose" class="pill go">닫기</button></div>
+  </div>
+</div>
+
+<!-- 해킹 모드 -->
+<div id="hackWin" class="hidden">
+  <div class="hw-head"><i data-ic="hack"></i><b>HACK MODE</b><button id="hackMin" class="x" aria-label="작게"><i data-ic="close"></i></button></div>
+  <label class="hrow"><span>돈 무한</span><input type="checkbox" class="sw" data-hk="money"></label>
+  <label class="hrow"><span>공격 쿨타임 없애기</span><input type="checkbox" class="sw" data-hk="nocd"></label>
+  <label class="hrow"><span>AI 안경 쓴 학생 찾기</span><input type="checkbox" class="sw" data-hk="find"></label>
+</div>
+<button id="hackBall" class="hidden" aria-label="해킹 창 열기"><i data-ic="hack"></i></button>
+
+<script type="module" src="./js/game.js?v=20261117b"></script>
+</body>
+</html>
