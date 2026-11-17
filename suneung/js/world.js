@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { studentBody, teacherBody, viewArms } from './human.js';
 
 export const R = { students: [], obstacles: [], debris: [], decals: [] };
 export const Q = { level: 'high' };
@@ -76,12 +77,12 @@ export function paintMat(color) { const k = 'p' + color; return matCache[k] || (
 export function buildWorld(canvas) {
   const r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false });
   r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
-  r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
+  r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = .95;
   R.renderer = r; R.scene = new THREE.Scene(); R.scene.background = new THREE.Color('#151b26');
   R.cam = new THREE.PerspectiveCamera(55, 1, .05, 80);
   textures(); misc(); initMats(); lights(); room(); furniture(); sunbeams();
   R.teacher = buildTeacher(); R.scene.add(R.teacher.root);
-  shopItems(); envMap();
+  shopItems(); viewModel(); envMap(); R.vmScene.environment = R.scene.environment;
   R.pfxA = new PFX(1600, true, R.glowTex); R.pfxN = new PFX(1400, false, R.glowTex); R.pfxS = new PFX(700, false, R.smokeTex);
   setQuality(matchMedia('(pointer:coarse)').matches ? 'mid' : 'high');
 }
@@ -102,7 +103,8 @@ function makeComposer(samples, fxaa) {
   const rt = new THREE.WebGLRenderTarget(sz.x, sz.y, { type: THREE.HalfFloatType, samples });
   const c = new EffectComposer(r, rt);
   c.addPass(new RenderPass(R.scene, R.cam));
-  R.bloom = new UnrealBloomPass(new THREE.Vector2(sz.x / 2, sz.y / 2), .5, .55, .86); c.addPass(R.bloom);
+  R.vmPass = new RenderPass(R.vmScene, R.vmCam); R.vmPass.clear = false; R.vmPass.clearDepth = true; c.addPass(R.vmPass);
+  R.bloom = new UnrealBloomPass(new THREE.Vector2(sz.x / 2, sz.y / 2), .28, .45, .92); c.addPass(R.bloom);
   c.addPass(new OutputPass());
   R.grade = new ShaderPass(GradeShader); c.addPass(R.grade);
   R.fxaa = fxaa ? new ShaderPass(FXAAShader) : null; if (R.fxaa) c.addPass(R.fxaa);
@@ -122,13 +124,35 @@ export function setQuality(lv) {
 }
 export function resizeGfx() {
   const w = innerWidth, h = innerHeight, r = R.renderer; r.setSize(w, h, false);
-  R.cam.aspect = w / h; R.cam.updateProjectionMatrix();
+  R.cam.aspect = w / h; R.cam.updateProjectionMatrix(); R.vmCam.aspect = w / h; R.vmCam.updateProjectionMatrix();
   if (R.comp) { R.comp.setPixelRatio(r.getPixelRatio()); R.comp.setSize(w, h); if (R.fxaa) R.fxaa.material.uniforms.resolution.value.set(1 / (w * r.getPixelRatio()), 1 / (h * r.getPixelRatio())); }
   const sc = h * r.getPixelRatio() / (2 * Math.tan(R.cam.fov * PI / 360));
   for (const p of [R.pfxA, R.pfxN, R.pfxS]) if (p) p.mat.uniforms.scale.value = sc;
 }
 export function renderFrame(t) {
-  if (R.comp) { R.grade.uniforms.time.value = t; R.comp.render(); } else R.renderer.render(R.scene, R.cam);
+  const vm = R.vm.root.visible;
+  if (R.comp) { R.vmPass.enabled = vm; R.grade.uniforms.time.value = t; R.comp.render(); }
+  else { const r = R.renderer; r.autoClear = false; r.clear(); r.render(R.scene, R.cam); if (vm) { r.clearDepth(); r.render(R.vmScene, R.vmCam); } }
+}
+function viewModel() {
+  const s = (R.vmScene = new THREE.Scene()); R.vmCam = new THREE.PerspectiveCamera(55, 1, .01, 10);
+  s.add(new THREE.HemisphereLight(0xfff4e6, 0x6a5440, .8)); const d = new THREE.DirectionalLight(0xffe2c0, 2.4); d.position.set(-2, 3, 1); s.add(d);
+  const A = viewArms(), vm = (R.vm = { root: new THREE.Group(), pivot: new THREE.Group(), r: A.r, l: A.l, wpn: {} });
+  s.add(vm.root); vm.root.add(vm.pivot); vm.pivot.add(A.r.a, A.l.a);
+  for (const k of ['bat', 'pistol', 'ak', 'rpg', 'tackle']) { const w = buildWeapon(k); w.visible = false; w.scale.setScalar(k === 'pistol' ? 1 : .86); vm.pivot.add(w); vm.wpn[k] = w; }
+  vm.root.visible = false;
+}
+// 강조 테두리 (프레넬 림 라이트) — 수능 종료 후 빨강/초록, 해킹 찾기
+const RIM = {};
+export function rimMat(hex) {
+  return RIM[hex] || (RIM[hex] = new THREE.ShaderMaterial({ uniforms: { col: { value: new THREE.Color(hex) } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv=modelViewMatrix*vec4(position,1.); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }',
+    fragmentShader: 'uniform vec3 col; varying vec3 vN; varying vec3 vV; void main(){ float f=pow(1.-abs(dot(vN,vV)),2.); gl_FragColor=vec4(col*(f*2.4+.1),1.); }' }));
+}
+export function setRim(st, hex) {
+  if (!hex) { if (st.rims) st.rims.forEach((m) => (m.visible = false)); return; }
+  if (!st.rims) { st.rims = []; st.fig.traverse((o) => { if (o.isMesh && !o.userData.noTint && !o.userData.rim) { const m = new THREE.Mesh(o.geometry, rimMat(hex)); m.userData.rim = true; m.renderOrder = 7; o.add(m); st.rims.push(m); } }); }
+  st.rims.forEach((m) => { m.visible = true; m.material = rimMat(hex); });
 }
 
 // ───────── 절차적 텍스처 ─────────
@@ -142,7 +166,7 @@ function grain(g, w, h, dark, n, vertical, amp = 4) {
   g.globalAlpha = 1;
 }
 function noise(g, w, h, n, a, sz = 2) { for (let i = 0; i < n; i++) { g.fillStyle = Math.random() < .5 ? `rgba(0,0,0,${rand(0, a)})` : `rgba(255,255,255,${rand(0, a)})`; g.fillRect(rand(0, w), rand(0, h), sz, sz); } }
-function normalFrom(hc, st = 2) {
+export function normalFrom(hc, st = 2) {
   const w = hc.width, h = hc.height, src = hc.getContext('2d').getImageData(0, 0, w, h).data, out = mkCanvas(w, h), og = out.getContext('2d'), od = og.createImageData(w, h), d = od.data;
   const H = (x, y) => src[((((y + h) % h) * w) + ((x + w) % w)) * 4] / 255;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -235,7 +259,7 @@ function initMats() {
 function lights() {
   const s = R.scene;
   s.add(new THREE.HemisphereLight(0xfff4e6, 0x6a5440, .45));
-  const sun = new THREE.DirectionalLight(0xffdfb0, 5.2); sun.position.copy(SUN_POS); sun.castShadow = true;
+  const sun = new THREE.DirectionalLight(0xffdfb0, 4.2); sun.position.copy(SUN_POS); sun.castShadow = true;
   const sh = sun.shadow; sh.mapSize.set(2048, 2048); Object.assign(sh.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 40 });
   sh.bias = -.0003; sh.normalBias = .025; sh.radius = 3; s.add(sun, sun.target); R.sun = sun;
   R.lamps = [];
@@ -401,7 +425,7 @@ function sunbeams() {
     R.beamBoxes.push({ W, Fp });
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('a', new THREE.Float32BufferAttribute(al, 1));
-  const m = new THREE.ShaderMaterial({ uniforms: { col: { value: new THREE.Color(1, .82, .55) }, op: { value: .05 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  const m = new THREE.ShaderMaterial({ uniforms: { col: { value: new THREE.Color(1, .82, .55) }, op: { value: .03 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
     vertexShader: 'attribute float a; varying float va; void main(){ va=a; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
     fragmentShader: 'uniform vec3 col; uniform float op; varying float va; void main(){ gl_FragColor=vec4(col*op*va,1.); }' });
   R.beams = new THREE.Mesh(g, m); R.beams.renderOrder = 4; R.scene.add(R.beams);
@@ -426,7 +450,7 @@ function furniture() {
   const sc = R.scene;
   const td = new THREE.Group(); td.position.set(0, 0, -6.0); sc.add(td);
   td.add(M(merge([{ g: B(1.8, .05, .8), p: [0, .8, 0] }, { g: B(1.8, .72, .03), p: [0, .42, .385] }, { g: B(.03, .76, .78), p: [-.885, .4, 0] }, { g: B(.03, .76, .78), p: [.885, .4, 0] }, { g: B(.45, .6, .74), p: [.6, .42, 0] }]), R.mDark));
-  td.add(M(merge([{ g: B(.14, .025, .02), c: '#d8c06a', p: [.6, .62, -.38], k: K.chrome }, { g: B(.14, .025, .02), c: '#d8c06a', p: [.6, .32, -.38], k: K.chrome }, { g: B(.5, .14, .02), c: '#f3e7c4', p: [0, .62, .4], k: K.paper }, { g: B(.32, .02, .24), c: '#1d3f8a', p: [.62, .835, -.2], r: [0, .1, 0], k: K.plastic }, { g: B(.3, .03, .22), c: '#fbfbf6', p: [-.62, .84, -.22], k: K.paper }])));
+  td.add(M(merge([{ g: B(.14, .025, .02), c: '#d8c06a', p: [.6, .62, -.38], k: K.chrome }, { g: B(.14, .025, .02), c: '#d8c06a', p: [.6, .32, -.38], k: K.chrome }, { g: B(.5, .14, .02), c: '#f3e7c4', p: [0, .62, .4], k: K.paper }])));
   const cp = [{ g: CA(.22, .06, 10), c: '#22252e', p: [0, .5, 0], s: [1.15, .35, 1.1], k: K.cloth }, { g: CA(.22, .3, 10), c: '#22252e', p: [0, .88, -.25], s: [1.1, 1, .3], r: [-.08, 0, 0], k: K.cloth }, { g: CY(.025, .025, .38), c: '#777', p: [0, .27, 0], k: K.chrome }, { g: B(.05, .05, .3), c: '#333', p: [0, .5, -.2], k: K.metal }];
   for (let i = 0; i < 5; i++) { const a = i / 5 * 2 * PI; cp.push({ g: B(.05, .035, .3), c: '#2a2a2a', p: [Math.sin(a) * .15, .07, Math.cos(a) * .15], r: [0, a, 0], k: K.plastic }, { g: SP(.035, 10, 8), c: '#151515', p: [Math.sin(a) * .29, .035, Math.cos(a) * .29], k: K.rubber }); }
   const ch = M(merge(cp)); ch.position.set(CHAIR.x, 0, CHAIR.z); sc.add(ch);
@@ -509,41 +533,30 @@ export function buildWeapon(k) {
   return g;
 }
 function shopItems() {
-  R.shopItems = {};
+  R.shopItems = {}; R.tags = {};
   ['bat', 'pistol', 'ak', 'rpg', 'tackle'].forEach((k, i) => {
     const w = buildWeapon(k), base = new THREE.Group(); base.add(w);
     w.rotation.set(0, PI, k === 'tackle' ? 0 : HP); w.scale.setScalar(k === 'rpg' ? .72 : k === 'pistol' ? 1.4 : 1);
     base.position.set(-.72 + i * .36, .86, -6.0); base.userData = { k, y: .86 }; R.scene.add(base); R.shopItems[k] = base;
+    const c = mkCanvas(320, 128), t = ctex(c), tag = new THREE.Mesh(new THREE.PlaneGeometry(.26, .104), new THREE.MeshStandardMaterial({ map: t, roughness: .4, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: .35 }));
+    tag.position.set(-.72 + i * .36, .835, -6.3); tag.lookAt(0, 1.4, -7.25); tag.userData = { k }; R.scene.add(tag); R.tags[k] = { tag, c, t };
   });
 }
-
-// ───────── 사람 공통 부품 ─────────
-function headParts(skin, hair, style, eye = '#2a1a10') {
-  const p = [
-    { g: SP(.118, 28, 22), c: skin, p: [0, .13, 0], s: [1, 1.08, 1.02], k: K.skin },
-    { g: SP(.06, 16, 12), c: skin, p: [0, .06, -.045], s: [1.45, 1, 1.15], k: K.skin },
-    { g: SP(.017, 14, 10), c: '#f6f4ef', p: [-.042, .135, -.104], s: [1.15, .8, .55], k: K.eye }, { g: SP(.017, 14, 10), c: '#f6f4ef', p: [.042, .135, -.104], s: [1.15, .8, .55], k: K.eye },
-    { g: SP(.0095, 12, 8), c: eye, p: [-.042, .135, -.112], s: [1, 1, .5], k: K.eye }, { g: SP(.0095, 12, 8), c: eye, p: [.042, .135, -.112], s: [1, 1, .5], k: K.eye },
-    { g: SP(.0028, 6, 4), c: '#fff', p: [-.038, .139, -.117], k: K.eye }, { g: SP(.0028, 6, 4), c: '#fff', p: [.046, .139, -.117], k: K.eye },
-    { g: CA(.006, .03, 6), c: hair, p: [-.044, .163, -.11], r: [0, 0, HP + .12], k: K.hair }, { g: CA(.006, .03, 6), c: hair, p: [.044, .163, -.11], r: [0, 0, HP - .12], k: K.hair },
-    { g: SP(.016, 12, 10), c: skin, p: [0, .108, -.122], s: [.8, 1.05, 1.1], k: K.skin },
-    { g: CA(.006, .026, 6), c: '#b8605a', p: [0, .073, -.113], r: [0, 0, HP], k: [.4, 0] }, { g: CA(.005, .02, 6), c: '#a04a46', p: [0, .067, -.11], r: [0, 0, HP], k: [.4, 0] },
-    { g: SP(.022, 10, 8), c: '#f0a8a0', p: [-.065, .1, -.088], s: [1, .7, .4], k: K.skin }, { g: SP(.022, 10, 8), c: '#f0a8a0', p: [.065, .1, -.088], s: [1, .7, .4], k: K.skin },
-    { g: SP(.026, 10, 8), c: skin, p: [-.118, .125, 0], s: [.45, 1, .8], k: K.skin }, { g: SP(.026, 10, 8), c: skin, p: [.118, .125, 0], s: [.45, 1, .8], k: K.skin },
-  ];
-  const H = (g, pp, s, r) => p.push({ g, c: hair, p: pp, s, r, k: K.hair });
-  H(SP(.127, 24, 16, 0, 2 * PI, 0, style === 'buzz' ? 1.45 : 1.72), [0, .145, .012]);
-  if (style !== 'buzz') {
-    H(SP(.06, 12, 10), [0, .235, .02], [1.6, .7, 1.6]); H(SP(.05, 12, 10), [-.085, .19, .03], [.8, 1.1, 1.3]); H(SP(.05, 12, 10), [.085, .19, .03], [.8, 1.1, 1.3]);
-    H(CA(.03, .14, 8), [0, .21, -.098], [1, 1, .5], [0, 0, HP]); H(SP(.04, 10, 8), [-.05, .2, -.1], [1, .8, .6]);
+export function drawTag(k, st) {
+  const { c, t } = R.tags[k], g = c.getContext('2d'), W = 320, H = 128; g.clearRect(0, 0, W, H);
+  g.fillStyle = st.sel ? '#1d1a0e' : '#121722'; g.beginPath(); if (g.roundRect) g.roundRect(6, 6, W - 12, H - 12, 22); else g.rect(6, 6, W - 12, H - 12); g.fill();
+  g.lineWidth = st.sel ? 7 : 3; g.strokeStyle = st.sel ? '#ffd23f' : 'rgba(255,255,255,.25)'; g.stroke();
+  g.textBaseline = 'middle'; g.textAlign = 'center';
+  if (st.owned) { g.fillStyle = st.eq ? '#ffd23f' : '#5ef08f'; g.font = `bold 46px ${F}`; g.fillText(st.eq ? '장착 중' : (st.sel ? '탭: 장착' : '보유'), W / 2, H / 2 + 2); }
+  else {
+    const x = W / 2 - 52, y = st.sel ? 50 : H / 2; const gr = g.createRadialGradient(x - 8, y - 8, 2, x, y, 26); gr.addColorStop(0, '#fff3b0'); gr.addColorStop(.5, '#ffc83a'); gr.addColorStop(1, '#b07800');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 24, 0, 7); g.fill(); g.strokeStyle = '#7a5200'; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 16, 0, 7); g.stroke();
+    g.fillStyle = '#fff'; g.font = `bold 54px ${F}`; g.textAlign = 'left'; g.fillText(st.price, x + 36, y + 3);
+    if (st.sel) { g.textAlign = 'center'; g.font = `bold 22px ${F}`; g.fillStyle = '#ffd23f'; g.fillText('한 번 더 탭하면 구매', W / 2, 98); }
   }
-  if (style === 'long') { H(CA(.1, .14, 12), [0, .05, .07], [1.12, 1, .55]); H(CA(.035, .16, 8), [-.11, .07, -.01], [1, 1, 1.1]); H(CA(.035, .16, 8), [.11, .07, -.01], [1, 1, 1.1]); }
-  if (style === 'pony') { H(SP(.035, 10, 8), [0, .17, .125]); H(CA(.035, .16, 10), [0, .06, .15], null, [.35, 0, 0]); p.push({ g: TO(.022, .006, 6, 12), c: '#e04a7a', p: [0, .165, .13], r: [.3, 0, 0], k: K.plastic }); }
-  return p;
+  t.needsUpdate = true;
 }
-function handParts(skin, side) {
-  return [{ g: SP(.04, 14, 10), c: skin, p: [0, -.245, 0], s: [.95, 1.2, .7], k: K.skin }, { g: CA(.011, .03, 6), c: skin, p: [-side * .03, -.235, -.018], r: [.3, 0, side * .5], k: K.skin }, { g: CA(.03, .02, 8), c: skin, p: [0, -.29, -.008], s: [1, .9, .6], k: K.skin }];
-}
+
 let _blob = null;
 function blobMat() {
   if (_blob) return _blob; const c = mkCanvas(64, 64), g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 32);
@@ -553,46 +566,15 @@ function blobMat() {
 
 // ───────── 감독관 ─────────
 export function buildTeacher() {
-  const T = { root: new THREE.Group(), walk: 0 };
-  const suit = '#232c42', suit2 = '#1b2234', pants = '#262a33', skin = '#ecc29c', hair = '#262321';
-  const leg = (s) => { const p = new THREE.Group(); p.position.set(s * .1, .92, 0); p.add(M(merge([{ g: CA(.075, .7, 12), c: pants, p: [0, -.45, 0], k: K.cloth }, { g: CA(.05, .14, 10), c: '#121212', p: [0, -.87, -.045], r: [HP, 0, 0], s: [1.1, .85, 1], k: K.leather }, { g: B(.105, .018, .27), c: '#0a0a0a', p: [0, -.905, -.05], k: K.rubber }]))); T.root.add(p); return p; };
-  T.legL = leg(-1); T.legR = leg(1);
-  T.body = new THREE.Group(); T.body.position.y = .92; T.root.add(T.body);
-  T.body.add(M(merge([
-    { g: CA(.2, .42, 16), c: suit, p: [0, .34, 0], s: [1, 1, .68], k: K.cloth },
-    { g: B(.12, .3, .02), c: '#f7f7f5', p: [0, .47, -.128], k: [.7, 0] }, { g: B(.034, .03, .022), c: '#b01c2c', p: [0, .585, -.142], k: [.45, 0] },
-    { g: EX([[0, .015], [.02, -.24], [0, -.27], [-.02, -.24]], .008, .003), c: '#c42236', p: [0, .575, -.141], r: [0, -HP, 0], k: [.45, 0] },
-    { g: B(.05, .26, .015), c: suit2, p: [-.07, .49, -.132], r: [0, 0, -.32], k: K.cloth }, { g: B(.05, .26, .015), c: suit2, p: [.07, .49, -.132], r: [0, 0, .32], k: K.cloth },
-    { g: SP(.012, 10, 8), c: '#111', p: [0, .26, -.142], k: K.gloss }, { g: SP(.012, 10, 8), c: '#111', p: [0, .18, -.14], k: K.gloss },
-    { g: CY(.205, .205, .04, 24), c: '#3a2416', p: [0, .1, 0], s: [1, 1, .7], k: K.leather }, { g: B(.04, .03, .01), c: '#d8c06a', p: [0, .1, -.145], k: K.chrome },
-    { g: B(.06, .085, .004), c: '#ffffff', p: [.09, .33, -.143], k: K.gloss }, { g: B(.06, .02, .005), c: '#1a4fb0', p: [.09, .365, -.144], k: K.plastic },
-    { g: B(.008, .2, .004), c: '#1a4fb0', p: [.06, .46, -.14], r: [0, 0, -.3], k: K.cloth }, { g: B(.008, .2, .004), c: '#1a4fb0', p: [.12, .46, -.14], r: [0, 0, .3], k: K.cloth },
-    { g: B(.04, .012, .005), c: '#fff', p: [-.11, .44, -.138], k: K.cloth },
-    { g: CY(.058, .062, .1, 14), c: skin, p: [0, .66, 0], k: K.skin }, { g: TO(.056, .012, 8, 20), c: '#f7f7f5', p: [0, .625, 0], r: [HP, 0, 0], s: [1, .8, 1], k: [.7, 0] },
-  ])));
-  T.head = new THREE.Group(); T.head.position.y = .72; T.body.add(T.head);
-  T.head.add(M(merge(headParts(skin, hair, 'short', '#1a120c'))));
-  const gl = '#b0b6be';
-  T.head.add(M(merge([{ g: TO(.034, .0035, 6, 20), c: gl, p: [-.046, .135, -.128], k: K.chrome }, { g: TO(.034, .0035, 6, 20), c: gl, p: [.046, .135, -.128], k: K.chrome }, { g: B(.02, .004, .004), c: gl, p: [0, .14, -.128], k: K.chrome }, { g: B(.004, .004, .13), c: gl, p: [-.12, .138, -.06], k: K.chrome }, { g: B(.004, .004, .13), c: gl, p: [.12, .138, -.06], k: K.chrome }, { g: B(.04, .004, .004), c: gl, p: [-.1, .138, -.125], k: K.chrome }, { g: B(.04, .004, .004), c: gl, p: [.1, .138, -.125], k: K.chrome }]), R.mV, false));
-  const arm = (s) => {
-    const sh = new THREE.Group(); sh.position.set(s * .27, .6, 0); T.body.add(sh); sh.add(M(merge([{ g: CA(.064, .2, 12), c: suit, p: [0, -.15, 0], k: K.cloth }, { g: SP(.072, 14, 10), c: suit, p: [0, -.01, 0], k: K.cloth }])));
-    const el = new THREE.Group(); el.position.y = -.3; sh.add(el);
-    const ap = [{ g: CA(.057, .17, 12), c: suit, p: [0, -.12, 0], k: K.cloth }, { g: CY(.047, .047, .03, 14), c: '#f7f7f5', p: [0, -.215, 0], k: [.7, 0] }, ...handParts(skin, s)];
-    if (s < 0) ap.push({ g: CY(.046, .046, .022, 16), c: '#c9ced6', p: [0, -.205, 0], k: K.chrome }, { g: CY(.018, .018, .008, 16), c: '#222', p: [0, -.205, -.044], r: [HP, 0, 0], k: K.gloss });
-    el.add(M(merge(ap))); return { sh, el };
-  };
-  T.armL = arm(-1); T.armR = arm(1);
-  T.mount = new THREE.Group(); T.mount.position.y = -.27; T.mount.rotation.x = -HP; T.armR.el.add(T.mount);
+  const T = { root: new THREE.Group(), walk: 0 }; teacherBody(T);
+  T.mount = new THREE.Group(); T.mount.position.y = -.33; T.mount.rotation.x = -HP; T.armR.el.add(T.mount);
   T.stack = M(merge([{ g: B(.3, .1, .22), c: '#f4f1e8', k: K.paper }, { g: B(.31, .012, .23), c: '#c9b089', p: [0, -.055, 0], k: K.paper }, { g: B(.31, .012, .23), c: '#e8577a', p: [0, .055, 0], k: K.paper }]));
-  T.stack.position.set(0, -.3, -.1); T.armL.el.add(T.stack); T.stack.visible = false;
+  T.stack.position.set(0, -.32, -.1); T.armL.el.add(T.stack); T.stack.visible = false;
   const sh = new THREE.Mesh(R.blobGeo, blobMat()); sh.rotation.x = -HP; sh.scale.set(.8, .8, 1); sh.position.y = .006; T.root.add(sh);
   return T;
 }
 
 // ───────── 학생 ─────────
-const SKIN = ['#f2cfae', '#e9be98', '#f6d8bb', '#e3b48c', '#eec8a4'], HAIR = ['#17120f', '#241a14', '#33251b', '#101010', '#45301f'];
-const TOPS = ['#2b3a67', '#555b66', '#1f1f24', '#e8e8e8', '#7b2d3a', '#2f5d46', '#c8b79a', '#3d6fa8', '#6a4c93', '#d9d4c7', '#1d2d44', '#8a5a3a', '#111318', '#3c3f45'];
-const PANTS = ['#22283a', '#1b1b1f', '#3b4252', '#2f3640', '#4a5468', '#2e3d5c'];
 function paperObj() { const pc = mkCanvas(256, 352); return { pc, pg: pc.getContext('2d'), ink: 0 }; }
 export function drawPage(o, subj, page) {
   const g = o.pg; g.setTransform(2, 0, 0, 2, 0, 0);
@@ -624,17 +606,17 @@ export function inkStroke(o) {
   o.ink++; o.dirty = true; if (o.ink > 150) o.wantFlip = true;
 }
 function buildGlasses(type, thick) {
-  const ai = type === 'ai', t = ai ? .0075 : (thick ? .0065 : .0035);
+  const ai = type === 'ai', t = ai ? .0052 : (thick ? .0046 : .0026);
   const col = ai ? '#0e0e0e' : (thick ? '#1a1a1a' : pick(['#b8bec6', '#6b4a2f', '#c9b26b', '#3a3a3a'])), km = ai || thick ? [.25, 0] : K.chrome;
   const parts = [
-    { g: TO(.036, t, 8, 24), c: col, p: [-.046, .135, -.128], s: [1.05, .85, 1], k: km }, { g: TO(.036, t, 8, 24), c: col, p: [.046, .135, -.128], s: [1.05, .85, 1], k: km },
+    { g: TO(.031, t, 8, 28), c: col, p: [-.045, .135, -.128], s: [1.18, .78, 1], k: km }, { g: TO(.031, t, 8, 28), c: col, p: [.045, .135, -.128], s: [1.18, .78, 1], k: km },
     { g: B(.022, t * 1.6, t * 1.6), c: col, p: [0, .14, -.128], k: km },
     { g: B(.04, t * 1.7, t * 1.7), c: col, p: [-.1, .138, -.124], k: km }, { g: B(.04, t * 1.7, t * 1.7), c: col, p: [.1, .138, -.124], k: km },
     { g: B(t * 1.5, t * 1.5, .13), c: col, p: [-.12, .138, -.06], k: km }, { g: B(t * 1.5, t * 1.5, .13), c: col, p: [.12, .138, -.06], k: km },
   ];
   if (ai) parts.push({ g: B(.02, .013, .014), c: '#151515', p: [0, .158, -.13], k: K.gloss }, { g: CY(.0045, .0045, .004, 12), c: '#203a6a', p: [0, .158, -.138], r: [HP, 0, 0], k: [.02, .5] }, { g: B(.016, .018, .055), c: '#151515', p: [.122, .138, -.08], k: K.gloss }, { g: B(.016, .018, .055), c: '#151515', p: [-.122, .138, -.08], k: K.gloss });
   const g = new THREE.Group(), fm = M(merge(parts), R.mV, false); fm.userData.noTint = true; g.add(fm);
-  const lens = new THREE.Mesh(merge([{ g: new THREE.CircleGeometry(.034, 20), p: [-.046, .135, -.129], s: [1.05, .85, 1] }, { g: new THREE.CircleGeometry(.034, 20), p: [.046, .135, -.129], s: [1.05, .85, 1] }]), ai ? R.lensAI : R.lens);
+  const lens = new THREE.Mesh(merge([{ g: new THREE.CircleGeometry(.03, 24), p: [-.045, .135, -.129], s: [1.18, .78, 1] }, { g: new THREE.CircleGeometry(.03, 24), p: [.045, .135, -.129], s: [1.18, .78, 1] }]), ai ? R.lensAI : R.lens);
   lens.userData.noTint = true; g.add(lens); g.userData = { type, lens };
   if (ai) {
     const led = new THREE.Mesh(R.ledGeo, R.ledOff); led.position.set(.131, .146, -.1); led.userData.noTint = true; g.add(led);
@@ -667,36 +649,8 @@ export function buildStudent(i, x, z, o) {
   st.omr = new THREE.Mesh(R.omrGeo, R.omrMat); st.omr.rotation.x = -HP; st.omr.rotation.z = rand(-.1, .1); st.omr.position.set(.29, .761, -.4); st.omr.receiveShadow = true; seat.add(st.omr);
   st.flip = new THREE.Group(); st.flip.position.set(-.2, .764, -.38); seat.add(st.flip);
   const fp = new THREE.Mesh(R.paperGeo, R.pageUsedMat); fp.rotation.x = -HP; fp.position.x = .13; st.flip.add(fp); st.flip.visible = false;
-  const skin = pick(SKIN), hair = pick(HAIR), top = pick(TOPS), pants = pick(PANTS), shoe = pick(['#f2f2f2', '#1c1c1c', '#c33', '#2b5fb5', '#e8e2d4']);
-  const style = pick(['short', 'short', 'long', 'pony', 'buzz', 'long']), cloth = pick(['hoodie', 'padding', 'sweater', 'hoodie', 'padding']);
-  const puffy = cloth === 'padding', ck = puffy ? [.55, 0] : K.cloth, track = Math.random() < .35;
-  const fig = new THREE.Group(); fig.position.set(0, .52, .14); seat.add(fig); st.fig = fig;
-  st.thigh = new THREE.Group(); st.thigh.rotation.x = HP; fig.add(st.thigh);
-  const tp = [{ g: CA(.074, .3, 12), c: pants, p: [-.1, -.21, 0], k: K.cloth }, { g: CA(.074, .3, 12), c: pants, p: [.1, -.21, 0], k: K.cloth }];
-  if (track) tp.push({ g: B(.006, .4, .02), c: '#f2f2f2', p: [-.175, -.21, 0], k: K.cloth }, { g: B(.006, .4, .02), c: '#f2f2f2', p: [.175, -.21, 0], k: K.cloth });
-  st.thigh.add(M(merge(tp)));
-  st.shin = new THREE.Group(); st.shin.position.y = -.42; st.shin.rotation.x = -HP; st.thigh.add(st.shin);
-  const sp = [];
-  for (const s of [-1, 1]) sp.push({ g: CA(.06, .3, 12), c: pants, p: [s * .1, -.2, 0], k: K.cloth }, { g: CA(.048, .13, 10), c: shoe, p: [s * .1, -.42, -.045], r: [HP, 0, 0], s: [1.05, .8, 1], k: K.shoe }, { g: B(.1, .022, .25), c: '#f8f8f8', p: [s * .1, -.46, -.045], k: K.rubber });
-  st.shin.add(M(merge(sp)));
-  st.spine = new THREE.Group(); st.spine.position.set(0, 0, .03); fig.add(st.spine);
-  const bp = [{ g: CA(puffy ? .175 : .16, .24, 16), c: top, p: [0, .27, 0], s: [1, 1, .74], k: ck }, { g: CY(.05, .055, .1, 12), c: skin, p: [0, .52, 0], k: K.skin }];
-  if (cloth === 'hoodie') bp.push({ g: TO(.09, .042, 8, 16), c: top, p: [0, .49, .07], r: [1.25, 0, 0], k: K.cloth }, { g: B(.2, .09, .02), c: top, p: [0, .14, -.115], k: K.cloth }, { g: CY(.004, .004, .14, 6), c: '#eee', p: [-.03, .38, -.125], k: K.cloth }, { g: CY(.004, .004, .14, 6), c: '#eee', p: [.03, .38, -.125], k: K.cloth });
-  if (puffy) { for (let b = 0; b < 4; b++) bp.push({ g: TO(.165, .022, 8, 24), c: top, p: [0, .1 + b * .1, 0], r: [HP, 0, 0], s: [1.05, .74, 1], k: ck }); bp.push({ g: B(.006, .38, .01), c: '#c0c4c8', p: [0, .27, -.13], k: K.chrome }, { g: CY(.085, .09, .07, 16), c: top, p: [0, .49, 0], k: ck }); }
-  if (cloth === 'sweater') bp.push({ g: TO(.062, .016, 8, 20), c: top, p: [0, .47, 0], r: [HP, 0, 0], k: K.cloth }, { g: CY(.168, .162, .04, 18), c: top, p: [0, .04, 0], s: [1, 1, .74], k: K.cloth });
-  st.spine.add(M(merge(bp)));
-  st.head = new THREE.Group(); st.head.position.y = .56; st.spine.add(st.head);
-  st.headMesh = M(merge(headParts(skin, hair, style))); st.head.add(st.headMesh);
+  studentBody(st);
   if (o.glasses !== 'none') { st.glasses = buildGlasses(o.glasses, o.thick); st.head.add(st.glasses); }
-  const ar = puffy ? .058 : .05;
-  const arm = (s) => {
-    const sh = new THREE.Group(); sh.position.set(s * .2, .46, 0); st.spine.add(sh); sh.add(M(merge([{ g: CA(ar, .17, 12), c: top, p: [0, -.13, 0], k: ck }, { g: SP(ar + .012, 12, 10), c: top, p: [0, -.01, 0], k: ck }])));
-    const el = new THREE.Group(); el.position.y = -.27; sh.add(el);
-    const p = [{ g: CA(ar - .005, .14, 12), c: top, p: [0, -.1, 0], k: ck }, { g: CY(.038, .04, .025, 12), c: top, p: [0, -.2, 0], k: ck }, ...handParts(skin, s)];
-    if (s > 0) p.push({ g: CY(.0016, .0072, .15, 8), c: '#f5c400', p: [0, -.27, .06], r: [2.04, 0, 0], k: K.gloss }, { g: CY(.0016, .0068, .03, 8), c: '#2a2a2a', p: [0, -.305, .128], r: [2.04, 0, 0], k: K.metal });
-    el.add(M(merge(p))); return { sh, el };
-  };
-  st.armL = arm(-1); st.armR = arm(1);
   st.armR.sh.rotation.set(.9, 0, -.1); st.armR.el.rotation.x = .7; st.armL.sh.rotation.set(.85, 0, .12); st.armL.el.rotation.x = .75;
   st.spine.rotation.x = -.12; st.head.rotation.x = -.45;
   st.marker = new THREE.Mesh(R.markerGeo, R.mkRed); st.marker.visible = false; R.scene.add(st.marker);

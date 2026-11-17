@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { icon, WEAPONS, SHOP_ORDER, NAMES, REACT, classify, makeQuestion, aiAnswer } from './data.js';
 import { SFX } from './audio.js';
-import { R, rand, pick, clamp, CHAIR, buildWorld, buildStudent, buildWeapon, drawBoard, setClock, drawPage, inkStroke, addDecal, lam, basic, M, updDecor, renderFrame, resizeGfx, setQuality, Q, paintMat, updAmbient } from './world.js';
+import { R, rand, pick, clamp, CHAIR, buildWorld, buildStudent, buildWeapon, drawBoard, setClock, drawPage, inkStroke, addDecal, lam, basic, M, updDecor, renderFrame, resizeGfx, setQuality, Q, paintMat, updAmbient, setRim, drawTag } from './world.js';
 
 const $ = (id) => document.getElementById(id);
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -33,13 +33,14 @@ const toMin = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + 
 // ───────── 상태 ─────────
 const G = {
   mode: 'menu', phase: 'menu', T: 0, paused: false, hearts: 3, coins: 0, owned: [], slots: [], sel: 0, cd: {}, cdMax: {},
-  hack: { money: false, nocd: false, find: false }, unlocked: false, settings: { sound: true, voice: true, quality: '' },
+  hack: { money: false, nocd: false, find: false }, unlocked: false, settings: { sound: true, voice: true, quality: '', view: 'fp' },
   sched: 0, pT: 0, subj: '국어', examOn: false, found: 0, earned: 0, proj: [], tw: [], bubs: [], shake: 0, camBlend: 1,
   shop: false, shopSel: 'bat', chatOpen: false,
   // 학생 모드
   q: null, qNo: 0, qStart: 0, qLock: false, correct: 0, answered: 0, susp: 0, aiOpen: false, solvingT: 0, writeT: 0, catching: false, sv: { yaw: 0, pitch: -.42 },
 };
-const P = { pos: V(0, 0, -5.3), vy: 0, yaw: PI, ground: true, cy: PI, cp: .55, cdist: 5.2, anim: null, dash: false, armed: true };
+const P = { pos: V(0, 0, -5.3), vy: 0, yaw: PI, ground: true, cy: PI, cp: .55, cdist: 5.2, anim: null, dash: false, armed: true, pitch: -.1, kick: 0, bobT: 0, bobA: 0 };
+const VM = { swX: 0, swY: 0, rec: 0, eq: 0, lastCy: 0, lastP: 0, held: null, reach: null };
 const IN = { jx: 0, jy: 0, keys: {}, atk: false, jump: false, drag: null, jid: null };
 const N = { xi: 3, zi: 0, tx: 3, tz: 0, wait: 2, look: null };
 const GX = [-6.2, -4.15, -2.08, 0, 2.08, 4.15, 6.2], GZ = [-4.6, -2.44, -.24, 1.96, 4.6];
@@ -95,7 +96,7 @@ const remaining = () => R.students.filter((s) => s.cheater && !s.found && !s.isP
 // ───────── 화면 전환 ─────────
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function toMenu() {
-  closeModal(); show('settings', false); show('hud', false); show('shop', false); show('cine', false); show('menu', true);
+  closeModal(); show('settings', false); show('hud', false); show('shopExit', false); document.body.classList.remove('shop'); G.shop = false; show('cine', false); show('menu', true);
   G.mode = 'menu'; G.phase = 'menu'; G.paused = false; G.shop = false; G.examOn = true; G.sched = 0;
   if (R.students.length === 0 || G.dirtyWorld) newWorld('menu'); G.dirtyWorld = false;
   R.teacher.root.visible = true; P.pos.set(0, 0, -5.3); P.yaw = PI; P.anim = null; setHeld(null); R.teacher.stack.visible = false;
@@ -106,7 +107,7 @@ function startGame(mode) {
   G.mode = mode; G.hearts = 3; G.found = 0; G.earned = 0; G.sched = 0; G.pT = 0; G.shake = 0; G.dirtyWorld = true;
   G.correct = 0; G.answered = 0; G.susp = 0; G.aiOpen = false; G.catching = false; G.sv.yaw = 0; G.sv.pitch = -.42; G.cd = {}; G.cdMax = {};
   newWorld(mode); rebuildSlots(); G.sel = 0;
-  P.cy = PI; P.cp = .55; P.anim = null; P.dash = false; P.vy = 0; P.ground = true; P.armed = true;
+  P.cy = PI; P.cp = .55; P.pitch = -.1; P.kick = 0; P.anim = null; if (VM.held) { VM.held.removeFromParent(); VM.held = null; } P.dash = false; P.vy = 0; P.ground = true; P.armed = true;
   Object.assign(N, { xi: 3, zi: 0, tx: 3, tz: 0, wait: 2, look: null });
   $('chatLog').innerHTML = ''; $('aiLog').innerHTML = ''; show('aiPanel', false); document.body.classList.remove('aion');
   show('tctl', mode === 'teacher'); show('sctl', mode === 'student'); show('btnResult', false);
@@ -136,7 +137,8 @@ function updIntro(dt) {
   if (t > 1.6 && t < 6.5) for (const st of R.students) st.lookT = Math.max(st.lookT, .2);
   const head = _v.set(P.pos.x, 1.6, P.pos.z);
   if (G.mode === 'teacher') {
-    if (t < 1.7) setCam(_v2.set(-2.5, 1.8, 2.8), _v3.set(0, 1.6, -8), dt, 2);
+    if (isFP()) { P.cy = P.yaw; P.pitch = lerp(P.pitch, t < 5.6 ? -.04 : -.12, Math.min(1, dt * 3)); P.bobA = spd > .2 ? 1 : 0; P.bobT += dt * spd * 2.4; R.teacher.root.visible = false; G.camBlend = 1; fpCam(dt); }
+    else if (t < 1.7) setCam(_v2.set(-2.5, 1.8, 2.8), _v3.set(0, 1.6, -8), dt, 2);
     else if (t < 5.6) setCam(_v2.set(2.4, 1.75, -1.4), head, dt, 2.5);
     else { const fp = followCam(); setCam(fp[0], fp[1], dt, 3); }
   } else {
@@ -149,7 +151,7 @@ function updIntro(dt) {
 }
 function endIntro() {
   show('cine', false); show('hud', true); R.teacher.stack.visible = false; R.door.rotation.y = 0;
-  P.pos.set(.9, 0, -5.05); P.yaw = PI; G.camBlend = 0; setHeld(curWeapon());
+  P.pos.set(.9, 0, -5.05); P.yaw = PI; P.cy = PI; P.pitch = -.12; G.camBlend = 0; setHeld(curWeapon());
   for (const st of R.students) st.lookT = 0;
   if (G.mode === 'teacher') { renderHotbar(); toast('의자(노란 원)에 가면 무기 상점이 열려요', 'info'); } else setHeld(null);
   beginPeriod(); updHUD();
@@ -189,7 +191,6 @@ function endExam() {
   banner('수능 종료!', '빨간색 = 남은 AI 안경 학생 · 초록색 = 일반 학생');
   for (const st of R.students) {
     if (st.state === 'exam' || st.state === 'stunned') { st.state = 'endsit'; removeStars(st); }
-    tint(st, st.cheater ? (st.found ? R.mVOrange : R.mVRed) : R.mVGreen);
     if (st.cheater && !st.found && SEATED.has(st.state)) setTimeout(() => say(st, pick(['헉...!', '들켰다!', '(덜덜)'])), rand(300, 1500));
   }
   show('btnResult', true); updHUD();
@@ -225,7 +226,7 @@ function rebuildSlots() { G.slots = ['snatch', 'punch', ...SHOP_ORDER.filter((k)
 const heldCache = {};
 function setHeld(id) {
   const m = R.teacher.mount; while (m.children.length) m.remove(m.children[0]);
-  if (!id || !WEAPONS[id] || !WEAPONS[id].price) return;
+  VM.eq = 1; if (!id || !WEAPONS[id] || !WEAPONS[id].price) return;
   m.add(heldCache[id] || (heldCache[id] = buildWeapon(id)));
 }
 function collide(p, r) {
@@ -247,11 +248,13 @@ function updTeacher(dt) {
   let ix = IN.jx, iy = IN.jy; const k = IN.keys;
   if (k.KeyA || k.ArrowLeft) ix -= 1; if (k.KeyD || k.ArrowRight) ix += 1; if (k.KeyW || k.ArrowUp) iy += 1; if (k.KeyS || k.ArrowDown) iy -= 1;
   const il = Math.hypot(ix, iy); if (il > 1) { ix /= il; iy /= il; }
+  if (G.shop && il > .6) closeShop();
   let vx = 0, vz = 0;
   const canMove = !G.shop && !(P.anim && P.anim.lock) && !P.dash && (G.phase === 'exam' || G.phase === 'end');
   if (canMove) { const fx = -Math.sin(P.cy), fz = -Math.cos(P.cy), rx = Math.cos(P.cy), rz = -Math.sin(P.cy); vx = (fx * iy + rx * ix) * 3.4; vz = (fz * iy + rz * ix) * 3.4; }
   P.pos.x += vx * dt; P.pos.z += vz * dt; collide(P.pos, .3);
   const sp = Math.hypot(vx, vz); if (sp > .1) P.yaw = lerpA(P.yaw, Math.atan2(-vx, -vz), Math.min(1, dt * 12));
+  if (isFP()) P.yaw = P.cy; P.bobA = lerp(P.bobA, sp > .3 && P.ground ? 1 : 0, Math.min(1, dt * 6)); P.bobT += dt * sp * 2.4; P.kick *= Math.max(0, 1 - dt * 9);
   if (IN.jump && P.ground && canMove) { P.vy = 5.4; P.ground = false; SFX.jump(P.pos); } IN.jump = false;
   P.vy -= 15 * dt; P.pos.y += P.vy * dt; const gy = groundY(P.pos.x, P.pos.z);
   if (P.pos.y <= gy && P.vy <= 0) { if (!P.ground && P.vy < -4) SFX.step(P.pos); P.pos.y = gy; P.vy = 0; P.ground = true; } else if (P.pos.y > gy + .02) P.ground = false;
@@ -264,8 +267,9 @@ function updTeacher(dt) {
   if (dc < .5 && P.armed && !G.shop && P.ground) openShop();
   if (dc > .9) P.armed = true;
   // 근접 대상 표시
-  const w = WEAPONS[curWeapon()], tg = (w.range && !G.shop) ? meleeTarget(w.range) : null;
-  R.tring.visible = !!tg; if (tg) { R.tring.position.set(tg.x, .02, tg.z + .14); R.tring.scale.setScalar(1 + Math.sin(G.T * 8) * .06); }
+  const w = WEAPONS[curWeapon()], fp = isFP(), tg = G.shop ? null : fp ? (w.range ? viewHit(w.range + .4, .12, true) : viewHit(40, 0)) : (w.range ? meleeTarget(w.range) : null);
+  $('xhair').classList.toggle('tgt', fp && !!tg); R.teacher.root.visible = !fp && !G.shop;
+  R.tring.visible = !fp && !!tg; if (tg && !fp) { R.tring.position.set(tg.x, .02, tg.z + .14); R.tring.scale.setScalar(1 + Math.sin(G.T * 8) * .06); }
 }
 function followCam() {
   const t = _v3.set(P.pos.x, P.pos.y + 1.35, P.pos.z), c = Math.cos(P.cp) * P.cdist;
@@ -333,7 +337,10 @@ function tryAttack() {
   if ((G.cd[id] || 0) > 0 || (P.anim && P.anim.lock) || P.dash) return;
   const cd = G.hack.nocd ? (w.kind === 'gun' ? .06 : .15) : w.cd;
   let ok = true;
-  if (w.kind === 'gun') fireGun(w);
+  if (isFP()) {
+    if (w.kind === 'gun' || w.kind === 'rocket') fireFP(w, id);
+    else { const t = viewHit(w.range + .4, .14, true); if (w.kind === 'snatch') ok = actSnatchFP(t); else if (w.kind === 'punch') actPunchFP(t); else if (w.kind === 'bat') actBatFP(); else ok = actTackle(t); }
+  } else if (w.kind === 'gun') fireGun(w);
   else if (w.kind === 'rocket') fireRocket(w);
   else {
     const t = meleeTarget(w.range);
@@ -352,8 +359,8 @@ function snatchGlasses(st) {
   const from = g.position.clone(), hand = () => R.teacher.armR.el.localToWorld(_v.set(0, -.32, -.05));
   tween(.28, (k) => g.position.lerpVectors(from, hand(), ease(k)), () => tween(.3, () => g.position.copy(hand()), () => breakGlasses(g, st)));
 }
-function breakGlasses(g, st) {
-  const p = g.position.clone(), type = g.userData.type; R.scene.remove(g);
+function breakGlasses(g, st, p0) {
+  const p = p0 || g.position.clone(), type = g.userData.type; g.removeFromParent(); hitMark();
   SFX.snap(p); ftext(p, '콰직!', 'snap'); G.shake = Math.max(G.shake, .1);
   for (const s of [-1, 1]) {
     const h = new THREE.Mesh(R.halfGlass[type === 'ai' ? 1 : 0], R.mV); h.position.copy(p); h.position.x += s * .04; h.castShadow = true;
@@ -389,7 +396,7 @@ function actBat(st) {
 function batHit(st) {
   SFX.bonk(st.hpos); ftext(st.hpos, '딱!', 'big'); starBurst(st.hpos); R.pfxA.spawn(st.hpos.x, st.hpos.y, st.hpos.z, 0, 0, 0, '#ffffff', .5, .09, 0, 0, 1, 1); G.shake = Math.max(G.shake, .3);
   const dir = V(st.x - P.pos.x, 0, st.z + .14 - P.pos.z).normalize();
-  knockOut(st, dir, 3.2, { up: 3, tipChair: true });
+  knockOut(st, dir, 2.4, { up: 1.6, tipChair: true });
 }
 function fireGun(w) {
   const t = aimTarget(); if (t) P.yaw = Math.atan2(-(t.cpos.x - P.pos.x), -(t.cpos.z - P.pos.z));
@@ -435,8 +442,7 @@ function knockOut(st, dir, pow, o = {}) {
   st.state = 'ko'; st.landed = false; st.bounce = 0; st.kT = 0; st.flip.visible = false;
   st.fig.rotation.order = 'YXZ'; R.scene.attach(st.fig);
   st.kv = V(dir.x * pow, o.up ?? 2.5, dir.z * pow);
-  st.kav = V(dir.z * 6 + rand(-1.5, 1.5), rand(-2, 2), -dir.x * 6 + rand(-1.5, 1.5));
-  if (o.soot) tint(st, R.mVSoot);
+  st.kav = V(dir.z * 3.4 + rand(-.5, .5), rand(-.6, .6), -dir.x * 3.4 + rand(-.5, .5)); hitMark();
   if (st.glasses) {
     const g = st.glasses; st.glasses = null; R.scene.attach(g);
     addDebris(g, V(dir.x * 2 + rand(-1, 1), rand(2, 4), dir.z * 2 + rand(-1, 1)), V(rand(-10, 10), rand(-10, 10), rand(-10, 10)), .03);
@@ -468,12 +474,12 @@ function updKO(st, dt) {
   L(st.armR.sh.rotation, 'x', .3, k); L(st.armR.sh.rotation, 'z', -1.2, k); L(st.armR.el.rotation, 'x', .4, k);
 }
 function addStars(st) {
-  if (st.stars) return; const g = new THREE.Group();
+  return; const g = new THREE.Group();
   for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(R.starGeo, R.starMat); const a = i / 3 * 2 * PI; s.position.set(Math.cos(a) * .16, 0, Math.sin(a) * .16); g.add(s); }
   st.stars = g; R.scene.add(g);
 }
 function removeStars(st) { if (st.stars) { R.scene.remove(st.stars); st.stars = null; } }
-function starBurst(p) { for (let i = 0; i < 16; i++) R.pfxA.spawn(p.x, p.y + .1, p.z, rand(-2.5, 2.5), rand(.5, 3), rand(-2.5, 2.5), '#ffe14d', rand(.05, .09), rand(.3, .6), 6, 1); }
+function starBurst(p) { for (let i = 0; i < 8; i++) R.pfxS.spawn(p.x, p.y, p.z, rand(-.8, .8), rand(-.2, .6), rand(-.8, .8), '#e8e2da', rand(.08, .14), rand(.3, .6), 0, 3, 2, .35); }
 
 // ───────── 투사체 ─────────
 function deskHit(x, z) { for (const o of R.obstacles) if (o.on && o.dx0 !== undefined && x > o.dx0 && x < o.dx1 && z > o.dz0 && z < o.dz1) return true; return false; }
@@ -510,7 +516,7 @@ function paintImpact(pr, hit, surf) {
     const s = new THREE.Mesh(R.spotGeo, paintMat(col)); s.position.set(rand(-.1, .1), rand(.15, .4), -.11); s.scale.set(rand(.8, 1.4), rand(.8, 1.4), .35); s.userData.paint = true; hit.spine.add(s);
     addDecal(V(hit.x + rand(-.6, .6), 0, hit.z + rand(-.1, .9)), rand(.15, .3), col);
     if (!hit.destroyed) addDecal(V(hit.x + rand(-.3, .3), .76, hit.z - .36 + rand(-.2, .2)), rand(.06, .12), col);
-    knockOut(hit, V(pr.v.x, 0, pr.v.z).normalize(), 2.4, { up: 2, tipChair: Math.random() < .6 });
+    knockOut(hit, V(pr.v.x, 0, pr.v.z).normalize(), 1.8, { up: 1.2, tipChair: Math.random() < .6 });
   } else addDecal(V(p.x, p.y, p.z), rand(.1, .2), col, surf);
 }
 function explode(p, hit) {
@@ -650,11 +656,10 @@ function updStudents(dt) {
     st.spine.localToWorld(st.cpos.set(0, .27, 0)); st.head.localToWorld(st.hpos.set(0, .13, 0));
     updLED(st, dt);
     if (st.stars) { st.stars.position.copy(st.hpos); st.stars.position.y += .2; st.stars.rotation.y += dt * 4; }
-    let m = null;
-    if (G.mode === 'teacher' && G.phase === 'end') m = st.cheater ? (st.found ? R.mkOrange : R.mkRed) : R.mkGreen;
-    else if (G.hack.find && st.cheater && !st.found && !st.isPlayer && st.state !== 'ko') m = R.mkRed;
-    const mk = st.marker; mk.visible = !!m;
-    if (m) { mk.material = m; mk.position.copy(st.hpos); mk.position.y += st.state === 'ko' ? .35 : .5 + Math.sin(G.T * 4 + st.i) * .05; mk.rotation.y += dt * 3; }
+    let rim = null;
+    if (G.mode === 'teacher' && G.phase === 'end') rim = st.cheater ? (st.found ? '#ff8a20' : '#ff2236') : '#1fe06a';
+    else if (G.hack.find && st.cheater && !st.found && !st.isPlayer && st.state !== 'ko') rim = '#ff2236';
+    if (rim !== (st.rimC || null)) { st.rimC = rim; setRim(st, rim); }
   }
   // 시험지 텍스처 업로드 (프레임당 최대 5장)
   const n = R.students.length; let up = 0;
@@ -759,41 +764,135 @@ function catchPlayer() {
 // ───────── 상점 (감독관 책상) ─────────
 function openShop() {
   if (G.mode !== 'teacher' || G.phase === 'lunch') return;
-  G.shop = true; P.armed = false; IN.atk = false; resetJoy(); P.pos.set(CHAIR.x, 0, CHAIR.z);
-  R.teacher.root.visible = false; show('shop', true); show('tctl', false); G.camBlend = 0; renderShop(); SFX.click();
+  G.shop = true; P.armed = false; IN.atk = false; resetJoy(); exitLock(); P.pos.set(CHAIR.x, 0, CHAIR.z); G.shopSel = null;
+  R.teacher.root.visible = false; document.body.classList.add('shop'); show('shopExit', true); G.camBlend = 0; G.shopLook = { yaw: PI, pitch: -.42 }; renderShop(); SFX.creak(P.pos);
 }
 function closeShop() {
-  G.shop = false; R.teacher.root.visible = true; P.pos.set(CHAIR.x + .75, 0, CHAIR.z); P.yaw = PI;
-  show('shop', false); show('tctl', true); G.camBlend = 0; renderHotbar();
+  G.shop = false; G.shopSel = null; P.pos.set(CHAIR.x + .75, 0, CHAIR.z); P.yaw = P.cy = PI; P.pitch = -.12;
+  document.body.classList.remove('shop'); show('shopExit', false); G.camBlend = 0; renderHotbar(); renderShop();
 }
 function shopCam(dt) {
-  const hf = 2 * Math.atan(Math.tan(R.cam.fov * PI / 360) * R.cam.aspect), d = Math.max(1.25, .98 / Math.tan(hf / 2));
-  setCam(_v.set(0, .86 + d * .78, -6.0 - d * .62), _v2.set(0, .8, -5.92), dt, 5);
+  const e = _v.set(0, 1.4, -7.25), y = G.shopLook.yaw, p = G.shopLook.pitch;
+  setCam(e, _v2.set(e.x - Math.sin(y) * Math.cos(p), e.y + Math.sin(p), e.z - Math.cos(y) * Math.cos(p)), dt, 9);
 }
-function renderShop() {
-  const box = $('shopCards'); box.innerHTML = '';
-  for (const id of SHOP_ORDER) {
-    const w = WEAPONS[id], own = G.owned.includes(id), sel = G.shopSel === id, eq = curWeapon() === id;
-    const b = document.createElement('button'); b.className = 'scard' + (sel ? ' sel' : '') + (own ? ' own' : '');
-    const price = own ? `${icon('check')}${eq ? '장착 중' : '보유 중'}` : `${icon('coin')}${w.price}`;
-    b.innerHTML = `<i>${icon(w.icon)}</i><b>${w.name}</b><small>${w.desc}</small><span class="price">${price}</span>${sel && !own ? '<em class="hint">한 번 더 누르면 구매</em>' : ''}${sel && own && !eq ? '<em class="hint">한 번 더 누르면 장착</em>' : ''}`;
-    b.onclick = () => shopTap(id); box.appendChild(b);
-  }
-  $('shopCoins').innerHTML = `<i>${icon('coin')}</i><b>${G.hack.money ? '∞' : G.coins}</b>`;
-}
+function renderShop() { for (const id of SHOP_ORDER) drawTag(id, { price: WEAPONS[id].price, owned: G.owned.includes(id), eq: curWeapon() === id, sel: G.shop && G.shopSel === id }); }
 function shopTap(id) {
   SFX.click();
   if (G.shopSel !== id) { G.shopSel = id; renderShop(); return; }
   const w = WEAPONS[id];
-  if (G.owned.includes(id)) { G.sel = G.slots.indexOf(id); setHeld(id); toast(`${w.name} 장착!`, 'good'); }
-  else if (!G.hack.money && G.coins < w.price) { toast(`코인이 부족해요! (${w.price - G.coins}개 더 필요)`, 'bad'); SFX.hurt(); }
-  else { if (!G.hack.money) G.coins -= w.price; G.owned.push(id); save(); rebuildSlots(); G.sel = G.slots.indexOf(id); setHeld(id); SFX.buy(); toast(`${w.name} 구매 완료!`, 'good'); updHUD(); }
+  if (G.owned.includes(id)) { G.sel = G.slots.indexOf(id); setHeld(id); SFX.buy(); }
+  else if (!G.hack.money && G.coins < w.price) { toast(`코인이 ${w.price - G.coins}개 부족해요`, 'bad'); SFX.hurt(); }
+  else { if (!G.hack.money) G.coins -= w.price; G.owned.push(id); save(); rebuildSlots(); G.sel = G.slots.indexOf(id); setHeld(id); SFX.buy(); updHUD(); }
   renderShop();
 }
 function shopPick(e) {
   const rc = new THREE.Raycaster(), m = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); rc.setFromCamera(m, R.cam);
-  const hit = rc.intersectObjects(Object.values(R.shopItems), true)[0];
+  const hit = rc.intersectObjects([...Object.values(R.shopItems), ...Object.values(R.tags).map((t) => t.tag)], true)[0];
   if (hit) { let o = hit.object; while (o && !o.userData.k) o = o.parent; if (o) shopTap(o.userData.k); }
+}
+
+// ───────── 1인칭 (감독관 시점) ─────────
+const isFP = () => G.mode === 'teacher' && G.settings.view !== 'tp';
+const _f = V(), _q = new THREE.Quaternion(), _eu = new THREE.Euler(), _a = V(), _b = V(), _c = V(), _d = V(), _t = V();
+const camFwd = (o) => o.set(0, 0, -1).applyQuaternion(R.cam.quaternion);
+function fpCam(dt) {
+  G.camBlend = Math.min(1, G.camBlend + dt * 2);
+  const by = Math.sin(P.bobT * 2) * .022 * P.bobA, tp = _t.set(P.pos.x + Math.cos(P.bobT) * .012 * P.bobA, P.pos.y + 1.62 + by - (P.dash ? .3 : 0), P.pos.z);
+  _q.setFromEuler(_eu.set(P.pitch + P.kick, P.cy, 0, 'YXZ'));
+  if (G.camBlend < 1) { const a = 1 - Math.exp(-9 * dt); camPos.lerp(tp, a); R.cam.quaternion.slerp(_q, a); } else { camPos.copy(tp); R.cam.quaternion.copy(_q); }
+  R.cam.position.copy(camPos);
+  if (G.shake > 0) { const s = G.shake * .05; R.cam.position.x += rand(-s, s); R.cam.position.y += rand(-s, s); }
+  camLook.copy(camPos).add(camFwd(_f));
+}
+const VH = { t: 0 };
+function viewHit(range, assist, seatedOnly) {
+  const o = R.cam.position, f = camFwd(_f); let best = null, bt = 1e9;
+  for (const st of R.students) {
+    if (st.isPlayer || st.state === 'ko' || (seatedOnly && !SEATED.has(st.state))) continue;
+    for (const [p, r] of [[st.hpos, .13], [st.cpos, .24]]) { _d.copy(p).sub(o); const t = _d.dot(f); if (t < .1 || t > range) continue; if (_d.addScaledVector(f, -t).length() < r + assist && t < bt) { bt = t; best = st; } }
+  }
+  VH.t = bt; return best;
+}
+function hitMark() { const x = $('xhair'); x.classList.remove('hit'); void x.offsetWidth; x.classList.add('hit'); }
+function exitLock() { if (document.pointerLockElement) document.exitPointerLock(); }
+function fireFP(w, id) {
+  const mz = R.vm.wpn[id].userData.muzzle; mz.getWorldPosition(_a); const o = R.cam.localToWorld(_a.clone()), f = camFwd(V());
+  const hit = viewHit(40, 0), far = f.y < -.01 ? Math.min(20, (R.cam.position.y - .02) / -f.y) : 20, dist = hit ? VH.t : far;
+  const dir = R.cam.position.clone().addScaledVector(f, dist).sub(o).normalize(), sp = w.spread || 0;
+  dir.x += rand(-sp, sp); dir.y += rand(-sp, sp) * .5; dir.z += rand(-sp, sp); dir.normalize();
+  if (w.kind === 'gun') {
+    const col = pick(PAINT), m = new THREE.Mesh(R.ballGeo, paintMat(col)); m.position.copy(o); R.scene.add(m);
+    G.proj.push({ k: 'paint', m, p: m.position, v: dir.multiplyScalar(w.speed), col, life: 1.6 });
+    SFX.shot(o, w.auto); VM.rec = w.auto ? .03 : .055; P.kick += w.auto ? .006 : .018;
+    for (let i = 0; i < 3; i++) R.pfxS.spawn(o.x, o.y, o.z, f.x * rand(.6, 1.6) + rand(-.3, .3), rand(0, .4), f.z * rand(.6, 1.6) + rand(-.3, .3), '#eef2f6', rand(.06, .1), rand(.2, .4), -.2, 4, 2.5, .35);
+  } else {
+    const m = M(R.rocketGeo); m.position.copy(o); R.scene.add(m); m.lookAt(_b.copy(o).add(dir));
+    const fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: R.glowTex, color: new THREE.Color().setRGB(5, 2.6, .9), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); fl.scale.setScalar(.45); fl.position.z = -.2; m.add(fl);
+    G.proj.push({ k: 'rocket', m, p: m.position, v: dir.multiplyScalar(w.speed), life: 3, snd: SFX.rocketLoop(o) });
+    SFX.rocket(o); VM.rec = .14; P.kick += .07; G.shake = Math.max(G.shake, .25);
+    const b = R.cam.localToWorld(V(.15, -.1, .6));
+    for (let i = 0; i < 20; i++) R.pfxS.spawn(b.x, b.y, b.z, -f.x * rand(1, 4) + rand(-1, 1), rand(0, 1), -f.z * rand(1, 4) + rand(-1, 1), '#b4aea6', rand(.3, .55), rand(.9, 1.8), -.3, 2, 2.5, .6);
+  }
+  P.anim = { k: 'shoot', t: 0, d: .12 };
+}
+function actPunchFP(st) {
+  SFX.whoosh(P.pos); P.anim = { k: 'punch', t: 0, d: .34, hit: .13, fn: () => { if (st && SEATED.has(st.state)) { stun(st); hitMark(); } } };
+}
+function actBatFP() {
+  SFX.whoosh(P.pos);
+  P.anim = { k: 'bat', t: 0, d: .62, hit: .33, lock: true, fn: () => { const st = viewHit(WEAPONS.bat.range + .5, .25, true); if (st) batHit(st); } };
+}
+function actSnatchFP(st) {
+  if (!st) { toast('가까이에 학생이 없어요', 'info'); return false; }
+  if (!st.glasses) { say(st, '저 안경 안 썼는데요?'); return false; }
+  VM.reach = R.cam.worldToLocal(st.hpos.clone()); if (VM.reach.length() > .8) VM.reach.setLength(.8);
+  P.anim = { k: 'snatch', t: 0, d: 1.15, lock: true, hit: .28, fn: () => {
+    const g = st.glasses; if (!g) return; st.glasses = null; g.removeFromParent(); g.position.set(0, -.08, .02); g.rotation.set(-1.25, PI, 0); R.vm.r.hand.add(g); VM.held = g; SFX.whoosh(P.pos);
+    tween(.55, null, () => { if (VM.held === g) { VM.held = null; breakGlasses(g, st, R.cam.localToWorld(V(0, -.15, -.42))); } });
+  } };
+  return true;
+}
+// 1인칭 손/무기 배치 (카메라 기준 좌표)
+const WL = {
+  bat: { w: [.21, -.27, -.42], d: [.25, 1, .18], r: [0, 0, 0] },
+  pistol: { w: [.12, -.15, -.36], d: [-.03, 0, -1], r: [0, -.045, .02], l: [-.03, -.06, .015] },
+  ak: { w: [.15, -.18, -.36], d: [-.04, 0, -1], r: [0, -.06, .03], l: [-.016, -.025, -.4] },
+  rpg: { w: [.13, -.14, -.24], d: [-.03, 0, -1], r: [0, -.02, 0], l: [-.01, -.03, -.24] },
+  tackle: { w: [.2, -.33, -.47], d: [0, -.4, -1], r: [0, .07, .02] },
+  none: { r: [.2, -.25, -.45], l: [-.22, -.27, -.47] },
+};
+function placeArm(arm, pos, rx, rz) { arm.a.rotation.set(rx, 0, rz); _t.set(0, -.37, 0).applyEuler(arm.a.rotation); arm.a.position.copy(pos).sub(_t); }
+const lv = (o, a, b, k) => o.set(lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k));
+function updVM(dt) {
+  const vm = R.vm, show = isFP() && !G.shop && ['exam', 'end', 'lunch', 'over', 'results'].includes(G.phase);
+  vm.root.visible = show; $('xhair').classList.toggle('hidden', !show); if (!show) return;
+  const id = curWeapon(), Lw = WL[id] || WL.none, hasW = !!WL[id];
+  for (const k in vm.wpn) vm.wpn[k].visible = k === id;
+  const dy = wrapA(P.cy - VM.lastCy), dp = P.pitch - VM.lastP; VM.lastCy = P.cy; VM.lastP = P.pitch;
+  const k8 = Math.min(1, dt * 8); VM.swX = lerp(clamp(VM.swX + dy * .3, -.08, .08), 0, k8); VM.swY = lerp(clamp(VM.swY - dp * .25, -.06, .06), 0, k8);
+  VM.rec = lerp(VM.rec, 0, Math.min(1, dt * 12)); VM.eq = Math.max(0, VM.eq - dt * 3.5);
+  const bA = P.bobA, bx = Math.sin(P.bobT) * .012 * bA, by = -Math.abs(Math.cos(P.bobT)) * .014 * bA + Math.sin(G.T * 1.6) * .003;
+  vm.pivot.position.set(VM.swX * .6 + bx, by - ease(VM.eq) * .35 + VM.swY * .4, VM.rec);
+  vm.pivot.rotation.set(VM.rec * 1.6 + VM.swY, VM.swX, 0);
+  const wp = _a.set(...(Lw.w || [0, 0, 0])), d = _b.set(...(Lw.d || [0, 0, -1])).normalize();
+  const rp = hasW ? _c.copy(wp).add(_t.set(...Lw.r)) : _c.set(...Lw.r);
+  let lp = Lw.l ? (hasW ? _d.copy(wp).add(_t.set(...Lw.l)) : _d.set(...Lw.l)) : null;
+  const a = P.anim, p = a ? clamp(a.t / a.d, 0, 1) : 0;
+  if (a && a.k === 'bat') {
+    const W0 = Lw.w, D0 = Lw.d, W1 = [.25, -.22, -.37], D1 = [.45, .75, .5], W2 = [-.12, -.3, -.52], D2 = [-1, -.15, -.55];
+    if (p < .4) { const q = ease(p / .4); lv(wp, W0, W1, q); lv(d, D0, D1, q); } else if (p < .62) { const q = ease((p - .4) / .22); lv(wp, W1, W2, q); lv(d, D1, D2, q); } else { const q = ease((p - .62) / .38); lv(wp, W2, W0, q); lv(d, D2, D0, q); }
+    d.normalize(); rp.copy(wp);
+  }
+  if (id === 'bat') lp = _d.copy(wp).addScaledVector(d, -.085);
+  if (a && a.k === 'punch') { const q = Math.sin(p * PI); rp.set(lerp(.2, .05, q), lerp(-.25, -.12, q), lerp(-.45, -.8, q)); }
+  if (a && a.k === 'snatch' && VM.reach) {
+    const R0 = Lw.r, T = [VM.reach.x, VM.reach.y, VM.reach.z], Hd = [.04, -.16, -.4];
+    if (p < .28) lv(rp, R0, T, ease(p / .28)); else if (p < .5) lv(rp, T, Hd, ease((p - .28) / .22)); else rp.set(...Hd);
+    if (p > .42) { lp = _d.set(lerp(-.22, -.05, ease((p - .42) / .15)), -.17, -.41); if (p > .7) { rp.x += .05; lp.x -= .05; } }
+  }
+  if (a && a.k === 'tackle') { rp.set(.15, -.2, -.62); lp = _d.set(-.15, -.2, -.62); }
+  if (hasW) { const w = vm.wpn[id]; w.position.copy(wp); w.quaternion.setFromUnitVectors(_t.set(0, 0, -1), d); }
+  placeArm(vm.r, rp, 1.72, -.35); vm.l.a.visible = !!lp; if (lp) placeArm(vm.l, lp, 1.72, .38);
 }
 
 // ───────── HUD / 핫바 / 말풍선 / 알림 ─────────
@@ -851,7 +950,8 @@ function updBubbles(dt) {
     b.el.style.display = s.ok ? '' : 'none'; b.el.style.transform = `translate(${s.x}px,${s.y}px) translate(-50%,-100%)`; b.el.style.opacity = Math.min(1, b.t / .3);
   }
 }
-function ftext(p, t, cls = '') {
+function ftext() { }
+function ftextOld(p, t, cls = '') {
   const s = toScreen(p); if (!s.ok) return; const el = document.createElement('div'); el.className = 'ftext ' + cls; el.textContent = t;
   el.style.left = s.x + 'px'; el.style.top = s.y + 'px'; $('labels').appendChild(el); setTimeout(() => el.remove(), 950);
 }
@@ -880,7 +980,7 @@ function addChat(name, text, cls) {
   while ($('chatLog').children.length > 40) $('chatLog').firstChild.remove(); $('chatLog').scrollTop = 1e6;
 }
 function teacherSay(text) {
-  addChat('감독관(나)', text, 'me'); bubble(R.teacher.head, text, 4, 'teacher'); SFX.speak(text, { pitch: .85, rate: 1.05, who: 0, prio: true });
+  addChat('감독관(나)', text, 'me'); if (!isFP()) bubble(R.teacher.head, text, 4, 'teacher'); SFX.speak(text, { pitch: .85, rate: 1.05, who: 0, prio: true });
   const cat = classify(text), alive = R.students.filter((s) => SEATED.has(s.state) && !s.isPlayer);
   alive.forEach((s) => { s.lookT = 1.4 + Math.random(); if (cat === 'cheat' && s.cheater && !s.found) s.scared = 10; if (cat === 'quiet') s.scared = Math.max(s.scared, 3); });
   const d2 = (s) => (s.x - P.pos.x) ** 2 + (s.z - P.pos.z) ** 2;
@@ -911,14 +1011,15 @@ function update(dt) {
   } else if (ph === 'intro') updIntro(dt);
   else if (G.mode === 'teacher') {
     if (ph === 'exam' || ph === 'end' || ph === 'lunch' || ph === 'over' || ph === 'results') updTeacher(dt);
-    if (G.shop) shopCam(dt); else { const f = followCam(); setCam(f[0], f[1], dt); }
+    if (G.shop) shopCam(dt); else if (isFP()) fpCam(dt); else { const f = followCam(); setCam(f[0], f[1], dt); }
   } else updStudentMode(dt);
+  updVM(dt);
   if (ph === 'exam') { const s = SCHED[G.sched]; G.pT += dt; if (G.pT >= s.d) nextSched(); }
   updStudents(dt); updProj(dt); updDebris(dt); R.pfxA.update(dt); R.pfxN.update(dt); R.pfxS.update(dt); updAmbient(G.T);
   if (R.flashL.intensity > 0) R.flashL.intensity = Math.max(0, R.flashL.intensity - dt * 220);
   G.shake = Math.max(0, G.shake - dt * 2.2);
   R.shopRing.material.opacity = .45 + Math.sin(G.T * 4) * .25; R.shopLabel.visible = G.mode === 'teacher' && !G.shop && ph !== 'intro';
-  R.shopRing.visible = G.mode !== 'student';
+  R.shopRing.visible = G.mode !== 'student' && !G.shop;
   for (const k in R.shopItems) { const it = R.shopItems[k], sel = G.shop && G.shopSel === k; it.position.y += ((sel ? it.userData.y + .12 : it.userData.y) - it.position.y) * Math.min(1, dt * 8); it.rotation.y = sel ? Math.sin(G.T * 2) * .5 : it.rotation.y * .9; }
   if (G.mode !== 'teacher' || G.shop) R.tring.visible = false;
   updBubbles(dt); updUI();
@@ -931,10 +1032,19 @@ const cv = $('cv');
 cv.addEventListener('pointerdown', (e) => { SFX.init(); IN.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY }; try { cv.setPointerCapture(e.pointerId); } catch (er) { /* 무시 */ } });
 cv.addEventListener('pointermove', (e) => {
   const d = IN.drag; if (!d || d.id !== e.pointerId) return; const dx = e.clientX - d.x, dy = e.clientY - d.y; d.x = e.clientX; d.y = e.clientY;
-  if (G.mode === 'teacher' && !G.shop) { P.cy -= dx * .006; P.cp = clamp(P.cp + dy * .004, .12, 1.25); }
+  if (document.pointerLockElement) return;
+  if (G.shop) { G.shopLook.yaw = clamp(G.shopLook.yaw - dx * .004, PI - 1.2, PI + 1.2); G.shopLook.pitch = clamp(G.shopLook.pitch - dy * .004, -1.2, .3); }
+  else if (isFP()) look(dx * 2.1, dy * 2.1);
+  else if (G.mode === 'teacher') { P.cy -= dx * .006; P.cp = clamp(P.cp + dy * .004, .12, 1.25); }
   else if (G.mode === 'student') { G.sv.yaw = clamp(G.sv.yaw - dx * .004, -2.3, 2.3); G.sv.pitch = clamp(G.sv.pitch - dy * .004, -1.2, .5); }
 });
 cv.addEventListener('pointerup', (e) => { const d = IN.drag; if (d && G.shop && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) shopPick(e); IN.drag = null; });
+function look(dx, dy) { P.cy -= dx * .0024; P.pitch = clamp(P.pitch - dy * .0022, -1.35, 1.25); }
+cv.addEventListener('click', () => { if (isFP() && !G.shop && (G.phase === 'exam' || G.phase === 'end') && matchMedia('(pointer:fine)').matches && !document.pointerLockElement && cv.requestPointerLock) cv.requestPointerLock(); });
+addEventListener('mousemove', (e) => { if (document.pointerLockElement === cv) look(e.movementX, e.movementY); });
+cv.addEventListener('mousedown', (e) => { if (document.pointerLockElement === cv && e.button === 0) { IN.atk = true; tryAttack(); } });
+addEventListener('mouseup', () => { if (document.pointerLockElement === cv) IN.atk = false; });
+$('btnView').onclick = () => { G.settings.view = isFP() ? 'tp' : 'fp'; save(); G.camBlend = 0; exitLock(); SFX.click(); toast(isFP() ? '1인칭 시점' : '3인칭 시점', 'info'); };
 cv.addEventListener('wheel', (e) => { P.cdist = clamp(P.cdist + e.deltaY * .004, 2.5, 9); }, { passive: true });
 const joy = $('joy'), knob = $('knob');
 function joyMove(e) { const r = joy.getBoundingClientRect(), R0 = r.width * .38; let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); const l = Math.hypot(dx, dy); if (l > R0) { dx *= R0 / l; dy *= R0 / l; } knob.style.transform = `translate(${dx}px,${dy}px)`; IN.jx = dx / R0; IN.jy = -dy / R0; }
@@ -969,7 +1079,7 @@ $('btnAsk').onclick = () => (G.aiOpen ? closeAI() : openAI());
 $('aiClose').onclick = closeAI;
 $('aiSend').onclick = aiSend;
 $('aiIn').addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') aiSend(); });
-const openSettings = () => { show('settings', true); show('hackPwBox', false); $('hackMsg').textContent = ''; G.paused = G.mode !== 'menu'; $('btnHome').classList.toggle('hidden', G.mode === 'menu'); };
+const openSettings = () => { exitLock(); show('settings', true); show('hackPwBox', false); $('hackMsg').textContent = ''; G.paused = G.mode !== 'menu'; $('btnHome').classList.toggle('hidden', G.mode === 'menu'); };
 const closeSettings = () => { show('settings', false); G.paused = false; last = performance.now(); };
 $('btnSet').onclick = openSettings; $('mSettings').onclick = openSettings; $('setClose').onclick = closeSettings;
 $('btnHome').onclick = () => { closeSettings(); toMenu(); };

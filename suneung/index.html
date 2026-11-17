@@ -8,14 +8,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=20261117b">
+<link rel="stylesheet" href="./style.css?v=20261118a">
 <script type="importmap">
 { "imports": {
   "three": "../vendor/three/three.module.min.js",
   "three/addons/": "../vendor/three/addons/",
-  "./js/data.js": "./js/data.js?v=20261117b",
-  "./js/audio.js": "./js/audio.js?v=20261117b",
-  "./js/world.js": "./js/world.js?v=20261117b"
+  "./js/data.js": "./js/data.js?v=20261118a",
+  "./js/audio.js": "./js/audio.js?v=20261118a",
+  "./js/world.js": "./js/world.js?v=20261118a",
+  "./js/human.js": "./js/human.js?v=20261118a"
 } }
 </script>
 </head>
@@ -53,10 +54,13 @@
     <button id="btnSet" class="icbtn" aria-label="설정"><i data-ic="gear"></i></button>
   </div>
   <div id="remain" class="hidden"></div>
+  <div id="xhair" class="hidden"><i></i><i></i><i></i><i></i><b></b></div>
+  <button id="shopExit" class="glassbtn hidden"><i data-ic="exit"></i><span>일어나기</span></button>
 
   <!-- 선생님 모드 조작 -->
   <div id="tctl">
     <button id="btnChat" class="icbtn" aria-label="말하기"><i data-ic="chat"></i></button>
+    <button id="btnView" class="icbtn" aria-label="시점 바꾸기"><i data-ic="view"></i></button>
     <div id="chatLog"></div>
     <div id="chatBar" class="hidden"><input id="chatIn" maxlength="60" placeholder="학생들에게 말하기..." autocomplete="off"><button id="chatSend" class="icbtn" aria-label="보내기"><i data-ic="send"></i></button></div>
     <div id="joy"><div id="knob"></div></div>
@@ -87,12 +91,6 @@
   </div>
 </div>
 
-<!-- 무기 상점 -->
-<div id="shop" class="hidden">
-  <button id="shopExit" class="pill"><i data-ic="exit"></i>나가기</button>
-  <div class="shop-head"><b>감독관 책상 · 무기 상점</b><span id="shopCoins" class="coinbox"></span></div>
-  <div id="shopCards"></div>
-</div>
 
 <!-- 입실 애니메이션 -->
 <div id="cine" class="hidden"><div class="bar top"></div><div class="bar bot"></div><div id="cineTxt"></div><button id="skip" class="pill">건너뛰기</button></div>
@@ -123,6 +121,6 @@
 </div>
 <button id="hackBall" class="hidden" aria-label="해킹 창 열기"><i data-ic="hack"></i></button>
 
-<script type="module" src="./js/game.js?v=20261117b"></script>
+<script type="module" src="./js/game.js?v=20261118a"></script>
 </body>
 </html>
