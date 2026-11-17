@@ -190,7 +190,7 @@ function textures() {
     let x = -((r % 2) * 256) - ri(0, 120);
     while (x < S) {
       const w = ri(340, 520), l = rand(-7, 7);
-      g.fillStyle = `hsl(${30 + rand(-3, 3)},${46 + rand(-6, 6)}%,${47 + l}%)`; g.fillRect(x, r * ph, w, ph);
+      g.fillStyle = `hsl(${32 + rand(-3, 3)},${30 + rand(-5, 5)}%,${55 + l}%)`; g.fillRect(x, r * ph, w, ph);
       g.save(); g.beginPath(); g.rect(x, r * ph, w, ph); g.clip(); g.translate(x, r * ph); grain(g, w, ph, '#5a3412', 26, false, 3); g.restore();
       g.fillStyle = 'rgba(40,22,8,.75)'; g.fillRect(x, r * ph, 3, ph);
       hg.fillStyle = '#000'; hg.fillRect(x / 2, r * ph / 2, 1.5, ph / 2);
@@ -258,12 +258,12 @@ function initMats() {
 
 function lights() {
   const s = R.scene;
-  s.add(new THREE.HemisphereLight(0xfff4e6, 0x6a5440, .45));
-  const sun = new THREE.DirectionalLight(0xffdfb0, 4.2); sun.position.copy(SUN_POS); sun.castShadow = true;
+  s.add(new THREE.HemisphereLight(0xf4f6ff, 0x6a5a48, .6));
+  const sun = new THREE.DirectionalLight(0xfff0dc, 3.6); sun.position.copy(SUN_POS); sun.castShadow = true;
   const sh = sun.shadow; sh.mapSize.set(2048, 2048); Object.assign(sh.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 40 });
   sh.bias = -.0003; sh.normalBias = .025; sh.radius = 3; s.add(sun, sun.target); R.sun = sun;
   R.lamps = [];
-  for (const x of [-3.5, 3.5]) for (const z of [-3.6, 3.6]) { const l = new THREE.PointLight(0xfff3e2, 9, 0, 2); l.position.set(x, 2.95, z); s.add(l); R.lamps.push(l); }
+  for (const x of [-3.5, 3.5]) for (const z of [-3.6, 3.6]) { const l = new THREE.PointLight(0xf6f8ff, 9, 0, 2); l.position.set(x, 2.95, z); s.add(l); R.lamps.push(l); }
   R.flashL = new THREE.PointLight(0xffa040, 0, 16, 2); s.add(R.flashL);
 }
 function envMap() {
@@ -369,6 +369,7 @@ function room() {
     for (let i = 0; i < 9; i++) fp.push({ g: B(.02, .5, .012), c: '#b4bac2', p: [-6.83, .45, z - 1 + i * .25], k: K.metal });
     for (const s of [-1, 1]) for (let f = 0; f < 4; f++) fp.push({ g: CY(.05, .055, 1.95, 10), c: '#a9c2ab', p: [-6.86, 1.98, z + s * (1.48 + f * .07)], s: [.6, 1, 1], k: K.cloth });
     fp.push({ g: CY(.015, .015, 3.4, 8), c: '#c0c4ca', p: [-6.86, 2.97, z], r: [HP, 0, 0], k: K.chrome });
+    for (const s of [-1, 1]) fp.push({ g: CY(.035, .035, 1.38, 12), c: '#ece6d8', p: [-6.9, 2.56, z + s * .7], r: [HP, 0, 0], k: K.plastic }, { g: B(.008, .5, 1.36), c: '#ece4d0', p: [-6.9, 2.29, z + s * .7], k: K.cloth }, { g: B(.016, .025, 1.36), c: '#d8d0bc', p: [-6.9, 2.04, z + s * .7], k: K.plastic });
   }
   R.dec.L.add(M(merge(fp)));
   const bd = new THREE.Mesh(new THREE.PlaneGeometry(6.6, 1.65), new THREE.MeshStandardMaterial({ map: R.boardTex, normalMap: T.boardN, normalScale: new THREE.Vector2(.3, .3), roughness: .92 })); bd.position.set(0, 1.62, -7.955); sc.add(bd);
@@ -405,12 +406,22 @@ function room() {
   const df = '#6e563f', dp = [{ g: B(.14, 2.25, .08), c: df, p: [6.98, 1.125, -5.04], k: K.wood }, { g: B(.14, 2.25, .08), c: df, p: [6.98, 1.125, -3.96], k: K.wood }, { g: B(.14, .08, 1.16), c: df, p: [6.98, 2.25, -4.5], k: K.wood }];
   dp.push({ g: B(.06, 2.15, 1), c: '#93714c', p: [6.97, 1.075, 6], k: K.wood }, { g: B(.08, 2.25, .08), c: df, p: [6.98, 1.125, 5.46], k: K.wood }, { g: B(.08, 2.25, .08), c: df, p: [6.98, 1.125, 6.54], k: K.wood }, { g: SP(.035), c: '#d8c06a', p: [6.92, 1.0, 6.4], k: K.chrome });
   dp.push({ g: B(.02, .22, .5), c: '#fff', p: [6.94, 2.45, -4.5], k: K.paper }, { g: B(.01, .14, .42), c: '#1a3b8a', p: [6.93, 2.45, -4.5], k: K.plastic });
+  for (const [z0, z1] of [[-3.7, -.1], [.1, 3.7], [3.9, 5.3]]) {
+    const L = z1 - z0, zc = (z0 + z1) / 2; dp.push({ g: B(.1, .05, L), c: '#c9ced4', p: [6.96, 2.86, zc], k: K.metal }, { g: B(.1, .05, L), c: '#c9ced4', p: [6.96, 2.29, zc], k: K.metal });
+    for (let k = 0; k <= Math.round(L / .9); k++) dp.push({ g: B(.1, .6, .04), c: '#c9ced4', p: [6.96, 2.575, z0 + k * L / Math.round(L / .9)], k: K.metal });
+    const fg = new THREE.Mesh(new THREE.PlaneGeometry(L, .52), new THREE.MeshStandardMaterial({ color: 0xe6edf0, emissive: 0xb8c6cc, emissiveIntensity: .45, roughness: .18 })); fg.position.set(6.985, 2.575, zc); fg.rotation.y = -HP; R.dec.Rt.add(fg);
+  }
   R.dec.Rt.add(M(merge(dp)));
+  R.dec.B.add(M(merge([['#2a64b8', 6.35], ['#2f8a4a', 5.95], ['#6f757c', 5.55]].flatMap(([c, x]) => [{ g: CY(.17, .145, .52, 20), c, p: [x, .26, 7.08], k: K.plastic }, { g: CY(.175, .175, .03, 20), c, p: [x, .53, 7.08], k: K.plastic }, { g: B(.12, .002, .08), c: '#fff', p: [x, .4, 6.93], r: [HP, 0, 0], k: K.paper }]))));
   R.door = new THREE.Group(); R.door.position.set(6.97, 0, -4.0); R.dec.Rt.add(R.door);
   R.door.add(M(merge([{ g: B(.05, 2.15, 1), c: '#93714c', p: [0, 1.075, -.5], k: K.wood }, { g: B(.055, .55, .4), c: '#7d5f40', p: [0, 1.55, -.5], k: K.wood }, { g: CY(.02, .02, .12, 10), c: '#d8c06a', p: [-.06, 1.0, -.88], r: [0, 0, HP], k: K.chrome }, { g: B(.02, .16, .26), c: '#fff', p: [-.035, 1.95, -.5], k: K.paper }])));
-  const lp = [], tube = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(3.2, 3.2, 3) });
-  for (const x of [-3.5, 0, 3.5]) for (const z of [-4.5, 0, 4.5]) { lp.push({ g: B(1.42, .05, .38), c: '#e6e9ec', p: [x, 3.17, z], k: K.metal }); for (const dz of [-.08, .08]) { const t = new THREE.Mesh(CY(.016, .016, 1.24, 10), tube); t.rotation.z = HP; t.position.set(x, 3.125, z + dz); R.dec.C.add(t); } }
-  R.dec.C.add(M(merge(lp), R.mV, false));
+  const lp = [], led = [];
+  for (const x of [-3.5, 0, 3.5]) for (const z of [-4.5, 0, 4.5]) { lp.push({ g: B(1.26, .04, .66), c: '#e9ecef', p: [x, 3.18, z], k: K.metal }); led.push({ g: B(1.18, .01, .58), p: [x, 3.157, z] }); }
+  for (const x of [-1.75, 1.75]) for (const z of [-2.25, 2.25]) {
+    lp.push({ g: CY(.012, .012, .36, 8), c: '#f0f0ee', p: [x, 3.02, z], k: K.plastic }, { g: CY(.11, .085, .09, 20), c: '#f2f2f0', p: [x, 2.8, z], k: K.plastic }, { g: CY(.04, .04, .03, 12), c: '#d9dadc', p: [x, 2.74, z], k: K.chrome });
+    for (let i = 0; i < 3; i++) { const a = i * 2.094 + x; lp.push({ g: B(.6, .008, .12), c: '#f4f4f2', p: [x + Math.cos(a) * .4, 2.77, z + Math.sin(a) * .4], r: [0, -a, .06], k: K.plastic }); }
+  }
+  R.dec.C.add(M(merge(lp), R.mV, false)); R.dec.C.add(new THREE.Mesh(merge(led), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(2.4, 2.45, 2.5) })));
 }
 
 // ───────── 창문 햇살 + 먼지 ─────────
@@ -419,19 +430,19 @@ function sunbeams() {
   const quad = (a, b, c, e, aa, ab, ac, ae) => { pos.push(...a, ...b, ...c, ...a, ...c, ...e); al.push(aa, ab, ac, aa, ac, ae); };
   R.beamBoxes = [];
   for (const zc of [-4.2, 0, 4.2]) {
-    const W = [[.98, zc - 1.4], [.98, zc + 1.4], [2.52, zc + 1.4], [2.52, zc - 1.4]].map(([y, z]) => [-6.98, y, z]);
+    const W = [[.98, zc - 1.4], [.98, zc + 1.4], [2.04, zc + 1.4], [2.04, zc - 1.4]].map(([y, z]) => [-6.98, y, z]);
     const Fp = W.map(([x, y, z]) => { const t = y / -d.y; return [x + d.x * t, 0, z + d.z * t]; });
     for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; quad(W[i], W[j], Fp[j], Fp[i], 1, 1, .1, .1); }
     R.beamBoxes.push({ W, Fp });
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('a', new THREE.Float32BufferAttribute(al, 1));
-  const m = new THREE.ShaderMaterial({ uniforms: { col: { value: new THREE.Color(1, .82, .55) }, op: { value: .03 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  const m = new THREE.ShaderMaterial({ uniforms: { col: { value: new THREE.Color(1, .9, .75) }, op: { value: .022 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
     vertexShader: 'attribute float a; varying float va; void main(){ va=a; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
     fragmentShader: 'uniform vec3 col; uniform float op; varying float va; void main(){ gl_FragColor=vec4(col*op*va,1.); }' });
   R.beams = new THREE.Mesh(g, m); R.beams.renderOrder = 4; R.scene.add(R.beams);
   const n = 220, mp = new Float32Array(n * 3); R.moteBase = [];
   for (let i = 0; i < n; i++) {
-    const bx = pick(R.beamBoxes), y = lerp(.98, 2.52, Math.random()), z = lerp(bx.W[0][2], bx.W[1][2], Math.random()), tt = y / -d.y * Math.random();
+    const bx = pick(R.beamBoxes), y = lerp(.98, 2.04, Math.random()), z = lerp(bx.W[0][2], bx.W[1][2], Math.random()), tt = y / -d.y * Math.random();
     R.moteBase.push([-6.98 + d.x * tt, y + d.y * tt, z + d.z * tt, rand(0, 6)]);
   }
   const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.BufferAttribute(mp, 3));
@@ -454,7 +465,7 @@ function furniture() {
   const cp = [{ g: CA(.22, .06, 10), c: '#22252e', p: [0, .5, 0], s: [1.15, .35, 1.1], k: K.cloth }, { g: CA(.22, .3, 10), c: '#22252e', p: [0, .88, -.25], s: [1.1, 1, .3], r: [-.08, 0, 0], k: K.cloth }, { g: CY(.025, .025, .38), c: '#777', p: [0, .27, 0], k: K.chrome }, { g: B(.05, .05, .3), c: '#333', p: [0, .5, -.2], k: K.metal }];
   for (let i = 0; i < 5; i++) { const a = i / 5 * 2 * PI; cp.push({ g: B(.05, .035, .3), c: '#2a2a2a', p: [Math.sin(a) * .15, .07, Math.cos(a) * .15], r: [0, a, 0], k: K.plastic }, { g: SP(.035, 10, 8), c: '#151515', p: [Math.sin(a) * .29, .035, Math.cos(a) * .29], k: K.rubber }); }
   const ch = M(merge(cp)); ch.position.set(CHAIR.x, 0, CHAIR.z); sc.add(ch);
-  R.shopRing = new THREE.Mesh(new THREE.RingGeometry(.42, .56, 48), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(1.6, 1.2, .2), transparent: true, opacity: .7, depthWrite: false }));
+  R.shopRing = new THREE.Mesh(new THREE.RingGeometry(.48, .52, 64), new THREE.MeshBasicMaterial({ color: 0xffe6a0, transparent: true, opacity: .4, depthWrite: false }));
   R.shopRing.rotation.x = -HP; R.shopRing.position.set(CHAIR.x, .135, CHAIR.z); sc.add(R.shopRing);
   const lc = mkCanvas(256, 64), g = lc.getContext('2d');
   g.fillStyle = 'rgba(20,24,36,.88)'; g.beginPath(); if (g.roundRect) g.roundRect(4, 6, 248, 52, 26); else g.rect(4, 6, 248, 52); g.fill(); g.strokeStyle = '#ffd23f'; g.lineWidth = 4; g.stroke();
@@ -534,26 +545,26 @@ export function buildWeapon(k) {
 }
 function shopItems() {
   R.shopItems = {}; R.tags = {};
+  R.scene.add(M(merge([{ g: B(1.7, .006, .6), c: '#2a2d33', p: [0, .828, -6.02], k: [.95, 0] }, { g: B(1.72, .008, .012), c: '#c9a24a', p: [0, .829, -6.32], k: K.chrome }])));
   ['bat', 'pistol', 'ak', 'rpg', 'tackle'].forEach((k, i) => {
     const w = buildWeapon(k), base = new THREE.Group(); base.add(w);
-    w.rotation.set(0, PI, k === 'tackle' ? 0 : HP); w.scale.setScalar(k === 'rpg' ? .72 : k === 'pistol' ? 1.4 : 1);
-    base.position.set(-.72 + i * .36, .86, -6.0); base.userData = { k, y: .86 }; R.scene.add(base); R.shopItems[k] = base;
-    const c = mkCanvas(320, 128), t = ctex(c), tag = new THREE.Mesh(new THREE.PlaneGeometry(.26, .104), new THREE.MeshStandardMaterial({ map: t, roughness: .4, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: .35 }));
-    tag.position.set(-.72 + i * .36, .835, -6.3); tag.lookAt(0, 1.4, -7.25); tag.userData = { k }; R.scene.add(tag); R.tags[k] = { tag, c, t };
+    w.rotation.set(0, PI, k === 'tackle' ? 0 : HP); w.scale.setScalar({ bat: .62, pistol: 1.35, ak: .44, rpg: .38, tackle: 1.1 }[k]); w.position.z = { bat: .2, pistol: .06, ak: .2, rpg: .2, tackle: 0 }[k];
+    base.position.set(-.68 + i * .34, .86, -5.98); base.userData = { k, y: .86 }; R.scene.add(base); R.shopItems[k] = base;
+    const c = mkCanvas(320, 128), t = ctex(c), tag = new THREE.Mesh(new THREE.PlaneGeometry(.22, .088), new THREE.MeshStandardMaterial({ map: t, roughness: .4, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: .35 }));
+    tag.position.set(-.68 + i * .34, .842, -6.37); tag.lookAt(0, 1.4, -7.25); tag.userData = { k }; R.scene.add(tag); R.tags[k] = { tag, c, t };
   });
 }
 export function drawTag(k, st) {
   const { c, t } = R.tags[k], g = c.getContext('2d'), W = 320, H = 128; g.clearRect(0, 0, W, H);
-  g.fillStyle = st.sel ? '#1d1a0e' : '#121722'; g.beginPath(); if (g.roundRect) g.roundRect(6, 6, W - 12, H - 12, 22); else g.rect(6, 6, W - 12, H - 12); g.fill();
-  g.lineWidth = st.sel ? 7 : 3; g.strokeStyle = st.sel ? '#ffd23f' : 'rgba(255,255,255,.25)'; g.stroke();
-  g.textBaseline = 'middle'; g.textAlign = 'center';
-  if (st.owned) { g.fillStyle = st.eq ? '#ffd23f' : '#5ef08f'; g.font = `bold 46px ${F}`; g.fillText(st.eq ? '장착 중' : (st.sel ? '탭: 장착' : '보유'), W / 2, H / 2 + 2); }
+  g.fillStyle = st.eq ? 'rgba(255,214,102,.95)' : 'rgba(250,250,248,.94)'; g.beginPath(); if (g.roundRect) g.roundRect(8, 8, W - 16, H - 16, 26); else g.rect(8, 8, W - 16, H - 16); g.fill();
+  if (st.sel) { g.lineWidth = 6; g.strokeStyle = '#f5a623'; g.stroke(); }
+  g.textBaseline = 'middle'; g.textAlign = 'center'; const y = st.sel ? 52 : H / 2;
+  if (st.owned) { g.fillStyle = st.eq ? '#3a2a00' : '#1f7a45'; g.font = `bold 44px ${F}`; g.fillText(st.eq ? '장착 중' : '보유', W / 2, y + 2); }
   else {
-    const x = W / 2 - 52, y = st.sel ? 50 : H / 2; const gr = g.createRadialGradient(x - 8, y - 8, 2, x, y, 26); gr.addColorStop(0, '#fff3b0'); gr.addColorStop(.5, '#ffc83a'); gr.addColorStop(1, '#b07800');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 24, 0, 7); g.fill(); g.strokeStyle = '#7a5200'; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 16, 0, 7); g.stroke();
-    g.fillStyle = '#fff'; g.font = `bold 54px ${F}`; g.textAlign = 'left'; g.fillText(st.price, x + 36, y + 3);
-    if (st.sel) { g.textAlign = 'center'; g.font = `bold 22px ${F}`; g.fillStyle = '#ffd23f'; g.fillText('한 번 더 탭하면 구매', W / 2, 98); }
+    const x = W / 2 - 46, gr = g.createRadialGradient(x - 7, y - 7, 2, x, y, 22); gr.addColorStop(0, '#fff1a8'); gr.addColorStop(.55, '#f7c234'); gr.addColorStop(1, '#b07800');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 20, 0, 7); g.fill(); g.fillStyle = '#1c1f26'; g.font = `bold 50px ${F}`; g.textAlign = 'left'; g.fillText(st.price, x + 32, y + 3);
   }
+  if (st.sel && !st.eq) { g.textAlign = 'center'; g.font = `bold 22px ${F}`; g.fillStyle = '#9a6400'; g.fillText(st.owned ? '한 번 더 탭하면 장착' : '한 번 더 탭하면 구매', W / 2, 98); }
   t.needsUpdate = true;
 }
 

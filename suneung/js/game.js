@@ -792,7 +792,7 @@ function shopPick(e) {
 }
 
 // ───────── 1인칭 (감독관 시점) ─────────
-const isFP = () => G.mode === 'teacher' && G.settings.view !== 'tp';
+const isFP = () => G.mode === 'teacher';
 const _f = V(), _q = new THREE.Quaternion(), _eu = new THREE.Euler(), _a = V(), _b = V(), _c = V(), _d = V(), _t = V();
 const camFwd = (o) => o.set(0, 0, -1).applyQuaternion(R.cam.quaternion);
 function fpCam(dt) {
@@ -1018,7 +1018,7 @@ function update(dt) {
   updStudents(dt); updProj(dt); updDebris(dt); R.pfxA.update(dt); R.pfxN.update(dt); R.pfxS.update(dt); updAmbient(G.T);
   if (R.flashL.intensity > 0) R.flashL.intensity = Math.max(0, R.flashL.intensity - dt * 220);
   G.shake = Math.max(0, G.shake - dt * 2.2);
-  R.shopRing.material.opacity = .45 + Math.sin(G.T * 4) * .25; R.shopLabel.visible = G.mode === 'teacher' && !G.shop && ph !== 'intro';
+  R.shopLabel.visible = false;
   R.shopRing.visible = G.mode !== 'student' && !G.shop;
   for (const k in R.shopItems) { const it = R.shopItems[k], sel = G.shop && G.shopSel === k; it.position.y += ((sel ? it.userData.y + .12 : it.userData.y) - it.position.y) * Math.min(1, dt * 8); it.rotation.y = sel ? Math.sin(G.T * 2) * .5 : it.rotation.y * .9; }
   if (G.mode !== 'teacher' || G.shop) R.tring.visible = false;
@@ -1044,7 +1044,6 @@ cv.addEventListener('click', () => { if (isFP() && !G.shop && (G.phase === 'exam
 addEventListener('mousemove', (e) => { if (document.pointerLockElement === cv) look(e.movementX, e.movementY); });
 cv.addEventListener('mousedown', (e) => { if (document.pointerLockElement === cv && e.button === 0) { IN.atk = true; tryAttack(); } });
 addEventListener('mouseup', () => { if (document.pointerLockElement === cv) IN.atk = false; });
-$('btnView').onclick = () => { G.settings.view = isFP() ? 'tp' : 'fp'; save(); G.camBlend = 0; exitLock(); SFX.click(); toast(isFP() ? '1인칭 시점' : '3인칭 시점', 'info'); };
 cv.addEventListener('wheel', (e) => { P.cdist = clamp(P.cdist + e.deltaY * .004, 2.5, 9); }, { passive: true });
 const joy = $('joy'), knob = $('knob');
 function joyMove(e) { const r = joy.getBoundingClientRect(), R0 = r.width * .38; let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); const l = Math.hypot(dx, dy); if (l > R0) { dx *= R0 / l; dy *= R0 / l; } knob.style.transform = `translate(${dx}px,${dy}px)`; IN.jx = dx / R0; IN.jy = -dy / R0; }
