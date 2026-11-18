@@ -186,6 +186,8 @@
       }
       case 'scr-story': { const [g, w, h] = fitCanvas($('storyArt')); ART.story[page](g, w, h, t); break; }
       case 'scr-game': GAME.tick(dt); GAME.draw(); break;
+      case 'scr-war': WAR.frame(dt); break;
+      case 'scr-result': WAR.resultFrame(dt); break;
       case 'scr-ending': if (ending) { ending.t += dt; const [g, w, h] = fitCanvas($('endArt')); (ending.kind === 'sad' ? ART.sad : ART.happy)(g, w, h, ending.t, map); } break;
       case 'scr-bye': { const [g, w, h] = fitCanvas($('byeArt')); ART.bye(g, w, h, t); break; }
     }

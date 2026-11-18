@@ -42,7 +42,7 @@
   const batchim = (w) => { const c = w.charCodeAt(w.length - 1); return c >= 0xac00 && c <= 0xd7a3 ? (c - 0xac00) % 28 : 0; };
   const J = (w, a, b) => w + (batchim(w) ? a : b);
   const RO = (w) => { const b = batchim(w); return w + (b && b !== 8 ? '으로' : '로'); };
-  UI.fmt = fmt; UI.J = J;
+  UI.fmt = fmt; UI.J = J; UI.RO = RO;
 
   // ───────── 규칙 ─────────
   const SAVE_KEY = 'zollaWar.saves.v1';
@@ -202,70 +202,52 @@
 
   // ───────── 전쟁 ─────────
   function openWar(id) {
-    const c = cities[id], en = countries[S.owner[id]];
+    const c = cities[id];
     if (!inRange[id]) {
       SFX.play('deny');
       UI.toast(`${c.name}${batchim(c.name) ? '은' : '는'} 사거리 밖이에요. <b>시설</b> 탭에서 군사기지를 올리세요.`, 'bad', 'base');
       return;
     }
-    const P0 = power(), D = defOf(id);
-    if (P0 <= 0) { SFX.play('deny'); UI.toast('군대가 없어요! <b>생성</b> 탭에서 병사를 만드세요.', 'bad', 'infantry'); return; }
-    let f = [0.25, 0.5, 0.75, 1].find((x) => chanceOf(P0 * x, D) >= 0.8) || 1;
+    if (power() <= 0) { SFX.play('deny'); UI.toast('군대가 없어요! <b>생성</b> 탭에서 병사를 만드세요.', 'bad', 'infantry'); return; }
     SFX.play('drum');
-    const body = () => {
-      const P = Math.round(P0 * f), ch = chanceOf(P, D);
-      return `<h2 class="wob">${en.name} · ${c.name} 공격</h2>
-        <div class="vs"><span>${SK.img('power', 26)} 투입 전투력 <b>${fmt(P)}</b></span><span>${SK.img('fort', 26)} 적 방어력 <b>${fmt(D)}</b></span></div>
-        <div class="force">투입 병력: ${[0.25, 0.5, 0.75, 1].map((x) => `<button class="btn small ${x === f ? 'sel' : ''}" data-f="${x}">${x * 100}%</button>`).join('')}</div>
-        <div class="chance"><i style="width:${(ch * 100).toFixed(0)}%"></i><span>예상 승률 ${(ch * 100).toFixed(0)}%</span></div>
-        <p style="font-size:16px;font-weight:400">${c.capital ? '<b>수도</b>를 함락하면 그 나라의 다른 도시들 방어력이 크게 떨어져요. ' : ''}지면 병력을 잃지만 적 방어력도 깎여요.</p>
-        <div class="acts"><button class="btn" data-a="no"><span class="wob">취소</span></button><button class="btn red big" data-a="go"><span class="wob">공격 개시!</span></button></div>`;
-    };
-    const bind = (card) => {
-      card.querySelectorAll('[data-f]').forEach((b) => (b.onclick = () => { SFX.play('click'); f = +b.dataset.f; UI.modal(body(), bind); }));
-      card.querySelector('[data-a=no]').onclick = () => { SFX.play('click'); UI.close(); };
-      card.querySelector('[data-a=go]').onclick = () => fight(id, f);
-    };
-    UI.modal(body(), bind);
+    G.onWar && G.onWar(id);
   }
-
-  function fight(id, f) {
-    const c = cities[id], enIdx = S.owner[id], en = countries[enIdx];
+  G.chance = chanceOf;
+  G.warPrep = (id) => {
+    const c = cities[id], ei = S.owner[id], en = countries[ei];
+    return { id, city: c.name, capital: c.capital && c.country === ei, enemy: en.name, rgb: en.rgb, D: defOf(id), P0: power(), units: { ...S.units } };
+  };
+  // 전투 계산 + 결과 적용 (화면은 war.js)
+  G.fight = (id, f) => {
+    const c = cities[id], ei = S.owner[id], en = countries[ei];
     const P = power() * f, D = defOf(id), ch = chanceOf(P, D);
     const win = Math.random() < ch;
     const loss = win ? Math.min(0.5, Math.max(0.03, (0.5 * D) / (P + D))) : Math.min(0.8, Math.max(0.35, 0.35 + (0.4 * D) / (P + D)));
-    const sent = {}, lost = {};
-    Object.keys(UNITS).forEach((k) => { sent[k] = Math.round(S.units[k] * f); lost[k] = Math.min(sent[k], Math.floor(sent[k] * loss + Math.random())); });
-    UI.modal(`<h2 class="wob">${c.name} 전투</h2><canvas class="battle" id="battleCv"></canvas><p class="hint" style="font-size:15px">화면을 누르면 건너뛰어요</p><div class="acts" id="battleActs"></div>`);
-    ART.battle($('battleCv'), {
-      ourPower: P, enemyPower: D, win, ourLoss: loss, enemyLoss: win ? 0.75 : 0.35, units: sent,
-      cityName: `${en.name} ${c.name}`, fast: G.settings.fast, seed: id * 31 + S.wins,
-    }).then(() => {
-      Object.keys(UNITS).forEach((k) => (S.units[k] -= lost[k]));
-      const lostTxt = Object.keys(UNITS).filter((k) => lost[k]).map((k) => `${UNITS[k].name} ${fmt(lost[k])}`).join(', ') || '없음';
-      let msg;
-      if (win) {
-        S.owner[id] = K; delete S.dmg[id]; S.wins++;
-        S.approval = Math.min(100, S.approval + (c.capital ? 6 : 3));
-        const allMine = en.cities.every((ci) => S.owner[ci] === K);
-        msg = `<p><b>${c.name}</b>${batchim(c.name) ? '을' : '를'} 점령했습니다! 지지율 +${c.capital ? 6 : 3}</p>${allMine ? `<p><b>${en.name}</b> 전체를 정복했습니다! 지지율 +2</p>` : ''}`;
-        if (allMine) S.approval = Math.min(100, S.approval + 2);
-        SFX.play('win');
-        map.recolor((i) => S.owner[i]); computeRange(); dirtyMap = true;
-      } else {
-        const prev = S.dmg[id];
-        const cur = prev ? Math.max(0, prev.v - (S.played - prev.t) * baseDef(id) * 0.01) : 0;
-        S.dmg[id] = { v: cur + P * 0.6, t: S.played };
-        S.losses++; S.approval -= 5;
-        msg = `<p>공격에 실패했습니다... 지지율 -5</p><p style="font-size:16px">적 방어력이 ${fmt(D)}에서 ${fmt(defOf(id))}까지 줄었어요. 다시 도전하세요!</p>`;
-        SFX.play('lose');
-      }
-      $('battleActs').insertAdjacentHTML('beforebegin', `${msg}<p style="font-size:16px">잃은 병력: ${lostTxt}</p>`);
-      $('battleActs').innerHTML = '<button class="btn big" id="battleOk"><span class="wob">확인</span></button>';
-      SK.wob($('battleOk').firstChild);
-      $('battleOk').onclick = () => { SFX.play('click'); UI.close(); G.save(); checkEnd(); };
-    });
-  }
+    const sent = {}, lost = {}, before = { ...S.units };
+    Object.keys(UNITS).forEach((k) => { sent[k] = Math.round(S.units[k] * f); lost[k] = Math.min(sent[k], Math.floor(sent[k] * loss + Math.random())); S.units[k] -= lost[k]; });
+    const r = { win, P: Math.round(P), D, ch, loss, sent, lost, before, city: c.name, enemy: en.name, rgb: en.rgb, capital: c.capital && c.country === ei };
+    if (win) {
+      const prev = inRange.slice();
+      S.owner[id] = K; delete S.dmg[id]; S.wins++;
+      r.gain = r.capital ? 6 : 3;
+      r.allMine = en.cities.every((ci) => S.owner[ci] === K);
+      if (r.allMine) r.gain += 2;
+      S.approval = Math.min(100, S.approval + r.gain);
+      map.recolor((i) => S.owner[i]); computeRange(); dirtyMap = true;
+      r.newTargets = inRange.filter((v, i) => v && !prev[i]).length;
+    } else {
+      const prev = S.dmg[id];
+      const cur = prev ? Math.max(0, prev.v - (S.played - prev.t) * baseDef(id) * 0.01) : 0;
+      S.dmg[id] = { v: cur + P * 0.6, t: S.played };
+      S.losses++; S.approval -= 5; r.gain = -5;
+      r.Dafter = defOf(id);
+    }
+    r.after = { ...S.units }; r.power = power(); r.approval = S.approval;
+    r.owned = G.ownedCount(S); r.total = cities.length;
+    G.save();
+    return r;
+  };
+  G.afterWar = () => { renderPanel(true); renderHud(true); checkEnd(); };
 
   function checkEnd() {
     if (!S || S.ended) return;

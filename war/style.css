@@ -193,6 +193,55 @@ input[type=range] { width: 46%; accent-color: #c8403a; }
 .chance span { position: relative; display: block; text-align: center; font-size: 18px; line-height: 21px; }
 .vs { display: flex; justify-content: space-between; gap: 12px; font-size: 19px; }
 
+/* 전쟁 화면 */
+#scr-war { background: #2a2420; }
+#scr-war.show, #scr-result.show { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 350px); }
+.war-field { position: relative; min-width: 0; min-height: 0; }
+#warCv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+.war-side { position: relative; z-index: 2; padding: 16px 16px 12px; overflow: auto; border-left: 3px solid var(--ink); box-shadow: -3px 0 0 rgba(0,0,0,.2); display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.war-side h2 { font-family: var(--title); font-weight: 400; font-size: 40px; margin: 0; line-height: 1.05; }
+.war-sub, .war-tip, .war-units { font-size: 17px; margin: 0; font-weight: 400; line-height: 1.35; }
+.war-tip { color: #6a5a4a; }
+.war-box { display: flex; justify-content: space-between; align-items: center; font-size: 20px; padding: 4px 2px; border-bottom: 2px dashed rgba(42,36,32,.25); }
+.war-box img { width: 26px; height: 26px; vertical-align: middle; }
+.war-box b { font-size: 24px; }
+.war-acts { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 8px; }
+#warLog, #resList { list-style: none; padding: 0; margin: 4px 0; flex: 1; overflow: auto; font-size: 18px; min-height: 60px; }
+#warLog li, #resList li { padding: 7px 4px; border-bottom: 2px dashed rgba(42,36,32,.2); font-weight: 400; line-height: 1.35; animation: logIn .35s ease; }
+#warLog li .tm { color: #8a7a6a; margin-right: 6px; }
+#warLog li.good, #resList li.good { color: #2f6a1f; }
+#warLog li.bad, #resList li.bad { color: #a3301f; }
+@keyframes logIn { from { opacity: 0; transform: translateX(14px); } }
+
+/* 결과 화면 */
+#scr-result.lose { background-color: #d9d4ca; }
+.res-main { position: relative; display: flex; flex-direction: column; gap: 14px; padding: 18px 16px; min-width: 0; min-height: 0; }
+.res-side { position: relative; flex: 1; display: flex; min-height: 0; box-shadow: 4px 6px 0 rgba(0,0,0,.25); }
+.res-side::before { content: ""; position: absolute; inset: 0; border: 2.5px solid var(--ink); border-radius: 6px 3px 8px 4px; filter: url(#rough); pointer-events: none; z-index: 2; }
+.res-side canvas { flex: 1.2; min-width: 0; height: 100%; display: block; }
+.res-info { flex: 1; padding: 12px 16px; font-size: 18px; overflow: auto; }
+.res-info h3 { margin: 0 0 6px; font-size: 24px; }
+.res-info h3 img { width: 26px; height: 26px; vertical-align: middle; }
+.res-info p { margin: 0; line-height: 1.5; font-weight: 400; }
+.res-info .neg { color: #a3301f; }
+.res-tag { position: absolute; left: -6px; top: -12px; z-index: 3; padding: 0 12px; font-size: 18px; background: rgba(240,225,160,.9); transform: rotate(-4deg); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.res-tag.ours { background: rgba(190,225,160,.92); }
+.res-stamp { position: absolute; left: 28%; top: 50%; z-index: 5; transform: translate(-50%, -50%) rotate(-9deg); font-family: var(--title); font-size: clamp(64px, 11vw, 120px); line-height: 1; padding: 4px 30px 10px; border: 7px solid currentColor; border-radius: 18px 8px 22px 10px; background: rgba(255,250,235,.88); pointer-events: none; opacity: 0; white-space: nowrap; }
+.res-stamp.win { color: #c8303a; }
+.res-stamp.lose { color: #3a4a6a; }
+.res-stamp.go { animation: stamp .55s cubic-bezier(.2,1.5,.4,1) .25s forwards; }
+@keyframes stamp { from { opacity: 0; transform: translate(-50%, -50%) rotate(-9deg) scale(2.6); } to { opacity: 1; transform: translate(-50%, -50%) rotate(-9deg) scale(1); } }
+@media (max-width: 720px) {
+  #scr-war.show, #scr-result.show { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .war-side { max-height: 44vh; border-left: 0; border-top: 3px solid var(--ink); }
+  .war-side h2 { font-size: 30px; }
+  .res-main { padding: 14px 10px 10px; gap: 10px; }
+  .res-info { font-size: 15px; padding: 8px; }
+  .res-info h3 { font-size: 18px; }
+  .res-side canvas { flex: .8; }
+  .res-stamp { left: 24%; font-size: 52px; border-width: 5px; padding: 2px 16px 6px; }
+}
+
 /* 엔딩 */
 #scr-ending { background: #333; }
 .end-card { position: absolute; left: 50%; bottom: 5%; transform: translateX(-50%) rotate(-1deg); width: min(620px, calc(100% - 32px)); padding: 18px 22px; text-align: center; box-shadow: 6px 9px 0 rgba(0,0,0,.35); opacity: 0; transition: opacity 1.2s ease 1s; }

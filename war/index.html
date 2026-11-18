@@ -107,6 +107,26 @@
   </div>
 </section>
 
+<!-- 전쟁 화면: 위 적국, 아래 아군, 오른쪽 전투 기록 -->
+<section id="scr-war" class="screen">
+  <div class="war-field"><canvas id="warCv"></canvas></div>
+  <div class="war-side paper" id="warSide"></div>
+</section>
+
+<!-- 전쟁 결과 화면 -->
+<section id="scr-result" class="screen paper-bg">
+  <div class="res-main">
+    <div class="res-side paper"><span class="res-tag wob">다른 나라</span><canvas id="resEnemyArt"></canvas><div class="res-info"><h3 id="resEnemyName"></h3><p id="resEnemyText"></p></div></div>
+    <div class="res-stamp" id="resStamp"></div>
+    <div class="res-side paper"><span class="res-tag ours wob">아군</span><canvas id="resOurArt"></canvas><div class="res-info"><h3><span class="wob">대한민국군</span></h3><p id="resOurText"></p></div></div>
+  </div>
+  <div class="war-side paper res-log">
+    <h2 class="wob">전투 결과</h2>
+    <ul id="resList"></ul>
+    <div class="war-acts"><button class="btn big" id="btnResultOk"><span class="wob">지도로 돌아가기</span></button></div>
+  </div>
+</section>
+
 <!-- 엔딩 -->
 <section id="scr-ending" class="screen">
   <canvas id="endArt" class="fill"></canvas>
@@ -138,6 +158,7 @@
 <script src="js/map.js"></script>
 <script src="js/art.js"></script>
 <script src="js/game.js"></script>
+<script src="js/war.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
