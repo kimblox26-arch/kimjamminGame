@@ -244,10 +244,10 @@ function initMats() {
   R.mV = stdV(); R.mVRed = stdV({ color: 0xff8a8a, emissive: 0x7a0c0c }); R.mVGreen = stdV({ color: 0xa8ffb8, emissive: 0x0a5a1c });
   R.mVOrange = stdV({ color: 0xffc070, emissive: 0x6a3800 }); R.mVSoot = stdV({ color: 0x404040 });
   R.mBasicV = new THREE.MeshBasicMaterial({ vertexColors: true });
-  R.ledOn = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(1.2, 4, 6) }); R.ledOff = new THREE.MeshBasicMaterial({ color: 0x0a1822 });
+  R.ledOn = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(.25, .7, .9) }); R.ledOff = new THREE.MeshBasicMaterial({ color: 0x0a1822 });
   R.lens = new THREE.MeshStandardMaterial({ color: 0xdff2ff, transparent: true, opacity: .16, roughness: .02, metalness: .1, depthWrite: false });
   R.lensAI = new THREE.MeshStandardMaterial({ color: 0x5a9cff, transparent: true, opacity: .32, roughness: .02, metalness: .3, depthWrite: false });
-  R.lensAIOn = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(.6, 2.2, 2.6), transparent: true, opacity: .5, depthWrite: false, blending: THREE.AdditiveBlending });
+  R.lensAIOn = R.lensAI;
   const T = R.tex;
   R.mDesk = new THREE.MeshStandardMaterial({ map: T.desk, roughness: .36 });
   R.mChairW = new THREE.MeshStandardMaterial({ map: T.chair, roughness: .42 });
@@ -567,7 +567,7 @@ function buildGlasses(type, thick) {
   lens.userData.noTint = true; g.add(lens); g.userData = { type, lens };
   if (ai) {
     const led = new THREE.Mesh(R.ledGeo, R.ledOff); led.position.set(.131, .146, -.1); led.userData.noTint = true; g.add(led);
-    const glow = new THREE.Sprite(R.glowMat); glow.scale.set(.12, .12, .12); glow.position.copy(led.position); glow.visible = false; g.add(glow);
+    const glow = new THREE.Sprite(R.glowMat); glow.scale.set(.035, .035, .035); glow.position.copy(led.position); glow.visible = false; g.add(glow);
     g.userData.led = led; g.userData.glow = glow;
   }
   return g;
@@ -617,7 +617,7 @@ function misc() {
   for (let i = 0; i < 26; i++) { const x = 64 + rand(-26, 26), y = 64 + rand(-26, 26), r = rand(14, 34), cg = sg.createRadialGradient(x, y, 0, x, y, r); cg.addColorStop(0, `rgba(255,255,255,${rand(.25, .55)})`); cg.addColorStop(1, 'rgba(255,255,255,0)'); sg.fillStyle = cg; sg.fillRect(0, 0, 128, 128); }
   const mask = sg.createRadialGradient(64, 64, 20, 64, 64, 64); mask.addColorStop(0, 'rgba(0,0,0,1)'); mask.addColorStop(1, 'rgba(0,0,0,0)'); sg.globalCompositeOperation = 'destination-in'; sg.fillStyle = mask; sg.fillRect(0, 0, 128, 128);
   R.smokeTex = ctex(sc);
-  R.glowMat = new THREE.SpriteMaterial({ map: R.glowTex, color: new THREE.Color().setRGB(.8, 2.6, 3.4), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+  R.glowMat = new THREE.SpriteMaterial({ map: R.glowTex, color: new THREE.Color().setRGB(.25, .6, .8), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
   R.markerGeo = merge([{ g: new THREE.ConeGeometry(.09, .2, 4), r: [PI, 0, 0] }, { g: SP(.05, 10, 8), p: [0, .16, 0] }]);
   R.mkRed = basic('#ff3344'); R.mkGreen = basic('#36e070'); R.mkOrange = basic('#ff9a2a');
   R.tring = new THREE.Mesh(new THREE.RingGeometry(.38, .48, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(1.6, 1.3, .3), transparent: true, opacity: .85, depthWrite: false }));

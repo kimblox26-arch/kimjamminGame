@@ -678,8 +678,8 @@ function updLED(st, dt) {
   let on = false; if (st.glitch > 0) { st.glitch -= dt; }
   if (!st.found && (st.state === 'exam' || st.state === 'endsit')) {
     if (st.isPlayer) on = G.aiOpen || G.solvingT > 0;
-    else if (st.act === 'look') on = Math.sin(st.t * 14) > -.2;
-    else { st.blinkT -= dt; if (st.blinkT <= 0) { st.blinkT = rand(3, 7); st.blinkOn = st.near ? 0 : .3; } if (st.blinkOn > 0) { st.blinkOn -= dt; on = true; } }
+    else if (st.act === 'look') on = Math.sin(st.t * 9) > .9;
+    else { st.blinkT -= dt; if (st.blinkT <= 0) { st.blinkT = rand(7, 15); st.blinkOn = st.near ? 0 : .1; } if (st.blinkOn > 0) { st.blinkOn -= dt; on = true; } }
     if (st.scared > 0 && !st.isPlayer) on = false;
   }
   if (st.glitch > 0 && !st.found) on = Math.sin(st.t * 40) > 0;
