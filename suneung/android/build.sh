@@ -10,7 +10,7 @@ cp -r "$ROOT/suneung/index.html" "$ROOT/suneung/style.css" "$ROOT/suneung/js" "$
 cp -r "$ROOT/vendor/three" "$OUT/assets/vendor/"
 "$BT/aapt2" link -o "$OUT/base.apk" -I "$JAR" --manifest AndroidManifest.xml -A "$OUT/assets" \
   --min-sdk-version 24 --target-sdk-version 34 --version-code 1 --version-name 1.0
-javac -source 8 -target 8 -bootclasspath "$JAR" -d "$OUT/obj" src/kr/kimjam/suneung/MainActivity.java 2>/dev/null
+javac -source 8 -target 8 -bootclasspath "$JAR" -d "$OUT/obj" src/kr/kimjam/suneung/*.java 2>/dev/null
 "$BT/d8" --release --lib "$JAR" --output "$OUT/dex" $(find "$OUT/obj" -name '*.class')
 (cd "$OUT/dex" && zip -q ../base.apk classes.dex)
 "$BT/zipalign" -f 4 "$OUT/base.apk" "$OUT/aligned.apk"

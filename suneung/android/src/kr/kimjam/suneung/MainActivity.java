@@ -1,19 +1,14 @@
 package kr.kimjam.suneung;
 
 import android.app.Activity;
-import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
 
 // 게임(HTML/JS)을 앱 안의 assets 에서 https 주소처럼 열어 주는 WebView 앱
 public class MainActivity extends Activity {
-  private static final String HOST = "appassets.androidplatform.net";
   private WebView web;
 
   @Override protected void onCreate(Bundle b) {
@@ -22,23 +17,10 @@ public class MainActivity extends Activity {
     web = new WebView(this);
     WebSettings s = web.getSettings();
     s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); s.setMediaPlaybackRequiresUserGesture(false);
-    web.setWebViewClient(new WebViewClient() {
-      @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
-        Uri u = r.getUrl();
-        if (!HOST.equals(u.getHost()) || u.getPath() == null) return null;
-        String p = u.getPath().substring(1);
-        try { return new WebResourceResponse(mime(p), "utf-8", getAssets().open(p)); } catch (Exception e) { return null; }
-      }
-    });
+    web.setWebViewClient(new AssetClient(getAssets()));
     setContentView(web);
     hideBars();
-    web.loadUrl("https://" + HOST + "/suneung/index.html");
-  }
-  private static String mime(String p) {
-    if (p.endsWith(".html")) return "text/html";
-    if (p.endsWith(".js")) return "text/javascript";
-    if (p.endsWith(".css")) return "text/css";
-    return "application/octet-stream";
+    web.loadUrl("https://" + AssetClient.HOST + "/suneung/index.html");
   }
   private void hideBars() {
     web.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
