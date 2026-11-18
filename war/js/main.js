@@ -141,6 +141,25 @@
     c.querySelector('[data-a=quit]').onclick = () => { SFX.play('click'); GAME.leave(); UI.fade(toMenu); };
   }));
 
+  // ───────── 남북 통일 ─────────
+  GAME.onUnify = () => {
+    SFX.play('cheer');
+    UI.modal(`<h2 class="wob">남북 통일!</h2><canvas class="battle" id="unifyCv"></canvas>
+      <p>70년 넘게 갈라져 있던 한반도가 마침내 하나가 되었습니다! 남과 북의 졸라맨들이 얼싸안고 기뻐합니다.</p>
+      <p><b>보상: 지지율 +20, ₩2,000</b></p>
+      <div class="acts"><button class="btn big red" id="unifyOk"><span class="wob">우리의 소원은 통일!</span></button></div>`, (c) => {
+      const cv = c.querySelector('#unifyCv'), t0 = performance.now();
+      const draw = () => {
+        if (!document.body.contains(cv) || UI.$('modal').classList.contains('hidden')) return;
+        const [g, w, h] = fitCanvas(cv);
+        ART.unify(g, w, h, (performance.now() - t0) / 1000);
+        requestAnimationFrame(draw);
+      };
+      requestAnimationFrame(draw);
+      c.querySelector('#unifyOk').onclick = () => { SFX.play('click'); UI.close(); };
+    });
+  };
+
   // ───────── 엔딩 ─────────
   GAME.onEnding = (kind, st) => {
     UI.close();

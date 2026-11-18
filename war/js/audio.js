@@ -51,6 +51,10 @@
       case 'win': [523, 659, 784, 1046].forEach((f, i) => tone(f, t + i * 0.12, 0.35, 'triangle', 0.25)); break;
       case 'lose': [392, 349, 311, 262].forEach((f, i) => tone(f, t + i * 0.22, 0.4, 'triangle', 0.22)); break;
       case 'alarm': for (let i = 0; i < 3; i++) { tone(880, t + i * 0.3, 0.12, 'square', 0.1); tone(660, t + i * 0.3 + 0.14, 0.12, 'square', 0.1); } break;
+      case 'jackpot': [784, 988, 1175, 1568, 1976].forEach((f, i) => tone(f, t + i * 0.06, 0.2, 'square', 0.09)); tone(2093, t + 0.32, 0.6, 'triangle', 0.22); break;
+      case 'fever': for (let i = 0; i < 10; i++) tone(440 * Math.pow(2, i / 6), t + i * 0.05, 0.14, 'square', 0.08); break;
+      case 'crate': nz(t, 0.7, 500, 0.4, 0.25); tone(330, t + 0.15, 0.3, 'triangle', 0.15); break;
+      case 'kpop': for (let i = 0; i < 8; i++) { if (i % 2 === 0) tone(70, t + i * 0.13, 0.12, 'sine', 0.5); else nz(t + i * 0.13, 0.06, 4000, 1, 0.15); tone([659, 784, 988, 784, 880, 1047, 880, 784][i], t + i * 0.13, 0.12, 'square', 0.07); } break;
       case 'cheer': [523, 659, 784, 659, 784, 1046].forEach((f, i) => tone(f, t + i * 0.1, 0.25, 'triangle', 0.2)); break;
     }
   };

@@ -494,6 +494,32 @@
       SK.line(g, s * 0.18, s * 0.26, s * 0.82, s * 0.26, { w: s * 0.06 });
       SK.line(g, s * 0.42, s * 0.16, s * 0.58, s * 0.16, { w: s * 0.06 });
     },
+    chicken: (g, s) => {
+      SK.line(g, s * 0.55, s * 0.55, s * 0.8, s * 0.8, { w: s * 0.14, passes: 1, seed: 3 });
+      SK.line(g, s * 0.55, s * 0.55, s * 0.8, s * 0.8, { w: s * 0.08, color: '#f6f0e0', passes: 1, seed: 4 });
+      SK.ellipse(g, s * 0.84, s * 0.78, s * 0.06, s * 0.06, { fill: '#f6f0e0', w: s * 0.03, passes: 1, seed: 5 });
+      SK.ellipse(g, s * 0.78, s * 0.85, s * 0.06, s * 0.06, { fill: '#f6f0e0', w: s * 0.03, passes: 1, seed: 6 });
+      SK.ellipse(g, s * 0.4, s * 0.4, s * 0.3, s * 0.25, { fill: '#c9772f', w: s * 0.05, seed: 1 });
+      g.fillStyle = 'rgba(120,60,10,.35)';
+      for (let i = 0; i < 9; i++) { g.beginPath(); g.arc(s * (0.25 + (i % 3) * 0.12), s * (0.3 + Math.floor(i / 3) * 0.08), s * 0.022, 0, 7); g.fill(); }
+    },
+    kpop: (g, s) => {
+      SK.stick(g, s * 0.42, s * 0.95, s * 0.75, { pose: 'cheer', helmet: '#e85a9a', seed: 4, t: 1 });
+      SK.line(g, s * 0.24, s * 0.36, s * 0.2, s * 0.48, { w: s * 0.06, passes: 1, seed: 5 });
+      SK.ellipse(g, s * 0.25, s * 0.33, s * 0.05, s * 0.05, { fill: '#555', w: s * 0.02, passes: 1, seed: 6 });
+      [[0.72, 0.3, '#8a5aa8'], [0.84, 0.5, '#3b7dd8']].forEach(([u, v, c], i) => {
+        SK.ellipse(g, s * u, s * v, s * 0.06, s * 0.045, { fill: c, w: s * 0.02, passes: 1, seed: 7 + i });
+        SK.line(g, s * (u + 0.05), s * v, s * (u + 0.05), s * (v - 0.2), { w: s * 0.03, color: c, passes: 1, seed: 9 + i });
+      });
+    },
+    crate: (g, s) => {
+      SK.ellipse(g, s * 0.5, s * 0.2, s * 0.32, s * 0.15, { fill: '#e8483c', w: s * 0.04, passes: 1, seed: 1 });
+      [0.22, 0.4, 0.6, 0.78].forEach((u, i) => SK.line(g, s * u, s * 0.27, s * (0.4 + u * 0.2), s * 0.48, { w: s * 0.02, passes: 1, seed: 2 + i }));
+      SK.rect(g, s * 0.25, s * 0.48, s * 0.5, s * 0.42, { fill: '#b5874e', w: s * 0.05, seed: 7, hatch: { gap: s * 0.08, color: 'rgba(0,0,0,.15)' } });
+      SK.star(g, s * 0.5, s * 0.69, s * 0.1, { seed: 8 });
+    },
+    star: (g, s) => SK.star(g, s / 2, s * 0.53, s * 0.42, { seed: 2, w: s * 0.05 }),
+    starOff: (g, s) => SK.star(g, s / 2, s * 0.53, s * 0.42, { seed: 2, w: s * 0.05, fill: '#d6cdbd' }),
     alarm: (g, s) => {
       SK.poly(g, [[s * 0.5, s * 0.1], [s * 0.92, s * 0.86], [s * 0.08, s * 0.86]], { fill: '#f2c230', w: s * 0.06, seed: 1 });
       SK.line(g, s * 0.5, s * 0.36, s * 0.5, s * 0.62, { w: s * 0.09, passes: 1 });

@@ -66,21 +66,26 @@
 
   // ───────── 오른쪽 창 ─────────
   function sidePrep() {
-    const p = st.prep, P = Math.round(p.P0 * st.f), ch = GAME.chance(P, p.D);
+    const p = st.prep, P = Math.round(p.P0 * st.f), ch = GAME.chance(P, p.D), kp = GAME.persuadeInfo(p.id);
     $('warSide').innerHTML = `
       <h2 class="wob">${p.enemy} · ${p.city}</h2>
-      <p class="war-sub">${p.capital ? '이 나라의 <b>수도</b>입니다! 함락하면 다른 도시들이 약해져요.' : '전쟁을 준비하세요.'}</p>
+      <p class="war-sub">${p.boss ? '<b class="boss">보스전!</b> 강대국의 수도입니다. 이기면 보너스 상금!' : p.capital ? '이 나라의 <b>수도</b>입니다! 함락하면 다른 도시들이 약해져요.' : '전쟁을 준비하세요.'}</p>
       <div class="war-box"><span>${SK.img('fort', 26)} 적 방어력</span><b>${fmt(p.D)}</b></div>
       <div class="war-box"><span>${SK.img('power', 26)} 투입 전투력</span><b>${fmt(P)}</b></div>
       <div class="force">투입 병력: ${FR.map((x) => `<button class="btn small ${x === st.f ? 'sel' : ''}" data-f="${x}">${x * 100}%</button>`).join('')}</div>
       <p class="war-units">출전: ${unitTxt(sentOf(st.f))}</p>
       <div class="chance"><i style="width:${(ch * 100).toFixed(0)}%"></i><span>예상 승률 ${(ch * 100).toFixed(0)}%</span></div>
       <p class="war-tip">지더라도 적 방어력이 깎여서 다음 공격이 쉬워져요.</p>
+      <div class="kpop-box"><h3>${SK.img('kpop', 30)}한류로 설득하기</h3>
+        <p>K-팝 콘서트를 열어 시민들이 스스로 넘어오게 해요. 병사를 잃지 않아요!</p>
+        <div class="chance"><i style="width:${(kp.chance * 100).toFixed(0)}%"></i><span>성공률 ${(kp.chance * 100).toFixed(0)}%</span></div>
+        <button class="btn green small" id="warKpop" ${GAME.state().money >= kp.cost ? '' : 'disabled'}>콘서트 열기 ₩${fmt(kp.cost)}</button></div>
       <div class="war-acts"><button class="btn dark" id="warBack"><span class="wob">후퇴</span></button><button class="btn red big" id="warGo"><span class="wob">공격 개시!</span></button></div>`;
     $('warSide').querySelectorAll('.wob').forEach((e) => SK.wob(e));
     $('warSide').querySelectorAll('[data-f]').forEach((b) => (b.onclick = () => { SFX.play('click'); st.f = +b.dataset.f; build(null); sidePrep(); }));
     $('warBack').onclick = () => { SFX.play('click'); st = null; UI.fade(backToMap); };
     $('warGo').onclick = attack;
+    $('warKpop').onclick = concert;
   }
 
   function attack() {
@@ -105,8 +110,59 @@
     st.log = L.map(([at, text, cls]) => ({ at: at * T, text, cls: cls || '', shown: false }));
   }
 
+  function concert() {
+    const res = GAME.persuade(st.id);
+    if (!res) return SFX.play('deny');
+    SFX.play('kpop');
+    st.res = res; st.phase = 'kpop'; st.t = 0; st.T = GAME.settings.fast ? 3 : 5;
+    $('warSide').innerHTML = '<h2 class="wob">콘서트 기록</h2><ul id="warLog"></ul><div id="warDone" class="war-acts"></div>';
+    SK.wob($('warSide').querySelector('.wob'));
+    const c = res.city, T = st.T;
+    const L = [[0.02, `${c} 한복판에 K-팝 무대가 세워졌습니다!`], [0.2, '조명이 켜지고 음악이 시작됩니다. 쿵! 짝! 쿵쿵 짝!'], [0.4, `${res.enemy}군 병사들이 하나둘 무대 앞으로 모여듭니다...`]];
+    if (res.win) L.push([0.6, '떼창이 시작되었습니다! 다들 한국어 가사를 따라 부릅니다!', 'good'], [0.8, `${c} 시민들이 태극기를 흔듭니다. 평화 통합 성공!`, 'good']);
+    else L.push([0.6, '"우리는 트로트가 더 좋아요..." 반응이 시큰둥합니다.', 'bad'], [0.8, '관객들이 하나둘 떠나갑니다. 설득 실패...', 'bad']);
+    st.log = L.map(([at, text, cls]) => ({ at: at * T, text, cls: cls || '', shown: false }));
+  }
+
+  function drawConcert(g, W, H, dt) {
+    if (st.phase === 'kpop') st.t += dt;
+    const t = st.t, T = st.T, ok = st.res.win, on = t > T * 0.5;
+    const cols = ['#e85a9a', '#5ab0e8', '#f2c230', '#8ad860'];
+    cols.forEach((c, i) => {
+      const sx = W * (0.15 + i * 0.23), a = Math.sin(t * 2 + i) * W * 0.08;
+      g.fillStyle = c; g.globalAlpha = 0.16 + 0.08 * Math.sin(t * 6 + i);
+      g.beginPath(); g.moveTo(sx - 10, 0); g.lineTo(sx + 10, 0); g.lineTo(W / 2 + a + 70, H * 0.66); g.lineTo(W / 2 + a - 70, H * 0.66); g.fill();
+    });
+    g.globalAlpha = 1;
+    // 적군 관객
+    st.sol.filter((s) => s.side > 0).forEach((s, i) => {
+      const x = s.u * W, y = (s.v + 0.08) * H, h = s.hk * H, dance = ok && on;
+      SK.stick(g, x, y, h, { pose: dance ? 'cheer' : 'stand', t: t * 8 + i, color: '#3a1e1a', helmet: rgb(st.prep.rgb, 0.7), seed: s.seed, gun: !dance });
+      if (dance) SK.line(g, x + h * 0.25, y - h * 0.95, x + h * 0.3, y - h * 1.25, { w: 3, color: cols[i % 4], passes: 1, seed: i });
+    });
+    // 무대
+    SK.rect(g, W * 0.22, H * 0.66, W * 0.56, H * 0.1, { fill: '#6a4a8a', w: 2.2, seed: 81, hatch: { gap: 8, color: 'rgba(255,255,255,.15)' } });
+    for (let i = 0; i < 4; i++) {
+      const x = W * (0.32 + i * 0.12);
+      SK.stick(g, x, H * 0.66, H * 0.14, { pose: ok || !on ? 'cheer' : 'sad', t: t * 9 + i * 1.3, dir: i < 2 ? 1 : -1, helmet: cols[i], seed: 90 + i });
+    }
+    // 음표
+    for (let k = 0; k < 7; k++) {
+      const x = W * (0.25 + k * 0.08) + Math.sin(t * 3 + k) * 12, y = H * 0.62 - ((t * 70 + k * 45) % (H * 0.4));
+      g.fillStyle = cols[k % 4]; g.strokeStyle = cols[k % 4]; g.lineWidth = 2;
+      g.beginPath(); g.ellipse(x, y, 6, 4.5, -0.4, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(x + 5, y); g.lineTo(x + 5, y - 18); g.lineTo(x + 12, y - 14); g.stroke();
+    }
+    banner(g, 12, Math.max(4, H * 0.065 - 26), Math.min(330, W - 24), true, ok ? Math.max(0, 1 - t / T) : 1, `${st.prep.enemy} 시민의 마음`, ok && t >= T ? '활짝 열림!' : '굳게 닫힘');
+    SK.text(g, 'K-팝 콘서트', W / 2, H * 0.82, { size: 30, color: '#8a3aa8', stroke: '#fffdf5', strokeW: 6 });
+    if (t > T * 0.85) SK.text(g, ok ? '설득 성공!' : '설득 실패...', W / 2, H * 0.5, { size: 60, color: ok ? '#c8303a' : '#3a4a6a', stroke: '#fffdf5', strokeW: 8, seed: 4 });
+    st.log.forEach((e) => { if (!e.shown && t >= e.at) showLog(e); });
+    if (st.phase === 'kpop' && t >= T) finish();
+  }
+
   function finish() {
     if (st.phase === 'done') return;
+    st.wasKpop = st.phase === 'kpop';
     st.phase = 'done';
     st.log.forEach((e) => !e.shown && showLog(e));
     $('warDone').innerHTML = '<button class="btn big" id="warResult"><span class="wob">결과 보기 →</span></button>';
@@ -170,6 +226,7 @@
     const [g, W, H] = fit($('warCv'));
     if (!bg) drawBg(W, H);
     g.drawImage(bg, 0, 0, W, H);
+    if (st.phase === 'kpop' || (st.phase === 'done' && st.res.kpop)) { drawConcert(g, W, H, dt); ART.paperFrame(g, W, H); return; }
     const T = st.T, fighting = st.phase !== 'prep';
     if (fighting) st.t += dt;
     const t = st.t, res = st.res;
@@ -240,7 +297,7 @@
     const hpE = 1 - deadE / st.nE, hpO = 1 - deadO / st.nO;
     banner(g, 12, Math.max(4, H * 0.065 - 26), bw, true, hpE, `적군: ${st.prep.enemy}`, `방어력 ${fmt(st.prep.D * hpE)}`);
     banner(g, 12, H - 64, bw, false, hpO, '아군: 대한민국', `전투력 ${fmt(st.prep.P0 * st.f * hpO)}`);
-    if (st.phase === 'prep') SK.text(g, '공격 준비 중...', W / 2, H * 0.535, { size: 26, color: 'rgba(120,40,30,.8)', stroke: '#fbf5e6', strokeW: 5 });
+    if (st.phase === 'prep') SK.text(g, st.prep.boss ? '보스전!' : '공격 준비 중...', W / 2, H * 0.535, { size: 26, color: 'rgba(120,40,30,.8)', stroke: '#fbf5e6', strokeW: 5 });
     if (endP > 0.3) {
       g.globalAlpha = Math.min(1, (endP - 0.3) * 3);
       SK.text(g, res.win ? '승리!' : '패배...', W / 2, H * 0.535, { size: 64, color: res.win ? '#c8303a' : '#3a4a6a', stroke: '#fffdf5', strokeW: 8, seed: 3 });
@@ -252,7 +309,7 @@
     if (fighting && t >= T) finish();
   };
   // 화면을 누르면 빨리 감기
-  $('warCv').addEventListener('click', () => { if (st && st.phase === 'fight') st.t = Math.max(st.t, st.T); });
+  $('warCv').addEventListener('click', () => { if (st && (st.phase === 'fight' || st.phase === 'kpop')) st.t = Math.max(st.t, st.T); });
 
   // ───────── 결과 화면 ─────────
   function showResult() {
@@ -262,22 +319,28 @@
     SFX.play(win ? 'win' : 'lose');
     $('scr-result').classList.toggle('lose', !win);
     const stamp = $('resStamp');
-    SK.wob(stamp, win ? '승리!' : '패배...');
+    SK.wob(stamp, r.kpop ? (win ? '설득 성공!' : '설득 실패...') : win ? '승리!' : '패배...');
     stamp.className = 'res-stamp ' + (win ? 'win' : 'lose');
     void stamp.offsetWidth; stamp.classList.add('go');
     // 위: 다른 나라
     $('resEnemyName').innerHTML = `${SK.img('swords', 26)} ${r.enemy}군 · ${r.city}`;
-    $('resEnemyText').innerHTML = win
+    $('resEnemyText').innerHTML = r.kpop
+      ? (win ? `${r.city} 시민들이 한류에 푹 빠져 스스로 대한민국에 합류했습니다!<br>병사들도 응원봉을 들었습니다.` : `"우리는 트로트가 더 좋아요..."<br>시민들이 공연장을 떠났습니다.`)
+      : win
       ? `방어력 ${fmt(r.D)} → <b>0</b> (괴멸)<br>${r.city} 수비대가 무너졌습니다.${r.capital ? '<br>수도가 함락되었습니다!' : ''}`
       : `방어력 ${fmt(r.D)} → <b>${fmt(r.Dafter)}</b><br>${r.enemy}군이 도시를 지켜냈습니다.`;
     // 아래: 아군
-    $('resOurText').innerHTML = `투입 전투력 <b>${fmt(r.P)}</b> (예상 승률 ${(r.ch * 100).toFixed(0)}%)<br>` +
+    $('resOurText').innerHTML = r.kpop ? `K-팝 콘서트 비용 <b>₩${fmt(r.cost)}</b> (성공률 ${(r.ch * 100).toFixed(0)}%)<br>잃은 병력 없음<br>남은 총 전투력 <b>${fmt(r.power)}</b>` : `투입 전투력 <b>${fmt(r.P)}</b> (예상 승률 ${(r.ch * 100).toFixed(0)}%)<br>` +
       Object.keys(UN).filter((k) => r.sent[k] > 0).map((k) => `${UN[k].name} ${fmt(r.sent[k])} → ${fmt(r.sent[k] - r.lost[k])}${r.lost[k] ? ` <span class="neg">(-${fmt(r.lost[k])})</span>` : ''}`).join('<br>') +
       `<br>남은 총 전투력 <b>${fmt(r.power)}</b>`;
     // 오른쪽: 어떻게 됐는지
     const it = [];
-    if (win) {
-      it.push(['good', `<b>${J(r.city, '을', '를')}</b> 점령했습니다!`]);
+    if (r.kpop && win) it.push(['good', `<b>${r.city}</b>, 한류로 평화 통합!`]);
+    else if (win) it.push(['good', `<b>${J(r.city, '을', '를')}</b> 점령했습니다!`]);
+    if (r.bonus) it.push(['good', `보스 격파 보너스 ₩${fmt(r.bonus)}!`]);
+    if (r.kpop && !win) {
+      it.push(['bad', `<b>${r.city}</b> 설득에 실패했습니다.`], ['bad', `지지율 -2% (지금 ${Math.max(0, Math.ceil(r.approval))}%)`], ['', '시설 탭에서 <b>한류 센터</b>를 지으면 성공률이 올라가요.']);
+    } else if (win) {
       if (r.capital) it.push(['good', `${r.enemy}의 수도가 함락되어 남은 도시들의 사기가 크게 떨어졌습니다.`]);
       if (r.allMine) it.push(['good', `<b>${r.enemy}</b> 전체를 정복했습니다!`]);
       it.push(['good', `지지율 +${r.gain}% (지금 ${Math.ceil(r.approval)}%)`]);
@@ -289,7 +352,7 @@
       it.push(['', r.ch < 0.5 ? `예상 승률이 ${(r.ch * 100).toFixed(0)}%로 낮았어요. 군대를 더 키워서 다시 도전하세요.` : '아쉽게 운이 따르지 않았어요. 바로 다시 도전해 보세요!']);
       if (r.approval < 20) it.push(['bad', '지지율이 위험합니다! 탄핵되지 않게 정책을 쓰세요.']);
     }
-    it.push([win ? '' : 'bad', `잃은 병력: ${unitTxt(r.lost)}`]);
+    if (!r.kpop) it.push([win ? '' : 'bad', `잃은 병력: ${unitTxt(r.lost)}`]);
     it.push(['', `세계 통일 ${((r.owned / r.total) * 100).toFixed(1)}% (${r.owned} / ${r.total} 도시)`]);
     $('resList').innerHTML = it.map(([c, t]) => `<li class="${c}">${t}</li>`).join('');
     st.rt = 0;
@@ -297,7 +360,7 @@
   WAR.resultFrame = (dt) => {
     if (!st || !st.res) return;
     st.rt += dt;
-    const t = st.rt, win = st.res.win;
+    const t = st.rt, win = st.res.win, kp = st.res.kpop, cols = ['#e85a9a', '#5ab0e8', '#f2c230', '#8ad860'];
     // 위: 적군
     {
       const [g, W, H] = fit($('resEnemyArt'));
@@ -305,7 +368,13 @@
       ART.ground(g, W, H, H * 0.72, win ? '#b8b090' : '#b9c98a', 4);
       for (let x = 10; x < W * 0.4; x += 30) SK.building(g, x, H * 0.72, 14 + ((x * 7) % 9), { fill: rgb(st.prep.rgb), seed: x });
       if (win) SK.flag(g, W * 0.22, H * 0.4, 30, { korea: true, t, seed: 3 });
-      for (let i = 0; i < 6; i++) {
+      if (kp) for (let i = 0; i < 6; i++) {
+        const x = W * (0.45 + i * 0.09), y = H * (0.86 + (i % 2) * 0.05);
+        SK.stick(g, x, y, H * 0.3, { pose: win ? 'cheer' : 'stand', t: t * 6 + i, color: '#3a1e1a', helmet: rgb(st.prep.rgb, 0.7), seed: i });
+        if (win && i % 2) SK.flag(g, x + 8, y - H * 0.24, H * 0.13, { korea: true, t: t + i, seed: 40 + i });
+        else if (win) SK.line(g, x + H * 0.08, y - H * 0.28, x + H * 0.1, y - H * 0.4, { w: 4, color: cols[i % 4], passes: 1, seed: i });
+      }
+      else for (let i = 0; i < 6; i++) {
         const x = W * (0.45 + i * 0.09), y = H * (0.86 + (i % 2) * 0.05);
         if (win && i % 2 === 0) SK.stick(g, x, y, H * 0.26, { fall: 1, color: '#3a1e1a', helmet: rgb(st.prep.rgb, 0.7), seed: i, eyes: false });
         else if (win) {
@@ -323,7 +392,10 @@
       const [g, W, H] = fit($('resOurArt'));
       ART.wash(g, W, H, win ? '#bcdcf2' : '#9aa0aa', '#efe5cf', 17);
       ART.ground(g, W, H, H * 0.72, win ? '#a8cf7a' : '#8f9a7a', 6);
-      for (let i = 0; i < 7; i++) {
+      if (kp) {
+        SK.rect(g, W * 0.08, H * 0.7, W * 0.84, H * 0.12, { fill: '#6a4a8a', w: 2, seed: 81, hatch: { gap: 8, color: 'rgba(255,255,255,.15)' } });
+        for (let i = 0; i < 4; i++) SK.stick(g, W * (0.22 + i * 0.19), H * 0.7, H * 0.36, { pose: win ? 'cheer' : 'sad', t: t * 8 + i * 1.3, dir: i < 2 ? 1 : -1, helmet: cols[i], seed: 90 + i });
+      } else for (let i = 0; i < 7; i++) {
         const x = W * (0.12 + i * 0.12), y = H * (0.86 + (i % 2) * 0.05);
         if (win) {
           SK.stick(g, x, y, H * 0.32, { pose: 'cheer', t: t * 2 + i, helmet: HELM, seed: 60 + i });

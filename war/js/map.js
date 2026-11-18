@@ -414,7 +414,7 @@
           SK.text(ctx, cn.name, x, y, { size: fs, color: 'rgba(60,40,28,.5)', stroke: 'rgba(255,250,235,.35)', strokeW: 3, seed: cn.key.length * 13 });
         }
       }
-      if (opt.compass !== false) this.drawCompass(ctx, W - 52, H - 56, 30);
+      if (opt.compass !== false) this.drawCompass(ctx, W - 52, H - 88, 30);
     }
 
     drawCompass(ctx, x, y, r) {

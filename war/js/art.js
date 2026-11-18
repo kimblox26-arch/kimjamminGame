@@ -166,6 +166,26 @@
     ART.paperFrame(g, W, H);
   };
 
+  ART.unify = (g, W, H, t) => {
+    wash(g, W, H, '#bcdcf2', '#fdf1cf', 61);
+    for (let i = 0; i < 4; i++) {
+      const p = (t * 0.5 + i * 0.25) % 1, fx = W * (0.15 + i * 0.23), fy = H * (0.18 + (i % 2) * 0.1);
+      g.save(); g.globalAlpha = 1 - p; g.strokeStyle = ['#e8433a', '#3b7dd8', '#f2c230', '#5fbf5a'][i]; g.lineWidth = 2; g.beginPath();
+      for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2; g.moveTo(fx + Math.cos(a) * p * 18, fy + Math.sin(a) * p * 18); g.lineTo(fx + Math.cos(a) * p * 36, fy + Math.sin(a) * p * 36); }
+      g.stroke(); g.restore();
+    }
+    ground(g, W, H, H * 0.74, '#a8cf7a', 3);
+    SK.flag(g, W * 0.5, H * 0.76, H * 0.32, { korea: true, t, seed: 1 });
+    for (let i = 0; i < 8; i++) {
+      const x = i < 4 ? W * (0.06 + i * 0.07) : W * (0.73 + (i - 4) * 0.07);
+      SK.stick(g, x, H * 0.93, H * 0.2, { pose: 'cheer', t: t * 2 + i, dir: i < 4 ? 1 : -1, helmet: i < 4 ? HELM : '#8a7a9a', seed: 20 + i, eyes: false });
+    }
+    SK.stick(g, W * 0.42, H * 0.95, H * 0.3, { pose: 'cheer', t: t * 1.5, dir: 1, helmet: HELM, seed: 2 });
+    SK.stick(g, W * 0.6, H * 0.95, H * 0.3, { pose: 'cheer', t: t * 1.5 + 1, dir: -1, helmet: '#8a7a9a', seed: 3 });
+    SK.text(g, '우리의 소원은 통일', W / 2, H * 0.12, { size: Math.min(34, W / 14), color: '#c8303a', stroke: '#fffdf5', strokeW: 6 });
+    ART.paperFrame(g, W, H);
+  };
+
   ART.bye = (g, W, H, t) => {
     g.fillStyle = '#15120f'; g.fillRect(0, 0, W, H);
     const cx = W / 2, cy = H * 0.5;
