@@ -1217,7 +1217,7 @@ cv.addEventListener('pointermove', (e) => {
 });
 cv.addEventListener('pointerup', (e) => { const d = IN.drag; if (d && G.shop && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) shopPick(e); IN.drag = null; });
 function look(dx, dy) { const f = R.cam.fov / 55; P.cy -= dx * .0024 * f; P.pitch = clamp(P.pitch - dy * .0022 * f, -1.35, 1.25); }
-cv.addEventListener('click', () => { if (isFP() && !G.shop && (G.phase === 'exam' || G.phase === 'end') && matchMedia('(pointer:fine)').matches && !document.pointerLockElement && cv.requestPointerLock) cv.requestPointerLock(); });
+cv.addEventListener('click', () => { if (isFP() && !G.shop && (G.phase === 'exam' || G.phase === 'end') && matchMedia('(pointer:fine)').matches && !document.pointerLockElement && cv.requestPointerLock) { try { const r = cv.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* 지원 안 함 */ } } });
 addEventListener('mousemove', (e) => { if (document.pointerLockElement === cv) look(e.movementX, e.movementY); });
 cv.addEventListener('mousedown', (e) => { if (document.pointerLockElement !== cv) return; if (e.button === 0) { IN.atk = true; tryAttack(); } if (e.button === 2) G.aim = true; });
 cv.addEventListener('contextmenu', (e) => e.preventDefault());
