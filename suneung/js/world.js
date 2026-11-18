@@ -553,20 +553,19 @@ export function inkStroke(o) {
   o.ink++; o.dirty = true; if (o.ink > 150) o.wantFlip = true;
 }
 function buildGlasses(type, thick) {
-  const ai = type === 'ai', t = ai ? .0052 : (thick ? .0046 : .0026);
-  const col = ai ? '#0e0e0e' : (thick ? '#1a1a1a' : pick(['#b8bec6', '#6b4a2f', '#c9b26b', '#3a3a3a'])), km = ai || thick ? [.25, 0] : K.chrome;
+  const ai = type === 'ai', t = thick ? .0046 : .0026;
+  const col = thick ? pick(['#1a1a1a', '#2a2018', '#3a3a3a']) : pick(['#b8bec6', '#6b4a2f', '#c9b26b', '#3a3a3a']), km = thick ? [.25, 0] : K.chrome;
   const parts = [
     { g: TO(.031, t, 8, 28), c: col, p: [-.045, .135, -.128], s: [1.18, .78, 1], k: km }, { g: TO(.031, t, 8, 28), c: col, p: [.045, .135, -.128], s: [1.18, .78, 1], k: km },
     { g: B(.022, t * 1.6, t * 1.6), c: col, p: [0, .14, -.128], k: km },
     { g: B(.04, t * 1.7, t * 1.7), c: col, p: [-.1, .138, -.124], k: km }, { g: B(.04, t * 1.7, t * 1.7), c: col, p: [.1, .138, -.124], k: km },
     { g: B(t * 1.5, t * 1.5, .13), c: col, p: [-.12, .138, -.06], k: km }, { g: B(t * 1.5, t * 1.5, .13), c: col, p: [.12, .138, -.06], k: km },
   ];
-  if (ai) parts.push({ g: B(.02, .013, .014), c: '#151515', p: [0, .158, -.13], k: K.gloss }, { g: CY(.0045, .0045, .004, 12), c: '#203a6a', p: [0, .158, -.138], r: [HP, 0, 0], k: [.02, .5] }, { g: B(.016, .018, .055), c: '#151515', p: [.122, .138, -.08], k: K.gloss }, { g: B(.016, .018, .055), c: '#151515', p: [-.122, .138, -.08], k: K.gloss });
   const g = new THREE.Group(), fm = M(merge(parts), R.mV, false); fm.userData.noTint = true; g.add(fm);
-  const lens = new THREE.Mesh(merge([{ g: new THREE.CircleGeometry(.03, 24), p: [-.045, .135, -.129], s: [1.18, .78, 1] }, { g: new THREE.CircleGeometry(.03, 24), p: [.045, .135, -.129], s: [1.18, .78, 1] }]), ai ? R.lensAI : R.lens);
+  const lens = new THREE.Mesh(merge([{ g: new THREE.CircleGeometry(.03, 24), p: [-.045, .135, -.129], s: [1.18, .78, 1] }, { g: new THREE.CircleGeometry(.03, 24), p: [.045, .135, -.129], s: [1.18, .78, 1] }]), R.lens);
   lens.userData.noTint = true; g.add(lens); g.userData = { type, lens };
   if (ai) {
-    const led = new THREE.Mesh(R.ledGeo, R.ledOff); led.position.set(.131, .146, -.1); led.userData.noTint = true; g.add(led);
+    const led = new THREE.Mesh(R.ledGeo, R.ledOn); led.visible = false; led.position.set(.113, .14, -.1); led.userData.noTint = true; g.add(led);
     const glow = new THREE.Sprite(R.glowMat); glow.scale.set(.035, .035, .035); glow.position.copy(led.position); glow.visible = false; g.add(glow);
     g.userData.led = led; g.userData.glow = glow;
   }

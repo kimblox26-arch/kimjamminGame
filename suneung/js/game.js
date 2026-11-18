@@ -684,7 +684,7 @@ function updLED(st, dt) {
   }
   if (st.glitch > 0 && !st.found) on = Math.sin(st.t * 40) > 0;
   if (G.hack.find && st.cheater && !st.found) on = true;
-  if (on !== st.ledState) { st.ledState = on; g.userData.led.material = on ? R.ledOn : R.ledOff; g.userData.glow.visible = on; g.userData.lens.material = on ? R.lensAIOn : R.lensAI; }
+  if (on !== st.ledState) { st.ledState = on; g.userData.led.visible = on; g.userData.glow.visible = on; }
 }
 const texQ = { i: 0 };
 function updStudents(dt) {
