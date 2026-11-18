@@ -1,8 +1,10 @@
 // 수능 감독관 — 게임 로직 (선생님 모드 / 학생 모드 / 상점 / 채팅 / 해킹)
 import * as THREE from 'three';
-import { icon, WEAPONS, SHOP_ORDER, NAMES, REACT, classify, makeQuestion, aiAnswer } from './data.js';
+import { icon, WEAPONS, SHOP_ORDER, BASE_SKILLS, NAMES, REACT, classify, makeQuestion, aiAnswer } from './data.js';
 import { SFX } from './audio.js';
-import { R, rand, pick, clamp, CHAIR, buildWorld, buildStudent, buildWeapon, drawBoard, setClock, drawPage, inkStroke, addDecal, lam, basic, M, updDecor, renderFrame, resizeGfx, setQuality, Q, paintMat, updAmbient, setRim, drawTag } from './world.js';
+import { poseHand } from './human.js';
+import { buildShell } from './weapons.js';
+import { R, rand, pick, clamp, CHAIR, buildWorld, buildStudent, buildWeapon, drawBoard, setClock, drawPage, inkStroke, addDecal, lam, basic, M, updDecor, renderFrame, resizeGfx, setQuality, Q, paintMat, updAmbient, setRim, drawTag, addCrack } from './world.js';
 
 const $ = (id) => document.getElementById(id);
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -16,7 +18,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 const _v = V(), _v2 = V(), _v3 = V(), _sv = V();
 
-const HACK_PW = '2027';
+const HACK_PW = '수능2026game';
 const COLS = [-5.2, -3.1, -1.05, 1.05, 3.1, 5.2], ROWS = [-3.4, -1.2, 1.0, 3.2];
 const PIDX = 2 * 6 + 3;
 const PAINT = ['#ff2d7a', '#2ad0ff', '#ffd400', '#7bff3a', '#b44dff', '#ff7a1a'];
@@ -87,9 +89,11 @@ function newWorld(mode) {
     Object.assign(st, { cheater: ai, found: false, isPlayer: isP, state: 'exam', destroyed: false });
     st.obs = { x0: COLS[c] - .48, x1: COLS[c] + .48, z0: ROWS[r] - .7, z1: ROWS[r] + .42, h: .78, on: true, dx0: COLS[c] - .46, dx1: COLS[c] + .46, dz0: ROWS[r] - .67, dz1: ROWS[r] - .05 };
     R.obstacles.push(st.obs); drawPage(st, '국어', 0); R.students.push(st);
+    st.habits = shuffle(['twirl', 'penspin', 'legs', 'chin', 'scratch', 'ceiling', 'drum', 'neck', 'bite', ...(st.glasses ? ['glasses', 'glasses'] : [])]).slice(0, 3); st.cryT = rand(1, 3);
     if (isP) { st.head.visible = false; G.me = st; }
   }
   R.door.rotation.y = 0;
+  for (const gw of R.glass) { gw.broken = false; gw.hits = 0; gw.gp.visible = true; gw.decals = []; }
 }
 const remaining = () => R.students.filter((s) => s.cheater && !s.found && !s.isPlayer).length;
 
@@ -105,7 +109,7 @@ function toMenu() {
 function startGame(mode) {
   SFX.init(); show('menu', false);
   G.mode = mode; G.hearts = 3; G.found = 0; G.earned = 0; G.sched = 0; G.pT = 0; G.shake = 0; G.dirtyWorld = true;
-  G.correct = 0; G.answered = 0; G.susp = 0; G.aiOpen = false; G.catching = false; G.sv.yaw = 0; G.sv.pitch = -.42; G.cd = {}; G.cdMax = {};
+  G.correct = 0; G.answered = 0; G.susp = 0; G.aiOpen = false; G.catching = false; G.sv.yaw = 0; G.sv.pitch = -.42; G.cd = {}; G.cdMax = {}; G.ammo = {}; G.aim = false; VM.rl = null; VM.cyc = null; R.cam.fov = 55; R.cam.updateProjectionMatrix();
   newWorld(mode); rebuildSlots(); G.sel = 0;
   P.cy = PI; P.cp = .55; P.pitch = -.1; P.kick = 0; P.anim = null; if (VM.held) { VM.held.removeFromParent(); VM.held = null; } P.dash = false; P.vy = 0; P.ground = true; P.armed = true;
   Object.assign(N, { xi: 3, zi: 0, tx: 3, tz: 0, wait: 2, look: null });
@@ -222,7 +226,7 @@ function gameOver(msg) {
 
 // ───────── 감독관 (플레이어) ─────────
 const curWeapon = () => G.slots[G.sel] || 'snatch';
-function rebuildSlots() { G.slots = ['snatch', 'punch', ...SHOP_ORDER.filter((k) => G.owned.includes(k))]; if (G.sel >= G.slots.length) G.sel = 0; }
+function rebuildSlots() { G.slots = [...BASE_SKILLS, ...SHOP_ORDER.filter((k) => G.owned.includes(k))]; if (G.sel >= G.slots.length) G.sel = 0; }
 const heldCache = {};
 function setHeld(id) {
   const m = R.teacher.mount; while (m.children.length) m.remove(m.children[0]);
@@ -268,7 +272,7 @@ function updTeacher(dt) {
   if (dc > .9) P.armed = true;
   // 근접 대상 표시
   const w = WEAPONS[curWeapon()], fp = isFP(), tg = G.shop ? null : fp ? (w.range ? viewHit(w.range + .4, .12, true) : viewHit(40, 0)) : (w.range ? meleeTarget(w.range) : null);
-  $('xhair').classList.toggle('tgt', fp && !!tg); R.teacher.root.visible = !fp && !G.shop;
+  $('xhair').classList.toggle('tgt', fp && !!tg); if (fp && curWeapon() === 'detector') updDetector(dt, tg); R.teacher.root.visible = !fp && !G.shop;
   R.tring.visible = !fp && !!tg; if (tg && !fp) { R.tring.position.set(tg.x, .02, tg.z + .14); R.tring.scale.setScalar(1 + Math.sin(G.T * 8) * .06); }
 }
 function followCam() {
@@ -338,7 +342,14 @@ function tryAttack() {
   const cd = G.hack.nocd ? (w.kind === 'gun' ? .06 : .15) : w.cd;
   let ok = true;
   if (isFP()) {
-    if (w.kind === 'gun' || w.kind === 'rocket') fireFP(w, id);
+    if (w.mag) { if (VM.rl || VM.cyc) return; if (ammo(id) <= 0) { SFX.dry(P.pos); startReload(id); G.cd[id] = .3; return; } }
+    if (w.kind === 'gun' || w.kind === 'rocket') {
+      fireFP(w, id); G.ammo[id] = ammo(id) - 1;
+      if (id === 'shotgun') { VM.cyc = { k: 'pump', t: 0, d: .55 }; setTimeout(() => SFX.pump(P.pos), 120); } else if (id === 'sniper') { VM.cyc = { k: 'bolt', t: 0, d: .85 }; setTimeout(() => SFX.bolt(P.pos), 150); }
+      if (G.ammo[id] <= 0) setTimeout(() => { if (curWeapon() === id) startReload(id); }, 380);
+    } else if (w.kind === 'throw') throwChalk();
+    else if (w.kind === 'whistle') blowWhistle();
+    else if (w.kind === 'detector') scanDetector();
     else { const t = viewHit(w.range + .4, .14, true); if (w.kind === 'snatch') ok = actSnatchFP(t); else if (w.kind === 'punch') actPunchFP(t); else if (w.kind === 'bat') actBatFP(); else ok = actTackle(t); }
   } else if (w.kind === 'gun') fireGun(w);
   else if (w.kind === 'rocket') fireRocket(w);
@@ -449,7 +460,7 @@ function knockOut(st, dir, pow, o = {}) {
   }
   if (o.tipChair && !st.destroyed && st.chair.parent === st.seat) { R.scene.attach(st.chair); addDebris(st.chair, V(dir.x * 2.2, 1.6, dir.z * 2.2), V(rand(-4, 4), rand(-2, 2), rand(-4, 4)), .22, { chair: true }); const cp = st.chair.position; setTimeout(() => SFX.clang(cp), 380); }
   if (o.cuffs) { const c = buildWeapon('tackle'); c.scale.setScalar(.75); c.position.set(0, -.25, 0); st.armR.el.add(c); }
-  addStars(st);
+  addStars(st); hurtSay(st, true);
   if (st.cheater && !st.found) { st.found = true; if (G.mode === 'teacher') { G.found++; addCoins(1, st); toast('AI 안경 학생 적발! +1 코인', 'good'); } }
   else if (!st.cheater && G.mode === 'teacher') loseHeart(`무고한 학생(${st.name})을 공격했어요!`);
 }
@@ -466,12 +477,26 @@ function updKO(st, dt) {
       else { st.landed = true; SFX.thud(f.position); f.rotation.x = wrapA(f.rotation.x); f.rotation.z = wrapA(f.rotation.z); st.lyX = f.rotation.x >= 0 ? PI / 2 : -PI / 2; st.slide = V(st.kv.x * .4, 0, st.kv.z * .4); }
     }
   } else {
-    f.rotation.x += (st.lyX - f.rotation.x) * k; f.rotation.z += (0 - f.rotation.z) * k; f.position.y += (.13 - f.position.y) * k;
     st.slide.multiplyScalar(Math.max(0, 1 - dt * 5)); f.position.addScaledVector(st.slide, dt);
+    if (st.kT > 1.9) { // 일어나 앉아서 머리를 감싸고 아파함
+      const ks = Math.min(1, dt * 3), sob = Math.sin(st.t * 11) * .03;
+      f.rotation.x += (0 - f.rotation.x) * ks; f.rotation.z += (0 - f.rotation.z) * ks; f.position.y += (.15 - f.position.y) * ks;
+      L(st.thigh.rotation, 'x', 1.25, ks); L(st.shin.rotation, 'x', -1.85, ks); L(st.spine.rotation, 'x', -.3 + sob, ks); L(st.head.rotation, 'x', -.4, ks); L(st.head.rotation, 'y', 0, ks);
+      L(st.armL.sh.rotation, 'x', 2.25, ks); L(st.armL.sh.rotation, 'z', .45, ks); L(st.armL.el.rotation, 'x', 1.95, ks);
+      L(st.armR.sh.rotation, 'x', 2.25, ks); L(st.armR.sh.rotation, 'z', -.45, ks); L(st.armR.el.rotation, 'x', 1.95, ks);
+      st.cryT -= dt; if (st.cryT <= 0) { st.cryT = rand(4.5, 8); hurtSay(st, false); }
+      return;
+    }
+    f.rotation.x += (st.lyX - f.rotation.x) * k; f.rotation.z += (0 - f.rotation.z) * k; f.position.y += (.13 - f.position.y) * k;
   }
   L(st.thigh.rotation, 'x', .12, k); L(st.shin.rotation, 'x', -.1, k); L(st.spine.rotation, 'x', 0, k); L(st.head.rotation, 'x', .1, k); L(st.head.rotation, 'y', .5, k);
   L(st.armL.sh.rotation, 'x', .3, k); L(st.armL.sh.rotation, 'z', 1.2, k); L(st.armL.el.rotation, 'x', .4, k);
   L(st.armR.sh.rotation, 'x', .3, k); L(st.armR.sh.rotation, 'z', -1.2, k); L(st.armR.el.rotation, 'x', .4, k);
+}
+function hurtSay(st, first) {
+  if (st.isPlayer || !R.students.includes(st)) return;
+  const lines = first ? REACT.pain : st.cheater ? REACT.remorse : (Math.random() < .5 ? REACT.wronged : REACT.pain), line = pick(lines);
+  say(st, line, 3.2); if (!first) { SFX.sob(st.hpos); if (R.cam.position.distanceTo(st.hpos) < 6) SFX.speak(line, { pitch: rand(1.3, 1.7), rate: 1.05, who: 1 }); } else SFX.gasp(st.hpos);
 }
 function addStars(st) {
   return; const g = new THREE.Group();
@@ -488,7 +513,7 @@ function updProj(dt) {
     const pr = G.proj[i]; pr.life -= dt;
     const steps = Math.max(1, Math.ceil(pr.v.length() * dt / .1)), h = dt / steps; let hit = null, end = false, surf = 'y';
     for (let s = 0; s < steps && !end; s++) {
-      if (pr.k === 'paint') pr.v.y -= 2.5 * h;
+      if (pr.k === 'paint') pr.v.y -= 2.5 * h; else if (pr.k === 'chalk') { pr.v.y -= 9.8 * h; pr.m.rotation.x += h * 22; }
       pr.p.addScaledVector(pr.v, h);
       for (const st of R.students) { if (st.state === 'ko' || st.isPlayer) continue; if (pr.p.distanceToSquared(st.cpos) < .075 || pr.p.distanceToSquared(st.hpos) < .03) { hit = st; end = true; break; } }
       if (end) break;
@@ -505,7 +530,7 @@ function updProj(dt) {
       R.pfxA.spawn(b.x, b.y, b.z, rand(-.6, .6), rand(-.6, .6), rand(-.6, .6), '#fff', rand(.18, .28), rand(.08, .16), 0, 2, 1, 1, 1);
       if (pr.snd) pr.snd.set(pr.p);
     }
-    if (end || pr.life <= 0) { R.scene.remove(pr.m); G.proj.splice(i, 1); if (pr.snd) pr.snd.stop(); if (pr.k === 'paint') paintImpact(pr, hit, surf); else explode(pr.p.clone(), hit); }
+    if (end || pr.life <= 0) { R.scene.remove(pr.m); G.proj.splice(i, 1); if (pr.snd) pr.snd.stop(); if (pr.k === 'paint') paintImpact(pr, hit, surf); else if (pr.k === 'chalk') chalkImpact(pr, hit, surf); else explode(pr.p.clone(), hit); }
   }
 }
 function paintImpact(pr, hit, surf) {
@@ -517,7 +542,7 @@ function paintImpact(pr, hit, surf) {
     addDecal(V(hit.x + rand(-.6, .6), 0, hit.z + rand(-.1, .9)), rand(.15, .3), col);
     if (!hit.destroyed) addDecal(V(hit.x + rand(-.3, .3), .76, hit.z - .36 + rand(-.2, .2)), rand(.06, .12), col);
     knockOut(hit, V(pr.v.x, 0, pr.v.z).normalize(), 1.8, { up: 1.2, tipChair: Math.random() < .6 });
-  } else addDecal(V(p.x, p.y, p.z), rand(.1, .2), col, surf);
+  } else if (!brokenAt(p, surf)) { addDecal(V(p.x, p.y, p.z), rand(.1, .2), col, surf); surfaceHit(p, surf, false); }
 }
 function explode(p, hit) {
   SFX.boom(p); G.shake = Math.max(G.shake, .9); R.flashL.position.set(p.x, p.y + .4, p.z); R.flashL.intensity = 90;
@@ -533,6 +558,8 @@ function explode(p, hit) {
   for (let i = 0; i < 50; i++) { const [x, y, z] = rv(), s = rand(.5, 2.5); R.pfxS.spawn(p.x + x * .4, p.y + .4 + Math.abs(y) * .5, p.z + z * .4, x * s, Math.abs(y) * s + 1, z * s, pick(['#2e2a26', '#3d3833', '#4a4540', '#5a544e']), rand(.9, 1.7), rand(2.5, 4.5), -.35, 1.3, 2.2, .8); }
   for (let i = 0; i < 36; i++) { const a = rand(0, 6.28), s = rand(4, 8); R.pfxS.spawn(p.x, .12, p.z, Math.cos(a) * s, rand(0, .5), Math.sin(a) * s, '#8d8170', rand(.4, .7), rand(1.2, 2), 0, 3, 2.5, .6); }
   addDecal(V(p.x, 0, p.z), rand(.9, 1.2), '#1a1410', 'y', .75);
+  if (p.x < -4.6) for (const gw of R.glass) if (Math.abs(gw.z - p.z) < 2.4) shatterGlass(gw);
+  if (p.z < -6.4 && Math.abs(p.x) < 3.6) addCrack(V(clamp(p.x, -3, 3), clamp(p.y + .6, 1, 2.2), -7.95), '+z', 1.1, 'board');
   let tgt = hit;
   if (!tgt) for (const st of R.students) if (!st.destroyed && Math.abs(p.x - st.x) < .7 && p.z > st.z - 1 && p.z < st.z + .7) { tgt = st; break; }
   if (tgt && !tgt.isPlayer) {
@@ -594,10 +621,11 @@ function updDebris(dt) {
 
 // ───────── 학생 애니메이션 ─────────
 function nextAct(st, near) {
-  if (st.wantFlip) { st.wantFlip = false; if (Math.random() < .6) SFX.page(st.cpos); st.act = 'flip'; st.actT = .85; st.flipT = 0; st.flip.visible = true; st.flip.rotation.z = 0; st.page++; drawPage(st, G.subj, st.page); return; }
+  if (st.wantFlip) { st.wantFlip = false; SFX.page(st.cpos); st.act = 'flip'; st.actT = 1.1; st.flipT = 0; st.flip.visible = true; st.flip.rotation.z = 0; bendPage(st, 0); st.page++; drawPage(st, G.subj, st.page); return; }
   const r = Math.random();
   if (st.cheater && !st.found && !near && st.scared <= 0 && r < .32) { st.act = 'look'; st.actT = rand(1.2, 2.5); st.burstNext = true; return; }
   if (st.burstNext) { st.burstNext = false; st.act = 'write'; st.actT = rand(1.5, 3); st.burst = st.actT; return; }
+  if (st.habits && Math.random() < .26) { st.act = pick(st.habits); st.actT = rand(1.6, 3.6); return; }
   if (r < .68) { st.act = 'write'; st.actT = rand(2, 6); } else if (r < .94) { st.act = 'think'; st.actT = rand(1, 2.6); } else { st.act = 'stretch'; st.actT = 1.3; }
 }
 function animSeated(st, dt, tp) {
@@ -616,11 +644,23 @@ function animSeated(st, dt, tp) {
       break;
     case 'think': hx = -.15; hz = Math.sin(t * 1.1) * .12; rsx = 1.35; rex = 2.0; rsz = -.25; break;
     case 'look': hx = .08; hy = .4; hz = -.1; lean = -.05; break;
+    case 'twirl': lsx = 2.45; lsz = .5 + Math.cos(t * 9) * .08; lex = 2.15 + Math.sin(t * 9) * .15; hz = .14; hx = -.22; break;
+    case 'penspin': rsx = 1.05; rex = 1.15; rsz = -.15; hx = -.35; break;
+    case 'legs': hx = -.42; rsz = -.1 + Math.sin(t * 6) * .05; rex = .7 + Math.sin(t * 18) * .07; break;
+    case 'chin': rsx = 1.25; rex = 2.35; rsz = -.2; hx = -.1; lean = -.18; break;
+    case 'scratch': rsx = 2.7; rex = 2.1 + Math.sin(t * 14) * .12; rsz = -.25; hx = -.25; break;
+    case 'glasses': rsx = 2.0; rex = 2.45; rsz = .05; hx = -.05; break;
+    case 'ceiling': hx = .42; hy = Math.sin(t * .7) * .25; lean = .04; break;
+    case 'drum': lsx = .9; lex = .75 + Math.abs(Math.sin(t * 16)) * .12; hx = -.3; break;
+    case 'neck': hz = Math.sin(t * 2.2) * .35; hx = -.1; break;
+    case 'bite': rsx = 1.75; rex = 2.55; rsz = -.12; hx = -.05; break;
     case 'stretch': lean = .12; hx = .3; rsx = 2.8; lsx = 2.8; rex = .25; lex = .25; rsz = .2; lsz = -.2; break;
-    case 'flip': { st.flipT += dt; const f = Math.min(1, st.flipT / .6); st.flip.rotation.z = ease(f) * PI; if (f >= 1) st.flip.visible = false; lsx = 1.05; lsz = .45 - f * .3; lex = .6; break; }
+    case 'flip': { st.flipT += dt; const f = Math.min(1, st.flipT / .9); bendPage(st, f); if (f >= 1) st.flip.visible = false; rsx = 1.0 - Math.sin(f * PI) * .15; rsz = .05 - ease(f) * .45; rex = .65 + Math.sin(f * PI) * .5; hy = -.1 + f * .2; lsx = 1.05; lsz = .45 - f * .3; lex = .6; break; }
     case 'rest': hx = -.08; lean = -.02; rsx = .8; rex = .8; break;
   }
-  if (st.state === 'caught') { lean = -.35; hx = -.7; rsx = 1.7; lsx = 1.7; rex = 2.1; lex = 2.1; rsz = -.35; lsz = .35; lean += Math.sin(st.t * 14) * .025; if (Math.random() < dt * 1.5) R.pfxN.spawn(st.hpos.x + rand(-.05, .05), st.hpos.y, st.hpos.z - .1, 0, -.3, 0, '#7fd0ff', .03, .6, 3); }
+  if (st.pencil) { if (st.act === 'penspin') st.pencil.rotation.z += dt * 15; else st.pencil.rotation.z *= Math.max(0, 1 - dt * 10); }
+  st.shin.rotation.x = -PI / 2 + (st.act === 'legs' ? Math.sin(t * 24) * .07 : 0);
+  if (st.state === 'caught') { st.cryT -= dt; if (st.cryT <= 0) { st.cryT = rand(5, 9); hurtSay(st, false); } lean = -.35; hx = -.7; rsx = 1.7; lsx = 1.7; rex = 2.1; lex = 2.1; rsz = -.35; lsz = .35; lean += Math.sin(st.t * 14) * .025; if (Math.random() < dt * 1.5) R.pfxN.spawn(st.hpos.x + rand(-.05, .05), st.hpos.y, st.hpos.z - .1, 0, -.3, 0, '#7fd0ff', .03, .6, 3); }
   if (st.flinchT > 0) { st.flinchT -= dt; rsx = lsx = 2.2; rex = lex = 1.6; lean = .12; hx = .2; }
   if (st.lookT > 0) { st.lookT -= dt; hy = clamp(wrapA(Math.atan2(-dx, -dz)), -1.1, 1.1); hx = 0; lean = -.02; }
   lean += Math.sin(t * 1.6) * .012;
@@ -629,14 +669,20 @@ function animSeated(st, dt, tp) {
   L(st.armL.sh.rotation, 'x', lsx, k); L(st.armL.sh.rotation, 'z', lsz, k); L(st.armL.el.rotation, 'x', lex, k);
 }
 function updLED(st, dt) {
-  const g = st.glasses; if (!g || !g.userData.led) return;
-  let on = false;
+  const g = st.glasses; if (!g) return;
+  if (!g.userData.led) { // 일반 안경: 가끔 빛 반사 (헷갈리게)
+    if (!g.userData.glint) { const sp = new THREE.Sprite(R.glintMat || (R.glintMat = new THREE.SpriteMaterial({ map: R.glowTex, color: new THREE.Color().setRGB(2.4, 2.4, 2.3), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }))); sp.scale.setScalar(.07); sp.position.set(.045, .145, -.135); sp.visible = false; g.add(sp); g.userData.glint = sp; }
+    st.glintT = (st.glintT ?? rand(2, 9)) - dt; if (st.glintT <= 0) { st.glintT = rand(4, 11); st.glintOn = .16; } if (st.glintOn > 0) st.glintOn -= dt; g.userData.glint.visible = st.glintOn > 0 && st.state === 'exam';
+    return;
+  }
+  let on = false; if (st.glitch > 0) { st.glitch -= dt; }
   if (!st.found && (st.state === 'exam' || st.state === 'endsit')) {
     if (st.isPlayer) on = G.aiOpen || G.solvingT > 0;
     else if (st.act === 'look') on = Math.sin(st.t * 14) > -.2;
     else { st.blinkT -= dt; if (st.blinkT <= 0) { st.blinkT = rand(3, 7); st.blinkOn = st.near ? 0 : .3; } if (st.blinkOn > 0) { st.blinkOn -= dt; on = true; } }
     if (st.scared > 0 && !st.isPlayer) on = false;
   }
+  if (st.glitch > 0 && !st.found) on = Math.sin(st.t * 40) > 0;
   if (G.hack.find && st.cheater && !st.found) on = true;
   if (on !== st.ledState) { st.ledState = on; g.userData.led.material = on ? R.ledOn : R.ledOff; g.userData.glow.visible = on; g.userData.lens.material = on ? R.lensAIOn : R.lensAI; }
 }
@@ -798,6 +844,7 @@ const camFwd = (o) => o.set(0, 0, -1).applyQuaternion(R.cam.quaternion);
 function fpCam(dt) {
   G.camBlend = Math.min(1, G.camBlend + dt * 2);
   const by = Math.sin(P.bobT * 2) * .022 * P.bobA, tp = _t.set(P.pos.x + Math.cos(P.bobT) * .012 * P.bobA, P.pos.y + 1.62 + by - (P.dash ? .3 : 0), P.pos.z);
+  const tf = (G.aim && WEAPONS[curWeapon()].ads) || 55; if (Math.abs(R.cam.fov - tf) > .05) { R.cam.fov = lerp(R.cam.fov, tf, Math.min(1, dt * 12)); R.cam.updateProjectionMatrix(); }
   _q.setFromEuler(_eu.set(P.pitch + P.kick, P.cy, 0, 'YXZ'));
   if (G.camBlend < 1) { const a = 1 - Math.exp(-9 * dt); camPos.lerp(tp, a); R.cam.quaternion.slerp(_q, a); } else { camPos.copy(tp); R.cam.quaternion.copy(_q); }
   R.cam.position.copy(camPos);
@@ -821,15 +868,17 @@ function fireFP(w, id) {
   const dir = R.cam.position.clone().addScaledVector(f, dist).sub(o).normalize(), sp = w.spread || 0;
   dir.x += rand(-sp, sp); dir.y += rand(-sp, sp) * .5; dir.z += rand(-sp, sp); dir.normalize();
   if (w.kind === 'gun') {
-    const col = pick(PAINT), m = new THREE.Mesh(R.ballGeo, paintMat(col)); m.position.copy(o); R.scene.add(m);
-    G.proj.push({ k: 'paint', m, p: m.position, v: dir.multiplyScalar(w.speed), col, life: 1.6 });
-    SFX.shot(o, w.auto); VM.rec = w.auto ? .03 : .055; P.kick += w.auto ? .006 : .018;
+    for (let n = 0; n < (w.pellets || 1); n++) {
+      const dv = n ? dir.clone().add(V(rand(-sp, sp), rand(-sp, sp) * .6, rand(-sp, sp))).normalize() : dir.clone(), col = pick(PAINT), m = new THREE.Mesh(R.ballGeo, paintMat(col)); m.position.copy(o); R.scene.add(m);
+      G.proj.push({ k: 'paint', m, p: m.position, v: dv.multiplyScalar(w.speed), col, life: 1.6 });
+    }
+    SFX.gun(id, o); VM.rec = { pistol: .05, ak: .03, shotgun: .1, sniper: .12 }[id]; P.kick += { pistol: .016, ak: .007, shotgun: .05, sniper: .06 }[id] * (G.aim ? .5 : 1); G.shake = Math.max(G.shake, id === 'shotgun' || id === 'sniper' ? .12 : 0);
     for (let i = 0; i < 3; i++) R.pfxS.spawn(o.x, o.y, o.z, f.x * rand(.6, 1.6) + rand(-.3, .3), rand(0, .4), f.z * rand(.6, 1.6) + rand(-.3, .3), '#eef2f6', rand(.06, .1), rand(.2, .4), -.2, 4, 2.5, .35);
   } else {
     const m = M(R.rocketGeo); m.position.copy(o); R.scene.add(m); m.lookAt(_b.copy(o).add(dir));
     const fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: R.glowTex, color: new THREE.Color().setRGB(5, 2.6, .9), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); fl.scale.setScalar(.45); fl.position.z = -.2; m.add(fl);
     G.proj.push({ k: 'rocket', m, p: m.position, v: dir.multiplyScalar(w.speed), life: 3, snd: SFX.rocketLoop(o) });
-    SFX.rocket(o); VM.rec = .14; P.kick += .07; G.shake = Math.max(G.shake, .25);
+    SFX.rocket(o); VM.rec = .14; P.kick += .07; G.shake = Math.max(G.shake, .25); R.vm.wpn.rpg.userData.mag.visible = false;
     const b = R.cam.localToWorld(V(.15, -.1, .6));
     for (let i = 0; i < 20; i++) R.pfxS.spawn(b.x, b.y, b.z, -f.x * rand(1, 4) + rand(-1, 1), rand(0, 1), -f.z * rand(1, 4) + rand(-1, 1), '#b4aea6', rand(.3, .55), rand(.9, 1.8), -.3, 2, 2.5, .6);
   }
@@ -852,47 +901,173 @@ function actSnatchFP(st) {
   } };
   return true;
 }
-// 1인칭 손/무기 배치 (카메라 기준 좌표)
+// 1인칭 손/무기 배치 (카메라 기준 좌표) · 재장전 · 조준
 const WL = {
   bat: { w: [.21, -.27, -.42], d: [.25, 1, .18], r: [0, 0, 0] },
-  pistol: { w: [.12, -.15, -.36], d: [-.03, 0, -1], r: [0, -.045, .02], l: [-.03, -.06, .015] },
-  ak: { w: [.15, -.18, -.36], d: [-.04, 0, -1], r: [0, -.06, .03], l: [-.016, -.025, -.4] },
-  rpg: { w: [.13, -.14, -.24], d: [-.03, 0, -1], r: [0, -.02, 0], l: [-.01, -.03, -.24] },
+  detector: { w: [.16, -.2, -.36], d: [-.1, .1, -1], r: [0, 0, .012] },
+  chalk: { w: [.17, -.19, -.4], d: [-.15, .35, -1], r: [0, -.005, .02] },
+  pistol: { w: [.12, -.15, -.36], a: [0, -.066, -.32], d: [-.03, 0, -1], r: [0, -.045, .02], l: [-.03, -.06, .015] },
+  shotgun: { w: [.13, -.17, -.33], a: [0, -.077, -.3], d: [-.03, 0, -1], r: [0, -.05, .03], l: [-.012, -.03, -.32] },
+  ak: { w: [.15, -.18, -.36], a: [0, -.072, -.3], d: [-.04, 0, -1], r: [0, -.06, .03], l: [-.016, -.025, -.36] },
+  sniper: { w: [.14, -.17, -.34], a: [0, -.105, -.28], d: [-.03, 0, -1], r: [0, -.045, .03], l: [-.012, -.02, -.38] },
+  rpg: { w: [.13, -.14, -.24], a: [.07, -.11, -.2], d: [-.03, 0, -1], r: [0, -.02, 0], l: [-.01, -.03, -.22] },
   tackle: { w: [.2, -.33, -.47], d: [0, -.4, -1], r: [0, .07, .02] },
   none: { r: [.2, -.25, -.45], l: [-.22, -.27, -.47] },
 };
+const _g = V(), _h = V();
+const ammo = (id) => G.ammo[id] ?? WEAPONS[id].mag;
 function placeArm(arm, pos, rx, rz) { arm.a.rotation.set(rx, 0, rz); _t.set(0, -.37, 0).applyEuler(arm.a.rotation); arm.a.position.copy(pos).sub(_t); }
 const lv = (o, a, b, k) => o.set(lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k));
+const bump = (p, a, b, c, d) => (p <= a || p >= d ? 0 : p < b ? ease((p - a) / (b - a)) : p <= c ? 1 : 1 - ease((p - c) / (d - c)));
+function resetParts(w) { const u = w.userData; for (const n of ['mag', 'slide', 'pump', 'bolt']) if (u[n]) { u[n].position.copy(u[n + 'Home']); u[n].rotation.set(0, 0, 0); u[n].visible = true; } }
+function startReload(id) {
+  const w = WEAPONS[id]; if (!isFP() || !w || !w.mag || VM.rl || G.shop || ammo(id) >= w.mag || !(G.phase === 'exam' || G.phase === 'end')) return;
+  G.aim = false; VM.cyc = null; VM.rl = { id, t: 0, d: w.rl, ev: {} };
+}
+function cancelReload() { VM.rl = null; VM.cyc = null; for (const k in R.vm.wpn) resetParts(R.vm.wpn[k]); if (VM.shell) VM.shell.visible = false; }
+function throwChalk() {
+  SFX.whoosh(P.pos);
+  P.anim = { k: 'throw', t: 0, d: .5, hit: .17, fn: () => {
+    const o = R.cam.localToWorld(V(.16, -.06, -.45)), f = camFwd(V()), st = viewHit(25, .12);
+    const tgt = st ? st.hpos.clone() : R.cam.position.clone().addScaledVector(f, 12), tt = Math.max(.08, o.distanceTo(tgt) / 17), v = tgt.sub(o).divideScalar(tt); v.y += 4.9 * tt;
+    const m = new THREE.Mesh(R.chalkGeo || (R.chalkGeo = new THREE.CylinderGeometry(.006, .006, .07, 8)), lam('#f6f5f0', { roughness: .95 })); m.position.copy(o); m.rotation.z = PI / 2; R.scene.add(m);
+    G.proj.push({ k: 'chalk', m, p: m.position, v, life: 2.5 }); VM.chalkT = .45;
+  } };
+}
+function chalkImpact(pr, hit, surf) {
+  const p = pr.p; SFX.chalk(p);
+  for (let i = 0; i < 8; i++) R.pfxS.spawn(p.x, p.y, p.z, rand(-.6, .6), rand(0, .8), rand(-.6, .6), '#f4f2ea', rand(.04, .08), rand(.4, .8), 1, 2, 1.5, .5);
+  if (hit) {
+    hitMark(); hit.flinchT = .7; SFX.gasp(hit.hpos); if (SEATED.has(hit.state)) say(hit, pick(REACT.pain), 2);
+    const g = hit.glasses;
+    if (g && SEATED.has(hit.state) && Math.random() < (g.userData.type === 'ai' ? .65 : .35)) {
+      hit.glasses = null; R.scene.attach(g); addDebris(g, V(pr.v.x * .1, 1.5, pr.v.z * .1), V(rand(-9, 9), rand(-9, 9), rand(-9, 9)), .03);
+      if (g.userData.type === 'ai' && hit.cheater && !hit.found) { hit.found = true; G.found++; addCoins(1, hit); toast('분필에 AI 안경이 떨어졌다! +1 코인', 'good'); hit.state = 'caught'; hit.cryT = 1.5; }
+    }
+  } else if (!brokenAt(p, surf)) { addDecal(V(p.x, p.y, p.z), rand(.025, .04), '#efeee8', surf, .85); if (surf === '+z' && Math.abs(p.x) < 3.3) SFX.thunk(p); }
+}
+function blowWhistle() {
+  SFX.alarm(P.pos); P.anim = { k: 'whistle', t: 0, d: .7 };
+  for (const st of R.students) { if (!SEATED.has(st.state) || st.isPlayer) continue; st.flinchT = .5; st.lookT = 1.5; if (st.cheater && !st.found) st.glitch = 1.3; }
+  toast('호루라기! 순간 깜빡이는 안경을 찾아라', 'info');
+}
+const detLevel = (st) => (!st ? 0 : st.glasses ? (st.glasses.userData.type === 'ai' && !st.found ? 1 : .3) : .08);
+function updDetector(dt, st) {
+  const lvl = detLevel(st), led = R.vm.wpn.detector.userData.led;
+  led.material.color.setHex(lvl > .8 ? 0xff2a2a : lvl > .2 ? 0xffc21a : 0x2bff6a);
+  VM.beepT = (VM.beepT || 0) - dt; if (lvl > .05 && VM.beepT <= 0) { VM.beepT = lerp(1.1, .09, lvl); SFX.beep(lvl, P.pos); }
+}
+function scanDetector() {
+  const st = viewHit(2.3, .35, true), lvl = detLevel(st); P.anim = { k: 'scan', t: 0, d: .5 };
+  if (!st) { toast('탐지기를 학생 가까이 대세요', 'info'); return; }
+  if (lvl > .8) { toast('강한 전자기기 반응! AI 안경일 가능성이 높다', 'warn'); say(st, pick(['(뜨끔)', '왜, 왜요...?', '아무것도 없어요!']), 2); }
+  else toast(lvl > .2 ? '약한 금속 반응 (일반 안경)' : '반응 없음', 'info');
+}
+// ── 유리창·칠판 흔적 ──
+const brokenAt = (p, surf) => surf === '+x' && R.glass.some((g) => g.broken && Math.abs(p.z - g.z) < 1.4 && p.y > .98 && p.y < 2.52);
+function surfaceHit(p, surf) {
+  if (surf === '+x') { const gw = R.glass.find((g) => !g.broken && Math.abs(p.z - g.z) < 1.4 && p.y > .98 && p.y < 2.04); if (gw) { hitGlass(gw, p); return; } }
+  if (surf === '+z' && Math.abs(p.x) < 3.3 && p.y > .8 && p.y < 2.44) { addCrack(V(p.x, p.y, -7.95), '+z', rand(.12, .2), 'board'); SFX.thunk(p); return; }
+  if (surf === '-x' && p.y > 2.3 && p.y < 2.85) { addCrack(V(6.98, p.y, p.z), '-x', rand(.15, .25), 'glass'); SFX.glassCrack(p); return; }
+  if (surf !== 'y') addCrack(V(p.x, p.y, p.z), surf, rand(.05, .09), 'wall');
+}
+function hitGlass(gw, p) {
+  gw.hits++; SFX.glassCrack(p); gw.decals.push(addCrack(V(-6.97, p.y, p.z), '+x', rand(.28, .42), 'glass'));
+  for (let i = 0; i < 6; i++) R.pfxA.spawn(-6.95, p.y, p.z, rand(.2, 1.5), rand(-.5, 1), rand(-.6, .6), '#dff4ff', .03, .4, 8, .5);
+  if (gw.hits >= 5) shatterGlass(gw);
+}
+function shatterGlass(gw) {
+  if (gw.broken) return; gw.broken = true; gw.gp.visible = false; gw.decals.forEach((d) => R.scene.remove(d)); SFX.glassShatter(V(-6.95, 1.5, gw.z));
+  if (!R.shardGeo) { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.06, .01); sh.lineTo(.02, .07); sh.closePath(); R.shardGeo = new THREE.ShapeGeometry(sh); R.shardMat = new THREE.MeshStandardMaterial({ color: 0xd8efff, transparent: true, opacity: .55, roughness: .05, metalness: .3, side: THREE.DoubleSide }); }
+  for (let i = 0; i < 28; i++) { const m = new THREE.Mesh(R.shardGeo, R.shardMat); m.position.set(-6.95, rand(1, 2), gw.z + rand(-1.3, 1.3)); m.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6)); m.scale.setScalar(rand(.5, 1.7)); addDebris(m, V(rand(.5, 3), rand(0, 2), rand(-1, 1)), V(rand(-12, 12), rand(-12, 12), rand(-12, 12)), .01); }
+  for (let i = 0; i < 30; i++) R.pfxA.spawn(-6.95, rand(1, 2), gw.z + rand(-1.3, 1.3), rand(.5, 3), rand(-1, 2), rand(-1, 1), '#e8f8ff', rand(.02, .04), rand(.5, 1), 9, .3);
+  for (const st of R.students) if (SEATED.has(st.state) && st.x < -3 && Math.abs(st.z - gw.z) < 3) { st.flinchT = .9; if (Math.random() < .5) say(st, pick(['꺄악!', '창문이...!', '헉!']), 1.6); }
+}
+// ── 시험지 넘기기 (종이가 휘면서 넘어감) ──
+function bendPage(st, f) {
+  const fp = st.flip.children[0];
+  if (!st.flipGeo) { const g = new THREE.PlaneGeometry(.26, .36, 10, 1); g.rotateX(-PI / 2); g.translate(.13, 0, 0); st.flipGeo = g; fp.geometry = g; fp.rotation.set(0, 0, 0); fp.position.set(0, 0, 0); }
+  const A = ease(f) * PI, bend = Math.sin(A) * .9, pos = st.flipGeo.attributes.position; let x = 0, y = 0;
+  for (let i = 0; i <= 10; i++) { pos.setX(i, x); pos.setY(i, y); pos.setX(i + 11, x); pos.setY(i + 11, y); const th = A + bend * Math.pow(i / 10, 1.5); x += Math.cos(th) * .026; y += Math.sin(th) * .026; }
+  pos.needsUpdate = true; st.flipGeo.computeVertexNormals();
+}
 function updVM(dt) {
-  const vm = R.vm, show = isFP() && !G.shop && ['exam', 'end', 'lunch', 'over', 'results'].includes(G.phase);
-  vm.root.visible = show; $('xhair').classList.toggle('hidden', !show); if (!show) return;
-  const id = curWeapon(), Lw = WL[id] || WL.none, hasW = !!WL[id];
-  for (const k in vm.wpn) vm.wpn[k].visible = k === id;
-  const dy = wrapA(P.cy - VM.lastCy), dp = P.pitch - VM.lastP; VM.lastCy = P.cy; VM.lastP = P.pitch;
-  const k8 = Math.min(1, dt * 8); VM.swX = lerp(clamp(VM.swX + dy * .3, -.08, .08), 0, k8); VM.swY = lerp(clamp(VM.swY - dp * .25, -.06, .06), 0, k8);
+  const vm = R.vm, id = curWeapon(), w = WEAPONS[id], Lw = WL[id] || WL.none, hasW = !!WL[id] && !!vm.wpn[id];
+  const show = isFP() && !G.shop && ['exam', 'end', 'lunch', 'over', 'results'].includes(G.phase);
+  VM.ads = lerp(VM.ads || 0, G.aim && w.ads && !VM.rl && show ? 1 : 0, Math.min(1, dt * 10));
+  const scoped = id === 'sniper' && VM.ads > .85;
+  vm.root.visible = show && !scoped; $('xhair').classList.toggle('hidden', !show || VM.ads > .3); if (!show) return;
+  if (VM.chalkT > 0) VM.chalkT -= dt;
+  for (const k in vm.wpn) vm.wpn[k].visible = k === id && !(k === 'chalk' && VM.chalkT > 0);
+  const dy = wrapA(P.cy - VM.lastCy), dpi = P.pitch - VM.lastP; VM.lastCy = P.cy; VM.lastP = P.pitch;
+  const k8 = Math.min(1, dt * 8), am = 1 - VM.ads * .85; VM.swX = lerp(clamp(VM.swX + dy * .3, -.08, .08), 0, k8); VM.swY = lerp(clamp(VM.swY - dpi * .25, -.06, .06), 0, k8);
   VM.rec = lerp(VM.rec, 0, Math.min(1, dt * 12)); VM.eq = Math.max(0, VM.eq - dt * 3.5);
-  const bA = P.bobA, bx = Math.sin(P.bobT) * .012 * bA, by = -Math.abs(Math.cos(P.bobT)) * .014 * bA + Math.sin(G.T * 1.6) * .003;
-  vm.pivot.position.set(VM.swX * .6 + bx, by - ease(VM.eq) * .35 + VM.swY * .4, VM.rec);
-  vm.pivot.rotation.set(VM.rec * 1.6 + VM.swY, VM.swX, 0);
-  const wp = _a.set(...(Lw.w || [0, 0, 0])), d = _b.set(...(Lw.d || [0, 0, -1])).normalize();
+  const bA = P.bobA * am, bx = Math.sin(P.bobT) * .012 * bA, by = -Math.abs(Math.cos(P.bobT)) * .014 * bA + Math.sin(G.T * 1.6) * .003 * am;
+  vm.pivot.position.set(VM.swX * .6 * am + bx, by - ease(VM.eq) * .35 + VM.swY * .4 * am, VM.rec);
+  vm.pivot.rotation.set(VM.rec * (1.6 - VM.ads) + VM.swY * am, VM.swX * am, 0);
+  const wp = _a.set(...(Lw.w || [0, 0, 0])), d = _b.set(...(Lw.d || [0, 0, -1]));
+  if (Lw.a) { const q = ease(VM.ads); wp.lerp(_t.set(...Lw.a), q); d.lerp(_t.set(0, 0, -1), q); } d.normalize();
   const rp = hasW ? _c.copy(wp).add(_t.set(...Lw.r)) : _c.set(...Lw.r);
   let lp = Lw.l ? (hasW ? _d.copy(wp).add(_t.set(...Lw.l)) : _d.set(...Lw.l)) : null;
-  const a = P.anim, p = a ? clamp(a.t / a.d, 0, 1) : 0;
+  let rc = hasW ? 1.2 : id === 'punch' ? 1.6 : .55, lc = hasW ? 1 : id === 'punch' ? 1.6 : .5, roll = 0, pX = 0;
+  const a = P.anim, p = a ? clamp(a.t / a.d, 0, 1) : 0, W = hasW ? vm.wpn[id] : null, U = W ? W.userData : null, rl = VM.rl && VM.rl.id === id ? VM.rl : null;
   if (a && a.k === 'bat') {
     const W0 = Lw.w, D0 = Lw.d, W1 = [.25, -.22, -.37], D1 = [.45, .75, .5], W2 = [-.12, -.3, -.52], D2 = [-1, -.15, -.55];
     if (p < .4) { const q = ease(p / .4); lv(wp, W0, W1, q); lv(d, D0, D1, q); } else if (p < .62) { const q = ease((p - .4) / .22); lv(wp, W1, W2, q); lv(d, D1, D2, q); } else { const q = ease((p - .62) / .38); lv(wp, W2, W0, q); lv(d, D2, D0, q); }
     d.normalize(); rp.copy(wp);
   }
-  if (id === 'bat') lp = _d.copy(wp).addScaledVector(d, -.085);
+  if (id === 'bat') { lp = _d.copy(wp).addScaledVector(d, -.085); rc = lc = 1.3; }
   if (a && a.k === 'punch') { const q = Math.sin(p * PI); rp.set(lerp(.2, .05, q), lerp(-.25, -.12, q), lerp(-.45, -.8, q)); }
   if (a && a.k === 'snatch' && VM.reach) {
     const R0 = Lw.r, T = [VM.reach.x, VM.reach.y, VM.reach.z], Hd = [.04, -.16, -.4];
-    if (p < .28) lv(rp, R0, T, ease(p / .28)); else if (p < .5) lv(rp, T, Hd, ease((p - .28) / .22)); else rp.set(...Hd);
-    if (p > .42) { lp = _d.set(lerp(-.22, -.05, ease((p - .42) / .15)), -.17, -.41); if (p > .7) { rp.x += .05; lp.x -= .05; } }
+    if (p < .28) { lv(rp, R0, T, ease(p / .28)); rc = .1; } else if (p < .5) { lv(rp, T, Hd, ease((p - .28) / .22)); rc = 1.25; } else { rp.set(...Hd); rc = 1.25; }
+    if (p > .42) { lp = _d.set(lerp(-.22, -.05, ease((p - .42) / .15)), -.17, -.41); lc = 1.2; if (p > .7) { rp.x += .05; lp.x -= .05; } }
   }
-  if (a && a.k === 'tackle') { rp.set(.15, -.2, -.62); lp = _d.set(-.15, -.2, -.62); }
-  if (hasW) { const w = vm.wpn[id]; w.position.copy(wp); w.quaternion.setFromUnitVectors(_t.set(0, 0, -1), d); }
+  if (a && a.k === 'tackle') { rp.set(.15, -.2, -.62); lp = _d.set(-.15, -.2, -.62); rc = lc = .2; }
+  if (a && a.k === 'throw') { const back = bump(p, 0, .25, .25, .26), fwd = Math.sin(clamp((p - .2) / .5, 0, 1) * PI); wp.add(_t.set(.05 * back, .12 * back - .04 * fwd, .1 * back - .28 * fwd)); rp.copy(wp); }
+  if (a && a.k === 'scan') roll += Math.sin(p * PI * 2) * .3;
+  if (a && a.k === 'whistle') { lp = _d.set(-.04, -.06 + .02 * Math.sin(p * PI), -.24); lc = 1.3; }
+  if (rl) { const tilt = id === 'shotgun' ? 1 : bump(clamp(rl.t / rl.d, 0, 1), 0, .12, .85, 1); roll += .45 * tilt * (id === 'shotgun' ? -1 : 1); pX += .18 * tilt; wp.y += .03 * tilt; rp.y += .03 * tilt; }
+  if (W) { W.position.copy(wp); W.quaternion.setFromUnitVectors(_t.set(0, 0, -1), d); if (roll) W.rotateZ(roll); if (pX) W.rotateX(pX); }
+  vm.pivot.updateMatrixWorld(true);
+  const local = (o) => { o.getWorldPosition(_g); return vm.pivot.worldToLocal(_g); };
+  if (U && !rl) { if (U.slide && id === 'pistol') U.slide.position.z = U.slideHome.z + VM.rec * .6; if (U.bolt && id === 'ak') U.bolt.position.z = U.boltHome.z + VM.rec; if (id === 'rpg') U.mag.visible = ammo('rpg') > 0; }
+  if (VM.cyc && U) {
+    VM.cyc.t += dt; const q = clamp(VM.cyc.t / VM.cyc.d, 0, 1);
+    if (VM.cyc.k === 'pump' && U.pump) { const b = bump(q, 0, .4, .45, .9); U.pump.position.z = U.pumpHome.z + .09 * b; if (lp) lp.z += .08 * b; }
+    if (VM.cyc.k === 'bolt' && U.bolt) { const up = bump(q, 0, .15, .8, .95), bk = bump(q, .18, .4, .45, .7); U.bolt.rotation.z = -1.1 * up; U.bolt.position.z = U.boltHome.z + .07 * bk; rp.add(_t.set(.03 * up, .02 * up, .06 * bk)); }
+    if (q >= 1) VM.cyc = null;
+  }
+  if (rl && U) {
+    rl.t += dt; const q = clamp(rl.t / rl.d, 0, 1), ev = (n, at, fn) => { if (q >= at && !rl.ev[n]) { rl.ev[n] = 1; fn(); } };
+    if (id === 'shotgun') {
+      const sh = VM.shell || (VM.shell = buildShell()); if (sh.parent !== vm.pivot) vm.pivot.add(sh);
+      const port = local(W).add(_t.set(0, -.03, .02));
+      sh.visible = q > .05 && q < .7; sh.position.lerpVectors(_h.set(-.16, -.42, -.3), port, q < .55 ? ease(q / .55) : 1); sh.rotation.set(0, 0, 0);
+      lp = _d.copy(sh.position).add(_t.set(0, -.03, .02)); lc = .9; ev('in', .6, () => SFX.shellIn(P.pos));
+      if (q >= 1) { G.ammo[id] = ammo(id) + 1; if (G.ammo[id] < w.mag) { rl.t = 0; rl.ev = {}; } else { VM.rl = null; sh.visible = false; VM.cyc = { k: 'pump', t: 0, d: .55 }; SFX.pump(P.pos); } }
+    } else if (id === 'rpg') {
+      const mg = U.mag, m = ease(clamp((q - .15) / .45, 0, 1)); mg.visible = q > .15;
+      mg.position.set(U.magHome.x - .05 * (1 - m), U.magHome.y - .3 * (1 - m), U.magHome.z - .25 * (1 - m));
+      if (q > .12 && q < .72) { lp = _d.copy(local(mg)).add(_t.set(0, -.05, .02)); lc = .9; }
+      ev('in', .58, () => SFX.magIn(P.pos)); if (q >= 1) { G.ammo[id] = w.mag; VM.rl = null; }
+    } else {
+      const mg = U.mag;
+      if (q < .1) mg.position.copy(U.magHome);
+      else if (q < .3) { const o = ease((q - .1) / .2); mg.position.set(U.magHome.x, U.magHome.y - .32 * o, U.magHome.z + .04 * o); }
+      else if (q < .45) { mg.visible = false; lp = _d.set(-.12, -.55, -.3); }
+      else if (q < .68) { mg.visible = true; const o = 1 - ease((q - .45) / .23); mg.position.set(U.magHome.x, U.magHome.y - .26 * o, U.magHome.z + .03 * o); lp = _d.copy(local(mg)).add(_t.set(0, -.04, 0)); lc = .9; }
+      else mg.position.copy(U.magHome);
+      const rk = bump(q, .72, .8, .82, .92);
+      if (id === 'pistol') U.slide.position.z = U.slideHome.z + .035 * rk;
+      if (id === 'ak') { U.bolt.position.z = U.boltHome.z + .08 * rk; if (rk > 0) rp.add(_t.set(.03 * rk, .02, 0)); }
+      if (id === 'sniper') { const up = bump(q, .7, .76, .9, .95), bk = bump(q, .76, .82, .84, .9); U.bolt.rotation.z = -1.1 * up; U.bolt.position.z = U.boltHome.z + .07 * bk; }
+      ev('out', .1, () => SFX.magOut(P.pos)); ev('in', .64, () => SFX.magIn(P.pos)); ev('rk', .72, () => (id === 'sniper' ? SFX.bolt(P.pos) : SFX.rack(P.pos)));
+      if (q >= 1) { G.ammo[id] = w.mag; resetParts(W); VM.rl = null; }
+    }
+  }
   placeArm(vm.r, rp, 1.72, -.35); vm.l.a.visible = !!lp; if (lp) placeArm(vm.l, lp, 1.72, .38);
+  poseHand(vm.r.rig, rc, rc * .85); poseHand(vm.l.rig, lc, lc * .85);
 }
 
 // ───────── HUD / 핫바 / 말풍선 / 알림 ─────────
@@ -905,7 +1080,7 @@ function renderHotbar() {
   });
   $('atkIc').innerHTML = icon(WEAPONS[curWeapon()].icon);
 }
-function selectSlot(i) { if (i < 0 || i >= G.slots.length) return; G.sel = i; setHeld(curWeapon()); renderHotbar(); SFX.click(); }
+function selectSlot(i) { if (i < 0 || i >= G.slots.length) return; cancelReload(); G.aim = false; G.sel = i; setHeld(curWeapon()); renderHotbar(); SFX.click(); }
 function updHUD() {
   $('hearts').innerHTML = [0, 1, 2].map((i) => icon(i < G.hearts ? 'heart' : 'heart0')).join('');
   $('coins').textContent = G.hack.money ? '∞' : G.coins;
@@ -922,7 +1097,9 @@ function updUI() {
     $('clockTxt').textContent = `${String(Math.floor(mn / 60)).padStart(2, '0')}:${String(Math.floor(mn % 60)).padStart(2, '0')}`; setClock(mn);
   }
   if (G.mode === 'teacher' && !G.shop) {
-    const id = curWeapon(), c = Math.max(0, G.cd[id] || 0), mx = G.cdMax[id] || 1, f = c / mx;
+    const id = curWeapon(), c = Math.max(0, G.cd[id] || 0), mx = G.cdMax[id] || 1, f = c / mx, wm = WEAPONS[id].mag;
+    $('gunUI').classList.toggle('hidden', !wm); if (wm) { $('ammo').innerHTML = VM.rl ? '<small>재장전</small>' : `<b>${ammo(id)}</b><small>/ ∞</small>`; $('btnAim').classList.toggle('on', !!G.aim); }
+    $('scope').classList.toggle('hidden', !(id === 'sniper' && VM.ads > .85));
     $('atkCd').style.background = f > 0 ? `conic-gradient(rgba(0,0,0,.6) ${f * 360}deg, transparent 0)` : 'none';
     $('atkCd').textContent = c > .25 ? c.toFixed(1) : '';
     [...$('hotbar').children].forEach((b, i) => { const cc = Math.max(0, G.cd[G.slots[i]] || 0) / (G.cdMax[G.slots[i]] || 1); b.lastElementChild.style.height = (cc * 100) + '%'; });
@@ -1039,11 +1216,12 @@ cv.addEventListener('pointermove', (e) => {
   else if (G.mode === 'student') { G.sv.yaw = clamp(G.sv.yaw - dx * .004, -2.3, 2.3); G.sv.pitch = clamp(G.sv.pitch - dy * .004, -1.2, .5); }
 });
 cv.addEventListener('pointerup', (e) => { const d = IN.drag; if (d && G.shop && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) shopPick(e); IN.drag = null; });
-function look(dx, dy) { P.cy -= dx * .0024; P.pitch = clamp(P.pitch - dy * .0022, -1.35, 1.25); }
+function look(dx, dy) { const f = R.cam.fov / 55; P.cy -= dx * .0024 * f; P.pitch = clamp(P.pitch - dy * .0022 * f, -1.35, 1.25); }
 cv.addEventListener('click', () => { if (isFP() && !G.shop && (G.phase === 'exam' || G.phase === 'end') && matchMedia('(pointer:fine)').matches && !document.pointerLockElement && cv.requestPointerLock) cv.requestPointerLock(); });
 addEventListener('mousemove', (e) => { if (document.pointerLockElement === cv) look(e.movementX, e.movementY); });
-cv.addEventListener('mousedown', (e) => { if (document.pointerLockElement === cv && e.button === 0) { IN.atk = true; tryAttack(); } });
-addEventListener('mouseup', () => { if (document.pointerLockElement === cv) IN.atk = false; });
+cv.addEventListener('mousedown', (e) => { if (document.pointerLockElement !== cv) return; if (e.button === 0) { IN.atk = true; tryAttack(); } if (e.button === 2) G.aim = true; });
+cv.addEventListener('contextmenu', (e) => e.preventDefault());
+addEventListener('mouseup', (e) => { if (document.pointerLockElement === cv) { if (e.button === 0) IN.atk = false; if (e.button === 2) G.aim = false; } });
 cv.addEventListener('wheel', (e) => { P.cdist = clamp(P.cdist + e.deltaY * .004, 2.5, 9); }, { passive: true });
 const joy = $('joy'), knob = $('knob');
 function joyMove(e) { const r = joy.getBoundingClientRect(), R0 = r.width * .38; let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); const l = Math.hypot(dx, dy); if (l > R0) { dx *= R0 / l; dy *= R0 / l; } knob.style.transform = `translate(${dx}px,${dy}px)`; IN.jx = dx / R0; IN.jy = -dy / R0; }
@@ -1054,10 +1232,13 @@ joy.addEventListener('pointermove', (e) => { if (e.pointerId === IN.jid) joyMove
 $('btnAtk').addEventListener('pointerdown', (e) => { e.preventDefault(); SFX.init(); IN.atk = true; tryAttack(); });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => $('btnAtk').addEventListener(ev, () => (IN.atk = false)));
 $('btnJump').addEventListener('pointerdown', (e) => { e.preventDefault(); IN.jump = true; });
+$('btnReload').addEventListener('pointerdown', (e) => { e.preventDefault(); startReload(curWeapon()); });
+$('btnAim').addEventListener('pointerdown', (e) => { e.preventDefault(); if (!VM.rl) G.aim = !G.aim; });
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return; IN.keys[e.code] = true;
   if (G.mode !== 'teacher' || G.shop) return;
-  if (/^Digit[1-7]$/.test(e.code)) selectSlot(+e.code.slice(5) - 1);
+  const KS = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8, Digit0: 9, Minus: 10, Equal: 11 }; if (e.code in KS) selectSlot(KS[e.code]);
+  if (e.code === 'KeyR') startReload(curWeapon());
   if (e.code === 'Space') { IN.jump = true; e.preventDefault(); }
   if (e.code === 'KeyF' || e.code === 'KeyJ') { if (!IN.atk) tryAttack(); IN.atk = true; }
   if (e.code === 'Enter' || e.code === 'KeyT') { toggleChat(true); e.preventDefault(); }
@@ -1104,4 +1285,4 @@ ball.addEventListener('pointermove', (e) => { if (!bd) return; const dx = e.clie
 ball.addEventListener('pointerup', () => { if (bd && !bd.mv) openHack(); bd = null; });
 $('skip').onclick = () => { if (G.phase === 'intro') endIntro(); };
 
-window.__sn = { G, P, R, N, selectSlot, tryAttack, startGame, openShop, closeShop, shopTap, solveAI, endExam, nextSched };
+window.__sn = { G, P, R, N, VM, startReload, selectSlot, tryAttack, startGame, openShop, closeShop, shopTap, solveAI, endExam, nextSched };

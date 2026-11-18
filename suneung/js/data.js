@@ -23,6 +23,13 @@ export const ICONS = {
   ak: S(`<defs>${LG('m', '#5a5f66', '#141518')}${LG('w', '#c8743a', '#6e2e0c')}${LG('o', '#e0742a', '#8a3410')}</defs><path d="M2 30 13 23h11v9H14l-9 11H1Z" fill="url(#w$)"/><rect x="22" y="22" width="22" height="9" rx="1.5" fill="url(#m$)"/><path d="M42 23h12v6H42Z" fill="url(#w$)"/><rect x="52" y="24.5" width="11" height="2.8" fill="#1d1e21"/><rect x="61" y="23.8" width="2.6" height="4.2" fill="#ff6a00"/><path d="M33 31h6l4 11 1 6-6 1-3-8Z" fill="url(#o$)"/><path d="M25 31h5l-1.5 10h-5Z" fill="#1d1e21"/><path d="M23 22h21" stroke="#9aa0a8" stroke-width="1"/>`),
   rpg: S(`<defs>${LG('t', '#7a8a58', '#2f3a20')}${LG('h', '#a8653a', '#5a2c10')}${LG('r', '#ff6b4a', '#a01a10')}</defs><path d="M2 27l6-3h34v12H8l-6-3Z" fill="url(#t$)"/><rect x="18" y="24.5" width="13" height="11" rx="1" fill="url(#h$)"/><path d="M42 26h5l12 4-12 4h-5Z" fill="url(#r$)"/><path d="M45 26v8" stroke="#ffd400" stroke-width="2"/><path d="M15 36h5l-2 11h-5ZM27 36h5l-1 8h-5Z" fill="#1e1e1e"/><rect x="24" y="18" width="9" height="6" rx="1.5" fill="#22261c"/><circle cx="32" cy="21" r="2" fill="#5a8ad8"/>`),
   tackle: S(`<defs>${LG('s', '#ffffff', '#7d8794', 1, 1)}</defs><g fill="none" stroke="url(#s$)" stroke-width="5.5"><circle cx="17" cy="41" r="12"/><circle cx="47" cy="41" r="12"/></g><g fill="none" stroke="#56606c" stroke-width="1.6"><circle cx="17" cy="41" r="12"/><circle cx="47" cy="41" r="12"/></g><rect x="13" y="23" width="9" height="8" rx="1.5" fill="url(#s$)"/><rect x="42" y="23" width="9" height="8" rx="1.5" fill="url(#s$)"/><path d="M22 26q5-6 10 0 5-6 10 0" stroke="url(#s$)" stroke-width="3.5" fill="none"/>`),
+  chalk: S(`<defs>${LG('c', '#ffffff', '#cfd2c8', 1, 1)}</defs><path d="M12 44 44 12l8 8-32 32Z" fill="url(#c$)" stroke="#9aa094" stroke-width="2"/><path d="M44 12l8 8" stroke="#e8e8e0" stroke-width="3"/><circle cx="14" cy="52" r="3" fill="#fff" opacity=".7"/><circle cx="8" cy="46" r="2" fill="#fff" opacity=".5"/>`),
+  whistle: S(`<defs>${LG('w', '#f2f5f8', '#8f9aa6', 1, 1)}</defs><path d="M8 26h26l18-8a10 10 0 1 1-4 22H22a14 14 0 0 1-14-14Z" fill="url(#w$)" stroke="#55606c" stroke-width="2"/><circle cx="46" cy="32" r="5" fill="#55606c"/><path d="M50 10l4-5M56 15l5-2M44 8l1-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>`),
+  detector: S(`<defs>${LG('y', '#ffe066', '#d49a00')}</defs><rect x="27" y="40" width="10" height="20" rx="4" fill="#1b1b1b"/><path d="M22 6h20a5 5 0 0 1 5 5v26a5 5 0 0 1-5 5H22a5 5 0 0 1-5-5V11a5 5 0 0 1 5-5Z" fill="url(#y$)" stroke="#6b4c00" stroke-width="2"/><rect x="22" y="11" width="20" height="18" rx="9" fill="none" stroke="#1b1b1b" stroke-width="4"/><circle cx="32" cy="36" r="2.5" fill="#2bff6a"/>`),
+  shotgun: S(`<defs>${LG('m', '#5a5f66', '#141518')}${LG('w', '#c8743a', '#6e2e0c')}</defs><path d="M2 31 12 25h10v9H13l-8 9H1Z" fill="url(#w$)"/><rect x="20" y="24" width="16" height="9" rx="1.5" fill="url(#m$)"/><rect x="34" y="24" width="28" height="4" rx="1" fill="url(#m$)"/><rect x="34" y="29" width="22" height="3.5" rx="1" fill="#1d1e21"/><rect x="38" y="28" width="12" height="7" rx="3" fill="#2a2b2f"/><rect x="60" y="23.5" width="3" height="5" fill="#ff6a00"/><path d="M24 33h5l-2 9h-5Z" fill="url(#w$)"/>`),
+  sniper: S(`<defs>${LG('m', '#5c6150', '#1d2018')}</defs><path d="M2 33 10 28h12v8H12l-7 8H1Z" fill="#3b4231"/><rect x="20" y="28" width="16" height="8" rx="1.5" fill="url(#m$)"/><rect x="34" y="30" width="28" height="3" rx="1" fill="#1f2120"/><rect x="60" y="29" width="3" height="5" fill="#ff6a00"/><rect x="18" y="19" width="22" height="6" rx="3" fill="#141516"/><circle cx="41" cy="22" r="4" fill="#141516"/><circle cx="41" cy="22" r="2.2" fill="#4a7bd0"/><path d="M24 25v3M34 25v3" stroke="#141516" stroke-width="2.5"/>`),
+  reload: S(`<defs>${LG('r', '#ffffff', '#c6cfdc')}</defs><path d="M50 32a18 18 0 1 1-6-13.4" fill="none" stroke="url(#r$)" stroke-width="6" stroke-linecap="round"/><path d="M47 8l-1 13-13-2" fill="none" stroke="url(#r$)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>`),
+  scope: S(`<circle cx="32" cy="32" r="22" fill="none" stroke="#fff" stroke-width="4"/><circle cx="32" cy="32" r="12" fill="none" stroke="#fff" stroke-width="2" opacity=".6"/><path d="M32 4v18M32 42v18M4 32h18M42 32h18" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="32" r="2.5" fill="#ff4b5c"/>`),
   hack: S(`<defs>${RG('h', '#1f5a36', '#06140c')}</defs><rect x="14" y="14" width="36" height="36" rx="6" fill="url(#h$)" stroke="#2bff88" stroke-width="2.5"/><path d="M21 8v6M32 8v6M43 8v6M21 50v6M32 50v6M43 50v6M8 21h6M8 32h6M8 43h6M50 21h6M50 32h6M50 43h6" stroke="#2bff88" stroke-width="3" stroke-linecap="round"/><path d="M27 25l-6 7 6 7M37 25l6 7-6 7" stroke="#7dffb5" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`),
   close: S(`<path d="M17 17l30 30M47 17 17 47" stroke="#fff" stroke-width="6" stroke-linecap="round"/>`),
   ai: S(`<defs>${LG('l', '#b8fbff', '#0d9cc4')}</defs><g stroke="#0b1622" stroke-width="3.5" fill="url(#l$)"><rect x="4" y="22" width="25" height="19" rx="8"/><rect x="35" y="22" width="25" height="19" rx="8"/></g><path d="M29 29h6" stroke="#0b1622" stroke-width="3.5"/><path d="M10 29h11M41 29h11" stroke="#fff" stroke-width="2.6" stroke-linecap="round" opacity=".85"/><circle cx="56" cy="15" r="4.5" fill="#7af7ff"/><circle cx="56" cy="15" r="8" fill="#7af7ff" opacity=".25"/>`),
@@ -45,13 +52,19 @@ export const icon = (n) => { const s = ICONS[n]; if (!s) return ''; const id = '
 export const WEAPONS = {
   snatch: { name: '안경 뺏기', icon: 'snatch', cd: .8, range: 2.0, kind: 'snatch', desc: '안경을 뺏어서 반으로 쪼갠다' },
   punch: { name: '주먹 기절', icon: 'punch', cd: 1.2, range: 2.0, kind: 'punch', desc: '머리를 때려 잠깐 기절' },
+  chalk: { name: '분필 던지기', icon: 'chalk', cd: .7, kind: 'throw', desc: '맞히면 안경이 떨어질 수도' },
+  whistle: { name: '호루라기', icon: 'whistle', cd: 8, kind: 'whistle', desc: '모두 깜짝! AI 안경이 순간 깜빡인다' },
+  detector: { name: '금속 탐지기', icon: 'detector', price: 15, cd: .5, range: 1.9, kind: 'detector', desc: '가까이 대면 전자기기에 반응해 울린다' },
   bat: { name: '야구방망이', icon: 'bat', price: 10, cd: 1.0, range: 2.2, kind: 'bat', desc: '머리를 딱! 한 방에 KO' },
-  pistol: { name: '페인트 권총', icon: 'pistol', price: 25, cd: .5, kind: 'gun', speed: 30, spread: .012, desc: '페인트탄 한 발에 KO' },
-  ak: { name: 'AK-47 페인트건', icon: 'ak', price: 40, cd: .1, kind: 'gun', auto: true, speed: 36, spread: .05, desc: '연사! 빗나가면 옆 학생이 맞는다' },
-  rpg: { name: 'RPG 폭죽포', icon: 'rpg', price: 67, cd: 3, kind: 'rocket', speed: 14, desc: '자리째 날려버리는 대폭발' },
+  pistol: { name: '페인트 권총', icon: 'pistol', price: 25, cd: .28, kind: 'gun', speed: 34, spread: .01, mag: 12, rl: 1.4, ads: 45, desc: '12발 탄창 · 한 발에 KO' },
+  shotgun: { name: '페인트 샷건', icon: 'shotgun', price: 50, cd: .75, kind: 'gun', speed: 26, spread: .07, pellets: 7, mag: 6, rl: .5, ads: 45, desc: '7발 산탄 · 근거리 최강' },
+  ak: { name: 'AK-47 페인트건', icon: 'ak', price: 40, cd: .1, kind: 'gun', auto: true, speed: 38, spread: .035, mag: 30, rl: 2.1, ads: 40, desc: '30발 연사 · 빗나가면 옆 학생이 맞는다' },
+  sniper: { name: '저격 페인트총', icon: 'sniper', price: 85, cd: 1.1, kind: 'gun', speed: 70, spread: 0, mag: 5, rl: 2.3, ads: 14, desc: '조준경으로 멀리서 정확하게' },
+  rpg: { name: 'RPG 폭죽포', icon: 'rpg', price: 67, cd: 1, kind: 'rocket', speed: 14, mag: 1, rl: 1.9, ads: 45, desc: '자리째 날려버리는 대폭발' },
   tackle: { name: '태클 제압', icon: 'tackle', price: 100, cd: 3.5, range: 3.4, kind: 'tackle', desc: '밀어 넘어뜨리고 수갑 채우기' },
 };
-export const SHOP_ORDER = ['bat', 'pistol', 'ak', 'rpg', 'tackle'];
+export const SHOP_ORDER = ['bat', 'detector', 'pistol', 'shotgun', 'ak', 'sniper', 'rpg', 'tackle'];
+export const BASE_SKILLS = ['snatch', 'punch', 'chalk', 'whistle'];
 
 export const NAMES = ['김민준', '이서연', '박지호', '최서윤', '정도윤', '강하은', '조예준', '윤지우', '장시우', '임수아', '한주원', '오지민', '서건우', '신채원', '권현우', '황다은', '안유준', '송서아', '류은우', '홍하린', '전지환', '고나윤', '문승현', '양소율', '손태윤', '배지아', '백도현', '허예린'];
 
@@ -68,6 +81,9 @@ export const REACT = {
   food: ['배고파요...', '도시락 먹고 싶다', '점심 언제예요?'],
   praise: ['헤헤', '감사합니다!', '(뿌듯)'],
   angry: ['(움찔)', '죄송합니다!', '왜 저한테...'],
+  pain: ['아야!!', '으윽...', '아파요ㅠㅠ', '아...', '머리가 띵해요...', '흑...'],
+  remorse: ['잘못했어요... 다시는 안 그럴게요', '한 번만 봐주세요ㅠㅠ', 'AI 안경 쓴 거 반성하고 있어요...', '부모님한테는 말하지 말아 주세요ㅠ', '제가 욕심을 부렸어요...', '내년엔 정직하게 볼게요...'],
+  wronged: ['저 진짜 아니에요...', '억울해요!!', '왜 저한테 이러세요ㅠㅠ', '저 열심히 풀고 있었는데...'],
   def: ['네?', '...?', '네 선생님', '(끄덕끄덕)', '무슨 말씀이세요?', '네 알겠습니다'],
 };
 export function classify(t) {

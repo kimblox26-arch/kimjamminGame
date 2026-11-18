@@ -7,6 +7,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { studentBody, teacherBody, viewArms } from './human.js';
+import { buildWeapon } from './weapons.js';
+export { buildWeapon };
 
 export const R = { students: [], obstacles: [], debris: [], decals: [] };
 export const Q = { level: 'high' };
@@ -35,7 +37,7 @@ export function merge(parts) {
     const g = pt.g.index ? pt.g.toNonIndexed() : pt.g.clone();
     _e.set(...(pt.r || [0, 0, 0])); _q.setFromEuler(_e); _p.set(...(pt.p || [0, 0, 0]));
     if (typeof pt.s === 'number') _s.set(pt.s, pt.s, pt.s); else _s.set(...(pt.s || [1, 1, 1]));
-    _m.compose(_p, _q, _s); g.applyMatrix4(_m); _c.set(pt.c || '#fff');
+    if (pt.m) _m.copy(pt.m); else _m.compose(_p, _q, _s); g.applyMatrix4(_m); _c.set(pt.c || '#fff');
     const P = g.attributes.position.array, N = g.attributes.normal.array, U = g.attributes.uv ? g.attributes.uv.array : null, k = pt.k || [.75, 0];
     for (let i = 0; i < P.length; i++) { pos.push(P[i]); nor.push(N[i]); }
     for (let i = 0; i < P.length / 3; i++) { col.push(_c.r, _c.g, _c.b); rm.push(k[0], k[1]); uv.push(U ? U[i * 2] : 0, U ? U[i * 2 + 1] : 0); }
@@ -139,7 +141,7 @@ function viewModel() {
   s.add(new THREE.HemisphereLight(0xfff4e6, 0x6a5440, .8)); const d = new THREE.DirectionalLight(0xffe2c0, 2.4); d.position.set(-2, 3, 1); s.add(d);
   const A = viewArms(), vm = (R.vm = { root: new THREE.Group(), pivot: new THREE.Group(), r: A.r, l: A.l, wpn: {} });
   s.add(vm.root); vm.root.add(vm.pivot); vm.pivot.add(A.r.a, A.l.a);
-  for (const k of ['bat', 'pistol', 'ak', 'rpg', 'tackle']) { const w = buildWeapon(k); w.visible = false; w.scale.setScalar(k === 'pistol' ? 1 : .86); vm.pivot.add(w); vm.wpn[k] = w; }
+  for (const k of ['bat', 'detector', 'pistol', 'shotgun', 'ak', 'sniper', 'rpg', 'tackle', 'chalk']) { const w = buildWeapon(k); w.visible = false; w.scale.setScalar(k === 'pistol' || k === 'chalk' || k === 'detector' ? 1 : .86); vm.pivot.add(w); vm.wpn[k] = w; }
   vm.root.visible = false;
 }
 // 강조 테두리 (프레넬 림 라이트) — 수능 종료 후 빨강/초록, 해킹 찾기
@@ -359,7 +361,7 @@ function room() {
   const glass = new THREE.MeshStandardMaterial({ color: 0xcfe8ff, transparent: true, opacity: .12, roughness: .02, metalness: .2, depthWrite: false });
   for (const z of [-4.2, 0, 4.2]) {
     const gl = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.54), sky); gl.position.set(-7.25, 1.75, z); gl.rotation.y = HP; sc.add(gl);
-    const gp = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.54), glass); gp.position.set(-6.97, 1.75, z); gp.rotation.y = HP; R.dec.L.add(gp);
+    const gp = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.54), glass.clone()); gp.position.set(-6.97, 1.75, z); gp.rotation.y = HP; R.dec.L.add(gp); (R.glass || (R.glass = [])).push({ gp, z, hits: 0, broken: false, decals: [] });
     const wc = '#eef0f2', km = K.metal;
     fp.push({ g: B(.3, .07, 2.92), c: wc, p: [-7.08, 2.52, z], k: km }, { g: B(.3, .07, 2.92), c: wc, p: [-7.08, .98, z], k: km },
       { g: B(.3, 1.6, .07), c: wc, p: [-7.08, 1.75, z - 1.43], k: km }, { g: B(.3, 1.6, .07), c: wc, p: [-7.08, 1.75, z + 1.43], k: km },
@@ -473,85 +475,19 @@ function furniture() {
   R.shopLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: ctex(lc), depthTest: false, transparent: true, toneMapped: false })); R.shopLabel.scale.set(1, .25, 1); R.shopLabel.position.set(CHAIR.x, 1.55, CHAIR.z); sc.add(R.shopLabel);
 }
 
-// ───────── 무기 모델 (실제 비율 · 금속/나무/플라스틱 재질) ─────────
 function meshes(group, sets) { for (const [mat, parts] of sets) if (parts.length) group.add(M(merge(parts), mat)); }
-export function buildWeapon(k) {
-  const g = new THREE.Group(); let mz = -.5, my = .07;
-  const G = (c = '#24262a', kk = K.metal) => ({ c, k: kk });
-  if (k === 'bat') {
-    const prof = [[0, 0], [.03, 0], [.034, .008], [.032, .018], [.018, .026], [.016, .06], [.0158, .25], [.018, .36], [.025, .46], [.032, .55], [.0365, .63], [.0375, .78], [.036, .815], [.029, .835], [0, .842]];
-    const grip = [{ g: CY(.0172, .0172, .2, 20), c: '#151515', p: [0, 0, .02], r: [HP, 0, 0], k: K.rubber }];
-    for (let i = 0; i < 9; i++) grip.push({ g: TO(.0172, .0016, 6, 20), c: '#3a3a3a', p: [0, 0, .1 - i * .022], r: [.25, 0, 0], k: K.rubber });
-    grip.push({ g: TO(.031, .003, 6, 24), c: '#c4161c', p: [0, 0, .105], k: K.gloss });
-    meshes(g, [[R.mBat, [{ g: LA(prof, 32), r: [-HP, 0, 0], p: [0, 0, .12] }]], [R.mV, grip]]); mz = -.72; my = 0;
-  } else if (k === 'pistol') {
-    const v = [
-      { g: B(.026, .032, .19), ...G('#2a2c30'), p: [0, .046, -.075] }, { g: B(.024, .024, .165), ...G('#1a1b1d', K.plastic), p: [0, .019, -.068] },
-      { g: B(.027, .033, .009), c: '#ff6a00', p: [0, .046, -.172], k: K.plastic }, { g: CY(.005, .005, .012, 10), ...G('#0a0a0a'), p: [0, .046, -.178], r: [HP, 0, 0] },
-      { g: B(.004, .007, .006), ...G('#111'), p: [0, .065, -.158] }, { g: B(.017, .007, .007), ...G('#111'), p: [0, .065, .012] },
-      { g: B(.012, .006, .03), c: '#cfd4da', p: [.013, .052, -.05], k: K.chrome },
-      { g: EX([[.014, .008], [-.028, .008], [-.046, -.098], [-.008, -.102], [.006, -.03]], .026, .005), c: '#1c1d20', k: [.7, 0] },
-      { g: TO(.02, .0035, 6, 14, PI), ...G('#1a1b1d', K.plastic), p: [0, .006, -.032], r: [0, HP, PI] }, { g: B(.004, .016, .006), ...G('#222'), p: [0, -.002, -.025], r: [.3, 0, 0] },
-      { g: B(.03, .008, .046), c: '#111', p: [0, -.1, .026], r: [-.32, 0, 0], k: K.plastic },
-    ];
-    for (let i = 0; i < 7; i++) v.push({ g: B(.0275, .026, .002), c: '#111', p: [0, .047, i * .004], k: K.metal });
-    meshes(g, [[R.mV, v]]); mz = -.18; my = .046;
-  } else if (k === 'ak') {
-    const bk = [[.05, -.03], [.055, -.08], [.07, -.13], [.095, -.18], [.125, -.222]], fr = [[.11, -.03], [.118, -.08], [.136, -.125], [.163, -.166], [.195, -.2]];
-    const metal = [
-      { g: B(.046, .072, .38), ...G('#26282c'), p: [0, .028, -.1] }, { g: CA(.022, .3, 14), ...G('#2e3034'), p: [0, .062, -.08], r: [HP, 0, 0], s: [1, 1, .9] },
-      { g: CY(.011, .011, .46, 14), ...G('#1d1e21'), p: [0, .018, -.52], r: [HP, 0, 0] }, { g: CY(.0105, .0105, .3, 12), ...G('#33353a'), p: [0, .052, -.36], r: [HP, 0, 0] },
-      { g: CY(.015, .015, .05, 12), ...G('#1d1e21'), p: [0, .018, -.765], r: [HP, 0, 0] }, { g: CY(.016, .016, .014, 14), c: '#ff6a00', p: [0, .018, -.796], r: [HP, 0, 0], k: K.plastic },
-      { g: B(.026, .04, .035), ...G('#26282c'), p: [0, .03, -.6] }, { g: B(.004, .045, .004), ...G('#111'), p: [0, .072, -.6] }, { g: TO(.012, .003, 6, 12, PI), ...G('#26282c'), p: [0, .065, -.6], r: [0, HP, 0] },
-      { g: B(.03, .016, .05), ...G('#26282c'), p: [0, .07, -.27] }, { g: B(.004, .008, .004), ...G('#111'), p: [0, .082, -.25] },
-      { g: TO(.026, .004, 6, 16, PI), ...G('#26282c'), p: [0, -.008, -.045], r: [0, HP, PI] }, { g: B(.004, .022, .006), ...G('#222'), p: [0, -.012, -.04], r: [.25, 0, 0] },
-      { g: B(.004, .012, .1), ...G('#3a3c40'), p: [.025, .028, -.04], r: [-.08, 0, 0] }, { g: CY(.005, .005, .32, 8), ...G('#3a3c40'), p: [0, -.004, -.55], r: [HP, 0, 0] },
-      { g: B(.05, .012, .02), ...G('#26282c'), p: [0, -.004, -.12] }, { g: B(.048, .08, .006), ...G('#1a1b1d'), p: [0, -.035, .425] },
-    ];
-    for (let i = 0; i < 6; i++) metal.push({ g: B(.046, .004, .006), ...G('#1b1c1f'), p: [0, .084, -i * .04] });
-    const wood = [
-      { g: CA(.022, .17, 14), p: [0, .002, -.4], r: [HP, 0, 0], s: [.95, 1, 1] }, { g: CA(.018, .13, 14), p: [0, .055, -.38], r: [HP, 0, 0], s: [1, 1, .85] },
-      { g: EX([[-.07, .045], [-.42, .0], [-.425, -.012], [-.425, -.115], [-.4, -.118], [-.1, -.035], [-.07, -.02]], .036, .006) },
-      { g: EX([[.02, -.03], [.046, -.03], [.004, -.13], [-.028, -.13]], .03, .005) },
-    ];
-    const mag = [{ g: EX([...bk, ...fr.reverse()], .028, .004), c: '#b04c19', k: [.42, 0] }];
-    for (let i = 0; i < 4; i++) mag.push({ g: B(.032, .004, .045), c: '#8a3a12', p: [0, -.07 - i * .035, -.09 - i * .018], r: [-.3 - i * .08, 0, 0], k: [.5, 0] });
-    meshes(g, [[R.mV, metal], [R.mRifle, wood], [R.mV, mag]]); mz = -.81; my = .018;
-  } else if (k === 'rpg') {
-    const tube = [
-      { g: CY(.031, .031, .95, 24), c: '#3d4431', p: [0, .07, -.12], r: [HP, 0, 0], k: [.55, .5] }, { g: CY(.052, .033, .14, 24), c: '#30352a', p: [0, .07, .42], r: [HP, 0, 0], k: [.5, .5] },
-      { g: CY(.036, .036, .02, 20), c: '#2a2e24', p: [0, .07, -.6], r: [HP, 0, 0], k: K.metal }, { g: CY(.036, .036, .02, 20), c: '#2a2e24', p: [0, .07, .335], r: [HP, 0, 0], k: K.metal },
-      { g: EX([[.018, -.004], [-.012, -.004], [-.03, -.11], [.004, -.114], [.016, -.04]], .028, .005), c: '#2a1a10', p: [0, .04, 0], k: [.55, 0] },
-      { g: EX([[.02, -.004], [-.01, -.004], [-.02, -.1], [.01, -.1]], .026, .005), c: '#2a1a10', p: [0, .04, -.24], k: [.55, 0] },
-      { g: TO(.022, .0035, 6, 14, PI), c: '#222', p: [0, .036, -.03], r: [0, HP, PI], k: K.metal }, { g: B(.004, .02, .006), c: '#222', p: [0, .028, -.025], k: K.metal },
-      { g: B(.032, .045, .12), c: '#2b2f26', p: [-.052, .11, -.1], k: [.4, .4] }, { g: CY(.016, .018, .04, 16), c: '#1a1a1a', p: [-.052, .112, -.02], r: [HP, 0, 0], k: K.rubber },
-      { g: CY(.016, .016, .01, 16), c: '#3366aa', p: [-.052, .112, -.165], r: [HP, 0, 0], k: [.03, .5] }, { g: B(.03, .012, .03), c: '#2b2f26', p: [-.03, .1, -.1], k: K.metal },
-      { g: B(.005, .03, .01), c: '#222', p: [0, .108, -.5], k: K.metal }, { g: B(.012, .022, .01), c: '#222', p: [0, .104, -.05], k: K.metal },
-      { g: CY(.017, .017, .14, 12), c: '#555b4a', p: [0, .07, -.67], r: [HP, 0, 0], k: K.metal },
-      { g: LA([[0, 0], [.012, .006], [.028, .04], [.043, .085], [.048, .14], [.048, .2], [.036, .228], [.02, .25]], 24), c: '#56603e', p: [0, .07, -.99], r: [HP, 0, 0], k: [.45, .3] },
-      { g: CY(.0485, .0485, .018, 24), c: '#ff2a3a', p: [0, .07, -.84], r: [HP, 0, 0], k: K.gloss }, { g: CY(.0485, .0485, .018, 24), c: '#ffd400', p: [0, .07, -.81], r: [HP, 0, 0], k: K.gloss },
-      { g: CY(.003, .013, .03, 12), c: '#d8b040', p: [0, .07, -1.0], r: [-HP, 0, 0], k: K.chrome },
-    ];
-    for (let i = 0; i < 4; i++) { const a = i * HP + PI / 4; tube.push({ g: B(.002, .03, .05), c: '#444a3a', p: [Math.cos(a) * .02, .07 + Math.sin(a) * .02, -.64], r: [0, 0, a], k: K.metal }); }
-    meshes(g, [[R.mV, tube], [R.mDark, [{ g: CY(.044, .044, .26, 24), p: [0, .07, -.06], r: [HP, 0, 0] }]]]); mz = -1.0; my = .07;
-  } else {
-    const st = [];
-    for (const s of [-1, 1]) st.push({ g: TO(.04, .0065, 10, 32), p: [s * .07, 0, 0], r: [HP, 0, 0] }, { g: TO(.034, .006, 8, 20, PI * .9), p: [s * .07, 0, 0], r: [HP, 0, s * .4] }, { g: B(.03, .016, .055), p: [s * .07, 0, -.045] }, { g: CY(.004, .004, .02, 8), p: [s * .07, .01, -.05] });
-    for (let i = 0; i < 3; i++) st.push({ g: TO(.009, .0026, 6, 12), p: [-.022 + i * .022, 0, -.06], r: [i % 2 ? HP : 0, 0, 0] });
-    g.add(M(merge(st), R.mSteel)); mz = 0; my = 0;
-  }
-  const mo = new THREE.Object3D(); mo.position.set(0, my, mz); g.add(mo); g.userData.muzzle = mo;
-  return g;
-}
+const SHOP_K = ['bat', 'detector', 'pistol', 'shotgun', 'ak', 'sniper', 'rpg', 'tackle'];
 function shopItems() {
   R.shopItems = {}; R.tags = {};
-  R.scene.add(M(merge([{ g: B(1.7, .006, .6), c: '#2a2d33', p: [0, .828, -6.02], k: [.95, 0] }, { g: B(1.72, .008, .012), c: '#c9a24a', p: [0, .829, -6.32], k: K.chrome }])));
-  ['bat', 'pistol', 'ak', 'rpg', 'tackle'].forEach((k, i) => {
+  R.scene.add(M(merge([{ g: B(1.7, .006, .66), c: '#2a2d33', p: [0, .828, -6.0], k: [.95, 0] }, { g: B(1.72, .008, .012), c: '#c9a24a', p: [0, .829, -6.34], k: K.chrome }, { g: B(1.6, .07, .24), c: '#30343b', p: [0, .864, -5.82], k: [.8, 0] }])));
+  const SC = { bat: .5, detector: .9, pistol: 1.25, shotgun: .4, ak: .38, sniper: .32, rpg: .3, tackle: 1 }, OZ = { bat: .16, detector: .08, pistol: .06, shotgun: .16, ak: .16, sniper: .16, rpg: .16, tackle: 0 };
+  SHOP_K.forEach((k, i) => {
+    const row = i < 4 ? 0 : 1, x = -.6 + (i % 4) * .4, y = row ? .905 : .838, z = row ? -5.82 : -6.12;
     const w = buildWeapon(k), base = new THREE.Group(); base.add(w);
-    w.rotation.set(0, PI, k === 'tackle' ? 0 : HP); w.scale.setScalar({ bat: .62, pistol: 1.35, ak: .44, rpg: .38, tackle: 1.1 }[k]); w.position.z = { bat: .2, pistol: .06, ak: .2, rpg: .2, tackle: 0 }[k];
-    base.position.set(-.68 + i * .34, .86, -5.98); base.userData = { k, y: .86 }; R.scene.add(base); R.shopItems[k] = base;
-    const c = mkCanvas(320, 128), t = ctex(c), tag = new THREE.Mesh(new THREE.PlaneGeometry(.22, .088), new THREE.MeshStandardMaterial({ map: t, roughness: .4, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: .35 }));
-    tag.position.set(-.68 + i * .34, .842, -6.37); tag.lookAt(0, 1.4, -7.25); tag.userData = { k }; R.scene.add(tag); R.tags[k] = { tag, c, t };
+    w.rotation.set(0, PI, k === 'tackle' || k === 'detector' ? 0 : HP); w.scale.setScalar(SC[k]); w.position.z = OZ[k];
+    base.position.set(x, y + .02, z); base.userData = { k, y: y + .02 }; R.scene.add(base); R.shopItems[k] = base;
+    const c = mkCanvas(320, 128), t = ctex(c), tag = new THREE.Mesh(new THREE.PlaneGeometry(.2, .08), new THREE.MeshStandardMaterial({ map: t, roughness: .4, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: .35, transparent: true }));
+    tag.position.set(x, row ? .95 : .845, row ? -5.95 : -6.38); tag.lookAt(0, 1.4, -7.25); tag.userData = { k }; R.scene.add(tag); R.tags[k] = { tag, c, t };
   });
 }
 export function drawTag(k, st) {
@@ -699,6 +635,26 @@ function misc() {
     for (let k = 0; k < 6; k++) { const a = rand(0, 7), d = rand(1.2, 1.8); parts.push({ g: new THREE.CircleGeometry(rand(.06, .18), 12), p: [Math.cos(a) * d, Math.sin(a) * d, 0] }); }
     return merge(parts);
   });
+}
+
+// ───────── 금·흠집 자국 ─────────
+let _crack = null;
+function crackTex() {
+  if (_crack) return _crack; const c = mkCanvas(256, 256), g = c.getContext('2d'); g.translate(128, 128); g.lineCap = 'round';
+  for (let i = 0; i < 14; i++) { let a = i / 14 * 2 * PI + rand(-.2, .2), x = 0, y = 0, r = 0; g.beginPath(); g.moveTo(0, 0); const L = rand(60, 124); while (r < L) { r += rand(8, 18); a += rand(-.25, .25); x = Math.cos(a) * r; y = Math.sin(a) * r; g.lineTo(x, y); } g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = rand(1, 2.4); g.stroke(); }
+  for (let k = 1; k < 4; k++) { g.beginPath(); for (let i = 0; i <= 18; i++) { const a = i / 18 * 2 * PI, r = k * 24 + rand(-5, 5); i ? g.lineTo(Math.cos(a) * r, Math.sin(a) * r) : g.moveTo(Math.cos(a) * r, Math.sin(a) * r); } g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.stroke(); }
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, 14); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(-14, -14, 28, 28);
+  return (_crack = ctex(c));
+}
+const crackMats = {};
+export function addCrack(pos, normal, size, kind = 'glass') {
+  const col = kind === 'glass' ? 0xeaf6ff : kind === 'board' ? 0xb8c4bc : 0x3a2c22;
+  const mat = crackMats[kind] || (crackMats[kind] = new THREE.MeshBasicMaterial({ map: crackTex(), color: col, transparent: true, opacity: kind === 'glass' ? .9 : .7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+  const m = new THREE.Mesh(R.crackGeo || (R.crackGeo = new THREE.PlaneGeometry(1, 1)), mat); m.scale.set(size, size, 1); m.position.copy(pos); m.rotation.z = rand(0, 6);
+  if (normal === '+x') { m.rotation.set(0, HP, rand(0, 6)); m.position.x += .006; } else if (normal === '-x') { m.rotation.set(0, -HP, rand(0, 6)); m.position.x -= .006; }
+  else if (normal === '+z') { m.rotation.set(0, 0, rand(0, 6)); m.position.z += .006; } else if (normal === '-z') { m.rotation.set(0, PI, rand(0, 6)); m.position.z -= .006; } else { m.rotation.set(-HP, 0, rand(0, 6)); m.position.y += .006; }
+  R.scene.add(m); R.decals.push(m); if (R.decals.length > 160) R.scene.remove(R.decals.shift());
+  return m;
 }
 
 // ───────── 바닥/벽/책상 자국 ─────────

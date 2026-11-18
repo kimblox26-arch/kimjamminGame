@@ -8,15 +8,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=20261118b">
+<link rel="stylesheet" href="./style.css?v=20261118c">
 <script type="importmap">
 { "imports": {
   "three": "../vendor/three/three.module.min.js",
   "three/addons/": "../vendor/three/addons/",
-  "./js/data.js": "./js/data.js?v=20261118b",
-  "./js/audio.js": "./js/audio.js?v=20261118b",
-  "./js/world.js": "./js/world.js?v=20261118b",
-  "./js/human.js": "./js/human.js?v=20261118b"
+  "./js/data.js": "./js/data.js?v=20261118c",
+  "./js/audio.js": "./js/audio.js?v=20261118c",
+  "./js/world.js": "./js/world.js?v=20261118c",
+  "./js/human.js": "./js/human.js?v=20261118c",
+  "./js/weapons.js": "./js/weapons.js?v=20261118c"
 } }
 </script>
 </head>
@@ -54,6 +55,7 @@
     <button id="btnSet" class="icbtn" aria-label="설정"><i data-ic="gear"></i></button>
   </div>
   <div id="remain" class="hidden"></div>
+  <div id="scope" class="hidden"><i></i></div>
   <div id="xhair" class="hidden"><i></i><i></i><i></i><i></i><b></b></div>
   <button id="shopExit" class="glassbtn hidden"><i data-ic="exit"></i><span>일어나기</span></button>
 
@@ -64,6 +66,7 @@
     <div id="chatBar" class="hidden"><input id="chatIn" maxlength="60" placeholder="학생들에게 말하기..." autocomplete="off"><button id="chatSend" class="icbtn" aria-label="보내기"><i data-ic="send"></i></button></div>
     <div id="joy"><div id="knob"></div></div>
     <button id="btnJump" class="rbtn" aria-label="점프"><i data-ic="jump"></i></button>
+    <div id="gunUI" class="hidden"><div id="ammo"></div><button id="btnReload" class="icbtn" aria-label="재장전"><i data-ic="reload"></i></button><button id="btnAim" class="icbtn" aria-label="조준"><i data-ic="scope"></i></button></div>
     <button id="btnAtk" class="rbtn big" aria-label="공격"><i id="atkIc" data-ic="attack"></i><span id="atkCd"></span></button>
     <div id="hotbar"></div>
     <button id="btnResult" class="pill go hidden">결과 보기</button>
@@ -120,6 +123,6 @@
 </div>
 <button id="hackBall" class="hidden" aria-label="해킹 창 열기"><i data-ic="hack"></i></button>
 
-<script type="module" src="./js/game.js?v=20261118b"></script>
+<script type="module" src="./js/game.js?v=20261118c"></script>
 </body>
 </html>

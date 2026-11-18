@@ -80,17 +80,33 @@ function torso(sc = 1, female = false, sy = 1) {
     : [[0, -.02], [.14, 0], [.155, .05], [.15, .13], [.14, .2], [.152, .27], [.172, .34], [.178, .41], [.17, .46], [.12, .5], [.066, .53], [0, .545]];
   const g = LA(p.map(([r, y]) => [r * sc, y * sy]), 22); g.scale(1, 1, .64); return g;
 }
-function handParts(side, curl = .5, y0 = -.21) {
-  const p = [{ g: SP(.036, 12, 9), p: [0, y0 - .045, 0], s: [1.05, 1.2, .55] }];
-  [.026, .03, .028, .022].forEach((l, i) => p.push({ g: CA(.0078, l, 8), p: [(-.021 + i * .014) * side, y0 - .1 - l * .25, .004 + curl * .014], r: [curl * .9, 0, 0] }));
-  p.push({ g: CA(.009, .026, 8), p: [-side * .03, y0 - .055, .014], r: [.4, 0, side * .75] });
-  return p;
+// 관절 있는 손: 손가락 3마디 + 엄지 2마디 + 손톱 (손바닥 = +z, 손가락 = -y)
+const nailM = () => C.nail || (C.nail = new THREE.MeshStandardMaterial({ color: '#efd0c4', roughness: .25 }));
+export function handRig(side, skinM, seg = 8) {
+  const root = new THREE.Group(), F = [], T = [];
+  root.add(M(merge([{ g: SP(.039, 14, 10), p: [0, -.046, 0], s: [1.08, 1.12, .5] }, { g: SP(.021, 10, 8), p: [-side * .021, -.032, .008], s: [1, 1.3, .8] },
+    ...[-1.5, -.5, .5, 1.5].map((i) => ({ g: SP(.0092, 8, 6), p: [i * .0142 * side, -.084, -.007] }))]), skinM, false));
+  const segm = (par, l, r, tip) => {
+    par.add(M(merge([{ g: CA(r, l * .82, seg), p: [0, -l / 2, 0] }]), skinM, false));
+    if (tip) { const n = new THREE.Mesh(B(r * 1.5, l * .55, .002), nailM()); n.position.set(0, -l * .58, -r * .93); par.add(n); }
+    const j = new THREE.Group(); j.position.y = -l; par.add(j); return j;
+  };
+  [[-.021, -.088, .026, .017, .014, .0085], [-.007, -.09, .029, .019, .015, .0088], [.007, -.088, .027, .018, .014, .0082], [.021, -.083, .021, .014, .012, .0072]].forEach(([x, y, l1, l2, l3, r]) => {
+    const j0 = new THREE.Group(); j0.position.set(x * side, y, 0); root.add(j0);
+    const j1 = segm(j0, l1, r), j2 = segm(j1, l2, r * .93); segm(j2, l3, r * .86, true); F.push([j0, j1, j2]);
+  });
+  const t0 = new THREE.Group(); t0.position.set(-side * .03, -.026, .012); t0.rotation.set(.35, 0, -side * .78); root.add(t0);
+  const t1 = segm(t0, .024, .0098); segm(t1, .021, .009, true); T.push(t0, t1);
+  return { root, F, T, side };
 }
-function fist(side) {
-  const p = [{ g: SP(.037, 16, 12), p: [0, -.045, 0], s: [1.05, 1.15, .62] }];
-  for (let i = 0; i < 4; i++) p.push({ g: CA(.0082, .022, 8), p: [(-.021 + i * .014) * side, -.088, .012], r: [1.5, 0, 0] }, { g: SP(.0085, 8, 6), p: [(-.021 + i * .014) * side, -.08, .026] });
-  p.push({ g: CA(.0095, .03, 8), p: [-side * .027, -.06, .022], r: [1.2, 0, side * .9] });
-  return p;
+export function poseHand(h, c, t = c, spread = .06) {
+  h.F.forEach((f, i) => { f[0].rotation.set(c * .95, 0, (i - 1.5) * spread * h.side); f[1].rotation.x = c * 1.15; f[2].rotation.x = c * .78; });
+  h.T[0].rotation.x = .35 + t * .55; h.T[1].rotation.x = t * .9;
+}
+function bakeHand(side, skinM, c, t, y) {
+  const h = handRig(side, skinM, 6); poseHand(h, c, t); h.root.updateMatrixWorld(true);
+  const sk = [], nl = []; h.root.traverse((o) => { if (o.isMesh) (o.material === skinM ? sk : nl).push({ g: o.geometry, m: o.matrixWorld.clone() }); });
+  const g = new THREE.Group(); g.position.y = y; g.add(M(merge(sk), skinM, false)); g.add(M(merge(nl), nailM(), false)); return g;
 }
 function shoes(col, x) {
   return [{ g: SP(.05, 18, 12), c: col, p: [x, -.43, -.055], s: [1.04, .78, 2.35], k: K.shoe }, { g: SP(.052, 18, 10), c: '#f6f6f4', p: [x, -.462, -.055], s: [1.08, .3, 2.45], k: K.rubber },
@@ -138,8 +154,8 @@ export function studentBody(st) {
     sh.add(M(merge([{ g: limb(.27, .058 * ar, .046 * ar, 1.04) }, { g: SP(.064 * ar, 16, 12), p: [0, -.01, 0] }]), topM));
     const el = new THREE.Group(); el.position.y = -.27; sh.add(el);
     el.add(M(merge([{ g: limb(.19, .046 * ar, .04 * ar, 1.02) }, { g: TO(.037, .007, 8, 18), p: [0, -.19, 0], r: [HP, 0, 0] }]), topM));
-    el.add(M(merge(handParts(s, s > 0 ? .95 : .45)), skinM, false));
-    if (s > 0) el.add(M(merge([{ g: CY(.0016, .0072, .15, 8), c: '#f5c400', p: [0, -.27, .06], r: [2.04, 0, 0], k: K.gloss }, { g: CY(.0016, .0068, .03, 8), c: '#2a2a2a', p: [0, -.305, .128], r: [2.04, 0, 0], k: K.metal }])));
+    el.add(bakeHand(s, skinM, s > 0 ? .95 : .45, s > 0 ? .8 : .4, -.2));
+    if (s > 0) { const pg = new THREE.Group(); pg.position.set(0, -.27, .03); pg.add(M(merge([{ g: CY(.0016, .0072, .15, 8), c: '#f5c400', p: [0, 0, .03], r: [2.04, 0, 0], k: K.gloss }, { g: CY(.0016, .0068, .03, 8), c: '#2a2a2a', p: [0, -.035, .098], r: [2.04, 0, 0], k: K.metal }]), R.mV, false)); el.add(pg); st.pencil = pg; }
     return { sh, el };
   };
   st.armL = arm(-1); st.armR = arm(1);
@@ -175,7 +191,7 @@ export function teacherBody(T) {
     sh.add(M(merge([{ g: limb(.3, .068, .054, 1.03) }, { g: SP(.074, 16, 12), p: [0, -.01, 0] }]), suitM));
     const el = new THREE.Group(); el.position.y = -.3; sh.add(el);
     el.add(M(merge([{ g: limb(.24, .054, .045, 1.02) }]), suitM)); el.add(M(merge([{ g: CY(.046, .046, .03, 16), p: [0, -.235, 0] }]), shirtM));
-    el.add(M(merge(handParts(s, .35, -.25)), skinM));
+    el.add(bakeHand(s, skinM, .35, .3, -.25));
     if (s < 0) el.add(M(merge([{ g: CY(.046, .046, .02, 18), c: '#c9ced6', p: [0, -.225, 0], k: K.chrome }, { g: CY(.017, .017, .008, 16), c: '#1a1a1a', p: [0, -.225, -.045], r: [HP, 0, 0], k: K.gloss }])));
     return { sh, el };
   };
@@ -194,9 +210,9 @@ export function viewArms() {
     a.add(M(merge([{ g: limb(.36, .06, .047, 1.03, 22) }]), suitM, false));
     a.add(M(merge([{ g: CY(.046, .047, .035, 20), p: [0, -.352, 0] }]), shirtM, false));
     const hand = new THREE.Group(); hand.position.y = -.37; a.add(hand);
-    hand.add(M(merge(fist(s)), skinM, false));
+    const rig = handRig(s, skinM, 10); poseHand(rig, 1.1, .9); hand.add(rig.root);
     if (s < 0) a.add(M(merge([{ g: CY(.049, .049, .022, 22), c: '#c9ced6', p: [0, -.335, 0], k: K.chrome }, { g: CY(.019, .019, .008, 18), c: '#151515', p: [0, -.335, .05], r: [HP, 0, 0], k: K.gloss }]), R.mV, false));
-    return { a, hand };
+    return { a, hand, rig };
   };
   return { r: mk(1), l: mk(-1) };
 }

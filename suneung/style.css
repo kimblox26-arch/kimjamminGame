@@ -162,3 +162,11 @@ body.aion #glassFx{opacity:1}
   #aiPanel{left:10px;right:auto;top:calc(var(--safe-t) + 100px);height:calc(100vh - 114px)}
   #joy{bottom:calc(var(--safe-b) + 14px);width:112px;height:112px}#btnJump{bottom:calc(var(--safe-b) + 14px)}#btnAtk{bottom:calc(var(--safe-b) + 54px)}
 }
+#gunUI{position:absolute;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(var(--safe-b) + 236px);display:flex;align-items:center;gap:6px;pointer-events:auto}
+#ammo{min-width:74px;text-align:right;padding:6px 12px;border-radius:12px;background:var(--glass);border:1px solid var(--line);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);font-variant-numeric:tabular-nums}#ammo b{font-size:22px;font-weight:900}#ammo small{font-size:12px;color:var(--sub);margin-left:3px}
+#btnAim.on{background:rgba(255,204,77,.35);border-color:rgba(255,214,110,.9)}
+#scope{position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle at 50% 50%,transparent 0 33vmin,rgba(0,0,0,.92) 33.3vmin)}
+#scope i{position:absolute;left:50%;top:50%;width:66vmin;height:66vmin;margin:-33vmin 0 0 -33vmin;border-radius:50%;box-shadow:inset 0 0 40px rgba(0,0,0,.8);background:linear-gradient(#000,#000) center/1.5px 100% no-repeat,linear-gradient(#000,#000) center/100% 1.5px no-repeat}
+#scope i::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#ff3b4b}
+@media (max-width:520px){#gunUI{bottom:calc(var(--safe-b) + 214px)}}
+@media (max-height:500px){#gunUI{bottom:calc(var(--safe-b) + 150px)}}

@@ -112,6 +112,26 @@ export const SFX = {
     mk(this.brown, 260, .07); mk(this.pink, 1800, .006);
     const h = c.createOscillator(), hg = c.createGain(); h.frequency.value = 120; hg.gain.value = .0035; h.connect(hg).connect(this.master); h.start();
   },
+  // ───── 총 · 재장전 · 유리 ─────
+  gun(k, p) {
+    if (!this.ok()) return; const b = this.bus(p, k === 'sniper' ? .8 : .55, 3), big = { pistol: 1, ak: .9, shotgun: 1.5, sniper: 1.7 }[k] || 1;
+    this.N(b, { d: .012, v: 1.3 * big, type: 'highpass', f: 3200 }); this.N(b, { d: .14 * big, v: .95 * big, type: 'bandpass', f: k === 'shotgun' ? 700 : 1150, q: .8 });
+    this.O(b, { d: .12 * big, v: .55 * big, f: k === 'shotgun' ? 110 : 170, f2: 45 }); this.N(b, { d: .4 * big, v: .45 * big, f: 600, buf: 'brown', a: .004 });
+    this.O(b, { t: .028, d: .01, v: .06, f: 2600, type: 'square' }); if (k === 'sniper') this.N(b, { t: .05, d: 1.2, v: .25, type: 'lowpass', f: 1200, f2: 200, buf: 'pink' });
+  },
+  dry(p) { if (!this.ok()) return; const b = this.bus(p, .1, 1); this.N(b, { d: .015, v: .5, type: 'bandpass', f: 3200, q: 3 }); this.O(b, { d: .02, v: .08, f: 1800, type: 'square' }); },
+  magOut(p) { if (!this.ok()) return; const b = this.bus(p, .2, 1); this.N(b, { d: .03, v: .55, type: 'bandpass', f: 2300, q: 3 }); this.N(b, { t: .03, d: .12, v: .25, type: 'bandpass', f: 1200, f2: 600, q: 1.5 }); this.O(b, { d: .05, v: .1, f: 900 }); },
+  magIn(p) { if (!this.ok()) return; const b = this.bus(p, .2, 1); this.N(b, { d: .06, v: .3, type: 'bandpass', f: 900, f2: 1600, q: 2 }); this.N(b, { t: .06, d: .025, v: .75, type: 'bandpass', f: 2600, q: 4 }); this.O(b, { t: .06, d: .05, v: .15, f: 520 }); },
+  rack(p) { if (!this.ok()) return; const b = this.bus(p, .25, 1); this.N(b, { d: .08, v: .55, type: 'bandpass', f: 3200, f2: 1500, q: 2 }); this.N(b, { t: .13, d: .05, v: .8, type: 'bandpass', f: 2400, q: 3 }); this.O(b, { t: .13, d: .06, v: .18, f: 700, f2: 400 }); },
+  pump(p) { if (!this.ok()) return; const b = this.bus(p, .3, 1); this.N(b, { d: .11, v: .6, type: 'bandpass', f: 1100, f2: 2100, q: 1.6 }); this.N(b, { t: .18, d: .1, v: .7, type: 'bandpass', f: 1900, f2: 900, q: 1.6 }); this.O(b, { t: .27, d: .05, v: .2, f: 600 }); },
+  shellIn(p) { if (!this.ok()) return; const b = this.bus(p, .2, 1); this.N(b, { d: .04, v: .45, type: 'bandpass', f: 2000, q: 3 }); this.O(b, { d: .03, v: .1, f: 1300 }); },
+  bolt(p) { if (!this.ok()) return; const b = this.bus(p, .2, 2); this.N(b, { d: .02, v: .5, type: 'bandpass', f: 3000, q: 4 }); this.N(b, { t: .12, d: .1, v: .4, type: 'bandpass', f: 1800, f2: 1000, q: 2 }); this.N(b, { t: .38, d: .1, v: .45, type: 'bandpass', f: 1000, f2: 1900, q: 2 }); this.N(b, { t: .55, d: .02, v: .6, type: 'bandpass', f: 3200, q: 4 }); },
+  chalk(p) { if (!this.ok()) return; const b = this.bus(p, .3, 1); this.N(b, { d: .012, v: .6, type: 'highpass', f: 4200 }); this.O(b, { d: .03, v: .12, f: 2500, f2: 1600 }); },
+  beep(level, p) { if (!this.ok()) return; const b = this.bus(p, .05, 1); this.O(b, { d: .06, v: .04 + .1 * level, f: 1100 + 1600 * level, type: 'square', filt: 4000 }); },
+  thunk(p) { if (!this.ok()) return; const b = this.bus(p, .35, 1); this.N(b, { d: .08, v: .6, f: 900, buf: 'pink' }); this.O(b, { d: .08, v: .25, f: 220, f2: 120 }); },
+  glassCrack(p) { if (!this.ok()) return; const b = this.bus(p, .4, 2); this.N(b, { d: .05, v: .7, type: 'highpass', f: 3500 }); for (let i = 0; i < 4; i++) this.O(b, { t: R1(0, .08), d: .12, v: .04, f: R1(3000, 6500) }); },
+  glassShatter(p) { if (!this.ok()) return; const b = this.bus(p, .6, 3); this.N(b, { d: .7, v: 1, type: 'highpass', f: 2500 }); this.N(b, { d: 1, v: .3, type: 'bandpass', f: 5000, q: .8 }); for (let i = 0; i < 26; i++) this.O(b, { t: R1(.05, 1.1), d: R1(.06, .18), v: R1(.02, .07), f: R1(2500, 7500) }); },
+  sob(p) { if (!this.ok()) return; const b = this.bus(p, .4, 2), r = R1(.9, 1.3); for (const t of [0, .22, .4]) this.O(b, { t, d: .16, v: .05, f: 330 * r, f2: 250 * r, type: 'sawtooth', filt: 1400 }); },
   // ───── 한국어 음성 ─────
   voices() { if (!this._vs) this._vs = ('speechSynthesis' in window) ? speechSynthesis.getVoices().filter((v) => /^ko/i.test(v.lang)) : []; return this._vs; },
   speak(text, { pitch = 1, rate = 1.05, vol = 1, who = 0, prio = false } = {}) {
