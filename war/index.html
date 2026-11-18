@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>졸라맨 세계대전</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Nanum+Pen+Script&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <filter id="rough"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4"/><feDisplacementMap in="SourceGraphic" scale="3.5"/></filter>
+  <filter id="rough2"><feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="9"/><feDisplacementMap in="SourceGraphic" scale="6"/></filter>
+</svg>
+
+<!-- 로딩 -->
+<section id="scr-loading" class="screen show">
+  <div class="loading-box"><canvas id="loadArt" width="240" height="140"></canvas><p class="wob">지도를 그리는 중...</p></div>
+</section>
+
+<!-- 메인 화면 -->
+<section id="scr-menu" class="screen">
+  <canvas id="menuMap" class="fill"></canvas>
+  <div class="grain"></div>
+  <canvas id="menuFx" class="fill"></canvas>
+  <div class="menu-card paper tape">
+    <h1 class="title wob">졸라맨 세계대전</h1>
+    <p class="sub wob">대한민국, 세계를 하나로</p>
+    <p class="teaser">어느 날 밤, 하늘에서 푸른 유성이 쏟아졌다.<br>그날 이후 전 세계는 서로에게 총을 겨누었다...</p>
+    <div class="menu-btns">
+      <button class="btn big" id="btnPlay"><span class="wob">플레이</span></button>
+      <button class="btn" id="btnSettings"><span class="wob">설정</span></button>
+      <button class="btn dark" id="btnExit"><span class="wob">게임 나가기</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- 세계 선택 -->
+<section id="scr-worlds" class="screen paper-bg">
+  <div class="page-head">
+    <button class="btn small" id="btnWorldsBack"><span class="wob">← 뒤로</span></button>
+    <h2 class="wob">나의 세계</h2>
+    <span></span>
+  </div>
+  <p class="hint wob">세계는 최대 3개까지 만들 수 있어요. 진행 상황은 자동으로 저장됩니다.</p>
+  <div id="worldList" class="world-list"></div>
+  <div class="center"><button class="btn big" id="btnNewSession"><span class="wob">+ 새 세션</span></button></div>
+</section>
+
+<!-- 설정 -->
+<section id="scr-settings" class="screen paper-bg">
+  <div class="page-head">
+    <button class="btn small" id="btnSettingsBack"><span class="wob">← 뒤로</span></button>
+    <h2 class="wob">설정</h2>
+    <span></span>
+  </div>
+  <div class="settings paper tape">
+    <label class="row"><span class="wob">효과음 크기</span><input type="range" id="setVol" min="0" max="100"></label>
+    <label class="row"><span class="wob">배경 음악</span><input type="checkbox" id="setMusic" class="chk"></label>
+    <label class="row"><span class="wob">손그림 선 흔들림</span><input type="checkbox" id="setWobble" class="chk"></label>
+    <label class="row"><span class="wob">빠른 전투 (전투 장면 짧게)</span><input type="checkbox" id="setFast" class="chk"></label>
+    <div class="row"><span class="wob">저장 데이터</span><button class="btn small dark" id="btnWipe"><span class="wob">모두 지우기</span></button></div>
+  </div>
+</section>
+
+<!-- 스토리 -->
+<section id="scr-story" class="screen paper-bg">
+  <div class="story-page paper">
+    <div class="story-num wob" id="storyNum">1 / 3</div>
+    <canvas id="storyArt"></canvas>
+    <h2 id="storyTitle" class="wob"></h2>
+    <p id="storyText"></p>
+  </div>
+  <div class="story-nav">
+    <button class="btn" id="btnSkip"><span class="wob">스토리 건너뛰기</span></button>
+    <button class="btn big" id="btnNext"><span class="wob">다음 →</span></button>
+  </div>
+</section>
+
+<!-- 게임 -->
+<section id="scr-game" class="screen">
+  <div id="hud" class="paper">
+    <div class="hud-item" id="hudMoney"></div>
+    <div class="hud-item" id="hudPower"></div>
+    <div class="hud-item approval" id="hudApproval"></div>
+    <div class="hud-item" id="hudCities"></div>
+    <div class="hud-item date" id="hudDate"></div>
+    <button class="btn small" id="btnPause"></button>
+  </div>
+  <div id="mapWrap">
+    <canvas id="mapBase" class="fill"></canvas>
+    <div class="grain"></div>
+    <canvas id="mapTop" class="fill"></canvas>
+    <div id="mapCtl">
+      <button class="btn icon" id="zoomIn"></button>
+      <button class="btn icon" id="zoomOut"></button>
+      <button class="btn icon" id="zoomHome"></button>
+    </div>
+    <div id="toasts"></div>
+    <div id="tip" class="paper"></div>
+  </div>
+  <div id="panel" class="paper">
+    <div class="tabs" id="tabs"></div>
+    <div class="tab-body" id="tabBody"></div>
+  </div>
+</section>
+
+<!-- 엔딩 -->
+<section id="scr-ending" class="screen">
+  <canvas id="endArt" class="fill"></canvas>
+  <div class="end-card paper tape">
+    <h1 id="endTitle" class="wob"></h1>
+    <p id="endText"></p>
+    <p id="endStats" class="small-text"></p>
+    <button class="btn big" id="btnEnd"><span class="wob">확인</span></button>
+  </div>
+</section>
+
+<!-- 나가기 -->
+<section id="scr-bye" class="screen">
+  <canvas id="byeArt" class="fill"></canvas>
+  <div class="bye-text">
+    <h1 class="wob">안녕히 가세요!</h1>
+    <p class="wob">브라우저 탭을 닫으면 게임이 완전히 종료됩니다.</p>
+    <button class="btn" id="btnBack"><span class="wob">다시 켜기</span></button>
+  </div>
+</section>
+
+<div id="modal" class="hidden"><div class="modal-card paper tape" id="modalCard"></div></div>
+<div id="fade"></div>
+
+<script src="js/geo.js"></script>
+<script src="js/data.js"></script>
+<script src="js/sketch.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/map.js"></script>
+<script src="js/art.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
