@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SKILL RPG — 픽셀 스킬 테스트</title>
+<meta name="description" content="픽셀 그래픽 스킬 RPG 테스트 버전: 슬라임을 상대로 스킬을 테스트하고 상자에서 스킬·장비를 뽑아보세요">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top pbox">
+    <h1 class="logo">SKILL<span>RPG</span><small>TEST BUILD</small></h1>
+    <div class="gems" title="보석"><i class="gem"></i><b id="gems">0</b></div>
+    <div class="top-btns">
+      <button class="pbtn sm" id="btn-gems">+10,000 <i class="gem"></i></button>
+      <button class="pbtn sm" id="btn-unlock">전체 해금</button>
+      <button class="pbtn sm" id="btn-mute">🔊 소리</button>
+      <button class="pbtn sm danger" id="btn-reset">초기화</button>
+    </div>
+  </header>
+
+  <!-- ───── 스킬 테스트 ───── -->
+  <section class="pbox arena-box">
+    <h2 class="sec-title">⚔ 스킬 테스트</h2>
+    <div class="arena" id="arena">
+      <canvas id="game" width="256" height="144"></canvas>
+      <div id="banner" class="banner"></div>
+      <div class="hud hud-l">플레이어</div>
+      <div class="hud hud-r" id="slime-name">슬라임</div>
+    </div>
+    <div class="skillbar" id="skillbar"></div>
+    <div class="arena-foot">
+      <div class="stats" id="stats"></div>
+      <label class="auto"><input type="checkbox" id="auto"><span></span>자동 시전</label>
+    </div>
+    <p class="hint">키보드 <b>1 2 3 4</b> 또는 스킬 칸을 눌러 시전 · 슬라임을 처치하면 보석 획득</p>
+  </section>
+
+  <!-- ───── 뽑기 ───── -->
+  <section class="pbox gacha-box" id="gacha-box" data-kind="skill">
+    <h2 class="sec-title">🎁 뽑기</h2>
+    <div class="tabs">
+      <button class="tab active" data-kind="skill">✦ 스킬 뽑기</button>
+      <button class="tab" data-kind="gear">🛡 장비 뽑기 <small>머리·몸·다리</small></button>
+    </div>
+    <p class="gdesc" id="gacha-desc">17종 스킬 중 하나를 뽑아요. 중복이면 스킬 레벨 업!</p>
+    <div class="boxes" id="boxes"></div>
+  </section>
+
+  <!-- ───── 가방 ───── -->
+  <section class="pbox inv-box">
+    <h2 class="sec-title">🎒 가방</h2>
+    <div class="inv">
+      <div class="equip">
+        <div class="pv-wrap"><canvas id="preview" width="24" height="34"></canvas></div>
+        <div class="eslots" id="eslots"></div>
+        <p class="hint">착용 중인 장비를 누르면 해제</p>
+      </div>
+      <div class="coll">
+        <div class="coll-head"><b>스킬</b><span id="skill-count"></span><em>누르면 슬롯 장착 · 테스트</em></div>
+        <div class="grid" id="skill-grid"></div>
+        <div class="coll-head"><b>장비</b><span id="gear-count"></span><em>누르면 착용 / 해제</em></div>
+        <div class="grid" id="gear-grid"></div>
+      </div>
+    </div>
+  </section>
+  <footer class="foot">SKILL RPG 테스트 버전 · 모든 그래픽은 픽셀 단위로 직접 그리고, 소리는 실시간으로 합성합니다</footer>
+</div>
+
+<div id="gacha-ov" class="ov" hidden>
+  <div id="gacha-title" class="g-title"></div>
+  <canvas id="gacha-cv" width="200" height="120"></canvas>
+  <div id="gacha-hint" class="g-hint"></div>
+  <div id="gacha-results" class="results"></div>
+  <button id="gacha-ok" class="pbtn big" hidden>확인</button>
+</div>
+<div id="modal" class="modal" hidden><div class="pbox modal-box" id="modal-box"></div></div>
+<div id="toast" class="toast"></div>
+
+<script src="js/audio.js"></script>
+<script src="js/pixel.js"></script>
+<script src="js/data.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/gacha.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
