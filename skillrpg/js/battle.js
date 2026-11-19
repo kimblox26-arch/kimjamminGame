@@ -21,7 +21,8 @@ const E = (() => {
     dark: 0, darkTo: 0, darkHold: 0, tintC: '#000', tintA: 0, tintTo: 0, tintHold: 0,
     invert: 0, invertTo: 0, frozen: false, hitstop: 0, lastHitSfx: 0, fly: 0, gearT: 0,
   };
-  const player = { x: 62, y: GROUND, cast: 0, castCol: '#fff', sprite: null, hide: false, glow: 0 };
+  const player = { x: 62, homeX: 62, y: GROUND, cast: 0, castCol: '#fff', castR: 0, sprite: null, hide: false, swing: null, crouch: 0, dash: 0, busy: false,
+    scarf: '#e8364f', scarfL: '#ff8a9a', scarfD: '#a01a30' };
   const slime = { x: 194, lv: 1, hp: 1, max: 1, ghost: 1, bw: 30, bh: 22, sx: 1, sy: 1, kx: 0, flash: 0, hurt: 0,
     dead: true, respawn: 0, oy: 0, vy: 0, frozen: 0, poison: 0, burn: 0, king: false, col: SLIME_COLORS[0], hop: 2 };
   const clouds = Array.from({ length: 5 }, (_, i) => ({ x: i * 60 + rnd(0, 30), y: rnd(8, 44), s: rnd(0.6, 1.2), v: rnd(2, 5) }));
@@ -95,7 +96,10 @@ const E = (() => {
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e5 ? Math.round(n / 1000) + 'K' : String(n);
 
   // ── 위치 ──
-  const hand = () => ({ x: player.x + 9, y: player.y - 15 });
+  const swordAng = () => player.swing != null ? player.swing : player.cast > 0 ? -1.25 : -0.5 + Math.sin(G.t * 3) * 0.05;
+  const breath = () => (player.crouch ? 1 : 0) + ((G.t * 1.6 | 0) % 2);
+  const grip = () => ({ x: player.x + 4, y: player.y - 9 + breath() });
+  const hand = () => { const g = grip(), a = swordAng(); return { x: g.x + Math.cos(a) * 12, y: g.y + Math.sin(a) * 12 }; };
   const target = () => ({ x: slime.x + slime.kx, y: GROUND - slime.bh * 0.45 + slime.oy, top: GROUND - slime.bh + slime.oy });
   const alive = () => !slime.dead && slime.oy > -3;
 
@@ -129,6 +133,13 @@ const E = (() => {
     slime.sx = 1.22; slime.sy = 0.82;
     const nx = slime.x + slime.kx + rnd(-10, 10), ny = GROUND - slime.bh - 8 - rnd(0, 10) + slime.oy;
     num(fmt(dmg) + (crit ? '!' : ''), nx, ny, crit ? '#ffd23f' : (o.col || '#ffffff'), crit ? 2 : 1);
+    const hx = slime.x + slime.kx + rnd(-8, 8), hy = GROUND - slime.bh * rnd(0.3, 0.7) + slime.oy, sc = o.col || '#fff3a0';
+    fx({ layer: 4, dur: 0.13, draw(c) {
+      const q = this.t / 0.13, l = 3 + q * (crit ? 16 : 9), d = l * 0.55;
+      PX.line(c, hx - l, hy, hx + l, hy, '#ffffff'); PX.line(c, hx, hy - l, hx, hy + l, '#ffffff');
+      PX.line(c, hx - d, hy - d, hx + d, hy + d, sc); PX.line(c, hx - d, hy + d, hx + d, hy - d, sc);
+      if (q < 0.5) PX.disc(c, hx, hy, 3.5 * (1 - q * 2) + 1, '#ffffff');
+    } });
     if (!o.silent && G.t - G.lastHitSfx > 0.05) { SFX.hit(crit); G.lastHitSfx = G.t; }
     if (crit) { shake(2, 0.12); burst(nx + 4, ny + 8, 10, ['#ffffff', '#ffd23f'], { spd: 110, life: 0.25, add: true, shape: 'streak', drag: 4 }); }
     E.onDamage && E.onDamage(dmg);
@@ -140,10 +151,40 @@ const E = (() => {
   function cast(skill, lv) {
     const per = skill.dmg * (1 + 0.15 * (lv - 1));
     const k = { r: skill.r, per, hit: (o = {}) => hit(per * (o.mult || 1), o) };
-    player.cast = 0.5; player.castCol = RAR[skill.r].color;
-    burst(player.x, GROUND - 2, 12 + skill.r * 6, [ '#ffffff', RAR[skill.r].color, RAR[skill.r].dark], { spd: 30, life: 0.7, up: -40, add: true, r: 8, ry: 1, drag: 1 });
+    if (skill.basic) { SKILL_FX[skill.id](k); return; }
+    const big = skill.r >= 3;
+    player.cast = big ? 1.25 : 0.5; player.castCol = RAR[skill.r].color; player.castR = skill.r;
+    burst(player.x, GROUND - 2, 12 + skill.r * 6, ['#ffffff', RAR[skill.r].color, RAR[skill.r].dark], { spd: 30, life: 0.7, up: -40, add: true, r: 8, ry: 1, drag: 1 });
     SFX.cast(skill.r);
-    SKILL_FX[skill.id](k);
+    if (big) { cutIn(skill); after(0.6, () => SKILL_FX[skill.id](k)); }
+    else { if (skill.r === 2) cutIn(skill, true); SKILL_FX[skill.id](k); }
+  }
+  // 컷인 연출 (레터박스 + 사선 띠 + 얼굴 클로즈업)
+  function cutIn(skill, barsOnly) {
+    const col = RAR[skill.r].color, dark = RAR[skill.r].dark, dur = barsOnly ? 1.1 : 0.62;
+    if (!barsOnly) { SFX.tone(500, 0.45, 'sawtooth', 0.07, 2600); SFX.noise(0.4, 0.2, 2000, 'bandpass', 7000, 0, 2); }
+    fx({ layer: 3, dur, draw(c) {
+      const t = this.t, out = Math.max(0, (t - (dur - 0.15)) / 0.15);
+      const bh = Math.round(16 * Math.min(1, t / 0.08) * (1 - out));
+      PX.rect(c, -4, -4, W + 8, bh + 4, '#000'); PX.rect(c, -4, H - bh, W + 8, bh + 4, '#000');
+      if (barsOnly) return;
+      const y0 = 56, h = 50, k = 0.1, rb = skill.r === 5;
+      const x0 = out * (W + 8) - 4, x1 = Math.min(1, t / 0.1) * (W + 8) - 4;
+      c.save(); c.beginPath();
+      for (let x = Math.floor(x0); x < x1; x++) c.rect(x, Math.round(y0 - x * k), 1, h);
+      c.clip();
+      PX.rect(c, -4, 0, W + 8, H, '#120a1e');
+      c.globalAlpha = 0.35; PX.rect(c, -4, 0, W + 8, H, rb ? PX.hsl(t * 500, 70, 30) : dark); c.globalAlpha = 1;
+      for (let i = 0; i < 22; i++) {
+        const off = 3 + ((i * 29) % (h - 6)), sp = 700 + (i % 4) * 220, len = 14 + (i % 3) * 14;
+        const lx = ((i * 57 - t * sp) % (W + 80) + W + 80) % (W + 80) - 40;
+        PX.line(c, lx, y0 + off - lx * k, lx + len, y0 + off - (lx + len) * k, i % 3 ? (rb ? PX.hsl(i * 50 + t * 600) : col) : '#ffffff');
+      }
+      c.drawImage(player.sprite, 0, 0, 24, 20, Math.round(40 + t * 16), y0 - 16, 72, 60);
+      PX.line(c, -4, y0 + 0.4, W + 4, y0 - (W + 4) * k, rb ? PX.hsl(t * 700) : col, 2);
+      PX.line(c, -4, y0 + h - 1.6, W + 4, y0 + h - 2 - (W + 4) * k, rb ? PX.hsl(t * 700 + 180) : col, 2);
+      c.restore();
+    } });
   }
 
   // ── 업데이트 ──
@@ -260,25 +301,65 @@ const E = (() => {
     PX.rect(c, bx, by, hw, 3, slime.king ? '#ffb020' : '#e8364f');
     PX.rect(c, bx, by, hw, 1, slime.king ? '#ffe066' : '#ff8a9a');
   }
+  const silCache = { src: null, map: {} };
+  function sil(col) {
+    if (silCache.src !== player.sprite) { silCache.src = player.sprite; silCache.map = {}; }
+    if (!silCache.map[col]) { const [cv, g] = PX.mk(24, 34); g.drawImage(player.sprite, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, 24, 34); silCache.map[col] = cv; }
+    return silCache.map[col];
+  }
+  function afterimage(col, a = 0.5, dur = 0.25) {
+    const x = Math.round(player.x - 12), y = Math.round(player.y - 31);
+    fx({ layer: 1, dur, draw(c) { c.globalAlpha = a * (1 - this.t / dur); c.drawImage(sil(col), x, y); } });
+  }
+  function drawSword(c, hx, hy, ang, glow) {
+    const ca = Math.cos(ang), sa = Math.sin(ang), L = 12, P = k => [hx + ca * k, hy + sa * k];
+    if (glow) { c.globalCompositeOperation = 'lighter'; PX.line(c, ...P(3), ...P(L + 1), glow, 5); c.globalCompositeOperation = 'source-over'; }
+    PX.line(c, ...P(-3), ...P(L), '#140c1c', 3);
+    PX.line(c, ...P(-3), ...P(-1), '#8a5a32', 1);
+    PX.line(c, ...P(2), ...P(L - 1), '#c8d4e4', 2);
+    PX.line(c, ...P(2), ...P(L - 1), '#ffffff', 1);
+    const gx = hx + ca, gy = hy + sa;
+    PX.line(c, gx - sa * 3, gy + ca * 3, gx + sa * 3, gy - ca * 3, '#140c1c', 3);
+    PX.line(c, gx - sa * 2.5, gy + ca * 2.5, gx + sa * 2.5, gy - ca * 2.5, '#ffd23f', 1);
+    PX.rect(c, ...P(-3), 1, 1, '#ffd23f');
+  }
+  function drawScarf(c, bx, by, dash) {
+    const n = dash ? 12 : 8, pts = [];
+    for (let i = 0; i <= n; i++) pts.push([bx - i * 1.4, by + i * (dash ? 0.12 : 0.45) + Math.sin(G.t * (dash ? 18 : 8) - i * 0.7) * i * (dash ? 0.14 : 0.2)]);
+    pts.forEach(([x, y], i) => PX.rect(c, x - 1, y - 1, 4, i < n - 2 ? 4 : 3, '#140c1c'));
+    pts.forEach(([x, y], i) => { PX.rect(c, x, y, 2, i < n - 2 ? 2 : 1, player.scarf); if (i < n - 2) PX.rect(c, x, y + 1, 2, 1, player.scarfD); });
+  }
   function drawPlayer() {
     if (player.hide) return;
-    const bob = Math.sin(G.t * 3) > 0 ? 0 : 1;
-    const hop = player.cast > 0.3 ? 2 : player.cast > 0.2 ? 1 : 0;
+    const b = breath(), x = Math.round(player.x - 12), y = Math.round(player.y - 31);
     c.globalAlpha = 0.35; PX.ellipse(c, player.x, GROUND + 1, 8, 2, '#000'); c.globalAlpha = 1;
     if (player.cast > 0) {
-      const a = Math.min(1, player.cast * 3);
+      const a = Math.min(1, player.cast * 3), R = 13 + player.castR * 2;
       c.globalAlpha = a;
-      PX.ring(c, player.x, GROUND, 13, player.castCol, 0.25);
-      PX.ring(c, player.x, GROUND, 9, '#ffffff', 0.25);
-      for (let i = 0; i < 6; i++) { const an = G.t * 4 + i * Math.PI / 3; PX.rect(c, player.x + Math.cos(an) * 11, GROUND + Math.sin(an) * 2.75, 1, 1, '#ffffff'); }
+      PX.ring(c, player.x, GROUND, R, player.castCol, 0.25);
+      PX.ring(c, player.x, GROUND, R - 4, '#ffffff', 0.25);
+      const nn = 6 + player.castR * 2;
+      for (let i = 0; i < nn; i++) { const an = G.t * 4 + i * Math.PI * 2 / nn; PX.rect(c, player.x + Math.cos(an) * (R - 2), GROUND + Math.sin(an) * (R - 2) * 0.25, 1, 1, '#ffffff'); }
+      if (player.castR >= 3) { c.globalCompositeOperation = 'lighter'; c.globalAlpha = a * 0.35; PX.rect(c, player.x - 9, 0, 18, GROUND, player.castCol); c.globalCompositeOperation = 'source-over'; }
       c.globalAlpha = 1;
     }
-    c.drawImage(player.sprite, Math.round(player.x - 12), Math.round(player.y - 31 - bob - hop));
+    if (player.aura) {
+      const s = sil(player.aura === 'rainbow' ? PX.hsl(((G.t * 8) | 0) * 30, 100, 65) : player.aura);
+      c.globalAlpha = 0.45 + Math.sin(G.t * 5) * 0.2;
+      [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dx, dy]) => { c.drawImage(s, 0, 0, 24, 24, x + dx, y + b + dy, 24, 24); c.drawImage(s, 0, 24, 24, 10, x + dx, y + 24 + dy, 24, 10); });
+      c.globalAlpha = 1;
+    }
+    drawScarf(c, player.x - 5, player.y - 12 + b, player.dash > 0);
+    c.drawImage(player.sprite, 0, 24, 24, 10, x, y + 24, 24, 10);
+    c.drawImage(player.sprite, 0, 0, 24, 24, x, y + b, 24, 24);
+    PX.rect(c, player.x - 4, player.y - 13 + b, 8, 2, player.scarf); PX.rect(c, player.x - 4, player.y - 13 + b, 8, 1, player.scarfL);
+    const g = grip();
+    drawSword(c, g.x, g.y, swordAng(), player.cast > 0 ? player.castCol : null);
     if (player.cast > 0.15) {
       const h = hand();
       c.globalCompositeOperation = 'lighter';
-      PX.disc(c, h.x, h.y - hop, 2 + Math.sin(G.t * 40), player.castCol);
-      PX.rect(c, h.x, h.y - hop, 1, 1, '#ffffff');
+      PX.disc(c, h.x, h.y, 2 + Math.sin(G.t * 40), player.castCol);
+      PX.rect(c, h.x, h.y, 1, 1, '#ffffff');
       c.globalCompositeOperation = 'source-over';
     }
   }
@@ -333,7 +414,7 @@ const E = (() => {
   }
 
   return {
-    G, player, slime, start, part, burst, fx, after, shake, flash, darken, tint, num, hit, cast, hand, target, alive, setupSlime,
+    G, player, slime, start, part, burst, fx, after, shake, flash, darken, tint, num, hit, cast, hand, grip, swordAng, target, alive, setupSlime, afterimage, sil, cutIn,
     hitstop(s) { G.hitstop = Math.max(G.hitstop, s); },
     stats: null, onKill: null, onSlime: null, onTick: null, onDamage: null, gear: null, startLevel: 1,
   };

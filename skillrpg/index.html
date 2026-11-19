@@ -20,14 +20,28 @@
     </div>
   </header>
 
+  <!-- ───── 스킬 · 옷 목록 ───── -->
+  <section class="pbox list-box">
+    <h2 class="sec-title">📜 스킬 · 옷 목록</h2>
+    <div class="lrow"><div class="lhead"><b>✦ 스킬</b><span id="cnt-skill"></span></div><div class="lbtns" id="list-skill"></div></div>
+    <div class="lrow"><div class="lhead"><b>🎩 머리</b><span id="cnt-head"></span></div><div class="lbtns" id="list-head"></div></div>
+    <div class="lrow"><div class="lhead"><b>👕 몸</b><span id="cnt-body"></span></div><div class="lbtns" id="list-body"></div></div>
+    <div class="lrow"><div class="lhead"><b>👢 다리</b><span id="cnt-legs"></span></div><div class="lbtns" id="list-legs"></div></div>
+    <p class="hint">스킬을 누르면 <b>슬롯 장착 · 테스트</b> / 옷을 누르면 <b>착용 · 해제</b> · 잠긴 항목은 아래 뽑기로 획득</p>
+  </section>
+
   <!-- ───── 스킬 테스트 ───── -->
-  <section class="pbox arena-box">
+  <section class="pbox arena-box" id="arena-box">
     <h2 class="sec-title">⚔ 스킬 테스트</h2>
     <div class="arena" id="arena">
       <canvas id="game" width="256" height="144"></canvas>
       <div id="banner" class="banner"></div>
       <div class="hud hud-l">플레이어</div>
       <div class="hud hud-r" id="slime-name">슬라임</div>
+    </div>
+    <div class="atk-test">
+      <button class="pbtn atk" id="btn-atk">⚔ 일반 공격 테스트<small>Space</small></button>
+      <button class="pbtn crit" id="btn-crit">💥 크리티컬 공격 테스트<small>C</small></button>
     </div>
     <div class="skillbar" id="skillbar"></div>
     <div class="arena-foot">
@@ -44,26 +58,8 @@
       <button class="tab active" data-kind="skill">✦ 스킬 뽑기</button>
       <button class="tab" data-kind="gear">🛡 장비 뽑기 <small>머리·몸·다리</small></button>
     </div>
-    <p class="gdesc" id="gacha-desc">17종 스킬 중 하나를 뽑아요. 중복이면 스킬 레벨 업!</p>
+    <p class="gdesc" id="gacha-desc"></p>
     <div class="boxes" id="boxes"></div>
-  </section>
-
-  <!-- ───── 가방 ───── -->
-  <section class="pbox inv-box">
-    <h2 class="sec-title">🎒 가방</h2>
-    <div class="inv">
-      <div class="equip">
-        <div class="pv-wrap"><canvas id="preview" width="24" height="34"></canvas></div>
-        <div class="eslots" id="eslots"></div>
-        <p class="hint">착용 중인 장비를 누르면 해제</p>
-      </div>
-      <div class="coll">
-        <div class="coll-head"><b>스킬</b><span id="skill-count"></span><em>누르면 슬롯 장착 · 테스트</em></div>
-        <div class="grid" id="skill-grid"></div>
-        <div class="coll-head"><b>장비</b><span id="gear-count"></span><em>누르면 착용 / 해제</em></div>
-        <div class="grid" id="gear-grid"></div>
-      </div>
-    </div>
   </section>
   <footer class="foot">SKILL RPG 테스트 버전 · 모든 그래픽은 픽셀 단위로 직접 그리고, 소리는 실시간으로 합성합니다</footer>
 </div>

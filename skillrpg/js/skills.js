@@ -651,3 +651,99 @@ SKILL_FX.timestop = k => {
     end() { E.player.hide = false; E.G.invertTo = 0; E.G.frozen = false; },
   });
 };
+
+// ══════════ 기본 공격 ══════════
+function swingArc(cx, cy, a0, a1, r, cols, dur = 0.18) {
+  return E.fx({
+    layer: 4, dur,
+    draw(c) {
+      const q = this.t / dur, a = a0 + (a1 - a0) * Math.min(1, q * 2.5), from = Math.max(a0, a - 2);
+      c.globalAlpha = 1 - q;
+      for (let i = 0; i < 5; i++) PX.ring(c, cx, cy, r - i, cols[Math.min(cols.length - 1, i >> 1)], 1, 1, from + i * 0.12, a);
+    },
+  });
+}
+function star(x, y, col = '#ffd23f', dur = 0.35, size = 8) {
+  E.fx({ layer: 4, dur, draw(c) {
+    const l = size * Math.sin(this.t / dur * Math.PI), d = l * 0.4;
+    PX.line(c, x - l, y, x + l, y, '#ffffff'); PX.line(c, x, y - l, x, y + l, '#ffffff');
+    PX.line(c, x - d, y - d, x + d, y + d, col); PX.line(c, x - d, y + d, x + d, y - d, col); PX.disc(c, x, y, 1.5, '#ffffff');
+  } });
+}
+SKILL_FX.attack = k => {
+  const P = E.player; if (P.busy) return; P.busy = true;
+  const home = P.homeX, tx = Math.max(home, E.slime.x - 26);
+  SFX.whoosh(0.15, 1500);
+  let hit = false, gt = 0;
+  E.fx({
+    layer: 1, dur: 0.52,
+    update(dt) {
+      const t = this.t;
+      if (t < 0.12) {
+        const q = t / 0.12; P.x = home + (tx - home) * (1 - (1 - q) * (1 - q)); P.swing = -2.2; P.dash = 1;
+        if ((gt -= dt) <= 0) { gt = 0.025; E.afterimage('#8ef6ff', 0.5, 0.2); }
+        E.part({ x: P.x - 4, y: GROUND - 1, vx: rnd(-40, -10), vy: rnd(-20, -5), life: 0.3, cols: DUST, size: 2, shrink: true });
+      } else if (t < 0.25) {
+        P.x = tx; P.dash = 0;
+        const q = (t - 0.12) / 0.13; P.swing = -2.2 + 3.3 * (1 - Math.pow(1 - q, 3));
+        if (!hit && q > 0.3) {
+          hit = true; const g = E.grip();
+          swingArc(g.x, g.y, -2.2, 1.1, 15, ['#ffffff', '#8ef6ff', '#4aa8ff']);
+          k.hit({ kb: 6 }); SFX.slash(); E.shake(2, 0.1); E.hitstop(0.04);
+          const S = E.target(); E.burst(S.x - 6, S.y, 10, ['#ffffff', '#8ef6ff'], { spd: 120, life: 0.25, add: true, shape: 'streak', dir: 0, spread: 1.6 });
+        }
+      } else {
+        const q = Math.min(1, (t - 0.25) / 0.27); P.x = tx + (home - tx) * q * q * (3 - 2 * q); P.swing = 1.1 - q * 1.6;
+      }
+    },
+    end() { P.x = home; P.swing = null; P.dash = 0; P.busy = false; },
+  });
+};
+function critImpact(k) {
+  const S = E.target(), x = S.x, y = S.y;
+  k.hit({ crit: true, kb: 16, col: '#ffd23f' });
+  E.flash('#fff0e0', 0.22, 0.9); E.hitstop(0.16); E.shake(7, 0.45); SFX.clang(); SFX.boom(1.3); SFX.slash();
+  [-0.75, 0.75].forEach((a, i) => E.fx({ layer: 3, dur: 0.45, draw(c) {
+    const q = Math.min(1, (this.t - i * 0.05) / 0.08); if (q <= 0) return;
+    const l = 34 * q, th = this.t < 0.2 ? 5 : this.t < 0.32 ? 3 : 1, ca = Math.cos(a), sa = Math.sin(a);
+    c.globalAlpha = Math.min(1, (0.45 - this.t) / 0.15);
+    PX.line(c, x - ca * l, y - sa * l, x + ca * l, y + sa * l, '#e8364f', th + 2);
+    PX.line(c, x - ca * l, y - sa * l, x + ca * l, y + sa * l, '#ffffff', th);
+  } }));
+  E.burst(x, y, 40, ['#ffffff', '#ffd23f', '#ff5a3c'], { spd: 220, life: 0.45, add: true, shape: 'streak', drag: 3 });
+  E.burst(x, y, 30, FIRE, { spd: 120, life: 0.7, size: 2, add: true, shrink: true });
+  E.fx({ layer: 4, dur: 0.45, draw(c) { const q = this.t / 0.45; PX.ring(c, x, y, 6 + q * 60, '#ffd23f', 1, 2); PX.ring(c, x, GROUND, 8 + q * 90, '#ff5a3c', 0.25); } });
+  E.fx({ layer: 3, dur: 1.0, draw(c) {
+    const t = this.t, s = t < 0.06 ? 3 : 2, str = 'CRITICAL!', w = PX.textW(str, s);
+    c.globalAlpha = t > 0.75 ? (1 - t) / 0.25 : 1;
+    const tx = Math.max(2, Math.min(W - w - 2, x - w / 2 + (t < 0.3 ? Math.round(rnd(-1, 1)) : 0)));
+    PX.text(c, str, tx, y - 46 - t * 8, t % 0.1 < 0.05 ? '#ffffff' : '#ffd23f', s);
+  } });
+}
+SKILL_FX.critical = k => {
+  const P = E.player; if (P.busy) return; P.busy = true;
+  const home = P.homeX, tx = Math.max(home, E.slime.x - 26);
+  SFX.charge(0.4); E.darken(0.5, 1.1);
+  let hit = false, gt = 0, glint = false;
+  E.fx({
+    layer: 1, dur: 1.15,
+    update(dt) {
+      const t = this.t;
+      if (t < 0.4) {
+        P.swing = -2.5; P.crouch = 1;
+        if (Math.random() < 0.8) E.part({ x: P.x + rnd(-8, 8), y: GROUND - rnd(0, 6), vx: 0, vy: rnd(-60, -30), life: 0.5, cols: ['#ffffff', '#ffd23f', '#ff5a3c', '#a8261a'], add: true, shape: 'streak' });
+        if (!glint && t > 0.25) { glint = true; const h = E.hand(); star(h.x, h.y, '#ffd23f', 0.4, 10); SFX.tone(2600, 0.3, 'triangle', 0.12); SFX.tone(3900, 0.3, 'sine', 0.06, null, 0.03); }
+      } else if (t < 0.5) {
+        P.crouch = 0; P.dash = 1; P.x = home + (tx - home) * (t - 0.4) / 0.1;
+        if ((gt -= dt) <= 0) { gt = 0.018; E.afterimage(pick(['#ffd23f', '#ff5a3c']), 0.6, 0.3); }
+        if (!this.ws) { this.ws = 1; SFX.whoosh(0.2, 2500); }
+      } else if (t < 0.62) {
+        P.x = tx; P.dash = 0; const q = (t - 0.5) / 0.12; P.swing = -2.5 + 3.8 * (1 - Math.pow(1 - q, 3));
+        if (!hit && q > 0.25) { hit = true; const g = E.grip(); swingArc(g.x, g.y, -2.5, 1.3, 16, ['#ffffff', '#ffd23f', '#ff5a3c'], 0.22); critImpact(k); }
+      } else if (t > 0.8) {
+        const q = Math.min(1, (t - 0.8) / 0.3); P.x = tx + (home - tx) * q * q * (3 - 2 * q); P.swing = 1.3 - q * 1.8;
+      }
+    },
+    end() { P.x = home; P.swing = null; P.crouch = 0; P.dash = 0; P.busy = false; },
+  });
+};
