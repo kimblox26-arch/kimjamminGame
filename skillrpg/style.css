@@ -59,15 +59,30 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .hint b { color: var(--text); }
 .badge { position: absolute; top: -7px; right: -7px; background: #ffd23f; color: #241200; font-size: 10px; font-weight: 700; padding: 1px 5px; box-shadow: 0 0 0 2px var(--edge); z-index: 2; }
 
+/* 상태창 */
+.status { display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
+.pv-wrap { display: flex; justify-content: center; align-items: center; padding: 14px 0; background: radial-gradient(circle at 50% 75%, #e9e2ff 0, #f6f4fb 70%); box-shadow: inset 0 0 0 3px var(--sh); }
+#preview { width: 120px; height: 170px; }
+.eslots { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.eslot { --rc: #c8c2d8; display: flex; align-items: center; gap: 10px; border: 0; background: var(--card); padding: 6px; text-align: left; box-shadow: inset 0 0 0 3px var(--rc); }
+.eicon { width: 44px; height: 44px; flex: none; background: #1f1838; display: flex; align-items: center; justify-content: center; }
+.eicon canvas { width: 40px; height: 40px; }
+.etext { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.etext small { color: var(--muted); font-size: 11px; }
+.etext b { font-size: 13px; }
+.etext span { font-size: 11px; color: var(--rc); filter: saturate(1.3) brightness(.85); }
+.eslot.empty .etext b, .eslot.empty .etext span { color: var(--muted); filter: none; }
+.status .stats { flex-direction: column; gap: 2px; margin-top: 10px; padding: 8px 10px; background: var(--card); box-shadow: inset 0 0 0 2px var(--sh); justify-content: flex-start; }
+.status .stats span { display: flex; justify-content: space-between; }
 /* 목록 */
-.lrow { display: grid; grid-template-columns: 74px 1fr; gap: 10px; align-items: start; padding: 8px 0; border-top: 2px dashed var(--sh); }
+.lrow { display: grid; grid-template-columns: 58px 1fr; gap: 10px; align-items: start; padding: 8px 0; border-top: 2px dashed var(--sh); }
 .lrow:first-of-type { border-top: 0; }
 .lhead { display: flex; flex-direction: column; padding-top: 8px; }
 .lhead b { font-size: 14px; }
 .lhead span { font-size: 11px; color: var(--muted); }
 .lbtns { display: flex; flex-wrap: wrap; gap: 8px; }
 .lbtn {
-  position: relative; display: flex; align-items: center; gap: 6px; border: 0; background: var(--card); padding: 4px 10px 4px 4px; min-width: 132px;
+  position: relative; display: flex; align-items: center; gap: 6px; border: 0; background: var(--card); padding: 4px 10px 4px 4px; min-width: 124px;
   box-shadow: inset 0 0 0 2px var(--rc), 0 3px 0 0 color-mix(in srgb, var(--rc) 45%, #1a1430); transition: transform .08s;
 }
 .lbtn:hover { transform: translateY(-2px); }
@@ -210,6 +225,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @media (max-width: 760px) {
   .app { padding: 4px 8px 20px; }
   .pbox { padding: 12px; }
+  .status { grid-template-columns: 1fr; }
+  .equip { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: start; }
+  #preview { width: 84px; height: 119px; }
+  .eslots { margin-top: 0; }
   .lrow { grid-template-columns: 1fr; gap: 4px; }
   .lhead { flex-direction: row; gap: 8px; align-items: baseline; padding-top: 0; }
   .lbtns { flex-wrap: nowrap; overflow-x: auto; padding: 8px 4px 8px; margin: 0 -4px; scrollbar-width: thin; }

@@ -20,14 +20,25 @@
     </div>
   </header>
 
-  <!-- ───── 스킬 · 옷 목록 ───── -->
-  <section class="pbox list-box">
-    <h2 class="sec-title">📜 스킬 · 옷 목록</h2>
-    <div class="lrow"><div class="lhead"><b>✦ 스킬</b><span id="cnt-skill"></span></div><div class="lbtns" id="list-skill"></div></div>
-    <div class="lrow"><div class="lhead"><b>🎩 머리</b><span id="cnt-head"></span></div><div class="lbtns" id="list-head"></div></div>
-    <div class="lrow"><div class="lhead"><b>👕 몸</b><span id="cnt-body"></span></div><div class="lbtns" id="list-body"></div></div>
-    <div class="lrow"><div class="lhead"><b>👢 다리</b><span id="cnt-legs"></span></div><div class="lbtns" id="list-legs"></div></div>
-    <p class="hint">스킬을 누르면 <b>슬롯 장착 · 테스트</b> / 옷을 누르면 <b>착용 · 해제</b> · 잠긴 항목은 아래 뽑기로 획득</p>
+  <!-- ───── 상태창 ───── -->
+  <section class="pbox status-box">
+    <h2 class="sec-title">📜 상태창</h2>
+    <div class="status">
+      <div class="equip">
+        <div class="pv-wrap"><canvas id="preview" width="24" height="34"></canvas></div>
+        <div class="eside">
+          <div class="eslots" id="eslots"></div>
+          <div class="stats" id="stats"></div>
+        </div>
+      </div>
+      <div class="lists">
+        <div class="lrow"><div class="lhead"><b>✦ 스킬</b><span id="cnt-skill"></span></div><div class="lbtns" id="list-skill"></div></div>
+        <div class="lrow"><div class="lhead"><b>머리</b><span id="cnt-head"></span></div><div class="lbtns" id="list-head"></div></div>
+        <div class="lrow"><div class="lhead"><b>몸</b><span id="cnt-body"></span></div><div class="lbtns" id="list-body"></div></div>
+        <div class="lrow"><div class="lhead"><b>다리</b><span id="cnt-legs"></span></div><div class="lbtns" id="list-legs"></div></div>
+        <p class="hint">스킬을 누르면 <b>슬롯 장착 · 테스트</b> / 장비를 누르면 <b>착용 · 해제</b> · 잠긴 항목은 아래 뽑기로 획득</p>
+      </div>
+    </div>
   </section>
 
   <!-- ───── 스킬 테스트 ───── -->
@@ -45,7 +56,6 @@
     </div>
     <div class="skillbar" id="skillbar"></div>
     <div class="arena-foot">
-      <div class="stats" id="stats"></div>
       <label class="auto"><input type="checkbox" id="auto"><span></span>자동 시전</label>
     </div>
     <p class="hint">키보드 <b>1 2 3 4</b> 또는 스킬 칸을 눌러 시전 · 슬라임을 처치하면 보석 획득</p>

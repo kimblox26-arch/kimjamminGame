@@ -9,8 +9,6 @@ const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { local
 
 const cds = [0, 0, 0, 0], cdMax = [1, 1, 1, 1];
 let kind = 'skill', autoGap = 0;
-const SCARF = [['#e8364f', '#ff8a9a', '#a01a30'], ['#e8364f', '#ff8a9a', '#a01a30'], ['#3fa9ff', '#a8dcff', '#1d5aa8'],
-  ['#2f9e6b', '#5fd39a', '#1b6343'], ['#ffd23f', '#fff3b0', '#b8860b'], ['#ff5ad9', '#ffb0f0', '#8a1f7a']];
 
 function stats() {
   let crit = 5, atk = 0, cdr = 0;
@@ -34,11 +32,20 @@ function refreshPlayer() {
   const g = gearObj();
   E.player.sprite = buildPlayerSprite(g);
   E.gear = { head: g.head ? g.head.r : -1, body: g.body ? g.body.r : -1, legs: g.legs ? g.legs.r : -1 };
-  [E.player.scarf, E.player.scarfL, E.player.scarfD] = SCARF[g.body ? g.body.r : 0];
-  const top = Math.max(E.gear.head, E.gear.body, E.gear.legs);
-  E.player.aura = top >= 5 ? 'rainbow' : top === 4 ? '#ffd23f' : null;
+  const pv = $('#preview').getContext('2d');
+  pv.imageSmoothingEnabled = false; pv.clearRect(0, 0, 24, 34); pv.drawImage(E.player.sprite, 0, 0);
   const st = stats();
   $('#stats').innerHTML = `<span>⚔ 공격력 <b>+${st.atk.toFixed(0)}%</b></span><span>✦ 치명타 <b>${st.crit.toFixed(0)}%</b></span><span>⏱ 쿨감 <b>${st.cdr.toFixed(0)}%</b></span>`;
+  const es = $('#eslots'); es.innerHTML = '';
+  ['head', 'body', 'legs'].forEach(slot => {
+    const id = S.equip[slot], it = GEAR_BY_ID[id];
+    const el = document.createElement('button');
+    el.className = 'eslot' + (it ? ' r' + it.r : ' empty');
+    el.innerHTML = `<div class="eicon"></div><div class="etext"><small>${SLOT_NAME[slot]}</small><b>${it ? it.name + ' Lv.' + S.gear[id] : '없음'}</b><span>${it ? it.stat + ' +' + gearValue(it, S.gear[id]) + it.unit : '장비 뽑기로 획득'}</span></div>`;
+    if (it) el.querySelector('.eicon').appendChild(icon(gearIcon(it)));
+    el.addEventListener('click', () => { if (it) { S.equip[slot] = null; SFX.click(); save(); renderAll(); toast(`${it.name} 해제`); } });
+    es.appendChild(el);
+  });
 }
 
 // ── 스킬 바 ──
@@ -63,7 +70,7 @@ function renderSkillbar() {
 }
 function tryCast(i, auto) {
   const id = S.slots[i];
-  if (!id) { if (!auto) { SFX.error(); toast('위 목록에서 스킬을 눌러 장착하세요'); } return; }
+  if (!id) { if (!auto) { SFX.error(); toast('상태창에서 스킬을 눌러 장착하세요'); } return; }
   if (cds[i] > 0) return;
   const sk = SKILL_BY_ID[id];
   if (sk.basic && E.player.busy) return;
@@ -262,7 +269,7 @@ $('#btn-unlock').addEventListener('click', () => {
   SKILLS.forEach(s => { if (!S.skills[s.id]) S.skills[s.id] = 1; });
   GEAR.forEach(g => { if (!S.gear[g.id]) S.gear[g.id] = 1; });
   ['timestop', 'omega', 'holysword', 'meteor'].forEach(id => { if (!S.slots.includes(id)) { const e = S.slots.indexOf(null); if (e >= 0) S.slots[e] = id; } });
-  save(); SFX.open(3); renderAll(); toast('모든 스킬·옷 해금! 위 목록에서 장착/테스트 해보세요');
+  save(); SFX.open(3); renderAll(); toast('모든 스킬·장비 해금! 상태창에서 장착/테스트 해보세요');
 });
 const muteBtn = $('#btn-mute');
 const setMuteLabel = () => { muteBtn.textContent = SFX.muted ? '🔇 소리' : '🔊 소리'; };
