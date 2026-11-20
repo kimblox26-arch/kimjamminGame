@@ -88,7 +88,7 @@ SKILL_FX.fireball = k => {
     x: P.x, y: P.y, tx: S.x - 4, ty: S.y, speed: 230, arc: 6,
     trail(p) { for (let i = 0; i < 3; i++) E.part({ x: p.x + rnd(-1.5, 1.5), y: p.y + rnd(-1.5, 1.5), vx: rnd(-35, -5), vy: rnd(-20, 5), life: rnd(0.2, 0.45), cols: FIRE, size: pick([1, 2, 2]), add: true, shrink: true }); },
     draw(c, p) {
-      c.globalCompositeOperation = 'lighter'; PX.disc(c, p.x, p.y, 5, '#a8261a'); c.globalCompositeOperation = 'source-over';
+      c.globalCompositeOperation = ADD; PX.disc(c, p.x, p.y, 5, '#a8261a'); c.globalCompositeOperation = 'source-over';
       PX.disc(c, p.x, p.y, 3.6, '#ff8a1f'); PX.disc(c, p.x + 0.5, p.y - 0.5, 2.4, '#ffd23f'); PX.rect(c, p.x, p.y - 1, 1, 1, '#ffffff');
     },
     onHit(p) { k.hit({ kb: 4, col: '#ffb070' }); E.slime.burn = 1; explode(p.x, p.y, 1); SFX.boom(0.5); E.shake(2, 0.15); },
@@ -144,7 +144,7 @@ SKILL_FX.windslash = k => {
     x: P.x + 4, y: P.y + 2, tx: S.x + 6, ty: S.y, speed: 330,
     trail(p) { E.part({ x: p.x - 6, y: p.y + rnd(-9, 9), vx: -80, vy: 0, life: 0.18, cols: WIND, shape: 'streak', add: true }); },
     draw(c, p) {
-      c.globalCompositeOperation = 'lighter'; PX.ring(c, p.x - 8, p.y, 11, '#2fa87a', 1, 2, -1.15, 1.15); c.globalCompositeOperation = 'source-over';
+      c.globalCompositeOperation = ADD; PX.ring(c, p.x - 8, p.y, 11, '#2fa87a', 1, 2, -1.15, 1.15); c.globalCompositeOperation = 'source-over';
       PX.ring(c, p.x - 8, p.y, 10, '#bff5e0', 1, 1, -1.05, 1.05); PX.ring(c, p.x - 9, p.y, 9, '#ffffff', 1, 1, -0.8, 0.8); PX.ring(c, p.x - 10, p.y, 8, '#6fe0b0', 1, 1, -0.9, 0.9);
     },
     onHit(p) {
@@ -235,7 +235,7 @@ SKILL_FX.daggers = k => {
       ds.forEach(d => {
         if (d.done) return;
         const ca = Math.cos(d.ang), sa = Math.sin(d.ang);
-        c.globalCompositeOperation = 'lighter'; PX.line(c, d.x - ca * 6, d.y - sa * 6, d.x + ca * 3, d.y + sa * 3, '#6522a8', 3); c.globalCompositeOperation = 'source-over';
+        c.globalCompositeOperation = ADD; PX.line(c, d.x - ca * 6, d.y - sa * 6, d.x + ca * 3, d.y + sa * 3, '#6522a8', 3); c.globalCompositeOperation = 'source-over';
         PX.line(c, d.x - ca, d.y - sa, d.x + ca * 4, d.y + sa * 4, '#e6e9ef', 1); PX.rect(c, d.x + ca * 4, d.y + sa * 4, 1, 1, '#ffffff');
         PX.line(c, d.x - ca * 4, d.y - sa * 4, d.x - ca * 2, d.y - sa * 2, '#b45cff', 1);
         PX.line(c, d.x - ca * 2 - sa * 2, d.y - sa * 2 + ca * 2, d.x - ca * 2 + sa * 2, d.y - sa * 2 - ca * 2, '#ffd23f', 1);
@@ -287,7 +287,7 @@ SKILL_FX.meteor = k => {
     },
     draw(c) {
       if (this.x === undefined) return;
-      c.globalCompositeOperation = 'lighter'; PX.disc(c, this.x, this.y, 12, '#a8261a'); PX.disc(c, this.x, this.y, 9, '#e8401c'); c.globalCompositeOperation = 'source-over';
+      c.globalCompositeOperation = ADD; PX.disc(c, this.x, this.y, 12, '#a8261a'); PX.disc(c, this.x, this.y, 9, '#e8401c'); c.globalCompositeOperation = 'source-over';
       PX.disc(c, this.x, this.y, 7, '#4a2a2a'); PX.disc(c, this.x + 1, this.y + 1, 5, '#7a3a2a'); PX.disc(c, this.x + 2, this.y + 2, 3, '#ff8a1f'); PX.disc(c, this.x + 2, this.y + 2, 1.5, '#fff3a0');
     },
     end() {
@@ -386,7 +386,7 @@ SKILL_FX.dragon = k => {
       if (this.hx === undefined) return;
       const a = Math.min(1, this.t * 4, (dur - this.t) * 4), hx = this.hx, hy = this.hy;
       c.globalAlpha = a * 0.55;
-      c.globalCompositeOperation = 'lighter';
+      c.globalCompositeOperation = ADD;
       PX.disc(c, hx + 16, hy + 10, 18 + Math.sin(this.t * 20), '#6a1a10');
       c.globalCompositeOperation = 'source-over';
       c.globalAlpha = a * 0.9;
@@ -395,7 +395,7 @@ SKILL_FX.dragon = k => {
         PX.disc(c, x, y, r + 1, '#140c1c'); PX.disc(c, x, y, r, i % 2 ? '#d8323c' : '#b02830'); PX.rect(c, x - 1, y - r - 1, 2, 2, '#ffd23f');
       }
       c.drawImage(DRAGON_CV, Math.round(hx), Math.round(hy), 32, 20);
-      if (this.t > 0.45 && this.t < dur - 0.3) { c.globalCompositeOperation = 'lighter'; PX.disc(c, hx + 30, hy + 15, 4 + Math.sin(this.t * 40), '#ffd23f'); }
+      if (this.t > 0.45 && this.t < dur - 0.3) { c.globalCompositeOperation = ADD; PX.disc(c, hx + 30, hy + 15, 4 + Math.sin(this.t * 40), '#ffd23f'); }
     },
   });
 };
@@ -417,7 +417,7 @@ SKILL_FX.blackhole = k => {
     },
     draw(c) {
       const r = this.r || 0;
-      c.globalCompositeOperation = 'lighter';
+      c.globalCompositeOperation = ADD;
       motes.forEach(m => { const x = cx + Math.cos(m.a) * m.r, y = cy + Math.sin(m.a) * m.r * 0.45; PX.rect(c, x, y, 1, 1, m.c); PX.rect(c, x - Math.sin(m.a) * 2, y + Math.cos(m.a), 1, 1, '#5a1fa8'); });
       PX.disc(c, cx, cy, r + 6, '#3a0f6a'); PX.ring(c, cx, cy, r + 4, '#b45cff', 0.4, 2); PX.ring(c, cx, cy, r + 2, '#ff9af0');
       c.globalCompositeOperation = 'source-over';
@@ -444,7 +444,7 @@ SKILL_FX.blackhole = k => {
 function drawHolySword(c, x, y, glow) {
   x = Math.round(x); y = Math.round(y);
   const K = '#140c1c';
-  if (glow) { c.globalCompositeOperation = 'lighter'; PX.rect(c, x - 6, y + 12, 13, 32, '#4a3608'); PX.rect(c, x - 12, y + 9, 25, 8, '#4a3608'); c.globalCompositeOperation = 'source-over'; }
+  if (glow) { c.globalCompositeOperation = ADD; PX.rect(c, x - 6, y + 12, 13, 32, '#4a3608'); PX.rect(c, x - 12, y + 9, 25, 8, '#4a3608'); c.globalCompositeOperation = 'source-over'; }
   PX.disc(c, x, y + 2, 2.5, K); PX.disc(c, x, y + 2, 1.6, '#ffd23f'); PX.rect(c, x, y + 2, 1, 1, '#e8364f');
   PX.rect(c, x - 2, y + 4, 5, 8, K); PX.rect(c, x - 1, y + 5, 3, 6, '#6b3f1f'); PX.rect(c, x - 1, y + 6, 3, 1, '#a0673a'); PX.rect(c, x - 1, y + 8, 3, 1, '#a0673a');
   PX.rect(c, x - 10, y + 11, 21, 5, K); PX.rect(c, x - 9, y + 12, 19, 3, '#ffd23f'); PX.rect(c, x - 9, y + 12, 19, 1, '#fff3b0');
@@ -502,7 +502,7 @@ function drawPhoenix(c, x, y, ang, t) {
   const ca = Math.cos(ang), sa = Math.sin(ang);
   const T = (u, v) => [x + u * ca - v * sa, y + u * sa + v * ca];
   const f = Math.sin(t * 26);
-  c.globalCompositeOperation = 'lighter';
+  c.globalCompositeOperation = ADD;
   PX.disc(c, x, y, 11, '#5a1408');
   c.globalCompositeOperation = 'source-over';
   [[-14, -3, '#e8401c'], [-16, 0, '#ff8a1f'], [-13, 3, '#e8401c'], [-18, 1, '#ffd23f']].forEach(([u, v, col]) => PX.line(c, ...T(-3, 0), ...T(u + Math.sin(t * 30 + v) * 1.5, v), col, 1));
@@ -571,7 +571,7 @@ SKILL_FX.omega = k => {
     },
     draw(c) {
       const t = this.t;
-      c.globalCompositeOperation = 'lighter';
+      c.globalCompositeOperation = ADD;
       if (t < charge) {
         const q = t / charge;
         PX.disc(c, ox, oy, 2 + q * 7 + Math.sin(t * 40) * 0.6, PX.hsl(t * 500, 100, 55)); PX.disc(c, ox, oy, 1 + q * 4, '#ffffff');
@@ -713,12 +713,7 @@ function critImpact(k) {
   E.burst(x, y, 40, ['#ffffff', '#ffd23f', '#ff5a3c'], { spd: 220, life: 0.45, add: true, shape: 'streak', drag: 3 });
   E.burst(x, y, 30, FIRE, { spd: 120, life: 0.7, size: 2, add: true, shrink: true });
   E.fx({ layer: 4, dur: 0.45, draw(c) { const q = this.t / 0.45; PX.ring(c, x, y, 6 + q * 60, '#ffd23f', 1, 2); PX.ring(c, x, GROUND, 8 + q * 90, '#ff5a3c', 0.25); } });
-  E.fx({ layer: 3, dur: 1.0, draw(c) {
-    const t = this.t, s = t < 0.06 ? 3 : 2, str = 'CRITICAL!', w = PX.textW(str, s);
-    c.globalAlpha = t > 0.75 ? (1 - t) / 0.25 : 1;
-    const tx = Math.max(2, Math.min(W - w - 2, x - w / 2 + (t < 0.3 ? Math.round(rnd(-1, 1)) : 0)));
-    PX.text(c, str, tx, y - 46 - t * 8, t % 0.1 < 0.05 ? '#ffffff' : '#ffd23f', s);
-  } });
+  critText(x, y - 46);
 }
 SKILL_FX.critical = k => {
   const P = E.player; if (P.busy) return; P.busy = true;
@@ -747,3 +742,12 @@ SKILL_FX.critical = k => {
     end() { P.x = home; P.swing = null; P.crouch = 0; P.dash = 0; P.busy = false; },
   });
 };
+
+function critText(x, y) {
+  E.fx({ layer: 3, dur: 1.0, draw(c) {
+    const t = this.t, s = t < 0.06 ? 3 : 2, str = 'CRITICAL!', w = PX.textW(str, s);
+    c.globalAlpha = t > 0.75 ? (1 - t) / 0.25 : 1;
+    const tx = Math.max(2, Math.min(W - w - 2, x - w / 2 + (t < 0.3 ? Math.round(rnd(-1, 1)) : 0)));
+    PX.text(c, str, tx, y - t * 8, t % 0.1 < 0.05 ? '#ffffff' : '#ffd23f', s);
+  } });
+}

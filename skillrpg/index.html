@@ -2,86 +2,87 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SKILL RPG — 픽셀 스킬 테스트</title>
-<meta name="description" content="픽셀 그래픽 스킬 RPG 테스트 버전: 슬라임을 상대로 스킬을 테스트하고 상자에서 스킬·장비를 뽑아보세요">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SKILL RPG</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="픽셀 스킬 RPG 테스트 버전: 옷장, 장비 뽑기, 스킬 상자, 공격 테스트">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="app">
-  <header class="top pbox">
-    <h1 class="logo">SKILL<span>RPG</span><small>TEST BUILD</small></h1>
-    <div class="gems" title="보석"><i class="gem"></i><b id="gems">0</b></div>
-    <div class="top-btns">
-      <button class="pbtn sm" id="btn-gems">+10,000 <i class="gem"></i></button>
-      <button class="pbtn sm" id="btn-unlock">전체 해금</button>
-      <button class="pbtn sm" id="btn-mute">🔊 소리</button>
-      <button class="pbtn sm danger" id="btn-reset">초기화</button>
+<header class="hdr">
+  <div class="hdr-in">
+    <div class="logo">SKILL RPG<small>테스트 버전</small></div>
+    <div class="hdr-btns">
+      <button class="hbtn" id="btn-mute" type="button">🔊 소리</button>
+      <button class="hbtn" id="btn-gems" type="button">보석 +10,000</button>
+      <button class="hbtn" id="btn-unlock" type="button">전체 해금</button>
+      <button class="hbtn" id="btn-reset" type="button">초기화</button>
     </div>
-  </header>
+  </div>
+</header>
 
-  <!-- ───── 상태창 ───── -->
-  <section class="pbox status-box">
-    <h2 class="sec-title">📜 상태창</h2>
-    <div class="status">
-      <div class="equip">
-        <div class="pv-wrap"><canvas id="preview" width="24" height="34"></canvas></div>
-        <div class="eside">
-          <div class="eslots" id="eslots"></div>
-          <div class="stats" id="stats"></div>
+<main class="wrap">
+  <!-- 왼쪽: 캐릭터 미리보기 + 상세 정보 -->
+  <section class="card left">
+    <div class="pv">
+      <div class="gem-pill"><i class="gem"></i><b id="gems">0</b></div>
+      <canvas id="preview" width="24" height="34"></canvas>
+    </div>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <!-- 오른쪽: 탭 -->
+  <section class="card right">
+    <nav class="tabs" id="tabs">
+      <button type="button" data-tab="closet">👕 내 옷장</button>
+      <button type="button" data-tab="gear">🎁 장비 뽑기</button>
+      <button type="button" data-tab="attack">⚔ 공격 테스트</button>
+    </nav>
+
+    <div class="pane" data-pane="closet">
+      <div class="subtabs" id="subtabs">
+        <button type="button" data-slot="head">머리</button>
+        <button type="button" data-slot="body">몸</button>
+        <button type="button" data-slot="legs">다리</button>
+      </div>
+      <div class="igrid" id="closet-grid"></div>
+    </div>
+
+    <div class="pane" data-pane="gear">
+      <div class="boxlist" id="gear-boxes"></div>
+    </div>
+
+    <div class="pane" data-pane="attack">
+      <div class="atk">
+        <div class="arena" id="arena">
+          <canvas id="game" width="256" height="144"></canvas>
+          <div class="chip" id="atk-chip"></div>
+          <div class="chip right" id="slime-name"></div>
+          <div id="banner" class="banner"></div>
+        </div>
+        <div class="atk-side">
+          <button class="abtn" id="btn-atk" type="button"><span class="cdfill"></span><span class="lbl">공격해 보기</span></button>
+          <button class="abtn crit" id="btn-crit" type="button"><span class="cdfill"></span><span class="lbl">크리티컬</span></button>
+          <label class="auto" for="auto"><input type="checkbox" id="auto"><span class="box"></span>자동 공격</label>
+          <p class="keys">키보드 <b>Space</b> 공격 · <b>C</b> 크리티컬</p>
         </div>
       </div>
-      <div class="lists">
-        <div class="lrow"><div class="lhead"><b>✦ 스킬</b><span id="cnt-skill"></span></div><div class="lbtns" id="list-skill"></div></div>
-        <div class="lrow"><div class="lhead"><b>머리</b><span id="cnt-head"></span></div><div class="lbtns" id="list-head"></div></div>
-        <div class="lrow"><div class="lhead"><b>몸</b><span id="cnt-body"></span></div><div class="lbtns" id="list-body"></div></div>
-        <div class="lrow"><div class="lhead"><b>다리</b><span id="cnt-legs"></span></div><div class="lbtns" id="list-legs"></div></div>
-        <p class="hint">스킬을 누르면 <b>슬롯 장착 · 테스트</b> / 장비를 누르면 <b>착용 · 해제</b> · 잠긴 항목은 아래 뽑기로 획득</p>
-      </div>
+      <div class="boxlist sk" id="skill-boxes"></div>
+      <div class="igrid sk" id="skill-grid"></div>
     </div>
   </section>
-
-  <!-- ───── 스킬 테스트 ───── -->
-  <section class="pbox arena-box" id="arena-box">
-    <h2 class="sec-title">⚔ 스킬 테스트</h2>
-    <div class="arena" id="arena">
-      <canvas id="game" width="256" height="144"></canvas>
-      <div id="banner" class="banner"></div>
-      <div class="hud hud-l">플레이어</div>
-      <div class="hud hud-r" id="slime-name">슬라임</div>
-    </div>
-    <div class="atk-test">
-      <button class="pbtn atk" id="btn-atk">⚔ 일반 공격 테스트<small>Space</small></button>
-      <button class="pbtn crit" id="btn-crit">💥 크리티컬 공격 테스트<small>C</small></button>
-    </div>
-    <div class="skillbar" id="skillbar"></div>
-    <div class="arena-foot">
-      <label class="auto"><input type="checkbox" id="auto"><span></span>자동 시전</label>
-    </div>
-    <p class="hint">키보드 <b>1 2 3 4</b> 또는 스킬 칸을 눌러 시전 · 슬라임을 처치하면 보석 획득</p>
-  </section>
-
-  <!-- ───── 뽑기 ───── -->
-  <section class="pbox gacha-box" id="gacha-box" data-kind="skill">
-    <h2 class="sec-title">🎁 뽑기</h2>
-    <div class="tabs">
-      <button class="tab active" data-kind="skill">✦ 스킬 뽑기</button>
-      <button class="tab" data-kind="gear">🛡 장비 뽑기 <small>머리·몸·다리</small></button>
-    </div>
-    <p class="gdesc" id="gacha-desc"></p>
-    <div class="boxes" id="boxes"></div>
-  </section>
-  <footer class="foot">SKILL RPG 테스트 버전 · 모든 그래픽은 픽셀 단위로 직접 그리고, 소리는 실시간으로 합성합니다</footer>
-</div>
+</main>
 
 <div id="gacha-ov" class="ov" hidden>
   <div id="gacha-title" class="g-title"></div>
   <canvas id="gacha-cv" width="200" height="120"></canvas>
   <div id="gacha-hint" class="g-hint"></div>
   <div id="gacha-results" class="results"></div>
-  <button id="gacha-ok" class="pbtn big" hidden>확인</button>
+  <button id="gacha-ok" class="okbtn" type="button" hidden>확인</button>
 </div>
-<div id="modal" class="modal" hidden><div class="pbox modal-box" id="modal-box"></div></div>
 <div id="toast" class="toast"></div>
 
 <script src="js/audio.js"></script>

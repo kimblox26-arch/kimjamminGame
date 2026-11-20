@@ -1,5 +1,6 @@
 // ───────── 전투 엔진: 루프 · 파티클 · 이펙트 · 슬라임 · 플레이어 ─────────
-const W = 256, H = 144, GROUND = 122;
+const W = 256, H = 144, GROUND = 112;
+let ADD = 'lighter'; // 밝은 배경에선 일반 합성, 어두워질 때만 가산 합성
 const FIRE = ['#ffffff', '#fff3a0', '#ffd23f', '#ff8a1f', '#e8401c', '#a8261a', '#4a2a2a'];
 const SMOKE = ['#7a7088', '#5a5068', '#463e54', '#342c40'];
 const ICE = ['#ffffff', '#d8f6ff', '#8ef6ff', '#4ab8e8', '#2a6fb0'];
@@ -19,52 +20,41 @@ const E = (() => {
     t: 0, fx: [], parts: [], nums: [], timers: [],
     shakeA: 0, shakeT: 0, flashC: '#fff', flashT: 0, flashD: 1, flashA: 1,
     dark: 0, darkTo: 0, darkHold: 0, tintC: '#000', tintA: 0, tintTo: 0, tintHold: 0,
-    invert: 0, invertTo: 0, frozen: false, hitstop: 0, lastHitSfx: 0, fly: 0, gearT: 0,
+    invert: 0, invertTo: 0, frozen: false, critUntil: 0, hitstop: 0, lastHitSfx: 0, fly: 0, gearT: 0,
   };
   const player = { x: 62, homeX: 62, y: GROUND, cast: 0, castCol: '#fff', castR: 0, sprite: null, hide: false, swing: null, crouch: 0, dash: 0, busy: false };
   const slime = { x: 194, lv: 1, hp: 1, max: 1, ghost: 1, bw: 30, bh: 22, sx: 1, sy: 1, kx: 0, flash: 0, hurt: 0,
     dead: true, respawn: 0, oy: 0, vy: 0, frozen: 0, poison: 0, burn: 0, king: false, col: SLIME_COLORS[0], hop: 2 };
-  const clouds = Array.from({ length: 5 }, (_, i) => ({ x: i * 60 + rnd(0, 30), y: rnd(8, 44), s: rnd(0.6, 1.2), v: rnd(2, 5) }));
+  const clouds = Array.from({ length: 5 }, (_, i) => ({ x: i * 60 + rnd(0, 30), y: rnd(8, 40), s: rnd(0.6, 1.2), v: rnd(2, 5) }));
 
   // ── 배경 미리 그리기 (흔들림 여유 4px) ──
   function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function makeBg() {
     const [b, g] = PX.mk(W + 8, H + 8);
-    const r = mulberry(7);
+    const r = mulberry(7), HZ = GROUND - 26;
     g.translate(4, 4);
-    const sky = ['#120d2a', '#1a1440', '#241a52', '#33205e', '#472668', '#622d74', '#84367c', '#a8427e', '#cc5a7c'];
-    const bandH = (GROUND - 24) / sky.length;
-    for (let y = -4; y < GROUND; y++) {
-      const fi = Math.max(0, (y + 4) / bandH);
-      let i = Math.min(sky.length - 1, Math.floor(fi));
-      const frac = fi - Math.floor(fi);
-      for (let x = -4; x < W + 4; x++) {
-        let k = i;
-        if (frac > 0.75 && ((x + y) & 1) && i < sky.length - 1) k = i + 1;
-        g.fillStyle = sky[k]; g.fillRect(x, y, 1, 1);
-      }
-    }
-    for (let i = 0; i < 60; i++) { g.fillStyle = r() < 0.3 ? '#ffe9b0' : '#ffffff'; g.globalAlpha = 0.4 + r() * 0.6; g.fillRect((r() * (W + 8) - 4) | 0, (r() * 60 - 4) | 0, 1, 1); }
-    g.globalAlpha = 1;
-    PX.disc(g, 214, 24, 11, '#3d2a5e'); PX.disc(g, 214, 24, 9, '#ffe9b0'); PX.disc(g, 211, 21, 2, '#e8cf90'); PX.disc(g, 218, 27, 1.5, '#e8cf90'); PX.disc(g, 216, 19, 1, '#e8cf90');
-    const ridge = (base, amp, f, col, seed) => {
-      for (let x = -4; x < W + 4; x++) {
-        const h = base + Math.sin(x * f + seed) * amp + Math.sin(x * f * 2.7 + seed * 2) * amp * 0.4 + Math.sin(x * f * 7.1) * amp * 0.12;
-        g.fillStyle = col; g.fillRect(x, Math.round(GROUND - h), 1, Math.ceil(h) + 1);
+    const band = (cols, y0, y1) => {
+      const bh = (y1 - y0) / cols.length;
+      for (let y = y0; y < y1; y++) {
+        const fi = (y - y0) / bh, i = Math.min(cols.length - 1, Math.floor(fi)), fr = fi - Math.floor(fi);
+        for (let x = -4; x < W + 4; x++) { g.fillStyle = cols[fr > 0.7 && ((x + y) & 1) && i < cols.length - 1 ? i + 1 : i]; g.fillRect(x, y, 1, 1); }
       }
     };
-    ridge(42, 14, 0.035, '#2e2052', 1); ridge(26, 9, 0.06, '#251842', 4); ridge(12, 5, 0.11, '#1c1233', 9);
-    // 땅
-    for (let y = GROUND; y < H + 4; y++) {
+    band(['#6cb9f0', '#7fc3f3', '#93cdf5', '#a6d6f7', '#b9dff9', '#cae7fa', '#dbeffc', '#e9f6fd'], -4, HZ);
+    PX.disc(g, 222, 22, 14, '#fff8d6'); PX.disc(g, 222, 22, 10, '#fff0a0'); PX.disc(g, 222, 22, 8, '#ffe066');
+    const ridge = (base, amp, f, col, seed) => {
       for (let x = -4; x < W + 4; x++) {
-        let col = y === GROUND ? '#8ee07a' : y < GROUND + 3 ? '#4fa84a' : y < GROUND + 5 ? '#3a7d3a' : '#5a3d2a';
-        if (y >= GROUND + 5) { const n = r(); if (n < 0.07) col = '#4a311f'; else if (n < 0.1) col = '#6b4a33'; }
-        if (y === GROUND + 5 && r() < 0.5) col = '#3a7d3a';
-        g.fillStyle = col; g.fillRect(x, y, 1, 1);
+        const h = base + Math.sin(x * f + seed) * amp + Math.sin(x * f * 2.7 + seed * 2) * amp * 0.4;
+        g.fillStyle = col; g.fillRect(x, Math.round(HZ - h), 1, Math.ceil(h) + 1);
       }
+    };
+    ridge(15, 6, 0.035, '#bfe0f0', 1); ridge(8, 4, 0.07, '#acdcb4', 4);
+    band(['#b7e59c', '#ade08f', '#a2da83', '#97d478', '#8ccd6d', '#82c664', '#79bf5c'], HZ, H + 4);
+    for (let i = 0; i < 140; i++) {
+      const k = Math.pow(r(), 0.8), y = Math.round(HZ + 3 + k * (H - HZ)), x = (r() * (W + 8) - 4) | 0, h = k < 0.3 ? 1 : k < 0.7 ? 2 : 3;
+      g.fillStyle = r() < 0.5 ? '#6db552' : '#5fa848'; g.fillRect(x, y - h, 1, h);
     }
-    for (let i = 0; i < 70; i++) { const x = (r() * (W + 8) - 4) | 0, h = 1 + (r() * 3 | 0); g.fillStyle = r() < 0.5 ? '#4fa84a' : '#8ee07a'; g.fillRect(x, GROUND - h, 1, h); }
-    for (let i = 0; i < 8; i++) { const x = (r() * W) | 0; g.fillStyle = pick(['#ff7ab8', '#ffe066', '#ffffff']); g.fillRect(x, GROUND - 2, 1, 1); g.fillStyle = '#3a7d3a'; g.fillRect(x, GROUND - 1, 1, 1); }
+    for (let i = 0; i < 14; i++) { const x = (r() * W) | 0, y = Math.round(HZ + 6 + r() * (H - HZ - 8)); g.fillStyle = pick(['#ffffff', '#ffe066', '#ff9ac0']); g.fillRect(x, y, 1, 1); }
     return b;
   }
 
@@ -124,7 +114,7 @@ const E = (() => {
   function hit(base, o = {}) {
     if (!alive()) return 0;
     const st = E.stats ? E.stats() : { atk: 0, crit: 5 };
-    const crit = o.crit || Math.random() < st.crit / 100;
+    const crit = o.crit || G.t < G.critUntil || Math.random() < st.crit / 100;
     const dmg = Math.max(1, Math.round(base * (1 + st.atk / 100) * rnd(0.9, 1.1) * (crit ? 2 : 1)));
     slime.hp -= dmg; slime.flash = 0.06; slime.hurt = 0.35;
     slime.kx = Math.min(16, slime.kx + (o.kb ?? 2) * (crit ? 1.5 : 1));
@@ -200,7 +190,7 @@ const E = (() => {
     clouds.forEach(cl => { cl.x += cl.v * rdt; if (cl.x > W + 30) cl.x = -40; });
     // 반딧불
     G.fly -= rdt;
-    if (G.fly <= 0) { G.fly = 0.35; part({ x: rnd(0, W), y: rnd(GROUND - 30, GROUND - 4), vx: rnd(-4, 4), vy: rnd(-4, 1), life: 3, cols: ['#c8ff80', '#e8ffb0', '#a8f060', '#5ad35a'], add: true, update: (p, d) => { p.vx += rnd(-20, 20) * d; } }); }
+    if (G.fly <= 0) { G.fly = 0.35; part({ x: rnd(0, W), y: rnd(GROUND - 30, GROUND - 4), vx: rnd(-4, 4), vy: rnd(-4, 1), life: 3, cols: ['#ffffff', '#fff8c0', '#ffe066'], update: (p, d) => { p.vx += rnd(-20, 20) * d; } }); }
 
     // 플레이어
     player.cast = Math.max(0, player.cast - dt);
@@ -308,13 +298,14 @@ const E = (() => {
     c.drawImage(player.sprite, Math.round(player.x - 12), Math.round(player.y - 31 - bob - hop + (player.crouch ? 1 : 0)));
     if (player.cast > 0.15) {
       const h = hand();
-      c.globalCompositeOperation = 'lighter';
+      c.globalCompositeOperation = ADD;
       PX.disc(c, h.x, h.y - hop, 2 + Math.sin(G.t * 40), player.castCol);
       PX.rect(c, h.x, h.y - hop, 1, 1, '#ffffff');
       c.globalCompositeOperation = 'source-over';
     }
   }
   function draw() {
+    ADD = G.dark > 0.2 ? 'lighter' : 'source-over';
     c.setTransform(1, 0, 0, 1, 0, 0);
     let ox = 0, oy = 0;
     if (G.shakeA > 0) { ox = Math.round(rnd(-1, 1) * G.shakeA); oy = Math.round(rnd(-1, 1) * G.shakeA); }
@@ -322,7 +313,7 @@ const E = (() => {
     c.drawImage(bg, -4, -4);
     for (const cl of clouds) {
       const x = Math.round(cl.x), y = Math.round(cl.y), s = cl.s;
-      PX.ellipse(c, x, y, 14 * s, 4 * s, '#3a2862'); PX.ellipse(c, x - 6 * s, y - 2, 7 * s, 4 * s, '#3a2862'); PX.ellipse(c, x + 5 * s, y - 3 * s, 8 * s, 5 * s, '#46307a');
+      PX.ellipse(c, x, y + 1, 14 * s, 4 * s, '#d6ebf9'); PX.ellipse(c, x, y, 14 * s, 4 * s, '#ffffff'); PX.ellipse(c, x - 6 * s, y - 2, 7 * s, 4 * s, '#ffffff'); PX.ellipse(c, x + 5 * s, y - 3 * s, 8 * s, 5 * s, '#ffffff');
     }
     if (G.dark > 0.01) { c.globalAlpha = G.dark; PX.rect(c, -4, -4, W + 8, H + 8, '#05020c'); c.globalAlpha = 1; }
     drawFx(0);
@@ -331,7 +322,7 @@ const E = (() => {
     if (G.tintA > 0.01) { c.globalAlpha = G.tintA; PX.rect(c, -4, -4, W + 8, H + 8, G.tintC); c.globalAlpha = 1; }
     drawFx(1);
     drawParts(false);
-    c.globalCompositeOperation = 'lighter'; drawParts(true); drawFx(4); c.globalCompositeOperation = 'source-over';
+    c.globalCompositeOperation = ADD; drawParts(true); drawFx(4); c.globalCompositeOperation = 'source-over';
     drawFx(2);
     for (const n of G.nums) {
       c.globalAlpha = n.t > 0.7 ? Math.max(0, (1 - n.t) / 0.3) : 1;
@@ -367,6 +358,7 @@ const E = (() => {
   return {
     G, player, slime, start, part, burst, fx, after, shake, flash, darken, tint, num, hit, cast, hand, grip, swordAng, target, alive, setupSlime, afterimage, sil, cutIn,
     hitstop(s) { G.hitstop = Math.max(G.hitstop, s); },
+    critMode(s) { G.critUntil = G.t + s; },
     stats: null, onKill: null, onSlime: null, onTick: null, onDamage: null, gear: null, startLevel: 1,
   };
 })();
