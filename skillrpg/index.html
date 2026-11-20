@@ -14,6 +14,7 @@
 <body>
 <header class="hdr">
   <div class="hdr-in">
+    <button class="menubtn" id="btn-menu" type="button">☰ <span>메뉴 접기</span></button>
     <div class="logo">SKILL RPG<small>테스트 버전</small></div>
     <div class="hdr-btns">
       <button class="hbtn" id="btn-mute" type="button">🔊 소리</button>
@@ -24,57 +25,132 @@
   </div>
 </header>
 
-<main class="wrap">
-  <!-- 왼쪽: 캐릭터 미리보기 + 상세 정보 -->
-  <section class="card left">
-    <div class="pv">
-      <div class="gem-pill"><i class="gem"></i><b id="gems">0</b></div>
-      <canvas id="preview" width="24" height="34"></canvas>
+<div class="shell" id="shell">
+  <aside class="side" id="side">
+    <div class="prof">
+      <div class="prof-av"><canvas id="prof-cv" width="48" height="60"></canvas></div>
+      <b>모험가</b>
+      <span id="prof-sub">슬라임 Lv.1 사냥 중</span>
     </div>
-    <div class="detail" id="detail"></div>
-  </section>
+    <nav class="snav">
+      <button type="button" data-go="home"><i>🏠</i>홈</button>
+      <div class="sgrp">모험</div>
+      <button type="button" data-go="attack"><i>⚔️</i>공격 테스트</button>
+      <div class="sgrp">캐릭터</div>
+      <button type="button" data-go="closet"><i>👕</i>내 옷장</button>
+      <button type="button" data-go="gear"><i>🎁</i>장비 뽑기</button>
+      <div class="sgrp">수집</div>
+      <button type="button" data-go="dex"><i>📖</i>도감</button>
+      <button type="button" data-go="log"><i>📜</i>기록</button>
+    </nav>
+  </aside>
+  <div class="scrim" id="scrim"></div>
 
-  <!-- 오른쪽: 탭 -->
-  <section class="card right">
-    <nav class="tabs" id="tabs">
-      <button type="button" data-tab="closet">👕 내 옷장</button>
-      <button type="button" data-tab="gear">🎁 장비 뽑기</button>
-      <button type="button" data-tab="attack">⚔ 공격 테스트</button>
+  <div class="main">
+    <nav class="toptabs" id="toptabs">
+      <button type="button" data-go="home">홈</button>
+      <button type="button" data-go="log">기록</button>
+      <button type="button" data-go="dex">도감</button>
+      <button type="button" data-go="char">캐릭터</button>
     </nav>
 
-    <div class="pane" data-pane="closet">
-      <div class="subtabs" id="subtabs">
-        <button type="button" data-slot="head">머리</button>
-        <button type="button" data-slot="body">몸</button>
-        <button type="button" data-slot="legs">다리</button>
-      </div>
-      <div class="igrid" id="closet-grid"></div>
-    </div>
-
-    <div class="pane" data-pane="gear">
-      <div class="boxlist" id="gear-boxes"></div>
-    </div>
-
-    <div class="pane" data-pane="attack">
-      <div class="atk">
-        <div class="arena" id="arena">
-          <canvas id="game" width="256" height="144"></canvas>
-          <div class="chip" id="atk-chip"></div>
-          <div class="chip right" id="slime-name"></div>
-          <div id="banner" class="banner"></div>
+    <!-- 홈 -->
+    <section class="view" data-view="home">
+      <div class="home">
+        <div class="card hero">
+          <div class="hero-pv"><canvas id="home-cv" width="48" height="60"></canvas></div>
+          <div class="hero-info">
+            <div class="eyebrow">오늘의 모험</div>
+            <h2>모험가</h2>
+            <p class="d-desc" id="home-sub"></p>
+            <div class="stats" id="home-stats"></div>
+            <div class="d-btns">
+              <button class="btn primary" type="button" data-go="attack">⚔️ 공격 테스트</button>
+              <button class="btn outline" type="button" data-go="gear">🎁 장비 뽑기</button>
+              <button class="btn ghost" type="button" data-go="closet">👕 내 옷장</button>
+            </div>
+          </div>
         </div>
-        <div class="atk-side">
-          <button class="abtn" id="btn-atk" type="button"><span class="cdfill"></span><span class="lbl">공격해 보기</span></button>
-          <button class="abtn crit" id="btn-crit" type="button"><span class="cdfill"></span><span class="lbl">크리티컬</span></button>
-          <label class="auto" for="auto"><input type="checkbox" id="auto"><span class="box"></span>자동 공격</label>
-          <p class="keys">키보드 <b>Space</b> 공격 · <b>C</b> 크리티컬</p>
+        <div class="card pad">
+          <h3 class="ch">수집 현황</h3>
+          <div class="prog" id="home-prog"></div>
+        </div>
+        <div class="card pad">
+          <h3 class="ch">최근 기록</h3>
+          <ul class="loglist" id="home-log"></ul>
         </div>
       </div>
-      <div class="boxlist sk" id="skill-boxes"></div>
-      <div class="igrid sk" id="skill-grid"></div>
-    </div>
-  </section>
-</main>
+    </section>
+
+    <!-- 기록 -->
+    <section class="view" data-view="log">
+      <div class="card pad">
+        <h3 class="ch">모험 기록 <small id="log-count"></small></h3>
+        <ul class="loglist" id="log-list"></ul>
+      </div>
+    </section>
+
+    <!-- 도감 -->
+    <section class="view" data-view="dex">
+      <div class="card pad" id="dex"></div>
+    </section>
+
+    <!-- 캐릭터 -->
+    <section class="view" data-view="char">
+      <div class="wrap">
+        <section class="card left">
+          <div class="pv">
+            <div class="gem-pill"><i class="gem"></i><b id="gems">0</b></div>
+            <canvas id="preview" width="48" height="60"></canvas>
+          </div>
+          <div class="detail" id="detail"></div>
+        </section>
+
+        <section class="card right">
+          <nav class="tabs" id="tabs">
+            <button type="button" data-tab="closet">👕 내 옷장</button>
+            <button type="button" data-tab="gear">🎁 장비 뽑기</button>
+            <button type="button" data-tab="attack">⚔️ 공격 테스트</button>
+          </nav>
+
+          <div class="pane" data-pane="closet">
+            <div class="subtabs" id="subtabs">
+              <button type="button" data-slot="face">얼굴</button>
+              <button type="button" data-slot="body">의상</button>
+              <button type="button" data-slot="head">모자</button>
+              <button type="button" data-slot="weapon">무기</button>
+              <button type="button" data-slot="acc">장식</button>
+            </div>
+            <div class="igrid" id="closet-grid"></div>
+          </div>
+
+          <div class="pane" data-pane="gear">
+            <div class="boxlist" id="gear-boxes"></div>
+          </div>
+
+          <div class="pane" data-pane="attack">
+            <div class="atk">
+              <div class="arena" id="arena">
+                <canvas id="game" width="320" height="180"></canvas>
+                <div class="chip" id="atk-chip"></div>
+                <div class="chip right" id="slime-name"></div>
+                <div id="banner" class="banner"></div>
+              </div>
+              <div class="atk-side">
+                <button class="abtn" id="btn-atk" type="button"><span class="cdfill"></span><span class="lbl">공격해 보기</span></button>
+                <button class="abtn crit" id="btn-crit" type="button"><span class="cdfill"></span><span class="lbl">크리티컬</span></button>
+                <label class="auto" for="auto"><input type="checkbox" id="auto"><span class="box"></span>자동 공격</label>
+                <p class="keys">키보드 <b>Space</b> 공격 · <b>C</b> 크리티컬</p>
+              </div>
+            </div>
+            <div class="boxlist sk" id="skill-boxes"></div>
+            <div class="igrid sk" id="skill-grid"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+</div>
 
 <div id="gacha-ov" class="ov" hidden>
   <div id="gacha-title" class="g-title"></div>
@@ -88,6 +164,7 @@
 <script src="js/audio.js"></script>
 <script src="js/pixel.js"></script>
 <script src="js/data.js"></script>
+<script src="js/avatar.js"></script>
 <script src="js/battle.js"></script>
 <script src="js/skills.js"></script>
 <script src="js/gacha.js"></script>

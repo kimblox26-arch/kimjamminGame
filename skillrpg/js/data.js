@@ -41,41 +41,17 @@ const GACHA_SKILLS = SKILLS.filter(s => !s.basic);
 const rarName = sk => sk.basic ? '기본' : RAR[sk.r].name;
 const SKILL_BY_ID = Object.fromEntries(SKILLS.map(s => [s.id, s]));
 
-const SLOT_NAME = { head: '머리', body: '몸', legs: '다리' };
+const SLOTS = ['face', 'body', 'head', 'weapon', 'acc'];
+const SLOT_NAME = { face: '얼굴', body: '의상', head: '모자', weapon: '무기', acc: '장식' };
 const GEAR_DEF = {
-  head: {
-    stat: '치명타', unit: '%', vals: [3, 6, 10, 15, 22, 30],
-    names: ['천 두건', '강철 투구', '마법사 모자', '뿔 투구', '황금 왕관', '별빛 후광관'],
-    cols: [['#c0392b', '#7d1f16', '#e86b5c', '#f5d76e'], ['#9aa4b1', '#5d6673', '#d9e1ea', '#e04848'],
-      ['#3b4fc4', '#232f7a', '#f4d35e', '#ffe66d'], ['#4a4458', '#2a2533', '#7a7290', '#e8d9a8'],
-      ['#ffd23f', '#c48a12', '#fff3b0', '#e8364f'], ['#8ef6ff', '#3aa0d8', '#ffffff', '#ff7ad9']],
-  },
-  body: {
-    stat: '공격력', unit: '%', vals: [5, 12, 22, 35, 55, 80],
-    names: ['천 튜닉', '가죽 갑옷', '미스릴 사슬갑옷', '용비늘 갑옷', '성기사 판금갑옷', '은하 로브'],
-    cols: [['#7fa35a', '#4f6b37', '#a5c97c', '#7a5230'], ['#a0673a', '#6b3f1f', '#c98d58', '#3b2414'],
-      ['#8fb3c9', '#557a91', '#e8f6ff', '#4a5b6b'], ['#2f9e6b', '#1b6343', '#5fd39a', '#e0b84a'],
-      ['#e6e9ef', '#a3aab7', '#ffffff', '#ffcc33'], ['#3a2a7a', '#1e1448', '#8c6cf0', '#ff7ad9']],
-  },
-  legs: {
-    stat: '쿨타임 감소', unit: '%', vals: [3, 6, 10, 14, 20, 28],
-    names: ['천 바지', '가죽 장화', '강철 각반', '그림자 각반', '황금 그리브', '차원 부츠'],
-    cols: [['#6b5a45', '#4a3d2e', '#5a3a22', '#3a2414'], ['#4f5b78', '#353e55', '#a0673a', '#6b3f1f'],
-      ['#9aa4b1', '#5d6673', '#7a838f', '#4a515c', '#d9e1ea'], ['#3a3348', '#211c2b', '#6c3fb5', '#b45cff'],
-      ['#ffd23f', '#c48a12', '#e8a820', '#e8364f'], ['#3aa0d8', '#1f5f8a', '#8ef6ff', '#ffffff']],
-  },
+  face: { stat: '보석 획득', vals: [5, 10, 16, 25, 40, 60], names: ['갈색 단발', '검은 바가지머리', '금발 포니테일', '은발 긴머리', '불꽃 머리', '별빛 머리'] },
+  body: { stat: '공격력', vals: [5, 12, 22, 35, 55, 80], names: ['천 튜닉', '가죽 갑옷', '미스릴 사슬갑옷', '용비늘 갑옷', '성기사 판금갑옷', '은하 로브'] },
+  head: { stat: '치명타', vals: [3, 6, 10, 15, 22, 30], names: ['천 두건', '강철 투구', '마법사 모자', '뿔 투구', '황금 왕관', '별빛 후광관'] },
+  weapon: { stat: '치명타 피해', vals: [10, 20, 35, 50, 75, 100], names: ['목검', '강철 검', '마법 지팡이', '용의 창', '황금 성검', '별빛 지팡이'] },
+  acc: { stat: '쿨타임 감소', vals: [3, 6, 10, 14, 20, 28], names: ['빨간 목도리', '파란 망토', '나비 날개', '악마 날개', '천사 날개', '은하 날개'] },
 };
 const GEAR = [];
-['head', 'body', 'legs'].forEach(slot => {
-  const d = GEAR_DEF[slot];
-  for (let r = 0; r < 6; r++) {
-    const col = d.cols[r].slice(0, 4);
-    if (slot === 'legs' && r === 2) col[2] = '#7a838f';
-    GEAR.push({ id: slot + r, slot, r, name: d.names[r], col, stat: d.stat, unit: d.unit, val: d.vals[r] });
-  }
-});
-// 강철 각반의 무릎 보호대 색
-GEAR.find(g => g.id === 'legs2').col[2] = '#d9e1ea';
+SLOTS.forEach(slot => { const d = GEAR_DEF[slot]; for (let r = 0; r < 6; r++) GEAR.push({ id: slot + r, slot, r, name: d.names[r], stat: d.stat, unit: '%', val: d.vals[r] }); });
 const GEAR_BY_ID = Object.fromEntries(GEAR.map(g => [g.id, g]));
 const gearValue = (g, lv) => +(g.val * (1 + 0.1 * (lv - 1))).toFixed(1);
 
@@ -186,13 +162,5 @@ const DRAGON_PAL = { K: '#140c1c', 1: '#d8323c', 2: '#8a1f2a', 4: '#ffd23f', W: 
 function skillIcon(id, size = 16) {
   const [cv, c] = PX.mk(16, 16);
   ICONS[id](c);
-  return cv;
-}
-// 장비 아이콘: 해당 부위만 착용한 플레이어에서 잘라냄
-function gearIcon(g) {
-  const sp = buildPlayerSprite({ [g.slot]: g });
-  const [cv, c] = PX.mk(20, 20);
-  const crop = { head: [0, 0, 24, 18, -2, 1], body: [0, 15, 24, 13, -2, 3], legs: [0, 22, 24, 12, -2, 4] }[g.slot];
-  c.drawImage(sp, crop[0], crop[1], crop[2], crop[3], crop[4], crop[5], crop[2], crop[3]);
   return cv;
 }

@@ -1,51 +1,67 @@
 // ───────── 상태 · UI ─────────
 const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
 const SAVE_KEY = 'srpg_save_v1';
-const DEFAULT = () => ({ gems: 100000, skills: { attack: 1, critical: 1, fireball: 1 }, gear: {}, equip: { head: null, body: null, legs: null }, main: 'attack', lv: 1, tab: 'attack', slot: 'head' });
+const NO_EQUIP = () => ({ face: null, body: null, head: null, weapon: null, acc: null });
+const DEFAULT = () => ({ gems: 100000, skills: { attack: 1, critical: 1, fireball: 1 }, gear: {}, equip: NO_EQUIP(), main: 'attack', lv: 1, view: 'char', tab: 'attack', slot: 'face', log: [], menu: true });
 let S = (() => { try { const d = JSON.parse(localStorage.getItem(SAVE_KEY)); if (d && d.skills) return Object.assign(DEFAULT(), d); } catch (e) {} return DEFAULT(); })();
 S.skills.attack = S.skills.attack || 1; S.skills.critical = S.skills.critical || 1;
 if (!S.skills[S.main]) S.main = 'attack';
+S.equip = Object.assign(NO_EQUIP(), S.equip);
+Object.keys(S.equip).forEach(k => { const g = GEAR_BY_ID[S.equip[k]]; if (!SLOTS.includes(k)) delete S.equip[k]; else if (!g || g.slot !== k) S.equip[k] = null; });
+if (!SLOTS.includes(S.slot)) S.slot = 'face';
+if (!Array.isArray(S.log)) S.log = [];
 let saveT = 0;
 const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) {} }, 150); };
 
-let sel = null;            // 왼쪽 상세 정보에 보여줄 항목 { t: 'skill' | 'gear', id }
-let cd = 0, cdMax = 1;     // 공격 버튼 쿨타임
-let autoGap = 0;
+let sel = null;            // 왼쪽 상세 정보 { t: 'skill' | 'gear', id }
+let cd = 0, cdMax = 1, autoGap = 0;
 
 function stats() {
-  let crit = 5, atk = 0, cdr = 0;
-  const e = S.equip;
-  if (e.head) crit += gearValue(GEAR_BY_ID[e.head], S.gear[e.head]);
-  if (e.body) atk += gearValue(GEAR_BY_ID[e.body], S.gear[e.body]);
-  if (e.legs) cdr += gearValue(GEAR_BY_ID[e.legs], S.gear[e.legs]);
-  return { crit: Math.min(100, crit), atk, cdr: Math.min(60, cdr) };
+  const v = slot => { const id = S.equip[slot]; return id ? gearValue(GEAR_BY_ID[id], S.gear[id] || 1) : 0; };
+  return { crit: Math.min(100, 5 + v('head')), atk: v('body'), critDmg: v('weapon'), cdr: Math.min(60, v('acc')), gem: v('face') };
 }
-const gearObj = () => ({ head: GEAR_BY_ID[S.equip.head] || null, body: GEAR_BY_ID[S.equip.body] || null, legs: GEAR_BY_ID[S.equip.legs] || null });
-const icon = cv => { cv.className = 'px-icon'; return cv; };
+const STAT_LIST = [['atk', '공격력', '+', '%'], ['crit', '치명타', '', '%'], ['critDmg', '치명타 피해', '+', '%'], ['cdr', '쿨타임 감소', '', '%'], ['gem', '보석 획득', '+', '%']];
+const statsHTML = () => { const st = stats(); return STAT_LIST.map(([k, n, p, u]) => `<div><span>${n}</span><b>${p}${Math.round(st[k])}${u}</b></div>`).join(''); };
+const gearObj = () => Object.fromEntries(SLOTS.map(s => [s, GEAR_BY_ID[S.equip[s]] || null]));
 const ownCount = list => list.filter(x => (x.slot ? S.gear : S.skills)[x.id]).length;
+const isMobile = () => matchMedia('(max-width: 920px)').matches;
 
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.remove('show'); void t.offsetWidth; t.classList.add('show'); }
 function setGems(n) {
   S.gems = Math.max(0, n); $('#gems').textContent = S.gems.toLocaleString(); save();
   const g = $('.gem-pill'); g.classList.remove('pulse'); void g.offsetWidth; g.classList.add('pulse');
   if (!sel) renderDetail();
+  if (S.view === 'home') renderHome();
+}
+function addLog(icon, html, r = 0) {
+  const d = new Date();
+  S.log.unshift({ t: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, icon, html, r });
+  if (S.log.length > 80) S.log.length = 80;
+  save();
+}
+function logHTML(list) {
+  if (!list.length) return '<li class="empty">아직 기록이 없어요. 슬라임을 잡거나 상자를 열어 보세요!</li>';
+  return list.map(e => `<li class="r${e.r}"><time>${e.t}</time><span class="li-ic">${e.icon}</span><span>${e.html}</span></li>`).join('');
 }
 
-// ── 왼쪽: 미리보기 + 상세 정보 ──
+// ── 캐릭터 그림 (미리보기 · 사이드바 · 홈) ──
 function refreshPlayer() {
   const g = gearObj();
   E.player.sprite = buildPlayerSprite(g);
-  E.gear = { head: g.head ? g.head.r : -1, body: g.body ? g.body.r : -1, legs: g.legs ? g.legs.r : -1 };
-  const pv = $('#preview').getContext('2d');
-  pv.imageSmoothingEnabled = false; pv.clearRect(0, 0, 24, 34); pv.drawImage(E.player.sprite, 0, 0);
+  E.gear = { top: Math.max(-1, ...SLOTS.map(s => g[s] ? g[s].r : -1)) };
+  ['#preview', '#prof-cv', '#home-cv'].forEach(id => { const c = $(id).getContext('2d'); c.imageSmoothingEnabled = false; c.clearRect(0, 0, AV_W, AV_H); c.drawImage(E.player.sprite, 0, 0); });
+  $('#prof-sub').textContent = `슬라임 Lv.${S.lv} 사냥 중`;
 }
+
+// ── 왼쪽 상세 정보 ──
 function renderDetail() {
-  const d = $('#detail'), st = stats();
+  const d = $('#detail');
   let h = '';
   if (sel && sel.t === 'gear') {
     const g = GEAR_BY_ID[sel.id], lv = S.gear[g.id], on = S.equip[g.slot] === g.id;
     h = `<div class="d-title r${g.r}"><b>${lv ? g.name : '???'}</b><span class="rt">${RAR[g.r].name}</span></div>
-      <div class="d-sub">${SLOT_NAME[g.slot]} 장비${lv ? ' · Lv.' + lv : ''}</div>
+      <div class="d-sub">${SLOT_NAME[g.slot]}${lv ? ' · Lv.' + lv : ''}</div>
       <div class="d-lbl">장비 보너스</div><div><span class="bchip">${g.stat} +${gearValue(g, lv || 1)}${g.unit}</span></div>
       ${lv ? `<div class="d-btns"><button class="btn ${on ? 'ghost' : 'primary'}" id="d-act" type="button">${on ? '해제하기' : '착용하기'}</button></div>` : '<p class="d-desc">장비 뽑기에서 얻을 수 있어요.</p>'}`;
   } else if (sel && sel.t === 'skill') {
@@ -61,31 +77,30 @@ function renderDetail() {
       <div class="d-gem">보유 보석 <i class="gem"></i><b>${S.gems.toLocaleString()}</b></div>
       <p class="d-desc">스킬과 장비를 모아 나만의 모험가를 꾸며 보세요!</p>`;
   }
-  h += `<div class="d-lbl">능력치</div><div class="stats"><div><span>공격력</span><b>+${st.atk.toFixed(0)}%</b></div><div><span>치명타</span><b>${st.crit.toFixed(0)}%</b></div><div><span>쿨타임 감소</span><b>${st.cdr.toFixed(0)}%</b></div></div>
-    <div class="d-lbl">착용 중</div><div class="eq" id="eq"></div>`;
+  h += `<div class="d-lbl">능력치</div><div class="stats">${statsHTML()}</div><div class="d-lbl">착용 중</div><div class="eq" id="eq"></div>`;
   d.innerHTML = h;
   const eq = d.querySelector('#eq');
-  ['head', 'body', 'legs'].forEach(slot => {
+  SLOTS.forEach(slot => {
     const g = GEAR_BY_ID[S.equip[slot]], b = document.createElement('button');
     b.type = 'button'; b.className = 'eqrow' + (g ? ' r' + g.r : ' empty');
     b.innerHTML = `<span class="ei"></span><span><small>${SLOT_NAME[slot]}</small><b>${g ? g.name : '없음'}</b></span>${g ? `<em>${g.stat} +${gearValue(g, S.gear[g.id])}${g.unit}</em>` : ''}`;
-    if (g) b.querySelector('.ei').appendChild(icon(gearIcon(g)));
-    b.addEventListener('click', () => { SFX.click(); S.slot = slot; if (g) sel = { t: 'gear', id: g.id }; setTab('closet'); renderAll(); });
+    if (g) b.querySelector('.ei').appendChild(fitIcon(gearIcon(g), 40));
+    b.addEventListener('click', () => { SFX.click(); S.slot = slot; sel = g ? { t: 'gear', id: g.id } : null; go('closet'); });
     eq.appendChild(b);
   });
   const act = d.querySelector('#d-act'), test = d.querySelector('#d-test');
   if (act && sel.t === 'gear') act.addEventListener('click', () => toggleGear(GEAR_BY_ID[sel.id]));
   if (act && sel.t === 'skill') act.addEventListener('click', () => equipSkill(sel.id));
-  if (test) test.addEventListener('click', () => { equipSkill(sel.id, true); setTab('attack'); attack(); });
+  if (test) test.addEventListener('click', () => { equipSkill(sel.id, true); go('attack'); attack(); });
 }
 
-// ── 장비 / 스킬 장착 ──
+// ── 장착 ──
 function toggleGear(g) {
   const on = S.equip[g.slot] === g.id;
   S.equip[g.slot] = on ? null : g.id; save();
   on ? SFX.click() : SFX.equip();
   toast(on ? `${g.name} 해제` : `${g.name} 착용! ${g.stat} +${gearValue(g, S.gear[g.id])}${g.unit}`);
-  if (!on) E.burst(E.player.x, GROUND - 14, 30, ['#ffffff', RAR[g.r].color, RAR[g.r].dark], { spd: 50, life: 0.8, r: 6 });
+  if (!on) E.burst(E.player.x, GROUND - 24, 30, ['#ffffff', RAR[g.r].color, RAR[g.r].dark], { spd: 50, life: 0.8, r: 8 });
   renderAll();
 }
 function equipSkill(id, quiet) {
@@ -95,27 +110,36 @@ function equipSkill(id, quiet) {
   renderAll();
 }
 
-// ── 내 옷장 ──
-function renderCloset() {
-  document.querySelectorAll('#subtabs button').forEach(b => b.classList.toggle('on', b.dataset.slot === S.slot));
-  const grid = $('#closet-grid'); grid.innerHTML = '';
-  GEAR.filter(g => g.slot === S.slot).forEach(g => {
-    const lv = S.gear[g.id], on = S.equip[g.slot] === g.id;
-    const b = card(`r${g.r}${lv ? '' : ' locked'}${on ? ' on' : ''}${sel && sel.id === g.id ? ' sel' : ''}`, gearIcon(g), lv ? g.name : '???', lv ? `${RAR[g.r].name} · Lv.${lv}` : RAR[g.r].name, on ? '장착중' : '');
-    b.addEventListener('click', () => {
-      sel = { t: 'gear', id: g.id };
-      if (!lv) { SFX.error(); renderAll(); return; }
-      if (!on) toggleGear(g); else { SFX.click(); renderAll(); }
-    });
-    grid.appendChild(b);
-  });
-}
-function card(cls, cv, name, sub, tag) {
+// ── 카드 ──
+function card(cls, cv, name, sub, tag, box = 72) {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'icard ' + cls;
   b.innerHTML = `<span class="ic"></span><span class="nm">${name}</span><span class="rr">${sub}</span>${tag ? `<span class="tag">${tag}</span>` : ''}`;
-  b.querySelector('.ic').appendChild(icon(cv));
+  b.querySelector('.ic').appendChild(fitIcon(cv, box, box));
   return b;
+}
+function gearCard(g, onClick, box) {
+  const lv = S.gear[g.id], on = S.equip[g.slot] === g.id;
+  const b = card(`r${g.r}${lv ? '' : ' locked'}${on ? ' on' : ''}${sel && sel.id === g.id ? ' sel' : ''}`, gearIcon(g), lv ? g.name : '???', lv ? `${RAR[g.r].name} · Lv.${lv}` : RAR[g.r].name, on ? '장착중' : '', box);
+  b.addEventListener('click', onClick);
+  return b;
+}
+function skillCard(s, onClick, box) {
+  const lv = S.skills[s.id], on = S.main === s.id;
+  const b = card(`r${s.r}${lv ? '' : ' locked'}${on ? ' on' : ''}${sel && sel.id === s.id ? ' sel' : ''}`, skillIcon(s.id), lv ? s.name : '???', lv ? `${rarName(s)} · Lv.${lv}` : RAR[s.r].name, on ? '장착 중' : '', box);
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// ── 내 옷장 ──
+function renderCloset() {
+  $$('#subtabs button').forEach(b => b.classList.toggle('on', b.dataset.slot === S.slot));
+  const grid = $('#closet-grid'); grid.innerHTML = '';
+  GEAR.filter(g => g.slot === S.slot).forEach(g => grid.appendChild(gearCard(g, () => {
+    sel = { t: 'gear', id: g.id };
+    if (!S.gear[g.id]) { SFX.error(); renderAll(); return; }
+    if (S.equip[g.slot] !== g.id) toggleGear(g); else { SFX.click(); renderAll(); }
+  })));
 }
 
 // ── 공격 테스트 ──
@@ -123,21 +147,16 @@ function renderAttack() {
   const sk = SKILL_BY_ID[S.main];
   const chip = $('#atk-chip'); chip.className = 'chip r' + sk.r; chip.innerHTML = `<i></i>${sk.name}`;
   const grid = $('#skill-grid'); grid.innerHTML = '';
-  SKILLS.forEach(s => {
-    const lv = S.skills[s.id], on = S.main === s.id;
-    const b = card(`r${s.r}${lv ? '' : ' locked'}${on ? ' on' : ''}${sel && sel.id === s.id ? ' sel' : ''}`, skillIcon(s.id), lv ? s.name : '???', lv ? `${rarName(s)} · Lv.${lv}` : RAR[s.r].name, on ? '장착 중' : '');
-    b.addEventListener('click', () => {
-      sel = { t: 'skill', id: s.id };
-      if (!lv) { SFX.error(); renderAll(); return; }
-      if (!on) equipSkill(s.id); else { SFX.click(); renderAll(); }
-    });
-    grid.appendChild(b);
-  });
+  SKILLS.forEach(s => grid.appendChild(skillCard(s, () => {
+    sel = { t: 'skill', id: s.id };
+    if (!S.skills[s.id]) { SFX.error(); renderAll(); return; }
+    if (S.main !== s.id) equipSkill(s.id); else { SFX.click(); renderAll(); }
+  }, 56)));
 }
-function showBanner(sk) {
+function showBanner(sk, sub) {
   const b = $('#banner');
-  b.className = 'banner r' + sk.r;
-  b.innerHTML = `<small>${rarName(sk)}</small>${sk.name}`;
+  b.className = 'banner r' + (sub ? 4 : sk.r);
+  b.innerHTML = `<small>${sub || rarName(sk)}</small>${sk.name}`;
   void b.offsetWidth; b.classList.add('show');
 }
 function startCd(sk) { cdMax = cd = Math.max(0.3, sk.cd * (1 - stats().cdr / 100)); }
@@ -149,37 +168,34 @@ function attack() {
 function critical() {
   if (cd > 0 || E.player.busy) return;
   const main = SKILL_BY_ID[S.main];
-  if (main.basic) {                       // 기본 공격이면 크리티컬 공격 기술로
-    const sk = SKILL_BY_ID.critical;
-    startCd(sk); E.cast(sk, S.skills.critical || 1); showBanner(sk);
-    return;
-  }
-  startCd(main);                          // 다른 스킬은 모든 타격이 치명타
-  E.critMode(3.6);
-  E.flash('#fff3c0', 0.15, 0.6); SFX.clang();
-  { const t = E.target(); critText(t.x, t.top - 30); }
+  if (main.basic) { const sk = SKILL_BY_ID.critical; startCd(sk); E.cast(sk, S.skills.critical || 1); showBanner(sk); return; }
+  startCd(main);
+  E.critMode(3.6); E.flash('#fff3c0', 0.15, 0.6); SFX.clang();
+  { const t = E.target(); critText(t.x, t.top - 20); }
   E.cast(main, S.skills[main.id] || 1);
-  const b = $('#banner'); b.className = 'banner r4'; b.innerHTML = `<small>크리티컬</small>${main.name}`; void b.offsetWidth; b.classList.add('show');
+  showBanner(main, '크리티컬');
 }
 E.onTick = dt => {
   if (cd > 0) cd = Math.max(0, cd - dt);
   const w = (cd > 0 ? cd / cdMax * 100 : 0).toFixed(1) + '%';
-  document.querySelectorAll('.abtn').forEach(b => {
-    const f = b.firstElementChild; if (f.style.width !== w) f.style.width = w;
-    b.classList.toggle('cool', cd > 0);
-  });
+  $$('.abtn').forEach(b => { const f = b.firstElementChild; if (f.style.width !== w) f.style.width = w; b.classList.toggle('cool', cd > 0); });
   autoGap -= dt;
-  if ($('#auto').checked && cd <= 0 && autoGap <= 0 && E.alive() && !E.G.frozen && !E.player.busy && S.tab === 'attack') { autoGap = 0.4; attack(); }
+  if ($('#auto').checked && cd <= 0 && autoGap <= 0 && E.alive() && !E.G.frozen && !E.player.busy && S.view === 'char' && S.tab === 'attack') { autoGap = 0.4; attack(); }
 };
-E.onKill = gems => setGems(S.gems + gems);
+E.onKill = (gems, lv) => {
+  const got = Math.round(gems * (1 + stats().gem / 100));
+  setGems(S.gems + got);
+  addLog('🟢', `${lv % 5 === 0 ? '킹 슬라임' : '슬라임'} Lv.${lv} 처치 · 보석 +${got.toLocaleString()}`, lv % 5 === 0 ? 4 : 0);
+};
 E.onSlime = s => {
   $('#slime-name').innerHTML = `${s.king ? '👑 킹 ' : SLIME_COLORS[(s.lv - 1) % 6].name + ' '}슬라임 <b>Lv.${s.lv}</b>`;
   S.lv = s.lv; save();
+  $('#prof-sub').textContent = `슬라임 Lv.${S.lv} 사냥 중`;
 };
 E.stats = stats;
 E.startLevel = S.lv;
 
-// ── 뽑기 (장비 / 스킬) ──
+// ── 뽑기 ──
 function renderBoxes(kind) {
   const wrap = $(kind === 'skill' ? '#skill-boxes' : '#gear-boxes'); wrap.innerHTML = '';
   const pool = kind === 'skill' ? GACHA_SKILLS : GEAR;
@@ -193,7 +209,7 @@ function renderBoxes(kind) {
     el.innerHTML = `<div class="bimg"></div>
       <div class="binfo"><div class="bt"><b>${name}</b><span class="pill">모은 ${kind === 'skill' ? '스킬' : '장비'} ${ownCount(pool)}/${pool.length}</span></div><div class="bar">${bar}</div><div class="rates">${rates}</div></div>
       <div class="bbtns"><button class="btn primary p1" type="button">${kind === 'skill' ? '열기' : '뽑기'} <i class="gem"></i>${b.cost.toLocaleString()}</button><button class="btn outline p10" type="button">10회 <i class="gem"></i>${(b.cost * 10).toLocaleString()}</button></div>`;
-    el.querySelector('.bimg').appendChild(icon(cv));
+    cv.className = 'px-icon'; el.querySelector('.bimg').appendChild(cv);
     el.querySelector('.p1').addEventListener('click', () => pull(kind, b, 1));
     el.querySelector('.p10').addEventListener('click', () => pull(kind, b, 10));
     wrap.appendChild(el);
@@ -219,25 +235,68 @@ function pull(kind, box, count) {
     if (isNew && kind === 'gear' && !S.equip[item.slot]) S.equip[item.slot] = item.id;
     results.push({ kind, item, rar, isNew, lv: store[item.id] });
   }
+  const label = kind === 'skill' ? box.name.replace('상자', '스킬 상자') : box.name.replace('상자', '장비 상자');
+  results.slice().reverse().forEach(r => addLog(kind === 'skill' ? '✨' : '🎁', `${label}에서 <b>${r.item.name}</b>(${RAR[r.rar].name}) ${r.isNew ? '획득!' : '레벨 업 → Lv.' + r.lv}`, r.rar));
   save();
   Gacha.play(box, results, kind === 'skill' ? '스킬' : '장비');
 }
 Gacha.onClose = () => renderAll();
 
-// ── 탭 ──
-function setTab(t) {
-  S.tab = t; save();
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  document.querySelectorAll('.pane').forEach(p => { p.hidden = p.dataset.pane !== t; });
-  if (t === 'attack') fit();
+// ── 홈 · 기록 · 도감 ──
+function renderHome() {
+  $('#home-sub').innerHTML = `슬라임 Lv.${S.lv} 사냥 중 · 보유 보석 <i class="gem"></i><b>${S.gems.toLocaleString()}</b>`;
+  $('#home-stats').innerHTML = statsHTML();
+  const rows = [['스킬', GACHA_SKILLS], ...SLOTS.map(s => [SLOT_NAME[s], GEAR.filter(g => g.slot === s)])];
+  $('#home-prog').innerHTML = rows.map(([n, list]) => { const o = ownCount(list); return `<div class="prog-row"><span>${n}</span><span class="pb"><i style="width:${o / list.length * 100}%"></i></span><span>${o}/${list.length}</span></div>`; }).join('');
+  $('#home-log').innerHTML = logHTML(S.log.slice(0, 6));
 }
-function renderAll() { refreshPlayer(); renderDetail(); renderCloset(); renderAttack(); renderBoxes('gear'); renderBoxes('skill'); }
+function renderLog() { $('#log-list').innerHTML = logHTML(S.log); $('#log-count').textContent = `${S.log.length}개`; }
+function renderDex() {
+  const d = $('#dex'); d.innerHTML = '';
+  const total = GACHA_SKILLS.length + GEAR.length, own = ownCount(GACHA_SKILLS) + ownCount(GEAR);
+  d.insertAdjacentHTML('beforeend', `<h3 class="ch">도감 <small>수집률 ${Math.round(own / total * 100)}% · ${own}/${total}</small></h3>`);
+  const sec = (title, list, mk) => {
+    const s = document.createElement('div'); s.className = 'dex-sec';
+    s.innerHTML = `<h4>${title} <small>${ownCount(list)}/${list.length}</small></h4><div class="igrid"></div>`;
+    const g = s.querySelector('.igrid'); list.forEach(x => g.appendChild(mk(x))); d.appendChild(s);
+  };
+  sec('스킬', SKILLS.filter(s => !s.basic), s => skillCard(s, () => { SFX.click(); sel = { t: 'skill', id: s.id }; go('attack'); }, 48));
+  SLOTS.forEach(slot => sec(SLOT_NAME[slot], GEAR.filter(g => g.slot === slot), g => gearCard(g, () => { SFX.click(); sel = { t: 'gear', id: g.id }; S.slot = slot; go('closet'); }, 56)));
+}
+
+// ── 이동 ──
+function go(target) {
+  if (['attack', 'closet', 'gear'].includes(target)) { S.view = 'char'; S.tab = target; } else S.view = target;
+  save(); applyNav();
+  if (isMobile()) $('#shell').classList.remove('open');
+  window.scrollTo({ top: 0 });
+}
+function applyNav() {
+  const key = S.view === 'char' ? S.tab : S.view;
+  $$('.view').forEach(v => { v.hidden = v.dataset.view !== S.view; });
+  $$('.snav [data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === key));
+  $$('#toptabs [data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === S.view));
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
+  $$('.pane').forEach(p => { p.hidden = p.dataset.pane !== S.tab; });
+  renderAll();
+  if (S.view === 'char' && S.tab === 'attack') fit();
+}
+function renderAll() {
+  refreshPlayer(); renderDetail(); renderCloset(); renderAttack(); renderBoxes('gear'); renderBoxes('skill');
+  if (S.view === 'home') renderHome();
+  if (S.view === 'log') renderLog();
+  if (S.view === 'dex') renderDex();
+}
 function fit() {
   const cv = $('#game'), w = $('#arena').clientWidth;
   if (!w) return;
   let s = w / W;
   if (s >= 2 && Math.floor(s) / s > 0.94) s = Math.floor(s);
   cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
+}
+function setMenu() {
+  $('#shell').classList.toggle('collapsed', !S.menu);
+  $('#btn-menu span').textContent = isMobile() ? '메뉴' : S.menu ? '메뉴 접기' : '메뉴 펼치기';
 }
 
 // ── 시작 ──
@@ -247,18 +306,26 @@ function fit() {
   document.documentElement.style.setProperty('--gem', `url(${cv.toDataURL()})`);
 })();
 Gacha.init();
-setTab(S.tab);
-renderAll();
+setMenu();
+applyNav();
 setGems(S.gems);
 E.start($('#game'));
-fit(); window.addEventListener('resize', fit);
+fit();
+window.addEventListener('resize', () => { fit(); setMenu(); });
 
-document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { SFX.tab(); setTab(b.dataset.tab); }));
-document.querySelectorAll('#subtabs button').forEach(b => b.addEventListener('click', () => { SFX.tab(); S.slot = b.dataset.slot; save(); renderCloset(); }));
+$$('[data-go]').forEach(b => b.addEventListener('click', () => { SFX.tab(); go(b.dataset.go === 'char' ? S.tab : b.dataset.go); }));
+$$('#tabs button').forEach(b => b.addEventListener('click', () => { SFX.tab(); go(b.dataset.tab); }));
+$$('#subtabs button').forEach(b => b.addEventListener('click', () => { SFX.tab(); S.slot = b.dataset.slot; save(); renderCloset(); }));
+$('#btn-menu').addEventListener('click', () => {
+  SFX.click();
+  if (isMobile()) $('#shell').classList.toggle('open');
+  else { S.menu = !S.menu; save(); setMenu(); setTimeout(fit, 0); }
+});
+$('#scrim').addEventListener('click', () => $('#shell').classList.remove('open'));
 $('#btn-atk').addEventListener('click', attack);
 $('#btn-crit').addEventListener('click', critical);
 window.addEventListener('keydown', e => {
-  if (e.repeat || !$('#gacha-ov').hidden || S.tab !== 'attack') return;
+  if (e.repeat || !$('#gacha-ov').hidden || S.view !== 'char' || S.tab !== 'attack') return;
   if (e.target.closest && e.target.closest('input, textarea')) return;
   if (e.key === ' ') { e.preventDefault(); attack(); }
   else if (e.key === 'c' || e.key === 'C') critical();
@@ -267,13 +334,13 @@ $('#btn-gems').addEventListener('click', () => { SFX.coin(); setGems(S.gems + 10
 $('#btn-unlock').addEventListener('click', () => {
   SKILLS.forEach(s => { if (!S.skills[s.id]) S.skills[s.id] = 1; });
   GEAR.forEach(g => { if (!S.gear[g.id]) S.gear[g.id] = 1; });
+  addLog('🔓', '테스트용으로 모든 스킬과 장비를 열었어요');
   save(); SFX.open(3); renderAll(); toast('모든 스킬과 장비를 열었어요');
 });
 const muteBtn = $('#btn-mute');
 const setMuteLabel = () => { muteBtn.textContent = SFX.muted ? '🔇 소리 꺼짐' : '🔊 소리'; };
 setMuteLabel();
 muteBtn.addEventListener('click', () => { SFX.toggle(); setMuteLabel(); SFX.click(); });
-// 초기화: 한 번 더 눌러야 실행
 const resetBtn = $('#btn-reset');
 let resetArm = 0;
 resetBtn.addEventListener('click', () => {

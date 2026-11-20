@@ -1,5 +1,5 @@
 // ───────── 전투 엔진: 루프 · 파티클 · 이펙트 · 슬라임 · 플레이어 ─────────
-const W = 256, H = 144, GROUND = 112;
+const W = 320, H = 180, GROUND = 142;
 let ADD = 'lighter'; // 밝은 배경에선 일반 합성, 어두워질 때만 가산 합성
 const FIRE = ['#ffffff', '#fff3a0', '#ffd23f', '#ff8a1f', '#e8401c', '#a8261a', '#4a2a2a'];
 const SMOKE = ['#7a7088', '#5a5068', '#463e54', '#342c40'];
@@ -22,8 +22,8 @@ const E = (() => {
     dark: 0, darkTo: 0, darkHold: 0, tintC: '#000', tintA: 0, tintTo: 0, tintHold: 0,
     invert: 0, invertTo: 0, frozen: false, critUntil: 0, hitstop: 0, lastHitSfx: 0, fly: 0, gearT: 0,
   };
-  const player = { x: 62, homeX: 62, y: GROUND, cast: 0, castCol: '#fff', castR: 0, sprite: null, hide: false, swing: null, crouch: 0, dash: 0, busy: false };
-  const slime = { x: 194, lv: 1, hp: 1, max: 1, ghost: 1, bw: 30, bh: 22, sx: 1, sy: 1, kx: 0, flash: 0, hurt: 0,
+  const player = { x: 84, homeX: 84, y: GROUND, cast: 0, castCol: '#fff', castR: 0, sprite: null, hide: false, swing: null, crouch: 0, dash: 0, busy: false };
+  const slime = { x: 236, lv: 1, hp: 1, max: 1, ghost: 1, bw: 30, bh: 22, sx: 1, sy: 1, kx: 0, flash: 0, hurt: 0,
     dead: true, respawn: 0, oy: 0, vy: 0, frozen: 0, poison: 0, burn: 0, king: false, col: SLIME_COLORS[0], hop: 2 };
   const clouds = Array.from({ length: 5 }, (_, i) => ({ x: i * 60 + rnd(0, 30), y: rnd(8, 40), s: rnd(0.6, 1.2), v: rnd(2, 5) }));
 
@@ -86,8 +86,8 @@ const E = (() => {
 
   // ── 위치 ──
   const swordAng = () => player.swing != null ? player.swing : -0.5;
-  const grip = () => ({ x: player.x + 4, y: player.y - 9 });
-  const hand = () => ({ x: player.x + 9, y: player.y - 15 });
+  const grip = () => ({ x: player.x + 9, y: player.y - 14 });
+  const hand = () => ({ x: player.x + 9, y: player.y - 16 });
   const target = () => ({ x: slime.x + slime.kx, y: GROUND - slime.bh * 0.45 + slime.oy, top: GROUND - slime.bh + slime.oy });
   const alive = () => !slime.dead && slime.oy > -3;
 
@@ -99,7 +99,7 @@ const E = (() => {
     });
     slime.max = Math.round(600 * Math.pow(1.3, lv - 1) * (slime.king ? 2.5 : 1));
     slime.hp = slime.ghost = slime.max;
-    slime.bw = slime.king ? 40 : 30; slime.bh = slime.king ? 29 : 22;
+    slime.bw = slime.king ? 50 : 38; slime.bh = slime.king ? 36 : 28;
     E.onSlime && E.onSlime(slime);
   }
   function killSlime() {
@@ -115,7 +115,7 @@ const E = (() => {
     if (!alive()) return 0;
     const st = E.stats ? E.stats() : { atk: 0, crit: 5 };
     const crit = o.crit || G.t < G.critUntil || Math.random() < st.crit / 100;
-    const dmg = Math.max(1, Math.round(base * (1 + st.atk / 100) * rnd(0.9, 1.1) * (crit ? 2 : 1)));
+    const dmg = Math.max(1, Math.round(base * (1 + st.atk / 100) * rnd(0.9, 1.1) * (crit ? 2 + (st.critDmg || 0) / 100 : 1)));
     slime.hp -= dmg; slime.flash = 0.06; slime.hurt = 0.35;
     slime.kx = Math.min(16, slime.kx + (o.kb ?? 2) * (crit ? 1.5 : 1));
     slime.sx = 1.22; slime.sy = 0.82;
@@ -197,10 +197,8 @@ const E = (() => {
     G.gearT -= dt;
     if (G.gearT <= 0 && E.gear && !player.hide) {
       G.gearT = 0.12;
-      const g = E.gear;
-      if (g.head >= 4 && Math.random() < 0.6) part({ x: player.x + rnd(-6, 7), y: player.y - rnd(26, 34), vx: 0, vy: -8, life: 0.6, cols: g.head === 5 ? ['#ffffff', '#8ef6ff', '#ff7ad9'] : ['#ffffff', '#fff3b0', '#ffd23f'], add: true });
-      if (g.body >= 4 && Math.random() < 0.6) part({ x: player.x + rnd(-8, 8), y: player.y - rnd(8, 18), vx: rnd(-5, 5), vy: -10, life: 0.7, cols: g.body === 5 ? ['#ffffff', '#ff9af0', '#8c6cf0'] : ['#ffffff', '#ffe066'], add: true });
-      if (g.legs >= 4) part({ x: player.x + rnd(-5, 5), y: GROUND - 1, vx: rnd(-6, 6), vy: rnd(-10, -3), life: 0.6, cols: g.legs === 5 ? ['#ffffff', '#8ef6ff', '#3aa0d8'] : ['#fff3b0', '#ffd23f', '#b8860b'], add: true });
+      const r = E.gear.top;
+      if (r >= 4 && Math.random() < 0.7) part({ x: player.x + rnd(-14, 14), y: player.y - rnd(4, 52), vx: rnd(-5, 5), vy: -12, life: 0.7, cols: r === 5 ? ['#ffffff', '#8ef6ff', '#ff9af0'] : ['#ffffff', '#fff3b0', '#ffd23f'] });
     }
 
     // 슬라임
@@ -263,7 +261,7 @@ const E = (() => {
       c.globalAlpha = 1;
     }
     // HP 바
-    const bw = 40, bx = Math.round(slime.x - bw / 2), by = Math.round(GROUND - slime.bh - (slime.king ? 16 : 10) + Math.min(0, slime.oy));
+    const bw = 46, bx = Math.round(slime.x - bw / 2), by = Math.round(GROUND - slime.bh - (slime.king ? 18 : 12) + Math.min(0, slime.oy));
     PX.rect(c, bx - 1, by - 1, bw + 2, 5, '#140c1c');
     PX.rect(c, bx, by, bw, 3, '#3a1020');
     PX.rect(c, bx, by, Math.round(bw * slime.ghost / slime.max), 3, '#ffffff');
@@ -274,20 +272,20 @@ const E = (() => {
   const silCache = { src: null, map: {} };
   function sil(col) {
     if (silCache.src !== player.sprite) { silCache.src = player.sprite; silCache.map = {}; }
-    if (!silCache.map[col]) { const [cv, g] = PX.mk(24, 34); g.drawImage(player.sprite, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, 24, 34); silCache.map[col] = cv; }
+    if (!silCache.map[col]) { const [cv, g] = PX.mk(AV_W, AV_H); g.drawImage(player.sprite, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, AV_W, AV_H); silCache.map[col] = cv; }
     return silCache.map[col];
   }
   function afterimage(col, a = 0.5, dur = 0.25) {
-    const x = Math.round(player.x - 12), y = Math.round(player.y - 31);
+    const x = Math.round(player.x - 24), y = Math.round(player.y - AV_FOOT);
     fx({ layer: 1, dur, draw(c) { c.globalAlpha = a * (1 - this.t / dur); c.drawImage(sil(col), x, y); } });
   }
   function drawPlayer() {
     if (player.hide) return;
     const bob = Math.sin(G.t * 3) > 0 ? 0 : 1;
     const hop = player.cast > 0.3 ? 2 : player.cast > 0.2 ? 1 : 0;
-    c.globalAlpha = 0.35; PX.ellipse(c, player.x, GROUND + 1, 8, 2, '#000'); c.globalAlpha = 1;
+    c.globalAlpha = 0.3; PX.ellipse(c, player.x, GROUND + 1, 12, 2.5, '#000'); c.globalAlpha = 1;
     if (player.cast > 0) {
-      const a = Math.min(1, player.cast * 3), R = 13 + player.castR * 2;
+      const a = Math.min(1, player.cast * 3), R = 17 + player.castR * 2;
       c.globalAlpha = a;
       PX.ring(c, player.x, GROUND, R, player.castCol, 0.25);
       PX.ring(c, player.x, GROUND, R - 4, '#ffffff', 0.25);
@@ -295,7 +293,7 @@ const E = (() => {
       for (let i = 0; i < nn; i++) { const an = G.t * 4 + i * Math.PI * 2 / nn; PX.rect(c, player.x + Math.cos(an) * (R - 2), GROUND + Math.sin(an) * (R - 2) * 0.25, 1, 1, '#ffffff'); }
       c.globalAlpha = 1;
     }
-    c.drawImage(player.sprite, Math.round(player.x - 12), Math.round(player.y - 31 - bob - hop + (player.crouch ? 1 : 0)));
+    c.drawImage(player.sprite, Math.round(player.x - 24), Math.round(player.y - AV_FOOT - bob - hop + (player.crouch ? 1 : 0)));
     if (player.cast > 0.15) {
       const h = hand();
       c.globalCompositeOperation = ADD;

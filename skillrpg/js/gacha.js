@@ -144,7 +144,7 @@ const Gacha = (() => {
       const el = document.createElement('div');
       el.className = `rcard r${res.rar}`;
       const icon = res.kind === 'skill' ? skillIcon(res.item.id) : gearIcon(res.item);
-      icon.className = 'px-icon';
+      fitIcon(icon, many ? 56 : 112);
       const kind = res.kind === 'skill' ? '스킬' : SLOT_NAME[res.item.slot];
       el.innerHTML = `<div class="rc-rar">${RAR[res.rar].name} · ${kind}</div><div class="rc-icon"></div><div class="rc-name">${res.item.name}</div><div class="rc-tag ${res.isNew ? 'new' : ''}">${res.isNew ? 'NEW!' : 'Lv.' + res.lv + ' ▲'}</div>`;
       el.querySelector('.rc-icon').appendChild(icon);

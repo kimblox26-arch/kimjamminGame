@@ -638,7 +638,7 @@ SKILL_FX.timestop = k => {
         if (rel) return;
         c.globalAlpha = i === ghosts.length - 1 ? 0.95 : 0.3;
         c.save(); c.translate(Math.round(g.x), 0); if (g.side > 0) c.scale(-1, 1);
-        c.drawImage(E.player.sprite, -12, GROUND - 31); c.restore();
+        c.drawImage(E.player.sprite, -24, GROUND - AV_FOOT); c.restore();
       });
       slashes.forEach(s => {
         const l = s.len * Math.min(1, s.t * 12), ca = Math.cos(s.an), sa = Math.sin(s.an);
@@ -672,7 +672,7 @@ function star(x, y, col = '#ffd23f', dur = 0.35, size = 8) {
 }
 SKILL_FX.attack = k => {
   const P = E.player; if (P.busy) return; P.busy = true;
-  const home = P.homeX, tx = Math.max(home, E.slime.x - 26);
+  const home = P.homeX, tx = Math.max(home, E.slime.x - 34);
   SFX.whoosh(0.15, 1500);
   let hit = false, gt = 0;
   E.fx({
@@ -717,7 +717,7 @@ function critImpact(k) {
 }
 SKILL_FX.critical = k => {
   const P = E.player; if (P.busy) return; P.busy = true;
-  const home = P.homeX, tx = Math.max(home, E.slime.x - 26);
+  const home = P.homeX, tx = Math.max(home, E.slime.x - 34);
   SFX.charge(0.4); E.darken(0.5, 1.1);
   let hit = false, gt = 0, glint = false;
   E.fx({
