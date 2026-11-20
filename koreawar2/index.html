@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>한국전쟁 2</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1b1d16;color:#eee;font-family:system-ui,"Malgun Gothic",sans-serif;user-select:none;-webkit-user-select:none;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+#top{display:flex;gap:12px;align-items:center;padding:6px 10px;background:#2b2e22;font-size:14px;flex-wrap:wrap}
+#top b{color:#ffd54a}
+#cv{flex:1 1 0;min-height:0;width:100%;display:block;background:#6b7a4a;touch-action:none}
+#bar{display:flex;gap:6px;padding:6px;background:#2b2e22;overflow-x:auto}
+.btn{flex:0 0 auto;min-width:78px;padding:6px 8px;border:2px solid #556;border-radius:8px;background:#3a3f2c;color:#eee;font-size:13px;text-align:center;cursor:pointer;position:relative}
+.btn small{display:block;color:#ffd54a}
+.btn.off{opacity:.45}
+.btn .cd{position:absolute;left:0;bottom:0;height:4px;background:#ffd54a;border-radius:0 0 6px 6px}
+.btn.sp{border-color:#a33}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;text-align:center;padding:16px}
+#ov h1{font-size:34px;color:#ffd54a}
+#ov p{max-width:520px;line-height:1.5;color:#ccc}
+#ov button{padding:10px 22px;font-size:17px;border-radius:8px;border:0;background:#c9a227;color:#111;font-weight:700;cursor:pointer;margin:3px}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div id="top">
+  <span id="stg"></span>
+  <span>자금 <b id="money">0</b></span>
+  <span>수입Lv <b id="inc">1</b></span>
+  <span>아군기지 <b id="hp1"></b></span>
+  <span>적기지 <b id="hp2"></b></span>
+  <span id="msg" style="color:#9fd"></span>
+</div>
+<canvas id="cv"></canvas>
+<div id="bar"></div>
+<div id="ov"></div>
+<script>
+// ===== 데이터 =====
+const UNITS={
+ rifle:{n:'소총수',c:50,hp:60,dmg:8,rng:90,spd:38,rate:.9,cd:1.2,w:10,h:22},
+ mg:{n:'기관총',c:110,hp:80,dmg:4,rng:120,spd:30,rate:.18,cd:3,w:12,h:20},
+ baz:{n:'바주카',c:140,hp:70,dmg:40,rng:110,spd:34,rate:2.2,cd:4,w:11,h:22,anti:2.5},
+ snp:{n:'저격수',c:170,hp:45,dmg:45,rng:260,spd:30,rate:2.6,cd:5,w:10,h:22},
+ med:{n:'위생병',c:90,hp:55,dmg:-6,rng:70,spd:36,rate:1,cd:4,w:10,h:22,heal:1},
+ tank:{n:'M4 전차',c:450,hp:700,dmg:55,rng:170,spd:22,rate:2,cd:12,w:46,h:24,armor:1},
+ art:{n:'곡사포',c:380,hp:120,dmg:70,rng:340,spd:14,rate:4,cd:10,w:30,h:18,splash:50},
+};
+const EUNITS={rifle:1,mg:1,baz:1,snp:1,tank:1,art:1};
+const STAGES=[
+ {n:'1. 낙동강 방어선',d:'1950년 8월. 밀려난 국군과 유엔군이 낙동강에서 최후 방어선을 지킵니다.',diff:.8,ebase:1500,pool:['rifle','rifle','mg','tank'],sky:'#9ab'},
+ {n:'2. 인천상륙작전',d:'1950년 9월 15일. 적 후방 인천에 상륙해 교두보를 확보하세요.',diff:1,ebase:1800,pool:['rifle','mg','baz','snp'],sky:'#8aa4b8'},
+ {n:'3. 서울 수복',d:'1950년 9월 28일. 시가전을 뚫고 서울을 되찾으세요.',diff:1.2,ebase:2200,pool:['rifle','mg','baz','snp','tank'],sky:'#a99'},
+ {n:'4. 장진호 전투',d:'1950년 11월. 혹한 속 대규모 병력에 포위당했습니다. 버티고 돌파하세요.',diff:1.5,ebase:2600,pool:['rifle','rifle','rifle','mg','art','baz'],sky:'#cde',snow:1},
+ {n:'5. 고지전',d:'1953년. 휴전선을 두고 벌어지는 마지막 고지 쟁탈전.',diff:1.8,ebase:3200,pool:['rifle','mg','baz','snp','tank','art'],sky:'#b98'},
+];
+const SPECIAL={
+ air:{n:'항공지원',c:300,cd:30,desc:'적 진영 폭격'},
+ arty:{n:'포병사격',c:200,cd:18,desc:'전선 포격'},
+};
+// ===== 상태 =====
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let W,H,G,WORLD=2000,cam=0,S,last=0,stageIdx=0,unlocked=1;
+try{unlocked=+localStorage.getItem('kw2u')||1}catch(e){}
+function resize(){W=cv.width=cv.clientWidth;H=cv.height=cv.clientHeight;G=H-40}
+addEventListener('resize',resize);
+const $=id=>document.getElementById(id);
+
+function newGame(i){
+ const st=STAGES[i];stageIdx=i;
+ S={st,t:0,money:200,incLv:1,units:[],fx:[],shells:[],p:{hp:2000,max:2000},e:{hp:st.ebase,max:st.ebase},
+  ecd:3,cds:{},over:false,planes:[]};
+ cam=0;buildBar();$('ov').classList.add('hide');
+}
+// ===== UI =====
+function buildBar(){
+ const b=$('bar');b.innerHTML='';
+ for(const k in UNITS){const u=UNITS[k];b.insertAdjacentHTML('beforeend',`<div class="btn" data-k="${k}">${u.n}<small>${u.c}</small><div class="cd"></div></div>`)}
+ for(const k in SPECIAL){const u=SPECIAL[k];b.insertAdjacentHTML('beforeend',`<div class="btn sp" data-k="${k}">${u.n}<small>${u.c}</small><div class="cd"></div></div>`)}
+ b.insertAdjacentHTML('beforeend',`<div class="btn" data-k="inc">수입 증가<small id="incc"></small></div>`);
+ b.insertAdjacentHTML('beforeend',`<div class="btn" data-k="fix">기지 수리<small>250</small></div>`);
+ b.querySelectorAll('.btn').forEach(e=>e.onclick=()=>act(e.dataset.k));
+}
+const incCost=()=>150*S.incLv;
+function say(t){$('msg').textContent=t;clearTimeout(say.t);say.t=setTimeout(()=>$('msg').textContent='',1500)}
+function act(k){
+ if(!S||S.over)return;
+ if(k==='inc'){if(S.incLv>=6)return say('최대 레벨');if(S.money<incCost())return say('자금 부족');S.money-=incCost();S.incLv++;return}
+ if(k==='fix'){if(S.money<250)return say('자금 부족');if(S.p.hp>=S.p.max)return;S.money-=250;S.p.hp=Math.min(S.p.max,S.p.hp+400);return}
+ const def=UNITS[k]||SPECIAL[k];
+ if((S.cds[k]||0)>0)return say('재사용 대기');
+ if(S.money<def.c)return say('자금 부족');
+ S.money-=def.c;S.cds[k]=def.cd;
+ if(UNITS[k])spawn(k,1);
+ else if(k==='air'){S.planes.push({x:-80,y:40,dropped:0})}
+ else if(k==='arty'){const front=frontX();for(let i=0;i<6;i++)S.shells.push({x:front+60+Math.random()*220,t:.4+i*.25,dmg:60})}
+}
+function frontX(){let f=150;for(const u of S.units)if(u.side===1)f=Math.max(f,u.x);return f}
+// ===== 유닛 =====
+function spawn(k,side,lvl=1){
+ const d=UNITS[k];
+ S.units.push({k,d,side,x:side===1?110:WORLD-110,y:G-Math.random()*14,hp:d.hp*lvl,max:d.hp*lvl,lvl,cool:0,anim:Math.random()*6,dead:0});
+}
+function enemyAI(dt){
+ S.ecd-=dt;
+ if(S.ecd<=0){
+  const st=S.st,tm=S.t;
+  const n=1+Math.floor(tm/45*st.diff);
+  const lvl=1+tm/240*st.diff;
+  for(let i=0;i<Math.min(n,4);i++){
+   const pool=st.pool.filter(k=>k!=='tank'&&k!=='art'||tm>40);
+   spawn(pool[Math.random()*pool.length|0],-1,lvl*.8);
+  }
+  S.ecd=Math.max(2.2,(6-tm/60)/st.diff);
+  if(tm>60&&Math.random()<.04*st.diff)for(let i=0;i<5;i++)S.shells.push({x:frontX()-100+Math.random()*200,t:.5+i*.3,dmg:45,enemy:1});
+ }
+}
+function update(dt){
+ S.t+=dt;
+ S.money+=dt*(8+S.incLv*7);
+ for(const k in S.cds)S.cds[k]=Math.max(0,S.cds[k]-dt);
+ enemyAI(dt);
+ const us=S.units;
+ for(const u of us){
+  if(u.dead){u.dead+=dt;continue}
+  u.cool-=dt;u.anim+=dt;
+  const d=u.d;
+  // 목표 탐색
+  let tgt=null,best=1e9;
+  if(d.heal){
+   for(const o of us)if(!o.dead&&o.side===u.side&&o!==u&&o.hp<o.max){const dd=Math.abs(o.x-u.x);if(dd<d.rng&&dd<best){best=dd;tgt=o}}
+  }else{
+   for(const o of us)if(!o.dead&&o.side!==u.side){const dd=(o.x-u.x)*u.side;if(dd>-10&&dd<best){best=dd;tgt=o}}
+  }
+  const baseX=u.side===1?WORLD-80:80;
+  const baseD=Math.abs(baseX-u.x);
+  let firing=false;
+  if(d.heal){
+   if(tgt&&u.cool<=0){tgt.hp=Math.min(tgt.max,tgt.hp-d.dmg*u.lvl);u.cool=d.rate;S.fx.push({x:tgt.x,y:tgt.y-30,t:0,type:'heal'})}
+   // 앞 아군 뒤를 따라감
+   let ally=null;for(const o of us)if(!o.dead&&o.side===u.side&&o!==u&&!o.d.heal&&(o.x-u.x)*u.side>0)ally=ally&&Math.abs(ally.x-u.x)<Math.abs(o.x-u.x)?ally:o;
+   if(!ally||Math.abs(ally.x-u.x)>50){let enemyNear=false;for(const o of us)if(!o.dead&&o.side!==u.side&&Math.abs(o.x-u.x)<120)enemyNear=true;if(!enemyNear)u.x+=d.spd*dt*u.side}
+  }else if(tgt&&best<=d.rng){firing=true;if(u.cool<=0)shoot(u,tgt)}
+  else if(baseD<=d.rng){firing=true;if(u.cool<=0){u.cool=d.rate;const b=u.side===1?S.e:S.p;b.hp-=d.dmg*u.lvl*(d.armor?1.5:1);S.fx.push({x:baseX,y:G-40-Math.random()*40,t:0,type:'boom'})}}
+  else u.x+=d.spd*dt*u.side;
+  u.firing=firing;
+  if(u.hp<=0){u.dead=.001;if(u.side===-1)S.money+=d.c*.35}
+ }
+ S.units=us.filter(u=>!u.dead||u.dead<1.5);
+ // 포탄
+ for(const s of S.shells){s.t-=dt;if(s.t<=0&&!s.done){s.done=1;S.fx.push({x:s.x,y:G,t:0,type:'big'});
+  for(const o of S.units)if(!o.dead&&(s.enemy?o.side===1:o.side===-1)&&Math.abs(o.x-s.x)<55)o.hp-=s.dmg*(o.d.armor?.6:1)}}
+ S.shells=S.shells.filter(s=>!s.done);
+ // 비행기
+ for(const p of S.planes){p.x+=420*dt;
+  if(p.x>frontX()+50&&p.dropped<8&&p.x>(frontX()+50+p.dropped*90)){p.dropped++;S.shells.push({x:p.x,t:.5,dmg:110})}}
+ S.planes=S.planes.filter(p=>p.x<WORLD+200);
+ S.fx.forEach(f=>f.t+=dt);S.fx=S.fx.filter(f=>f.t<.6);
+ if(S.e.hp<=0)end(true);else if(S.p.hp<=0)end(false);
+}
+function shoot(u,t){
+ const d=u.d;u.cool=d.rate*(.9+Math.random()*.2);
+ let dmg=d.dmg*u.lvl;
+ if(t.d.armor)dmg*=d.anti||(d.armor?1:.35);
+ if(d.splash){for(const o of S.units)if(!o.dead&&o.side!==u.side&&Math.abs(o.x-t.x)<d.splash)o.hp-=dmg*(o.d.armor?.7:1);S.fx.push({x:t.x,y:G,t:0,type:'big'})}
+ else{t.hp-=dmg;S.fx.push({x:t.x,y:t.y-12,t:0,type:'hit'})}
+ S.fx.push({x:u.x+u.side*(d.w/2+4),y:u.y-(d.armor?16:14),t:0,type:'flash'});
+}
+function end(win){
+ S.over=true;
+ if(win&&stageIdx+1>=unlocked){unlocked=Math.min(STAGES.length,stageIdx+2);try{localStorage.setItem('kw2u',unlocked)}catch(e){}}
+ const last=stageIdx===STAGES.length-1;
+ $('ov').innerHTML=win?`<h1>${last?'휴전 — 전선을 지켜냈다':'승리!'}</h1><p>${S.st.n} 클리어 (${Math.round(S.t)}초)</p>
+ ${last?'':`<button onclick="newGame(${stageIdx+1})">다음 작전</button>`}<button onclick="menu()">작전 선택</button>`
+ :`<h1>패배</h1><p>기지가 함락되었습니다.</p><button onclick="newGame(${stageIdx})">다시 도전</button><button onclick="menu()">작전 선택</button>`;
+ $('ov').classList.remove('hide');
+}
+// ===== 그리기 =====
+function draw(){
+ const st=S.st;
+ ctx.fillStyle=st.sky;ctx.fillRect(0,0,W,H);
+ ctx.save();ctx.translate(-cam,0);
+ // 산
+ ctx.fillStyle=st.snow?'#e8eef2':'#6f7c55';
+ ctx.beginPath();ctx.moveTo(0,G);for(let x=0;x<=WORLD;x+=80)ctx.lineTo(x,G-60-Math.sin(x*.004)*40-Math.sin(x*.013)*20);ctx.lineTo(WORLD,G);ctx.fill();
+ ctx.fillStyle=st.snow?'#fff':'#5a6b3a';ctx.fillRect(0,G,WORLD,H-G);
+ // 기지
+ drawBase(80,'#3c5a99','태극기',S.p);drawBase(WORLD-80,'#8a2a2a','적',S.e);
+ // 유닛
+ for(const u of [...S.units].sort((a,b)=>a.y-b.y))drawUnit(u);
+ // 비행기
+ ctx.fillStyle='#334';for(const p of S.planes){ctx.fillRect(p.x-30,p.y,60,8);ctx.fillRect(p.x-6,p.y-10,10,28);ctx.fillRect(p.x-30,p.y-6,6,12)}
+ // 포탄 경고
+ for(const s of S.shells){ctx.strokeStyle=s.enemy?'#f44':'#ff0';ctx.beginPath();ctx.arc(s.x,G,8+s.t*20,0,7);ctx.stroke()}
+ // 효과
+ for(const f of S.fx){const a=1-f.t/.6;ctx.globalAlpha=a;
+  if(f.type==='flash'){ctx.fillStyle='#ffea70';ctx.fillRect(f.x-3,f.y-2,6,4)}
+  else if(f.type==='hit'){ctx.fillStyle='#c22';ctx.fillRect(f.x-2,f.y,4,4)}
+  else if(f.type==='heal'){ctx.fillStyle='#4f4';ctx.font='bold 14px sans-serif';ctx.fillText('+',f.x,f.y-f.t*30)}
+  else{const r=(f.type==='big'?40:20)*(.4+f.t*1.5);ctx.fillStyle='#f80';ctx.beginPath();ctx.arc(f.x,f.y-r/2,r,0,7);ctx.fill();ctx.fillStyle='#555';ctx.beginPath();ctx.arc(f.x,f.y-r,r*.6,0,7);ctx.fill()}
+  ctx.globalAlpha=1}
+ if(st.snow){ctx.fillStyle='#fff';for(let i=0;i<120;i++){const x=(i*137+S.t*20)%WORLD,y=(i*71+S.t*60)%G;ctx.fillRect(x,y,2,2)}}
+ ctx.restore();
+ // 미니맵
+ ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(W-170,8,160,14);
+ for(const u of S.units)if(!u.dead){ctx.fillStyle=u.side===1?'#6af':'#f55';ctx.fillRect(W-170+u.x/WORLD*160,10,2,10)}
+ ctx.strokeStyle='#fff';ctx.strokeRect(W-170+cam/WORLD*160,8,W/WORLD*160,14);
+}
+function drawBase(x,col,label,b){
+ ctx.fillStyle='#555';ctx.fillRect(x-50,G-90,100,90);
+ ctx.fillStyle=col;ctx.fillRect(x-40,G-80,80,30);
+ ctx.fillStyle='#333';ctx.fillRect(x-2,G-150,4,60);
+ ctx.fillStyle=col;ctx.fillRect(x+2,G-150,34,22);
+ ctx.fillStyle='#200';ctx.fillRect(x-50,G-104,100,8);
+ ctx.fillStyle='#4c4';ctx.fillRect(x-50,G-104,100*Math.max(0,b.hp)/b.max,8);
+}
+function drawUnit(u){
+ const d=u.d,s=u.side,x=u.x,y=u.y;
+ ctx.save();ctx.translate(x,y);
+ if(u.dead){ctx.globalAlpha=Math.max(0,1-u.dead/1.5);ctx.rotate(-s*Math.PI/2*Math.min(1,u.dead*3))}
+ const body=s===1?'#556b2f':'#6b5a3a',helm=s===1?'#3e4f22':'#7a2020';
+ if(d.armor){
+  ctx.fillStyle=body;ctx.fillRect(-23,-18,46,14);ctx.fillRect(-12,-28,24,11);
+  ctx.fillStyle='#333';ctx.fillRect(-24,-6,48,7);ctx.fillRect(s*8,-25,s*28,4);
+  ctx.fillStyle=s===1?'#fff':'#e33';ctx.beginPath();ctx.arc(0,-22,3,0,7);ctx.fill();
+ }else if(d.splash){
+  ctx.fillStyle='#444';ctx.beginPath();ctx.arc(-6,-5,6,0,7);ctx.arc(8,-5,6,0,7);ctx.fill();
+  ctx.fillStyle=body;ctx.fillRect(-14,-14,26,8);ctx.save();ctx.translate(4,-12);ctx.rotate(-s*.5);ctx.fillRect(0,-2,s*26,4);ctx.restore();
+ }else{
+  const step=u.firing?0:Math.sin(u.anim*10)*4;
+  ctx.strokeStyle='#2a2a20';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(0,-8);ctx.lineTo(-step,0);ctx.moveTo(0,-8);ctx.lineTo(step,0);ctx.stroke();
+  ctx.fillStyle=body;ctx.fillRect(-4,-19,8,12);
+  ctx.fillStyle='#e0b890';ctx.beginPath();ctx.arc(0,-22,3.5,0,7);ctx.fill();
+  ctx.fillStyle=helm;ctx.beginPath();ctx.arc(0,-24,4.5,Math.PI,0);ctx.fill();
+  if(d.heal){ctx.fillStyle='#fff';ctx.fillRect(-3,-17,6,6);ctx.fillStyle='#d00';ctx.fillRect(-1,-16,2,4);ctx.fillRect(-2,-15,4,2)}
+  else{ctx.fillStyle='#222';const len=d.rng>200?18:d.anti?16:12;ctx.fillRect(s>0?0:-len,-16,len,d.anti?4:2)}
+ }
+ ctx.restore();
+ if(!u.dead&&u.hp<u.max){ctx.fillStyle='#300';ctx.fillRect(x-10,y-d.h-12,20,3);ctx.fillStyle=s===1?'#4c4':'#e44';ctx.fillRect(x-10,y-d.h-12,20*u.hp/u.max,3)}
+}
+function hud(){
+ $('stg').textContent=S.st.n;$('money').textContent=Math.floor(S.money);$('inc').textContent=S.incLv;
+ $('hp1').textContent=Math.max(0,Math.ceil(S.p.hp));$('hp2').textContent=Math.max(0,Math.ceil(S.e.hp));
+ document.querySelectorAll('#bar .btn').forEach(b=>{const k=b.dataset.k,d=UNITS[k]||SPECIAL[k];
+  if(k==='inc'){$('incc').textContent=S.incLv>=6?'MAX':incCost();b.classList.toggle('off',S.incLv>=6||S.money<incCost());return}
+  if(k==='fix'){b.classList.toggle('off',S.money<250);return}
+  b.classList.toggle('off',S.money<d.c||(S.cds[k]||0)>0);
+  b.querySelector('.cd').style.width=((S.cds[k]||0)/d.cd*100)+'%'});
+}
+// ===== 카메라 (드래그/키보드) =====
+let drag=null,keys={};
+cv.addEventListener('pointerdown',e=>drag={x:e.clientX,c:cam});
+addEventListener('pointermove',e=>{if(drag)cam=drag.c-(e.clientX-drag.x)});
+addEventListener('pointerup',()=>drag=null);
+cv.addEventListener('wheel',e=>{cam+=e.deltaY+e.deltaX;e.preventDefault()},{passive:false});
+addEventListener('keydown',e=>{keys[e.key]=1;const i='1234567'.indexOf(e.key);if(i>=0)act(Object.keys(UNITS)[i]);if(e.key==='q')act('air');if(e.key==='w')act('arty');if(e.key==='e')act('inc')});
+addEventListener('keyup',e=>keys[e.key]=0);
+function loop(ts){
+ const dt=Math.min(.05,(ts-last)/1000||0);last=ts;
+ if(S){
+  if(keys.ArrowLeft||keys.a)cam-=600*dt;if(keys.ArrowRight||keys.d)cam+=600*dt;
+  cam=Math.max(0,Math.min(WORLD-W,cam));
+  if(!S.over)update(dt);draw();hud();
+ }
+ requestAnimationFrame(loop);
+}
+function menu(){
+ S=null;ctx.fillStyle='#222';ctx.fillRect(0,0,W,H);
+ $('ov').innerHTML=`<h1>한국전쟁 2</h1><p>1950–1953. 병력을 투입해 전선을 밀어내고 적 기지를 파괴하세요.<br>화면을 드래그(또는 ←/→)해서 전장을 둘러보세요. 단축키 1~7: 유닛, Q: 항공지원, W: 포격, E: 수입.</p>`+
+  STAGES.map((s,i)=>`<button ${i>=unlocked?'disabled style="opacity:.4"':''} onclick="newGame(${i})" title="${s.d}">${s.n}${i>=unlocked?' 🔒':''}</button>`).join('<br>');
+ $('ov').classList.remove('hide');
+}
+resize();menu();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
