@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>카드 시세 스캐너</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">카드 시세 스캐너</div>
+    <div class="summary"><span id="sumCount">0장</span> · <b id="sumTotal">₩0</b></div>
+  </header>
+
+  <main class="cam" id="cam">
+    <video id="video" playsinline muted autoplay></video>
+    <div class="shade"></div>
+    <div class="guide" id="guide"><i></i><i></i><i></i><i></i></div>
+    <div class="hint" id="hint">카드 데이터를 불러오는 중…</div>
+
+    <div class="start" id="start">
+      <p>휴대폰 뒷면 카메라로 카드를 비추면<br>자동으로 인식해서 시세를 알려줘요.</p>
+      <button class="btn primary" id="startBtn" disabled>카메라 켜기</button>
+      <p class="small" id="loadInfo"></p>
+    </div>
+
+    <div class="result" id="result" hidden>
+      <img id="resImg" alt="">
+      <div class="info">
+        <div class="name" id="resName"></div>
+        <div class="meta" id="resMeta"></div>
+        <div class="price" id="resPrice"></div>
+      </div>
+      <button class="btn ghost" id="resWrong">아니에요</button>
+    </div>
+  </main>
+
+  <nav class="bar">
+    <button class="btn" id="pauseBtn" disabled>일시정지</button>
+    <button class="btn primary" id="listBtn">목록 보기</button>
+    <button class="btn" id="searchBtn">직접 검색</button>
+  </nav>
+
+  <!-- 스캔 목록 -->
+  <section class="sheet" id="listSheet" hidden>
+    <div class="sheet-head">
+      <button class="btn ghost" data-close>닫기</button>
+      <div class="title"><span id="listCount">0장</span><b id="listTotal">₩0</b></div>
+      <button class="btn ghost" id="selectBtn">선택</button>
+    </div>
+    <div class="select-bar" id="selectBar" hidden>
+      <button class="btn" id="selAll">전체 선택</button>
+      <span id="selInfo">0장 선택</span>
+      <button class="btn danger" id="selDel">삭제</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="empty" id="emptyMsg">아직 스캔한 카드가 없어요.</p>
+    <p class="note" id="priceNote"></p>
+  </section>
+
+  <!-- 직접 검색 -->
+  <section class="sheet" id="searchSheet" hidden>
+    <div class="sheet-head">
+      <button class="btn ghost" data-close>닫기</button>
+      <div class="title">직접 검색</div>
+      <span></span>
+    </div>
+    <input id="searchInput" type="search" placeholder="영어 이름(Pikachu) 또는 번호(025/165)" autocomplete="off">
+    <div class="rows" id="searchRows"></div>
+  </section>
+
+  <!-- 카드 상세 -->
+  <section class="sheet" id="detailSheet" hidden>
+    <div class="sheet-head">
+      <button class="btn ghost" data-close>닫기</button>
+      <div class="title">카드 정보</div>
+      <button class="btn danger ghost" id="detDel">삭제</button>
+    </div>
+    <div class="detail">
+      <img id="detImg" alt="">
+      <div>
+        <h2 id="detName"></h2>
+        <div class="meta" id="detMeta"></div>
+        <div class="big-price" id="detPrice"></div>
+        <label>종류
+          <select id="detVariant"></select>
+        </label>
+        <label>카드 상태
+          <select id="detCond"></select>
+        </label>
+        <a id="detLink" target="_blank" rel="noopener">TCGplayer 시세 보기 ↗</a>
+      </div>
+    </div>
+    <h3>혹시 이 카드인가요?</h3>
+    <div class="rows" id="detAlts"></div>
+  </section>
+
+  <canvas id="work" hidden></canvas>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

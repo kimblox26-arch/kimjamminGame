@@ -1,0 +1,9 @@
+{
+  "name": "cardscan-tools",
+  "private": true,
+  "type": "module",
+  "description": "카드 DB(지문+시세) 생성 도구",
+  "dependencies": {
+    "sharp": "^0.33.5"
+  }
+}
