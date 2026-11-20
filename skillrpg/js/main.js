@@ -15,6 +15,12 @@ let saveT = 0;
 const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) {} }, 150); };
 
 let sel = null;            // 왼쪽 상세 정보 { t: 'skill' | 'gear', id }
+const DAY_LIMIT = 3;
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+function dailyLeft(key) { if (!S.daily || S.daily.day !== today()) S.daily = { day: today(), used: {} }; return Math.max(0, DAY_LIMIT - (S.daily.used[key] || 0)); }
+function useDaily(key) { dailyLeft(key); S.daily.used[key] = (S.daily.used[key] || 0) + 1; }
+const FUSE_COST = [200, 500, 1500, 4000, 10000];
+let fuseTier = 0, fuseSel = [];
 let cd = 0, cdMax = 1, autoGap = 0;
 
 function stats() {
@@ -197,7 +203,9 @@ E.startLevel = S.lv;
 
 // ── 뽑기 ──
 function renderBoxes(kind) {
-  const wrap = $(kind === 'skill' ? '#skill-boxes' : '#gear-boxes'); wrap.innerHTML = '';
+  const wrap = $(kind === 'skill' ? '#skill-boxes' : '#gear-boxes');
+  wrap.innerHTML = `<div class="limit-note">상자마다 하루 ${DAY_LIMIT}번 열 수 있어요 (10회 뽑기도 1번으로 세요)<button class="linkbtn" type="button">횟수 채우기 (테스트)</button></div>`;
+  wrap.querySelector('.linkbtn').addEventListener('click', () => { S.daily = { day: today(), used: {} }; save(); SFX.coin(); renderBoxes('gear'); renderBoxes('skill'); toast('오늘 열 수 있는 횟수를 다시 채웠어요'); });
   const pool = kind === 'skill' ? GACHA_SKILLS : GEAR;
   BOXES.forEach(b => {
     const el = document.createElement('div');
@@ -206,9 +214,10 @@ function renderBoxes(kind) {
     const bar = b.rates.map((r, i) => r ? `<i class="r${i}" style="width:${r}%"></i>` : '').join('');
     const rates = b.rates.map((r, i) => r ? `<span class="r${i}">${RAR[i].name}</span> ${r}%` : '').filter(Boolean).join(' · ');
     const name = kind === 'skill' ? b.name.replace('상자', '스킬 상자') : b.name.replace('상자', '장비 상자');
+    const left = dailyLeft(kind + b.tier);
     el.innerHTML = `<div class="bimg"></div>
-      <div class="binfo"><div class="bt"><b>${name}</b><span class="pill">모은 ${kind === 'skill' ? '스킬' : '장비'} ${ownCount(pool)}/${pool.length}</span></div><div class="bar">${bar}</div><div class="rates">${rates}</div></div>
-      <div class="bbtns"><button class="btn primary p1" type="button">${kind === 'skill' ? '열기' : '뽑기'} <i class="gem"></i>${b.cost.toLocaleString()}</button><button class="btn outline p10" type="button">10회 <i class="gem"></i>${(b.cost * 10).toLocaleString()}</button></div>`;
+      <div class="binfo"><div class="bt"><b>${name}</b><span class="pill">모은 ${kind === 'skill' ? '스킬' : '장비'} ${ownCount(pool)}/${pool.length}</span></div><div class="bar">${bar}</div><div class="rates">${rates}</div><div class="daily${left ? '' : ' none'}">${left ? `오늘 ${left}번 남았어요 (${left}/${DAY_LIMIT})` : '오늘은 다 열었어요 · 내일 다시 열 수 있어요'}</div></div>
+      <div class="bbtns"><button class="btn primary p1" type="button"${left ? '' : ' disabled'}>${kind === 'skill' ? '열기' : '뽑기'} <i class="gem"></i>${b.cost.toLocaleString()}</button><button class="btn outline p10" type="button"${left ? '' : ' disabled'}>10회 <i class="gem"></i>${(b.cost * 10).toLocaleString()}</button></div>`;
     cv.className = 'px-icon'; el.querySelector('.bimg').appendChild(cv);
     el.querySelector('.p1').addEventListener('click', () => pull(kind, b, 1));
     el.querySelector('.p10').addEventListener('click', () => pull(kind, b, 10));
@@ -222,7 +231,9 @@ function roll(rates) {
 }
 function pull(kind, box, count) {
   const cost = box.cost * count;
+  if (!dailyLeft(kind + box.tier)) { SFX.error(); toast('오늘은 이 상자를 다 열었어요. 내일 다시 열 수 있어요'); return; }
   if (S.gems < cost) { SFX.error(); toast(`보석이 부족해요 (필요 ${cost.toLocaleString()})`); return; }
+  useDaily(kind + box.tier);
   SFX.click();
   setGems(S.gems - cost);
   const results = [];
@@ -241,6 +252,55 @@ function pull(kind, box, count) {
   Gacha.play(box, results, kind === 'skill' ? '스킬' : '장비');
 }
 Gacha.onClose = () => renderAll();
+
+// ── 장비 합성 ──
+function renderFuse() {
+  const t = fuseTier, owned = id => S.gear[id] || 0;
+  const cnt = {}; fuseSel = fuseSel.filter(id => { cnt[id] = (cnt[id] || 0) + 1; return GEAR_BY_ID[id].r === t && cnt[id] <= owned(id); });
+  const pills = $('#fuse-pills'); pills.innerHTML = '';
+  for (let i = 0; i < 5; i++) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'pill2 r' + i + (i === t ? ' on' : '');
+    b.innerHTML = `<i></i>${RAR[i].name} → ${RAR[i + 1].name}`;
+    b.addEventListener('click', () => { SFX.tab(); fuseTier = i; fuseSel = []; renderFuse(); });
+    pills.appendChild(b);
+  }
+  const slots = $('#fuse-slots'); slots.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const id = fuseSel[i], b = document.createElement('button'); b.type = 'button';
+    b.className = 'fslot' + (id ? ' r' + t + ' full' : '');
+    if (id) { b.appendChild(fitIcon(gearIcon(GEAR_BY_ID[id]), 48)); b.addEventListener('click', () => { SFX.click(); fuseSel.splice(i, 1); renderFuse(); }); }
+    slots.appendChild(b);
+  }
+  slots.insertAdjacentHTML('beforeend', `<span class="farrow">→</span><span class="fslot res r${t + 1}">?</span>`);
+  const go = $('#fuse-go'); go.disabled = fuseSel.length < 3;
+  go.innerHTML = `합성하기 <i class="gem"></i>${FUSE_COST[t].toLocaleString()}`;
+  $('#fuse-label').textContent = `보유한 ${RAR[t].name} 장비 (선택됨: ${fuseSel.length}/3)`;
+  const grid = $('#fuse-grid'); grid.innerHTML = '';
+  const list = GEAR.filter(g => g.r === t && owned(g.id));
+  if (!list.length) { grid.innerHTML = `<p class="empty-msg">합성할 수 있는 ${RAR[t].name} 장비가 없어요. 장비 뽑기로 모아 보세요!</p>`; return; }
+  list.forEach(g => {
+    const k = fuseSel.filter(x => x === g.id).length;
+    const b = card(`r${g.r}${k ? ' on' : ''}`, gearIcon(g), g.name, `${SLOT_NAME[g.slot]} · 보유 ${owned(g.id)}개`, k ? `선택 ${k}` : '', 60);
+    b.addEventListener('click', () => {
+      if (fuseSel.length >= 3 || k >= owned(g.id)) { SFX.error(); toast(fuseSel.length >= 3 ? '3개를 모두 골랐어요' : '가진 개수만큼만 고를 수 있어요'); return; }
+      SFX.click(); fuseSel.push(g.id); renderFuse();
+    });
+    grid.appendChild(b);
+  });
+}
+function doFuse() {
+  const t = fuseTier, cost = FUSE_COST[t];
+  if (fuseSel.length < 3) return;
+  if (S.gems < cost) { SFX.error(); toast(`보석이 부족해요 (필요 ${cost.toLocaleString()})`); return; }
+  setGems(S.gems - cost);
+  fuseSel.forEach(id => { S.gear[id]--; if (S.gear[id] <= 0) { delete S.gear[id]; const g = GEAR_BY_ID[id]; if (S.equip[g.slot] === id) S.equip[g.slot] = null; } });
+  const item = pick(GEAR.filter(g => g.r === t + 1)), isNew = !S.gear[item.id];
+  S.gear[item.id] = (S.gear[item.id] || 0) + 1;
+  if (isNew && !S.equip[item.slot]) S.equip[item.slot] = item.id;
+  addLog('🔮', `장비 합성으로 <b>${item.name}</b>(${RAR[item.r].name}) ${isNew ? '획득!' : '레벨 업 → Lv.' + S.gear[item.id]}`, item.r);
+  fuseSel = []; save();
+  Gacha.play({ name: '장비 합성', title: `장비 합성 · ${RAR[t].name} 3개 → ${RAR[t + 1].name}`, tier: [0, 1, 2, 2, 3][t], cost: 0 }, [{ kind: 'gear', item, rar: item.r, isNew, lv: S.gear[item.id] }], '장비');
+}
 
 // ── 홈 · 기록 · 도감 ──
 function renderHome() {
@@ -266,7 +326,7 @@ function renderDex() {
 
 // ── 이동 ──
 function go(target) {
-  if (['attack', 'closet', 'gear'].includes(target)) { S.view = 'char'; S.tab = target; } else S.view = target;
+  if (['attack', 'closet', 'gear', 'fuse'].includes(target)) { S.view = 'char'; S.tab = target; } else S.view = target;
   save(); applyNav();
   if (isMobile()) $('#shell').classList.remove('open');
   window.scrollTo({ top: 0 });
@@ -282,7 +342,7 @@ function applyNav() {
   if (S.view === 'char' && S.tab === 'attack') fit();
 }
 function renderAll() {
-  refreshPlayer(); renderDetail(); renderCloset(); renderAttack(); renderBoxes('gear'); renderBoxes('skill');
+  refreshPlayer(); renderDetail(); renderCloset(); renderAttack(); renderBoxes('gear'); renderBoxes('skill'); renderFuse();
   if (S.view === 'home') renderHome();
   if (S.view === 'log') renderLog();
   if (S.view === 'dex') renderDex();
@@ -323,6 +383,8 @@ $('#btn-menu').addEventListener('click', () => {
 });
 $('#scrim').addEventListener('click', () => $('#shell').classList.remove('open'));
 $('#btn-atk').addEventListener('click', attack);
+$('#fuse-go').addEventListener('click', doFuse);
+$('#fuse-clear').addEventListener('click', () => { SFX.click(); fuseSel = []; renderFuse(); });
 $('#btn-crit').addEventListener('click', critical);
 window.addEventListener('keydown', e => {
   if (e.repeat || !$('#gacha-ov').hidden || S.view !== 'char' || S.tab !== 'attack') return;

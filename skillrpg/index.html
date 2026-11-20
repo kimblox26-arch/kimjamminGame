@@ -28,7 +28,7 @@
 <div class="shell" id="shell">
   <aside class="side" id="side">
     <div class="prof">
-      <div class="prof-av"><canvas id="prof-cv" width="48" height="60"></canvas></div>
+      <div class="prof-av"><canvas id="prof-cv" width="64" height="80"></canvas></div>
       <b>모험가</b>
       <span id="prof-sub">슬라임 Lv.1 사냥 중</span>
     </div>
@@ -39,6 +39,7 @@
       <div class="sgrp">캐릭터</div>
       <button type="button" data-go="closet"><i>👕</i>내 옷장</button>
       <button type="button" data-go="gear"><i>🎁</i>장비 뽑기</button>
+      <button type="button" data-go="fuse"><i>🔮</i>장비 합성</button>
       <div class="sgrp">수집</div>
       <button type="button" data-go="dex"><i>📖</i>도감</button>
       <button type="button" data-go="log"><i>📜</i>기록</button>
@@ -58,7 +59,7 @@
     <section class="view" data-view="home">
       <div class="home">
         <div class="card hero">
-          <div class="hero-pv"><canvas id="home-cv" width="48" height="60"></canvas></div>
+          <div class="hero-pv"><canvas id="home-cv" width="64" height="80"></canvas></div>
           <div class="hero-info">
             <div class="eyebrow">오늘의 모험</div>
             <h2>모험가</h2>
@@ -101,7 +102,7 @@
         <section class="card left">
           <div class="pv">
             <div class="gem-pill"><i class="gem"></i><b id="gems">0</b></div>
-            <canvas id="preview" width="48" height="60"></canvas>
+            <canvas id="preview" width="64" height="80"></canvas>
           </div>
           <div class="detail" id="detail"></div>
         </section>
@@ -110,6 +111,7 @@
           <nav class="tabs" id="tabs">
             <button type="button" data-tab="closet">👕 내 옷장</button>
             <button type="button" data-tab="gear">🎁 장비 뽑기</button>
+            <button type="button" data-tab="fuse">🔮 장비 합성</button>
             <button type="button" data-tab="attack">⚔️ 공격 테스트</button>
           </nav>
 
@@ -126,6 +128,17 @@
 
           <div class="pane" data-pane="gear">
             <div class="boxlist" id="gear-boxes"></div>
+          </div>
+
+          <div class="pane" data-pane="fuse">
+            <div class="pills" id="fuse-pills"></div>
+            <div class="fuse">
+              <div class="fslots" id="fuse-slots"></div>
+              <p class="d-desc">같은 등급 장비 3개를 합성하면 한 단계 높은 등급 장비 1개를 얻어요. 부위는 무작위예요.</p>
+              <button class="btn primary" id="fuse-go" type="button"></button>
+            </div>
+            <div class="fhead"><b id="fuse-label"></b><button class="linkbtn" id="fuse-clear" type="button">선택 초기화</button></div>
+            <div class="igrid" id="fuse-grid"></div>
           </div>
 
           <div class="pane" data-pane="attack">

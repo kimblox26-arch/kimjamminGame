@@ -23,7 +23,7 @@ const Gacha = (() => {
     // 흔들림 동안 0 → best 까지 등급 상승
     for (let r = 1; r <= best; r++) st.steps.push(0.35 + (r / (best + 1)) * 1.3);
     parts.length = 0;
-    titleEl.textContent = `${box.name} · ${kindName} ${results.length}회`;
+    titleEl.textContent = box.title || `${box.name} · ${kindName} ${results.length}회`;
     resultsEl.innerHTML = ''; resultsEl.className = 'results';
     okBtn.hidden = true; hintEl.hidden = false; hintEl.textContent = '화면을 누르면 바로 열려요!';
     ov.hidden = false; ov.className = 'ov';

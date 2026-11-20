@@ -86,8 +86,8 @@ const E = (() => {
 
   // ── 위치 ──
   const swordAng = () => player.swing != null ? player.swing : -0.5;
-  const grip = () => ({ x: player.x + 9, y: player.y - 14 });
-  const hand = () => ({ x: player.x + 9, y: player.y - 16 });
+  const grip = () => ({ x: player.x + 14, y: player.y - 17 });
+  const hand = () => ({ x: player.x + 16, y: player.y - 24 });
   const target = () => ({ x: slime.x + slime.kx, y: GROUND - slime.bh * 0.45 + slime.oy, top: GROUND - slime.bh + slime.oy });
   const alive = () => !slime.dead && slime.oy > -3;
 
@@ -99,7 +99,7 @@ const E = (() => {
     });
     slime.max = Math.round(600 * Math.pow(1.3, lv - 1) * (slime.king ? 2.5 : 1));
     slime.hp = slime.ghost = slime.max;
-    slime.bw = slime.king ? 50 : 38; slime.bh = slime.king ? 36 : 28;
+    slime.bw = slime.king ? 56 : 44; slime.bh = slime.king ? 40 : 32;
     E.onSlime && E.onSlime(slime);
   }
   function killSlime() {
@@ -198,7 +198,7 @@ const E = (() => {
     if (G.gearT <= 0 && E.gear && !player.hide) {
       G.gearT = 0.12;
       const r = E.gear.top;
-      if (r >= 4 && Math.random() < 0.7) part({ x: player.x + rnd(-14, 14), y: player.y - rnd(4, 52), vx: rnd(-5, 5), vy: -12, life: 0.7, cols: r === 5 ? ['#ffffff', '#8ef6ff', '#ff9af0'] : ['#ffffff', '#fff3b0', '#ffd23f'] });
+      if (r >= 4 && Math.random() < 0.7) part({ x: player.x + rnd(-14, 14), y: player.y - rnd(4, 64), vx: rnd(-5, 5), vy: -12, life: 0.7, cols: r === 5 ? ['#ffffff', '#8ef6ff', '#ff9af0'] : ['#ffffff', '#fff3b0', '#ffd23f'] });
     }
 
     // 슬라임
@@ -276,14 +276,14 @@ const E = (() => {
     return silCache.map[col];
   }
   function afterimage(col, a = 0.5, dur = 0.25) {
-    const x = Math.round(player.x - 24), y = Math.round(player.y - AV_FOOT);
+    const x = Math.round(player.x - AV_W / 2), y = Math.round(player.y - AV_FOOT);
     fx({ layer: 1, dur, draw(c) { c.globalAlpha = a * (1 - this.t / dur); c.drawImage(sil(col), x, y); } });
   }
   function drawPlayer() {
     if (player.hide) return;
     const bob = Math.sin(G.t * 3) > 0 ? 0 : 1;
     const hop = player.cast > 0.3 ? 2 : player.cast > 0.2 ? 1 : 0;
-    c.globalAlpha = 0.3; PX.ellipse(c, player.x, GROUND + 1, 12, 2.5, '#000'); c.globalAlpha = 1;
+    c.globalAlpha = 0.3; PX.ellipse(c, player.x, GROUND + 1, 14, 2.5, '#000'); c.globalAlpha = 1;
     if (player.cast > 0) {
       const a = Math.min(1, player.cast * 3), R = 17 + player.castR * 2;
       c.globalAlpha = a;
@@ -293,7 +293,7 @@ const E = (() => {
       for (let i = 0; i < nn; i++) { const an = G.t * 4 + i * Math.PI * 2 / nn; PX.rect(c, player.x + Math.cos(an) * (R - 2), GROUND + Math.sin(an) * (R - 2) * 0.25, 1, 1, '#ffffff'); }
       c.globalAlpha = 1;
     }
-    c.drawImage(player.sprite, Math.round(player.x - 24), Math.round(player.y - AV_FOOT - bob - hop + (player.crouch ? 1 : 0)));
+    c.drawImage(player.sprite, Math.round(player.x - AV_W / 2), Math.round(player.y - AV_FOOT - bob - hop + (player.crouch ? 1 : 0)));
     if (player.cast > 0.15) {
       const h = hand();
       c.globalCompositeOperation = ADD;

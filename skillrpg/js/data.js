@@ -1,14 +1,14 @@
 // ───────── 등급 · 상자 · 스킬 · 장비 데이터 ─────────
 const RAR = [
   { name: '일반', color: '#c8c8d0', dark: '#5e5e6e' },
+  { name: '고급', color: '#5ad35a', dark: '#1f8a3a' },
   { name: '희귀', color: '#4aa8ff', dark: '#1d5aa8' },
-  { name: '에픽', color: '#b45cff', dark: '#6522a8' },
-  { name: '고급', color: '#ff5a3c', dark: '#a8261a' },
-  { name: '전설', color: '#ffd23f', dark: '#b8860b' },
+  { name: '영웅', color: '#b45cff', dark: '#6522a8' },
+  { name: '전설', color: '#ffb020', dark: '#b8660b' },
   { name: '신화', color: '#ff5ad9', dark: '#8a1f7a' },
 ];
 
-// 5000 상자는 합계가 105%라서 희귀 40% → 35% 로 조정
+// 5000 상자는 합계가 105%라서 두 번째 등급을 40% → 35% 로 조정
 const BOXES = [
   { tier: 0, name: '나무 상자', cost: 100, rates: [60, 35, 5, 0, 0, 0] },
   { tier: 1, name: '강철 상자', cost: 300, rates: [35, 45, 19, 1, 0, 0] },
