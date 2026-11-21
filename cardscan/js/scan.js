@@ -1,10 +1,10 @@
 // 카메라 한 장면에서 카드 지문 후보들을 만든다 (브라우저/테스트 공용, DOM 없음)
-import { toGray, integral, cardHash } from './hash.js';
+import { toGray, integral, cardHash } from './hash.js?v=7';
 
 const CARD_RATIO = 63 / 88; // 가로/세로
 
 // 가이드 근처에서 카드 테두리(가장 바깥쪽 강한 경계선)를 찾는다
-function findEdge(rgba, w, h, guide) {
+function findEdge(rgba, w, h, guide, bx, by) {
   const gw = guide.x1 - guide.x0, gh = guide.y1 - guide.y0;
   const diffAt = (a, b) => {
     const i = a * 4, j = b * 4;
@@ -35,7 +35,7 @@ function findEdge(rgba, w, h, guide) {
     }
     return null;
   };
-  const mx = gw * 0.14, my = gh * 0.12;
+  const mx = gw * bx, my = gh * by;
   const ya = Math.round(guide.y0 + gh * 0.2), yb = Math.round(guide.y1 - gh * 0.2);
   const xa = Math.round(guide.x0 + gw * 0.2), xb = Math.round(guide.x1 - gw * 0.2);
   const x0 = pick(guide.x0 - mx, Math.min(guide.x0 + mx, w - 2), x => colScore(x, ya, yb), true);
@@ -66,8 +66,14 @@ function variants(r, scales, shifts) {
 // 반환: { queries: [[4 x uint32], ...], edge: 찾은 테두리 or null }
 export function makeQueries(rgba, w, h, guide) {
   const I = integral(toGray(rgba, w, h, 4), w, h);
-  const edge = findEdge(rgba, w, h, guide);
-  const rects = variants(guide, [0.9, 0.96, 1.02, 1.08], [-0.03, 0, 0.03]);
-  if (edge) rects.push(...variants(edge, [0.97, 1, 1.03], [-0.015, 0, 0.015]));
+  const rects = variants(guide, [0.86, 0.93, 1, 1.07, 1.14], [-0.03, 0, 0.03]);
+  // 테두리 찾기: 좁은 범위 / 넓은 범위 두 번 (카드가 가이드보다 많이 크거나 어긋나 있어도 찾도록)
+  let edge = null;
+  for (const [bx, by] of [[0.14, 0.12], [0.19, 0.18]]) {
+    const e = findEdge(rgba, w, h, guide, bx, by);
+    if (!e || (edge && Math.abs(e.x0 - edge.x0) + Math.abs(e.y0 - edge.y0) + Math.abs(e.x1 - edge.x1) + Math.abs(e.y1 - edge.y1) < 4)) continue;
+    edge = e;
+    rects.push(...variants(e, [0.97, 1, 1.03], [-0.015, 0, 0.015]));
+  }
   return { queries: rects.map(r => cardHash(I, r.x0, r.y0, r.x1, r.y1)), edge };
 }

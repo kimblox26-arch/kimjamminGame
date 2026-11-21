@@ -117,7 +117,10 @@ svg { width: 22px; height: 22px; flex: none; }
   background: var(--accent); color: #fff; font-weight: 800; font-size: 15px; border-radius: 99px; padding: 14px 18px; white-space: nowrap;
   box-shadow: 0 8px 22px rgba(255, 95, 31, .5); animation: popIn .3s ease; }
 .reg-btn svg { width: 18px; height: 18px; }
-.cam-msg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 30px; background: var(--bg); color: var(--text); line-height: 1.7; }
+.cam-msg { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; text-align: center; padding: 30px; background: var(--bg); color: var(--text); line-height: 1.7; }
+.cam-msg .cam-ic { width: 56px; height: 56px; color: var(--accent); padding: 12px; border-radius: 18px; background: #fff1ea; }
+.cam-msg .tip { font-size: 14px; color: var(--sub); background: var(--surface); border-radius: 14px; padding: 12px 14px; margin: 0 0 16px; }
+.cam-msg .link { display: inline-block; margin-top: 14px; color: var(--sub); font-size: 14px; }
 
 .scan-bottom { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: flex-end;
   padding: 10px 16px calc(env(safe-area-inset-bottom) + 18px); }

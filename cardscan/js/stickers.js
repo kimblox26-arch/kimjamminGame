@@ -1,6 +1,6 @@
 // 띠부씰: 스캔(내가 한 번 등록한 띠부씰을 지문으로 알아봄) + 내 띠부씰 목록 + 정보 수정
-import { $, D, won, toast, stickers, saveStickers, stickerTotals, load, save, stkPrice, REF, REF_NOTE } from './store.js';
-import { stickerHash, bestMatches } from './hash.js';
+import { $, D, won, toast, stickers, saveStickers, stickerTotals, load, save, stkPrice, REF, REF_NOTE } from './store.js?v=7';
+import { stickerHash, bestMatches } from './hash.js?v=7';
 
 const GENS = [[1, 151], [152, 251], [252, 386], [387, 493], [494, 649], [650, 721], [722, 809], [810, 905], [906, 1025]];
 const photoKey = n => 'pc.stkphoto.' + n;

@@ -1,11 +1,11 @@
-import { integral, toGray, sample, bestMatches, stickerHash } from './hash.js';
-import { makeQueries } from './scan.js';
+import { integral, toGray, sample, bestMatches, stickerHash } from './hash.js?v=7';
+import { makeQueries } from './scan.js?v=7';
 import {
   $, bus, D, rate, loadData, loadRate, card, imgUrl, won, metaText, toast, cardName,
   CONDS, condMul, VARIANT_NAME, variantsOf, krwOf, foreignText,
   list, setList, saveList, itemKrw, cardsTotal, addItem, stickerTotals, stkPrice,
-} from './store.js';
-import { initStickers, renderStickers, stickerStep, openRegister, resetScan, recent as stkRecent, stkName, stkPhoto, openEdit } from './stickers.js';
+} from './store.js?v=7';
+import { initStickers, renderStickers, stickerStep, openRegister, resetScan, recent as stkRecent, stkName, stkPhoto, openEdit } from './stickers.js?v=7';
 
 const ACCEPT = 25; // 카드: 이 점수 이하면 같은 카드로 인정 (0~128. 시뮬레이션: 정답 90%가 20 이하, 카드 없음은 28 이상)
 const pad3 = n => String(n).padStart(3, '0');
@@ -91,23 +91,56 @@ function setMode(m) {
   renderScanBottom();
 }
 
+let starting = false;
 async function startCamera() {
-  if (running) return;
+  renderScanBottom();
+  if (running || starting) return;
   if (!D.ready) { hint('데이터를 불러오는 중…'); bus.addEventListener('change', () => !$('v-scan').hidden && startCamera(), { once: true }); return; }
   $('camMsg').hidden = true;
+  if (!navigator.mediaDevices?.getUserMedia) { camError('NoMedia'); return; }
+  starting = true;
+  hint('카메라를 켜는 중…');
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false,
-    });
+    const ask = c => Promise.race([navigator.mediaDevices.getUserMedia(c),
+      new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('timeout'), { name: 'Timeout' })), 15000))]);
+    try {
+      stream = await ask({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    } catch (e) {
+      if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e;
+      stream = await ask({ video: true, audio: false }); // 조건 없이 아무 카메라나
+    }
     if ($('v-scan').hidden) { stopCamera(); return; }
     video.srcObject = stream;
-    await video.play();
+    await video.play().catch(() => {});
+    // 실제로 화면이 나오는지 최대 4초 확인
+    for (let i = 0; i < 20 && !video.videoWidth; i++) await new Promise(r => setTimeout(r, 200));
+    if (!video.videoWidth) { stopCamera(); camError('NoFrames'); return; }
     running = true;
+    hint(mode === 'sticker' ? '띠부씰을 네모 안에 놓아 주세요' : '카드를 네모 안에 맞춰 주세요');
     timer = setTimeout(tick, 300);
   } catch (e) {
-    $('camMsg').hidden = false;
-    $('camMsg').innerHTML = `<div>카메라를 켤 수 없어요.<br>브라우저 설정에서 카메라 권한을 허용해 주세요.<br><small>(${e.name})</small><br><br><a class="btn-accent" href="#/">홈으로</a></div>`;
+    stopCamera();
+    camError(e.name);
+  } finally {
+    starting = false;
   }
+}
+function camError(name) {
+  const inApp = /KAKAOTALK|NAVER\(|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp/i.test(navigator.userAgent);
+  const why = {
+    NotAllowedError: '카메라 권한이 막혀 있어요.<br>주소창의 자물쇠(또는 브라우저 설정)에서 카메라를 <b>허용</b>한 뒤 다시 시도해 주세요.',
+    NotReadableError: '다른 앱이 카메라를 쓰고 있어요.<br>카메라를 쓰는 다른 앱을 닫고 다시 시도해 주세요.',
+    NotFoundError: '카메라를 찾지 못했어요.',
+    Timeout: '카메라 권한 창이 뜨지 않았어요.',
+    NoMedia: '이 브라우저에서는 카메라를 쓸 수 없어요.',
+    NoFrames: '카메라 화면이 나오지 않아요.',
+  }[name] || `카메라를 켜지 못했어요. (${name})`;
+  const tip = inApp || name === 'NoMedia' || name === 'Timeout'
+    ? '<p class="tip">카카오톡·네이버 앱 안에서 열었다면 오른쪽 위 메뉴에서 <b>다른 브라우저로 열기</b>를 눌러 <b>크롬이나 사파리</b>로 열어 주세요.</p>' : '';
+  $('camMsg').innerHTML = `<div><svg class="cam-ic"><use href="#i-cam"/></svg><p>${why}</p>${tip}<button class="btn-accent" id="camRetry">다시 시도</button><br><a class="link" href="#/">홈으로</a></div>`;
+  $('camMsg').hidden = false;
+  $('camRetry').onclick = () => startCamera();
+  hint('');
 }
 function stopCamera() {
   running = false;
