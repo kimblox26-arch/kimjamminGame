@@ -139,11 +139,15 @@ export function addItem(id, alts = []) {
 // stickers[도감번호] = { qty, price, memo }  (사진은 'pc.stkphoto.<번호>' 에 따로)
 export const stickers = load('pc.stickers.v1', {});
 export const saveStickers = () => { save('pc.stickers.v1', stickers); changed(); };
+// 참고 시세: 공개 시세 데이터가 없어 기사에 나온 것만 (한국경제 2026-06, 번개장터·당근 중고 시세)
+export const REF = { 150: 60000, 151: 20000, 6: 10000, 143: 7000 };
+export const REF_NOTE = '2026년 6월 기사 기준 중고 시세';
+export const stkPrice = n => (stickers[n]?.price || REF[n] || null);
 export function stickerTotals() {
   let kinds = 0, qty = 0, krw = 0;
-  for (const s of Object.values(stickers)) {
+  for (const [n, s] of Object.entries(stickers)) {
     if (!s.qty) continue;
-    kinds++; qty += s.qty; krw += s.qty * (s.price || 0);
+    kinds++; qty += s.qty; krw += s.qty * (stkPrice(n) || 0);
   }
   return { kinds, qty, krw };
 }

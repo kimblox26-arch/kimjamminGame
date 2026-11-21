@@ -3,15 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0c0d16">
+  <meta name="theme-color" content="#f2f2f6">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>포켓 컬렉터</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- ===== 그림 모음 (아이콘 + 일러스트) ===== -->
   <svg class="sprite" aria-hidden="true">
     <defs>
       <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe066"/><stop offset="1" stop-color="#ff8a3d"/></linearGradient>
@@ -29,6 +27,8 @@
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
     <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 12.4l2.7 2.7L16 9.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-sticker" viewBox="0 0 24 24"><path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 20v-5a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="9.5" cy="9.5" r="1.3" fill="currentColor"/><circle cx="14.5" cy="9.5" r="1.3" fill="currentColor"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.5l2.2 7.3 7.3 2.2-7.3 2.2L12 21.5l-2.2-7.3L2.5 12l7.3-2.2z" fill="currentColor"/></symbol>
     <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" opacity=".35"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2" opacity=".6"/><path d="M12 12L12 3a9 9 0 0 1 7.8 4.5z" fill="currentColor" opacity=".85"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/></symbol>
@@ -105,34 +105,37 @@
       <svg class="logo"><use href="#art-logo"/></svg>
       <div>
         <div class="app-name">포켓 컬렉터</div>
-        <div class="app-sub">카드 시세 스캔 · 띠부씰 기록장</div>
+        <div class="app-sub">카드 · 띠부씰 시세 스캐너</div>
       </div>
     </header>
 
-    <div class="hero holo">
-      <div class="hero-in">
-        <svg class="hero-art"><use href="#art-cards"/></svg>
-        <div class="hero-label">내 컬렉션 가치</div>
-        <div class="hero-value" id="homeTotal">₩0</div>
-        <div class="hero-split">
-          <a href="#/cards"><span id="homeCardsN">카드 0장</span><b id="homeCards">₩0</b></a>
-          <a href="#/stickers"><span id="homeStkN">띠부씰 0장</span><b id="homeStk">₩0</b></a>
-        </div>
-      </div>
+    <div class="hero">
+      <div class="hero-label">내 컬렉션 가치</div>
+      <div class="hero-value" id="homeTotal">₩0</div>
+      <svg class="hero-art"><use href="#art-cards"/></svg>
     </div>
 
     <div class="tiles">
-      <a class="big-tile t-scan" href="#/scan">
+      <a class="big-tile" href="#/scan">
         <svg class="tile-art"><use href="#art-scan"/></svg>
-        <b>카드 스캔</b>
-        <span>비추면 시세가 바로</span>
-        <i class="go"><svg><use href="#i-chev"/></svg></i>
+        <b>카드 스캔</b><span>비추면 시세가 바로</span>
       </a>
-      <a class="big-tile t-stk" href="#/stickers">
+      <a class="big-tile" href="#/scan/sticker">
         <svg class="tile-art"><use href="#art-sticker"/></svg>
-        <b>띠부씰 기록장</b>
-        <span>개수·가격 기록</span>
-        <i class="go"><svg><use href="#i-chev"/></svg></i>
+        <b>띠부씰 스캔</b><span>찍어서 가격 확인</span>
+      </a>
+    </div>
+
+    <div class="my-row">
+      <a class="my" href="#/cards">
+        <svg><use href="#i-cards"/></svg>
+        <div><span id="homeCardsN">내 카드 0장</span><b id="homeCards">₩0</b></div>
+        <svg class="chev"><use href="#i-chev"/></svg>
+      </a>
+      <a class="my" href="#/stickers">
+        <svg><use href="#i-sticker"/></svg>
+        <div><span id="homeStkN">내 띠부씰 0장</span><b id="homeStk">₩0</b></div>
+        <svg class="chev"><use href="#i-chev"/></svg>
       </a>
     </div>
 
@@ -141,91 +144,75 @@
     <p class="foot" id="homeFoot">카드 데이터를 불러오는 중…</p>
   </section>
 
-  <!-- ===== 카드 스캔 (카메라) ===== -->
+  <!-- ===== 스캔 (카메라) ===== -->
   <section class="view scan" id="v-scan" hidden>
     <video id="video" playsinline muted autoplay></video>
-    <div class="guide" id="guide"><i></i><i></i><i></i><i></i><div class="laser"></div></div>
+    <div class="guide" id="guide"><i></i><i></i><i></i><i></i></div>
 
     <div class="scan-top">
       <a class="round" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
-      <div class="status"><svg class="radar"><use href="#i-radar"/></svg><span id="hint">준비 중…</span></div>
-      <button class="round" id="searchBtn" aria-label="직접 검색"><svg><use href="#i-search"/></svg></button>
-      <button class="round" id="pauseBtn" aria-label="일시정지"><svg><use id="pauseIcon" href="#i-pause"/></svg></button>
+      <div class="status"><span>스캔 중</span><svg class="spark"><use href="#i-spark"/></svg></div>
+      <div class="tools">
+        <button id="searchBtn" aria-label="직접 검색"><svg><use href="#i-search"/></svg></button>
+        <button id="pauseBtn" aria-label="일시정지"><svg><use id="pauseIcon" href="#i-pause"/></svg></button>
+      </div>
     </div>
+    <div class="modes">
+      <a href="#/scan" id="modeCard">카드</a>
+      <a href="#/scan/sticker" id="modeStk">띠부씰</a>
+    </div>
+    <div class="hint" id="hint">준비 중…</div>
 
     <div class="pop" id="pop" hidden>
-      <div class="tag holo">
-        <div class="tag-in">
-          <div class="tag-label"><svg><use href="#i-spark"/></svg>예상 시세</div>
-          <div class="tag-price" id="popPrice"></div>
-          <div class="tag-name" id="popName"></div>
-        </div>
-      </div>
+      <div class="pop-price" id="popPrice"></div>
+      <div class="pop-name" id="popName"></div>
       <button class="pop-wrong" id="popWrong">다른 카드예요</button>
     </div>
+    <button class="reg-btn" id="regBtn" hidden><svg><use href="#i-plus"/></svg>처음 보는 띠부씰이에요 · 등록하기</button>
 
     <div class="cam-msg" id="camMsg" hidden></div>
 
-    <div class="dock">
-      <button class="last" id="stack" aria-label="마지막 카드">
-        <img id="lastImg" alt="" hidden>
-        <span class="last-ph" id="lastPh"><svg><use href="#i-cards"/></svg></span>
-        <span class="last-txt"><span class="ln" id="lastName">카드를 비춰 주세요</span><span class="lp" id="lastPrice"></span></span>
-      </button>
-      <a class="dock-btn" href="#/cards" id="pill"><svg><use href="#i-cards"/></svg><b id="pillCount">0</b>장</a>
+    <div class="scan-bottom">
+      <button class="stack" id="stack" aria-label="마지막으로 스캔한 것"></button>
+      <a class="pill" href="#/cards" id="pill"><svg><use href="#i-cards"/></svg><span id="pillText">포켓몬 카드 (0)</span></a>
     </div>
   </section>
 
   <!-- ===== 스캔한 카드 목록 ===== -->
   <section class="view page" id="v-cards" hidden>
     <header class="bar-top">
-      <a class="icon-btn" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
-      <div class="bt-title">스캔한 카드</div>
+      <a class="back" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
+      <div class="bt-title" id="cardsCount">0장 스캔됨</div>
       <button class="text-btn" id="selectBtn">선택</button>
     </header>
-    <div class="total-box">
-      <div>
-        <span id="cardsCount">0장 스캔됨</span>
-        <b id="cardsTotal">₩0</b>
-      </div>
-      <a class="btn-accent" href="#/scan"><svg><use href="#i-cam"/></svg>스캔</a>
-    </div>
+    <div class="total">합계 <b id="cardsTotal">₩0</b></div>
     <div class="grid" id="grid"></div>
     <div class="empty" id="cardsEmpty">
       <svg class="empty-art"><use href="#art-cards"/></svg>
-      <p>아직 스캔한 카드가 없어요.<br>카드를 스캔하면 여기에 모여요.</p>
+      <p>아직 스캔한 카드가 없어요.</p>
       <a class="btn-accent" href="#/scan"><svg><use href="#i-cam"/></svg>카드 스캔하기</a>
     </div>
     <p class="note" id="priceNote"></p>
     <div class="action-bar" id="selectBar" hidden>
-      <button class="btn-soft" id="selAll">전체 선택</button>
-      <span id="selInfo">0장 선택</span>
-      <button class="btn-danger" id="selDel"><svg><use href="#i-trash"/></svg>삭제</button>
+      <button id="selAll"><svg><use href="#i-check"/></svg><span id="selInfo">전체 선택</span></button>
+      <button class="danger" id="selDel"><svg><use href="#i-trash"/></svg>삭제</button>
     </div>
   </section>
 
-  <!-- ===== 띠부씰 기록장 ===== -->
+  <!-- ===== 내 띠부씰 ===== -->
   <section class="view page" id="v-stickers" hidden>
     <header class="bar-top">
-      <a class="icon-btn" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
-      <div class="bt-title">띠부씰 기록장</div>
-      <span></span>
+      <a class="back" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
+      <div class="bt-title" id="stkCount">띠부씰 0장</div>
+      <a class="text-btn" href="#/scan/sticker">스캔</a>
     </header>
-    <div class="stk-hero">
-      <svg class="stk-art"><use href="#art-sticker"/></svg>
-      <div class="stk-nums">
-        <div><span>모은 종류</span><b id="stkKinds">0종</b></div>
-        <div><span>총 개수</span><b id="stkQtyAll">0장</b></div>
-        <div><span>총 가치</span><b id="stkTotal">₩0</b></div>
-      </div>
-      <div class="progress"><i id="stkBar"></i></div>
-      <small id="stkProg"></small>
-    </div>
+    <div class="total">합계 <b id="stkTotal">₩0</b> <small id="stkProg"></small></div>
     <label class="search-box"><svg><use href="#i-search"/></svg>
-      <input type="search" id="stkSearch" placeholder="포켓몬 이름 또는 번호 (예: 피카츄, 25)" autocomplete="off">
+      <input type="search" id="stkSearch" placeholder="포켓몬 이름 또는 번호" autocomplete="off">
     </label>
     <div class="chips" id="stkGens"></div>
-    <div class="stk-grid" id="stkGrid"></div>
+    <div class="grid" id="stkGrid"></div>
+    <p class="note">띠부씰은 공개 시세 데이터가 없어서, 뮤츠·뮤·리자몽·잠만보만 2026년 6월 기사 기준 참고 시세가 들어 있어요. 나머지는 띠부씰을 눌러 가격을 적어 주세요.</p>
   </section>
 
   <!-- ===== 시트: 카드 상세 ===== -->
@@ -233,7 +220,7 @@
     <div class="sheet-card">
       <div class="grab"></div>
       <div class="detail">
-        <div class="det-img holo"><img id="detImg" alt=""></div>
+        <img id="detImg" alt="">
         <div class="det-info">
           <h2 id="detName"></h2>
           <div class="sub" id="detEn"></div>
@@ -248,7 +235,7 @@
       <h3>혹시 이 카드인가요?</h3>
       <div class="rows" id="detAlts"></div>
       <div class="sheet-actions">
-        <button class="btn-danger ghost" id="detDel"><svg><use href="#i-trash"/></svg>목록에서 삭제</button>
+        <button class="btn-danger ghost" id="detDel"><svg><use href="#i-trash"/></svg>삭제</button>
         <button class="btn-accent" data-close>확인</button>
       </div>
     </div>
@@ -266,20 +253,36 @@
     </div>
   </div>
 
-  <!-- ===== 시트: 띠부씰 기록 ===== -->
+  <!-- ===== 시트: 띠부씰 등록 (어떤 포켓몬인지 고르기) ===== -->
+  <div class="sheet" id="regSheet" hidden>
+    <div class="sheet-card tall">
+      <div class="grab"></div>
+      <div class="reg-head">
+        <img id="regPhoto" alt="">
+        <div><h2 class="sheet-title">어떤 포켓몬인가요?</h2><p class="sub">한 번만 골라 주면 다음부터는 자동으로 알아봐요.</p></div>
+      </div>
+      <label class="search-box"><svg><use href="#i-search"/></svg>
+        <input id="regSearch" type="search" placeholder="이름 또는 번호 (예: 피카츄, 25)" autocomplete="off">
+      </label>
+      <div class="rows" id="regRows"></div>
+    </div>
+  </div>
+
+  <!-- ===== 시트: 띠부씰 정보 ===== -->
   <div class="sheet" id="stkSheet" hidden>
     <div class="sheet-card">
       <div class="grab"></div>
       <div class="stk-edit">
         <label class="photo" id="stkPhotoBox">
           <img id="stkPhoto" alt="" hidden>
-          <span id="stkPhotoTxt"><svg><use href="#i-cam"/></svg>사진 찍기</span>
+          <span id="stkPhotoTxt"><svg><use href="#i-cam"/></svg>사진</span>
           <input type="file" accept="image/*" capture="environment" id="stkFile">
         </label>
         <div>
           <div class="dex" id="stkNo"></div>
           <h2 id="stkName"></h2>
-          <div class="sub" id="stkEn"></div>
+          <div class="big-price" id="stkPriceShow"></div>
+          <div class="calc" id="stkRefNote"></div>
         </div>
       </div>
       <div class="field">가지고 있는 개수
@@ -289,13 +292,12 @@
           <button id="stkPlus" aria-label="더하기"><svg><use href="#i-plus"/></svg></button>
         </div>
       </div>
-      <label class="field">1장 가격 (원)
+      <label class="field">1장 가격 (원) — 비워 두면 참고 시세 사용
         <input type="number" inputmode="numeric" min="0" id="stkPrice" placeholder="예: 3000">
       </label>
       <label class="field">메모
-        <input id="stkMemo" placeholder="예: 2022년 1탄, 친구랑 교환" maxlength="60">
+        <input id="stkMemo" placeholder="예: 2026년 원화 띠부씰" maxlength="60">
       </label>
-      <p class="hint-sm">띠부씰은 공개된 시세 데이터가 없어서, 중고 거래 사이트에서 직접 확인하고 가격을 적어 주세요.</p>
       <div class="ext-row">
         <a class="ext" id="stkBunjang" target="_blank" rel="noopener">번개장터 시세<svg><use href="#i-ext"/></svg></a>
         <a class="ext" id="stkNaver" target="_blank" rel="noopener">네이버 검색<svg><use href="#i-ext"/></svg></a>

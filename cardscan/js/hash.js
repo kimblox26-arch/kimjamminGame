@@ -133,3 +133,11 @@ export function bestMatches(db, queries, k = 5) {
   }
   return top;
 }
+
+// 띠부씰(정사각형) 지문: [전체hi, 전체lo, 가운데hi, 가운데lo]
+export function stickerHash(I, x0, y0, x1, y1) {
+  const w = x1 - x0, h = y1 - y0;
+  const full = phash(sample(I, x0, y0, x1, y1));
+  const mid = phash(sample(I, x0 + 0.2 * w, y0 + 0.2 * h, x0 + 0.8 * w, y0 + 0.8 * h));
+  return [full[0], full[1], mid[0], mid[1]];
+}
