@@ -634,3 +634,30 @@ body{letter-spacing:-.2px}
 .ml-acts{display:flex;gap:6px;justify-content:flex-end;align-items:center}
 .ml-n,.mail-n{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--pk);color:#fff;font-size:11px;font-style:normal;font-weight:700}
 .mail-n{position:absolute;top:-4px;right:-4px}
+
+/* 그림 그리기 / 소리 만들기 */
+.light-ed{background:#fff;color:#111}
+.light-ed .ed-top{border-bottom:1px solid #eee}
+.dr-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:10px;background:#f2f2f6}
+.dr-cv{width:min(100%,62vh);aspect-ratio:1;border:1px solid #ddd;border-radius:6px;touch-action:none;background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 0 0/24px 24px;cursor:crosshair}
+.dr-tools{padding:8px 10px calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;border-top:1px solid #eee}
+.dr-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dr-col{width:28px;height:28px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.dr-col.on{box-shadow:0 0 0 2px #fff,0 0 0 4px #111;transform:scale(1.1)}
+.dr-pick{width:34px;height:30px;border:0;background:none;padding:0}
+.dr-size{width:38px;height:34px;border:1px solid #ddd;border-radius:6px;display:grid;place-items:center}
+.dr-size i{display:block;border-radius:50%;background:#111}
+.dr-size.on{border-color:#111;background:#f2f2f6}
+.dr-btn{display:inline-flex;align-items:center;gap:4px;padding:7px 11px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-weight:600}
+.dr-btn.on{background:#111;color:#fff;border-color:#111}
+.sm-body{flex:1;overflow-y:auto;padding:14px 16px 30px;display:flex;flex-direction:column;gap:8px}
+.sm-wave{width:100%;height:auto;border:1px solid #e6e6eb;border-radius:6px;background:#fafafa}
+.sm-time{font-size:13px;color:#555;font-variant-numeric:tabular-nums}
+.light-ed .ed-rng span{color:#555}.light-ed .ed-rng output{color:#111}
+.light-ed .chip{background:#f5f5f7;border-color:#e6e6eb;color:#111}.light-ed .chip.on{background:#111;color:#fff;border-color:#111}
+.snd-box{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+.snd-st{font-size:14px;font-weight:600}
+.chip.on-key{border-color:#111}
+.sk-ic img{width:100%;height:100%;object-fit:contain;border-radius:8px}
+
+.lbl .ic{display:inline-block;vertical-align:-3px;margin-right:2px}

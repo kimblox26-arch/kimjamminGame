@@ -2,7 +2,7 @@
 // ===== 공 스킬 제작 / 융합 / 업그레이드 / 다른 사람 스킬 =====
 const SK_COLORS = ['#ff6a3d', '#ffd43b', '#7cff6b', '#25F4EE', '#3d8bff', '#b46bff', '#FE2C55', '#111111'];
 const compChips = s => s.comps.map(c => `<span class="cchip">${ic(COMPS[c][1], 13)}${COMPS[c][0]}</span>`).join('');
-const skIcon = s => `<div class="sk-ic" style="--c:${s.color}">${ic(COMPS[s.comps[0]][1], 26)}${s.comps.length > 1 ? `<b>+${s.comps.length - 1}</b>` : ''}</div>`;
+const skIcon = s => `<div class="sk-ic" style="--c:${s.color}">${s.pic ? `<img src="${s.pic}" alt="">` : ic(COMPS[s.comps[0]][1], 26)}${s.comps.length > 1 ? `<b>+${s.comps.length - 1}</b>` : ''}</div>`;
 function skCard(s, acts, extra = '') {
   return `<div class="sk-card" data-id="${s.id}" style="--c:${s.color}">${extra}<div class="sk-row">${skIcon(s)}<div class="sk-info"><div class="sk-name"><b>${esc(s.name)}</b><span class="lv">Lv.${s.lv}</span>${s.fused ? '<span class="fz">융합</span>' : ''}${s.media ? ic('film', 14) : ''}</div><div class="cchips">${compChips(s)}</div><small>쿨타임 ${skillCD(s)}초 · 위력 ×${skillPower(s).toFixed(2)}</small></div></div><div class="sk-acts">${acts}</div></div>`;
 }
@@ -75,32 +75,32 @@ function skMine(body, u, p, setTab) {
 
 function skForm(body, u, p, setTab) {
   const ed = p.edit && D.skills[p.edit];
-  const st = ed ? JSON.parse(JSON.stringify(ed)) : { name: '', color: SK_COLORS[0], comps: [], cd: 6, sound: 'pop', media: null };
+  const st = ed ? JSON.parse(JSON.stringify(ed)) : { name: '', color: SK_COLORS[0], comps: [], cd: 6, sound: 'none', media: null, pic: null };
   body.innerHTML = `<div class="sk-form">
     <label class="lbl">스킬 이름</label><input class="inp" id="sf-n" maxlength="14" placeholder="예) 초록 폭풍" value="${esc(st.name)}">
     <label class="lbl">색상</label><div class="colors">${SK_COLORS.map(c => `<button class="sw" data-c="${c}" style="--c:${c}"></button>`).join('')}<input type="color" id="sf-c" value="${st.color}"></div>
     <label class="lbl">효과 조합 <small class="muted">여러 개를 골라 섞을 수 있어요 (최대 4개)</small></label>
     <div class="comp-grid">${COMP_KEYS.map(k => `<button class="comp" data-k="${k}">${ic(COMPS[k][1], 22)}<b>${COMPS[k][0]}</b><small>${COMPS[k][2]}</small></button>`).join('')}</div>
     <div class="pow"><span>위력</span><div class="pow-bar"><i></i></div><b id="sf-pw"></b></div>
-    <label class="lbl">${ic('music', 16)} 스킬 소리</label>
-    <div class="chips" id="sf-snd">${Object.entries(SOUNDS).map(([k, n]) => `<button class="chip" data-s="${k}">${n}</button>`).join('')}<button class="chip" data-s="__up">${ic('upload', 14)} 파일</button></div>
-    <label class="lbl">${ic('film', 16)} 스킬 영상·사진 <small class="muted">발동할 때 공 위에 나와요 · 배경 제거 가능</small></label>
+    <label class="lbl">${ic('pencil', 16)} 스킬 그림·영상 <small class="muted">발동할 때 공 위에 나와요</small></label>
     <div class="mbox"></div>
-    <div class="chips"><button class="chip" id="sf-mp">${ic('upload', 14)} 갤러리에서 선택</button><button class="chip" id="sf-me">${ic('wand', 14)} 편집·배경제거</button><button class="chip" id="sf-md">${ic('x', 14)} 제거</button></div>
+    <div class="chips"><button class="chip on-key" id="sf-draw">${ic('pencil', 14)} 그림 그리기</button><button class="chip" id="sf-mp">${ic('upload', 14)} 갤러리에서 선택</button><button class="chip" id="sf-me">${ic('wand', 14)} 편집·배경제거</button><button class="chip" id="sf-md">${ic('x', 14)} 제거</button></div>
+    <label class="lbl">${ic('music', 16)} 스킬 소리 <small class="muted">영상 소리를 잘라서 만들어요</small></label>
+    <div class="snd-box"><span class="snd-st"></span><div class="chips"><button class="chip on-key" id="sf-sm">${ic('film', 14)} 영상에서 소리 만들기</button><button class="chip" id="sf-sp">${ic('play', 14)} 듣기</button><button class="chip" id="sf-sd">${ic('x', 14)} 없애기</button></div></div>
     <button class="btn-play w100" id="sf-save">${ic('check', 20)} ${ed ? '수정 완료' : '스킬 만들기'}</button></div>`;
   let player = null;
   body._leave = () => player && player.destroy();
   const sync = () => {
     $$('.sw', body).forEach(b => b.classList.toggle('on', b.dataset.c === st.color));
     $$('.comp', body).forEach(b => b.classList.toggle('on', st.comps.includes(b.dataset.k)));
-    $$('#sf-snd .chip', body).forEach(b => b.classList.toggle('on', b.dataset.s === st.sound || (b.dataset.s === '__up' && AUD.isFile(st.sound))));
+    $('.snd-st', body).textContent = st.sound && st.sound.startsWith('data:') ? `영상 소리 ${st.sndLen ? st.sndLen + '초' : ''}` : st.sound && st.sound !== 'none' ? '예전 소리' : '소리 없음';
     const tmp = { ...st, lv: ed ? ed.lv : 1, fused: ed ? ed.fused : false, comps: st.comps.length ? st.comps : ['proj'] };
     const pw = st.comps.length ? skillPower(tmp) * Math.min(st.comps.length, 1 + (st.comps.length - 1) * .45) : 0;
     $('#sf-pw', body).textContent = '×' + (st.comps.length ? skillPower(tmp).toFixed(2) + ' (각 효과)' : '-'); $('.pow-bar i', body).style.width = Math.min(100, pw * 40) + '%';
   };
   const mediaBox = async () => {
     player && player.destroy(); player = null; const box = $('.mbox', body);
-    if (!st.media) { box.innerHTML = `<div class="mbox-empty">${ic('image', 30)}<small>영상이나 사진을 넣어보세요</small></div>`; return; }
+    if (!st.media) { box.innerHTML = `<div class="mbox-empty">${ic('pencil', 30)}<small>그림을 그리거나 영상·사진을 넣어보세요</small></div>`; return; }
     box.innerHTML = ''; const url = await mediaSrc(st.media); if (!url) return;
     player = makePlayer(box, url, st.media.kind, st.media.edits, { fit: 'contain', muted: true }); player.play();
   };
@@ -108,23 +108,27 @@ function skForm(body, u, p, setTab) {
   $('#sf-c', body).oninput = e => { st.color = e.target.value; sync(); };
   $$('.sw', body).forEach(b => b.onclick = () => { st.color = b.dataset.c; $('#sf-c', body).value = st.color; sync(); });
   $$('.comp', body).forEach(b => b.onclick = () => { const k = b.dataset.k, i = st.comps.indexOf(k); if (i >= 0) st.comps.splice(i, 1); else if (st.comps.length >= 4) toast('효과는 최대 4개까지 섞을 수 있어요'); else { st.comps.push(k); b.classList.add('pop'); setTimeout(() => b.classList.remove('pop'), 300); } sync(); });
-  $$('#sf-snd .chip', body).forEach(b => b.onclick = async () => {
-    const s = b.dataset.s;
-    if (s === '__up') { const f = await pickFile('audio/*'); if (!f) return; if (f.size > 2e5) return toast('200KB 이하 짧은 소리 파일만 넣을 수 있어요'); st.sound = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f); }); }
-    else st.sound = s;
-    AUD.skill(st.sound); sync();
-  });
+  $('#sf-sm', body).onclick = () => openSoundMaker((url, len) => { st.sound = url; st.sndLen = len; AUD.bufs[url] = null; AUD.skill(url); sync(); });
+  $('#sf-sp', body).onclick = () => { if (!st.sound || st.sound === 'none') return toast('먼저 소리를 만들어주세요'); AUD.skill(st.sound); };
+  $('#sf-sd', body).onclick = () => { st.sound = 'none'; st.sndLen = 0; sync(); };
+  $('#sf-draw', body).onclick = async () => {
+    const base = st.media && st.media.drawn ? await mediaSrc(st.media) : null;
+    openDraw(base, async (blob, pic) => {
+      const key = await putBlob(blob, 'm'); st.media = { key, kind: 'image', edits: edits0(), drawn: true }; st.pic = pic; mediaBox();
+      const asset = await shareBlob(key); if (asset && st.media && st.media.key === key) st.media.asset = asset;
+    });
+  };
   $('#sf-mp', body).onclick = async () => {
     const f = await pickFile('image/*,video/*'); if (!f) return; if (f.size > 40e6) return toast('40MB 이하 파일만 넣을 수 있어요');
     const kind = f.type.startsWith('video') ? 'video' : 'image', key = await putBlob(f, 'm'), url = await blobURL(key);
-    openEditor(url, kind, { key: { mode: 'ai', c: '#00ff00', tol: 90, soft: 50 } }, async e => { st.media = { key, kind, edits: e }; mediaBox(); const asset = await shareBlob(key); if (asset && st.media && st.media.key === key) st.media.asset = asset; }, { ratio: 1 });
+    openEditor(url, kind, { key: { mode: 'ai', c: '#00ff00', tol: 90, soft: 50 } }, async e => { st.media = { key, kind, edits: e }; st.pic = null; mediaBox(); const asset = await shareBlob(key); if (asset && st.media && st.media.key === key) st.media.asset = asset; }, { ratio: 1 });
   };
   $('#sf-me', body).onclick = async () => { if (!st.media) return toast('먼저 영상이나 사진을 넣어주세요'); const url = await mediaSrc(st.media); openEditor(url, st.media.kind, st.media.edits, e => { st.media.edits = e; mediaBox(); }, { ratio: 1 }); };
-  $('#sf-md', body).onclick = () => { st.media = null; mediaBox(); };
+  $('#sf-md', body).onclick = () => { st.media = null; st.pic = null; mediaBox(); };
   $('#sf-save', body).onclick = () => {
     const name = st.name.trim(); if (!name) return toast('스킬 이름을 적어주세요'); if (!st.comps.length) return toast('효과를 1개 이상 골라주세요');
-    if (ed) { Object.assign(ed, { name, color: st.color, comps: st.comps, cd: st.cd, sound: st.sound, media: st.media }); save('skills'); toast('스킬을 수정했어요'); }
-    else { const s = mkSkill(u.uid, name, st.color, st.comps, st.cd, { sound: st.sound, media: st.media }); if (!(u.equipped || []).some(id => usable(u, D.skills[id]))) equipToggle(u, s.id, false); save('skills'); toast(`'${name}' 스킬 완성!`); AUD.sfx('ding'); }
+    if (ed) { Object.assign(ed, { name, color: st.color, comps: st.comps, cd: st.cd, sound: st.sound, sndLen: st.sndLen || 0, media: st.media, pic: st.pic || null }); save('skills'); toast('스킬을 수정했어요'); }
+    else { const s = mkSkill(u.uid, name, st.color, st.comps, st.cd, { sound: st.sound, sndLen: st.sndLen || 0, media: st.media, pic: st.pic || null }); if (!(u.equipped || []).some(id => usable(u, D.skills[id]))) equipToggle(u, s.id, false); save('skills'); toast(`'${name}' 스킬 완성!`); AUD.sfx('ding'); }
     setTab('mine');
   };
   sync(); mediaBox();
