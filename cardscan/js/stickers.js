@@ -63,16 +63,28 @@ export function renderStickers() {
     const el = document.createElement('button');
     el.className = 'stk' + (s?.qty ? ' have' : '');
     const photo = s?.qty ? load(photoKey(n), null) : null;
-    el.innerHTML = `<div class="ph">${photo ? '<img alt="">' : '?'}</div><div class="no">No.${pad(n)}</div><div class="nm"></div>` +
-      (s?.qty ? `<span class="qty">×${s.qty}</span>` : '');
+    el.innerHTML = `<div class="art">${photo ? '<img alt="">' : stickerArt(n, !!s?.qty)}</div><div class="no">No.${pad(n)}</div><div class="nm"></div>` +
+      (s?.qty ? `<span class="qty">${s.qty}장</span>` : '');
     if (photo) el.querySelector('img').src = photo;
-    else if (s?.qty) el.querySelector('.ph').textContent = ko.slice(0, 1);
     el.querySelector('.nm').textContent = ko;
     el.onclick = () => openEdit(n);
     frag.appendChild(el);
   }
   grid.appendChild(frag);
   if (!grid.children.length) grid.innerHTML = `<p class="stk-empty">${filter === 'have' ? '아직 기록한 띠부씰이 없어요.<br>세대 탭에서 포켓몬을 눌러 기록해 보세요.' : '찾는 포켓몬이 없어요.'}</p>`;
+}
+
+// 귀퉁이가 살짝 떨어진 동그란 스티커 그림. 모은 것은 번호마다 다른 색, 안 모은 것은 점선
+function stickerArt(n, have) {
+  const body = 'M56.43 24.11A26 26 0 1 1 40.89 8.57Z';
+  const flap = 'M56.43 24.11L40.89 8.57Q45.03 19.97 56.43 24.11Z';
+  if (!have) return `<svg viewBox="0 0 64 64"><path d="${body}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="4 4"/><text x="32" y="39" text-anchor="middle" font-size="15" font-weight="900" fill="currentColor">${n}</text></svg>`;
+  const h = (n * 47) % 360;
+  return `<svg viewBox="0 0 64 64"><defs><linearGradient id="sg${n}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h} 95% 68%)"/><stop offset="1" stop-color="hsl(${(h + 55) % 360} 85% 55%)"/></linearGradient></defs>` +
+    `<path d="${body}" fill="url(#sg${n})" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"/>` +
+    `<path d="${flap}" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>` +
+    `<path d="M32 19l2.4 6 6 2.4-6 2.4-2.4 6-2.4-6-6-2.4 6-2.4z" fill="#fff" opacity=".9"/>` +
+    `<text x="32" y="51" text-anchor="middle" font-size="11" font-weight="900" fill="#fff">${n}</text></svg>`;
 }
 
 function openEdit(n) {

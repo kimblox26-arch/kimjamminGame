@@ -40,8 +40,10 @@ function closeSheet(s) {
 function renderHome() {
   const ct = cardsTotal(), st = stickerTotals();
   $('homeTotal').textContent = won(ct + st.krw);
-  $('homeCards').textContent = `${list.length}장 · ${won(ct)}`;
-  $('homeStk').textContent = `${st.qty}장 · ${won(st.krw)}`;
+  $('homeCardsN').textContent = `카드 ${list.length}장`;
+  $('homeCards').textContent = won(ct);
+  $('homeStkN').textContent = `띠부씰 ${st.qty}장`;
+  $('homeStk').textContent = won(st.krw);
   const strip = $('homeRecent');
   strip.innerHTML = '';
   if (!D.ready) return;
@@ -57,7 +59,7 @@ function renderHome() {
     b.onclick = () => openDetail(it);
     strip.appendChild(b);
   }
-  if (!strip.children.length) strip.innerHTML = '<div class="blank">아직 스캔한 카드가 없어요</div>';
+  if (!strip.children.length) strip.innerHTML = '<div class="blank"><svg><use href="#art-cards"/></svg><span>아직 스캔한 카드가 없어요.<br>카드 스캔으로 시작해 보세요.</span></div>';
   $('homeFoot').innerHTML = `카드 ${D.cards.length.toLocaleString('ko-KR')}장 · 시세 TCGplayer 기준${D.priceDate ? ` (${D.priceDate})` : ''}<br>환율 1달러 = ${Math.round(rate.KRW).toLocaleString('ko-KR')}원`;
 }
 
@@ -165,10 +167,21 @@ function step() {
 }
 
 let popTimer = 0, lastItem = null;
+// 가격 숫자가 0부터 빠르게 올라가는 효과
+function countUp(el, v) {
+  if (v == null) { el.textContent = won(null); return; }
+  const t0 = performance.now(), dur = 550;
+  const f = t => {
+    const k = Math.min(1, (t - t0) / dur);
+    el.textContent = won(v * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(f);
+  };
+  requestAnimationFrame(f);
+}
 function showPop(it) {
   const c = card(it.id);
   lastItem = it;
-  $('popPrice').textContent = won(itemKrw(it));
+  countUp($('popPrice'), itemKrw(it));
   $('popName').textContent = `${cardName(c)} · ${c[2]}/${c[4] || '?'}`;
   const pop = $('pop');
   pop.hidden = true; void pop.offsetWidth; pop.hidden = false;
@@ -177,30 +190,26 @@ function showPop(it) {
   renderScanBottom(true);
   navigator.vibrate?.(40);
   beep();
-  hint('인식 완료! 다음 카드');
+  hint('인식 완료!');
   clearTimeout(popTimer);
   popTimer = setTimeout(() => { pop.hidden = true; g.classList.remove('hit'); }, 2600);
 }
 
 function renderScanBottom(bump) {
-  const stack = $('stack');
-  stack.innerHTML = '';
-  const recent = list.slice(0, 3).reverse();
-  for (const it of recent) {
-    const c = card(it.id);
-    if (!c) continue;
-    const im = document.createElement('img');
-    im.src = imgUrl(c); im.alt = '';
-    stack.appendChild(im);
+  const it = list[0], c = it && card(it.id);
+  $('lastImg').hidden = !c;
+  $('lastPh').hidden = !!c;
+  if (c) {
+    if (bump) { $('lastImg').style.animation = 'none'; void $('lastImg').offsetWidth; $('lastImg').style.animation = ''; }
+    $('lastImg').src = imgUrl(c);
+    $('lastName').textContent = cardName(c);
+    $('lastPrice').textContent = won(itemKrw(it));
+  } else {
+    $('lastName').textContent = '카드를 비춰 주세요';
+    $('lastPrice').textContent = '';
   }
-  if (list[0]) {
-    const sp = document.createElement('span');
-    sp.className = 'sp'; sp.textContent = won(itemKrw(list[0]));
-    stack.appendChild(sp);
-  }
-  stack.hidden = !list.length;
+  $('pillCount').textContent = list.length;
   const pill = $('pill');
-  pill.textContent = `카드 ${list.length}장 ›`;
   if (bump) { pill.classList.remove('bump'); void pill.offsetWidth; pill.classList.add('bump'); }
 }
 $('stack').onclick = () => { if (list[0]) openDetail(list[0]); };
@@ -374,6 +383,8 @@ $('searchInput').oninput = () => {
 // ================= 시작 =================
 bus.addEventListener('change', () => {
   if (!$('v-home').hidden) renderHome();
+  if (!$('v-cards').hidden && $('detailSheet').hidden) renderCards();
+  if (!$('v-scan').hidden) renderScanBottom();
 });
 initStickers();
 route();
