@@ -64,12 +64,12 @@ const isDev = u => !!u && (u.uid === DEV_UID || u.handle === DEV_HANDLE);
 const DEV_HASH = '4c0fa6aba3a43d5a1790aa957fb80293c7bdf55b97249284d6a10328faaa7a40'; // 비밀번호는 해시로만 저장
 const D = {
   users: LS.get('users', {}), skills: LS.get('skills', {}), posts: LS.get('posts', []),
-  recs: LS.get('recs', []), reports: LS.get('reports', []),
+  recs: LS.get('recs', []), reports: LS.get('reports', []), bugs: LS.get('bugs', []),
 };
 // ===== 온라인 (다른 사람들과 같은 데이터 공유) =====
 // claude.ai 에 올린 게임에서는 공유 데이터베이스를 쓰고, 그 밖에서는 이 브라우저에만 저장해요.
 const NET = { ok: false, db: null, user: null, assets: null, cid: null, last: {}, q: {}, warned: false };
-const SHARED = ['users', 'skills', 'posts', 'reports'], PRIV = ['pw', 'email', 'age', 'google'];
+const SHARED = ['users', 'skills', 'posts', 'reports', 'bugs'], PRIV = ['pw', 'email', 'age', 'google'];
 const stab = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, y) => (o[y] = x[y], o), {}) : x);
 const pubOf = (k, o) => { if (k !== 'users') return o; const c = { ...o }; PRIV.forEach(f => delete c[f]); return c; };
 const asMap = k => Array.isArray(D[k]) ? Object.fromEntries(D[k].map(x => [x.id, x])) : D[k];
@@ -96,7 +96,7 @@ async function initNet() {
   NET.db = db;
   SHARED.forEach((k, i) => {
     const vs = snaps[i].docs.map(d => d.data());
-    if (k === 'posts' || k === 'reports') D[k] = vs.sort((a, b) => b.t - a.t); else { D[k] = {}; snaps[i].docs.forEach((d, j) => D[k][d.id] = vs[j]); }
+    if (k === 'posts' || k === 'reports' || k === 'bugs') D[k] = vs.sort((a, b) => b.t - a.t); else { D[k] = {}; snaps[i].docs.forEach((d, j) => D[k][d.id] = vs[j]); }
     snaps[i].docs.forEach((d, j) => NET.last[k + '/' + d.id] = stab(vs[j]));
     db.collection(k).onSnapshot(s => applyRemote(k, s), () => { });
   });

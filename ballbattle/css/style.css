@@ -621,3 +621,16 @@ body{letter-spacing:-.2px}
 .pv-title{cursor:default;user-select:none}
 /* 애니메이션 줄이기 */
 .reduce-motion *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+
+/* 버그 제보 / 우편함 */
+.bug-who{display:flex;align-items:center;gap:8px;padding:8px 10px;margin:6px 0 10px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+.ml-list{height:calc(100% - 120px);padding:4px 14px 30px;background:#f2f2f6}
+.ml{background:#fff;border:1px solid #e6e6eb;border-radius:8px;padding:12px;margin-top:8px;animation:rise .3s both}
+.ml.new{border-left:3px solid var(--pk)}
+.ml-top{display:flex;align-items:center;gap:8px}
+.ml-who{flex:1;min-width:0;display:flex;flex-direction:column;font-size:14px}
+.ml-who small{color:#888;font-size:12px}
+.ml-text{margin:8px 0;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.ml-acts{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.ml-n,.mail-n{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--pk);color:#fff;font-size:11px;font-style:normal;font-weight:700}
+.mail-n{position:absolute;top:-4px;right:-4px}

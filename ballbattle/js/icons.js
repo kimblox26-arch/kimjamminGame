@@ -13,6 +13,8 @@ const ICONS = {
   back: '<path d="M15 5l-7 7 7 7"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M5 16V6a2 2 0 0 1 2-2h9"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',
+  bug: '<rect x="8" y="7" width="8" height="13" rx="4"/><path d="M12 7V4M9 4l1.5 2M15 4l-1.5 2M8 11H4M8 16H4M16 11h4M16 16h4M12 11v9"/>',
   heart: '<path d="M12 20s-7.5-4.6-9.2-9.3A4.8 4.8 0 0 1 12 7.2a4.8 4.8 0 0 1 9.2 3.5C19.5 15.4 12 20 12 20z"/>',
   comment: '<path d="M4 5h16v11H10l-6 4z"/>',
   bookmark: '<path d="M6 4h12v17l-6-4-6 4z"/>',

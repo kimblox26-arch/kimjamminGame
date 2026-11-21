@@ -36,13 +36,14 @@ screen('settings', el => {
     ${stGroup('게임', [stSw('dmgNum', '피해 숫자 보이기'), stSw('shake', '화면 흔들림'), stSw('trail', '공 꼬리 효과'), stSw('autoRec', '플레이 자동 녹화'), stSeg('recQ', '녹화 화질', [['low', '낮음'], ['mid', '보통'], ['high', '높음']])])}
     ${stGroup('화면', [stSw('reduceMotion', '애니메이션 줄이기'), stSeg('fontSize', '글자 크기', [['sm', '작게'], ['mid', '보통'], ['lg', '크게']])])}
     ${stGroup('영상', [stSw('autoplay', '영상 자동 재생'), stSw('muteVideo', '소리 끄고 시작'), stSw('dataSaver', '데이터 절약', '영상을 누를 때만 재생해요')])}
+    ${stGroup('도움', [stNav('bug', '버그 제보', 'bug', `${COIN} +${BUG_REWARD}`)])}
     ${stGroup('저장 공간', [`<div class="st-row"><div class="st-t"><b>플레이 영상</b><small>${recs.length}개 저장됨</small></div><button class="st-btn" data-clear>모두 지우기</button></div>`])}
-    ${isDev(u) ? stGroup('개발자', [stNav('reports', '신고 목록', 'flag', D.reports.length), stNav('ban', '플레이어 밴', 'ban'), stNav('verify', '인증마크 주기', 'check')]) : ''}
-    ${stGroup('정보', [`<div class="st-row"><div class="st-t"><b>게임</b></div><span class="st-val">${esc(T)}</span></div>`, `<div class="st-row"><div class="st-t"><b>버전</b></div><span class="st-val">2.0</span></div>`, `<div class="st-row"><div class="st-t"><b>온라인</b></div><span class="st-val">${NET.ok ? '연결됨' : '이 기기에만 저장'}</span></div>`])}
+    ${isDev(u) ? stGroup('개발자', [stNav('mailbox', '우편함', 'mail', unreadMail() || ''), stNav('ban', '플레이어 밴', 'ban'), stNav('verify', '인증마크 주기', 'check')]) : ''}
+    ${stGroup('정보', [`<div class="st-row"><div class="st-t"><b>게임</b></div><span class="st-val">${esc(T)}</span></div>`, `<div class="st-row"><div class="st-t"><b>버전</b></div><span class="st-val">1</span></div>`, `<div class="st-row"><div class="st-t"><b>온라인</b></div><span class="st-val">${NET.ok ? '연결됨' : '이 기기에만 저장'}</span></div>`])}
     <button class="st-logout">${ic('logout', 18)} 로그아웃</button></div>`;
   bindSettings(el, id => {
     if (id === 'edit') go('edit'); if (id === 'privacy') go('privacy'); if (id === 'pw') changePw(u);
-    if (id === 'reports') reportsModal(); if (id === 'ban') banModal(''); if (id === 'verify') verifyModal('');
+    if (id === 'mailbox') go('mailbox'); if (id === 'bug') bugReport(u); if (id === 'ban') banModal(''); if (id === 'verify') verifyModal('');
   });
   $('[data-clear]', el).onclick = async () => {
     if (!recs.length) return toast('지울 영상이 없어요');
@@ -97,3 +98,48 @@ function verifyModal(handle = '', onDone) {
   hi.oninput = upd; upd(); $('[data-c]', m).onclick = () => m.close();
   ok.onclick = () => { const t = byHandle(hi.value); if (!t) return toast('아이디를 확인해주세요'); if (isDev(t)) return toast('개발자는 이미 인증돼 있어요'); t.verified = !t.verified; save('users'); m.close(); toast(t.verified ? `@${t.handle} 님에게 인증마크를 줬어요` : `@${t.handle} 님의 인증마크를 뺐어요`); onDone && onDone(); };
 }
+
+// ===== 버그 제보 → 개발자 우편함 =====
+const BUG_REWARD = 10, BUG_GAP = 10 * 60 * 1000; // 같은 사람은 10분에 한 번
+const unreadMail = () => D.bugs.filter(b => !b.read).length;
+function bugReport(u) {
+  const last = D.bugs.filter(b => b.uid === u.uid).sort((a, b) => b.t - a.t)[0];
+  const m = modal(`<h3 class="m-title">${ic('bug')} 버그 제보</h3><p class="m-sub">제보하면 ${COIN} ${BUG_REWARD}코인을 드려요. 개발자 우편함으로 가요.</p>
+    <div class="bug-who">${avImg(u, 'av-xs')}<span>${nameHTML(u)}</span><small class="muted">@${esc(u.handle)}</small></div>
+    <textarea class="inp" id="bg-t" maxlength="500" rows="5" placeholder="어디서 어떤 문제가 생겼는지 적어주세요"></textarea><div class="err" id="bg-e"></div>
+    <div class="row2"><button class="btn-ghost" data-c>취소</button><button class="btn-main" id="bg-ok">제보하기</button></div>`);
+  $('[data-c]', m).onclick = () => m.close();
+  $('#bg-ok', m).onclick = () => {
+    const t = $('#bg-t', m).value.trim(), e = $('#bg-e', m);
+    if (t.length < 5) return e.textContent = '5자 이상 적어주세요';
+    if (last && Date.now() - last.t < BUG_GAP) return e.textContent = `제보는 10분에 한 번 할 수 있어요 (${Math.ceil((BUG_GAP - (Date.now() - last.t)) / 60000)}분 남음)`;
+    D.bugs.unshift({ id: 'b_' + uid6(), uid: u.uid, text: t, t: Date.now(), read: false });
+    u.coins += BUG_REWARD; save('bugs', 'users'); m.close(); AUD.sfx('coin'); toast(`제보 고마워요! ${BUG_REWARD}코인을 받았어요`);
+  };
+}
+screen('mailbox', (el, p) => {
+  const u = me(); if (!isDev(u)) return back();
+  p.tab = p.tab || 'bugs';
+  const render = () => {
+    const bugs = D.bugs, reps = D.reports;
+    const who = id => { const x = D.users[id]; return x ? `${avImg(x, 'av-xs')}<div class="ml-who"><span>${nameHTML(x)}</span><small>@${esc(x.handle)}</small></div>` : `<img class="av-xs" src="${avatarSrc({})}" alt=""><div class="ml-who"><span class="muted">탈퇴한 사용자</span></div>`; };
+    const list = p.tab === 'bugs'
+      ? bugs.map(b => `<div class="ml ${b.read ? '' : 'new'}" data-id="${b.id}"><div class="ml-top">${who(b.uid)}<small class="muted">${ago(b.t)}</small></div><p class="ml-text">${esc(b.text)}</p><div class="ml-acts">${b.read ? '<small class="muted">읽음</small>' : `<button class="sa" data-read>읽음 표시</button>`}<button class="sa del" data-del>${ic('x', 14)} 삭제</button></div></div>`).join('')
+      : reps.map(r => { const t = D.users[r.to]; return `<div class="ml" data-rid="${r.id}"><div class="ml-top">${who(r.from)}<small class="muted">${ago(r.t)}</small></div><p class="ml-text"><b>@${esc(t ? t.handle : '?')}</b> 신고 · ${esc(r.reason)}${r.detail ? '<br>' + esc(r.detail) : ''}</p><div class="ml-acts">${t ? `<button class="mini-ban" data-ban="${esc(t.handle)}">${ic('ban', 12)} 밴</button>` : ''}<button class="sa del" data-rdel>${ic('x', 14)} 삭제</button></div></div>`; }).join('');
+    el.innerHTML = `<div class="hdr light"><button class="icon-btn" data-back>${ic('back')}</button><h2>우편함</h2><span></span></div>
+      <div class="seg"><button data-t="bugs" class="${p.tab === 'bugs' ? 'on' : ''}">버그 제보 ${unreadMail() ? `<em class="ml-n">${unreadMail()}</em>` : ''}</button><button data-t="reports" class="${p.tab === 'reports' ? 'on' : ''}">신고 ${reps.length}</button><i class="seg-ind" style="width:calc((100% - 8px)/2);transform:translateX(${p.tab === 'bugs' ? 0 : 100}%)"></i></div>
+      <div class="scroll ml-list">${list || `<div class="empty">${ic('mail', 44)}<p>우편함이 비어 있어요</p></div>`}</div>`;
+  };
+  el.onclick = e => {
+    const t = e.target.closest('[data-t]'); if (t) { p.tab = t.dataset.t; return render(); }
+    const card = e.target.closest('[data-id]');
+    if (card && e.target.closest('[data-read]')) { const b = D.bugs.find(x => x.id === card.dataset.id); if (b) { b.read = true; save('bugs'); render(); } return; }
+    if (card && e.target.closest('[data-del]')) { D.bugs = D.bugs.filter(x => x.id !== card.dataset.id); save('bugs'); return render(); }
+    const rc = e.target.closest('[data-rid]');
+    if (rc && e.target.closest('[data-rdel]')) { D.reports = D.reports.filter(x => x.id !== rc.dataset.rid); save('reports'); return render(); }
+    const bn = e.target.closest('[data-ban]'); if (bn) return banModal(bn.dataset.ban, render);
+  };
+  render();
+  const live = ev => { if (!el.isConnected) return document.removeEventListener('netchange', live); if (ev.detail === 'bugs' || ev.detail === 'reports') render(); };
+  document.addEventListener('netchange', live);
+});

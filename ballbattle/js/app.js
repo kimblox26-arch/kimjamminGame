@@ -160,7 +160,7 @@ TAB_R.home = page => {
   const u = me(), eq = loadout(u), recs = D.recs.filter(r => r.uid === u.uid).slice(0, 3);
   const shared = Object.values(D.skills).filter(s => s.shared && s.owner !== u.uid && D.users[s.owner] && !D.users[s.owner].banned).length;
   page.innerHTML = `<div class="ph hm"><div class="banner"><div class="banner-media"></div></div>
-    <button class="glass pen" data-edit>${ic('pencil', 20)}</button>
+    <button class="glass pen" data-edit>${ic('pencil', 20)}</button>${isDev(u) ? `<button class="glass menu-btn" data-mail>${ic('mail', 21)}${unreadMail() ? `<em class="mail-n">${unreadMail()}</em>` : ''}</button>` : ''}
     <div class="home-prof">${avImg(u, 'av-sq')}<div class="hp-name">${nameHTML(u)}</div><div class="hp-id">@${esc(u.handle)}</div>
       <div class="hm-chips"><span>${ic('trophy', 14)} <b>${u.wins}</b>승</span><span>${COIN} <b>${coinText(u)}</b></span><span class="hm-on"><i class="dot"></i> <b>${LIVE.online()}</b>명 접속 중</span></div></div></div>
     <div class="home-body">
@@ -175,6 +175,7 @@ TAB_R.home = page => {
   document.addEventListener('livechange', onLive);
   page._leave = () => { stopAnim(); document.removeEventListener('livechange', onLive); };
   $('[data-edit]', page).onclick = () => go('edit');
+  const mb = $('[data-mail]', page); if (mb) mb.onclick = () => go('mailbox');
   $('#hm-play', page).onclick = () => go('match', {}, 'zoom');
   $('#hm-sk', page).onclick = () => go('skills');
   $('#hm-sh', page).onclick = () => go('shared');

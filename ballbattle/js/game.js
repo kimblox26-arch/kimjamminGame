@@ -15,8 +15,9 @@ const COMPS = {
   meteor: ['메테오', 'meteor', '잠시 후 거대 운석'],
 };
 const COMP_KEYS = Object.keys(COMPS);
-const skillPower = s => (s.cd / 6) * (1 + .15 * (s.lv - 1)) * (s.fused ? 1.1 : 1) * (1.4 / (s.comps.length + .4));
-const skillCD = s => +(s.cd * (1 - .04 * (s.lv - 1))).toFixed(2);
+const SKILL_CD = 6; // 모든 스킬 쿨타임 동일
+const skillPower = s => (1 + .15 * (s.lv - 1)) * (s.fused ? 1.1 : 1) * (1.4 / (s.comps.length + .4));
+const skillCD = () => SKILL_CD;
 function srand(s) { return () => (s = (s * 16807) % 2147483647) / 2147483647; }
 const GRAY = '#9aa0a6';
 // 프로필 사진에서 공 색깔 뽑기 (사진이 없으면 회색)
