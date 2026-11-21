@@ -1,0 +1,9 @@
+{
+  "name": "카드 스캐너",
+  "short_name": "카드스캐너",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#1f6feb",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
