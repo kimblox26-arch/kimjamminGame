@@ -25,13 +25,17 @@
 'use strict';
 // ===== tikball box 홍보영상 (9:16, 약 22초) =====
 // 게임 엔진을 그대로 써서 장면을 그리고, ?rec=1 이면 소리까지 함께 webm 으로 저장해요.
-const W = 720, H = 1280, DUR = 22, cv = document.getElementById('cv'), c = cv.getContext('2d');
+const W = 720, H = 1280, DUR = 25, cv = document.getElementById('cv'), c = cv.getContext('2d');
 const FONT = "'IBM Plex Sans KR','WenQuanYi Zen Hei','Apple SD Gothic Neo',sans-serif";
 const PK = '#FE2C55', CY = '#25F4EE';
 const ez = t => t < 0 ? 0 : t > 1 ? 1 : 1 - Math.pow(1 - t, 3);            // ease-out
 const pop = t => t <= 0 ? 0 : t >= 1 ? 1 : 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2); // 살짝 튀어나옴
 const iconImg = (n, col) => { const i = new Image(); i.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>`); return i; };
 const ICO = { flask: iconImg('flask', PK), users: iconImg('users', '#1c7ed6'), trophy: iconImg('trophy', '#f59f00'), film: iconImg('film', '#7048e8') };
+function drawBadge(x, y, r) { // 인증마크
+  c.save(); c.translate(x, y); c.fillStyle = '#20D5EC'; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill();
+  c.strokeStyle = '#fff'; c.lineWidth = r * .24; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath(); c.moveTo(-r * .42, r * .04); c.lineTo(-r * .12, r * .34); c.lineTo(r * .45, -r * .28); c.stroke(); c.restore();
+}
 function text(s, x, y, size, col = '#111', w = 700, align = 'center', a = 1) { c.save(); c.globalAlpha *= a; c.font = `${w} ${size}px ${FONT}`; c.textAlign = align; c.textBaseline = 'middle'; c.fillStyle = col; c.fillText(s, x, y); c.restore(); }
 function logo(x, y, size, t0, now) { // 글자가 하나씩 톡톡
   const s = T; c.save(); c.font = `700 ${size}px ${FONT}`; const total = c.measureText(s).width; let cx = x - total / 2;
@@ -122,8 +126,14 @@ function frame(now) {
       c.save(); c.globalAlpha *= kk; c.strokeStyle = '#e6e6eb'; c.lineWidth = 2; c.strokeRect(x, y - 60, 560, 120); c.drawImage(ICO[ic2], x + 30, y - 32, 64, 64); c.restore();
       text(s, x + 120, y, 36, '#111', 700, 'left', kk); });
     c.globalAlpha = 1; }
-  // 6) 마무리
-  else { const k = t - 19.4; drawBox(W / 2, 430, 260, Math.min(1, ez(k / .6) + .55), dt); logo(W / 2, 680, 96, 19.6, t);
+  // 6) 인증마크 이벤트
+  else if (t < 22.4) { c.globalAlpha = fade(19.4, 22.4); const k = t - 19.4, bk = pop((k - .1) / .45);
+    c.save(); c.translate(W / 2, 470); c.rotate((1 - bk) * -.6); c.scale(bk, bk); c.fillStyle = 'rgba(32,213,236,.18)'; c.beginPath(); c.arc(0, 0, 150 + 10 * Math.sin(t * 5), 0, 7); c.fill(); drawBadge(0, 0, 110); c.restore();
+    text('지금 빨리 플레이하면', W / 2, 720, 54, '#111', 700, 'center', ez((k - .5) / .35));
+    text('인증마크를 드려요!', W / 2, 805, 64, '#20B8D0', 700, 'center', ez((k - .8) / .35));
+    text('먼저 온 플레이어만', W / 2, 900, 32, '#888', 500, 'center', ez((k - 1.2) / .35)); c.globalAlpha = 1; }
+  // 7) 마무리
+  else { const k = t - 22.4; drawBox(W / 2, 430, 260, Math.min(1, ez(k / .6) + .55), dt); logo(W / 2, 680, 96, 22.6, t);
     const pk = pop((k - .9) / .4), pulse = 1 + .04 * Math.sin(t * 7); c.save(); c.globalAlpha = Math.min(1, pk * 1.5); c.translate(W / 2, 830); c.scale(pk * pulse, pk * pulse);
     c.fillStyle = PK; c.fillRect(-190, -48, 380, 96); c.restore(); text('지금 플레이', W / 2, 830, 42, '#fff', 700, 'center', Math.min(1, pk * 1.5));
     text('created by @' + BB_CONFIG.CREDIT, W / 2, 1120, 28, '#999', 500, 'center', ez((k - 1.2) / .4)); }

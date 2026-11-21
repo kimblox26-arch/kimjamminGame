@@ -2,9 +2,9 @@
 // ===== 맵 / 스킬 효과 / 게임 엔진 / 매칭 =====
 const MAPS = {
   arena: { name: '일반', desc: '함정 없는 깔끔한 박스', bg: '#ffffff' },
-  jungle: { name: '정글', desc: '줄기에 걸리면 잠시 멈춰요. 빠져나오면 줄기는 사라져요', bg: '#f1f8f1' },
-  lava: { name: '용암', desc: '용암에 닿으면 1초에 HP 1 감소', bg: '#fff6f1' },
-  sky: { name: '하늘', desc: '구름에 닿으면 느려져요', bg: '#eef6ff' },
+  jungle: { name: '정글', desc: '줄기에 걸리면 잠시 멈춰요. 빠져나오면 줄기는 사라져요', bg: '#d9edcf' },
+  lava: { name: '용암 지옥', desc: '용암에 닿으면 1초에 HP 1 감소', bg: '#2a0808' },
+  sky: { name: '하늘', desc: '구름에 닿으면 느려져요', bg: '#cfeaff' },
 };
 const MAP_KEYS = Object.keys(MAPS);
 const COMPS = {
@@ -38,10 +38,53 @@ function segDist(px, py, x1, y1, x2, y2) {
 }
 
 function drawMapBG(c, mk, W, H, t = 0) {
-  c.fillStyle = MAPS[mk].bg; c.fillRect(0, 0, W, H); const R = srand(7); c.save();
-  if (mk === 'jungle') for (let i = 0; i < 18; i++) { c.fillStyle = 'rgba(80,160,90,.12)'; c.beginPath(); c.ellipse(R() * W, R() * H, 8 + R() * 14, 4 + R() * 5, R() * 6 + Math.sin(t + i) * .08, 0, 7); c.fill(); }
-  if (mk === 'lava') { c.strokeStyle = 'rgba(255,120,60,.18)'; c.lineWidth = 2; for (let i = 0; i < 10; i++) { let x = R() * W, y = R() * H; c.beginPath(); c.moveTo(x, y); for (let j = 0; j < 4; j++) { x += (R() - .5) * W * .2; y += (R() - .5) * H * .2; c.lineTo(x, y); } c.stroke(); } }
-  if (mk === 'sky') { c.fillStyle = 'rgba(255,255,255,.7)'; for (let i = 0; i < 5; i++) { c.beginPath(); c.ellipse((R() * W + t * 6) % (W + 60) - 30, R() * H, 34, 11, 0, 0, 7); c.fill(); } }
+  const R = srand(7), k = W / 400; c.save();
+  if (mk === 'arena') { c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); }
+  if (mk === 'jungle') { // 나무·덩굴이 우거진 정글
+    let g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#cfe8c2'); g.addColorStop(1, '#b9dca8'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+    for (let i = 0; i < 22; i++) { c.fillStyle = 'rgba(60,140,70,.14)'; c.beginPath(); c.ellipse(R() * W, R() * H, (8 + R() * 14) * k, (4 + R() * 5) * k, R() * 6, 0, 7); c.fill(); }
+    c.strokeStyle = '#5a9a4a'; c.lineWidth = 2 * k; c.lineCap = 'round';
+    for (let i = 0; i < 16; i++) { const x = R() * W, y = H * (.2 + R() * .8); for (let j = -1; j <= 1; j++) { c.beginPath(); c.moveTo(x, y); c.lineTo(x + j * 5 * k, y - (8 + R() * 6) * k); c.stroke(); } }
+    [[.07, .16], [.93, .13], [.05, .58], [.95, .55], [.09, .93], [.91, .95], [.5, .04]].forEach(([tx, ty], i) => { // 가장자리 나무
+      const x = tx * W, y = ty * H, sw = Math.sin(t * 1.2 + i) * 2 * k, r = 26 * k;
+      c.fillStyle = '#7a5230'; c.fillRect(x - 5 * k, y, 10 * k, 30 * k);
+      c.fillStyle = '#2f7d32'; c.beginPath(); c.arc(x - r * .55 + sw, y - 2 * k, r * .7, 0, 7); c.arc(x + r * .55 + sw, y, r * .7, 0, 7); c.arc(x + sw, y - r * .55, r * .8, 0, 7); c.fill();
+      c.fillStyle = 'rgba(255,255,255,.12)'; c.beginPath(); c.arc(x - r * .2 + sw, y - r * .75, r * .35, 0, 7); c.fill();
+    });
+    for (let i = 0; i < 7; i++) { // 위에서 늘어진 줄기
+      const x = (.1 + i * .13 + R() * .04) * W, len = (60 + R() * 80) * k, sw = Math.sin(t * 1.5 + i * 1.7) * 10 * k;
+      c.strokeStyle = '#3f8f3a'; c.lineWidth = 3 * k; c.beginPath(); c.moveTo(x, 0); c.quadraticCurveTo(x + sw, len * .55, x + sw * .6, len); c.stroke();
+      c.fillStyle = '#5cb85c'; for (let j = 1; j < 5; j++) { const yy = len * j / 5, xx = x + sw * (yy / len) * .9; c.beginPath(); c.ellipse(xx + (j % 2 ? 5 : -5) * k, yy, 6 * k, 3 * k, j % 2 ? .6 : -.6, 0, 7); c.fill(); }
+    }
+  }
+  if (mk === 'lava') { // 용암 지옥
+    let g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#3b0a0a'); g.addColorStop(1, '#160303'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+    const glow = .5 + .3 * Math.sin(t * 2);
+    for (let i = 0; i < 12; i++) { let x = R() * W, y = R() * H; const pts = [[x, y]]; for (let j = 0; j < 4; j++) { x += (R() - .5) * W * .22; y += (R() - .5) * H * .22; pts.push([x, y]); }
+      for (const [lw, col] of [[6 * k, `rgba(255,60,20,${.18 * glow})`], [2 * k, `rgba(255,150,40,${.7 * glow})`]]) { c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); pts.forEach(([a, b], n) => n ? c.lineTo(a, b) : c.moveTo(a, b)); c.stroke(); } }
+    c.fillStyle = '#0d0202'; c.beginPath(); c.moveTo(0, H); for (let i = 0; i <= 10; i++) c.lineTo(i * W / 10, H - (i % 2 ? 26 + R() * 20 : 6) * k); c.lineTo(W, H); c.fill(); // 바위 가시
+    for (let i = 0; i < 14; i++) { // 아래쪽 불길
+      const x = (i + .5) * W / 14, hh = (24 + 14 * Math.sin(t * 9 + i * 2.1) + 8 * Math.sin(t * 13 + i)) * k, w = 15 * k;
+      const fg = c.createLinearGradient(0, H, 0, H - hh); fg.addColorStop(0, 'rgba(255,90,20,.95)'); fg.addColorStop(.6, 'rgba(255,170,40,.8)'); fg.addColorStop(1, 'rgba(255,230,120,0)');
+      c.fillStyle = fg; c.beginPath(); c.moveTo(x - w, H); c.quadraticCurveTo(x - w * .6, H - hh * .5, x + Math.sin(t * 6 + i) * 4 * k, H - hh); c.quadraticCurveTo(x + w * .6, H - hh * .5, x + w, H); c.fill();
+    }
+    for (let i = 0; i < 26; i++) { // 올라가는 불티
+      const sp = 20 + R() * 40, x0 = R() * W, ph = R() * H, y = H - ((t * sp * k + ph) % H), x = x0 + Math.sin(t * 1.3 + i) * 10 * k, a = Math.min(1, y / H * 1.4);
+      c.fillStyle = `rgba(255,${140 + (i % 4) * 25},40,${a * .85})`; c.beginPath(); c.arc(x, y, (1.2 + (i % 3)) * k, 0, 7); c.fill();
+    }
+    g = c.createLinearGradient(0, 0, 0, H * .35); g.addColorStop(0, 'rgba(0,0,0,.35)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H * .35);
+  }
+  if (mk === 'sky') { // 새가 날아다니는 하늘
+    let g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#9fd3ff'); g.addColorStop(1, '#e9f6ff'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+    const sx = W * .84, sy = H * .13, sr = 26 * k; c.fillStyle = 'rgba(255,236,150,.35)'; c.beginPath(); c.arc(sx, sy, sr * 1.7, 0, 7); c.fill(); c.fillStyle = '#ffe680'; c.beginPath(); c.arc(sx, sy, sr, 0, 7); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.6)'; for (let i = 0; i < 6; i++) { c.beginPath(); c.ellipse((R() * W + t * 6 * k) % (W + 80 * k) - 40 * k, R() * H, 36 * k, 11 * k, 0, 0, 7); c.fill(); }
+    c.strokeStyle = '#34495e'; c.lineCap = 'round'; c.lineJoin = 'round';
+    for (let i = 0; i < 7; i++) { // 날갯짓하는 새
+      const dir = i % 3 ? 1 : -1, sp = (28 + R() * 30) * k, span = W + 60 * k, off = R() * span, bx = dir > 0 ? (t * sp + off) % span - 30 * k : W + 30 * k - ((t * sp + off) % span);
+      const by = H * (.1 + R() * .8) + Math.sin(t * 1.6 + i) * 8 * k, sz = (6 + R() * 5) * k, f = Math.sin(t * 11 + i * 1.9) * .9;
+      c.lineWidth = 2 * k; c.beginPath(); c.moveTo(bx - sz, by - sz * f * .8); c.quadraticCurveTo(bx - sz * .45, by - sz * .25, bx, by); c.quadraticCurveTo(bx + sz * .45, by - sz * .25, bx + sz, by - sz * f * .8); c.stroke();
+    }
+  }
   c.restore();
 }
 function drawCloud(c, x, y, w, hh, a = .95) {
@@ -84,7 +127,7 @@ class Game {
     for (const b of this.balls) for (const sk of b.sk) sk.t = sk.cd * (.35 + this.rng() * .3);
     this.vines = []; this.lava = []; this.clouds = []; this.vineT = 5;
     this.place = r => { for (let i = 0; i < 60; i++) { const x = 45 + this.rng() * 310, y = 45 + this.rng() * 310; if (this.balls.every(b => Math.hypot(b.x - x, b.y - y) > r + 60) && this.lava.every(l => Math.hypot(l.x - x, l.y - y) > r + l.r + 10)) return [x, y]; } return [200, 200]; };
-    if (this.map === 'jungle') for (let i = 0; i < 4; i++) this.addVine();
+    if (this.map === 'jungle') for (let i = 0; i < 6; i++) this.addVine();
     if (this.map === 'lava') for (let i = 0; i < 4; i++) { const r = 28 + this.rng() * 16, [x, y] = this.place(r); this.lava.push({ x, y, r, ph: this.rng() * 6 }); }
     if (this.map === 'sky') for (let i = 0; i < 4; i++) this.clouds.push({ x: this.rng() * 400, y: 55 + i * 92 + this.rng() * 20, w: 95 + this.rng() * 40, h: 42 + this.rng() * 12, vx: (this.rng() < .5 ? -1 : 1) * (15 + this.rng() * 20) });
   }
@@ -204,7 +247,7 @@ class Game {
     const [A, B] = this.balls;
     for (const b of this.balls) b.lag += (Math.max(0, b.hp) - b.lag) * Math.min(1, dt * 2.5);
     if (this.map === 'jungle') {
-      this.vineT -= dt; if (this.vineT <= 0) { this.vineT = 5; if (this.vines.length < 5) this.addVine(); }
+      this.vineT -= dt; if (this.vineT <= 0) { this.vineT = 5; if (this.vines.length < 7) this.addVine(); }
       for (const v of this.vines) { if (v.st === 0) v.a = Math.min(1, v.a + dt * 2); if (v.st === 2) v.a -= dt * 1.5; v.ph += dt; }
       this.vines = this.vines.filter(v => v.st !== 2 || v.a > 0);
     }
