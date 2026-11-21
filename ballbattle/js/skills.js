@@ -1,6 +1,6 @@
 'use strict';
 // ===== 공 스킬 제작 / 융합 / 업그레이드 / 다른 사람 스킬 =====
-const SK_COLORS = ['#ff6a3d', '#ffd43b', '#7cff6b', '#25F4EE', '#3d8bff', '#b46bff', '#FE2C55', '#ffffff'];
+const SK_COLORS = ['#ff6a3d', '#ffd43b', '#7cff6b', '#25F4EE', '#3d8bff', '#b46bff', '#FE2C55', '#111111'];
 const compChips = s => s.comps.map(c => `<span class="cchip">${ic(COMPS[c][1], 13)}${COMPS[c][0]}</span>`).join('');
 const skIcon = s => `<div class="sk-ic" style="--c:${s.color}">${ic(COMPS[s.comps[0]][1], 26)}${s.comps.length > 1 ? `<b>+${s.comps.length - 1}</b>` : ''}</div>`;
 function skCard(s, acts, extra = '') {
@@ -101,15 +101,15 @@ function skForm(body, u, p, setTab) {
   // 미리보기: 공이 스킬 효과를 쓰는 작은 애니메이션
   const pc = $('.sk-preview canvas', body), px = pc.getContext('2d'); let pt = 0, praf = 0;
   const prev = () => {
-    pt += 1 / 60; px.clearRect(0, 0, 240, 140); px.fillStyle = '#12121c'; px.fillRect(0, 0, 240, 140);
-    const k = pt % 2, bx = 60 + Math.sin(pt * 2) * 10, ex = 185; px.fillStyle = '#FE2C55'; px.beginPath(); px.arc(ex, 70, 18, 0, 7); px.fill();
-    px.fillStyle = st.color; px.shadowColor = st.color; px.shadowBlur = 14; px.beginPath(); px.arc(bx, 70, 20, 0, 7); px.fill(); px.shadowBlur = 0;
+    pt += 1 / 60; px.clearRect(0, 0, 240, 140); px.fillStyle = '#f5f5f7'; px.fillRect(0, 0, 240, 140);
+    const k = pt % 2, bx = 60 + Math.sin(pt * 2) * 10, ex = 185; px.fillStyle = '#ced4da'; px.beginPath(); px.arc(ex, 70, 18, 0, 7); px.fill();
+    px.fillStyle = st.color; px.beginPath(); px.arc(bx, 70, 20, 0, 7); px.fill();
     if (k < 1) {
       px.globalAlpha = 1 - k; px.strokeStyle = st.color; px.lineWidth = 4; px.beginPath(); px.arc(bx, 70, 20 + k * 50, 0, 7); px.stroke();
       if (st.comps.includes('proj') || st.comps.includes('laser') || st.comps.includes('bolt')) { px.fillStyle = st.color; px.beginPath(); px.arc(bx + (ex - bx) * k, 70, 6, 0, 7); px.fill(); }
       px.globalAlpha = 1;
     }
-    px.fillStyle = '#fff'; px.font = '14px Jua'; px.textAlign = 'center'; px.fillText(st.name || '스킬 이름', bx, 36 - (k < .3 ? (.3 - k) * 30 : 0));
+    px.fillStyle = '#111'; px.font = '14px Jua'; px.textAlign = 'center'; px.fillText(st.name || '스킬 이름', bx, 36 - (k < .3 ? (.3 - k) * 30 : 0));
     praf = requestAnimationFrame(prev);
   };
   prev(); const ol = body._leave; body._leave = () => { cancelAnimationFrame(praf); ol(); };

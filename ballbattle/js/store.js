@@ -78,20 +78,12 @@ function newUser(o) {
 function loadout(u) {
   return (u.equipped || []).map(id => D.skills[id]).filter(s => s && (s.owner === u.uid || s.shared) && !(D.users[s.owner] || {}).banned).slice(0, 3);
 }
-// 기본 아바타 (사진이 없을 때 자동 생성)
-const _av = {};
+// 프로필 사진이 아직 없으면 하얀색
+let _white = '';
 function avatarSrc(u) {
-  if (!u) return ''; if (u.avatar) return u.avatar; if (_av[u.uid]) return _av[u.uid];
-  let h = 0; for (const ch of u.handle) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
-  const hue = h % 360, g = x.createLinearGradient(0, 0, 128, 128);
-  g.addColorStop(0, `hsl(${hue},80%,62%)`); g.addColorStop(1, `hsl(${(hue + 60) % 360},80%,45%)`);
-  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
-  x.fillStyle = '#ffe0bd'; x.beginPath(); x.arc(64, 74, 40, 0, 7); x.fill();
-  x.fillStyle = '#222'; x.beginPath(); x.ellipse(50, 70, 5, 8, 0, 0, 7); x.ellipse(78, 70, 5, 8, 0, 0, 7); x.fill();
-  x.strokeStyle = '#222'; x.lineWidth = 4; x.lineCap = 'round'; x.beginPath(); x.arc(64, 82, 14, .2 * Math.PI, .8 * Math.PI); x.stroke();
-  x.fillStyle = `hsl(${(hue + 180) % 360},70%,42%)`; x.beginPath(); x.ellipse(64, 46, 42, 22, 0, Math.PI, 0); x.fill(); x.fillRect(18, 44, 92, 8);
-  return _av[u.uid] = c.toDataURL();
+  if (!u) return ''; if (u.avatar) return u.avatar;
+  if (!_white) { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 64, 64); _white = c.toDataURL(); }
+  return _white;
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function nameHTML(u) {

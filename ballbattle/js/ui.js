@@ -73,7 +73,7 @@ async function mountBanner(root, u) {
   box.innerHTML = kind === 'video' ? `<video src="${src}" autoplay muted loop playsinline></video>` : `<img src="${src}" alt="">`;
   tintOf(box.firstElementChild, kind).then(c => root.style.setProperty('--tint', c || defTint(u)));
 }
-function defTint(u) { let h = 0; for (const ch of u.handle) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return `hsl(${h % 360},55%,45%)`; }
+function defTint() { return '#eef0f3'; }
 function tintOf(el, kind) {
   return new Promise(res => {
     const go2 = () => {

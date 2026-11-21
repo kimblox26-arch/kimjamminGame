@@ -116,11 +116,10 @@ function toggleSub(o) {
 }
 async function sharePost(p) {
   const url = location.href.split('#')[0] + '#v=' + p.id;
-  try {
-    if (navigator.share) await navigator.share({ title: p.title, text: `${p.title} - ${T}`, url });
-    else { await navigator.clipboard.writeText(url); toast('링크를 복사했어요'); }
-    p.shares++; save('posts');
-  } catch (e) { }
+  let ok = false;
+  if (navigator.share) { try { await navigator.share({ title: p.title, text: `${p.title} - ${T}`, url }); ok = true; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  if (!ok) { try { await navigator.clipboard.writeText(url); toast('링크를 복사했어요'); ok = true; } catch (e) { toast('공유할 수 없어요'); } }
+  if (ok) { p.shares++; save('posts'); }
 }
 function openComments(p, onChange) {
   const row = c => { const o = D.users[c.uid]; return o ? `<div class="cm">${avImg(o, 'av-xs')}<div><b>@${esc(o.handle)}</b>${o.dev ? BADGE : ''} <small class="muted">${ago(c.t)}</small><p>${esc(c.text)}</p></div></div>` : ''; };
