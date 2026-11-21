@@ -502,3 +502,25 @@ body{letter-spacing:-.2px}
 .chip,.sa,.seg button,.seg2 button,.feed-tabs button,.sub,.mini-ban,.mini-btn,.coin-pill{font-weight:600}
 .card,.sk-card,.rk,.g-card,.ms-card,.home-stats{border:1px solid var(--line)}
 .pick-gal{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;aspect-ratio:9/16;border:1px dashed #c9c9d1;border-radius:6px;color:#555}
+
+/* 로딩 (깔끔하게) */
+.load{gap:20px;background:#fff}
+.load-cv{width:120px;height:120px;animation:pop .5s both}
+.logo,.logo.sm{font-family:'IBM Plex Sans KR',sans-serif;font-weight:700;font-size:48px;letter-spacing:-2px;color:#111;text-shadow:none;gap:0}
+.logo span{color:#111;text-shadow:none;animation:rise .45s var(--d) both}
+.logo.sm{font-size:40px}
+.load-info{width:200px;transition:opacity .3s}
+.load-row{display:flex;justify-content:space-between;font-size:12px;color:var(--tx2);margin-bottom:7px;font-variant-numeric:tabular-nums}
+.load-pct{font-size:12px;color:#111}
+.load-bar{width:100%;height:3px;border-radius:0;background:#ececf0}
+.load-bar i{border-radius:0;background:#111}
+.load.loaded .load-info{display:none}
+.welcome{font-size:17px;color:#333;min-height:26px}
+.btn-start{padding:14px 44px;font-size:19px;font-family:'IBM Plex Sans KR',sans-serif;font-weight:700}
+/* 스킬 칸 */
+.slot.crit.on{box-shadow:inset 0 0 0 1px #e03131}
+.slot em{top:-8px;right:4px}
+.slot.crit em{background:#e03131}
+.slot.buy{border-style:dashed;color:#555;cursor:pointer}
+.slot .price{display:flex;align-items:center;gap:3px;font-size:12px;color:#e67700;font-weight:700}
+.sa.crit{color:#e03131}.sa.crit.on{background:#e03131;color:#fff}

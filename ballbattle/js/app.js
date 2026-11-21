@@ -14,26 +14,51 @@ function seed() {
 
 // --- 로딩 ---
 screen('loading', el => {
-  el.innerHTML = `<div class="load"><div class="load-balls"><i></i><i></i><i></i></div><h1 class="logo">${T.split(' ').map((w, i) => `<span style="--d:${i * .15}s">${w}</span>`).join('')}</h1>
-    <div class="load-bar"><i></i></div><div class="load-pct">0%</div><div class="load-tip"></div>
-    <div class="welcome"></div><button class="btn-start">${ic('play', 26)} 플레이</button></div>`;
-  const bar = $('.load-bar i', el), pct = $('.load-pct', el); let prog = 0, target = 10; const t0 = performance.now();
-  const iv = setInterval(() => { prog += (target - prog) * .12 + .3; prog = Math.min(prog, target); bar.style.width = prog + '%'; pct.textContent = Math.floor(prog) + '%'; if (prog >= 99.5) { clearInterval(iv); done(); } }, 30);
+  el.innerHTML = `<div class="load"><canvas class="load-cv" width="240" height="240"></canvas>
+    <h1 class="logo">${[...T].map((c, i) => `<span style="--d:${.25 + i * .05}s">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('')}</h1>
+    <div class="load-info"><div class="load-row"><span class="load-tip">불러오는 중</span><span class="load-pct">0%</span></div><div class="load-bar"><i></i></div></div>
+    <div class="welcome"></div><button class="btn-start">${ic('play', 22)} 플레이</button></div>`;
+  // 상자 안에서 공 두 개가 튀는 애니메이션
+  const cv = $('.load-cv', el), x = cv.getContext('2d'); x.scale(2, 2);
+  const B = [{ x: 38, y: 46, vx: 96, vy: 74, c: '#FE2C55', sx: 1, sy: 1 }, { x: 82, y: 80, vx: -84, vy: -92, c: '#25F4EE', sx: 1, sy: 1 }];
+  let last = performance.now(), raf = 0;
+  const anim = now => {
+    const dt = Math.min(.033, (now - last) / 1000), r = 11; last = now; x.clearRect(0, 0, 120, 120);
+    for (const b of B) {
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (b.x < r + 4) { b.x = r + 4; b.vx = Math.abs(b.vx); b.sx = .72; b.sy = 1.25; } else if (b.x > 116 - r) { b.x = 116 - r; b.vx = -Math.abs(b.vx); b.sx = .72; b.sy = 1.25; }
+      if (b.y < r + 4) { b.y = r + 4; b.vy = Math.abs(b.vy); b.sx = 1.25; b.sy = .72; } else if (b.y > 116 - r) { b.y = 116 - r; b.vy = -Math.abs(b.vy); b.sx = 1.25; b.sy = .72; }
+      b.sx += (1 - b.sx) * .2; b.sy += (1 - b.sy) * .2;
+    }
+    const [a, c] = B, dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
+    if (d < r * 2 && d > 0) { const nx = dx / d, ny = dy / d, va = a.vx * nx + a.vy * ny, vc = c.vx * nx + c.vy * ny; if (va - vc > 0) { a.vx += (vc - va) * nx; a.vy += (vc - va) * ny; c.vx += (va - vc) * nx; c.vy += (va - vc) * ny; } }
+    x.lineWidth = 3; x.strokeStyle = '#111'; x.strokeRect(2.5, 2.5, 115, 115);
+    for (const b of B) { x.save(); x.translate(b.x, b.y); x.scale(b.sx, b.sy); x.fillStyle = b.c; x.beginPath(); x.arc(0, 0, r, 0, 7); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(0, 0, r - 3.5, 0, 7); x.fill(); x.restore(); }
+    raf = requestAnimationFrame(anim);
+  };
+  raf = requestAnimationFrame(anim);
+  const bar = $('.load-bar i', el), pct = $('.load-pct', el), tip = $('.load-tip', el); let prog = 0, target = 5; const t0 = performance.now();
+  const iv = setInterval(() => { prog = Math.min(target, prog + Math.max(.4, (target - prog) * .1)); bar.style.width = prog + '%'; pct.textContent = Math.floor(prog) + '%'; if (prog >= 100) { clearInterval(iv); done(); } }, 30);
+  const stepTo = (t, s) => { target = t; tip.textContent = s; };
   (async () => {
-    await IDB.open().catch(() => { }); target = 35;
-    await Promise.all(['assets/greencap.jpg', 'assets/greencap_banner.jpg'].map(loadImg)); target = 60;
-    await Promise.race([document.fonts ? document.fonts.ready : 0, new Promise(r => setTimeout(r, 1500))]); target = 85;
-    const tip = $('.load-tip', el); tip.textContent = '온라인에 연결하는 중'; await initNet(); tip.textContent = NET.ok ? '온라인 연결됨' : '';
-    seed(); await new Promise(r => setTimeout(r, Math.max(0, 1800 - (performance.now() - t0)))); target = 100;
+    try {
+      stepTo(25, '저장소 여는 중'); await withTimeout(IDB.open(), 3000);
+      stepTo(45, '이미지 불러오는 중'); await withTimeout(Promise.all(['assets/greencap.jpg', 'assets/greencap_banner.jpg'].map(loadImg)), 4000);
+      stepTo(60, '글꼴 불러오는 중'); await withTimeout(document.fonts && document.fonts.ready, 1500);
+      stepTo(85, '온라인에 연결하는 중'); await connectNet(8000);
+      seed();
+    } catch (e) { }
+    await new Promise(r => setTimeout(r, Math.max(0, 1500 - (performance.now() - t0))));
+    stepTo(100, NET.ok ? '온라인 연결됨' : '준비 완료');
   })();
   function done() {
     el.querySelector('.load').classList.add('loaded');
     const w = $('.welcome', el), txt = `'${T}'에 오신 것을 환영합니다`;
-    w.innerHTML = [...txt].map((c, i) => `<span style="--d:${i * .05}s">${c === ' ' ? '&nbsp;' : c}</span>`).join('');
-    setTimeout(() => $('.btn-start', el).classList.add('show'), txt.length * 50 + 300);
+    w.innerHTML = [...txt].map((c, i) => `<span style="--d:${i * .04}s">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('');
+    setTimeout(() => $('.btn-start', el).classList.add('show'), txt.length * 40 + 300);
     $('.btn-start', el).onclick = () => { AUD.o(); const u = me(); if (u && !u.banned) { reset('main', { tab: 'home' }, 'portal'); const v = window._openPost; if (v && D.posts.some(x => x.id === v)) setTimeout(() => go('viewer', { ids: [v], start: v }), 900); } else go('auth', {}, 'zoom'); };
   }
-  el._leave = () => clearInterval(iv);
+  el._leave = () => { clearInterval(iv); cancelAnimationFrame(raf); };
 });
 
 const floatBalls = () => `<div class="float-balls">${Array.from({ length: 7 }, (_, i) => `<i style="--x:${rnd(5, 90)}%;--s:${rint(30, 80)}px;--d:${rnd(0, 6)}s;--t:${rnd(7, 13)}s;--c:${pick(['#25F4EE', '#FE2C55', '#FFD700', '#7CFF6B', '#b46bff'])}"></i>`).join('')}</div>`;

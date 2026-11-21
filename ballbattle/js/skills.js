@@ -6,12 +6,22 @@ const skIcon = s => `<div class="sk-ic" style="--c:${s.color}">${ic(COMPS[s.comp
 function skCard(s, acts, extra = '') {
   return `<div class="sk-card" data-id="${s.id}" style="--c:${s.color}">${extra}<div class="sk-row">${skIcon(s)}<div class="sk-info"><div class="sk-name"><b>${esc(s.name)}</b><span class="lv">Lv.${s.lv}</span>${s.fused ? '<span class="fz">융합</span>' : ''}${s.media ? ic('film', 14) : ''}</div><div class="cchips">${compChips(s)}</div><small>쿨타임 ${skillCD(s)}초 · 위력 ×${skillPower(s).toFixed(2)}</small></div></div><div class="sk-acts">${acts}</div></div>`;
 }
-function equipToggle(u, sid) {
-  u.equipped = (u.equipped || []).filter(id => D.skills[id]);
-  const i = u.equipped.indexOf(sid);
-  if (i >= 0) u.equipped.splice(i, 1);
-  else { if (loadout(u).length >= 3) { toast('장착 칸이 가득 찼어요 (최대 3개)'); return false; } u.equipped = u.equipped.filter(id => loadout(u).some(s => s.id === id)); u.equipped.push(sid); }
+function equipToggle(u, sid, crit) { // 일반 칸 1개, 크리티컬 칸 1개
+  if (crit) { if (!u.critUnlocked) return false; u.crit = u.crit === sid ? null : sid; if (u.crit && (u.equipped || [])[0] === sid) u.equipped = []; }
+  else { u.equipped = (u.equipped || [])[0] === sid ? [] : [sid]; if (u.crit === sid) u.crit = null; }
   save('users'); return true;
+}
+function slotsHTML(u) {
+  const n = (u.equipped || []).map(id => D.skills[id]).filter(s => usable(u, s))[0], c = u.critUnlocked && D.skills[u.crit];
+  const one = (s, label, crit) => s ? `<button class="slot on ${crit ? 'crit' : ''}" data-un="${s.id}" data-crit="${crit ? 1 : ''}" style="--c:${s.color}">${ic(COMPS[s.comps[0]][1], 22)}<small>${esc(s.name)}</small><em>${label}</em></button>` : `<div class="slot ${crit ? 'crit' : ''}">${ic('plus', 20)}<small>${label} 빈 칸</small></div>`;
+  return `<div class="slots">${one(n, '스킬', false)}${u.critUnlocked ? one(usable(u, c) ? c : null, '크리티컬', true) : `<button class="slot buy" data-buy>${ic('plus', 20)}<small>크리티컬 스킬 추가</small><span class="price">${COIN}${CRIT_PRICE}</span></button>`}</div>
+    <p class="muted sm center">스킬은 1개만 장착돼요. 크리티컬 스킬은 위력이 2배예요</p>`;
+}
+async function buyCrit(u) {
+  if (u.critUnlocked) return false;
+  if (u.coins < CRIT_PRICE) { toast(`코인이 부족해요 (필요 ${CRIT_PRICE}, 보유 ${u.coins})`); return false; }
+  if (!await ask(`${CRIT_PRICE}코인으로 크리티컬 스킬 칸을 추가할까요?`, '추가')) return false;
+  u.coins -= CRIT_PRICE; u.critUnlocked = true; save('users'); AUD.sfx('coin'); toast('크리티컬 스킬 칸이 생겼어요'); return true;
 }
 function removeSkill(s) {
   delete D.skills[s.id]; Object.values(D.users).forEach(x => x.equipped = (x.equipped || []).filter(id => id !== s.id));
@@ -42,15 +52,14 @@ screen('skills', (el, p) => {
 
 function skMine(body, u, p, setTab) {
   const mine = Object.values(D.skills).filter(s => s.owner === u.uid).sort((a, b) => b.created - a.created);
-  const eq = loadout(u);
-  body.innerHTML = `<div class="slots">${[0, 1, 2].map(i => { const s = eq[i]; return s ? `<button class="slot on" data-un="${s.id}" style="--c:${s.color}">${ic(COMPS[s.comps[0]][1], 22)}<small>${esc(s.name)}</small>${s.owner !== u.uid ? '<em>빌림</em>' : ''}</button>` : `<div class="slot">${ic('plus', 20)}<small>빈 칸</small></div>`; }).join('')}</div>
-    <p class="muted sm center">장착한 스킬(최대 3개)은 게임에서 쿨타임마다 자동으로 발동돼요</p>
-    <div class="sk-list">${mine.length ? mine.map(s => { const on = u.equipped.includes(s.id); return skCard(s, `<button class="sa ${on ? 'on' : ''}" data-a="eq">${on ? '해제' : '장착'}</button><button class="sa gold" data-a="up" ${s.lv >= 10 ? 'disabled' : ''}>${ic('up', 14)}${s.lv >= 10 ? 'MAX' : COIN + s.lv}</button><button class="sa ${s.shared ? 'on' : ''}" data-a="share">${ic('share', 14)}${s.shared ? '공유중' : '공유'}</button><button class="sa" data-a="snd">${ic('volume', 14)}</button><button class="sa" data-a="edit">${ic('pencil', 14)}</button><button class="sa del" data-a="del">${ic('x', 14)}</button>`); }).join('') : '<p class="muted center">아직 스킬이 없어요</p>'}</div>
+  body.innerHTML = `${slotsHTML(u)}
+    <div class="sk-list">${mine.length ? mine.map(s => { const on = (u.equipped || [])[0] === s.id, con = isCrit(u, s); return skCard(s, `<button class="sa ${on ? 'on' : ''}" data-a="eq">${on ? '해제' : '장착'}</button>${u.critUnlocked ? `<button class="sa crit ${con ? 'on' : ''}" data-a="crit">${con ? '크리티컬 해제' : '크리티컬'}</button>` : ''}<button class="sa gold" data-a="up" ${s.lv >= 10 ? 'disabled' : ''}>${ic('up', 14)}${s.lv >= 10 ? 'MAX' : COIN + s.lv}</button><button class="sa ${s.shared ? 'on' : ''}" data-a="share">${ic('share', 14)}${s.shared ? '공유중' : '공유'}</button><button class="sa" data-a="snd">${ic('volume', 14)}</button><button class="sa" data-a="edit">${ic('pencil', 14)}</button><button class="sa del" data-a="del">${ic('x', 14)}</button>`); }).join('') : '<p class="muted center">아직 스킬이 없어요</p>'}</div>
     <p class="muted sm center">업그레이드: 레벨마다 위력 +15%, 쿨타임 -4% · 비용 = 현재 레벨 코인 (1승 = 1코인)</p>`;
   body.onclick = async e => {
-    const un = e.target.closest('[data-un]'); if (un) { equipToggle(u, un.dataset.un); return skMine(body, u, p, setTab); }
+    const un = e.target.closest('[data-un]'); if (un) { equipToggle(u, un.dataset.un, !!un.dataset.crit); return skMine(body, u, p, setTab); }
+    if (e.target.closest('[data-buy]')) { if (await buyCrit(u)) { skMine(body, u, p, setTab); const cp = $('.coin-pill b'); if (cp) cp.textContent = u.coins; } return; }
     const b = e.target.closest('[data-a]'); if (!b) return; const s = D.skills[b.closest('[data-id]').dataset.id], a = b.dataset.a;
-    if (a === 'eq') { equipToggle(u, s.id); skMine(body, u, p, setTab); }
+    if (a === 'eq' || a === 'crit') { equipToggle(u, s.id, a === 'crit'); skMine(body, u, p, setTab); }
     if (a === 'up') {
       if (s.lv >= 10) return; if (u.coins < s.lv) return toast(`코인이 부족해요 (필요 ${s.lv}, 보유 ${u.coins})`);
       u.coins -= s.lv; s.lv++; save('users', 'skills'); AUD.sfx('coin'); skMine(body, u, p, setTab);
@@ -118,7 +127,7 @@ function skForm(body, u, p, setTab) {
   $('#sf-save', body).onclick = () => {
     const name = st.name.trim(); if (!name) return toast('스킬 이름을 적어주세요'); if (!st.comps.length) return toast('효과를 1개 이상 골라주세요');
     if (ed) { Object.assign(ed, { name, color: st.color, comps: st.comps, cd: st.cd, sound: st.sound, media: st.media }); save('skills'); toast('스킬을 수정했어요'); }
-    else { const s = mkSkill(u.uid, name, st.color, st.comps, st.cd, { sound: st.sound, media: st.media }); if (loadout(u).length < 3) equipToggle(u, s.id); save('skills'); toast(`'${name}' 스킬 완성!`); AUD.sfx('ding'); }
+    else { const s = mkSkill(u.uid, name, st.color, st.comps, st.cd, { sound: st.sound, media: st.media }); if (!(u.equipped || []).some(id => usable(u, D.skills[id]))) equipToggle(u, s.id, false); save('skills'); toast(`'${name}' 스킬 완성!`); AUD.sfx('ding'); }
     setTab('mine');
   };
   sync(); mediaBox();
@@ -161,13 +170,15 @@ screen('shared', el => {
     const list = Object.values(D.skills).filter(s => s.shared && s.owner !== u.uid && D.users[s.owner] && !D.users[s.owner].banned).sort((a, b) => b.lv - a.lv || b.created - a.created);
     el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>다른 사람 스킬 쓰기</h2><span></span></div>
       <div class="scroll pad"><p class="muted sm center">다른 사람이 <b>공유</b>한 스킬만 쓸 수 있어요. 내 스킬은 스킬 제작에서 공유할 수 있어요.</p>
-      <div class="slots">${[0, 1, 2].map(i => { const s = loadout(u)[i]; return s ? `<div class="slot on" style="--c:${s.color}">${ic(COMPS[s.comps[0]][1], 22)}<small>${esc(s.name)}</small></div>` : `<div class="slot">${ic('plus', 20)}<small>빈 칸</small></div>`; }).join('')}</div>
-      <div class="sk-list">${list.length ? list.map(s => { const o = D.users[s.owner], on = u.equipped.includes(s.id); return skCard(s, `<button class="sa" data-a="snd">${ic('volume', 14)} 소리</button><button class="sa ${on ? 'on' : ''}" data-a="eq">${on ? '해제' : '장착해서 쓰기'}</button>`, `<div class="sk-owner">${avImg(o, 'av-xs')}<span>${nameHTML(o)}</span><small class="muted">@${esc(o.handle)}</small></div>`); }).join('') : '<p class="muted center">아직 공유된 스킬이 없어요</p>'}</div></div>`;
+      ${slotsHTML(u)}
+      <div class="sk-list">${list.length ? list.map(s => { const o = D.users[s.owner], on = (u.equipped || [])[0] === s.id, con = isCrit(u, s); return skCard(s, `<button class="sa" data-a="snd">${ic('volume', 14)} 소리</button><button class="sa ${on ? 'on' : ''}" data-a="eq">${on ? '해제' : '장착해서 쓰기'}</button>${u.critUnlocked ? `<button class="sa crit ${con ? 'on' : ''}" data-a="crit">${con ? '크리티컬 해제' : '크리티컬로 쓰기'}</button>` : ''}`, `<div class="sk-owner">${avImg(o, 'av-xs')}<span>${nameHTML(o)}</span><small class="muted">@${esc(o.handle)}</small></div>`); }).join('') : '<p class="muted center">아직 공유된 스킬이 없어요</p>'}</div></div>`;
   };
-  el.onclick = e => {
-    const b = e.target.closest('[data-a]'); if (!b) return; const s = D.skills[b.closest('[data-id]').dataset.id];
-    if (b.dataset.a === 'snd') AUD.skill(s.sound);
-    if (b.dataset.a === 'eq' && equipToggle(u, s.id)) { toast(u.equipped.includes(s.id) ? `'${s.name}' 장착!` : '해제했어요'); render(); }
+  el.onclick = async e => {
+    const un = e.target.closest('[data-un]'); if (un) { equipToggle(u, un.dataset.un, !!un.dataset.crit); return render(); }
+    if (e.target.closest('[data-buy]')) { if (await buyCrit(u)) render(); return; }
+    const b = e.target.closest('[data-a]'); if (!b) return; const s = D.skills[b.closest('[data-id]').dataset.id], a = b.dataset.a;
+    if (a === 'snd') AUD.skill(s.sound);
+    if ((a === 'eq' || a === 'crit') && equipToggle(u, s.id, a === 'crit')) { toast((u.equipped || [])[0] === s.id || u.crit === s.id ? `'${s.name}' 장착` : '해제했어요'); render(); }
   };
   render();
 });

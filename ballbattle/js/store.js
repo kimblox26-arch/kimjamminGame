@@ -88,12 +88,11 @@ function netWrite(k, id, data) {
 const withTimeout = (p, ms) => Promise.race([Promise.resolve(p).catch(() => null), new Promise(r => setTimeout(() => r(null), ms))]);
 async function initNet() {
   if (!window.claude || !window.claude.use) return false;
-  const db = await withTimeout(claude.use('db'), 10000); if (!db) return false;
-  NET.user = await withTimeout(claude.use('user'), 5000);
-  NET.assets = await withTimeout(claude.use('assets'), 5000);
-  try { NET.cid = NET.user ? await NET.user.id() : null; } catch (e) { }
-  const snaps = await withTimeout(Promise.all(SHARED.map(k => db.collection(k).get())), 10000);
-  if (!snaps) return false;
+  const db = await withTimeout(claude.use('db'), 6000); if (!db || NET.aborted) return false;
+  [NET.user, NET.assets] = await Promise.all([withTimeout(claude.use('user'), 4000), withTimeout(claude.use('assets'), 4000)]);
+  NET.cid = NET.user ? await withTimeout(NET.user.id(), 4000) : null;
+  const snaps = await withTimeout(Promise.all(SHARED.map(k => db.collection(k).get())), 8000);
+  if (!snaps || NET.aborted) return false;
   NET.db = db;
   SHARED.forEach((k, i) => {
     const vs = snaps[i].docs.map(d => d.data());
@@ -113,6 +112,11 @@ function applyRemote(k, s) {
     else if (arr) { D[k].push(v); D[k].sort((a, b) => b.t - a.t); } else D[k][id] = v;
   });
   document.dispatchEvent(new CustomEvent('netchange', { detail: k }));
+}
+async function connectNet(ms) { // 시간이 지나면 이 기기 저장 모드로 시작
+  let r = false; try { r = await withTimeout(initNet(), ms); } catch (e) { }
+  if (!r) { NET.aborted = true; NET.ok = false; }
+  return NET.ok;
 }
 const privRef = uid => NET.db.collection('data/users/' + NET.cid).doc(uid);
 async function getPriv(uid) { if (!NET.ok || !NET.cid) return null; try { const s = await privRef(uid).get(); return s.exists ? s.data() : null; } catch (e) { return null; } }
@@ -145,8 +149,14 @@ function newUser(o) {
   const u = Object.assign({ uid: 'u_' + uid6(), avatar: '', banner: null, bio: '', coins: 0, wins: 0, losses: 0, subs: [], following: [], equipped: [], created: Date.now() }, o);
   D.users[u.uid] = u; save('users'); return u;
 }
-function loadout(u) {
-  return (u.equipped || []).map(id => D.skills[id]).filter(s => s && (s.owner === u.uid || s.shared) && !(D.users[s.owner] || {}).banned).slice(0, 3);
+const CRIT_PRICE = 100;
+const usable = (u, s) => !!s && (s.owner === u.uid || s.shared) && !(D.users[s.owner] || {}).banned;
+const isCrit = (u, s) => !!u.critUnlocked && !!s && u.crit === s.id;
+function loadout(u) { // 일반 스킬 1개 + (산 경우) 크리티컬 스킬 1개
+  const out = (u.equipped || []).map(id => D.skills[id]).filter(s => usable(u, s)).slice(0, 1);
+  const c = u.critUnlocked && D.skills[u.crit];
+  if (usable(u, c) && !out.includes(c)) out.push(c);
+  return out;
 }
 // 프로필 사진이 아직 없으면 하얀색
 let _white = '';

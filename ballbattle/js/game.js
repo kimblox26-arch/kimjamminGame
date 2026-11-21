@@ -109,9 +109,9 @@ class Game {
   }
   shoot(b, e, ang, sp, r, dmg, col, home = 0) { this.projs.push({ x: b.x + Math.cos(ang) * b.r, y: b.y + Math.sin(ang) * b.r, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r, dmg, col, tg: e, life: 2.5, home }); }
   cast(b, e, sk) {
-    const s = sk.s, pm = skillPower(s), col = s.color;
+    const s = sk.s, pm = skillPower(s) * (sk.crit ? 2 : 1), col = s.color;
     if (sk.buf) AUD.playBuf(sk.buf); else AUD.skill(s.sound);
-    this.text(b.x, b.y - b.r * b.sc - 26, s.name, col, true); this.ring(b.x, b.y, b.r * 2.6, col, .5, 3);
+    this.text(b.x, b.y - b.r * b.sc - 26, sk.crit ? '크리티컬 ' + s.name : s.name, sk.crit ? '#e03131' : col, true); if (sk.crit) this.shake = 6; this.ring(b.x, b.y, b.r * 2.6, col, .5, 3);
     if (sk.el) {
       if (sk.el.tagName === 'VIDEO') { try { sk.el.currentTime = s.media.edits.start || 0; sk.el.playbackRate = s.media.edits.speed || 1; sk.el.play().catch(() => { }); } catch (x) { } }
       this.ovs.push({ b, sk, life: 1.8, ml: 1.8 });
@@ -316,7 +316,7 @@ class Game {
 // 게임용 스킬 준비 (소리·영상 미리 불러오기)
 async function prepSkills(u) {
   return Promise.all(loadout(u).map(async s => {
-    const sk = { s, cd: skillCD(s), t: skillCD(s) * (.35 + Math.random() * .3) };
+    const sk = { s, crit: isCrit(u, s), cd: skillCD(s), t: skillCD(s) * (.35 + Math.random() * .3) };
     if (AUD.isFile(s.sound)) sk.buf = await AUD.load(s.sound);
     if (s.media) {
       try {
