@@ -3,100 +3,207 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1115">
+  <meta name="theme-color" content="#f5f5f8">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>카드 시세 스캐너</title>
+  <title>포켓 컬렉터</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">카드 시세 스캐너</div>
-    <div class="summary"><span id="sumCount">0장</span> · <b id="sumTotal">₩0</b></div>
-  </header>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+    <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.7l1.3-2h5l1.3 2h1.7A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12.3" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-sticker" viewBox="0 0 24 24"><path d="M5 4h14a1 1 0 0 1 1 1v9l-6 6H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 20v-5a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="9.5" cy="9.5" r="1.3" fill="currentColor"/><circle cx="14.5" cy="9.5" r="1.3" fill="currentColor"/></symbol>
+    <symbol id="i-ball" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#fff" stroke="currentColor" stroke-width="2"/><path d="M2.5 12a9.5 9.5 0 0 1 19 0z" fill="currentColor"/><path d="M2.5 12h19" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="#fff" stroke="currentColor" stroke-width="2"/></symbol>
+  </svg>
 
-  <main class="cam" id="cam">
-    <video id="video" playsinline muted autoplay></video>
-    <div class="shade"></div>
-    <div class="guide" id="guide"><i></i><i></i><i></i><i></i></div>
-    <div class="hint" id="hint">카드 데이터를 불러오는 중…</div>
-
-    <div class="start" id="start">
-      <p>휴대폰 뒷면 카메라로 카드를 비추면<br>자동으로 인식해서 시세를 알려줘요.</p>
-      <button class="btn primary" id="startBtn" disabled>카메라 켜기</button>
-      <p class="small" id="loadInfo"></p>
-    </div>
-
-    <div class="result" id="result" hidden>
-      <img id="resImg" alt="">
-      <div class="info">
-        <div class="name" id="resName"></div>
-        <div class="meta" id="resMeta"></div>
-        <div class="price" id="resPrice"></div>
+  <!-- ===== 홈 ===== -->
+  <section class="view home" id="v-home">
+    <header class="home-top">
+      <div class="logo"><svg><use href="#i-ball"/></svg></div>
+      <div>
+        <div class="app-name">포켓 컬렉터</div>
+        <div class="app-sub">카드 시세 스캔 · 띠부씰 기록장</div>
       </div>
-      <button class="btn ghost" id="resWrong">아니에요</button>
-    </div>
-  </main>
+    </header>
 
-  <nav class="bar">
-    <button class="btn" id="pauseBtn" disabled>일시정지</button>
-    <button class="btn primary" id="listBtn">목록 보기</button>
-    <button class="btn" id="searchBtn">직접 검색</button>
-  </nav>
-
-  <!-- 스캔 목록 -->
-  <section class="sheet" id="listSheet" hidden>
-    <div class="sheet-head">
-      <button class="btn ghost" data-close>닫기</button>
-      <div class="title"><span id="listCount">0장</span><b id="listTotal">₩0</b></div>
-      <button class="btn ghost" id="selectBtn">선택</button>
+    <div class="hero">
+      <div class="hero-label">내 컬렉션 가치</div>
+      <div class="hero-value" id="homeTotal">₩0</div>
+      <div class="hero-split">
+        <a href="#/cards"><span>카드</span><b id="homeCards">0장 · ₩0</b></a>
+        <a href="#/stickers"><span>띠부씰</span><b id="homeStk">0장 · ₩0</b></a>
+      </div>
     </div>
-    <div class="select-bar" id="selectBar" hidden>
-      <button class="btn" id="selAll">전체 선택</button>
-      <span id="selInfo">0장 선택</span>
-      <button class="btn danger" id="selDel">삭제</button>
+
+    <div class="tiles">
+      <a class="big-tile t-scan" href="#/scan">
+        <svg><use href="#i-cam"/></svg>
+        <b>카드 스캔</b>
+        <span>카메라로 비추면<br>시세가 바로 나와요</span>
+      </a>
+      <a class="big-tile t-stk" href="#/stickers">
+        <svg><use href="#i-sticker"/></svg>
+        <b>띠부씰 기록장</b>
+        <span>모은 띠부씰과<br>가격을 기록해요</span>
+      </a>
+    </div>
+
+    <div class="sec-head"><h3>최근 스캔한 카드</h3><a href="#/cards">전체 보기 ›</a></div>
+    <div class="strip" id="homeRecent"></div>
+    <p class="foot" id="homeFoot">카드 데이터를 불러오는 중…</p>
+  </section>
+
+  <!-- ===== 카드 스캔 (카메라) ===== -->
+  <section class="view scan" id="v-scan" hidden>
+    <video id="video" playsinline muted autoplay></video>
+    <div class="guide" id="guide"><i></i><i></i><i></i><i></i><div class="laser"></div></div>
+
+    <div class="scan-top">
+      <a class="round" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
+      <div class="scanning"><span class="spark">✳</span><span id="hint">준비 중…</span></div>
+      <button class="round" id="searchBtn" aria-label="직접 검색"><svg><use href="#i-search"/></svg></button>
+      <button class="round" id="pauseBtn" aria-label="일시정지"><svg><use id="pauseIcon" href="#i-pause"/></svg></button>
+    </div>
+
+    <div class="pop" id="pop" hidden>
+      <div class="pop-price" id="popPrice"></div>
+      <div class="pop-name" id="popName"></div>
+      <button class="pop-wrong" id="popWrong">다른 카드예요</button>
+    </div>
+
+    <div class="cam-msg" id="camMsg" hidden></div>
+
+    <div class="scan-bottom">
+      <button class="stack" id="stack" aria-label="마지막 카드"></button>
+      <a class="pill" href="#/cards" id="pill">카드 0장 ›</a>
+    </div>
+  </section>
+
+  <!-- ===== 스캔한 카드 목록 ===== -->
+  <section class="view page" id="v-cards" hidden>
+    <header class="bar-top">
+      <a class="icon-btn" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
+      <div class="bt-title">스캔한 카드</div>
+      <button class="text-btn" id="selectBtn">선택</button>
+    </header>
+    <div class="total-box">
+      <div>
+        <span id="cardsCount">0장 스캔됨</span>
+        <b id="cardsTotal">₩0</b>
+      </div>
+      <a class="btn-accent" href="#/scan"><svg><use href="#i-cam"/></svg>스캔</a>
     </div>
     <div class="grid" id="grid"></div>
-    <p class="empty" id="emptyMsg">아직 스캔한 카드가 없어요.</p>
+    <div class="empty" id="cardsEmpty">
+      <svg><use href="#i-cam"/></svg>
+      <p>아직 스캔한 카드가 없어요.<br>카드 스캔을 눌러 시작해 보세요.</p>
+    </div>
     <p class="note" id="priceNote"></p>
+    <div class="action-bar" id="selectBar" hidden>
+      <button class="btn-soft" id="selAll">전체 선택</button>
+      <span id="selInfo">0장 선택</span>
+      <button class="btn-danger" id="selDel">삭제</button>
+    </div>
   </section>
 
-  <!-- 직접 검색 -->
-  <section class="sheet" id="searchSheet" hidden>
-    <div class="sheet-head">
-      <button class="btn ghost" data-close>닫기</button>
-      <div class="title">직접 검색</div>
+  <!-- ===== 띠부씰 기록장 ===== -->
+  <section class="view page" id="v-stickers" hidden>
+    <header class="bar-top">
+      <a class="icon-btn" href="#/" aria-label="홈"><svg><use href="#i-back"/></svg></a>
+      <div class="bt-title">띠부씰 기록장</div>
       <span></span>
+    </header>
+    <div class="stk-hero">
+      <div class="stk-nums">
+        <div><span>모은 종류</span><b id="stkKinds">0종</b></div>
+        <div><span>총 개수</span><b id="stkQtyAll">0장</b></div>
+        <div><span>총 가치</span><b id="stkTotal">₩0</b></div>
+      </div>
+      <div class="progress"><i id="stkBar"></i></div>
+      <small id="stkProg"></small>
     </div>
-    <input id="searchInput" type="search" placeholder="영어 이름(Pikachu) 또는 번호(025/165)" autocomplete="off">
-    <div class="rows" id="searchRows"></div>
+    <input type="search" class="search" id="stkSearch" placeholder="포켓몬 이름 또는 번호 (예: 피카츄, 25)" autocomplete="off">
+    <div class="chips" id="stkGens"></div>
+    <div class="stk-grid" id="stkGrid"></div>
   </section>
 
-  <!-- 카드 상세 -->
-  <section class="sheet" id="detailSheet" hidden>
-    <div class="sheet-head">
-      <button class="btn ghost" data-close>닫기</button>
-      <div class="title">카드 정보</div>
-      <button class="btn danger ghost" id="detDel">삭제</button>
-    </div>
-    <div class="detail">
-      <img id="detImg" alt="">
-      <div>
-        <h2 id="detName"></h2>
-        <div class="meta" id="detMeta"></div>
-        <div class="big-price" id="detPrice"></div>
-        <label>종류
-          <select id="detVariant"></select>
-        </label>
-        <label>카드 상태
-          <select id="detCond"></select>
-        </label>
-        <a id="detLink" target="_blank" rel="noopener">TCGplayer 시세 보기 ↗</a>
+  <!-- ===== 시트: 카드 상세 ===== -->
+  <div class="sheet" id="detailSheet" hidden>
+    <div class="sheet-card">
+      <div class="grab"></div>
+      <div class="detail">
+        <img id="detImg" alt="">
+        <div class="det-info">
+          <h2 id="detName"></h2>
+          <div class="sub" id="detEn"></div>
+          <div class="sub" id="detMeta"></div>
+          <div class="big-price" id="detPrice"></div>
+          <div class="calc" id="detCalc"></div>
+        </div>
+      </div>
+      <label class="field">종류 <select id="detVariant"></select></label>
+      <label class="field">카드 상태 <select id="detCond"></select></label>
+      <a class="ext" id="detLink" target="_blank" rel="noopener">TCGplayer에서 시세 확인 ↗</a>
+      <h3>혹시 이 카드인가요?</h3>
+      <div class="rows" id="detAlts"></div>
+      <div class="sheet-actions">
+        <button class="btn-danger ghost" id="detDel">목록에서 삭제</button>
+        <button class="btn-accent" data-close>확인</button>
       </div>
     </div>
-    <h3>혹시 이 카드인가요?</h3>
-    <div class="rows" id="detAlts"></div>
-  </section>
+  </div>
 
+  <!-- ===== 시트: 카드 직접 검색 ===== -->
+  <div class="sheet" id="searchSheet" hidden>
+    <div class="sheet-card tall">
+      <div class="grab"></div>
+      <h2 class="sheet-title">카드 직접 검색</h2>
+      <input id="searchInput" type="search" class="search" placeholder="이름(피카츄, Pikachu) 또는 번호(025/165)" autocomplete="off">
+      <div class="rows" id="searchRows"></div>
+    </div>
+  </div>
+
+  <!-- ===== 시트: 띠부씰 기록 ===== -->
+  <div class="sheet" id="stkSheet" hidden>
+    <div class="sheet-card">
+      <div class="grab"></div>
+      <div class="stk-edit">
+        <label class="photo" id="stkPhotoBox">
+          <img id="stkPhoto" alt="" hidden>
+          <span id="stkPhotoTxt"><svg><use href="#i-cam"/></svg>사진 찍기</span>
+          <input type="file" accept="image/*" capture="environment" id="stkFile">
+        </label>
+        <div>
+          <div class="dex" id="stkNo"></div>
+          <h2 id="stkName"></h2>
+          <div class="sub" id="stkEn"></div>
+        </div>
+      </div>
+      <div class="field">가지고 있는 개수
+        <div class="stepper"><button id="stkMinus" aria-label="빼기">−</button><b id="stkQty">0</b><button id="stkPlus" aria-label="더하기">+</button></div>
+      </div>
+      <label class="field">1장 가격 (원)
+        <input type="number" inputmode="numeric" min="0" id="stkPrice" placeholder="예: 3000">
+      </label>
+      <label class="field">메모
+        <input id="stkMemo" placeholder="예: 2022년 1탄, 친구랑 교환" maxlength="60">
+      </label>
+      <p class="hint-sm">띠부씰은 공개된 시세 데이터가 없어서, 중고 거래 사이트에서 직접 확인하고 가격을 적어 주세요.</p>
+      <div class="ext-row">
+        <a class="ext" id="stkBunjang" target="_blank" rel="noopener">번개장터 시세 ↗</a>
+        <a class="ext" id="stkNaver" target="_blank" rel="noopener">네이버 검색 ↗</a>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-danger ghost" id="stkClear">기록 지우기</button>
+        <button class="btn-accent" id="stkSave">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
   <canvas id="work" hidden></canvas>
   <script type="module" src="js/app.js"></script>
 </body>

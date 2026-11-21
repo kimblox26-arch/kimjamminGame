@@ -1,137 +1,112 @@
 import { integral, toGray, sample, bestMatches } from './hash.js';
 import { makeQueries } from './scan.js';
+import {
+  $, bus, D, rate, loadData, loadRate, card, imgUrl, won, metaText, toast, cardName,
+  CONDS, condMul, VARIANT_NAME, variantsOf, krwOf, foreignText,
+  list, setList, saveList, itemKrw, cardsTotal, addItem, stickerTotals,
+} from './store.js';
+import { initStickers, renderStickers } from './stickers.js';
 
-const $ = id => document.getElementById(id);
-const IMG = 'https://images.pokemontcg.io/';
-const imgUrl = c => c[5].startsWith('http') ? c[5] : IMG + c[5];
-const ACCEPT = 25;          // 이 점수 이하면 "같은 카드"로 인정 (0~128, 작을수록 닮음. 시뮬레이션: 정답 90%가 20 이하, 카드 없음은 28 이상)
-const STORE = 'cardscan.list.v1';
+const ACCEPT = 25; // 이 점수 이하면 "같은 카드"로 인정 (0~128, 작을수록 닮음. 시뮬레이션: 정답 90%가 20 이하, 카드 없음은 28 이상)
 
-// ---------- 데이터 ----------
-let cards = [];             // [id, name, number, setName, printedTotal, img, prices, rarity]
-let db = null;              // Uint32Array (카드당 4칸)
-let priceDate = null;
-const byId = new Map();
-let rate = { KRW: 1400, EUR: 0.92, date: null };
+// ================= 화면 이동 =================
+const VIEWS = ['home', 'scan', 'cards', 'stickers'];
+function route() {
+  const name = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'home';
+  const view = VIEWS.includes(name) ? name : 'home';
+  VIEWS.forEach(v => { $('v-' + v).hidden = v !== view; });
+  document.querySelectorAll('.sheet').forEach(s => { s.hidden = true; });
+  if (view === 'scan') startCamera(); else stopCamera();
+  if (view === 'home') renderHome();
+  if (view === 'cards') renderCards();
+  if (view === 'stickers') renderStickers();
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
 
-const CONDS = [
-  ['NM', '최상 (새것 같음)', 1], ['LP', '좋음 (살짝 사용감)', 0.85],
-  ['MP', '보통 (사용감 있음)', 0.7], ['HP', '나쁨 (많이 닳음)', 0.5], ['DMG', '손상 (찢김·접힘)', 0.3],
-];
-const VARIANT_NAME = { n: '일반', h: '홀로', r: '리버스 홀로', fh: '1판 홀로', fn: '1판 일반',
-  uh: '무제한 홀로', u: '무제한', f: '1판', eur: '유럽 시세' };
-const VARIANT_ORDER = ['n', 'h', 'fh', 'fn', 'uh', 'u', 'f', 'r'];
-
-async function loadData() {
-  const [meta, bin] = await Promise.all([
-    fetch('data/cards.json').then(r => r.json()),
-    fetch('data/hashes.bin').then(r => r.arrayBuffer()),
-  ]);
-  cards = meta.cards;
-  priceDate = meta.priceDate;
-  db = new Uint32Array(bin);
-  cards.forEach((c, i) => byId.set(c[0], i));
+// 시트(아래에서 올라오는 창)
+function openSheet(id) { $(id).hidden = false; }
+document.querySelectorAll('.sheet').forEach(s => {
+  s.addEventListener('click', e => {
+    if (e.target === s || e.target.closest('[data-close]')) closeSheet(s);
+  });
+});
+function closeSheet(s) {
+  s.hidden = true;
+  if (!$('v-cards').hidden) renderCards();
 }
 
-async function loadRate() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('cardscan.rate') || 'null');
-    if (saved && Date.now() - saved.t < 12 * 3600e3) { rate = saved.rate; return; }
-  } catch {}
-  try {
-    const j = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
-    if (j.rates?.KRW) {
-      rate = { KRW: j.rates.KRW, EUR: j.rates.EUR || 0.92, date: (j.time_last_update_utc || '').slice(5, 16) };
-      try { localStorage.setItem('cardscan.rate', JSON.stringify({ t: Date.now(), rate })); } catch {}
-    }
-  } catch {}
+// ================= 홈 =================
+function renderHome() {
+  const ct = cardsTotal(), st = stickerTotals();
+  $('homeTotal').textContent = won(ct + st.krw);
+  $('homeCards').textContent = `${list.length}장 · ${won(ct)}`;
+  $('homeStk').textContent = `${st.qty}장 · ${won(st.krw)}`;
+  const strip = $('homeRecent');
+  strip.innerHTML = '';
+  if (!D.ready) return;
+  for (const it of list.slice(0, 12)) {
+    const c = card(it.id);
+    if (!c) continue;
+    const b = document.createElement('button');
+    b.className = 'mini';
+    b.innerHTML = '<img loading="lazy" alt=""><div class="n"></div><div class="p"></div>';
+    b.querySelector('img').src = imgUrl(c);
+    b.querySelector('.n').textContent = cardName(c);
+    b.querySelector('.p').textContent = won(itemKrw(it));
+    b.onclick = () => openDetail(it);
+    strip.appendChild(b);
+  }
+  if (!strip.children.length) strip.innerHTML = '<div class="blank">아직 스캔한 카드가 없어요</div>';
+  $('homeFoot').innerHTML = `카드 ${D.cards.length.toLocaleString('ko-KR')}장 · 시세 TCGplayer 기준${D.priceDate ? ` (${D.priceDate})` : ''}<br>환율 1달러 = ${Math.round(rate.KRW).toLocaleString('ko-KR')}원`;
 }
 
-// ---------- 가격 ----------
-const card = id => cards[byId.get(id)];
-function variantsOf(c) {
-  const p = c[6] || {};
-  const keys = Object.keys(p).filter(k => k !== 'eur');
-  keys.sort((a, b) => (VARIANT_ORDER.indexOf(a) + 99) % 99 - (VARIANT_ORDER.indexOf(b) + 99) % 99);
-  if (!keys.length && p.eur) keys.push('eur');
-  return keys;
-}
-function krwOf(c, variant) {
-  const p = c[6] || {};
-  const v = variant && p[variant] != null ? variant : variantsOf(c)[0];
-  if (!v) return null;
-  return v === 'eur' ? p.eur * rate.KRW / rate.EUR : p[v] * rate.KRW;
-}
-function itemKrw(it) {
-  const c = card(it.id);
-  const base = c && krwOf(c, it.variant);
-  if (base == null) return null;
-  return base * (CONDS.find(x => x[0] === it.cond)?.[2] ?? 1);
-}
-const won = v => v == null ? '시세 없음' : '₩' + (Math.round(v / 10) * 10).toLocaleString('ko-KR');
-const usdText = (c, variant) => {
-  const p = c[6] || {};
-  const v = variant && p[variant] != null ? variant : variantsOf(c)[0];
-  if (!v) return '';
-  return v === 'eur' ? `€${p.eur}` : `$${p[v]}`;
-};
-const metaText = c => `${c[3]} · ${c[2]}${c[4] ? '/' + c[4] : ''}`;
-
-// ---------- 스캔 목록 ----------
-let list = [];
-try { list = JSON.parse(localStorage.getItem(STORE) || '[]'); } catch {}
-const save = () => { try { localStorage.setItem(STORE, JSON.stringify(list)); } catch {} };
-
-function addItem(id, alts = []) {
-  const it = { uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), id, cond: 'NM', variant: null, alts };
-  list.unshift(it);
-  save();
-  renderSummary();
-  return it;
-}
-
-function renderSummary() {
-  const total = list.reduce((s, it) => s + (itemKrw(it) || 0), 0);
-  $('sumCount').textContent = $('listCount').textContent = `${list.length}장`;
-  $('sumTotal').textContent = $('listTotal').textContent = won(total);
-  $('listBtn').textContent = list.length ? `목록 보기 (${list.length})` : '목록 보기';
-}
-
-// ---------- 카메라 & 자동 인식 ----------
+// ================= 카메라 스캔 =================
 const video = $('video'), work = $('work');
 const ctx = work.getContext('2d', { willReadFrequently: true });
-let running = false, paused = false;
+let stream = null, running = false, paused = false, timer = 0;
 let prevThumb = null, stableCount = 0;
 const st = { armed: true, lastIds: [], pending: null, miss: 0 };
 
+function hint(t) { $('hint').textContent = t; }
+
 async function startCamera() {
+  renderScanBottom();
+  if (running) return;
+  if (!D.ready) { hint('카드 데이터를 불러오는 중…'); bus.addEventListener('change', () => !$('v-scan').hidden && startCamera(), { once: true }); return; }
+  $('camMsg').hidden = true;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false,
     });
+    if ($('v-scan').hidden) { stopCamera(); return; } // 그 사이 화면을 나갔으면
     video.srcObject = stream;
     await video.play();
-    $('start').hidden = true;
-    $('pauseBtn').disabled = false;
     running = true;
+    Object.assign(st, { armed: true, pending: null, miss: 0 });
     hint('카드를 네모 안에 맞춰 주세요');
-    setTimeout(tick, 300);
+    timer = setTimeout(tick, 300);
   } catch (e) {
-    $('loadInfo').textContent = '카메라를 켤 수 없어요. 브라우저 설정에서 카메라 권한을 허용해 주세요. (' + e.name + ')';
+    $('camMsg').hidden = false;
+    $('camMsg').innerHTML = `카메라를 켤 수 없어요.<br>브라우저 설정에서 카메라 권한을 허용해 주세요.<br><small>(${e.name})</small><br><br><a class="btn-accent" href="#/">홈으로</a>`;
   }
 }
-
-function hint(t) { $('hint').textContent = t; }
+function stopCamera() {
+  running = false;
+  clearTimeout(timer);
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+  video.srcObject = null;
+  prevThumb = null;
+}
 
 // 화면의 가이드 네모 → 영상 좌표
 function guideInVideo() {
   const vw = video.videoWidth, vh = video.videoHeight;
-  const box = $('cam').getBoundingClientRect(), g = $('guide').getBoundingClientRect();
+  const box = $('v-scan').getBoundingClientRect(), g = $('guide').getBoundingClientRect();
   const s = Math.max(box.width / vw, box.height / vh);
   const ox = (box.width - vw * s) / 2, oy = (box.height - vh * s) / 2;
-  return {
-    x: (g.left - box.left - ox) / s, y: (g.top - box.top - oy) / s, w: g.width / s, h: g.height / s, vw, vh,
-  };
+  return { x: (g.left - box.left - ox) / s, y: (g.top - box.top - oy) / s, w: g.width / s, h: g.height / s, vw, vh };
 }
 
 function grabFrame() {
@@ -150,10 +125,10 @@ function grabFrame() {
 
 function tick() {
   if (!running) return;
-  if (!paused && video.readyState >= 2) {
+  if (!paused && video.readyState >= 2 && video.videoWidth) {
     try { step(); } catch (e) { console.error(e); }
   }
-  setTimeout(tick, 120);
+  timer = setTimeout(tick, 120);
 }
 
 function step() {
@@ -168,13 +143,13 @@ function step() {
   if (++stableCount < 2) return;
 
   const { queries } = makeQueries(f.data, f.W, f.H, f.guide);
-  const top = bestMatches(db, queries, 5);
-  const ids = top.map(t => cards[t.index][0]);
+  const top = bestMatches(D.db, queries, 5);
+  const ids = top.map(t => D.cards[t.index][0]);
   const best = top[0];
 
   if (!best || best.score > ACCEPT) {
     if (++st.miss >= 2) { st.armed = true; st.pending = null; }
-    hint('카드를 네모 안에 맞춰 주세요');
+    if (st.armed) hint('카드를 네모 안에 맞춰 주세요');
     return;
   }
   st.miss = 0;
@@ -184,112 +159,144 @@ function step() {
   if (!st.pending || !ids.slice(0, 3).includes(st.pending)) { st.pending = ids[0]; hint('인식 중…'); return; }
 
   st.armed = false; st.lastIds = ids; st.pending = null;
-  const alts = top.filter(t => t.score <= ACCEPT + 10).map(t => cards[t.index][0]).filter(x => x !== ids[0]);
+  const alts = top.filter(t => t.score <= ACCEPT + 10).map(t => D.cards[t.index][0]).filter(x => x !== ids[0]);
   const it = addItem(ids[0], alts.slice(0, 4));
-  showResult(it);
+  showPop(it);
 }
 
-let resultTimer = 0, lastShown = null;
-function showResult(it) {
+let popTimer = 0, lastItem = null;
+function showPop(it) {
   const c = card(it.id);
-  lastShown = it;
-  $('resImg').src = imgUrl(c);
-  $('resName').textContent = c[1];
-  $('resMeta').textContent = metaText(c);
-  $('resPrice').textContent = won(itemKrw(it));
-  $('result').hidden = false;
+  lastItem = it;
+  $('popPrice').textContent = won(itemKrw(it));
+  $('popName').textContent = `${cardName(c)} · ${c[2]}/${c[4] || '?'}`;
+  const pop = $('pop');
+  pop.hidden = true; void pop.offsetWidth; pop.hidden = false;
   const g = $('guide');
-  g.classList.remove('hit'); void g.offsetWidth; g.classList.add('hit');
+  g.classList.add('hit');
+  renderScanBottom(true);
   navigator.vibrate?.(40);
   beep();
-  hint('인식 완료! 다음 카드를 넣어 주세요');
-  clearTimeout(resultTimer);
-  resultTimer = setTimeout(() => { $('result').hidden = true; g.classList.remove('hit'); }, 4000);
+  hint('인식 완료! 다음 카드');
+  clearTimeout(popTimer);
+  popTimer = setTimeout(() => { pop.hidden = true; g.classList.remove('hit'); }, 2600);
 }
+
+function renderScanBottom(bump) {
+  const stack = $('stack');
+  stack.innerHTML = '';
+  const recent = list.slice(0, 3).reverse();
+  for (const it of recent) {
+    const c = card(it.id);
+    if (!c) continue;
+    const im = document.createElement('img');
+    im.src = imgUrl(c); im.alt = '';
+    stack.appendChild(im);
+  }
+  if (list[0]) {
+    const sp = document.createElement('span');
+    sp.className = 'sp'; sp.textContent = won(itemKrw(list[0]));
+    stack.appendChild(sp);
+  }
+  stack.hidden = !list.length;
+  const pill = $('pill');
+  pill.textContent = `카드 ${list.length}장 ›`;
+  if (bump) { pill.classList.remove('bump'); void pill.offsetWidth; pill.classList.add('bump'); }
+}
+$('stack').onclick = () => { if (list[0]) openDetail(list[0]); };
+$('popWrong').onclick = () => { if (lastItem) openDetail(lastItem); };
 
 let audio;
 function beep() {
   try {
     audio ||= new AudioContext();
     const o = audio.createOscillator(), g = audio.createGain();
-    o.frequency.value = 1320; g.gain.setValueAtTime(0.08, audio.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.12);
-    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.13);
+    o.frequency.setValueAtTime(880, audio.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1760, audio.currentTime + 0.08);
+    g.gain.setValueAtTime(0.09, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.14);
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.15);
   } catch {}
 }
 
-// ---------- 화면: 목록 ----------
+$('pauseBtn').onclick = () => {
+  paused = !paused;
+  $('pauseIcon').setAttribute('href', paused ? '#i-play' : '#i-pause');
+  $('v-scan').classList.toggle('paused', paused);
+  hint(paused ? '일시정지됨' : '카드를 네모 안에 맞춰 주세요');
+};
+
+// ================= 스캔한 카드 목록 =================
 let selecting = false;
 const selected = new Set();
 
-function open(id) { $(id).hidden = false; }
-document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => {
-  b.closest('.sheet').hidden = true;
-  if (b.closest('#detailSheet') && !$('listSheet').hidden) renderList();
-});
-
-function renderList() {
+function renderCards() {
   const grid = $('grid');
   grid.innerHTML = '';
+  grid.classList.toggle('selecting', selecting);
   for (const it of list) {
     const c = card(it.id);
     if (!c) continue;
-    const el = document.createElement('div');
-    el.className = 'tile' + (selected.has(it.uid) ? ' sel' : '');
-    el.innerHTML = `<img loading="lazy" alt=""><div class="name"></div><div class="p"></div>`;
+    const el = document.createElement('button');
+    el.className = 'ccard' + (selected.has(it.uid) ? ' sel' : '');
+    el.innerHTML = '<img loading="lazy" alt=""><div class="set"></div><div class="n"></div><div class="p"></div>';
     el.querySelector('img').src = imgUrl(c);
-    el.querySelector('.name').textContent = c[1];
+    el.querySelector('.set').textContent = metaText(c);
+    el.querySelector('.n').textContent = cardName(c);
     el.querySelector('.p').textContent = won(itemKrw(it));
+    if (it.cond !== 'NM') {
+      const b = document.createElement('span');
+      b.className = 'cond'; b.textContent = CONDS.find(x => x[0] === it.cond)[1].split(' ')[0];
+      el.appendChild(b);
+    }
     el.onclick = () => {
-      if (selecting) {
-        selected.has(it.uid) ? selected.delete(it.uid) : selected.add(it.uid);
-        el.classList.toggle('sel');
-        $('selInfo').textContent = `${selected.size}장 선택`;
-      } else openDetail(it);
+      if (!selecting) return openDetail(it);
+      selected.has(it.uid) ? selected.delete(it.uid) : selected.add(it.uid);
+      el.classList.toggle('sel');
+      $('selInfo').textContent = `${selected.size}장 선택`;
     };
     grid.appendChild(el);
   }
-  $('emptyMsg').hidden = list.length > 0;
-  $('priceNote').textContent = `시세: TCGplayer 기준${priceDate ? ` (${priceDate})` : ''} · 환율 1달러 = ${Math.round(rate.KRW).toLocaleString('ko-KR')}원`;
-  renderSummary();
+  $('cardsEmpty').hidden = list.length > 0;
+  $('cardsCount').textContent = `${list.length}장 스캔됨`;
+  $('cardsTotal').textContent = won(cardsTotal());
+  $('priceNote').textContent = `시세: TCGplayer 기준${D.priceDate ? ` (${D.priceDate})` : ''} · 환율 1달러 = ${Math.round(rate.KRW).toLocaleString('ko-KR')}원 · 카드를 누르면 상태·종류를 바꿀 수 있어요`;
 }
-
-$('listBtn').onclick = () => { open('listSheet'); renderList(); };
-$('selectBtn').onclick = () => {
-  selecting = !selecting;
+function setSelecting(on) {
+  selecting = on;
   selected.clear();
-  $('selectBtn').textContent = selecting ? '취소' : '선택';
-  $('selectBar').hidden = !selecting;
+  $('selectBtn').textContent = on ? '완료' : '선택';
+  $('selectBar').hidden = !on;
   $('selInfo').textContent = '0장 선택';
-  renderList();
-};
+  renderCards();
+}
+$('selectBtn').onclick = () => setSelecting(!selecting);
 $('selAll').onclick = () => {
   if (selected.size === list.length) selected.clear(); else list.forEach(it => selected.add(it.uid));
   $('selInfo').textContent = `${selected.size}장 선택`;
-  renderList();
+  renderCards();
 };
 $('selDel').onclick = () => {
   if (!selected.size || !confirm(`${selected.size}장을 삭제할까요?`)) return;
-  list = list.filter(it => !selected.has(it.uid));
-  selected.clear();
-  save();
-  $('selInfo').textContent = '0장 선택';
-  renderList();
+  setList(list.filter(it => !selected.has(it.uid)));
+  toast(`${selected.size}장 삭제했어요`);
+  setSelecting(false);
 };
 
-// ---------- 화면: 상세 ----------
+// ================= 카드 상세 =================
 let detailItem = null;
 function openDetail(it) {
   detailItem = it;
   const c = card(it.id);
   $('detImg').src = imgUrl(c);
-  $('detName').textContent = c[1];
+  $('detName').textContent = cardName(c);
+  $('detEn').textContent = cardName(c) !== c[1] ? c[1] : '';
   $('detMeta').textContent = metaText(c) + (c[7] ? ` · ${c[7]}` : '');
   $('detLink').href = `https://prices.pokemontcg.io/tcgplayer/${c[0]}`;
   const vs = variantsOf(c);
   $('detVariant').innerHTML = vs.length
-    ? vs.map(v => `<option value="${v}">${VARIANT_NAME[v] || v} — ${usdText(c, v)}</option>`).join('')
-    : '<option>시세 정보 없음</option>';
+    ? vs.map(v => `<option value="${v}">${VARIANT_NAME[v] || v} — ${foreignText(c, v)}</option>`).join('')
+    : '<option value="">시세 정보 없음</option>';
   $('detVariant').value = it.variant || vs[0] || '';
   $('detCond').innerHTML = CONDS.map(([k, n, m]) => `<option value="${k}">${n} · ${Math.round(m * 100)}%</option>`).join('');
   $('detCond').value = it.cond;
@@ -299,84 +306,78 @@ function openDetail(it) {
   for (const id of it.alts || []) {
     const a = card(id);
     if (!a) continue;
-    alts.appendChild(row(a, () => {
+    alts.appendChild(cardRow(a, () => {
       it.alts = [it.id, ...it.alts.filter(x => x !== id)];
       it.id = id; it.variant = null;
-      save(); openDetail(it);
+      saveList(); openDetail(it); toast('카드를 바꿨어요');
     }));
   }
-  if (!alts.children.length) alts.innerHTML = '<p class="note">비슷한 다른 카드가 없어요. 틀렸다면 삭제 후 “직접 검색”을 써 보세요.</p>';
-  open('detailSheet');
+  if (!alts.children.length) alts.innerHTML = '<p class="note">비슷한 다른 카드가 없어요. 틀렸다면 삭제하고 “직접 검색”을 써 보세요.</p>';
+  openSheet('detailSheet');
 }
 function updateDetailPrice() {
   const it = detailItem, c = card(it.id);
-  const v = itemKrw(it);
-  $('detPrice').innerHTML = `${won(v)}<small>${usdText(c, it.variant)} 기준 × 상태 ${Math.round((CONDS.find(x => x[0] === it.cond)?.[2] ?? 1) * 100)}%</small>`;
+  $('detPrice').textContent = won(itemKrw(it));
+  const f = foreignText(c, it.variant);
+  $('detCalc').textContent = f ? `${f} × 상태 ${Math.round(condMul(it.cond) * 100)}%` : '';
 }
-$('detVariant').onchange = e => { detailItem.variant = e.target.value; save(); updateDetailPrice(); renderSummary(); };
-$('detCond').onchange = e => { detailItem.cond = e.target.value; save(); updateDetailPrice(); renderSummary(); };
+$('detVariant').onchange = e => { detailItem.variant = e.target.value || null; saveList(); updateDetailPrice(); };
+$('detCond').onchange = e => { detailItem.cond = e.target.value; saveList(); updateDetailPrice(); };
 $('detDel').onclick = () => {
-  list = list.filter(x => x !== detailItem);
-  save();
-  $('detailSheet').hidden = true;
-  if (!$('listSheet').hidden) renderList(); else renderSummary();
+  setList(list.filter(x => x !== detailItem));
+  closeSheet($('detailSheet'));
+  renderScanBottom();
+  toast('삭제했어요');
 };
 
-function row(c, onclick) {
+function cardRow(c, onclick) {
   const b = document.createElement('button');
   b.className = 'row';
-  b.innerHTML = `<img loading="lazy" alt=""><div class="info"><div class="name"></div><div class="meta"></div></div><div class="p"></div>`;
+  b.innerHTML = '<img loading="lazy" alt=""><div class="info"><div class="n"></div><div class="sub"></div></div><div class="p"></div>';
   b.querySelector('img').src = imgUrl(c);
-  b.querySelector('.name').textContent = c[1];
-  b.querySelector('.meta').textContent = metaText(c);
+  b.querySelector('.n').textContent = cardName(c);
+  b.querySelector('.sub').textContent = metaText(c);
   b.querySelector('.p').textContent = won(krwOf(c));
   b.onclick = onclick;
   return b;
 }
 
-// 결과 카드에서 "아니에요" → 상세 열어 다른 후보 고르기
-$('resWrong').onclick = () => { if (lastShown) openDetail(lastShown); };
-$('result').onclick = e => { if (e.target.id !== 'resWrong' && lastShown) openDetail(lastShown); };
-
-// ---------- 화면: 직접 검색 ----------
-$('searchBtn').onclick = () => { open('searchSheet'); $('searchInput').focus(); };
+// ================= 카드 직접 검색 =================
+$('searchBtn').onclick = () => { openSheet('searchSheet'); setTimeout(() => $('searchInput').focus(), 250); };
 $('searchInput').oninput = () => {
   const q = $('searchInput').value.trim().toLowerCase();
   const rows = $('searchRows');
   rows.innerHTML = '';
-  if (q.length < 2) return;
+  if (q.length < 2 && !/^\d+$/.test(q)) return;
   const num = q.match(/^#?0*([a-z]{0,3}\d+[a-z]?)\s*(?:\/\s*0*(\d+))?$/i); // 025/165, TG05 등
+  // 한글로 쓰면 영어 이름으로 바꿔서 찾기
+  const enNames = /[가-힣]/.test(q) ? D.ko.map((k, i) => (k.includes(q) ? D.en[i].toLowerCase() : null)).filter(Boolean) : null;
   const found = [];
-  for (const c of cards) {
+  for (const c of D.cards) {
+    const name = c[1].toLowerCase();
     let ok;
     if (num) ok = c[2].toLowerCase().replace(/^0+/, '') === num[1] && (!num[2] || String(c[4]) === num[2]);
-    else ok = c[1].toLowerCase().includes(q);
-    if (ok) { found.push(c); if (found.length >= 40) break; }
+    else if (enNames) ok = enNames.some(n => name.includes(n));
+    else ok = name.includes(q);
+    if (ok) { found.push(c); if (found.length >= 50) break; }
   }
-  for (const c of found) rows.appendChild(row(c, () => {
+  for (const c of found) rows.appendChild(cardRow(c, () => {
     addItem(c[0]);
-    $('searchSheet').hidden = true;
+    closeSheet($('searchSheet'));
     $('searchInput').value = ''; rows.innerHTML = '';
-    hint(`${c[1]} 추가됨`);
+    renderScanBottom(true);
+    toast(`${cardName(c)} 추가했어요`);
   }));
   if (!found.length) rows.innerHTML = '<p class="note">찾는 카드가 없어요.</p>';
 };
 
-// ---------- 시작 ----------
-$('pauseBtn').onclick = () => {
-  paused = !paused;
-  $('pauseBtn').textContent = paused ? '다시 시작' : '일시정지';
-  hint(paused ? '일시정지됨' : '카드를 네모 안에 맞춰 주세요');
-};
-$('startBtn').onclick = startCamera;
-
-renderSummary();
-loadRate().then(renderSummary);
-loadData().then(() => {
-  $('startBtn').disabled = false;
-  $('loadInfo').textContent = `카드 ${cards.length.toLocaleString('ko-KR')}장 준비 완료`;
-  hint('카메라를 켜 주세요');
-  renderSummary();
-}).catch(e => {
-  $('loadInfo').textContent = '카드 데이터를 불러오지 못했어요: ' + e.message;
+// ================= 시작 =================
+bus.addEventListener('change', () => {
+  if (!$('v-home').hidden) renderHome();
+});
+initStickers();
+route();
+loadRate();
+loadData().catch(e => {
+  $('homeFoot').textContent = '카드 데이터를 불러오지 못했어요: ' + e.message;
 });
