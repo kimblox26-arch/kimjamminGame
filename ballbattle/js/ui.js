@@ -69,9 +69,8 @@ async function mountBanner(root, u) {
   const box = $('.banner-media', root); if (!box) return;
   const b = u.banner; let src = null, kind = 'image';
   if (b) { if (b.kind === 'url') src = b.src; else { src = await mediaSrc(b); kind = b.kind; } }
-  if (!src) { box.innerHTML = ''; root.style.setProperty('--tint', defTint(u)); return; }
+  if (!src) { box.innerHTML = ''; return; }
   box.innerHTML = kind === 'video' ? `<video src="${src}" autoplay muted loop playsinline></video>` : `<img src="${src}" alt="">`;
-  tintOf(box.firstElementChild, kind).then(c => root.style.setProperty('--tint', c || defTint(u)));
 }
 function defTint() { return '#eef0f3'; }
 function tintOf(el, kind) {

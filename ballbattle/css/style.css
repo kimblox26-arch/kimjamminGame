@@ -169,7 +169,7 @@ textarea.inp{resize:none;min-height:80px}
 .tb-create span{display:grid;place-items:center;width:52px;height:34px;border-radius:6px;background:#111;color:#fff;box-shadow:-4px 0 0 var(--cy),4px 0 0 var(--pk)}
 
 /* 프로필 머리 (배너 + 그라데이션) */
-.ph{position:relative;background:linear-gradient(180deg,var(--tint) 0,var(--tint) 120px,var(--bg) 330px);transition:background .6s}
+.ph{position:relative;background:var(--bg);--W:min(100vw,480px)}
 .banner{height:170px;position:relative;overflow:hidden}
 .banner.tall{height:220px}
 .banner-media,.banner-media>*{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -524,3 +524,21 @@ body{letter-spacing:-.2px}
 .slot.buy{border-style:dashed;color:#555;cursor:pointer}
 .slot .price{display:flex;align-items:center;gap:3px;font-size:12px;color:#e67700;font-weight:700}
 .sa.crit{color:#e03131}.sa.crit.on{background:#e03131;color:#fff}
+
+/* 배너: 틱톡처럼 화면 폭의 2/3 높이, 아래로 갈수록 배경과 자연스럽게 이어짐 */
+.ph.tk .banner,.ph.hm .banner{position:absolute;top:0;left:0;right:0;height:calc(var(--W) * .67)}
+.ph.tk .banner-media>*,.ph.hm .banner-media>*{-webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 30%,rgba(0,0,0,.55) 58%,rgba(0,0,0,.15) 82%,transparent 100%);mask-image:linear-gradient(to bottom,#000 0%,#000 30%,rgba(0,0,0,.55) 58%,rgba(0,0,0,.15) 82%,transparent 100%)}
+.ph.hm{padding-bottom:6px}
+.ph.hm .home-prof{margin-top:0;padding-top:calc(var(--W) * .26)}
+/* 틱톡 스타일 프로필 */
+.ph.tk{padding-bottom:6px}
+.ph.tk .tk-info{margin-top:0;padding:calc(var(--W) * .24) 16px 0;align-items:flex-start}
+.tk-left h1{font-family:'IBM Plex Sans KR',sans-serif;font-weight:700;font-size:28px;letter-spacing:-1px;line-height:1.2}
+.tk-id{font-size:15px;color:#222;margin:2px 0 16px}
+.tk-stats{gap:30px}
+.tk-stats b{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.tk-stats small{font-size:13px;color:#555}
+.tk-av{width:calc(var(--W) * .21);height:calc(var(--W) * .21);min-width:72px;min-height:72px;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.12);margin-top:6px}
+.tk-bio{padding:16px 16px 4px;font-size:15px}
+.tk-bio:empty{display:none}
+.ptabs{margin-top:14px}

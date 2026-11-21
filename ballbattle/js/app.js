@@ -6,9 +6,10 @@ function seed() {
   for (const id in D.users) if (!D.users[id]) Reflect.deleteProperty(D.users, id);
   for (const id in D.skills) if (String(D.skills[id].owner).startsWith('bot_')) Reflect.deleteProperty(D.skills, id);
   if (!D.users[DEV_UID]) {
-    D.users[DEV_UID] = { uid: DEV_UID, handle: DEV_HANDLE, nick: '초록모자', email: '', age: 0, avatar: 'assets/greencap.jpg', banner: { kind: 'url', src: 'assets/greencap_banner.jpg' }, bio: '팔로워 10만 되면 얼공함\n팔로워 11만되면 목소리 공개\n될릴가 ㅋ', coins: 0, wins: 0, losses: 0, subs: [], following: [], equipped: [], created: Date.now() };
+    D.users[DEV_UID] = { uid: DEV_UID, handle: DEV_HANDLE, nick: '초록모자', email: '', age: 0, avatar: '', banner: null, bio: '', coins: 0, wins: 0, losses: 0, subs: [], following: [], equipped: [], created: Date.now() };
   }
   const dv = D.users[DEV_UID]; dv.dev = true; dv.banned = false; if (dv.handle === 'greencap.roblox') dv.handle = DEV_HANDLE;
+  if (dv.avatar === 'assets/greencap.jpg') dv.avatar = ''; if (dv.banner && dv.banner.kind === 'url') dv.banner = null; if (String(dv.bio || '').startsWith('팔로워 10만')) dv.bio = '';
   if (!NET.ok) { D.users[DEV_UID].pw = DEV_HASH; save('users', 'skills'); }
 }
 
@@ -43,7 +44,6 @@ screen('loading', el => {
   (async () => {
     try {
       stepTo(25, '저장소 여는 중'); await withTimeout(IDB.open(), 3000);
-      stepTo(45, '이미지 불러오는 중'); await withTimeout(Promise.all(['assets/greencap.jpg', 'assets/greencap_banner.jpg'].map(loadImg)), 4000);
       stepTo(60, '글꼴 불러오는 중'); await withTimeout(document.fonts && document.fonts.ready, 1500);
       stepTo(85, '온라인에 연결하는 중'); await connectNet(8000);
       seed();
@@ -91,7 +91,7 @@ function enter(u) { setSession(u.uid); AUD.sfx('win'); toast(`${u.nick}님 환�
 
 screen('login', el => {
   el.innerHTML = `<div class="auth form">${floatBalls()}<div class="hdr clear"><button class="icon-btn" data-back>${ic('back')}</button><h2>로그인</h2><span></span></div>
-    <div class="auth-card"><label class="lbl">아이디 (틱톡 아이디)</label><input class="inp" id="li-h" placeholder="예) greencap.roblox" autocomplete="username" autocapitalize="off">
+    <div class="auth-card"><label class="lbl">아이디 (틱톡 아이디)</label><input class="inp" id="li-h" placeholder="틱톡 아이디" autocomplete="username" autocapitalize="off">
     <label class="lbl">비밀번호</label><input class="inp" id="li-p" type="password" autocomplete="current-password"><div class="err" id="li-e"></div>
     <button class="btn-main w100" id="li-go">로그인</button><div class="or"><span>또는</span></div><div class="g-btn-box"></div>
     <p class="muted center sm">계정이 없나요? <a data-su>회원가입</a></p></div></div>`;
@@ -107,7 +107,7 @@ screen('login', el => {
     if (u.banned) return e.textContent = '밴된 계정이에요';
     enter(u);
   };
-  $('#li-go', el).onclick = doIt; $('#li-p', el).onkeydown = e => e.key === 'Enter' && doIt();
+  $('#li-go', el).onclick = doIt; $('#li-p', el).onkeydown = e => { if (e.key === 'Enter') doIt(); };
 });
 
 screen('signup', (el, p) => {
@@ -173,8 +173,8 @@ function switchTab(el, t, first) {
 // 홈
 TAB_R.home = page => {
   const u = me();
-  page.innerHTML = `<div class="ph" style="--tint:${defTint(u)}"><div class="banner"><div class="banner-media"></div></div>
-    <button class="glass pen" data-edit>${ic('pencil', 20)}</button><span class="coin-pill top">${COIN}<b>${u.coins}</b></span>
+  page.innerHTML = `<div class="ph hm"><div class="banner"><div class="banner-media"></div></div>
+    <button class="glass pen" data-edit>${ic('pencil', 20)}</button>
     <div class="home-prof">${avImg(u, 'av-sq')}<div class="hp-name">${nameHTML(u)}</div><div class="hp-id">@${esc(u.handle)}</div></div></div>
     <div class="home-body">
       <button class="btn-play big" id="hm-play"><span class="pl-ic">${ic('play', 30)}</span><span>플레이</span></button>
@@ -214,12 +214,12 @@ TAB_R.feed = page => renderFeedTab(page);
 function profileView(root, x, self) {
   const u = me(), posts = D.posts.filter(p => p.uid === x.uid), subbed = x.subs.includes(u.uid);
   const tabs = self ? [['posts', 'grid'], ['recs', 'lock'], ['saved', 'bookmark'], ['liked', 'heart']] : [['posts', 'grid']];
-  root.innerHTML = `<div class="ph tk" style="--tint:${defTint(x)}"><div class="banner tall"><div class="banner-media"></div></div>
+  root.innerHTML = `<div class="ph tk"><div class="banner"><div class="banner-media"></div></div>
     ${self ? `<button class="glass pen" data-edit>${ic('pencil', 20)}</button><button class="glass menu-btn" data-menu>${ic('menu', 22)}</button>` : `<button class="glass pen" data-back>${ic('back', 22)}</button><button class="glass menu-btn" data-more>${ic('dots', 22)}</button>`}
     <div class="tk-info"><div class="tk-left"><h1>${nameHTML(x)}</h1><div class="tk-id">@${esc(x.handle)}</div>
       <div class="tk-stats"><div><b>${fmtN(x.following.length)}</b><small>구독중</small></div><div><b>${fmtN(x.subs.length)}</b><small>구독자</small></div><div><b>${fmtN(userLikes(x))}</b><small>좋아요</small></div></div></div>
       ${avImg(x, 'tk-av')}</div>
-    <div class="tk-bio">${esc(x.bio || (self ? '자기소개를 추가해보세요' : '')).replace(/\n/g, '<br>')}</div>
+    <div class="tk-bio">${esc(x.bio || '').replace(/\n/g, '<br>')}</div>
     ${self ? '' : `<div class="tk-acts"><button class="btn-sub ${subbed ? 'on' : ''}" data-sub>${subbed ? '구독중' : '구독'}</button><button class="btn-ghost dark" data-rep>${ic('flag', 16)} 신고</button>${isDev(u) ? `<button class="btn-ghost dark" data-ban>${ic('ban', 16)} 밴</button>` : ''}</div>`}</div>
     <div class="ptabs">${tabs.map(([k, i]) => `<button data-pt="${k}" class="pt-${k}">${ic(i, 24)}</button>`).join('')}<i class="pt-ind" style="width:${100 / tabs.length}%"></i></div><div class="pgrid"></div>`;
   mountBanner($('.ph', root), x);

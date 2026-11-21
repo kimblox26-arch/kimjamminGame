@@ -122,7 +122,7 @@ function openComments(p, onChange) {
     const l = $('.cm-list', m); if (p.comments.length === 1) l.innerHTML = ''; l.insertAdjacentHTML('beforeend', row(c)); l.scrollTop = l.scrollHeight;
     $('.cm-hd b', m).textContent = p.comments.length; inp.value = ''; onChange && onChange(p.comments.length);
   };
-  $('.cm-in button', m).onclick = send; inp.onkeydown = e => e.key === 'Enter' && send();
+  $('.cm-in button', m).onclick = send; inp.onkeydown = e => { if (e.key === 'Enter') send(); };
 }
 
 const FEED_TABS = [['short', '숏츠'], ['video', '동영상'], ['live', '라이브']];
@@ -171,6 +171,6 @@ screen('live', async el => {
   const end = () => { iv.forEach(clearInterval); stream && stream.getTracks().forEach(t => t.stop()); };
   el._leave = end;
   const send = () => { const i = $('.lv-in input', el), t = i.value.trim(); if (!t) return; chat(u, t); i.value = ''; };
-  $('#lv-s', el).onclick = send; $('.lv-in input', el).onkeydown = e => e.key === 'Enter' && send(); $('.lv-h', el).onclick = heart;
+  $('#lv-s', el).onclick = send; $('.lv-in input', el).onkeydown = e => { if (e.key === 'Enter') send(); }; $('.lv-h', el).onclick = heart;
   $('.lv-end', el).onclick = async () => { if (await ask('라이브를 끝낼까요?', '종료', true)) { end(); back(); } };
 });
