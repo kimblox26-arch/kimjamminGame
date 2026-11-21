@@ -101,11 +101,11 @@ class Game {
   text(x, y, s, col, big) { this.texts.push({ x, y, s, col, life: big ? 1.1 : .8, ml: big ? 1.1 : .8, big }); }
   later(t, fn) { this.timers.push({ t, fn }); }
   squash(b, ax) { if (ax) { b.sqx = .72; b.sqy = 1.22; } else { b.sqx = 1.22; b.sqy = .72; } }
-  hit(b, dmg, col = '#333') {
+  hit(b, dmg, col = '#333', snd = 'thud') {
     if (this.over || b.dead || dmg <= 0) return 0; let d = dmg;
     if (b.shield > 0) { const a = Math.min(b.shield, d); b.shield -= a; d -= a; this.ring(b.x, b.y, b.r * b.sc + 16, '#74c0fc', .3, 2); if (d <= 0) { this.text(b.x, b.y - b.r - 10, '막음', '#1c7ed6'); return 0; } }
     b.hp -= d; b.flash = .12; this.text(b.x + rnd(-12, 12), b.y - b.r * b.sc - 8, '-' + Math.round(d), '#333');
-    if (d >= 10) this.shake = Math.min(10, d * .5); AUD.sfx('hit'); return d;
+    if (d >= 10) this.shake = Math.min(10, d * .5); if (snd) AUD.sfx(snd); return d;
   }
   shoot(b, e, ang, sp, r, dmg, col, home = 0) { this.projs.push({ x: b.x + Math.cos(ang) * b.r, y: b.y + Math.sin(ang) * b.r, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r, dmg, col, tg: e, life: 2.5, home }); }
   cast(b, e, sk) {
@@ -121,20 +121,20 @@ class Game {
   comp(c, b, e, pm, col) {
     const ang = Math.atan2(e.y - b.y, e.x - b.x), dist = Math.hypot(e.x - b.x, e.y - b.y);
     switch (c) {
-      case 'proj': for (let i = -1; i <= 1; i++) this.shoot(b, e, ang + i * .2, 380, 6, 5 * pm, col, 1.5); break;
+      case 'proj': AUD.sfx('pew'); for (let i = -1; i <= 1; i++) this.shoot(b, e, ang + i * .2, 380, 6, 5 * pm, col, 1.5); break;
       case 'dash': b.dashT = .55; b.dashDmg = 10 * pm; AUD.sfx('whoosh'); break;
       case 'boom': this.ring(b.x, b.y, 110, col, .5, 5); this.burst(b.x, b.y, col, 26, 280); AUD.sfx('boom');
-        if (dist < 110 + e.r) { this.hit(e, 12 * pm, col); e.vx += Math.cos(ang) * 400; e.vy += Math.sin(ang) * 400; } break;
-      case 'heal': { const v = Math.min(b.max - b.hp, 10 * pm); b.hp += v; this.text(b.x, b.y - b.r - 8, '+' + Math.round(v), '#2f9e44'); for (let i = 0; i < 12; i++) this.part(b.x + rnd(-b.r, b.r), b.y + rnd(-b.r, b.r), '#51cf66', 20, .8, 3, -60); break; }
-      case 'shield': b.shield = 15 * pm; b.shieldT = 4; this.ring(b.x, b.y, b.r + 14, '#74c0fc', .5, 3); break;
-      case 'laser': this.beams.push({ x1: b.x, y1: b.y, b2: e, col, life: .35, ml: .35, w: 7 }); this.hit(e, 9 * pm, col); AUD.sfx('laser'); break;
-      case 'freeze': e.slowT = Math.min(4, 1.5 * pm); for (let i = 0; i < 14; i++) this.part(e.x, e.y, '#74c0fc', 120, .7, 3); this.text(e.x, e.y + e.r + 12, '느려짐', '#1c7ed6'); break;
-      case 'poison': e.poisonT = 3; e.poisonD = 3 * pm; this.burst(e.x, e.y, '#69db7c', 12); break;
-      case 'grow': b.growT = 3; b.growDmg = 6 * pm; break;
-      case 'bolt': this.bolts.push({ x: e.x, y: e.y, life: .35, ml: .35, seed: Math.random() * 1e4 }); this.hit(e, 10 * pm, '#fab005'); this.shake = 5; AUD.sfx('zap'); break;
-      case 'vamp': { const d = this.hit(e, 7 * pm, '#e03131'); this.beams.push({ x1: b.x, y1: b.y, b2: e, col: '#ff6b6b', life: .4, ml: .4, w: 3 }); if (d) { b.hp = Math.min(b.max, b.hp + d); this.text(b.x, b.y - b.r - 8, '+' + Math.round(d), '#2f9e44'); } break; }
-      case 'tele': { this.burst(b.x, b.y, col, 14); const a = Math.random() * 7, r = e.r + b.r + 6; b.x = Math.min(400 - b.r, Math.max(b.r, e.x + Math.cos(a) * r)); b.y = Math.min(400 - b.r, Math.max(b.r, e.y + Math.sin(a) * r)); this.burst(b.x, b.y, col, 14); this.ring(b.x, b.y, 50, col); this.hit(e, 6 * pm, col); break; }
-      case 'meteor': { const tx = e.x, ty = e.y; this.marks.push({ x: tx, y: ty, r: 55, life: .8, ml: .8 }); this.later(.8, () => { this.ring(tx, ty, 70, '#ff922b', .5, 5); this.burst(tx, ty, '#ff922b', 30, 300); AUD.sfx('boom'); this.shake = 8; if (Math.hypot(e.x - tx, e.y - ty) < 55 + e.r) this.hit(e, 16 * pm, '#ff922b'); }); break; }
+        if (dist < 110 + e.r) { this.hit(e, 12 * pm, col, null); e.vx += Math.cos(ang) * 400; e.vy += Math.sin(ang) * 400; } break;
+      case 'heal': { AUD.sfx('heal'); const v = Math.min(b.max - b.hp, 10 * pm); b.hp += v; this.text(b.x, b.y - b.r - 8, '+' + Math.round(v), '#2f9e44'); for (let i = 0; i < 12; i++) this.part(b.x + rnd(-b.r, b.r), b.y + rnd(-b.r, b.r), '#51cf66', 20, .8, 3, -60); break; }
+      case 'shield': AUD.sfx('shield'); b.shield = 15 * pm; b.shieldT = 4; this.ring(b.x, b.y, b.r + 14, '#74c0fc', .5, 3); break;
+      case 'laser': this.beams.push({ x1: b.x, y1: b.y, b2: e, col, life: .35, ml: .35, w: 7 }); this.hit(e, 9 * pm, col, null); AUD.sfx('laser'); break;
+      case 'freeze': AUD.sfx('freeze'); e.slowT = Math.min(4, 1.5 * pm); for (let i = 0; i < 14; i++) this.part(e.x, e.y, '#74c0fc', 120, .7, 3); this.text(e.x, e.y + e.r + 12, '느려짐', '#1c7ed6'); break;
+      case 'poison': AUD.sfx('poison'); e.poisonT = 3; e.poisonD = 3 * pm; this.burst(e.x, e.y, '#69db7c', 12); break;
+      case 'grow': AUD.sfx('grow'); b.growT = 3; b.growDmg = 6 * pm; break;
+      case 'bolt': this.bolts.push({ x: e.x, y: e.y, life: .35, ml: .35, seed: Math.random() * 1e4 }); this.hit(e, 10 * pm, '#fab005', null); this.shake = 5; AUD.sfx('zap'); break;
+      case 'vamp': { const d = this.hit(e, 7 * pm, '#e03131', 'vamp'); this.beams.push({ x1: b.x, y1: b.y, b2: e, col: '#ff6b6b', life: .4, ml: .4, w: 3 }); if (d) { b.hp = Math.min(b.max, b.hp + d); this.text(b.x, b.y - b.r - 8, '+' + Math.round(d), '#2f9e44'); } break; }
+      case 'tele': { AUD.sfx('tele'); this.burst(b.x, b.y, col, 14); const a = Math.random() * 7, r = e.r + b.r + 6; b.x = Math.min(400 - b.r, Math.max(b.r, e.x + Math.cos(a) * r)); b.y = Math.min(400 - b.r, Math.max(b.r, e.y + Math.sin(a) * r)); this.burst(b.x, b.y, col, 14); this.ring(b.x, b.y, 50, col); this.hit(e, 6 * pm, col, 'bang'); break; }
+      case 'meteor': { AUD.sfx('meteor'); const tx = e.x, ty = e.y; this.marks.push({ x: tx, y: ty, r: 55, life: .8, ml: .8 }); this.later(.8, () => { this.ring(tx, ty, 70, '#ff922b', .5, 5); this.burst(tx, ty, '#ff922b', 30, 300); AUD.sfx('boom'); this.shake = 8; if (Math.hypot(e.x - tx, e.y - ty) < 55 + e.r) this.hit(e, 16 * pm, '#ff922b', null); }); break; }
     }
   }
   updBall(b, dt, e) {
@@ -149,7 +149,6 @@ class Game {
       b.hp -= dt; b.lavaAcc += dt; if (b.lavaAcc >= 1) { b.lavaAcc -= 1; this.text(b.x, b.y - r, '-1', '#f76707'); }
       if (Math.random() < .5) this.part(b.x + rnd(-r, r), b.y + r * .5, '#ff922b', 0, .6, 3, -60);
     }
-    if (this.t > 60 && live) b.hp -= 2 * dt; // 서든데스
     b.cloud = this.map === 'sky' && this.clouds.some(c => ((b.x - c.x) / (c.w / 2 + r * .4)) ** 2 + ((b.y - c.y) / (c.h / 2 + r * .4)) ** 2 < 1);
     if (this.map === 'jungle') {
       if (b.stuckT > 0) {
@@ -158,7 +157,7 @@ class Game {
         if (b.stuckT <= 0) { if (v) { v.st = 2; v.hold = null; } b.immT = .6; this.burst(b.x, b.y, '#51cf66', 14); this.text(b.x, b.y - r - 8, '탈출', '#2f9e44'); }
       } else if (b.immT <= 0 && this.started) {
         const v = this.vines.find(v => v.st === 0 && v.a > .8 && Math.hypot(v.x - b.x, v.y - b.y) < v.r + r * .6);
-        if (v) { v.st = 1; v.hold = b; b.stuckT = 1.6; this.text(b.x, b.y - r - 8, '걸림', '#2f9e44'); AUD.sfx('whoosh'); }
+        if (v) { v.st = 1; v.hold = b; b.stuckT = 1.6; this.text(b.x, b.y - r - 8, '걸림', '#2f9e44'); AUD.sfx('vine'); }
       }
     }
     if (b.stuckT <= 0 && this.started) {
@@ -175,7 +174,7 @@ class Game {
     if (!live || b.dead) return;
     const L = r + 36 * b.sc, x1 = b.x + Math.cos(b.wa) * r, y1 = b.y + Math.sin(b.wa) * r, x2 = b.x + Math.cos(b.wa) * L, y2 = b.y + Math.sin(b.wa) * L;
     if (b.wcd <= 0 && segDist(e.x, e.y, x1, y1, x2, y2) < e.r * e.sc) {
-      b.wcd = .45; b.wd *= -1; this.hit(e, 3, b.color); this.burst(x2, y2, '#adb5bd', 8, 140);
+      b.wcd = .45; b.wd *= -1; this.hit(e, 3, b.color, 'hit'); this.burst(x2, y2, '#adb5bd', 8, 140);
       const a = Math.atan2(e.y - b.y, e.x - b.x); e.vx += Math.cos(a) * 120; e.vy += Math.sin(a) * 120;
     }
     for (const s of b.sk) { s.t -= dt; if (s.t <= 0) { s.t = s.cd; this.cast(b, e, s); } }
@@ -190,7 +189,7 @@ class Game {
       this.lastCol = this.t; const cx = A.x + nx * A.r, cy = A.y + ny * A.r;
       const dA = 4 + (A.growT > 0 ? A.growDmg : 0) + (A.dashT > 0 ? A.dashDmg : 0), dB = 4 + (B.growT > 0 ? B.growDmg : 0) + (B.dashT > 0 ? B.dashDmg : 0);
       if (A.dashT > 0) A.dashT = 0; if (B.dashT > 0) B.dashT = 0;
-      this.hit(B, dA, A.color); this.hit(A, dB, B.color); this.burst(cx, cy, '#ced4da', 10, 200); this.ring(cx, cy, 30, '#ced4da', .25, 2);
+      this.hit(B, dA, A.color, 'bump'); this.hit(A, dB, B.color, null); this.burst(cx, cy, '#ced4da', 10, 200); this.ring(cx, cy, 30, '#ced4da', .25, 2);
       this.squash(A, Math.abs(nx) > Math.abs(ny) ? 1 : 0); this.squash(B, Math.abs(nx) > Math.abs(ny) ? 1 : 0);
     }
   }
@@ -235,9 +234,9 @@ class Game {
   draw() {
     const c = this.c, d = this.dpr; c.setTransform(d, 0, 0, d, 0, 0);
     c.fillStyle = '#fff'; c.fillRect(0, 0, GW, GH);
-    c.textAlign = 'center'; c.fillStyle = '#a5a5a5'; c.font = '15px Jua,sans-serif'; c.fillText(`created by ${BB_CONFIG.CREDIT}`, GW / 2, 28);
-    c.font = '12px Jua,sans-serif'; c.textAlign = 'left'; c.fillStyle = '#b5b5b5'; c.fillText(MAPS[this.map].name, BX, 28);
-    c.textAlign = 'right'; c.fillStyle = this.t > 60 ? '#e03131' : '#b5b5b5'; c.fillText(this.t > 60 ? '서든데스' : `${Math.floor(this.t / 60)}:${String(Math.floor(this.t % 60)).padStart(2, '0')}`, GW - BX, 28);
+    c.textAlign = 'center'; c.fillStyle = '#a5a5a5'; c.font = '600 15px "IBM Plex Sans KR",sans-serif'; c.fillText(`created by ${BB_CONFIG.CREDIT}`, GW / 2, 28);
+    c.font = '600 12px "IBM Plex Sans KR",sans-serif'; c.textAlign = 'left'; c.fillStyle = '#b5b5b5'; c.fillText(MAPS[this.map].name, BX, 28);
+    c.textAlign = 'right'; c.fillStyle = '#b5b5b5'; c.fillText(`${Math.floor(this.t / 60)}:${String(Math.floor(this.t % 60)).padStart(2, '0')}`, GW - BX, 28);
     c.save(); if (this.shake > 0) c.translate(rnd(-this.shake, this.shake) * .5, rnd(-this.shake, this.shake) * .5);
     c.translate(BX, BY); c.beginPath(); c.rect(0, 0, 400, 400); c.clip();
     drawMapBG(c, this.map, 400, 400, this.t);
@@ -259,7 +258,7 @@ class Game {
     }
     for (const t of this.texts) {
       const a = Math.min(1, t.life / t.ml * 2), s = t.big ? 1 + .4 * Math.max(0, (t.life - t.ml + .2) / .2) : 1;
-      c.globalAlpha = a; c.font = `${t.big ? 18 * s : 14}px 'Black Han Sans',Jua,sans-serif`; c.textAlign = 'center'; c.lineWidth = 4; c.strokeStyle = '#fff'; c.lineJoin = 'round'; c.strokeText(t.s, t.x, t.y); c.fillStyle = t.col; c.fillText(t.s, t.x, t.y);
+      c.globalAlpha = a; c.font = `${t.big ? 18 * s : 14}px 'Black Han Sans',sans-serif`; c.textAlign = 'center'; c.lineWidth = 4; c.strokeStyle = '#fff'; c.lineJoin = 'round'; c.strokeText(t.s, t.x, t.y); c.fillStyle = t.col; c.fillText(t.s, t.x, t.y);
     } c.globalAlpha = 1;
     c.restore();
     c.lineWidth = 5; c.strokeStyle = '#111'; c.strokeRect(BX - 2.5, BY - 2.5, 405, 405);
@@ -267,14 +266,14 @@ class Game {
   }
   panel(b, x, side) {
     const c = this.c, w = 190, ny = BY + 400 + 34, hy = ny + 10, hh = 28, p = Math.max(0, b.hp / b.max), pl = Math.max(0, b.lag / b.max);
-    c.textAlign = side ? 'right' : 'left'; c.font = '24px Jua,sans-serif'; c.fillStyle = b.color;
+    c.textAlign = side ? 'right' : 'left'; c.font = '600 24px "IBM Plex Sans KR",sans-serif'; c.fillStyle = b.color;
     const nm = b.u.nick.length > 9 ? b.u.nick.slice(0, 9) + '…' : b.u.nick; c.fillText(nm, side ? x + w : x, ny);
     c.fillStyle = '#d0d0d0'; c.fillRect(x, hy, w, hh);
     c.fillStyle = '#ffa8a8'; c.fillRect(x, hy, w * pl, hh);
     c.fillStyle = p < .3 ? '#ff6b6b' : '#40d65a'; c.fillRect(x, hy, w * p, hh);
     if (b.shield > 0) { c.fillStyle = 'rgba(116,192,252,.6)'; c.fillRect(x, hy, Math.min(w, b.shield / b.max * w), 5); }
     c.lineWidth = 2.5; c.strokeStyle = '#111'; c.strokeRect(x, hy, w, hh);
-    c.fillStyle = '#fff'; c.font = '19px Jua,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(`${Math.ceil(Math.max(0, b.hp))} / ${b.max}`, x + w / 2, hy + hh / 2 + 1); c.textBaseline = 'alphabetic';
+    c.fillStyle = '#fff'; c.font = '600 19px "IBM Plex Sans KR",sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(`${Math.ceil(Math.max(0, b.hp))} / ${b.max}`, x + w / 2, hy + hh / 2 + 1); c.textBaseline = 'alphabetic';
     const rows = b.sk.length ? b.sk : [null];
     rows.forEach((s, i) => { const y = hy + hh + 9 + i * 12; c.fillStyle = '#e9e9e9'; c.fillRect(x, y, w, 6); if (s) { c.fillStyle = b.color; c.fillRect(x, y, w * Math.min(1, 1 - Math.max(0, s.t) / s.cd), 6); } c.lineWidth = 1; c.strokeStyle = '#9a9a9a'; c.strokeRect(x, y, w, 6); });
   }
@@ -302,7 +301,7 @@ class Game {
     try {
       const st = this.cv.captureStream(30); if (AUD.dest) AUD.dest.stream.getAudioTracks().forEach(t => st.addTrack(t));
       const mt = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
-      this.rec = new MediaRecorder(st, mt ? { mimeType: mt, videoBitsPerSecond: 2.5e6 } : undefined); this.chunks = [];
+      this.rec = new MediaRecorder(st, mt ? { mimeType: mt, videoBitsPerSecond: 1.2e6 } : undefined); this.chunks = [];
       this.rec.ondataavailable = e => e.data.size && this.chunks.push(e.data); this.rec.start(500);
     } catch (e) { this.rec = null; }
   }
@@ -318,10 +317,10 @@ class Game {
 async function prepSkills(u) {
   return Promise.all(loadout(u).map(async s => {
     const sk = { s, cd: skillCD(s), t: skillCD(s) * (.35 + Math.random() * .3) };
-    if (s.sound && s.sound.startsWith('k_')) sk.buf = await AUD.load(s.sound);
+    if (AUD.isFile(s.sound)) sk.buf = await AUD.load(s.sound);
     if (s.media) {
       try {
-        const url = await blobURL(s.media.key); if (url) {
+        const url = await mediaSrc(s.media); if (url) {
           sk.el = await loadEl(url, s.media.kind); sk.cv = document.createElement('canvas'); sk.cv.width = sk.cv.height = 128;
           if (s.media.edits.key && s.media.edits.key.mode === 'ai') SEG.load().catch(() => { });
         }
@@ -341,6 +340,7 @@ screen('match', el => {
     <h2 class="mt-title">상대를 찾는 중<span class="dots"><i>.</i><i>.</i><i>.</i></span></h2><div class="mt-time">0:00</div></div>`;
   let s = 0; el._iv = setInterval(() => { s++; const t = $('.mt-time', el); if (t) t.textContent = `0:${String(s).padStart(2, '0')}`; }, 1000);
   const pool = Object.values(D.users).filter(x => x.uid !== u.uid && !x.banned);
+  if (!pool.length) { later(() => { clearInterval(el._iv); el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button><h2 class="mt-title">아직 다른 플레이어가 없어요</h2><p class="muted center">다른 사람이 가입하면 그 사람의 공·스킬과 싸울 수 있어요</p><button class="btn-main" data-back>돌아가기</button></div>`; }, 1500); return; }
   const opp = pick(pool);
   later(() => {
     clearInterval(el._iv); AUD.sfx('ding');
@@ -389,13 +389,13 @@ function mapSelect(el, u, opp, later) {
 // ===== 게임 화면 =====
 screen('game', async (el, p) => {
   const u = me(), o = D.users[p.opp];
-  el.innerHTML = `<div class="game"><div class="g-top"><button class="icon-btn g-quit">${ic('x')}</button><span class="g-map">${MAPS[p.map].name}</span><span class="rec-dot">REC</span></div>
+  el.innerHTML = `<div class="game"><div class="g-top"><button class="icon-btn g-quit">${ic('x')}</button><span class="g-map">${MAPS[p.map].name}</span><span></span></div>
     <div class="g-cv-wrap"><canvas class="g-cv"></canvas><div class="g-count"></div></div><div class="g-cards"></div></div>`;
   const [mySk, opSk, myImg, opImg] = await Promise.all([prepSkills(u), prepSkills(o), loadImg(avatarSrc(u)), loadImg(avatarSrc(o))]);
   if (!el.isConnected) return;
   const myC = ballColor(myImg), opC = ballColor(opImg);
   const card = (x, side, col, sks) => `<div class="g-card ${side}" style="--bc:${col}">${avImg(x, 'av-c')}<div class="g-nm"><div class="g-name">${nameHTML(x)}</div><small>@${esc(x.handle)}</small>
-    ${side === 'opp' ? `<div class="g-acts">${u.dev ? `<button class="mini-ban" data-ban>${ic('ban', 13)} 밴</button>` : ''}<button class="mini-btn" data-rep>${ic('flag', 13)} 신고</button></div>` : ''}
+    ${side === 'opp' ? `<div class="g-acts">${isDev(u) ? `<button class="mini-ban" data-ban>${ic('ban', 13)} 밴</button>` : ''}<button class="mini-btn" data-rep>${ic('flag', 13)} 신고</button></div>` : ''}
     <div class="g-sk">${sks.map(s => `<div class="gs"><span>${esc(s.s.name)}</span><i><b></b></i></div>`).join('') || '<small class="muted">기본 공격만</small>'}</div></div></div>`;
   $('.g-cards', el).innerHTML = card(o, 'opp', opC, opSk) + card(u, 'me', myC, mySk);
   const g = new Game($('.g-cv', el), { map: p.map, me: { u, skills: mySk, img: myImg, color: myC }, opp: { u: o, skills: opSk, img: opImg, color: opC }, onEnd: w => finish(w) });
@@ -403,7 +403,7 @@ screen('game', async (el, p) => {
   const bars = [[opSk, $$('.g-card.opp .gs', el)], [mySk, $$('.g-card.me .gs', el)]];
   g.onFrame = () => bars.forEach(([sks, els]) => sks.forEach((s, i) => { const e = els[i]; if (!e) return; const pr = 1 - Math.max(0, s.t) / s.cd; e.querySelector('b').style.width = pr * 100 + '%'; e.classList.toggle('ready', pr > .97); }));
   g.start();
-  if (u.dev) $('[data-ban]', el).onclick = () => banModal(o.handle);
+  if (isDev(u)) $('[data-ban]', el).onclick = () => banModal(o.handle);
   $('[data-rep]', el).onclick = () => reportUser(o);
   $('.g-quit', el).onclick = async () => { if (g.over) return; if (await ask('게임을 나가면 패배로 기록돼요. 나갈까요?', '나가기', true)) { g.over = true; g.stop(); g.stopRec(); record(false); reset('main', { tab: 'home' }, 'back'); } };
   // 3, 2, 1 카운트다운

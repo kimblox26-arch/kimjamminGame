@@ -1,60 +1,84 @@
 'use strict';
 // ===== 사운드 / 영상 편집 / 배경 제거 / 플레이어 =====
 const AUD = {
-  ctx: null, master: null, dest: null, bufs: {},
+  ctx: null, master: null, dest: null, nb: null, bufs: {},
   init() {
     if (this.ctx) return this.ctx;
     const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
-    this.ctx = new C(); this.master = this.ctx.createGain(); this.master.gain.value = .8; this.master.connect(this.ctx.destination);
-    try { this.dest = this.ctx.createMediaStreamDestination(); this.master.connect(this.dest); } catch (e) { }
+    this.ctx = new C(); this.master = this.ctx.createGain(); this.master.gain.value = .9;
+    const comp = this.ctx.createDynamicsCompressor(); this.master.connect(comp); comp.connect(this.ctx.destination);
+    try { this.dest = this.ctx.createMediaStreamDestination(); comp.connect(this.dest); } catch (e) { }
+    const n = this.ctx.createBuffer(1, this.ctx.sampleRate * 2, this.ctx.sampleRate), d = n.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; this.nb = n;
     return this.ctx;
   },
   o() { const c = this.init(); if (c && c.state === 'suspended') c.resume(); return c; },
-  tone(type, f0, f1, dur, vol = .25, delay = 0) {
-    const c = this.o(); if (!c) return;
-    const t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
-    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dur + .05);
+  env(g, t, att, dur, vol) { g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + att); g.gain.exponentialRampToValueAtTime(.0001, t + att + dur); },
+  tone(type, f0, f1, dur, vol = .2, delay = 0, att = .004) {
+    const c = this.o(); if (!c) return; const t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    this.env(g, t, att, dur, vol); o.connect(g); g.connect(this.master); o.start(t); o.stop(t + att + dur + .05);
   },
-  noise(dur, vol = .3, f0 = 2000, f1 = 200, type = 'lowpass') {
-    const c = this.o(); if (!c) return;
-    const n = c.createBuffer(1, c.sampleRate * dur | 0, c.sampleRate), d = n.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const s = c.createBufferSource(); s.buffer = n; const f = c.createBiquadFilter(); f.type = type; const t = c.currentTime;
-    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
-    const g = c.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-    s.connect(f); f.connect(g); g.connect(this.master); s.start();
+  noise(dur, vol = .2, type = 'lowpass', f0 = 2000, f1 = f0, delay = 0, q = 1, att = .003) {
+    const c = this.o(); if (!c) return; const t = c.currentTime + delay, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = this.nb; f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    this.env(g, t, att, dur, vol); s.connect(f); f.connect(g); g.connect(this.master); s.start(t, Math.random() * 1.5); s.stop(t + att + dur + .05);
   },
   sfx(n) {
+    const v = .9 + Math.random() * .2, R = (a, b) => a + Math.random() * (b - a);
     switch (n) {
-      case 'pop': this.tone('sine', 800, 200, .15); break;
-      case 'boom': this.noise(.6, .5, 1500, 60); this.tone('sine', 120, 40, .5, .4); break;
-      case 'zap': this.tone('square', 1400, 120, .22, .12); break;
-      case 'whoosh': this.noise(.4, .3, 400, 3000, 'bandpass'); break;
-      case 'ding': this.tone('sine', 1320, 1300, .6, .2); this.tone('sine', 1980, 1970, .4, .1); break;
-      case 'laser': this.tone('sawtooth', 1800, 250, .28, .12); break;
-      case 'coin': this.tone('square', 988, 988, .08, .1); this.tone('square', 1319, 1319, .3, .1, .08); break;
-      case 'hit': this.tone('triangle', 300, 80, .1, .22); this.noise(.08, .12, 3000, 500); break;
-      case 'beep': this.tone('sine', 880, 880, .14, .2); break;
-      case 'go': this.tone('square', 660, 1320, .35, .15); break;
-      case 'win': [523, 659, 784, 1047].forEach((f, i) => this.tone('square', f, f, .28, .12, i * .12)); break;
-      case 'lose': [392, 330, 262].forEach((f, i) => this.tone('triangle', f, f * .97, .4, .2, i * .18)); break;
-      case 'click': this.tone('sine', 620, 480, .05, .08); break;
+      case 'click': this.tone('sine', 1500 * v, 800, .03, .04); break; // 버튼: 살짝 톡
+      case 'hit': this.noise(.06, .25, 'bandpass', 2600 * v, 1400, 0, 2.5); this.tone('triangle', 540 * v, 190, .08, .14); break; // 막대 딱
+      case 'bump': this.tone('sine', 160 * v, 55, .2, .35); this.noise(.07, .14, 'lowpass', 900, 300); break; // 공끼리 쿵
+      case 'thud': this.noise(.11, .22, 'lowpass', 1500 * v, 220); this.tone('sine', 240 * v, 90, .09, .15); break; // 탄환 퍽
+      case 'pew': this.tone('square', 1300 * v, 360, .11, .05); this.tone('sine', 1900 * v, 520, .1, .06); break;
+      case 'boom': this.noise(.9, .5, 'lowpass', 2600, 60); this.tone('sine', 110, 32, .7, .45); this.noise(.3, .2, 'bandpass', 900, 250, 0, .8); break;
+      case 'bang': this.noise(.35, .45, 'lowpass', 3200, 180); this.tone('sine', 190, 60, .22, .3); break;
+      case 'whoosh': this.noise(.45, .3, 'bandpass', 280, 2600, 0, 1.3, .05); break;
+      case 'zap': for (let i = 0; i < 6; i++) this.noise(.035, .22, 'highpass', R(2500, 6000), 2000, i * .03); this.tone('sawtooth', 95, 60, .3, .07); break;
+      case 'laser': this.tone('sawtooth', 2300 * v, 260, .3, .06); this.tone('sine', 1150 * v, 130, .3, .09); break;
+      case 'heal': [523, 659, 784, 1047].forEach((f, i) => this.tone('sine', f, f, .35, .07, i * .07)); this.tone('triangle', 2093, 2093, .5, .03, .28); break;
+      case 'shield': this.tone('triangle', 660, 990, .4, .08); this.tone('sine', 1320, 1980, .4, .05, .05); this.noise(.3, .05, 'highpass', 6000); break;
+      case 'freeze': for (let i = 0; i < 6; i++) this.tone('sine', R(2000, 3600), R(1800, 3400), .16, .04, i * .04); this.noise(.25, .07, 'highpass', 5000); break;
+      case 'poison': for (let i = 0; i < 5; i++) this.tone('sine', R(250, 500), R(520, 900), .07, .08, i * .06); break;
+      case 'tele': this.tone('sine', 300, 2400, .16, .08); this.tone('sine', 2400, 300, .16, .08, .16); break;
+      case 'grow': this.tone('sawtooth', 90, 260, .45, .06); this.noise(.45, .08, 'lowpass', 300, 1400); break;
+      case 'vamp': this.tone('sawtooth', 110, 70, .35, .08); this.noise(.35, .12, 'bandpass', 520, 200, 0, 3); break;
+      case 'meteor': this.tone('sine', 2400, 500, .75, .05); this.noise(.75, .06, 'bandpass', 3000, 600, 0, 2); break;
+      case 'vine': this.noise(.25, .18, 'bandpass', 700, 300, 0, 2); this.tone('triangle', 200, 140, .2, .08); break;
+      case 'coin': this.tone('sine', 1568, 1568, .12, .12); this.tone('sine', 2093, 2093, .35, .12, .08); this.tone('sine', 3136, 3136, .25, .03, .08); break;
+      case 'beep': this.tone('sine', 1000, 980, .08, .18); this.noise(.015, .08, 'highpass', 4000); break;
+      case 'go': [392, 494, 587, 784].forEach(f => this.tone('sawtooth', f, f, .45, .035)); this.noise(.35, .1, 'highpass', 5000); break;
+      case 'win': [[523, 659, 784], [587, 740, 880], [784, 988, 1175, 1568]].forEach((ch, i) => ch.forEach(f => this.tone('triangle', f, f, i === 2 ? .7 : .18, .06, i * .16))); this.noise(.8, .08, 'highpass', 6000, 6000, .32); break;
+      case 'lose': this.tone('sawtooth', 392, 370, .3, .05); this.tone('sawtooth', 349, 330, .3, .05, .28); this.tone('sawtooth', 294, 220, .7, .06, .56); break;
+      // 스킬 소리 선택용
+      case 'pop': this.tone('sine', 500 * v, 1300, .06, .16); this.tone('sine', 900, 320, .08, .07, .05); break;
+      case 'ding': this.tone('sine', 1320, 1310, .7, .16); this.tone('sine', 2640, 2630, .4, .05); break;
+      case 'tada': [523, 659, 784, 1047].forEach(f => this.tone('triangle', f, f, .6, .05, .1)); this.tone('triangle', 392, 392, .1, .06); this.noise(.6, .07, 'highpass', 7000, 7000, .1); break;
+      case 'glass': for (let i = 0; i < 7; i++) this.tone('sine', R(2500, 5200), R(2400, 5000), R(.1, .35), .05, i * .025); this.noise(.2, .15, 'highpass', 5000); break;
+      case 'buzz': this.tone('sawtooth', 70, 95, .5, .09); this.tone('square', 140, 190, .5, .03); break;
+      case 'sparkle': [1047, 1319, 1568, 2093, 2637, 3136].forEach((f, i) => this.tone('sine', f, f, .12, .05, i * .045)); break;
+      case 'drum': this.tone('sine', 170, 50, .25, .45); this.tone('sine', 170, 50, .35, .45, .2); this.noise(.06, .1, 'lowpass', 1200); break;
+      case 'spring': this.tone('sine', 280, 1000, .14, .14); this.tone('sine', 1000, 240, .3, .12, .14); break;
     }
   },
   async load(k) {
     if (this.bufs[k]) return this.bufs[k];
-    const c = this.o(); const b = await IDB.get(k).catch(() => null); if (!b || !c) return null;
-    try { return this.bufs[k] = await c.decodeAudioData(await b.arrayBuffer()); } catch (e) { return null; }
+    const c = this.o(); if (!c) return null; let ab = null;
+    try {
+      if (k.startsWith('data:')) { const bin = atob(k.split(',')[1]); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); ab = u8.buffer; }
+      else { const b = await IDB.get(k); if (!b) return null; ab = await b.arrayBuffer(); }
+      return this.bufs[k] = await c.decodeAudioData(ab);
+    } catch (e) { return null; }
   },
   playBuf(buf, vol = 1) {
     const c = this.o(); if (!c || !buf) return;
     const s = c.createBufferSource(), g = c.createGain(); g.gain.value = vol; s.buffer = buf; s.connect(g); g.connect(this.master); s.start();
   },
-  async skill(snd) { if (!snd || snd === 'none') return; if (snd.startsWith('k_')) this.playBuf(await this.load(snd)); else this.sfx(snd); },
+  isFile: snd => !!snd && (snd.startsWith('k_') || snd.startsWith('data:')),
+  async skill(snd) { if (!snd || snd === 'none') return; if (this.isFile(snd)) this.playBuf(await this.load(snd)); else this.sfx(snd); },
 };
-const SOUNDS = { none: '없음', pop: '뿅', boom: '쾅', zap: '지잉', whoosh: '슝', ding: '띠링', laser: '퓨웅' };
+const SOUNDS = { none: '없음', pop: '뿅', boom: '쾅', bang: '펑', zap: '지지직', whoosh: '슝', ding: '띠링', laser: '퓨웅', tada: '짠', glass: '쨍그랑', buzz: '부웅', sparkle: '뾰로롱', drum: '두둥', spring: '띠요옹' };
 
 // AI 사람 인식 배경 제거 (MediaPipe, 처음 사용할 때만 불러옴)
 const SEG = {
@@ -266,14 +290,3 @@ async function openEditor(src, kind, edits, onDone, { ratio = 1 } = {}) {
   panel();
 }
 
-// 마이크로 소리 녹음 (최대 3초)
-async function recordSound() {
-  let st; try { st = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { toast('마이크를 쓸 수 없어요'); return null; }
-  return new Promise(res => {
-    const r = new MediaRecorder(st), ch = []; r.ondataavailable = e => ch.push(e.data);
-    const m = modal(`<div class="rec-ui"><div class="rec-pulse">${ic('mic', 40)}</div><p>녹음 중... (최대 3초)</p><button class="btn-main" data-s>완료</button></div>`);
-    const stop = () => { if (r.state !== 'inactive') r.stop(); };
-    r.onstop = () => { st.getTracks().forEach(t => t.stop()); m._onclose = null; m.close(); res(new Blob(ch, { type: r.mimeType || 'audio/webm' })); };
-    m._onclose = stop; $('[data-s]', m).onclick = stop; r.start(); setTimeout(stop, 3000);
-  });
-}

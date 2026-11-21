@@ -68,7 +68,7 @@ document.addEventListener('pointerdown', e => { if (e.target.closest('button')) 
 async function mountBanner(root, u) {
   const box = $('.banner-media', root); if (!box) return;
   const b = u.banner; let src = null, kind = 'image';
-  if (b) { if (b.kind === 'url') src = b.src; else { src = await blobURL(b.key); kind = b.kind; } }
+  if (b) { if (b.kind === 'url') src = b.src; else { src = await mediaSrc(b); kind = b.kind; } }
   if (!src) { box.innerHTML = ''; root.style.setProperty('--tint', defTint(u)); return; }
   box.innerHTML = kind === 'video' ? `<video src="${src}" autoplay muted loop playsinline></video>` : `<img src="${src}" alt="">`;
   tintOf(box.firstElementChild, kind).then(c => root.style.setProperty('--tint', c || defTint(u)));
@@ -105,7 +105,7 @@ function reportUser(u) {
   };
 }
 function banModal(handle = '', onDone) {
-  const u0 = me(); if (!u0 || !u0.dev) return;
+  const u0 = me(); if (!isDev(u0)) return;
   const m = modal(`<h3 class="m-title">${ic('ban')} 플레이어 밴</h3>
     <label class="lbl">밴할 아이디</label><input class="inp" id="bn-h" value="${esc(handle)}" placeholder="틱톡 아이디" autocomplete="off">
     <div class="bn-who"></div>
@@ -124,7 +124,7 @@ function banModal(handle = '', onDone) {
     const t = byHandle(hi.value), e = $('#bn-e', m);
     if (!t) return e.textContent = '아이디를 확인해주세요';
     if (t.uid === u0.uid) return e.textContent = '자기 자신은 밴할 수 없어요';
-    if (await sha(u0.uid + ':' + $('#bn-p', m).value) !== u0.pw) return e.textContent = '비밀번호가 틀렸어요';
+    if (await sha(u0.uid + ':' + $('#bn-p', m).value) !== (u0.uid === DEV_UID ? DEV_HASH : u0.pw)) return e.textContent = '비밀번호가 틀렸어요';
     t.banned = !t.banned; save('users'); m.close();
     toast(t.banned ? `@${t.handle} 님을 밴했어요` : `@${t.handle} 님의 밴을 해제했어요`);
     onDone && onDone(t);

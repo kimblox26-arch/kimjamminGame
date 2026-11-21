@@ -37,11 +37,8 @@ screen('upload', async (el, p) => {
     const title = $('#up-t', el).value.trim(); if (!title) return toast('제목을 입력해주세요');
     const btn = $('#up-go', el); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 올리는 중...';
     let thumb = ''; try { thumb = await makeThumb(url, p.kind, st.edits); } catch (e) { }
-    const post = { id: 'p_' + uid6(), uid: u.uid, key: p.key, kind: p.kind, edits: st.edits, title, desc: $('#up-d', el).value.trim(), type: st.type, likes: [], saves: [], comments: [], shares: 0, views: 0, t: Date.now(), thumb, botLikes: 0 };
-    // AI 시청자 반응
-    const bots = Object.values(D.users).filter(x => x.bot); post.views = rint(5, 80); post.botLikes = rint(0, Math.ceil(post.views / 4));
-    bots.forEach(b => { if (Math.random() < .25 && !u.subs.includes(b.uid)) { u.subs.push(b.uid); b.following.push(u.uid); } });
-    if (Math.random() < .6) { const b = pick(bots); post.comments.push({ uid: b.uid, text: pick(['ㅋㅋㅋ 개웃기네', '와 스킬 미쳤다', '구독하고 갑니다', '이 맵 어려워요ㅠ', '나랑 1:1 ㄱ?', '레전드 판이네']), t: Date.now() }); }
+    const post = { id: 'p_' + uid6(), uid: u.uid, key: p.key, kind: p.kind, edits: st.edits, title, desc: $('#up-d', el).value.trim(), type: st.type, likes: [], saves: [], comments: [], shares: 0, views: 0, t: Date.now(), thumb };
+    if (NET.ok) { btn.innerHTML = '<span class="spin"></span> 온라인에 올리는 중...'; post.asset = await shareBlob(p.key); if (!post.asset) { btn.disabled = false; btn.innerHTML = `${ic('upload', 20)} 올리기`; return toast('영상을 올리지 못했어요 (20MB 이하, 올리기 권한 필요)'); } }
     D.posts.unshift(post); save('posts', 'users'); AUD.sfx('ding'); toast('영상이 올라갔어요!');
     reset('main', { tab: 'profile' }, 'fade');
   };
@@ -59,9 +56,9 @@ function feedItem(p) {
       <button data-a="save" class="${saved ? 'on' : ''}">${ic('bookmark', 30)}<span>${fmtN(p.saves.length)}</span></button>
       <button data-a="share">${ic('share', 30)}<span>${fmtN(p.shares)}</span></button>
       <button data-a="more">${ic('dots', 26)}</button></div>
-    <div class="fi-info"><div class="fi-user"><img data-a="user" class="fi-av" src="${avatarSrc(o)}" alt=""><b data-a="user">@${esc(o.handle)}</b>${o.dev ? BADGE : ''}${self ? '' : `<button data-a="sub" class="sub ${subbed ? 'on' : ''}">${subbed ? '구독중' : '구독'}</button>`}</div>
+    <div class="fi-info"><div class="fi-user"><img data-a="user" class="fi-av" src="${avatarSrc(o)}" alt=""><b data-a="user">@${esc(o.handle)}</b>${isDev(o) ? BADGE : ''}${self ? '' : `<button data-a="sub" class="sub ${subbed ? 'on' : ''}">${subbed ? '구독중' : '구독'}</button>`}</div>
       <div class="fi-title">${esc(p.title)}</div>${p.desc ? `<div class="fi-desc">${esc(p.desc)}</div>` : ''}<div class="fi-views">${ic('eye', 13)} 조회수 ${fmtN(p.views)}</div></div>
-    <div class="fi-heart">${ic('heart', 110)}</div><div class="fi-paused">${ic('play', 64)}</div></div>`;
+    <div class="fi-paused">${ic('play', 64)}</div></div>`;
 }
 function mountFeed(box, list, startId) {
   if (!list.length) { box.innerHTML = `<div class="empty">${ic('clapper', 56)}<p>아직 영상이 없어요</p><button class="btn-main" id="fe-mk">${ic('plus', 18)} 영상 만들기</button></div>`; $('#fe-mk', box).onclick = () => go('create'); return { destroy() { } }; }
@@ -71,22 +68,17 @@ function mountFeed(box, list, startId) {
     const p = D.posts.find(x => x.id === item.dataset.id); if (!p) return; item._on = true;
     if (!item._viewed) { item._viewed = 1; p.views++; save('posts'); }
     if (players[p.id]) return players[p.id].play();
-    const url = await blobURL(p.key); if (!url || !item._on || players[p.id]) return;
+    const url = await mediaSrc(p); if (!url || !item._on || players[p.id]) return;
     players[p.id] = makePlayer($('.fi-media', item), url, p.kind, p.edits, { fit: p.type === 'short' ? 'cover' : 'contain' }); players[p.id].play();
   };
   const deact = item => { item._on = false; item._viewed = 0; const pl = players[item.dataset.id]; if (pl) { pl.destroy(); delete players[item.dataset.id]; } item.classList.remove('paused'); };
   const io = new IntersectionObserver(es => es.forEach(en => en.intersectionRatio > .6 ? act(en.target) : deact(en.target)), { root: feed, threshold: [0, .6, 1] });
   $$('.fi', feed).forEach(i => io.observe(i));
   if (startId) { const it = $(`.fi[data-id="${startId}"]`, feed); if (it) setTimeout(() => { feed.scrollTop = it.offsetTop; }, 0); }
-  let lastTap = 0;
   feed.addEventListener('click', async e => {
     const item = e.target.closest('.fi'); if (!item) return; const p = D.posts.find(x => x.id === item.dataset.id), u = me(), o = D.users[p.uid];
     const b = e.target.closest('[data-a]');
-    if (!b) { // 탭: 일시정지 / 더블탭: 좋아요
-      const now = Date.now();
-      if (now - lastTap < 280) { if (!p.likes.includes(u.uid)) toggle('likes'); const hh = $('.fi-heart', item); hh.classList.remove('go'); void hh.offsetWidth; hh.classList.add('go'); lastTap = 0; return; }
-      lastTap = now; setTimeout(() => { if (lastTap === now) { const pl = players[p.id]; if (pl) item.classList.toggle('paused', !pl.toggle()); } }, 290); return;
-    }
+    if (!b) { const pl = players[p.id]; if (pl) item.classList.toggle('paused', !pl.toggle()); return; }
     const a = b.dataset.a;
     function toggle(k) {
       const i = p[k].indexOf(u.uid); i >= 0 ? p[k].splice(i, 1) : p[k].push(u.uid); save('posts');
@@ -101,8 +93,8 @@ function mountFeed(box, list, startId) {
     if (a === 'sub') { toggleSub(o); $$(`.fi [data-a="sub"]`, feed).forEach(x => { if (D.posts.find(q => q.id === x.closest('.fi').dataset.id).uid === o.uid) { const s = o.subs.includes(u.uid); x.classList.toggle('on', s); x.textContent = s ? '구독중' : '구독'; } }); }
     if (a === 'more') {
       const items = [{ label: '신고하기', fn: () => reportUser(o) }];
-      if (o.uid === u.uid || u.dev) items.push({ label: '영상 삭제', danger: true, fn: async () => { if (await ask('이 영상을 삭제할까요?', '삭제', true)) { D.posts = D.posts.filter(x => x !== p); if (!D.recs.some(r => r.key === p.key)) IDB.del(p.key); save('posts'); toast('삭제했어요'); refresh(); } } });
-      if (u.dev && o.uid !== u.uid) items.push({ label: '이 플레이어 밴', danger: true, fn: () => banModal(o.handle) });
+      if (o.uid === u.uid || isDev(u)) items.push({ label: '영상 삭제', danger: true, fn: async () => { if (await ask('이 영상을 삭제할까요?', '삭제', true)) { D.posts = D.posts.filter(x => x !== p); if (!D.recs.some(r => r.key === p.key)) IDB.del(p.key); save('posts'); toast('삭제했어요'); refresh(); } } });
+      if (isDev(u) && o.uid !== u.uid) items.push({ label: '이 플레이어 밴', danger: true, fn: () => banModal(o.handle) });
       sheet('', items);
     }
   });
@@ -122,7 +114,7 @@ async function sharePost(p) {
   if (ok) { p.shares++; save('posts'); }
 }
 function openComments(p, onChange) {
-  const row = c => { const o = D.users[c.uid]; return o ? `<div class="cm">${avImg(o, 'av-xs')}<div><b>@${esc(o.handle)}</b>${o.dev ? BADGE : ''} <small class="muted">${ago(c.t)}</small><p>${esc(c.text)}</p></div></div>` : ''; };
+  const row = c => { const o = D.users[c.uid]; return o ? `<div class="cm">${avImg(o, 'av-xs')}<div><b>@${esc(o.handle)}</b>${isDev(o) ? BADGE : ''} <small class="muted">${ago(c.t)}</small><p>${esc(c.text)}</p></div></div>` : ''; };
   const m = modal(`<div class="cm-hd">댓글 <b>${p.comments.length}</b>개</div><div class="cm-list">${p.comments.map(row).join('') || '<p class="muted center">첫 댓글을 남겨보세요</p>'}</div>
     <div class="cm-in">${avImg(me(), 'av-xs')}<input class="inp" placeholder="댓글 추가..." maxlength="150"><button class="icon-btn">${ic('send')}</button></div>`, { cls: 'sheet cm-sheet' });
   const inp = $('.cm-in input', m), send = () => {
@@ -133,7 +125,7 @@ function openComments(p, onChange) {
   $('.cm-in button', m).onclick = send; inp.onkeydown = e => e.key === 'Enter' && send();
 }
 
-const FEED_TABS = [['short', '숏츠'], ['video', '동영상'], ['subs', '구독'], ['live', '라이브']];
+const FEED_TABS = [['short', '숏츠'], ['video', '동영상'], ['live', '라이브']];
 function renderFeedTab(page) {
   page.innerHTML = `<div class="feed-tabs">${FEED_TABS.map(([k, n]) => `<button data-f="${k}">${k === 'live' ? ic('live', 15) : ''}${n}</button>`).join('')}</div><div class="feed-box"></div>`;
   let cur = null; const box = $('.feed-box', page);
@@ -168,20 +160,17 @@ screen('viewer', (el, p) => {
 
 screen('live', async el => {
   const u = me();
-  el.innerHTML = `<div class="live"><video autoplay playsinline muted></video><div class="lv-top"><span class="lv-badge">LIVE</span><span class="lv-view">${ic('eye', 14)} <b>0</b></span><button class="icon-btn lv-end">${ic('x')}</button></div>
+  el.innerHTML = `<div class="live"><video autoplay playsinline muted></video><div class="lv-top"><span class="lv-badge">LIVE</span><button class="icon-btn lv-end">${ic('x')}</button></div>
     <div class="lv-host">${avImg(u, 'av-xs')}<span>${nameHTML(u)}</span></div><div class="lv-chat"></div><div class="lv-hearts"></div>
     <div class="lv-in"><input class="inp" placeholder="채팅 보내기..." maxlength="80"><button class="icon-btn" id="lv-s">${ic('send')}</button><button class="icon-btn lv-h">${ic('heart')}</button></div></div>`;
-  let stream = null, viewers = 0, peak = 0, hearts = 0; const iv = [];
+  let stream = null; const iv = [];
   try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true }); $('video', el).srcObject = stream; }
   catch (e) { toast('카메라를 쓸 수 없어서 화면 없이 방송해요'); }
   const chat = (who, t) => { const c = $('.lv-chat', el); if (!c) return; c.insertAdjacentHTML('beforeend', `<div class="lv-msg">${avImg(who, 'av-xs')}<b>${esc(who.nick)}</b><span>${esc(t)}</span></div>`); while (c.children.length > 7) c.firstChild.remove(); };
-  const heart = () => { hearts++; const hh = h(`<i style="--x:${rnd(-30, 30)}px;color:${pick(['#FE2C55', '#25F4EE', '#FFD700', '#ff7ab6'])}">${ic('heart', 28)}</i>`); $('.lv-hearts', el).appendChild(hh); setTimeout(() => hh.remove(), 2000); };
-  const bots = Object.values(D.users).filter(x => x.uid !== u.uid && !x.banned);
-  iv.push(setInterval(() => { viewers = Math.max(1, viewers + rint(-1, 3)); peak = Math.max(peak, viewers); $('.lv-view b', el).textContent = viewers; }, 1500));
-  iv.push(setInterval(() => { if (Math.random() < .7) chat(pick(bots), pick(['안녕하세요!', '오 라이브다', '게임 한판 해요', '스킬 뭐 써요?', 'ㅋㅋㅋㅋ', '구독 박고 감', '초록모자 화이팅', '볼박스 재밌다'])); if (Math.random() < .5) heart(); }, 2200));
+  const heart = () => { const hh = h(`<i style="--x:${rnd(-30, 30)}px;color:${pick(['#FE2C55', '#25F4EE', '#FFD700', '#ff7ab6'])}">${ic('heart', 28)}</i>`); $('.lv-hearts', el).appendChild(hh); setTimeout(() => hh.remove(), 2000); };
   const end = () => { iv.forEach(clearInterval); stream && stream.getTracks().forEach(t => t.stop()); };
   el._leave = end;
   const send = () => { const i = $('.lv-in input', el), t = i.value.trim(); if (!t) return; chat(u, t); i.value = ''; };
   $('#lv-s', el).onclick = send; $('.lv-in input', el).onkeydown = e => e.key === 'Enter' && send(); $('.lv-h', el).onclick = heart;
-  $('.lv-end', el).onclick = async () => { if (await ask('라이브를 끝낼까요?', '종료', true)) { end(); const m = modal(`<h3 class="m-title">${ic('live')} 라이브 종료</h3><div class="lv-sum"><div><b>${peak}</b><small>최고 시청자</small></div><div><b>${hearts}</b><small>하트</small></div></div><button class="btn-main w100" data-c>확인</button>`); $('[data-c]', m).onclick = () => m.close(); back(); } };
+  $('.lv-end', el).onclick = async () => { if (await ask('라이브를 끝낼까요?', '종료', true)) { end(); back(); } };
 });

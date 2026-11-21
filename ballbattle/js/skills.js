@@ -68,7 +68,6 @@ function skForm(body, u, p, setTab) {
   const ed = p.edit && D.skills[p.edit];
   const st = ed ? JSON.parse(JSON.stringify(ed)) : { name: '', color: SK_COLORS[0], comps: [], cd: 6, sound: 'pop', media: null };
   body.innerHTML = `<div class="sk-form">
-    <div class="sk-preview"><canvas width="240" height="140"></canvas></div>
     <label class="lbl">스킬 이름</label><input class="inp" id="sf-n" maxlength="14" placeholder="예) 초록 폭풍" value="${esc(st.name)}">
     <label class="lbl">색상</label><div class="colors">${SK_COLORS.map(c => `<button class="sw" data-c="${c}" style="--c:${c}"></button>`).join('')}<input type="color" id="sf-c" value="${st.color}"></div>
     <label class="lbl">효과 조합 <small class="muted">여러 개를 골라 섞을 수 있어요 (최대 4개)</small></label>
@@ -77,7 +76,7 @@ function skForm(body, u, p, setTab) {
     <div class="pow"><span>위력</span><div class="pow-bar"><i></i></div><b id="sf-pw"></b></div>
     <p class="muted sm">쿨타임이 길수록 위력이 세져요. 효과를 여러 개 섞으면 하나하나는 약해지지만 합치면 더 강해요.</p>
     <label class="lbl">${ic('music', 16)} 스킬 소리</label>
-    <div class="chips" id="sf-snd">${Object.entries(SOUNDS).map(([k, n]) => `<button class="chip" data-s="${k}">${n}</button>`).join('')}<button class="chip" data-s="__up">${ic('upload', 14)} 파일</button><button class="chip" data-s="__rec">${ic('mic', 14)} 녹음</button></div>
+    <div class="chips" id="sf-snd">${Object.entries(SOUNDS).map(([k, n]) => `<button class="chip" data-s="${k}">${n}</button>`).join('')}<button class="chip" data-s="__up">${ic('upload', 14)} 파일</button></div>
     <label class="lbl">${ic('film', 16)} 스킬 영상·사진 <small class="muted">발동할 때 공 위에 나와요 · 배경 제거 가능</small></label>
     <div class="mbox"></div>
     <div class="chips"><button class="chip" id="sf-mp">${ic('upload', 14)} 갤러리에서 선택</button><button class="chip" id="sf-me">${ic('wand', 14)} 편집·배경제거</button><button class="chip" id="sf-md">${ic('x', 14)} 제거</button></div>
@@ -87,7 +86,7 @@ function skForm(body, u, p, setTab) {
   const sync = () => {
     $$('.sw', body).forEach(b => b.classList.toggle('on', b.dataset.c === st.color));
     $$('.comp', body).forEach(b => b.classList.toggle('on', st.comps.includes(b.dataset.k)));
-    $$('#sf-snd .chip', body).forEach(b => b.classList.toggle('on', b.dataset.s === st.sound || (b.dataset.s === '__up' && st.sound.startsWith('k_'))));
+    $$('#sf-snd .chip', body).forEach(b => b.classList.toggle('on', b.dataset.s === st.sound || (b.dataset.s === '__up' && AUD.isFile(st.sound))));
     const tmp = { ...st, lv: ed ? ed.lv : 1, fused: ed ? ed.fused : false, comps: st.comps.length ? st.comps : ['proj'] };
     $('#sf-cdv', body).textContent = skillCD(tmp) + '초'; const pw = st.comps.length ? skillPower(tmp) * Math.min(st.comps.length, 1 + (st.comps.length - 1) * .45) : 0;
     $('#sf-pw', body).textContent = '×' + (st.comps.length ? skillPower(tmp).toFixed(2) + ' (각 효과)' : '-'); $('.pow-bar i', body).style.width = Math.min(100, pw * 40) + '%';
@@ -95,24 +94,9 @@ function skForm(body, u, p, setTab) {
   const mediaBox = async () => {
     player && player.destroy(); player = null; const box = $('.mbox', body);
     if (!st.media) { box.innerHTML = `<div class="mbox-empty">${ic('image', 30)}<small>영상이나 사진을 넣어보세요</small></div>`; return; }
-    box.innerHTML = ''; const url = await blobURL(st.media.key); if (!url) return;
+    box.innerHTML = ''; const url = await mediaSrc(st.media); if (!url) return;
     player = makePlayer(box, url, st.media.kind, st.media.edits, { fit: 'contain', muted: true }); player.play();
   };
-  // 미리보기: 공이 스킬 효과를 쓰는 작은 애니메이션
-  const pc = $('.sk-preview canvas', body), px = pc.getContext('2d'); let pt = 0, praf = 0;
-  const prev = () => {
-    pt += 1 / 60; px.clearRect(0, 0, 240, 140); px.fillStyle = '#f5f5f7'; px.fillRect(0, 0, 240, 140);
-    const k = pt % 2, bx = 60 + Math.sin(pt * 2) * 10, ex = 185; px.fillStyle = '#ced4da'; px.beginPath(); px.arc(ex, 70, 18, 0, 7); px.fill();
-    px.fillStyle = st.color; px.beginPath(); px.arc(bx, 70, 20, 0, 7); px.fill();
-    if (k < 1) {
-      px.globalAlpha = 1 - k; px.strokeStyle = st.color; px.lineWidth = 4; px.beginPath(); px.arc(bx, 70, 20 + k * 50, 0, 7); px.stroke();
-      if (st.comps.includes('proj') || st.comps.includes('laser') || st.comps.includes('bolt')) { px.fillStyle = st.color; px.beginPath(); px.arc(bx + (ex - bx) * k, 70, 6, 0, 7); px.fill(); }
-      px.globalAlpha = 1;
-    }
-    px.fillStyle = '#111'; px.font = '14px Jua'; px.textAlign = 'center'; px.fillText(st.name || '스킬 이름', bx, 36 - (k < .3 ? (.3 - k) * 30 : 0));
-    praf = requestAnimationFrame(prev);
-  };
-  prev(); const ol = body._leave; body._leave = () => { cancelAnimationFrame(praf); ol(); };
   $('#sf-n', body).oninput = e => st.name = e.target.value;
   $('#sf-c', body).oninput = e => { st.color = e.target.value; sync(); };
   $$('.sw', body).forEach(b => b.onclick = () => { st.color = b.dataset.c; $('#sf-c', body).value = st.color; sync(); });
@@ -120,17 +104,16 @@ function skForm(body, u, p, setTab) {
   $('#sf-cd', body).oninput = e => { st.cd = +e.target.value; sync(); };
   $$('#sf-snd .chip', body).forEach(b => b.onclick = async () => {
     const s = b.dataset.s;
-    if (s === '__up') { const f = await pickFile('audio/*'); if (!f) return; if (f.size > 3e6) return toast('3MB 이하 소리 파일만 넣을 수 있어요'); st.sound = await putBlob(f, 'k'); }
-    else if (s === '__rec') { const bl = await recordSound(); if (!bl) return; st.sound = await putBlob(bl, 'k'); }
+    if (s === '__up') { const f = await pickFile('audio/*'); if (!f) return; if (f.size > 2e5) return toast('200KB 이하 짧은 소리 파일만 넣을 수 있어요'); st.sound = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f); }); }
     else st.sound = s;
     AUD.skill(st.sound); sync();
   });
   $('#sf-mp', body).onclick = async () => {
     const f = await pickFile('image/*,video/*'); if (!f) return; if (f.size > 40e6) return toast('40MB 이하 파일만 넣을 수 있어요');
     const kind = f.type.startsWith('video') ? 'video' : 'image', key = await putBlob(f, 'm'), url = await blobURL(key);
-    openEditor(url, kind, { key: { mode: 'ai', c: '#00ff00', tol: 90, soft: 50 } }, e => { st.media = { key, kind, edits: e }; mediaBox(); }, { ratio: 1 });
+    openEditor(url, kind, { key: { mode: 'ai', c: '#00ff00', tol: 90, soft: 50 } }, async e => { st.media = { key, kind, edits: e }; mediaBox(); const asset = await shareBlob(key); if (asset && st.media && st.media.key === key) st.media.asset = asset; }, { ratio: 1 });
   };
-  $('#sf-me', body).onclick = async () => { if (!st.media) return toast('먼저 영상이나 사진을 넣어주세요'); const url = await blobURL(st.media.key); openEditor(url, st.media.kind, st.media.edits, e => { st.media.edits = e; mediaBox(); }, { ratio: 1 }); };
+  $('#sf-me', body).onclick = async () => { if (!st.media) return toast('먼저 영상이나 사진을 넣어주세요'); const url = await mediaSrc(st.media); openEditor(url, st.media.kind, st.media.edits, e => { st.media.edits = e; mediaBox(); }, { ratio: 1 }); };
   $('#sf-md', body).onclick = () => { st.media = null; mediaBox(); };
   $('#sf-save', body).onclick = () => {
     const name = st.name.trim(); if (!name) return toast('스킬 이름을 적어주세요'); if (!st.comps.length) return toast('효과를 1개 이상 골라주세요');
