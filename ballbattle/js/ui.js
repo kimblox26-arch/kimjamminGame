@@ -64,6 +64,34 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('pointerdown', e => { if (e.target.closest('button')) AUD.sfx('click'); });
 
+// 상자 안에서 공 두 개가 튀는 애니메이션 (로딩·메인화면)
+function boxAnim(cv, { fill } = {}) {
+  const S = 120, x = cv.getContext('2d'), r = 11; cv.width = cv.height = S * 2; x.scale(2, 2);
+  const B = [{ x: 38, y: 40, vx: 96, vy: 74, c: '#FE2C55', sx: 1, sy: 1 }, { x: 82, y: 84, vx: -84, vy: -92, c: '#25F4EE', sx: 1, sy: 1 }];
+  let last = performance.now(), raf = 0; const t0 = last;
+  const f = now => {
+    const dt = Math.min(.033, (now - last) / 1000), k = Math.min(1, (now - t0) / 700); last = now; x.clearRect(0, 0, S, S);
+    if (fill) { const hh = 111 * Math.max(0, Math.min(1, fill())); x.fillStyle = '#eef0f3'; x.fillRect(4.5, 115.5 - hh, 111, hh); }
+    x.lineWidth = 3; x.strokeStyle = '#111'; x.setLineDash([460 * k, 460]); x.strokeRect(2.5, 2.5, 115, 115); x.setLineDash([]);
+    if (k > .5) {
+      for (const b of B) {
+        b.x += b.vx * dt; b.y += b.vy * dt;
+        if (b.x < r + 4) { b.x = r + 4; b.vx = Math.abs(b.vx); b.sx = .72; b.sy = 1.25; } else if (b.x > 116 - r) { b.x = 116 - r; b.vx = -Math.abs(b.vx); b.sx = .72; b.sy = 1.25; }
+        if (b.y < r + 4) { b.y = r + 4; b.vy = Math.abs(b.vy); b.sx = 1.25; b.sy = .72; } else if (b.y > 116 - r) { b.y = 116 - r; b.vy = -Math.abs(b.vy); b.sx = 1.25; b.sy = .72; }
+        b.sx += (1 - b.sx) * .2; b.sy += (1 - b.sy) * .2;
+      }
+      const [a, c] = B, dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
+      if (d < r * 2 && d > 0) { const nx = dx / d, ny = dy / d, va = a.vx * nx + a.vy * ny, vc = c.vx * nx + c.vy * ny; if (va - vc > 0) { a.vx += (vc - va) * nx; a.vy += (vc - va) * ny; c.vx += (va - vc) * nx; c.vy += (va - vc) * ny; } }
+      x.globalAlpha = Math.min(1, (k - .5) * 4);
+      for (const b of B) { x.save(); x.translate(b.x, b.y); x.scale(b.sx, b.sy); x.fillStyle = b.c; x.beginPath(); x.arc(0, 0, r, 0, 7); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(0, 0, r - 3.5, 0, 7); x.fill(); x.restore(); }
+      x.globalAlpha = 1;
+    }
+    raf = requestAnimationFrame(f);
+  };
+  raf = requestAnimationFrame(f);
+  return () => cancelAnimationFrame(raf);
+}
+
 // 배너 (이미지/영상) + 배경과 이어지는 그라데이션 색
 async function mountBanner(root, u) {
   const box = $('.banner-media', root); if (!box) return;

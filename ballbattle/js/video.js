@@ -69,7 +69,8 @@ function mountFeed(box, list, startId) {
     if (!item._viewed) { item._viewed = 1; p.views++; save('posts'); }
     if (players[p.id]) return players[p.id].play();
     const url = await mediaSrc(p); if (!url || !item._on || players[p.id]) return;
-    players[p.id] = makePlayer($('.fi-media', item), url, p.kind, p.edits, { fit: p.type === 'short' ? 'cover' : 'contain' }); players[p.id].play();
+    players[p.id] = makePlayer($('.fi-media', item), url, p.kind, p.edits, { fit: p.type === 'short' ? 'cover' : 'contain', muted: SET.muteVideo });
+    if (SET.autoplay && !SET.dataSaver) players[p.id].play(); else item.classList.add('paused');
   };
   const deact = item => { item._on = false; item._viewed = 0; const pl = players[item.dataset.id]; if (pl) { pl.destroy(); delete players[item.dataset.id]; } item.classList.remove('paused'); };
   const io = new IntersectionObserver(es => es.forEach(en => en.intersectionRatio > .6 ? act(en.target) : deact(en.target)), { root: feed, threshold: [0, .6, 1] });
@@ -132,7 +133,7 @@ function renderFeedTab(page) {
   const setF = f => {
     page._f = f; cur && cur.destroy(); cur = null;
     $$('.feed-tabs button', page).forEach(b => b.classList.toggle('on', b.dataset.f === f));
-    const u = me(), ok = p => D.users[p.uid] && !D.users[p.uid].banned;
+    const u = me(), ok = p => D.users[p.uid] && !D.users[p.uid].banned && (!D.users[p.uid].private || p.uid === u.uid);
     if (f === 'live') return liveTab(box);
     const list = D.posts.filter(ok).filter(p => f === 'subs' ? u.following.includes(p.uid) : p.type === f);
     if (f === 'subs' && !list.length) { box.innerHTML = `<div class="empty">${ic('users', 56)}<p>구독한 크리에이터의 영상이 여기에 나와요</p></div>`; return; }

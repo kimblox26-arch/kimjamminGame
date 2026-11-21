@@ -167,7 +167,7 @@ function avatarSrc(u) {
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function nameHTML(u) {
-  return `<span class="nm">${esc(u.nick)}</span>${isDev(u) ? BADGE + '<span class="devtag">개발자</span>' : ''}`;
+  return `<span class="nm">${esc(u.nick)}</span>${isDev(u) || u.verified ? BADGE : ''}${isDev(u) ? '<span class="devtag">개발자</span>' : ''}`;
 }
 function fmtN(n) { n = n || 0; if (n >= 1e4) return (n / 1e4).toFixed(1).replace('.0', '') + '만'; return n.toLocaleString(); }
 function ago(t) {

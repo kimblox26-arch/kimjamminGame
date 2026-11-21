@@ -19,9 +19,9 @@ function slotsHTML(u) {
 }
 async function buyCrit(u) {
   if (u.critUnlocked) return false;
-  if (u.coins < CRIT_PRICE) { toast(`코인이 부족해요 (필요 ${CRIT_PRICE}, 보유 ${u.coins})`); return false; }
+  if (!u.inf && u.coins < CRIT_PRICE) { toast(`코인이 부족해요 (필요 ${CRIT_PRICE}, 보유 ${u.coins})`); return false; }
   if (!await ask(`${CRIT_PRICE}코인으로 크리티컬 스킬 칸을 추가할까요?`, '추가')) return false;
-  u.coins -= CRIT_PRICE; u.critUnlocked = true; save('users'); AUD.sfx('coin'); toast('크리티컬 스킬 칸이 생겼어요'); return true;
+  spend(u, CRIT_PRICE); u.critUnlocked = true; save('users'); AUD.sfx('coin'); toast('크리티컬 스킬 칸이 생겼어요'); return true;
 }
 function removeSkill(s) {
   delete D.skills[s.id]; Object.values(D.users).forEach(x => x.equipped = (x.equipped || []).filter(id => id !== s.id));
@@ -31,7 +31,7 @@ function removeSkill(s) {
 
 screen('skills', (el, p) => {
   const u = me(); p.tab = p.tab || 'mine';
-  el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>공 스킬 제작</h2><span class="coin-pill">${COIN}<b>${u.coins}</b></span></div>
+  el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>공 스킬 제작</h2><span class="coin-pill">${COIN}<b>${coinText(u)}</b></span></div>
     <div class="seg"><button data-t="mine">내 스킬</button><button data-t="new">${p.edit ? '스킬 편집' : '새로 만들기'}</button><button data-t="fuse">${ic('flask', 15)} 융합</button><i class="seg-ind"></i></div>
     <div class="sk-body scroll"></div>`;
   const body = $('.sk-body', el);
@@ -43,7 +43,7 @@ screen('skills', (el, p) => {
     if (body._leave) body._leave(); body._leave = null;
     ({ mine: skMine, new: skForm, fuse: skFuse })[t](body, u, p, setTab);
     if (anim) { body.style.animation = 'none'; void body.offsetWidth; body.style.animation = `${nx >= prev ? 'tabInR' : 'tabInL'} .35s`; }
-    $('.coin-pill b', el).textContent = u.coins;
+    $('.coin-pill b', el).textContent = coinText(u);
   };
   $$('.seg button', el).forEach(b => b.onclick = () => setTab(b.dataset.t));
   el._leave = () => body._leave && body._leave();
@@ -57,14 +57,14 @@ function skMine(body, u, p, setTab) {
     <p class="muted sm center">업그레이드: 레벨마다 위력 +15%, 쿨타임 -4% · 비용 = 현재 레벨 코인 (1승 = 1코인)</p>`;
   body.onclick = async e => {
     const un = e.target.closest('[data-un]'); if (un) { equipToggle(u, un.dataset.un, !!un.dataset.crit); return skMine(body, u, p, setTab); }
-    if (e.target.closest('[data-buy]')) { if (await buyCrit(u)) { skMine(body, u, p, setTab); const cp = $('.coin-pill b'); if (cp) cp.textContent = u.coins; } return; }
+    if (e.target.closest('[data-buy]')) { if (await buyCrit(u)) { skMine(body, u, p, setTab); const cp = $('.coin-pill b'); if (cp) cp.textContent = coinText(u); } return; }
     const b = e.target.closest('[data-a]'); if (!b) return; const s = D.skills[b.closest('[data-id]').dataset.id], a = b.dataset.a;
     if (a === 'eq' || a === 'crit') { equipToggle(u, s.id, a === 'crit'); skMine(body, u, p, setTab); }
     if (a === 'up') {
-      if (s.lv >= 10) return; if (u.coins < s.lv) return toast(`코인이 부족해요 (필요 ${s.lv}, 보유 ${u.coins})`);
-      u.coins -= s.lv; s.lv++; save('users', 'skills'); AUD.sfx('coin'); skMine(body, u, p, setTab);
+      if (s.lv >= 10) return; if (!spend(u, s.lv)) return toast(`코인이 부족해요 (필요 ${s.lv}, 보유 ${u.coins})`);
+      s.lv++; save('users', 'skills'); AUD.sfx('coin'); skMine(body, u, p, setTab);
       const c = $(`[data-id="${s.id}"]`, body); c && c.classList.add('lvup'); toast(`${s.name} Lv.${s.lv} 달성!`);
-      $('.coin-pill b').textContent = u.coins;
+      $('.coin-pill b').textContent = coinText(u);
     }
     if (a === 'share') { s.shared = !s.shared; save('skills'); toast(s.shared ? '스킬을 공유했어요. 다른 사람이 쓸 수 있어요' : '공유를 껐어요'); skMine(body, u, p, setTab); }
     if (a === 'snd') AUD.skill(s.sound);

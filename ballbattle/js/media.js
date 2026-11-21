@@ -5,7 +5,7 @@ const AUD = {
   init() {
     if (this.ctx) return this.ctx;
     const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
-    this.ctx = new C(); this.master = this.ctx.createGain(); this.master.gain.value = .9;
+    this.ctx = new C(); this.master = this.ctx.createGain(); this.master.gain.value = typeof SET !== 'undefined' ? (SET.sfx ? SET.vol / 100 * .9 : 0) : .9;
     const comp = this.ctx.createDynamicsCompressor(); this.master.connect(comp); comp.connect(this.ctx.destination);
     try { this.dest = this.ctx.createMediaStreamDestination(); comp.connect(this.dest); } catch (e) { }
     const n = this.ctx.createBuffer(1, this.ctx.sampleRate * 2, this.ctx.sampleRate), d = n.getChannelData(0);
@@ -25,6 +25,7 @@ const AUD = {
     this.env(g, t, att, dur, vol); s.connect(f); f.connect(g); g.connect(this.master); s.start(t, Math.random() * 1.5); s.stop(t + att + dur + .05);
   },
   sfx(n) {
+    if (typeof SET !== 'undefined' && (!SET.sfx || (n === 'click' && !SET.click) || ((n === 'beep' || n === 'go') && !SET.countSnd))) return;
     const v = .9 + Math.random() * .2, R = (a, b) => a + Math.random() * (b - a);
     switch (n) {
       case 'click': this.tone('sine', 1500 * v, 800, .03, .04); break; // 버튼: 살짝 톡
@@ -131,7 +132,7 @@ function drawEdited(ctx, src, e, W, H, fit = 'contain') {
   if (k.mode === 'color') chroma(ctx, W, H, k); else if (k.mode === 'ai') SEG.apply(ctx);
   if (e.text) {
     ctx.save(); const fs = e.ts * W / 360;
-    ctx.font = `${fs}px 'Black Han Sans',Jua,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${fs}px 'IBM Plex Sans KR',sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = fs / 6; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round';
     ctx.strokeText(e.text, W / 2, H * e.ty / 100); ctx.fillStyle = e.tc; ctx.fillText(e.text, W / 2, H * e.ty / 100); ctx.restore();
   }

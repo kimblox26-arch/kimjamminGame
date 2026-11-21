@@ -15,50 +15,35 @@ function seed() {
 
 // --- 로딩 ---
 screen('loading', el => {
-  el.innerHTML = `<div class="load"><canvas class="load-cv" width="240" height="240"></canvas>
-    <h1 class="logo">${[...T].map((c, i) => `<span style="--d:${.25 + i * .05}s">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('')}</h1>
-    <div class="load-info"><div class="load-row"><span class="load-tip">불러오는 중</span><span class="load-pct">0%</span></div><div class="load-bar"><i></i></div></div>
-    <div class="welcome"></div><button class="btn-start">${ic('play', 22)} 플레이</button></div>`;
-  // 상자 안에서 공 두 개가 튀는 애니메이션
-  const cv = $('.load-cv', el), x = cv.getContext('2d'); x.scale(2, 2);
-  const B = [{ x: 38, y: 46, vx: 96, vy: 74, c: '#FE2C55', sx: 1, sy: 1 }, { x: 82, y: 80, vx: -84, vy: -92, c: '#25F4EE', sx: 1, sy: 1 }];
-  let last = performance.now(), raf = 0;
-  const anim = now => {
-    const dt = Math.min(.033, (now - last) / 1000), r = 11; last = now; x.clearRect(0, 0, 120, 120);
-    for (const b of B) {
-      b.x += b.vx * dt; b.y += b.vy * dt;
-      if (b.x < r + 4) { b.x = r + 4; b.vx = Math.abs(b.vx); b.sx = .72; b.sy = 1.25; } else if (b.x > 116 - r) { b.x = 116 - r; b.vx = -Math.abs(b.vx); b.sx = .72; b.sy = 1.25; }
-      if (b.y < r + 4) { b.y = r + 4; b.vy = Math.abs(b.vy); b.sx = 1.25; b.sy = .72; } else if (b.y > 116 - r) { b.y = 116 - r; b.vy = -Math.abs(b.vy); b.sx = 1.25; b.sy = .72; }
-      b.sx += (1 - b.sx) * .2; b.sy += (1 - b.sy) * .2;
-    }
-    const [a, c] = B, dx = c.x - a.x, dy = c.y - a.y, d = Math.hypot(dx, dy);
-    if (d < r * 2 && d > 0) { const nx = dx / d, ny = dy / d, va = a.vx * nx + a.vy * ny, vc = c.vx * nx + c.vy * ny; if (va - vc > 0) { a.vx += (vc - va) * nx; a.vy += (vc - va) * ny; c.vx += (va - vc) * nx; c.vy += (va - vc) * ny; } }
-    x.lineWidth = 3; x.strokeStyle = '#111'; x.strokeRect(2.5, 2.5, 115, 115);
-    for (const b of B) { x.save(); x.translate(b.x, b.y); x.scale(b.sx, b.sy); x.fillStyle = b.c; x.beginPath(); x.arc(0, 0, r, 0, 7); x.fill(); x.fillStyle = '#fff'; x.beginPath(); x.arc(0, 0, r - 3.5, 0, 7); x.fill(); x.restore(); }
-    raf = requestAnimationFrame(anim);
-  };
-  raf = requestAnimationFrame(anim);
+  el.innerHTML = `<div class="load"><canvas class="load-cv"></canvas>
+    <h1 class="logo">${[...T].map((c, i) => `<span class="${T.startsWith('tik') && i < 3 ? 'lg-a' : ''}" style="--d:${.55 + i * .04}s">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('')}</h1>
+    <div class="load-info"><div class="load-bar"><i></i></div><div class="load-row"><span class="load-tip">불러오는 중</span><span class="load-pct">0%</span></div></div>
+    <div class="welcome"></div><button class="btn-start">${ic('play', 20)} 플레이</button></div>`;
   const bar = $('.load-bar i', el), pct = $('.load-pct', el), tip = $('.load-tip', el); let prog = 0, target = 5; const t0 = performance.now();
+  const stopAnim = boxAnim($('.load-cv', el), { fill: () => prog / 100 });
   const iv = setInterval(() => { prog = Math.min(target, prog + Math.max(.4, (target - prog) * .1)); bar.style.width = prog + '%'; pct.textContent = Math.floor(prog) + '%'; if (prog >= 100) { clearInterval(iv); done(); } }, 30);
   const stepTo = (t, s) => { target = t; tip.textContent = s; };
   (async () => {
     try {
+      applySettings();
       stepTo(25, '저장소 여는 중'); await withTimeout(IDB.open(), 3000);
-      stepTo(60, '글꼴 불러오는 중'); await withTimeout(document.fonts && document.fonts.ready, 1500);
-      stepTo(85, '온라인에 연결하는 중'); await connectNet(8000);
+      stepTo(45, '글꼴 불러오는 중'); await withTimeout(document.fonts && document.fonts.ready, 1500);
+      stepTo(70, '온라인에 연결하는 중'); await connectNet(8000);
+      stepTo(88, '실시간 대결 연결하는 중'); await withTimeout(LIVE.init(), 6000);
       seed();
     } catch (e) { }
-    await new Promise(r => setTimeout(r, Math.max(0, 1500 - (performance.now() - t0))));
+    await new Promise(r => setTimeout(r, Math.max(0, 1800 - (performance.now() - t0))));
     stepTo(100, NET.ok ? '온라인 연결됨' : '준비 완료');
   })();
   function done() {
     el.querySelector('.load').classList.add('loaded');
     const w = $('.welcome', el), txt = `'${T}'에 오신 것을 환영합니다`;
-    w.innerHTML = [...txt].map((c, i) => `<span style="--d:${i * .04}s">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('');
-    setTimeout(() => $('.btn-start', el).classList.add('show'), txt.length * 40 + 300);
-    $('.btn-start', el).onclick = () => { AUD.o(); const u = me(); if (u && !u.banned) { reset('main', { tab: 'home' }, 'portal'); const v = window._openPost; if (v && D.posts.some(x => x.id === v)) setTimeout(() => go('viewer', { ids: [v], start: v }), 900); } else go('auth', {}, 'zoom'); };
+    w.innerHTML = [...txt].map((c, i) => `<span style="--d:${i * .035}s">${c === ' ' ? '&nbsp;' : esc(c)}</span>`).join('');
+    setTimeout(() => $('.btn-start', el).classList.add('show'), txt.length * 35 + 300);
+    // 시작하면 항상 로그인·회원가입 화면으로
+    $('.btn-start', el).onclick = () => { AUD.o(); applySettings(); setSession(null); go('auth', {}, 'zoom'); };
   }
-  el._leave = () => { clearInterval(iv); cancelAnimationFrame(raf); };
+  el._leave = () => { clearInterval(iv); stopAnim(); };
 });
 
 const floatBalls = () => `<div class="float-balls">${Array.from({ length: 7 }, (_, i) => `<i style="--x:${rnd(5, 90)}%;--s:${rint(30, 80)}px;--d:${rnd(0, 6)}s;--t:${rnd(7, 13)}s;--c:${pick(['#25F4EE', '#FE2C55', '#FFD700', '#7CFF6B', '#b46bff'])}"></i>`).join('')}</div>`;
@@ -87,7 +72,7 @@ function onGoogle(cred) {
     go('signup', { google: { sub: pl.sub, email: pl.email, pic: pl.picture } });
   } catch (e) { toast('구글 로그인에 실패했어요'); }
 }
-function enter(u) { setSession(u.uid); AUD.sfx('win'); toast(`${u.nick}님 환영해요!`); reset('main', { tab: 'home' }, 'portal'); }
+function enter(u) { setSession(u.uid); LIVE.hello(u); AUD.sfx('win'); toast(`${u.nick}님 환영해요!`); reset('main', { tab: 'home' }, 'portal'); }
 
 screen('login', el => {
   el.innerHTML = `<div class="auth form">${floatBalls()}<div class="hdr clear"><button class="icon-btn" data-back>${ic('back')}</button><h2>로그인</h2><span></span></div>
@@ -172,35 +157,50 @@ function switchTab(el, t, first) {
 
 // 홈
 TAB_R.home = page => {
-  const u = me();
+  const u = me(), eq = loadout(u), recs = D.recs.filter(r => r.uid === u.uid).slice(0, 3);
+  const shared = Object.values(D.skills).filter(s => s.shared && s.owner !== u.uid && D.users[s.owner] && !D.users[s.owner].banned).length;
   page.innerHTML = `<div class="ph hm"><div class="banner"><div class="banner-media"></div></div>
     <button class="glass pen" data-edit>${ic('pencil', 20)}</button>
-    <div class="home-prof">${avImg(u, 'av-sq')}<div class="hp-name">${nameHTML(u)}</div><div class="hp-id">@${esc(u.handle)}</div></div></div>
+    <div class="home-prof">${avImg(u, 'av-sq')}<div class="hp-name">${nameHTML(u)}</div><div class="hp-id">@${esc(u.handle)}</div>
+      <div class="hm-chips"><span>${ic('trophy', 14)} <b>${u.wins}</b>승</span><span>${COIN} <b>${coinText(u)}</b></span><span class="hm-on"><i class="dot"></i> <b>${LIVE.online()}</b>명 접속 중</span></div></div></div>
     <div class="home-body">
-      <button class="btn-play big" id="hm-play"><span class="pl-ic">${ic('play', 30)}</span><span>플레이</span></button>
-      <button class="btn-sec w100" id="hm-sk">${ic('flask', 22)} 공 스킬 제작</button>
-      <button class="btn-ghost w100" id="hm-sh">${ic('users', 20)} 다른 사람 스킬 쓰기</button></div>`;
+      <button class="play-card" id="hm-play"><canvas class="pc-cv"></canvas><span class="pc-txt"><b>플레이</b><small>지금 접속한 사람과 실시간 대결</small></span><span class="pc-go">${ic('play', 22)}</span></button>
+      <div class="hm-tiles"><button class="tile" id="hm-sk">${ic('flask', 24)}<b>공 스킬 제작</b><small>${eq.length ? eq.map(s => esc(s.name)).join(' · ') : '장착한 스킬 없음'}</small></button>
+        <button class="tile" id="hm-sh">${ic('users', 24)}<b>다른 사람 스킬 쓰기</b><small>공유된 스킬 ${shared}개</small></button></div>
+      ${recs.length ? `<div class="hm-sec"><b>최근 대결</b><button data-more>전체 보기</button></div><div class="hm-recs">${recs.map(r => { const o = D.users[r.opp]; return `<button class="hm-rec" data-rec="${r.id}"><img src="${r.thumb}" alt=""><span class="wl ${r.win ? 'w' : 'l'}">${r.win ? '승' : '패'}</span><small>vs ${esc(o ? o.nick : '?')}</small></button>`; }).join('')}</div>` : ''}
+    </div>`;
   mountBanner($('.ph', page), u);
+  const stopAnim = boxAnim($('.pc-cv', page));
+  const onLive = () => { const b = $('.hm-on b', page); if (b) b.textContent = LIVE.online(); };
+  document.addEventListener('livechange', onLive);
+  page._leave = () => { stopAnim(); document.removeEventListener('livechange', onLive); };
   $('[data-edit]', page).onclick = () => go('edit');
-  $('#hm-play', page).onclick = () => { go('match', {}, 'zoom'); };
+  $('#hm-play', page).onclick = () => go('match', {}, 'zoom');
   $('#hm-sk', page).onclick = () => go('skills');
   $('#hm-sh', page).onclick = () => go('shared');
+  const more = $('[data-more]', page); if (more) more.onclick = () => go('create');
+  $$('[data-rec]', page).forEach(b => b.onclick = () => { const r = D.recs.find(z => z.id === b.dataset.rec); if (r) go('upload', { key: r.key, kind: 'video' }); });
 };
 
-// 랭킹
+// 랭킹: 빈 자리는 '없음'
 TAB_R.rank = page => {
-  const u = me(); page._s = page._s || 'wins';
+  const u = me(), white = avatarSrc({});
   const render = () => {
-    const k = page._s, list = Object.values(D.users).filter(x => !x.banned).sort((a, b) => b[k] - a[k] || b[k === 'wins' ? 'coins' : 'wins'] - a[k === 'wins' ? 'coins' : 'wins']);
-    const top = [list[1], list[0], list[2]], cls = ['silver', 'gold', 'bronze'], pos = [2, 1, 3];
-    page.innerHTML = `<div class="rank"><h1 class="pg-title">${ic('trophy', 26)} 랭킹</h1>
-      <div class="seg sm"><button data-s="wins" class="${k === 'wins' ? 'on' : ''}">승수</button><button data-s="coins" class="${k === 'coins' ? 'on' : ''}">코인</button></div>
-      <div class="podium">${top.map((x, i) => x ? `<div class="pd ${cls[i]}" data-u="${x.uid}" style="--d:${[.2, 0, .4][i]}s">${i === 1 ? `<span class="crown">${ic('crown', 34)}</span>` : ''}<div class="pd-av">${avImg(x)}<span class="pd-n">${pos[i]}</span></div>
-        <div class="pd-name">${nameHTML(x)}</div><small>@${esc(x.handle)}</small><div class="pd-st"><span>${x.wins}승</span><span>${COIN}${x.coins}</span></div>${isDev(u) && x.uid !== u.uid ? `<button class="mini-ban" data-ban="${esc(x.handle)}">${ic('ban', 12)} 밴</button>` : ''}<div class="pd-base">${pos[i]}</div></div>` : '<div class="pd empty"></div>').join('')}</div>
-      <div class="rk-list">${list.slice(3).map((x, i) => `<div class="rk ${x.uid === u.uid ? 'me' : ''}" data-u="${x.uid}"><span class="rk-n">${i + 4}</span>${avImg(x, 'av-xs')}<div class="rk-nm"><div>${nameHTML(x)}</div><small>@${esc(x.handle)}</small></div><span class="rk-w">${x.wins}승</span><span class="rk-c">${COIN}${x.coins}</span>${isDev(u) && x.uid !== u.uid ? `<button class="mini-ban" data-ban="${esc(x.handle)}">${ic('ban', 12)} 밴</button>` : ''}</div>`).join('')}</div></div>`;
+    const list = Object.values(D.users).filter(x => !x.banned).sort((a, b) => b.wins - a.wins || b.coins - a.coins);
+    const st = x => `<span class="rk-st">${x.wins}승 <i>·</i> ${COIN}${coinText(x)}</span>`;
+    const ban = x => isDev(u) && x.uid !== u.uid ? `<button class="mini-ban" data-ban="${esc(x.handle)}">${ic('ban', 12)} 밴</button>` : '';
+    const pd = (x, cls, pos, d) => `<div class="pd ${cls} ${x ? '' : 'none'}" ${x ? `data-u="${x.uid}"` : ''} style="--d:${d}s">${pos === 1 ? `<span class="crown">${ic('crown', 30)}</span>` : ''}
+      <div class="pd-av"><img src="${x ? avatarSrc(x) : white}" alt=""><span class="pd-n">${pos}</span></div>
+      <div class="pd-name">${x ? nameHTML(x) : '없음'}</div><small>${x ? '@' + esc(x.handle) : '&nbsp;'}</small>${x ? st(x) : '<span class="rk-st">&nbsp;</span>'}${x ? ban(x) : ''}<div class="pd-base">${pos}</div></div>`;
+    const rows = [];
+    for (let i = 3; i < Math.max(10, list.length); i++) {
+      const x = list[i];
+      rows.push(x ? `<div class="rk ${x.uid === u.uid ? 'me' : ''}" data-u="${x.uid}"><span class="rk-n">${i + 1}</span>${avImg(x, 'av-xs')}<div class="rk-nm"><div>${nameHTML(x)}</div><small>@${esc(x.handle)}</small></div>${st(x)}${ban(x)}</div>`
+        : `<div class="rk none"><span class="rk-n">${i + 1}</span><img class="av-xs" src="${white}" alt=""><div class="rk-nm"><div class="muted">없음</div></div></div>`);
+    }
+    page.innerHTML = `<div class="rank"><h1 class="pg-title">${ic('trophy', 24)} 랭킹</h1><div class="podium">${pd(list[1], 'silver', 2, .2)}${pd(list[0], 'gold', 1, 0)}${pd(list[2], 'bronze', 3, .4)}</div><div class="rk-list">${rows.join('')}</div></div>`;
   };
   page.onclick = e => {
-    const s = e.target.closest('[data-s]'); if (s) { page._s = s.dataset.s; return render(); }
     const b = e.target.closest('[data-ban]'); if (b) return banModal(b.dataset.ban, render);
     const r = e.target.closest('[data-u]'); if (r && r.dataset.u !== u.uid) go('user', { uid: r.dataset.u });
   };
@@ -212,15 +212,15 @@ TAB_R.feed = page => renderFeedTab(page);
 
 // 프로필 (틱톡 스타일)
 function profileView(root, x, self) {
-  const u = me(), posts = D.posts.filter(p => p.uid === x.uid), subbed = x.subs.includes(u.uid);
+  const u = me(), posts = D.posts.filter(p => p.uid === x.uid), subbed = x.subs.includes(u.uid), hideF = !self && x.hideFollow, locked = !self && x.private;
   const tabs = self ? [['posts', 'grid'], ['recs', 'lock'], ['saved', 'bookmark'], ['liked', 'heart']] : [['posts', 'grid']];
   root.innerHTML = `<div class="ph tk"><div class="banner"><div class="banner-media"></div></div>
     ${self ? `<button class="glass pen" data-edit>${ic('pencil', 20)}</button><button class="glass menu-btn" data-menu>${ic('menu', 22)}</button>` : `<button class="glass pen" data-back>${ic('back', 22)}</button><button class="glass menu-btn" data-more>${ic('dots', 22)}</button>`}
     <div class="tk-info"><div class="tk-left"><h1>${nameHTML(x)}</h1><div class="tk-id">@${esc(x.handle)}</div>
-      <div class="tk-stats"><div><b>${fmtN(x.following.length)}</b><small>구독중</small></div><div><b>${fmtN(x.subs.length)}</b><small>구독자</small></div><div><b>${fmtN(userLikes(x))}</b><small>좋아요</small></div></div></div>
+      <div class="tk-stats"><div><b>${hideF ? '-' : fmtN(x.following.length)}</b><small>구독중</small></div><div><b>${hideF ? '-' : fmtN(x.subs.length)}</b><small>구독자</small></div><div><b>${fmtN(userLikes(x))}</b><small>좋아요</small></div></div></div>
       ${avImg(x, 'tk-av')}</div>
     <div class="tk-bio">${esc(x.bio || '').replace(/\n/g, '<br>')}</div>
-    ${self ? '' : `<div class="tk-acts"><button class="btn-sub ${subbed ? 'on' : ''}" data-sub>${subbed ? '구독중' : '구독'}</button><button class="btn-ghost dark" data-rep>${ic('flag', 16)} 신고</button>${isDev(u) ? `<button class="btn-ghost dark" data-ban>${ic('ban', 16)} 밴</button>` : ''}</div>`}</div>
+    ${self ? '' : `<div class="tk-acts"><button class="btn-sub ${subbed ? 'on' : ''}" data-sub>${subbed ? '구독중' : '구독'}</button><button class="btn-ghost dark" data-rep>${ic('flag', 16)} 신고</button>${isDev(u) ? `<button class="btn-ghost dark" data-verify>${ic('check', 16)} ${x.verified ? '인증 빼기' : '인증 주기'}</button><button class="btn-ghost dark" data-ban>${ic('ban', 16)} 밴</button>` : ''}</div>`}</div>
     <div class="ptabs">${tabs.map(([k, i]) => `<button data-pt="${k}" class="pt-${k}">${ic(i, 24)}</button>`).join('')}<i class="pt-ind" style="width:${100 / tabs.length}%"></i></div><div class="pgrid"></div>`;
   mountBanner($('.ph', root), x);
   const grid = $('.pgrid', root);
@@ -229,6 +229,7 @@ function profileView(root, x, self) {
     $$('.ptabs button', root).forEach(b => b.classList.toggle('on', b.dataset.pt === k)); $('.pt-ind', root).style.transform = `translateX(${i * 100}%)`;
     let items;
     if (k === 'recs') { const rs = D.recs.filter(r => r.uid === x.uid); grid.innerHTML = rs.map(r => `<div class="gi rec-gi" data-rec="${r.id}"><img src="${r.thumb}" alt=""><span class="wl ${r.win ? 'w' : 'l'}">${r.win ? '승' : '패'}</span><span class="gi-v">${ic('lock', 12)} ${fmtDur(r.dur)}</span></div>`).join('') || '<p class="muted pg-empty">플레이하면 영상이 자동 저장돼요 (나만 보기)</p>'; return; }
+    if (locked) { grid.innerHTML = `<p class="muted pg-empty">${ic('lock', 28)}<br>비공개 계정이에요</p>`; grid._ids = []; return; }
     if (k === 'posts') items = posts; if (k === 'saved') items = D.posts.filter(p => p.saves.includes(x.uid)); if (k === 'liked') items = D.posts.filter(p => p.likes.includes(x.uid));
     items = items.filter(p => D.users[p.uid] && !D.users[p.uid].banned);
     grid.innerHTML = items.map(p => `<div class="gi" data-p="${p.id}"><img src="${p.thumb}" alt=""><span class="gi-v">${ic('play', 12)} ${fmtN(p.views)}</span>${p.type === 'video' ? `<span class="gi-t">${ic('film', 12)}</span>` : ''}</div>`).join('') || `<p class="muted pg-empty">${{ posts: '아직 올린 영상이 없어요', saved: '저장한 영상이 없어요', liked: '좋아요한 영상이 없어요' }[k]}</p>`;
@@ -239,7 +240,8 @@ function profileView(root, x, self) {
     const g = e.target.closest('[data-p]'); if (g) return go('viewer', { ids: grid._ids, start: g.dataset.p });
     const r = e.target.closest('[data-rec]'); if (r) { const rc = D.recs.find(z => z.id === r.dataset.rec); return go('upload', { key: rc.key, kind: 'video' }); }
     if (e.target.closest('[data-edit]')) return go('edit');
-    if (e.target.closest('[data-menu]')) return sheet('', [...(isDev(u) ? [{ label: '신고 목록', fn: reportsModal }, { label: '플레이어 밴', fn: () => banModal('') }] : []), { label: '로그아웃', danger: true, fn: logout }]);
+    if (e.target.closest('[data-menu]')) return sheet('', [{ label: '설정', fn: () => go('settings') }, { label: '로그아웃', danger: true, fn: logout }]);
+    if (e.target.closest('[data-verify]')) return verifyModal(x.handle, () => profileView(root, x, self));
     if (e.target.closest('[data-sub]')) { toggleSub(x); return profileView(root, x, self); }
     if (e.target.closest('[data-rep]') || e.target.closest('[data-more]')) return reportUser(x);
     if (e.target.closest('[data-ban]')) return banModal(x.handle, () => back());
@@ -248,7 +250,7 @@ function profileView(root, x, self) {
 }
 TAB_R.profile = page => { page.classList.add('light-page'); profileView(page, me(), true); };
 screen('user', (el, p) => { const x = D.users[p.uid]; el.classList.add('light-page'); el.innerHTML = '<div class="scroll"></div>'; if (!x) return back(); if (x.uid === me().uid) return profileView($('.scroll', el), x, true); profileView($('.scroll', el), x, false); });
-async function logout() { if (await ask('로그아웃 할까요?', '로그아웃', true)) { setSession(null); toast('로그아웃했어요'); reset('auth', {}, 'fade'); } }
+async function logout() { if (await ask('로그아웃 할까요?', '로그아웃', true)) { setSession(null); LIVE.hello(null); toast('로그아웃했어요'); reset('auth', {}, 'fade'); } }
 
 // 프로필 편집 (보내준 사진 스타일)
 screen('edit', el => {

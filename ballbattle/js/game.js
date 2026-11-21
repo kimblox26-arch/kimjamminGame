@@ -71,29 +71,32 @@ function mapPreview(cv, mk) {
 
 // 캔버스 배치: 위 문구 / 가운데 박스(400x400) / 아래 이름·체력·쿨타임 (녹화 영상에도 그대로 나옴)
 const GW = 420, GH = 556, BX = 10, BY = 44;
+const SNAP_K = ['x', 'y', 'vx', 'vy', 'hp', 'shield', 'shieldT', 'slowT', 'stuckT', 'immT', 'poisonT', 'poisonD', 'growT', 'growDmg', 'dashT', 'dashDmg', 'wa', 'wd', 'wcd'];
 class Game {
   constructor(cv, o) {
     this.cv = cv; this.c = cv.getContext('2d'); this.o = o; this.map = o.map;
     this.dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = GW * this.dpr; cv.height = GH * this.dpr;
     this.t = 0; this.parts = []; this.projs = []; this.rings = []; this.beams = []; this.texts = []; this.timers = []; this.marks = []; this.ovs = []; this.bolts = [];
     this.shake = 0; this.over = false; this.started = false; this.lastCol = -1;
-    this.balls = [this.mkBall(0, o.opp), this.mkBall(1, o.me)];
+    this.rng = srand(o.seed || 1 + Math.floor(Math.random() * 2147483000)); this.meIdx = o.meIdx ?? 1; this.authority = o.authority !== false;
+    this.balls = [this.mkBall(0, o.p0), this.mkBall(1, o.p1)];
+    for (const b of this.balls) for (const sk of b.sk) sk.t = sk.cd * (.35 + this.rng() * .3);
     this.vines = []; this.lava = []; this.clouds = []; this.vineT = 5;
-    this.place = r => { for (let i = 0; i < 60; i++) { const x = 45 + Math.random() * 310, y = 45 + Math.random() * 310; if (this.balls.every(b => Math.hypot(b.x - x, b.y - y) > r + 60) && this.lava.every(l => Math.hypot(l.x - x, l.y - y) > r + l.r + 10)) return [x, y]; } return [200, 200]; };
+    this.place = r => { for (let i = 0; i < 60; i++) { const x = 45 + this.rng() * 310, y = 45 + this.rng() * 310; if (this.balls.every(b => Math.hypot(b.x - x, b.y - y) > r + 60) && this.lava.every(l => Math.hypot(l.x - x, l.y - y) > r + l.r + 10)) return [x, y]; } return [200, 200]; };
     if (this.map === 'jungle') for (let i = 0; i < 4; i++) this.addVine();
-    if (this.map === 'lava') for (let i = 0; i < 4; i++) { const r = 28 + Math.random() * 16, [x, y] = this.place(r); this.lava.push({ x, y, r, ph: Math.random() * 6 }); }
-    if (this.map === 'sky') for (let i = 0; i < 4; i++) this.clouds.push({ x: Math.random() * 400, y: 55 + i * 92 + Math.random() * 20, w: 95 + Math.random() * 40, h: 42 + Math.random() * 12, vx: (Math.random() < .5 ? -1 : 1) * (15 + Math.random() * 20) });
+    if (this.map === 'lava') for (let i = 0; i < 4; i++) { const r = 28 + this.rng() * 16, [x, y] = this.place(r); this.lava.push({ x, y, r, ph: this.rng() * 6 }); }
+    if (this.map === 'sky') for (let i = 0; i < 4; i++) this.clouds.push({ x: this.rng() * 400, y: 55 + i * 92 + this.rng() * 20, w: 95 + this.rng() * 40, h: 42 + this.rng() * 12, vx: (this.rng() < .5 ? -1 : 1) * (15 + this.rng() * 20) });
   }
   mkBall(side, p) {
-    const a = Math.random() * Math.PI * 2;
+    const a = this.rng() * Math.PI * 2;
     return {
       side, u: p.u, img: p.img, color: p.color || GRAY, x: side ? 300 : 100, y: side ? 300 : 100, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 26, sc: 1, sqx: 1, sqy: 1,
       hp: 150, max: 150, lag: 150, sk: p.skills, shield: 0, shieldT: 0, slowT: 0, stuckT: 0, immT: 0, poisonT: 0, poisonD: 0,
       growT: 0, growDmg: 0, dashT: 0, dashDmg: 0, flash: 0, trail: [], cloud: false, lavaAcc: 0, dotAcc: 0, dead: false,
-      wa: Math.random() * 7, wd: Math.random() < .5 ? -1 : 1, wcd: 0,
+      wa: this.rng() * 7, wd: this.rng() < .5 ? -1 : 1, wcd: 0,
     };
   }
-  addVine() { const [x, y] = this.place(28); this.vines.push({ x, y, r: 26, st: 0, a: 0, hold: null, ph: Math.random() * 6 }); }
+  addVine() { const [x, y] = this.place(28); this.vines.push({ x, y, r: 26, st: 0, a: 0, hold: null, ph: this.rng() * 6 }); }
   enemy(b) { return this.balls[b.side ? 0 : 1]; }
   part(x, y, col, sp = 60, life = .6, size = 3, g = 0) { const a = Math.random() * 7, v = Math.random() * sp; this.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, col, life, ml: life, size, g }); }
   burst(x, y, col, n = 10, sp = 160) { for (let i = 0; i < n; i++) this.part(x, y, col, sp, rnd(.3, .7), rnd(2, 4)); }
@@ -104,13 +107,13 @@ class Game {
   hit(b, dmg, col = '#333', snd = 'thud') {
     if (this.over || b.dead || dmg <= 0) return 0; let d = dmg;
     if (b.shield > 0) { const a = Math.min(b.shield, d); b.shield -= a; d -= a; this.ring(b.x, b.y, b.r * b.sc + 16, '#74c0fc', .3, 2); if (d <= 0) { this.text(b.x, b.y - b.r - 10, '막음', '#1c7ed6'); return 0; } }
-    b.hp -= d; b.flash = .12; this.text(b.x + rnd(-12, 12), b.y - b.r * b.sc - 8, '-' + Math.round(d), '#333');
+    b.hp -= d; b.flash = .12; if (SET.dmgNum) this.text(b.x + rnd(-12, 12), b.y - b.r * b.sc - 8, '-' + Math.round(d), '#333');
     if (d >= 10) this.shake = Math.min(10, d * .5); if (snd) AUD.sfx(snd); return d;
   }
   shoot(b, e, ang, sp, r, dmg, col, home = 0) { this.projs.push({ x: b.x + Math.cos(ang) * b.r, y: b.y + Math.sin(ang) * b.r, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r, dmg, col, tg: e, life: 2.5, home }); }
   cast(b, e, sk) {
     const s = sk.s, pm = skillPower(s) * (sk.crit ? 2 : 1), col = s.color;
-    if (sk.buf) AUD.playBuf(sk.buf); else AUD.skill(s.sound);
+    if (SET.skillSnd) { if (sk.buf) AUD.playBuf(sk.buf); else AUD.skill(s.sound); }
     this.text(b.x, b.y - b.r * b.sc - 26, sk.crit ? '크리티컬 ' + s.name : s.name, sk.crit ? '#e03131' : col, true); if (sk.crit) this.shake = 6; this.ring(b.x, b.y, b.r * 2.6, col, .5, 3);
     if (sk.el) {
       if (sk.el.tagName === 'VIDEO') { try { sk.el.currentTime = s.media.edits.start || 0; sk.el.playbackRate = s.media.edits.speed || 1; sk.el.play().catch(() => { }); } catch (x) { } }
@@ -133,7 +136,7 @@ class Game {
       case 'grow': AUD.sfx('grow'); b.growT = 3; b.growDmg = 6 * pm; break;
       case 'bolt': this.bolts.push({ x: e.x, y: e.y, life: .35, ml: .35, seed: Math.random() * 1e4 }); this.hit(e, 10 * pm, '#fab005', null); this.shake = 5; AUD.sfx('zap'); break;
       case 'vamp': { const d = this.hit(e, 7 * pm, '#e03131', 'vamp'); this.beams.push({ x1: b.x, y1: b.y, b2: e, col: '#ff6b6b', life: .4, ml: .4, w: 3 }); if (d) { b.hp = Math.min(b.max, b.hp + d); this.text(b.x, b.y - b.r - 8, '+' + Math.round(d), '#2f9e44'); } break; }
-      case 'tele': { AUD.sfx('tele'); this.burst(b.x, b.y, col, 14); const a = Math.random() * 7, r = e.r + b.r + 6; b.x = Math.min(400 - b.r, Math.max(b.r, e.x + Math.cos(a) * r)); b.y = Math.min(400 - b.r, Math.max(b.r, e.y + Math.sin(a) * r)); this.burst(b.x, b.y, col, 14); this.ring(b.x, b.y, 50, col); this.hit(e, 6 * pm, col, 'bang'); break; }
+      case 'tele': { AUD.sfx('tele'); this.burst(b.x, b.y, col, 14); const a = this.rng() * 7, r = e.r + b.r + 6; b.x = Math.min(400 - b.r, Math.max(b.r, e.x + Math.cos(a) * r)); b.y = Math.min(400 - b.r, Math.max(b.r, e.y + Math.sin(a) * r)); this.burst(b.x, b.y, col, 14); this.ring(b.x, b.y, 50, col); this.hit(e, 6 * pm, col, 'bang'); break; }
       case 'meteor': { AUD.sfx('meteor'); const tx = e.x, ty = e.y; this.marks.push({ x: tx, y: ty, r: 55, life: .8, ml: .8 }); this.later(.8, () => { this.ring(tx, ty, 70, '#ff922b', .5, 5); this.burst(tx, ty, '#ff922b', 30, 300); AUD.sfx('boom'); this.shake = 8; if (Math.hypot(e.x - tx, e.y - ty) < 55 + e.r) this.hit(e, 16 * pm, '#ff922b', null); }); break; }
     }
   }
@@ -224,12 +227,27 @@ class Game {
     for (const k of ['beams', 'bolts', 'marks', 'ovs']) { for (const x of this[k]) x.life -= dt; this[k] = this[k].filter(x => x.life > 0); }
     for (const t of this.texts) { t.life -= dt; t.y -= (t.big ? 18 : 34) * dt; }
     this.texts = this.texts.filter(t => t.life > 0);
-    if (!this.over && this.started && (A.hp <= 0 || B.hp <= 0)) {
-      const loser = A.hp <= 0 && B.hp <= 0 ? (A.hp < B.hp ? A : B) : (A.hp <= 0 ? A : B);
-      loser.hp = 0; loser.dead = true; this.winner = loser === A ? B : A; this.over = true; this.endT = 1.8;
-      for (let i = 0; i < 60; i++) this.part(loser.x, loser.y, i % 2 ? loser.color : '#ced4da', rnd(80, 400), rnd(.6, 1.4), rnd(2, 6));
-      this.ring(loser.x, loser.y, 140, loser.color, .8, 6); this.shake = 14; AUD.sfx('boom');
-    }
+    if (!this.authority && !this.over) for (const b of this.balls) if (b.hp < .5) b.hp = .5;
+    if (!this.over && this.started && this.authority && (A.hp <= 0 || B.hp <= 0)) this.kill(A.hp <= 0 && B.hp <= 0 ? (A.hp < B.hp ? A : B) : (A.hp <= 0 ? A : B));
+  }
+  kill(loser) {
+    if (this.over) return; const [A, B] = this.balls;
+    loser.hp = 0; loser.dead = true; this.winner = loser === A ? B : A; this.over = true; this.endT = 1.8;
+    for (let i = 0; i < 60; i++) this.part(loser.x, loser.y, i % 2 ? loser.color : '#ced4da', rnd(80, 400), rnd(.6, 1.4), rnd(2, 6));
+    this.ring(loser.x, loser.y, 140, loser.color, .8, 6); this.shake = 14; AUD.sfx('boom');
+    this.onKill && this.onKill(this.balls.indexOf(this.winner));
+  }
+  forceEnd(wi) { this.kill(this.balls[wi ? 0 : 1]); }
+  // 방장 화면의 상태를 손님에게 보내서 맞춤
+  snap() {
+    const r = v => Math.round(v * 100) / 100;
+    return { t: r(this.t), b: this.balls.map(b => [...SNAP_K.map(k => r(b[k])), ...b.sk.map(s => r(s.t))]), v: this.vines.map(v => [r(v.x), r(v.y), v.st, r(v.a), v.hold ? v.hold.side : -1]) };
+  }
+  applySnap(s) {
+    if (!s || !s.b) return;
+    s.b.forEach((a, i) => { const b = this.balls[i]; if (!b || b.dead) return; SNAP_K.forEach((k, j) => { if (a[j] != null) b[k] = a[j]; }); b.sk.forEach((sk, j) => { const v = a[SNAP_K.length + j]; if (v != null) sk.t = v; }); if (b.hp < .5) b.hp = .5; });
+    if (s.v) this.vines = s.v.map(([x, y, st, a, hd]) => ({ x, y, r: 26, st, a, hold: hd >= 0 ? this.balls[hd] : null, ph: x }));
+    if (s.t != null) this.t = s.t;
   }
   draw() {
     const c = this.c, d = this.dpr; c.setTransform(d, 0, 0, d, 0, 0);
@@ -237,13 +255,13 @@ class Game {
     c.textAlign = 'center'; c.fillStyle = '#a5a5a5'; c.font = '600 15px "IBM Plex Sans KR",sans-serif'; c.fillText(`created by ${BB_CONFIG.CREDIT}`, GW / 2, 28);
     c.font = '600 12px "IBM Plex Sans KR",sans-serif'; c.textAlign = 'left'; c.fillStyle = '#b5b5b5'; c.fillText(MAPS[this.map].name, BX, 28);
     c.textAlign = 'right'; c.fillStyle = '#b5b5b5'; c.fillText(`${Math.floor(this.t / 60)}:${String(Math.floor(this.t % 60)).padStart(2, '0')}`, GW - BX, 28);
-    c.save(); if (this.shake > 0) c.translate(rnd(-this.shake, this.shake) * .5, rnd(-this.shake, this.shake) * .5);
+    c.save(); if (this.shake > 0 && SET.shake) c.translate(rnd(-this.shake, this.shake) * .5, rnd(-this.shake, this.shake) * .5);
     c.translate(BX, BY); c.beginPath(); c.rect(0, 0, 400, 400); c.clip();
     drawMapBG(c, this.map, 400, 400, this.t);
     for (const l of this.lava) drawLava(c, l, this.t);
     for (const v of this.vines) drawVine(c, v, this.t);
     for (const m of this.marks) { const k = 1 - m.life / m.ml; c.strokeStyle = `rgba(240,62,62,${.4 + .4 * Math.sin(k * 30)})`; c.lineWidth = 2; c.setLineDash([6, 6]); c.beginPath(); c.arc(m.x, m.y, m.r, 0, 7); c.stroke(); c.setLineDash([]); c.fillStyle = 'rgba(240,62,62,.08)'; c.fill(); c.fillStyle = '#ff922b'; c.beginPath(); c.arc(m.x, m.y - 300 * (1 - k), 12, 0, 7); c.fill(); }
-    for (const b of this.balls) { if (b.dead) continue; b.trail.forEach(([x, y], i) => { c.globalAlpha = i / b.trail.length * .12; c.fillStyle = b.color; c.beginPath(); c.arc(x, y, b.r * b.sc, 0, 7); c.fill(); }); c.globalAlpha = 1; }
+    for (const b of this.balls) { if (b.dead || !SET.trail) continue; b.trail.forEach(([x, y], i) => { c.globalAlpha = i / b.trail.length * .12; c.fillStyle = b.color; c.beginPath(); c.arc(x, y, b.r * b.sc, 0, 7); c.fill(); }); c.globalAlpha = 1; }
     for (const b of this.balls) if (!b.dead) this.drawBall(b);
     for (const cl of this.clouds) drawCloud(c, cl.x, cl.y, cl.w, cl.h, .9);
     for (const p of this.projs) { c.fillStyle = p.col; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill(); }
@@ -258,11 +276,11 @@ class Game {
     }
     for (const t of this.texts) {
       const a = Math.min(1, t.life / t.ml * 2), s = t.big ? 1 + .4 * Math.max(0, (t.life - t.ml + .2) / .2) : 1;
-      c.globalAlpha = a; c.font = `${t.big ? 18 * s : 14}px 'Black Han Sans',sans-serif`; c.textAlign = 'center'; c.lineWidth = 4; c.strokeStyle = '#fff'; c.lineJoin = 'round'; c.strokeText(t.s, t.x, t.y); c.fillStyle = t.col; c.fillText(t.s, t.x, t.y);
+      c.globalAlpha = a; c.font = `700 ${t.big ? 18 * s : 14}px "IBM Plex Sans KR",sans-serif`; c.textAlign = 'center'; c.lineWidth = 4; c.strokeStyle = '#fff'; c.lineJoin = 'round'; c.strokeText(t.s, t.x, t.y); c.fillStyle = t.col; c.fillText(t.s, t.x, t.y);
     } c.globalAlpha = 1;
     c.restore();
     c.lineWidth = 5; c.strokeStyle = '#111'; c.strokeRect(BX - 2.5, BY - 2.5, 405, 405);
-    this.panel(this.balls[0], BX, 0); this.panel(this.balls[1], 220, 1);
+    this.panel(this.balls[1 - this.meIdx], BX, 0); this.panel(this.balls[this.meIdx], 220, 1);
   }
   panel(b, x, side) {
     const c = this.c, w = 190, ny = BY + 400 + 34, hy = ny + 10, hh = 28, p = Math.max(0, b.hp / b.max), pl = Math.max(0, b.lag / b.max);
@@ -295,13 +313,18 @@ class Game {
     c.restore();
     if (b.stuckT > 0) { c.strokeStyle = '#2f9e44'; c.lineWidth = 3.5; for (let i = 0; i < 3; i++) { c.beginPath(); c.ellipse(b.x, b.y, r + 2, r * .35, i * 1.05 + this.t, 0, 7); c.stroke(); } }
   }
-  start() { this.last = performance.now(); const loop = now => { if (this.stopped) return; const dt = Math.min(.033, (now - this.last) / 1000); this.last = now; this.step(dt); this.draw(); this.onFrame && this.onFrame(); this.raf = requestAnimationFrame(loop); }; this.raf = requestAnimationFrame(loop); }
+  start() { // 고정 간격(1/60초)으로 계산해서 두 사람 화면이 똑같이 움직여요
+    this.last = performance.now(); this.acc = 0;
+    const loop = now => { if (this.stopped) return; this.acc += Math.min(.1, (now - this.last) / 1000); this.last = now; let n = 0; while (this.acc >= 1 / 60 && n++ < 6) { this.step(1 / 60); this.acc -= 1 / 60; } this.draw(); this.onFrame && this.onFrame(); this.raf = requestAnimationFrame(loop); };
+    this.raf = requestAnimationFrame(loop);
+  }
   stop() { this.stopped = true; cancelAnimationFrame(this.raf); this.ovs.forEach(o => o.sk.el && o.sk.el.pause && o.sk.el.pause()); }
   startRec() {
+    if (!SET.autoRec) return;
     try {
       const st = this.cv.captureStream(30); if (AUD.dest) AUD.dest.stream.getAudioTracks().forEach(t => st.addTrack(t));
       const mt = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
-      this.rec = new MediaRecorder(st, mt ? { mimeType: mt, videoBitsPerSecond: 1.2e6 } : undefined); this.chunks = [];
+      this.rec = new MediaRecorder(st, mt ? { mimeType: mt, videoBitsPerSecond: { low: .6e6, mid: 1.2e6, high: 2.5e6 }[SET.recQ] || 1.2e6 } : undefined); this.chunks = [];
       this.rec.ondataavailable = e => e.data.size && this.chunks.push(e.data); this.rec.start(500);
     } catch (e) { this.rec = null; }
   }
@@ -331,65 +354,90 @@ async function prepSkills(u) {
 }
 function loadImg(src) { return new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(i); i.src = src; }); }
 
-// ===== 매칭 / VS / 맵 선택 =====
+// ===== 매칭 (지금 접속한 다른 사람과 실시간 대결) / VS / 맵 선택 =====
 screen('match', el => {
   const u = me(), tm = []; const later = (f, t) => tm.push(setTimeout(f, t));
-  el._leave = () => { tm.forEach(clearTimeout); clearInterval(el._iv); };
-  el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>
-    <div class="radar"><div class="radar-sweep"></div><div class="radar-ring r1"></div><div class="radar-ring r2"></div>${avImg(u, 'radar-me')}</div>
-    <h2 class="mt-title">상대를 찾는 중<span class="dots"><i>.</i><i>.</i><i>.</i></span></h2><div class="mt-time">0:00</div></div>`;
-  let s = 0; el._iv = setInterval(() => { s++; const t = $('.mt-time', el); if (t) t.textContent = `0:${String(s).padStart(2, '0')}`; }, 1000);
-  const pool = Object.values(D.users).filter(x => x.uid !== u.uid && !x.banned);
-  if (!pool.length) { later(() => { clearInterval(el._iv); el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button><h2 class="mt-title">아직 다른 플레이어가 없어요</h2><p class="muted center">다른 사람이 가입하면 그 사람의 공·스킬과 싸울 수 있어요</p><button class="btn-main" data-back>돌아가기</button></div>`; }, 1500); return; }
-  const opp = pick(pool);
-  later(() => {
-    clearInterval(el._iv); AUD.sfx('ding');
+  let stop = null, iv = 0;
+  el._leave = () => { tm.forEach(clearTimeout); clearInterval(iv); stop && stop(); if (LIVE.match && !LIVE.match.going) LIVE.end(); };
+  if (!LIVE.room) {
+    el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>${ic('users', 44)}<h2 class="mt-title">온라인에 연결되지 않았어요</h2><p class="muted center mt-p">다른 사람과 대결하려면 게임 주인에게 초대받은 계정으로 게임 페이지에 접속해야 해요</p><button class="btn-main" data-back>돌아가기</button></div>`;
+    return;
+  }
+  const searching = () => {
+    el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>
+      <div class="radar"><div class="radar-sweep"></div><div class="radar-ring r1"></div><div class="radar-ring r2"></div>${avImg(u, 'radar-me')}</div>
+      <h2 class="mt-title">상대를 찾는 중<span class="dots"><i>.</i><i>.</i><i>.</i></span></h2><div class="mt-time">0:00</div>
+      <div class="mt-online"><i class="dot"></i> 지금 <b>${LIVE.online()}</b>명 접속 중</div></div>`;
+    let s = 0; clearInterval(iv);
+    iv = setInterval(() => { s++; const t = $('.mt-time', el); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; const o = $('.mt-online b', el); if (o) o.textContent = LIVE.online(); }, 1000);
+    stop = LIVE.queue(u, found);
+  };
+  async function found(oppUid, host) {
+    stop = null; const t = $('.mt-title', el); if (t) t.textContent = '상대와 연결하는 중';
+    const M = await LIVE.connect(u, oppUid);
+    if (!el.isConnected) { M && M.leave().catch(() => { }); return; }
+    if (!M) return searching();
+    clearInterval(iv); LIVE.match = { M, opp: oppUid, host, going: false };
+    const opp = D.users[oppUid]; AUD.sfx('ding');
     el.innerHTML = `<div class="vs"><div class="vs-bg"><i class="vs-top"></i><i class="vs-bot"></i></div>
       <div class="vs-card opp">${avImg(opp, 'av-c')}<div><b>${nameHTML(opp)}</b><small>@${esc(opp.handle)}</small><small class="muted">${opp.wins}승</small></div></div>
       <div class="vs-mid">VS</div>
       <div class="vs-card me"><div><b>${nameHTML(u)}</b><small>@${esc(u.handle)}</small><small class="muted">${u.wins}승</small></div>${avImg(u, 'av-c')}</div>
-      <div class="vs-found">매칭 성공!</div></div>`;
+      <div class="vs-found">매칭 성공</div></div>`;
     later(() => AUD.sfx('boom'), 450);
-    later(() => mapSelect(el, u, opp, later), 2600);
-  }, 1600 + Math.random() * 1600);
+    later(() => mapSelect(el, u, opp, later), 2400);
+  }
+  searching();
 });
 function mapSelect(el, u, opp, later) {
-  const keys = [...MAP_KEYS, 'random'];
+  const L = LIVE.match; if (!L) return reset('main', { tab: 'home' }, 'back');
+  const M = L.M, keys = [...MAP_KEYS, 'random'];
   el.innerHTML = `<div class="ms"><h2 class="ms-title">맵 선택</h2><div class="ms-timer">10</div>
-    <div class="ms-grid">${keys.map(k => k === 'random' ? `<button class="ms-card rnd" data-k="random"><div class="ms-dice">${ic('dice', 46)}</div><b>랜덤</b><small>무작위로 골라요</small></button>` : `<button class="ms-card" data-k="${k}"><canvas width="200" height="120"></canvas><b>${MAPS[k].name}</b><small>${MAPS[k].desc}</small></button>`).join('')}</div>
-    <div class="ms-picks"><div class="ms-pick opp">${avImg(opp, 'av-xs')}<span>상대: <b id="op-pick">고르는 중...</b></span></div><div class="ms-pick me">${avImg(u, 'av-xs')}<span>나: <b id="my-pick">-</b></span></div></div></div>`;
+    <div class="ms-grid">${keys.map(k => k === 'random' ? `<button class="ms-card rnd" data-k="random"><div class="ms-dice">${ic('dice', 40)}</div><b>랜덤</b><small>무작위로 골라요</small></button>` : `<button class="ms-card" data-k="${k}"><canvas width="200" height="120"></canvas><b>${MAPS[k].name}</b><small>${MAPS[k].desc}</small></button>`).join('')}</div>
+    <div class="ms-picks"><div class="ms-pick opp">${avImg(opp, 'av-xs')}<span>${esc(opp.nick)}: <b id="op-pick">고르는 중...</b></span></div><div class="ms-pick me">${avImg(u, 'av-xs')}<span>나: <b id="my-pick">-</b></span></div></div></div>`;
   $$('.ms-card canvas', el).forEach(cv => mapPreview(cv, cv.parentElement.dataset.k));
-  let mine = null, theirs = null, left = 10, done = false;
-  const iv = setInterval(() => { left--; const t = $('.ms-timer', el); if (t) t.textContent = left; if (left <= 0) { clearInterval(iv); if (!mine) choose('random'); } }, 1000);
-  const oldLeave = el._leave; el._leave = () => { clearInterval(iv); oldLeave(); };
-  later(() => { theirs = pick(MAP_KEYS); $('#op-pick', el).textContent = MAPS[theirs].name; $(`.ms-card[data-k="${theirs}"]`, el).classList.add('opp-pick'); tryFinal(); }, 1200 + Math.random() * 2500);
-  const choose = k => {
+  let mine = null, theirs = null, final = null, left = 10;
+  const iv = setInterval(() => { left--; const t = $('.ms-timer', el); if (t) t.textContent = Math.max(0, left); if (left <= 0) { clearInterval(iv); if (!mine) choose('random'); } }, 1000);
+  const un = M.onPeers(ch => { if (ch.left.some(p => p.presence && p.presence.uid === opp.uid)) return gone(); read(); }, () => { });
+  const old = el._leave; el._leave = () => { clearInterval(iv); un(); old(); };
+  const gone = () => { if (final) return; toast('상대가 나갔어요'); LIVE.end(); reset('main', { tab: 'home' }, 'back'); };
+  function read() {
+    const op = LIVE.pres(M, opp.uid); if (!op) return;
+    if (op.pick && !theirs && MAPS[op.pick]) { theirs = op.pick; $('#op-pick', el).textContent = MAPS[theirs].name; $(`.ms-card[data-k="${theirs}"]`, el).classList.add('opp-pick'); }
+    if (final) return;
+    if (L.host && mine && theirs) { final = Math.random() < .5 ? mine : theirs; const seed = 1 + Math.floor(Math.random() * 2147483000); M.presence({ final, seed }).catch(() => { }); spin(seed); }
+    else if (!L.host && op.final && MAPS[op.final] && op.seed) { final = op.final; spin(op.seed); }
+  }
+  function choose(k) {
     if (mine) return; clearInterval(iv);
-    const real = k === 'random' ? pick(MAP_KEYS) : k; mine = real;
-    $('#my-pick', el).textContent = (k === 'random' ? '랜덤 → ' : '') + MAPS[real].name;
-    $(`.ms-card[data-k="${k}"]`, el).classList.add('my-pick'); if (k === 'random') $(`.ms-card[data-k="${real}"]`, el).classList.add('my-pick');
-    tryFinal();
-  };
+    mine = k === 'random' ? pick(MAP_KEYS) : k;
+    $('#my-pick', el).textContent = (k === 'random' ? '랜덤 → ' : '') + MAPS[mine].name;
+    $(`.ms-card[data-k="${k}"]`, el).classList.add('my-pick'); $(`.ms-card[data-k="${mine}"]`, el).classList.add('my-pick');
+    M.presence({ pick: mine }).catch(() => { }); read();
+  }
   $$('.ms-card', el).forEach(b => b.onclick = () => choose(b.dataset.k));
-  function tryFinal() {
-    if (!mine || !theirs || done) return; done = true;
-    const final = Math.random() < .5 ? mine : theirs, cand = [...new Set([mine, theirs])];
-    $('.ms-title', el).textContent = cand.length > 1 ? '맵 결정 중...' : '맵 결정!';
+  function spin(seed) {
+    const cand = [...new Set([mine || final, theirs || final])];
+    $('.ms-title', el).textContent = cand.length > 1 ? '맵 결정 중' : '맵 결정';
     let i = 0, n = cand.length > 1 ? (cand[0] === final ? 9 : 10) : 1, delay = 90;
-    const spin = () => {
+    const step = () => {
       $$('.ms-card', el).forEach(c => c.classList.remove('spin'));
       const k = cand.length > 1 ? cand[i % 2] : final; $(`.ms-card[data-k="${k}"]`, el).classList.add('spin'); AUD.sfx('beep');
-      i++; if (i < n) { delay *= 1.18; later(spin, delay); }
-      else { $(`.ms-card[data-k="${final}"]`, el).classList.add('final'); $('.ms-title', el).textContent = MAPS[final].name + '!'; later(() => go('game', { opp: opp.uid, map: final }, 'zoom'), 1100); }
+      if (++i < n) { delay *= 1.18; later(step, delay); }
+      else { $(`.ms-card[data-k="${final}"]`, el).classList.add('final'); $('.ms-title', el).textContent = MAPS[final].name; later(() => { L.going = true; go('game', { opp: opp.uid, map: final, seed }, 'zoom'); }, 1100); }
     };
-    later(spin, 500);
+    later(step, 500);
   }
+  read();
 }
 
-// ===== 게임 화면 =====
+// ===== 게임 화면 (실시간 대결) =====
 screen('game', async (el, p) => {
-  const u = me(), o = D.users[p.opp];
-  el.innerHTML = `<div class="game"><div class="g-top"><button class="icon-btn g-quit">${ic('x')}</button><span class="g-map">${MAPS[p.map].name}</span><span></span></div>
+  const u = me(), o = D.users[p.opp], L = LIVE.match && LIVE.match.opp === p.opp ? LIVE.match : null;
+  if (!L || !o) { toast('대결이 끝났어요'); return reset('main', { tab: 'home' }, 'back'); }
+  const M = L.M, host = L.host; let g = null, snapIv = 0, unPeers = null, lastSnap = null, ended = false;
+  el._leave = () => { clearInterval(snapIv); unPeers && unPeers(); if (g) { g.stop(); g.stopRec(); } LIVE.end(); };
+  el.innerHTML = `<div class="game"><div class="g-top"><button class="icon-btn g-quit">${ic('x')}</button><span class="g-map">${MAPS[p.map].name}</span><span class="g-live"><i class="dot"></i> 실시간</span></div>
     <div class="g-cv-wrap"><canvas class="g-cv"></canvas><div class="g-count"></div></div><div class="g-cards"></div></div>`;
   const [mySk, opSk, myImg, opImg] = await Promise.all([prepSkills(u), prepSkills(o), loadImg(avatarSrc(u)), loadImg(avatarSrc(o))]);
   if (!el.isConnected) return;
@@ -398,31 +446,47 @@ screen('game', async (el, p) => {
     ${side === 'opp' ? `<div class="g-acts">${isDev(u) ? `<button class="mini-ban" data-ban>${ic('ban', 13)} 밴</button>` : ''}<button class="mini-btn" data-rep>${ic('flag', 13)} 신고</button></div>` : ''}
     <div class="g-sk">${sks.map(s => `<div class="gs"><span>${esc(s.s.name)}</span><i><b></b></i></div>`).join('') || '<small class="muted">기본 공격만</small>'}</div></div></div>`;
   $('.g-cards', el).innerHTML = card(o, 'opp', opC, opSk) + card(u, 'me', myC, mySk);
-  const g = new Game($('.g-cv', el), { map: p.map, me: { u, skills: mySk, img: myImg, color: myC }, opp: { u: o, skills: opSk, img: opImg, color: opC }, onEnd: w => finish(w) });
-  el._leave = () => { g.stop(); g.stopRec(); };
+  // 두 사람 화면이 같은 세계를 보도록: 0번 공 = 손님, 1번 공 = 방장
+  const meD = { u, skills: mySk, img: myImg, color: myC }, opD = { u: o, skills: opSk, img: opImg, color: opC };
+  g = new Game($('.g-cv', el), { map: p.map, seed: p.seed, p0: host ? opD : meD, p1: host ? meD : opD, meIdx: host ? 1 : 0, authority: host, onEnd: w => finish(w) });
+  if (host) g.onKill = wi => M.presence({ end: { w: wi }, snap: g.snap() }).catch(() => { });
   const bars = [[opSk, $$('.g-card.opp .gs', el)], [mySk, $$('.g-card.me .gs', el)]];
   g.onFrame = () => bars.forEach(([sks, els]) => sks.forEach((s, i) => { const e = els[i]; if (!e) return; const pr = 1 - Math.max(0, s.t) / s.cd; e.querySelector('b').style.width = pr * 100 + '%'; e.classList.toggle('ready', pr > .97); }));
   g.start();
   if (isDev(u)) $('[data-ban]', el).onclick = () => banModal(o.handle);
   $('[data-rep]', el).onclick = () => reportUser(o);
-  $('.g-quit', el).onclick = async () => { if (g.over) return; if (await ask('게임을 나가면 패배로 기록돼요. 나갈까요?', '나가기', true)) { g.over = true; g.stop(); g.stopRec(); record(false); reset('main', { tab: 'home' }, 'back'); } };
-  // 3, 2, 1 카운트다운
+  $('.g-quit', el).onclick = async () => { if (g.over) return; if (await ask('게임을 나가면 패배로 기록돼요. 나갈까요?', '나가기', true)) { ended = true; g.over = true; record(false); reset('main', { tab: 'home' }, 'back'); } };
+  unPeers = M.onPeers(ch => {
+    if (ch.left.some(pp => pp.presence && pp.presence.uid === o.uid)) { if (!g.over && g.started) { toast('상대가 나가서 이겼어요'); g.forceEnd(g.meIdx); } else if (!g.started) { toast('상대가 나갔어요'); reset('main', { tab: 'home' }, 'back'); } return; }
+    if (host) return;
+    const op = LIVE.pres(M, o.uid); if (!op) return;
+    if (op.snap && op.snap !== lastSnap && !g.over) { lastSnap = op.snap; g.applySnap(op.snap); }
+    if (op.end && !g.over) { if (op.snap) g.applySnap(op.snap); g.forceEnd(op.end.w); }
+  }, () => { });
+  // 둘 다 준비되면 동시에 시작
+  M.presence({ ready: 1 }).catch(() => { });
   const cnt = $('.g-count', el);
+  cnt.innerHTML = '<span class="wait">상대를 기다리는 중</span>';
+  const ok = host ? await LIVE.waitFor(M, o.uid, op => op && op.ready, 15000) : await LIVE.waitFor(M, o.uid, op => op && op.go, 20000);
+  if (!el.isConnected) return;
+  if (!ok) { toast('상대와 연결이 끊겼어요'); return reset('main', { tab: 'home' }, 'back'); }
+  if (host) M.presence({ go: 1 }).catch(() => { });
   for (const n of ['3', '2', '1', '시작']) {
     if (!el.isConnected) return; cnt.innerHTML = `<span class="${n.length > 1 ? 'go' : ''}">${n}</span>`; AUD.sfx(n.length > 1 ? 'go' : 'beep'); await new Promise(r => setTimeout(r, n.length > 1 ? 650 : 850));
   }
   cnt.innerHTML = ''; g.started = true; g.startRec();
-  function record(win) {
-    u.wins += win ? 1 : 0; u.losses += win ? 0 : 1; if (win) u.coins += 1;
-    o.wins += win ? 0 : 1; o.losses += win ? 1 : 0; if (!win) o.coins += 1; save('users');
+  if (host) snapIv = setInterval(() => { if (!g.over) M.presence({ snap: g.snap() }).catch(() => { }); }, 100);
+  function record(win) { // 내 기록만 저장 (상대는 자기 화면에서 저장)
+    u.wins += win ? 1 : 0; u.losses += win ? 0 : 1; if (win) u.coins += 1; save('users');
   }
   async function finish(w) {
-    const win = w.side === 1; record(win); AUD.sfx(win ? 'win' : 'lose');
+    if (ended) return; ended = true; clearInterval(snapIv);
+    const win = w === g.balls[g.meIdx]; record(win); AUD.sfx(win ? 'win' : 'lose');
     let thumb = ''; try { const t = document.createElement('canvas'); t.width = 180; t.height = 238; t.getContext('2d').drawImage(g.cv, 0, 0, 180, 238); thumb = t.toDataURL('image/jpeg', .6); } catch (e) { }
     const res = h(`<div class="result ${win ? 'win' : 'lose'}"><div class="res-in">${win ? '<div class="confetti">' + Array.from({ length: 30 }, () => `<i style="--x:${rnd(-160, 160)}px;--d:${rnd(0, .6)}s;--c:${pick(['#ff6b6b', '#ffd43b', '#51cf66', '#4dabf7', '#cc5de8'])}"></i>`).join('') + '</div>' : ''}
       <div class="res-title">${win ? '승리' : '패배'}</div>${avImg(w.u, 'av-c res-av')}<div class="res-name">${nameHTML(w.u)} 승리</div>
       ${win ? `<div class="res-coin">${COIN}<b>+1 코인</b></div>` : '<div class="muted">다음엔 이길 수 있어요</div>'}
-      <div class="res-saved">${ic('film', 16)} 플레이 영상이 자동 저장됐어요</div>
+      <div class="res-saved">${ic('film', 16)} ${SET.autoRec ? '플레이 영상이 자동 저장됐어요' : '자동 녹화가 꺼져 있어요'}</div>
       <div class="res-btns"><button class="btn-main" data-a="again">${ic('rotate', 18)} 다시하기</button><button class="btn-sec" data-a="video">${ic('film', 18)} 영상 만들기</button><button class="btn-ghost" data-a="home">${ic('home', 18)} 홈</button></div></div></div>`);
     await new Promise(r => setTimeout(r, 400)); const blob = await g.stopRec(); g.stop();
     let rec = null;
@@ -432,7 +496,8 @@ screen('game', async (el, p) => {
       D.recs.unshift(rec); const mine = D.recs.filter(r => r.uid === u.uid);
       if (mine.length > 20) { const old = mine[mine.length - 1]; if (!D.posts.some(x => x.key === old.key)) IDB.del(old.key); D.recs = D.recs.filter(r => r !== old); }
       save('recs');
-    } else $('.res-saved', res).textContent = '이 브라우저는 영상 녹화를 지원하지 않아요';
+    } else if (SET.autoRec) $('.res-saved', res).textContent = '이 브라우저는 영상 녹화를 지원하지 않아요';
+    LIVE.end();
     if (!el.isConnected) return; el.appendChild(res);
     $$('[data-a]', res).forEach(b => b.onclick = () => {
       const a = b.dataset.a;
