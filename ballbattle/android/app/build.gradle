@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.kimjammin.tikballbox'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.kimjammin.tikballbox'
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName '1'
+    }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
+}

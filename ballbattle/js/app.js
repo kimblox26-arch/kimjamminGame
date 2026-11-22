@@ -184,7 +184,6 @@ TAB_R.home = page => {
       <div class="hm-chips"><span>${ic('trophy', 14)} <b>${u.wins}</b>승</span><span>${COIN} <b>${coinText(u)}</b></span><span class="hm-on"><i class="dot"></i> <b>${LIVE.online()}</b>명 접속 중</span></div></div></div>
     <div class="home-body">
       <button class="play-card" id="hm-play"><canvas class="pc-cv"></canvas><span class="pc-txt"><b>플레이</b><small>지금 접속한 사람과 실시간 대결</small></span><span class="pc-go">${ic('play', 22)}</span></button>
-      <button class="btn-ghost w100 hm-ai" id="hm-ai">${ic('users', 20)} AI와 연습하기 <small>혼자 테스트</small></button>
       <div class="hm-tiles"><button class="tile" id="hm-sk">${ic('flask', 24)}<b>공 스킬 제작</b><small>${eq.length ? eq.map(s => esc(s.name)).join(' · ') : '장착한 스킬 없음'}</small></button>
         <button class="tile" id="hm-sh">${ic('users', 24)}<b>다른 사람 스킬 보기</b><small>공개된 스킬 ${shared}개</small></button></div>
       ${recs.length ? `<div class="hm-sec"><b>최근 대결</b><button data-more>전체 보기</button></div><div class="hm-recs">${recs.map(r => { const o = D.users[r.opp]; return `<button class="hm-rec" data-rec="${r.id}"><img src="${r.thumb}" alt=""><span class="wl ${r.win ? 'w' : 'l'}">${r.win ? '승' : '패'}</span><small>${r.practice ? 'AI 연습' : 'vs ' + esc(o ? o.nick : '?')}</small></button>`; }).join('')}</div>` : ''}
@@ -198,7 +197,6 @@ TAB_R.home = page => {
   const mb = $('[data-mail]', page); if (mb) mb.onclick = () => go('mailbox');
   $('#hm-play', page).onclick = () => go('match', {}, 'zoom');
   $('#hm-sk', page).onclick = () => go('skills');
-  $('#hm-ai', page).onclick = () => go('practice');
   $('#hm-sh', page).onclick = () => go('shared');
   const more = $('[data-more]', page); if (more) more.onclick = () => go('create');
   $$('[data-rec]', page).forEach(b => b.onclick = () => { const r = D.recs.find(z => z.id === b.dataset.rec); if (r) go('upload', { key: r.key, kind: 'video' }); });

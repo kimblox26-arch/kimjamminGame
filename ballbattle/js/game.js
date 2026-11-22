@@ -496,19 +496,18 @@ function loadImg(src) { return new Promise(r => { const i = new Image(); i.onloa
 
 // ===== 매칭 (지금 접속한 다른 사람과 실시간 대결) / VS / 맵 선택 =====
 screen('match', el => {
-  el.addEventListener('click', e => { if (e.target.closest('[data-pr]')) { NAV.stack = [{ name: 'main', p: { tab: 'home' } }]; show('practice', {}, 'push'); } });
   const u = me(), tm = []; const later = (f, t) => tm.push(setTimeout(f, t));
   let stop = null, iv = 0;
   el._leave = () => { tm.forEach(clearTimeout); clearInterval(iv); stop && stop(); if (LIVE.match && !LIVE.match.going) LIVE.end(); };
   if (!LIVE.room) {
-    el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>${ic('users', 44)}<h2 class="mt-title">온라인에 연결되지 않았어요</h2><p class="muted center mt-p">다른 사람과 대결하려면 게임 주인에게 초대받은 계정으로 게임 페이지에 접속해야 해요</p><button class="btn-main" data-pr>${ic('users', 18)} AI와 연습하기</button><button class="btn-ghost" data-back>돌아가기</button></div>`;
+    el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>${ic('users', 44)}<h2 class="mt-title">온라인에 연결되지 않았어요</h2><p class="muted center mt-p">다른 사람과 대결하려면 게임 주인에게 초대받은 계정으로 게임 페이지에 접속해야 해요</p><button class="btn-ghost" data-back>돌아가기</button></div>`;
     return;
   }
   const searching = () => {
     el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>
       <div class="radar"><div class="radar-sweep"></div><div class="radar-ring r1"></div><div class="radar-ring r2"></div>${avImg(u, 'radar-me')}</div>
       <h2 class="mt-title">상대를 찾는 중<span class="dots"><i>.</i><i>.</i><i>.</i></span></h2><div class="mt-time">0:00</div>
-      <div class="mt-online"><i class="dot"></i> 지금 <b>${LIVE.online()}</b>명 접속 중</div><button class="btn-ghost mt-ai" data-pr>${ic('users', 18)} 기다리는 동안 AI와 연습</button></div>`;
+      <div class="mt-online"><i class="dot"></i> 지금 <b>${LIVE.online()}</b>명 접속 중</div></div>`;
     let s = 0; clearInterval(iv);
     iv = setInterval(() => { s++; const t = $('.mt-time', el); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; const o = $('.mt-online b', el); if (o) o.textContent = LIVE.online(); }, 1000);
     stop = LIVE.queue(u, found);
@@ -571,23 +570,6 @@ function mapSelect(el, u, opp, later) {
   }
   read();
 }
-
-// ===== AI와 연습 (혼자 테스트) =====
-screen('practice', (el, p) => {
-  p.ai = p.ai || 3; p.map = p.map || 'arena';
-  const keys = [...MAP_KEYS, 'random'];
-  el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>AI와 연습</h2><span></span></div>
-    <div class="scroll pad"><p class="muted sm">혼자 테스트하는 모드예요. 승수와 코인은 바뀌지 않아요.</p>
-    <label class="lbl">AI 상대</label><div class="seg2">${[1, 2, 3].map(n => `<button data-ai="${n}" class="${p.ai === n ? 'on' : ''}">${n}명 (${n + 1}인전)</button>`).join('')}</div>
-    <label class="lbl">맵</label><div class="ms-grid">${keys.map(k => k === 'random' ? `<button class="ms-card rnd ${p.map === k ? 'my-pick' : ''}" data-k="random"><div class="ms-dice">${ic('dice', 34)}</div><b>랜덤</b></button>` : `<button class="ms-card ${p.map === k ? 'my-pick' : ''}" data-k="${k}"><canvas width="200" height="120"></canvas><b>${MAPS[k].name}</b><small>${MAPS[k].desc}</small></button>`).join('')}</div>
-    <button class="btn-play w100 pr-go" id="pr-go">${ic('play', 22)} 연습 시작</button></div>`;
-  $$('.ms-card canvas', el).forEach(cv => mapPreview(cv, cv.parentElement.dataset.k));
-  el.onclick = e => {
-    const a = e.target.closest('[data-ai]'); if (a) { p.ai = +a.dataset.ai; $$('[data-ai]', el).forEach(b => b.classList.toggle('on', b === a)); }
-    const m = e.target.closest('.ms-card'); if (m) { p.map = m.dataset.k; $$('.ms-card', el).forEach(b => b.classList.toggle('my-pick', b === m)); }
-    if (e.target.closest('#pr-go')) go('game', { practice: true, ai: p.ai, map: p.map === 'random' ? pick(MAP_KEYS) : p.map, seed: 1 + Math.floor(Math.random() * 2147483000) }, 'zoom');
-  };
-});
 
 // ===== 게임 화면 (실시간 대결 / AI 연습) =====
 screen('game', async (el, p) => {
