@@ -1,7 +1,7 @@
 'use strict';
 // ===== 맵 / 스킬 효과 / 게임 엔진 / 매칭 =====
 const MAPS = {
-  arena: { name: '일반', desc: '함정 없는 깔끔한 박스', bg: '#ffffff' },
+  arena: { name: '일반', desc: '튕기는 범퍼, 도는 막대, 빨라지는 화살표 발판', bg: '#ffffff' },
   jungle: { name: '정글', desc: '줄기에 걸리면 잠시 멈춰요. 빠져나오면 줄기는 사라져요', bg: '#d9edcf' },
   lava: { name: '용암 지옥', desc: '용암에 닿으면 1초에 HP 1 감소', bg: '#2a0808' },
   sky: { name: '하늘', desc: '구름에 닿으면 느려져요', bg: '#cfeaff' },
@@ -110,11 +110,40 @@ function mapPreview(cv, mk) {
   if (mk === 'jungle') [[100, 120], [280, 260], [200, 330]].forEach(([x, y]) => drawVine(c, { x: x * s, y: y * s, r: 26 * s, a: 1, st: 0, ph: x }, 0));
   if (mk === 'lava') [[110, 140, 40], [290, 270, 34], [200, 340, 28]].forEach(([x, y, r]) => drawLava(c, { x: x * s, y: y * s, r: r * s, ph: x }, 0));
   if (mk === 'sky') [[120, 110], [280, 230], [150, 330]].forEach(([x, y]) => drawCloud(c, x * s, y * s, 110 * s, 46 * s));
+  c.save(); c.scale(W / 400, H / 400); drawObstacles(c, genObstacles(mk, srand(11), [[100, 100], [300, 100], [100, 300], [300, 300]].map(([x, y]) => ({ x, y })), []), 0, mk === 'arena'); c.restore();
   c.lineWidth = 4; c.strokeStyle = '#111'; c.strokeRect(2, 2, W - 4, H - 4);
 }
 
 // 캔버스 배치: 위 문구 / 가운데 박스(400x400) / 아래 이름·체력·쿨타임 (녹화 영상에도 그대로 나옴)
 const GW = 420, GH = 580, BX = 10, BY = 44;
+// ===== 맵 장애물 =====
+const OB_COL = [['#ffe3e3', '#fa5252'], ['#d0ebff', '#339af0'], ['#fff3bf', '#f59f00'], ['#d3f9d8', '#37b24d']];
+function genObstacles(mk, R, balls, lava) {
+  const out = [], free = (x, y, r) => balls.every(b => Math.hypot(b.x - x, b.y - y) > r + 58) && out.every(o => Math.hypot(o.x - x, o.y - y) > r + o.r + 24) && lava.every(l => Math.hypot(l.x - x, l.y - y) > r + l.r + 12) && !(mk === 'arena' && Math.hypot(x - 200, y - 200) < r + 78);
+  const add = (kind, n, r0, r1) => { for (let i = 0, k = 0; i < n && k < 300; k++) { const r = r0 + R() * (r1 - r0), x = 30 + R() * 340, y = 30 + R() * 340; if (free(x, y, r)) { out.push({ kind, x, y, r, ph: R() * 6, fl: 0, ci: out.length, ang: Math.floor(R() * 4) * Math.PI / 2 }); i++; } } };
+  if (mk === 'arena') { [[200, 62, 0], [200, 338, Math.PI]].forEach(([x, y, ang]) => out.push({ kind: 'pad', x, y, r: 16, ph: 0, fl: 0, ci: out.length, ang })); add('bumper', 4, 18, 24); }
+  if (mk === 'jungle') add('stump', 3, 17, 23);
+  if (mk === 'lava') add('rock', 3, 16, 22);
+  if (mk === 'sky') add('balloon', 3, 15, 19);
+  return out;
+}
+const obY = (o, t) => o.kind === 'balloon' ? o.y + Math.sin(t * 1.2 + o.ph) * 8 : o.y;
+const spinSeg = t => { const a = t * 1.4, L = 70; return [200 - Math.cos(a) * L, 200 - Math.sin(a) * L, 200 + Math.cos(a) * L, 200 + Math.sin(a) * L]; };
+function drawObstacles(c, obs, t, spinner) {
+  for (const o of obs) {
+    const s = 1 + (o.fl || 0) * .5; c.save(); c.translate(o.x, obY(o, t)); c.scale(s, s);
+    if (o.kind === 'bumper') { const [f, k] = OB_COL[o.ci % 4]; c.fillStyle = f; c.strokeStyle = k; c.lineWidth = 4; c.beginPath(); c.arc(0, 0, o.r, 0, 7); c.fill(); c.stroke(); c.lineWidth = 2; c.beginPath(); c.arc(0, 0, o.r * .5, 0, 7); c.stroke(); }
+    if (o.kind === 'pad') {
+      c.rotate(o.ang); c.fillStyle = 'rgba(77,171,247,.16)'; c.strokeStyle = 'rgba(51,154,240,.6)'; c.lineWidth = 2; c.beginPath(); c.roundRect ? c.roundRect(-16, -16, 32, 32, 7) : c.rect(-16, -16, 32, 32); c.fill(); c.stroke();
+      c.strokeStyle = '#339af0'; c.lineWidth = 3; c.lineCap = 'round'; c.lineJoin = 'round'; for (let i = 0; i < 2; i++) { const xo = -5 + i * 8 + (t * 16) % 8 - 4; c.beginPath(); c.moveTo(xo - 4, -7); c.lineTo(xo + 3, 0); c.lineTo(xo - 4, 7); c.stroke(); }
+    }
+    if (o.kind === 'stump') { c.fillStyle = '#7a5a3a'; c.beginPath(); c.arc(0, 0, o.r, 0, 7); c.fill(); c.fillStyle = '#d2ad82'; c.beginPath(); c.arc(0, 0, o.r - 4, 0, 7); c.fill(); c.strokeStyle = '#a5805a'; c.lineWidth = 1.5; for (let i = 1; i < 4; i++) { c.beginPath(); c.arc(1, 1, (o.r - 4) * i / 4, 0, 7); c.stroke(); } }
+    if (o.kind === 'rock') { c.fillStyle = '#262222'; c.beginPath(); for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2, rr = o.r * (.82 + .18 * Math.sin(i * 2.3 + o.ph)); c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } c.closePath(); c.fill(); c.strokeStyle = `rgba(255,120,40,${.45 + .35 * Math.sin(t * 3 + o.ph)})`; c.lineWidth = 2.5; c.stroke(); }
+    if (o.kind === 'balloon') { c.strokeStyle = 'rgba(0,0,0,.25)'; c.lineWidth = 1; c.beginPath(); c.moveTo(0, o.r); c.quadraticCurveTo(4, o.r + 10, 0, o.r + 20); c.stroke(); c.fillStyle = OB_COL[o.ci % 4][1]; c.beginPath(); c.ellipse(0, 0, o.r * .9, o.r, 0, 0, 7); c.fill(); c.fillStyle = 'rgba(255,255,255,.45)'; c.beginPath(); c.ellipse(-o.r * .3, -o.r * .35, o.r * .22, o.r * .32, -.4, 0, 7); c.fill(); }
+    c.restore();
+  }
+  if (spinner) { const [x1, y1, x2, y2] = spinSeg(t); c.save(); c.lineCap = 'round'; c.strokeStyle = '#495057'; c.lineWidth = 10; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke(); c.fillStyle = '#fff'; c.beginPath(); c.arc(200, 200, 7, 0, 7); c.fill(); c.lineWidth = 3; c.stroke(); c.restore(); }
+}
 const PCOL = ['#3b82f6', '#ef4444', '#22a447', '#f59e0b']; // 1P 파랑, 2P 빨강, 3P 초록, 4P 주황
 // AI 연습 상대
 const AI_SET = [ // 영상 속 스킬처럼 단순한 효과
@@ -146,18 +175,12 @@ class Game {
     const ps = o.players || [o.p0, o.p1]; this.lc = {};
     this.balls = ps.map((pl, i) => this.mkBall(i, pl, ps.length));
     for (const b of this.balls) for (const sk of b.sk) sk.t = sk.cd * (.35 + this.rng() * .3);
-    this.plats = []; // 안에 있는 막대 (부딪히면 튕김, 노란 막대는 빨라지는 발판)
-    for (let i = 0, tries = 0, nb = this.map === 'arena' ? 6 : 3; i < nb && tries < 300; tries++) {
-      const len = 60 + this.rng() * 80, x1 = 20 + this.rng() * (360 - len), y = 60 + this.rng() * 290;
-      if (this.balls.some(b => b.y > y - 48 && b.y < y + 48 && b.x > x1 - 44 && b.x < x1 + len + 44)) continue;
-      if (this.plats.some(q => Math.abs(q.y - y) < 36 && q.x1 < x1 + len + 24 && q.x2 > x1 - 24)) continue;
-      this.plats.push({ x1, x2: x1 + len, y, jump: i === 0 }); i++;
-    }
     this.vines = []; this.lava = []; this.clouds = []; this.vineT = 5;
     this.place = r => { for (let i = 0; i < 60; i++) { const x = 45 + this.rng() * 310, y = 45 + this.rng() * 310; if (this.balls.every(b => Math.hypot(b.x - x, b.y - y) > r + 60) && this.lava.every(l => Math.hypot(l.x - x, l.y - y) > r + l.r + 10)) return [x, y]; } return [200, 200]; };
     if (this.map === 'jungle') for (let i = 0; i < 6; i++) this.addVine();
     if (this.map === 'lava') for (let i = 0; i < 4; i++) { const r = 28 + this.rng() * 16, [x, y] = this.place(r); this.lava.push({ x, y, r, ph: this.rng() * 6 }); }
     if (this.map === 'sky') for (let i = 0; i < 4; i++) this.clouds.push({ x: this.rng() * 400, y: 55 + i * 92 + this.rng() * 20, w: 95 + this.rng() * 40, h: 42 + this.rng() * 12, vx: (this.rng() < .5 ? -1 : 1) * (15 + this.rng() * 20) });
+    this.obs = genObstacles(this.map, this.rng, this.balls, this.lava);
   }
   mkBall(side, p, n = 2) {
     const a = this.rng() * Math.PI * 2, at = n > 2 ? [[100, 100], [300, 100], [100, 300], [300, 300]][side] : side ? [300, 300] : [100, 100];
@@ -243,12 +266,18 @@ class Game {
       b.x += b.vx * dt; b.y += b.vy * dt;
       if (b.x < r) { b.x = r; b.vx = Math.abs(b.vx); this.squash(b, 1); } else if (b.x > 400 - r) { b.x = 400 - r; b.vx = -Math.abs(b.vx); this.squash(b, 1); }
       if (b.y < r) { b.y = r; b.vy = Math.abs(b.vy); this.squash(b, 0); } else if (b.y > 400 - r) { b.y = 400 - r; b.vy = -Math.abs(b.vy); this.squash(b, 0); }
-      for (const pl of this.plats) { // 막대에 튕기기
-        const cx = Math.max(pl.x1, Math.min(pl.x2, b.x)), dx = b.x - cx, dy = b.y - pl.y, d = Math.hypot(dx, dy);
-        if (d >= r + 3 || d === 0) continue;
-        const nx = dx / d, ny = dy / d, vn = b.vx * nx + b.vy * ny; b.x = cx + nx * (r + 3); b.y = pl.y + ny * (r + 3);
-        if (vn < 0) { b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny; } this.squash(b, Math.abs(ny) > .7 ? 0 : 1);
-        if (pl.jump && b.boostT <= 0) { b.boostT = .7; this.burst(b.x, pl.y, '#f2c230', 10, 160); AUD.sfx('spring'); }
+      for (const o of this.obs) { // 장애물: 범퍼·나무 그루터기·바위·풍선은 튕기고, 화살표 발판은 그 방향으로 빨라짐
+        const oy = obY(o, this.t);
+        if (o.kind === 'pad') { if (Math.hypot(b.x - o.x, b.y - oy) < 16 && b.boostT <= .3) { b.boostT = .7; const m = Math.hypot(b.vx, b.vy) || 1; b.vx = Math.cos(o.ang) * m; b.vy = Math.sin(o.ang) * m; o.fl = .3; AUD.sfx('whoosh'); } continue; }
+        const dx = b.x - o.x, dy = b.y - oy, d = Math.hypot(dx, dy); if (d >= r + o.r || d === 0) continue;
+        const nx = dx / d, ny = dy / d, vn = b.vx * nx + b.vy * ny; b.x = o.x + nx * (r + o.r); b.y = oy + ny * (r + o.r);
+        if (vn < 0) { b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny; } this.squash(b, Math.abs(nx) > Math.abs(ny) ? 1 : 0);
+        if (o.fl <= 0 && (o.kind === 'bumper' || o.kind === 'balloon')) { b.boostT = Math.max(b.boostT, .45); AUD.sfx(o.kind === 'bumper' ? 'spring' : 'pop'); this.ring(o.x, oy, o.r + 14, '#adb5bd', .25, 2); }
+        o.fl = .25;
+      }
+      if (this.map === 'arena') { // 가운데에서 도는 막대
+        const [x1, y1, x2, y2] = spinSeg(this.t), ddx = x2 - x1, ddy = y2 - y1, u = Math.max(0, Math.min(1, ((b.x - x1) * ddx + (b.y - y1) * ddy) / (ddx * ddx + ddy * ddy))), px = x1 + u * ddx, py = y1 + u * ddy, dd = Math.hypot(b.x - px, b.y - py);
+        if (dd < r + 5 && dd > 0) { const nx = (b.x - px) / dd, ny = (b.y - py) / dd, vn = b.vx * nx + b.vy * ny; b.x = px + nx * (r + 5); b.y = py + ny * (r + 5); if (vn < 0) { b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny; } b.boostT = Math.max(b.boostT, .3); }
       }
     }
     b.trail.push([b.x, b.y]); if (b.trail.length > 8) b.trail.shift();
@@ -290,6 +319,7 @@ class Game {
       for (const v of this.vines) { if (v.st === 0) v.a = Math.min(1, v.a + dt * 2); if (v.st === 2) v.a -= dt * 1.5; v.ph += dt; }
       this.vines = this.vines.filter(v => v.st !== 2 || v.a > 0);
     }
+    for (const o of this.obs) o.fl = Math.max(0, o.fl - dt);
     for (const c of this.clouds) { c.x += c.vx * dt; if (c.x < -c.w) c.x = 400 + c.w / 2; if (c.x > 400 + c.w) c.x = -c.w / 2; }
     for (const b of this.balls) if (!b.dead) this.updBall(b, dt, this.enemy(b));
     for (let i = 0; i < this.balls.length; i++) for (let j = i + 1; j < this.balls.length; j++) { const P = this.balls[i], Q = this.balls[j]; if (!P.dead && !Q.dead) this.collide(P, Q); }
@@ -348,7 +378,7 @@ class Game {
     drawMapBG(c, this.map, 400, 400, this.t);
     for (const l of this.lava) drawLava(c, l, this.t);
     for (const v of this.vines) drawVine(c, v, this.t);
-    c.lineCap = 'round'; for (const pl of this.plats) { c.strokeStyle = pl.jump ? '#f2c230' : this.map === 'lava' ? '#d0c4c4' : '#111'; c.lineWidth = 6; c.beginPath(); c.moveTo(pl.x1, pl.y); c.lineTo(pl.x2, pl.y); c.stroke(); }
+    drawObstacles(c, this.obs, this.t, this.map === 'arena');
     for (const m of this.marks) { const k = 1 - m.life / m.ml; c.strokeStyle = `rgba(240,62,62,${.4 + .4 * Math.sin(k * 30)})`; c.lineWidth = 2; c.setLineDash([6, 6]); c.beginPath(); c.arc(m.x, m.y, m.r, 0, 7); c.stroke(); c.setLineDash([]); c.fillStyle = 'rgba(240,62,62,.08)'; c.fill(); c.fillStyle = '#ff922b'; c.beginPath(); c.arc(m.x, m.y - 300 * (1 - k), 12, 0, 7); c.fill(); }
     for (const b of this.balls) { if (b.dead || !SET.trail) continue; b.trail.forEach(([x, y], i) => { c.globalAlpha = i / b.trail.length * .12; c.fillStyle = b.color; c.beginPath(); c.arc(x, y, b.r * b.sc, 0, 7); c.fill(); }); c.globalAlpha = 1; }
     for (const b of this.balls) if (!b.dead) this.drawBall(b);
