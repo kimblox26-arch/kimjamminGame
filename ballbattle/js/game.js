@@ -117,18 +117,18 @@ function mapPreview(cv, mk) {
 const GW = 420, GH = 580, BX = 10, BY = 44;
 const PCOL = ['#3b82f6', '#ef4444', '#22a447', '#f59e0b']; // 1P 파랑, 2P 빨강, 3P 초록, 4P 주황
 // AI 연습 상대
-const AI_SET = [
-  { nick: 'AI 슬라임', name: '초록 레이저', color: '#22a447', spec: { spawn: 'self', move: 'straight', count: 1, speed: 620, size: 6, life: 1.2, dmg: 11, knock: 60, shape: 'bolt', trail: true, glow: true } },
-  { nick: 'AI 번개', name: '유도탄', color: '#3b82f6', spec: { spawn: 'self', move: 'homing', count: 2, spread: 40, speed: 260, size: 9, life: 2.5, dmg: 7 } },
-  { nick: 'AI 불꽃', name: '메테오', color: '#f59e0b', spec: { spawn: 'above', move: 'straight', count: 3, speed: 340, size: 14, life: 2, dmg: 6, explode: 50 } },
-  { nick: 'AI 칼날', name: '회전 칼날', color: '#e64980', spec: { spawn: 'around', move: 'orbit', count: 3, speed: 200, size: 10, life: 3, dmg: 4, pierce: true, shape: 'star', spin: true } },
-  { nick: 'AI 돌진', name: '돌진', color: '#7048e8', spec: { spawn: 'dash', dmg: 14, knock: 300, life: 1 } },
-  { nick: 'AI 독침', name: '독침', color: '#51cf66', spec: { spawn: 'self', move: 'zigzag', count: 3, spread: 30, speed: 300, size: 7, dmg: 5, effect: 'poison' } },
-  { nick: 'AI 얼음', name: '얼음 부메랑', color: '#4dabf7', spec: { spawn: 'self', move: 'boomerang', count: 1, speed: 320, size: 11, life: 2, dmg: 9, effect: 'slow', shape: 'square', spin: true } },
+const AI_SET = [ // 영상 속 스킬처럼 단순한 효과
+  { nick: 'AI 초록', name: '초록 레이저', color: '#22a447', anim: () => ({ dur: 1.4, heal: 0, shield: 0, layers: [mkLayer('beam', 0, { end: 1.2 })] }) },
+  { nick: 'AI 레드', name: '붉은 범위', color: '#ef4444', anim: () => ({ dur: 1.2, heal: 0, shield: 0, layers: [mkLayer('area', 0)] }) },
+  { nick: 'AI 슬라임', name: '끈적한 자국', color: '#51cf66', anim: () => ({ dur: 1.4, heal: 0, shield: 0, layers: [mkLayer('trail', 0)] }) },
+  { nick: 'AI 그림자', name: '분신 돌진', color: '#7048e8', anim: () => ({ dur: 1.3, heal: 0, shield: 0, layers: [mkLayer('clone', 0)] }) },
+  { nick: 'AI 파랑', name: '유도탄', color: '#3b82f6', spec: { spawn: 'self', move: 'homing', count: 2, spread: 40, speed: 260, size: 9, life: 2.5, dmg: 7 } },
+  { nick: 'AI 주황', name: '떨어지는 공', color: '#f59e0b', spec: { spawn: 'above', move: 'straight', count: 3, speed: 340, size: 12, life: 2, dmg: 6, explode: 50 } },
+  { nick: 'AI 하늘', name: '부메랑', color: '#4dabf7', spec: { spawn: 'self', move: 'boomerang', count: 1, speed: 320, size: 11, life: 2, dmg: 9, effect: 'slow' } },
 ];
 function aiPlayers(n, img) {
   const pool = [...AI_SET].sort(() => Math.random() - .5);
-  return pool.slice(0, n).map((a, i) => ({ u: { uid: 'ai_' + i, nick: a.nick, handle: 'ai' }, img, ai: true, skills: [{ s: { id: 'ai' + i, name: a.name, color: a.color, comps: [], cd: SKILL_CD, lv: 1, spec: { ...SPEC0, ...a.spec }, sound: 'none' }, cd: SKILL_CD, t: 3 }] }));
+  return pool.slice(0, n).map((a, i) => ({ u: { uid: 'ai_' + i, nick: a.nick, handle: 'ai' }, img, ai: true, skills: [{ s: { id: 'ai' + i, name: a.name, color: a.color, comps: [], cd: SKILL_CD, lv: 1, spec: a.spec ? { ...SPEC0, ...a.spec } : null, anim: a.anim ? a.anim() : null, sound: 'none' }, cd: SKILL_CD, t: 3 }] }));
 }
 function drawTag(c, x, y, txt, col) { // '1P' 같은 작은 배지
   c.save(); c.font = '700 10px "IBM Plex Sans KR",sans-serif'; const w = c.measureText(txt).width + 8;
