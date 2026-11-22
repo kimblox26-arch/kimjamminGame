@@ -66,16 +66,12 @@ function drawBox(cx, cy, S, draw, dt) {
 }
 // 실제 게임 엔진으로 대결 장면
 let game = null, gameWin = -1;
-function makeGame() {
+function makeGame() { // 영상 속 스킬(레이저·범위·자국·분신)을 쓰는 4명 대결
   const white = new Image(); white.src = avatarSrc({});
-  const sk = (name, color, comps) => ({ s: { name, color, comps, cd: 6, lv: 2, fused: false, sound: 'pop', media: null }, crit: false, cd: 2.4, t: 1 });
-  const g = new Game(document.createElement('canvas'), {
-    map: 'lava', seed: 2024,
-    p0: { u: { nick: '민트볼', handle: 'mint' }, img: white, color: '#12b886', skills: [sk('얼음폭풍', '#4dabf7', ['freeze', 'proj']), sk('메테오', '#ff922b', ['meteor'])] },
-    p1: { u: { nick: '핑크볼', handle: 'pink' }, img: white, color: PK, skills: [sk('번개주먹', '#fab005', ['bolt', 'dash']), sk('대폭발', '#e03131', ['boom', 'heal'])] },
-    meIdx: 1, onEnd: () => { },
-  });
-  const hit = g.hit.bind(g); g.hit = (b, d, col, s) => hit(b, d * 2.6, col, s); // 홍보용으로 빨리 끝나게
+  const players = AI_SET.filter(a => a.anim).slice(0, 4).map((a, i) => ({ u: { uid: 'p' + i, nick: ['초록볼', '빨강볼', '슬라임', '그림자'][i], handle: 'p' + i }, img: white, color: PCOL[i], ai: true,
+    skills: [{ s: { id: 'p' + i, name: a.name, color: a.color, comps: [], cd: 6, lv: 1, anim: a.anim(), sound: 'none' }, cd: 2.2, t: 1 }] }));
+  const g = new Game(document.createElement('canvas'), { map: 'arena', seed: 2024, players, meIdx: 0, onEnd: () => { } });
+  const hit = g.hit.bind(g); g.hit = (b, d, col, s) => hit(b, d * 4, col, s);
   g.onKill = wi => { gameWin = wi; };
   return g;
 }
@@ -112,7 +108,7 @@ function frame(now) {
     const gw = 640, gh = gw * GH / GW; c.drawImage(game.cv, (W - gw) / 2, 230, gw, gh);
     const cap = k < 3.6 ? '공은 자동으로 싸워요' : (gameWin < 0 ? '스킬이 터지면 역전' : '승리!');
     text(cap, W / 2, 150, 52, gameWin < 0 ? '#111' : PK, 700, 'center', ez((k % 3.6) / .3));
-    text('#자동전투  #스킬조합  #함정맵', W / 2, 1150, 30, '#888', 500, 'center', ez((k - .4) / .4)); c.globalAlpha = 1;
+    text('#4명대결  #레이저  #자동전투', W / 2, 1180, 30, '#888', 500, 'center', ez((k - .4) / .4)); c.globalAlpha = 1;
   }
   // 4) 맵
   else if (t < 16.3) { c.globalAlpha = fade(13, 16.3); const k = t - 13; text('맵 4가지', W / 2, 200, 64, '#111', 700, 'center', ez(k / .3));
@@ -123,7 +119,7 @@ function frame(now) {
   // 5) 기능
   else if (t < 19.4) { c.globalAlpha = fade(16.3, 19.4); const k = t - 16.3;
     text('이런 것도 돼요', W / 2, 260, 60, '#111', 700, 'center', ez(k / .3));
-    [['flask', '스킬 직접 만들기 · 융합'], ['users', '지금 접속한 사람과 1:1 대결'], ['trophy', '랭킹 1·2·3등 단상'], ['film', '플레이 녹화 → 숏츠 편집']].forEach(([ic2, s], i) => {
+    [['flask', '스킬을 직접 편집해서 만들기'], ['users', '최대 4명 대결 · AI 연습'], ['trophy', '랭킹 1·2·3등 단상'], ['film', '플레이 녹화 → 숏츠 편집']].forEach(([ic2, s], i) => {
       const kk = ez((k - .3 - i * .22) / .35), y = 420 + i * 170, x = 80 + (1 - kk) * -120;
       c.save(); c.globalAlpha *= kk; c.strokeStyle = '#e6e6eb'; c.lineWidth = 2; c.strokeRect(x, y - 60, 560, 120); c.drawImage(ICO[ic2], x + 30, y - 32, 64, 64); c.restore();
       text(s, x + 120, y, 36, '#111', 700, 'left', kk); });
