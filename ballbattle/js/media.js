@@ -28,40 +28,39 @@ const AUD = {
     if (typeof SET !== 'undefined' && (!SET.sfx || (n === 'click' && !SET.click) || ((n === 'beep' || n === 'go') && !SET.countSnd))) return;
     const v = .9 + Math.random() * .2, R = (a, b) => a + Math.random() * (b - a);
     switch (n) {
-      case 'click': this.tone('sine', 1500 * v, 800, .03, .04); break; // 버튼: 살짝 톡
-      case 'enter': this.noise(.6, .16, 'bandpass', 250, 3200, 0, 1.1, .25); [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone('sine', f, f, 1.2, .07, .22 + i * .07, .02)); [1568, 2093, 2637].forEach((f, i) => this.tone('triangle', f, f * 1.005, .5, .025, .55 + i * .09, .01)); this.tone('sine', 130.8, 130.8, 1.4, .12, .22, .05); break; // 입장: 휙 + 부드러운 화음
-      case 'hit': this.noise(.06, .25, 'bandpass', 2600 * v, 1400, 0, 2.5); this.tone('triangle', 540 * v, 190, .08, .14); break; // 막대 딱
-      case 'bump': this.tone('sine', 160 * v, 55, .2, .35); this.noise(.07, .14, 'lowpass', 900, 300); break; // 공끼리 쿵
-      case 'thud': this.noise(.11, .22, 'lowpass', 1500 * v, 220); this.tone('sine', 240 * v, 90, .09, .15); break; // 탄환 퍽
-      case 'pew': this.tone('square', 1300 * v, 360, .11, .05); this.tone('sine', 1900 * v, 520, .1, .06); break;
-      case 'boom': this.noise(.9, .5, 'lowpass', 2600, 60); this.tone('sine', 110, 32, .7, .45); this.noise(.3, .2, 'bandpass', 900, 250, 0, .8); break;
-      case 'bang': this.noise(.35, .45, 'lowpass', 3200, 180); this.tone('sine', 190, 60, .22, .3); break;
-      case 'whoosh': this.noise(.45, .3, 'bandpass', 280, 2600, 0, 1.3, .05); break;
-      case 'zap': for (let i = 0; i < 6; i++) this.noise(.035, .22, 'highpass', R(2500, 6000), 2000, i * .03); this.tone('sawtooth', 95, 60, .3, .07); break;
-      case 'laser': this.tone('sawtooth', 2300 * v, 260, .3, .06); this.tone('sine', 1150 * v, 130, .3, .09); break;
-      case 'heal': [523, 659, 784, 1047].forEach((f, i) => this.tone('sine', f, f, .35, .07, i * .07)); this.tone('triangle', 2093, 2093, .5, .03, .28); break;
-      case 'shield': this.tone('triangle', 660, 990, .4, .08); this.tone('sine', 1320, 1980, .4, .05, .05); this.noise(.3, .05, 'highpass', 6000); break;
-      case 'freeze': for (let i = 0; i < 6; i++) this.tone('sine', R(2000, 3600), R(1800, 3400), .16, .04, i * .04); this.noise(.25, .07, 'highpass', 5000); break;
-      case 'poison': for (let i = 0; i < 5; i++) this.tone('sine', R(250, 500), R(520, 900), .07, .08, i * .06); break;
-      case 'tele': this.tone('sine', 300, 2400, .16, .08); this.tone('sine', 2400, 300, .16, .08, .16); break;
-      case 'grow': this.tone('sawtooth', 90, 260, .45, .06); this.noise(.45, .08, 'lowpass', 300, 1400); break;
-      case 'vamp': this.tone('sawtooth', 110, 70, .35, .08); this.noise(.35, .12, 'bandpass', 520, 200, 0, 3); break;
-      case 'meteor': this.tone('sine', 2400, 500, .75, .05); this.noise(.75, .06, 'bandpass', 3000, 600, 0, 2); break;
-      case 'vine': this.noise(.25, .18, 'bandpass', 700, 300, 0, 2); this.tone('triangle', 200, 140, .2, .08); break;
-      case 'coin': this.tone('sine', 1568, 1568, .12, .12); this.tone('sine', 2093, 2093, .35, .12, .08); this.tone('sine', 3136, 3136, .25, .03, .08); break;
-      case 'beep': this.tone('sine', 1000, 980, .08, .18); this.noise(.015, .08, 'highpass', 4000); break;
-      case 'go': [392, 494, 587, 784].forEach(f => this.tone('sawtooth', f, f, .45, .035)); this.noise(.35, .1, 'highpass', 5000); break;
-      case 'win': [[523, 659, 784], [587, 740, 880], [784, 988, 1175, 1568]].forEach((ch, i) => ch.forEach(f => this.tone('triangle', f, f, i === 2 ? .7 : .18, .06, i * .16))); this.noise(.8, .08, 'highpass', 6000, 6000, .32); break;
-      case 'lose': this.tone('sawtooth', 392, 370, .3, .05); this.tone('sawtooth', 349, 330, .3, .05, .28); this.tone('sawtooth', 294, 220, .7, .06, .56); break;
-      // 스킬 소리 선택용
-      case 'pop': this.tone('sine', 500 * v, 1300, .06, .16); this.tone('sine', 900, 320, .08, .07, .05); break;
-      case 'ding': this.tone('sine', 1320, 1310, .7, .16); this.tone('sine', 2640, 2630, .4, .05); break;
-      case 'tada': [523, 659, 784, 1047].forEach(f => this.tone('triangle', f, f, .6, .05, .1)); this.tone('triangle', 392, 392, .1, .06); this.noise(.6, .07, 'highpass', 7000, 7000, .1); break;
-      case 'glass': for (let i = 0; i < 7; i++) this.tone('sine', R(2500, 5200), R(2400, 5000), R(.1, .35), .05, i * .025); this.noise(.2, .15, 'highpass', 5000); break;
-      case 'buzz': this.tone('sawtooth', 70, 95, .5, .09); this.tone('square', 140, 190, .5, .03); break;
-      case 'sparkle': [1047, 1319, 1568, 2093, 2637, 3136].forEach((f, i) => this.tone('sine', f, f, .12, .05, i * .045)); break;
-      case 'drum': this.tone('sine', 170, 50, .25, .45); this.tone('sine', 170, 50, .35, .45, .2); this.noise(.06, .1, 'lowpass', 1200); break;
-      case 'spring': this.tone('sine', 280, 1000, .14, .14); this.tone('sine', 1000, 240, .3, .12, .14); break;
+      case 'click': this.noise(.018, .06, 'highpass', 3500 * v); break; // 톡
+      case 'enter': this.noise(.7, .2, 'bandpass', 220, 3400, 0, 1, .3); this.noise(.5, .06, 'highpass', 7000, 9000, .35); [261.6, 329.6, 392, 523.3].forEach((f, i) => this.tone('sine', f, f, 1.3, .06, .3 + i * .05, .03)); this.tone('sine', 65.4, 65.4, 1, .14, .3, .02); break; // 휘익 + 화음
+      case 'hit': this.noise(.05, .3, 'bandpass', 1900 * v, 900, 0, 2.2); this.tone('sine', 140 * v, 55, .07, .3); break; // 탁
+      case 'bump': this.tone('sine', 210 * v, 70, .16, .4); this.noise(.06, .16, 'lowpass', 1200, 300); break; // 퉁
+      case 'thud': this.noise(.12, .28, 'lowpass', 1600 * v, 180); this.tone('sine', 100 * v, 45, .12, .3); break; // 퍽
+      case 'pew': this.noise(.14, .22, 'bandpass', 3200 * v, 700, 0, 1.6, .005); break; // 슉
+      case 'boom': this.noise(1, .55, 'lowpass', 2400, 50); this.tone('sine', 85, 28, .8, .5); this.noise(.3, .2, 'bandpass', 700, 200, 0, .7); break; // 쾅
+      case 'bang': this.noise(.35, .45, 'lowpass', 3000, 160); this.tone('sine', 120, 40, .25, .35); break; // 펑
+      case 'whoosh': this.noise(.45, .3, 'bandpass', 260, 2600, 0, 1.2, .08); break; // 휙
+      case 'zap': for (let i = 0; i < 7; i++) this.noise(.03, .22, 'highpass', R(2500, 7000), 1800, i * .028); this.noise(.25, .1, 'bandpass', 900, 400, 0, 4); break; // 지지직
+      case 'laser': this.noise(.28, .2, 'bandpass', 5200 * v, 1200, 0, 6); this.noise(.12, .12, 'highpass', 6000, 3000); break; // 치익
+      case 'heal': this.noise(.6, .07, 'highpass', 6000, 9000, 0, 1, .15); [784, 988, 1319].forEach((f, i) => this.tone('sine', f, f, .7, .035, i * .08, .03)); break; // 반짝
+      case 'shield': this.noise(.5, .12, 'bandpass', 1800, 4200, 0, 3, .05); this.tone('sine', 520, 540, .5, .04, 0, .05); break; // 위잉
+      case 'freeze': for (let i = 0; i < 6; i++) this.tone('sine', R(2600, 4200), R(2500, 4000), R(.08, .25), .03, i * .03); this.noise(.3, .1, 'highpass', 6000); break; // 쨍
+      case 'poison': for (let i = 0; i < 6; i++) this.noise(.05, .14, 'bandpass', R(500, 1400), R(300, 900), i * .055, 8); break; // 보글
+      case 'tele': this.noise(.18, .2, 'bandpass', 400, 5000, 0, 2); this.noise(.18, .2, 'bandpass', 5000, 400, .18, 2); break; // 슝-
+      case 'grow': this.noise(.5, .16, 'lowpass', 250, 1600, 0, 1, .1); this.tone('sine', 70, 130, .5, .2, 0, .1); break; // 부웅
+      case 'vamp': this.noise(.35, .2, 'bandpass', 600, 180, 0, 3); this.tone('sine', 90, 60, .3, .2); break; // 흡
+      case 'meteor': this.noise(.8, .12, 'bandpass', 4500, 500, 0, 3, .1); break; // 휘이잉
+      case 'vine': this.noise(.25, .2, 'bandpass', 800, 300, 0, 2); this.noise(.08, .1, 'lowpass', 600, 200, .12); break; // 스륵
+      case 'spring': this.tone('sine', 160, 420, .12, .2); this.noise(.06, .1, 'bandpass', 1500, 2500); break; // 통!
+      case 'coin': [2100, 2950, 4200].forEach((f, i) => this.tone('sine', f, f * .998, .45 - i * .1, .06 / (i + 1), 0, .002)); this.noise(.02, .1, 'highpass', 5000); break; // 칭
+      case 'ding': [1568, 2350, 3136].forEach((f, i) => this.tone('sine', f, f, .7 - i * .15, .05 / (i + 1), 0, .003)); break;
+      case 'beep': this.tone('sine', 190, 105, .25, .45); this.noise(.04, .12, 'lowpass', 900, 300); break; // 둥 (북)
+      case 'go': this.tone('sine', 120, 45, .45, .55); this.noise(.9, .22, 'highpass', 5000, 7000, .02, 1, .005); this.noise(.15, .2, 'lowpass', 1500, 300); break; // 쿵 + 챙
+      case 'win': for (let i = 0; i < 14; i++) this.noise(.06, .12, 'bandpass', R(900, 2200), R(700, 1800), .1 + i * R(.05, .1), 1.5); this.noise(1.6, .12, 'bandpass', 1100, 1300, 0, .6, .3); this.tone('sine', 98, 49, .4, .4); [523.3, 659.3, 784].forEach((f, i) => this.tone('triangle', f, f, .9, .04, .2 + i * .08, .02)); break; // 와아 + 박수
+      case 'lose': this.noise(.9, .2, 'bandpass', 1200, 160, 0, 1.5, .05); this.tone('sine', 150, 55, .8, .3, .1); break; // 휘융-
+      case 'pop': this.noise(.05, .3, 'bandpass', 1400, 2600, 0, 3); this.tone('sine', 400, 900, .06, .12); break;
+      case 'tada': this.tone('sine', 98, 49, .3, .35); [523.3, 659.3, 784, 1047].forEach(f => this.tone('triangle', f, f, .7, .04, .08, .02)); this.noise(.8, .1, 'highpass', 6000, 8000, .08); break;
+      case 'glass': for (let i = 0; i < 8; i++) this.tone('sine', R(2500, 5500), R(2400, 5000), R(.1, .35), .04, i * .02, .002); this.noise(.25, .2, 'highpass', 4500); break;
+      case 'buzz': this.noise(.5, .18, 'bandpass', 120, 160, 0, 6); this.tone('sawtooth', 60, 70, .5, .05); break;
+      case 'sparkle': for (let i = 0; i < 6; i++) this.tone('sine', R(2000, 4000), R(2000, 4000), .15, .03, i * .05, .002); this.noise(.4, .05, 'highpass', 8000); break;
+      case 'drum': this.tone('sine', 170, 50, .25, .5); this.tone('sine', 170, 50, .35, .5, .2); this.noise(.06, .12, 'lowpass', 1200); break;
     }
   },
   async load(k) {
@@ -115,7 +114,7 @@ const SEG = {
 const ADJ = { br: 100, ct: 100, sat: 100, hue: 0, blur: 0, gray: 0, inv: 0, sep: 0 };
 const PRESETS = [['원본', {}], ['흑백', { gray: 100 }], ['빈티지', { sep: 55, ct: 110, sat: 85 }], ['비비드', { sat: 175, ct: 115 }], ['따뜻', { sep: 30, sat: 130, br: 105 }], ['시원', { hue: -18, sat: 90, br: 105 }], ['네온', { sat: 260, ct: 140 }], ['반전', { inv: 100 }], ['몽환', { blur: 1.5, br: 115, sat: 125 }], ['어둡게', { br: 70, ct: 125 }], ['레트로', { sep: 40, hue: -10, ct: 130, sat: 70 }]];
 function edits0(o) {
-  return Object.assign({ start: 0, end: 0, speed: 1, ...ADJ, preset: 0, flipH: false, flipV: false, rot: 0, zoom: 1, op: 1, key: { mode: 'off', c: '#00ff00', tol: 90, soft: 50 }, text: '', tc: '#ffffff', ts: 30, ty: 85, vol: 1, mute: false }, JSON.parse(JSON.stringify(o || {})));
+  return Object.assign({ start: 0, end: 0, speed: 1, ...ADJ, preset: 0, flipH: false, flipV: false, rot: 0, zoom: 1, op: 1, key: { mode: 'off', c: '#00ff00', tol: 90, soft: 50 }, ol: { w: 0, c: '#ffffff' }, vig: 0, text: '', tc: '#ffffff', ts: 30, ty: 85, vol: 1, mute: false }, JSON.parse(JSON.stringify(o || {})));
 }
 function filterStr(e) { return `brightness(${e.br}%) contrast(${e.ct}%) saturate(${e.sat}%) hue-rotate(${e.hue}deg) blur(${e.blur}px) grayscale(${e.gray}%) invert(${e.inv}%) sepia(${e.sep}%)`; }
 function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
@@ -131,12 +130,22 @@ function drawEdited(ctx, src, e, W, H, fit = 'contain') {
   ctx.restore(); ctx.filter = 'none';
   const k = e.key || {};
   if (k.mode === 'color') chroma(ctx, W, H, k); else if (k.mode === 'ai') SEG.apply(ctx);
+  if (e.ol && e.ol.w > 0) outlineFx(ctx, W, H, e.ol);
+  if (e.vig > 0) { const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .25, W / 2, H / 2, Math.max(W, H) * .75); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${e.vig / 100})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
   if (e.text) {
     ctx.save(); const fs = e.ts * W / 360;
     ctx.font = `700 ${fs}px 'IBM Plex Sans KR',sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = fs / 6; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round';
     ctx.strokeText(e.text, W / 2, H * e.ty / 100); ctx.fillStyle = e.tc; ctx.fillText(e.text, W / 2, H * e.ty / 100); ctx.restore();
   }
+}
+const _ol = {};
+function outlineFx(ctx, W, H, o) { // 배경을 지운 뒤 사람·물체 둘레에 테두리
+  const mk = n => { const c = _ol[n] || (_ol[n] = document.createElement('canvas')); if (c.width !== W || c.height !== H) { c.width = W; c.height = H; } const x = c.getContext('2d'); x.clearRect(0, 0, W, H); return [c, x]; };
+  const [a, ax] = mk('a'), [b, bx] = mk('b'); ax.drawImage(ctx.canvas, 0, 0);
+  for (let i = 0; i < 12; i++) { const t = i / 12 * Math.PI * 2; bx.drawImage(a, Math.cos(t) * o.w, Math.sin(t) * o.w); }
+  bx.globalCompositeOperation = 'source-in'; bx.fillStyle = o.c; bx.fillRect(0, 0, W, H); bx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, W, H); ctx.drawImage(b, 0, 0); ctx.drawImage(a, 0, 0);
 }
 function chroma(ctx, W, H, k) {
   let id; try { id = ctx.getImageData(0, 0, W, H); } catch (e) { return; }
@@ -216,7 +225,7 @@ function makePlayer(box, src, kind, edits, { fit = 'contain', muted = false } = 
 }
 
 // ===== 편집기 =====
-const ED_TOOLS = [['trim', '자르기', 'scissors', 1], ['speed', '속도', 'gauge', 1], ['filter', '필터', 'sparkle'], ['adj', '보정', 'sliders'], ['bg', '배경제거', 'wand'], ['text', '텍스트', 'text'], ['xf', '회전·반전', 'flip'], ['zoom', '확대·투명', 'zoom'], ['vol', '볼륨', 'volume', 1]];
+const ED_TOOLS = [['trim', '자르기', 'scissors', 1], ['speed', '속도', 'gauge', 1], ['filter', '필터', 'sparkle'], ['adj', '보정', 'sliders'], ['bg', '배경제거', 'wand'], ['text', '텍스트', 'text'], ['ol', '외곽선', 'pencil'], ['vig', '분위기', 'eye'], ['xf', '회전·반전', 'flip'], ['zoom', '확대·투명', 'zoom'], ['vol', '볼륨', 'volume', 1]];
 async function openEditor(src, kind, edits, onDone, { ratio = 1 } = {}) {
   const e = edits0(edits); let el;
   try { el = await loadEl(src, kind); } catch (x) { toast('파일을 열 수 없어요'); return; }
@@ -267,6 +276,8 @@ async function openEditor(src, kind, edits, onDone, { ratio = 1 } = {}) {
     if (tool === 'xf') x = `<div class="chips"><button class="chip" data-rot>${ic('rotate', 16)} 90° 회전</button><button class="chip ${e.flipH ? 'on' : ''}" data-tg="flipH">${ic('flip', 16)} 좌우 반전</button><button class="chip ${e.flipV ? 'on' : ''}" data-tg="flipV">상하 반전</button></div>`;
     if (tool === 'zoom') x = rng('확대', 'zoom', .5, 3, .05, 'x') + rng('투명도', 'op', .1, 1, .05);
     if (tool === 'vol') x = rng('볼륨', 'vol', 0, 1, .05) + `<div class="chips"><button class="chip ${e.mute ? 'on' : ''}" data-tg="mute">음소거</button></div>`;
+    if (tool === 'ol') x = `<p class="muted sm">배경을 지운 뒤 쓰면 스티커처럼 테두리가 생겨요</p><div class="row-c"><label class="ed-rng"><span>색</span><input type="color" data-k="ol.c" value="${e.ol.c}"></label></div>` + rng('두께', 'ol.w', 0, 12, 1);
+    if (tool === 'vig') x = rng('가장자리 어둡게', 'vig', 0, 90, 1);
     P.innerHTML = x;
     $$('.ed-tools button', m).forEach(b => b.classList.toggle('on', b.dataset.t === tool));
   };

@@ -70,16 +70,16 @@ Object.assign(Game.prototype, {
     }
   },
 });
-function drawSpecShape(c, shape, r, col, sprite) {
+function drawSpecShape(c, shape, r, col, sprite, ol) {
   c.fillStyle = col;
-  if (shape === 'drawing' && sprite && sprite.complete && sprite.naturalWidth) { c.drawImage(sprite, -r * 1.4, -r * 1.4, r * 2.8, r * 2.8); return; }
+  if (shape === 'drawing' && sprite && sprite.complete && sprite.naturalWidth) { if (ol) { c.shadowColor = '#fff'; c.shadowBlur = 6; } c.drawImage(sprite, -r * 1.4, -r * 1.4, r * 2.8, r * 2.8); return; }
   c.beginPath();
   if (shape === 'star') for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? r * .45 : r * 1.15; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
   else if (shape === 'square') c.rect(-r, -r, r * 2, r * 2);
   else if (shape === 'tri') { c.moveTo(r * 1.2, 0); c.lineTo(-r * .8, r); c.lineTo(-r * .8, -r); }
   else if (shape === 'bolt') { c.moveTo(r * 1.3, 0); c.lineTo(0, r * .5); c.lineTo(r * .1, r * .1); c.lineTo(-r * 1.3, 0); c.lineTo(0, -r * .5); c.lineTo(-r * .1, -r * .1); }
   else c.arc(0, 0, r, 0, 7);
-  c.closePath(); c.fill();
+  c.closePath(); c.fill(); if (ol) { c.shadowBlur = 0; c.lineWidth = Math.max(2, r * .18); c.strokeStyle = '#fff'; c.stroke(); }
   if (shape === 'circle' || !shape) { c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.arc(-r * .3, -r * .3, r * .35, 0, 7); c.fill(); }
 }
 // 만드는 화면의 미리보기: 실제 게임 엔진으로 과녁 공에게 계속 써봐요

@@ -6,7 +6,7 @@ screen('create', el => {
   el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>영상 만들기</h2><span></span></div>
     <div class="scroll pad"><button class="btn-sec w100" id="cr-gal">${ic('image', 20)} 갤러리에서 동영상 선택</button>
     <h3 class="sec-t">${ic('film', 18)} 자동 저장된 플레이 <small class="muted">${recs.length}개</small></h3>
-    <div class="rec-grid">${recs.length ? recs.map(r => { const o = D.users[r.opp]; return `<div class="rec" data-id="${r.id}"><img src="${r.thumb}" alt=""><span class="wl ${r.win ? 'w' : 'l'}">${r.win ? '승리' : '패배'}</span><div class="rec-meta"><b>vs ${esc(o ? o.nick : '?')}</b><small>${MAPS[r.map].name} · ${fmtDur(r.dur)} · ${ago(r.t)}</small></div><button class="rec-del" data-del>${ic('x', 14)}</button></div>`; }).join('') : `<p class="muted">게임을 플레이하면 영상이 자동으로 저장돼요</p>`}</div></div>`;
+    <div class="rec-grid">${recs.length ? recs.map(r => { const o = D.users[r.opp]; return `<div class="rec" data-id="${r.id}"><img src="${r.thumb}" alt=""><span class="wl ${r.win ? 'w' : 'l'}">${r.win ? '승리' : '패배'}</span><div class="rec-meta"><b>${r.practice ? 'AI 연습' : 'vs ' + esc(o ? o.nick : '?')}</b><small>${MAPS[r.map].name} · ${fmtDur(r.dur)} · ${ago(r.t)}</small></div><button class="rec-del" data-del>${ic('x', 14)}</button></div>`; }).join('') : `<p class="muted">게임을 플레이하면 영상이 자동으로 저장돼요</p>`}</div></div>`;
   $('#cr-gal', el).onclick = async () => {
     const f = await pickFile('video/*'); if (!f) return; if (f.size > 150e6) return toast('150MB 이하 영상만 올릴 수 있어요');
     const key = await putBlob(f, 'v'); go('upload', { key, kind: 'video' });

@@ -314,7 +314,7 @@ textarea.inp{resize:none;min-height:80px}
 .g-map{font-size:17px}
 .rec-dot{display:flex;align-items:center;gap:5px;color:#ff6b6b;font-size:13px;padding-right:8px}
 .rec-dot::before{content:'';width:9px;height:9px;border-radius:50%;background:#ff3b3b;animation:fadeIn .8s infinite alternate}
-.g-cv-wrap{position:relative;flex:none;height:min(calc(100% - 196px),calc(min(100vw,480px) * 1.3238));aspect-ratio:420/556;max-width:100%;margin:0 auto}
+.g-cv-wrap{position:relative;flex:none;height:min(calc(100% - 150px),calc(min(100vw,480px) * 1.381));aspect-ratio:420/580;max-width:100%;margin:0 auto}
 .g-cv{width:100%;height:100%;display:block}
 .g-count{position:absolute;inset:8% 0 20%;display:grid;place-items:center;pointer-events:none}
 .g-count span{font-family:'IBM Plex Sans KR',sans-serif;font-size:120px;color:#111;text-shadow:4px 4px 0 var(--cy),-4px -4px 0 var(--pk);animation:popBig .8s both;font-weight:700}
@@ -742,3 +742,10 @@ body{letter-spacing:-.2px}
 .wfx-av{position:relative;width:104px;height:104px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 4px #fff,0 0 0 7px var(--pk);animation:popBig .7s .05s both}
 .wfx-t{font-size:24px;font-weight:700;animation:rise .5s .3s both}
 .wfx-s{font-size:14px;color:#888;animation:rise .5s .4s both}
+
+/* AI 연습 */
+.hm-ai{font-size:15px;gap:8px;animation:rise .45s .1s both}.hm-ai small{color:var(--tx2);font-size:12px;font-weight:500}
+.mt-ai{margin-top:6px;font-size:14px;padding:10px 14px}
+.pr-go{margin-top:16px}
+.rec img{aspect-ratio:420/580}
+.hm-rec img{aspect-ratio:420/580}

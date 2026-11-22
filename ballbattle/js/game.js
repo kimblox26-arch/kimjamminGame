@@ -114,8 +114,28 @@ function mapPreview(cv, mk) {
 }
 
 // 캔버스 배치: 위 문구 / 가운데 박스(400x400) / 아래 이름·체력·쿨타임 (녹화 영상에도 그대로 나옴)
-const GW = 420, GH = 556, BX = 10, BY = 44;
-const SNAP_K = ['x', 'y', 'vx', 'vy', 'hp', 'shield', 'shieldT', 'slowT', 'stuckT', 'immT', 'poisonT', 'poisonD', 'growT', 'growDmg', 'dashT', 'dashDmg', 'wa', 'wd', 'wcd', 'stunT'];
+const GW = 420, GH = 580, BX = 10, BY = 44;
+const PCOL = ['#3b82f6', '#ef4444', '#22a447', '#f59e0b']; // 1P 파랑, 2P 빨강, 3P 초록, 4P 주황
+// AI 연습 상대
+const AI_SET = [
+  { nick: 'AI 슬라임', name: '초록 레이저', color: '#22a447', spec: { spawn: 'self', move: 'straight', count: 1, speed: 620, size: 6, life: 1.2, dmg: 11, knock: 60, shape: 'bolt', trail: true, glow: true } },
+  { nick: 'AI 번개', name: '유도탄', color: '#3b82f6', spec: { spawn: 'self', move: 'homing', count: 2, spread: 40, speed: 260, size: 9, life: 2.5, dmg: 7 } },
+  { nick: 'AI 불꽃', name: '메테오', color: '#f59e0b', spec: { spawn: 'above', move: 'straight', count: 3, speed: 340, size: 14, life: 2, dmg: 6, explode: 50 } },
+  { nick: 'AI 칼날', name: '회전 칼날', color: '#e64980', spec: { spawn: 'around', move: 'orbit', count: 3, speed: 200, size: 10, life: 3, dmg: 4, pierce: true, shape: 'star', spin: true } },
+  { nick: 'AI 돌진', name: '돌진', color: '#7048e8', spec: { spawn: 'dash', dmg: 14, knock: 300, life: 1 } },
+  { nick: 'AI 독침', name: '독침', color: '#51cf66', spec: { spawn: 'self', move: 'zigzag', count: 3, spread: 30, speed: 300, size: 7, dmg: 5, effect: 'poison' } },
+  { nick: 'AI 얼음', name: '얼음 부메랑', color: '#4dabf7', spec: { spawn: 'self', move: 'boomerang', count: 1, speed: 320, size: 11, life: 2, dmg: 9, effect: 'slow', shape: 'square', spin: true } },
+];
+function aiPlayers(n, img) {
+  const pool = [...AI_SET].sort(() => Math.random() - .5);
+  return pool.slice(0, n).map((a, i) => ({ u: { uid: 'ai_' + i, nick: a.nick, handle: 'ai' }, img, ai: true, skills: [{ s: { id: 'ai' + i, name: a.name, color: a.color, comps: [], cd: SKILL_CD, lv: 1, spec: { ...SPEC0, ...a.spec }, sound: 'none' }, cd: SKILL_CD, t: 3 }] }));
+}
+function drawTag(c, x, y, txt, col) { // '1P' 같은 작은 배지
+  c.save(); c.font = '700 10px "IBM Plex Sans KR",sans-serif'; const w = c.measureText(txt).width + 8;
+  c.fillStyle = col; c.beginPath(); c.roundRect ? c.roundRect(x - w / 2, y - 7, w, 14, 7) : c.rect(x - w / 2, y - 7, w, 14); c.fill();
+  c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, x, y + .5); c.restore();
+}
+const SNAP_K = ['x', 'y', 'vx', 'vy', 'hp', 'shield', 'shieldT', 'slowT', 'stuckT', 'immT', 'poisonT', 'poisonD', 'growT', 'growDmg', 'dashT', 'dashDmg', 'wa', 'wd', 'wcd', 'stunT', 'boostT'];
 class Game {
   constructor(cv, o) {
     this.cv = cv; this.c = cv.getContext('2d'); this.o = o; this.map = o.map;
@@ -123,25 +143,33 @@ class Game {
     this.t = 0; this.parts = []; this.projs = []; this.specs = []; this.anims = []; this.rings = []; this.beams = []; this.texts = []; this.timers = []; this.marks = []; this.ovs = []; this.bolts = [];
     this.shake = 0; this.over = false; this.started = false; this.lastCol = -1;
     this.rng = srand(o.seed || 1 + Math.floor(Math.random() * 2147483000)); this.meIdx = o.meIdx ?? 1; this.authority = o.authority !== false;
-    this.balls = [this.mkBall(0, o.p0), this.mkBall(1, o.p1)];
+    const ps = o.players || [o.p0, o.p1]; this.lc = {};
+    this.balls = ps.map((pl, i) => this.mkBall(i, pl, ps.length));
     for (const b of this.balls) for (const sk of b.sk) sk.t = sk.cd * (.35 + this.rng() * .3);
+    this.plats = []; // 안에 있는 막대 (부딪히면 튕김, 노란 막대는 빨라지는 발판)
+    for (let i = 0, tries = 0, nb = this.map === 'arena' ? 6 : 3; i < nb && tries < 300; tries++) {
+      const len = 60 + this.rng() * 80, x1 = 20 + this.rng() * (360 - len), y = 60 + this.rng() * 290;
+      if (this.balls.some(b => b.y > y - 48 && b.y < y + 48 && b.x > x1 - 44 && b.x < x1 + len + 44)) continue;
+      if (this.plats.some(q => Math.abs(q.y - y) < 36 && q.x1 < x1 + len + 24 && q.x2 > x1 - 24)) continue;
+      this.plats.push({ x1, x2: x1 + len, y, jump: i === 0 }); i++;
+    }
     this.vines = []; this.lava = []; this.clouds = []; this.vineT = 5;
     this.place = r => { for (let i = 0; i < 60; i++) { const x = 45 + this.rng() * 310, y = 45 + this.rng() * 310; if (this.balls.every(b => Math.hypot(b.x - x, b.y - y) > r + 60) && this.lava.every(l => Math.hypot(l.x - x, l.y - y) > r + l.r + 10)) return [x, y]; } return [200, 200]; };
     if (this.map === 'jungle') for (let i = 0; i < 6; i++) this.addVine();
     if (this.map === 'lava') for (let i = 0; i < 4; i++) { const r = 28 + this.rng() * 16, [x, y] = this.place(r); this.lava.push({ x, y, r, ph: this.rng() * 6 }); }
     if (this.map === 'sky') for (let i = 0; i < 4; i++) this.clouds.push({ x: this.rng() * 400, y: 55 + i * 92 + this.rng() * 20, w: 95 + this.rng() * 40, h: 42 + this.rng() * 12, vx: (this.rng() < .5 ? -1 : 1) * (15 + this.rng() * 20) });
   }
-  mkBall(side, p) {
-    const a = this.rng() * Math.PI * 2;
+  mkBall(side, p, n = 2) {
+    const a = this.rng() * Math.PI * 2, at = n > 2 ? [[100, 100], [300, 100], [100, 300], [300, 300]][side] : side ? [300, 300] : [100, 100];
     return {
-      side, u: p.u, img: p.img, color: p.color || GRAY, x: side ? 300 : 100, y: side ? 300 : 100, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 26, sc: 1, sqx: 1, sqy: 1,
+      side, ai: !!p.ai, u: p.u, img: p.img, color: p.color || PCOL[side] || GRAY, x: at[0], y: at[1], boostT: 0, place: 0, vx: Math.cos(a) * 160, vy: Math.sin(a) * 160, r: 26, sc: 1, sqx: 1, sqy: 1,
       hp: 150, max: 150, lag: 150, sk: p.skills, shield: 0, shieldT: 0, slowT: 0, stuckT: 0, immT: 0, poisonT: 0, poisonD: 0,
       growT: 0, growDmg: 0, dashT: 0, dashDmg: 0, flash: 0, trail: [], cloud: false, lavaAcc: 0, dotAcc: 0, dead: false,
       wa: this.rng() * 7, wd: this.rng() < .5 ? -1 : 1, wcd: 0,
     };
   }
   addVine() { const [x, y] = this.place(28); this.vines.push({ x, y, r: 26, st: 0, a: 0, hold: null, ph: this.rng() * 6 }); }
-  enemy(b) { return this.balls[b.side ? 0 : 1]; }
+  enemy(b) { let best = null, bd = 1e9; for (const o of this.balls) if (o !== b && !o.dead) { const d = Math.hypot(o.x - b.x, o.y - b.y); if (d < bd) { bd = d; best = o; } } return best || this.balls.find(o => o !== b); }
   part(x, y, col, sp = 60, life = .6, size = 3, g = 0) { const a = Math.random() * 7, v = Math.random() * sp; this.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, col, life, ml: life, size, g }); }
   burst(x, y, col, n = 10, sp = 160) { for (let i = 0; i < n; i++) this.part(x, y, col, sp, rnd(.3, .7), rnd(2, 4)); }
   ring(x, y, max, col, life = .45, w = 3) { this.rings.push({ x, y, r: 4, max, col, life, ml: life, w }); }
@@ -186,7 +214,7 @@ class Game {
   }
   updBall(b, dt, e) {
     b.flash = Math.max(0, b.flash - dt); b.wcd -= dt;
-    for (const k of ['shieldT', 'slowT', 'immT', 'poisonT', 'growT', 'dashT', 'stunT']) b[k] = Math.max(0, (b[k] || 0) - dt);
+    for (const k of ['shieldT', 'slowT', 'immT', 'poisonT', 'growT', 'dashT', 'stunT', 'boostT']) b[k] = Math.max(0, (b[k] || 0) - dt);
     if (b.dashT <= 0) b.dashSpec = null;
     if (b.shieldT <= 0) b.shield = 0;
     b.sc += ((b.growT > 0 ? 1.5 : 1) - b.sc) * Math.min(1, dt * 8);
@@ -209,21 +237,29 @@ class Game {
       }
     }
     if (b.stuckT <= 0 && !(b.stunT > 0) && this.started) {
-      const sp = 160 * (b.slowT > 0 ? .5 : 1) * (b.cloud ? .4 : 1) * (b.dashT > 0 ? 2.8 : 1);
+      const sp = 160 * (b.slowT > 0 ? .5 : 1) * (b.cloud ? .4 : 1) * (b.dashT > 0 ? 2.8 : 1) * (b.boostT > 0 ? 1.7 : 1);
       if (b.dashT > 0) { const a = Math.atan2(e.y - b.y, e.x - b.x), k = Math.min(1, dt * 10); b.vx += (Math.cos(a) * sp - b.vx) * k; b.vy += (Math.sin(a) * sp - b.vy) * k; this.part(b.x, b.y, b.color, 10, .4, 3); }
       const m = Math.hypot(b.vx, b.vy) || 1, nm = m + (sp - m) * Math.min(1, dt * 4); b.vx = b.vx / m * nm; b.vy = b.vy / m * nm;
       b.x += b.vx * dt; b.y += b.vy * dt;
       if (b.x < r) { b.x = r; b.vx = Math.abs(b.vx); this.squash(b, 1); } else if (b.x > 400 - r) { b.x = 400 - r; b.vx = -Math.abs(b.vx); this.squash(b, 1); }
       if (b.y < r) { b.y = r; b.vy = Math.abs(b.vy); this.squash(b, 0); } else if (b.y > 400 - r) { b.y = 400 - r; b.vy = -Math.abs(b.vy); this.squash(b, 0); }
+      for (const pl of this.plats) { // 막대에 튕기기
+        const cx = Math.max(pl.x1, Math.min(pl.x2, b.x)), dx = b.x - cx, dy = b.y - pl.y, d = Math.hypot(dx, dy);
+        if (d >= r + 3 || d === 0) continue;
+        const nx = dx / d, ny = dy / d, vn = b.vx * nx + b.vy * ny; b.x = cx + nx * (r + 3); b.y = pl.y + ny * (r + 3);
+        if (vn < 0) { b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny; } this.squash(b, Math.abs(ny) > .7 ? 0 : 1);
+        if (pl.jump && b.boostT <= 0) { b.boostT = .7; this.burst(b.x, pl.y, '#f2c230', 10, 160); AUD.sfx('spring'); }
+      }
     }
     b.trail.push([b.x, b.y]); if (b.trail.length > 8) b.trail.shift();
     // 기본 공격: 공에 달린 막대가 돌면서 자동으로 때림
     if (this.started) b.wa += b.wd * dt * (b.dashT > 0 ? 7 : 3.6);
     if (!live || b.dead) return;
     const L = r + 36 * b.sc, x1 = b.x + Math.cos(b.wa) * r, y1 = b.y + Math.sin(b.wa) * r, x2 = b.x + Math.cos(b.wa) * L, y2 = b.y + Math.sin(b.wa) * L;
-    if (b.wcd <= 0 && segDist(e.x, e.y, x1, y1, x2, y2) < e.r * e.sc) {
-      b.wcd = .45; b.wd *= -1; this.hit(e, 3, b.color, 'hit'); this.burst(x2, y2, '#adb5bd', 8, 140);
-      const a = Math.atan2(e.y - b.y, e.x - b.x); e.vx += Math.cos(a) * 120; e.vy += Math.sin(a) * 120;
+    for (const o of this.balls) {
+      if (o === b || o.dead || b.wcd > 0 || segDist(o.x, o.y, x1, y1, x2, y2) >= o.r * o.sc) continue;
+      b.wcd = .45; b.wd *= -1; this.hit(o, 3, b.color, 'hit'); this.burst(x2, y2, '#adb5bd', 8, 140);
+      const a = Math.atan2(o.y - b.y, o.x - b.x); o.vx += Math.cos(a) * 120; o.vy += Math.sin(a) * 120;
     }
     for (const s of b.sk) { s.t -= dt; if (s.t <= 0) { s.t = s.cd; this.cast(b, e, s); } }
   }
@@ -233,8 +269,9 @@ class Game {
     const nx = dx / d, ny = dy / d, ov = rr - d; A.x -= nx * ov / 2; A.y -= ny * ov / 2; B.x += nx * ov / 2; B.y += ny * ov / 2;
     const va = A.vx * nx + A.vy * ny, vb = B.vx * nx + B.vy * ny;
     if (va - vb > 0) { A.vx += (vb - va) * nx; A.vy += (vb - va) * ny; B.vx += (va - vb) * nx; B.vy += (va - vb) * ny; }
-    if (this.t - this.lastCol > .3 && this.started) {
-      this.lastCol = this.t; const cx = A.x + nx * A.r, cy = A.y + ny * A.r;
+    const key = A.side * 8 + B.side;
+    if (this.t - (this.lc[key] ?? -1) > .3 && this.started) {
+      this.lc[key] = this.t; const cx = A.x + nx * A.r, cy = A.y + ny * A.r;
       const dA = 4 + (A.growT > 0 ? A.growDmg : 0) + (A.dashT > 0 ? A.dashDmg : 0), dB = 4 + (B.growT > 0 ? B.growDmg : 0) + (B.dashT > 0 ? B.dashDmg : 0);
       for (const [X, Y] of [[A, B], [B, A]]) if (X.dashSpec && X.dashT > 0) { const ds = X.dashSpec; X.dashSpec = null; this.specHit({ ...ds, b: X, tg: Y }, Y, cx, cy); }
       if (A.dashT > 0) A.dashT = 0; if (B.dashT > 0) B.dashT = 0;
@@ -255,7 +292,7 @@ class Game {
     }
     for (const c of this.clouds) { c.x += c.vx * dt; if (c.x < -c.w) c.x = 400 + c.w / 2; if (c.x > 400 + c.w) c.x = -c.w / 2; }
     for (const b of this.balls) if (!b.dead) this.updBall(b, dt, this.enemy(b));
-    if (!A.dead && !B.dead) this.collide(A, B);
+    for (let i = 0; i < this.balls.length; i++) for (let j = i + 1; j < this.balls.length; j++) { const P = this.balls[i], Q = this.balls[j]; if (!P.dead && !Q.dead) this.collide(P, Q); }
     for (const p of this.projs) {
       p.life -= dt; const tg = p.tg;
       if (p.home && !tg.dead) { const a = Math.atan2(tg.y - p.y, tg.x - p.x), cur = Math.atan2(p.vy, p.vx); let df = a - cur; df = Math.atan2(Math.sin(df), Math.cos(df)); const na = cur + df * Math.min(1, dt * p.home), sp = Math.hypot(p.vx, p.vy); p.vx = Math.cos(na) * sp; p.vy = Math.sin(na) * sp; }
@@ -275,16 +312,20 @@ class Game {
     for (const t of this.texts) { t.life -= dt; t.y -= (t.big ? 18 : 34) * dt; }
     this.texts = this.texts.filter(t => t.life > 0);
     if (!this.authority && !this.over) for (const b of this.balls) if (b.hp < .5) b.hp = .5;
-    if (!this.over && this.started && this.authority && (A.hp <= 0 || B.hp <= 0)) this.kill(A.hp <= 0 && B.hp <= 0 ? (A.hp < B.hp ? A : B) : (A.hp <= 0 ? A : B));
+    if (!this.over && this.started && this.authority) {
+      const dying = this.balls.filter(b => !b.dead && b.hp <= 0);
+      if (dying.length) { if (!this.balls.some(b => !b.dead && b.hp > 0)) { const keep = dying.sort((a, b) => b.hp - a.hp).shift(); keep.hp = 1; } dying.forEach(b => this.eliminate(b)); }
+    }
   }
-  kill(loser) {
-    if (this.over) return; const [A, B] = this.balls;
-    loser.hp = 0; loser.dead = true; this.winner = loser === A ? B : A; this.over = true; this.endT = 1.8;
-    for (let i = 0; i < 60; i++) this.part(loser.x, loser.y, i % 2 ? loser.color : '#ced4da', rnd(80, 400), rnd(.6, 1.4), rnd(2, 6));
-    this.ring(loser.x, loser.y, 140, loser.color, .8, 6); this.shake = 14; AUD.sfx('boom');
-    this.onKill && this.onKill(this.balls.indexOf(this.winner));
+  eliminate(b) { // 탈락. 한 명만 남으면 끝
+    if (b.dead) return; b.hp = 0; b.dead = true; b.place = this.balls.filter(x => !x.dead).length + 1;
+    for (let i = 0; i < 60; i++) this.part(b.x, b.y, i % 2 ? b.color : '#ced4da', rnd(80, 400), rnd(.6, 1.4), rnd(2, 6));
+    this.ring(b.x, b.y, 140, b.color, .8, 6); this.shake = 14; AUD.sfx('boom');
+    const alive = this.balls.filter(x => !x.dead);
+    if (alive.length <= 1) { const w = alive[0] || b; w.place = 1; this.winner = w; this.over = true; this.endT = 2.4; this.onKill && this.onKill(this.balls.indexOf(w)); }
   }
-  forceEnd(wi) { this.kill(this.balls[wi ? 0 : 1]); }
+  kill(loser) { this.eliminate(loser); }
+  forceEnd(wi) { if (this.over) return; this.balls.forEach((b, i) => { if (i !== wi && !b.dead && !this.over) this.eliminate(b); }); }
   // 방장 화면의 상태를 손님에게 보내서 맞춤
   snap() {
     const r = v => Math.round(v * 100) / 100;
@@ -307,6 +348,7 @@ class Game {
     drawMapBG(c, this.map, 400, 400, this.t);
     for (const l of this.lava) drawLava(c, l, this.t);
     for (const v of this.vines) drawVine(c, v, this.t);
+    c.lineCap = 'round'; for (const pl of this.plats) { c.strokeStyle = pl.jump ? '#f2c230' : this.map === 'lava' ? '#d0c4c4' : '#111'; c.lineWidth = 6; c.beginPath(); c.moveTo(pl.x1, pl.y); c.lineTo(pl.x2, pl.y); c.stroke(); }
     for (const m of this.marks) { const k = 1 - m.life / m.ml; c.strokeStyle = `rgba(240,62,62,${.4 + .4 * Math.sin(k * 30)})`; c.lineWidth = 2; c.setLineDash([6, 6]); c.beginPath(); c.arc(m.x, m.y, m.r, 0, 7); c.stroke(); c.setLineDash([]); c.fillStyle = 'rgba(240,62,62,.08)'; c.fill(); c.fillStyle = '#ff922b'; c.beginPath(); c.arc(m.x, m.y - 300 * (1 - k), 12, 0, 7); c.fill(); }
     for (const b of this.balls) { if (b.dead || !SET.trail) continue; b.trail.forEach(([x, y], i) => { c.globalAlpha = i / b.trail.length * .12; c.fillStyle = b.color; c.beginPath(); c.arc(x, y, b.r * b.sc, 0, 7); c.fill(); }); c.globalAlpha = 1; }
     for (const b of this.balls) if (!b.dead) this.drawBall(b);
@@ -326,22 +368,35 @@ class Game {
       const a = Math.min(1, t.life / t.ml * 2), s = t.big ? 1 + .4 * Math.max(0, (t.life - t.ml + .2) / .2) : 1;
       c.globalAlpha = a; c.font = `700 ${t.big ? 18 * s : 14}px "IBM Plex Sans KR",sans-serif`; c.textAlign = 'center'; c.lineWidth = 4; c.strokeStyle = '#fff'; c.lineJoin = 'round'; c.strokeText(t.s, t.x, t.y); c.fillStyle = t.col; c.fillText(t.s, t.x, t.y);
     } c.globalAlpha = 1;
+    if (this.count) { // 3, 2, 1 (경기장 가운데)
+      const k = Math.min(1, (performance.now() - (this.countT || 0)) / 260), sc = this.count.length > 1 ? 1 : 1.6 - .6 * k;
+      c.save(); c.translate(200, 200); c.scale(sc, sc); c.globalAlpha = Math.min(1, k * 2); c.font = `700 ${this.count.length > 1 ? 64 : 110}px "IBM Plex Sans KR",sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.lineWidth = 10; c.strokeStyle = '#fff'; c.strokeText(this.count, 0, 0); c.fillStyle = '#111'; c.fillText(this.count, 0, 0); c.restore();
+    }
+    if (this.over && this.winner) { // 'nP 이름 승리!'
+      const w = this.winner, txt = `${w.u.nick} 승리!`; c.save(); c.font = '700 24px "IBM Plex Sans KR",sans-serif'; const tw = c.measureText(txt).width + 46, k = Math.min(1, (2.4 - this.endT) / .4);
+      c.globalAlpha = k; c.translate(200, 120); c.scale(.8 + .2 * k, .8 + .2 * k); c.fillStyle = 'rgba(255,255,255,.92)'; c.fillRect(-tw / 2 - 8, -22, tw + 16, 44);
+      drawTag(c, -tw / 2 + 14, 0, `${w.side + 1}P`, w.color); c.fillStyle = '#111'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(txt, -tw / 2 + 32, 1); c.restore();
+    }
     c.restore();
     c.lineWidth = 5; c.strokeStyle = '#111'; c.strokeRect(BX - 2.5, BY - 2.5, 405, 405);
-    this.panel(this.balls[1 - this.meIdx], BX, 0); this.panel(this.balls[this.meIdx], 220, 1);
+    const order = this.balls.length === 2 ? [this.balls[1 - this.meIdx], this.balls[this.meIdx]] : this.balls;
+    order.forEach((b, i) => this.panel(b, i % 2 ? 220 : BX, BY + 400 + 14 + Math.floor(i / 2) * 60 + (this.balls.length === 2 ? 20 : 0), i % 2));
   }
-  panel(b, x, side) {
-    const c = this.c, w = 190, ny = BY + 400 + 34, hy = ny + 10, hh = 28, p = Math.max(0, b.hp / b.max), pl = Math.max(0, b.lag / b.max);
-    c.textAlign = side ? 'right' : 'left'; c.font = '600 24px "IBM Plex Sans KR",sans-serif'; c.fillStyle = b.color;
-    const nm = b.u.nick.length > 9 ? b.u.nick.slice(0, 9) + '…' : b.u.nick; c.fillText(nm, side ? x + w : x, ny);
-    c.fillStyle = '#d0d0d0'; c.fillRect(x, hy, w, hh);
-    c.fillStyle = '#ffa8a8'; c.fillRect(x, hy, w * pl, hh);
-    c.fillStyle = p < .3 ? '#ff6b6b' : '#40d65a'; c.fillRect(x, hy, w * p, hh);
-    if (b.shield > 0) { c.fillStyle = 'rgba(116,192,252,.6)'; c.fillRect(x, hy, Math.min(w, b.shield / b.max * w), 5); }
-    c.lineWidth = 2.5; c.strokeStyle = '#111'; c.strokeRect(x, hy, w, hh);
-    c.fillStyle = '#fff'; c.font = '600 19px "IBM Plex Sans KR",sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(`${Math.ceil(Math.max(0, b.hp))} / ${b.max}`, x + w / 2, hy + hh / 2 + 1); c.textBaseline = 'alphabetic';
-    const rows = b.sk.length ? b.sk : [null];
-    rows.forEach((s, i) => { const y = hy + hh + 9 + i * 12; c.fillStyle = '#e9e9e9'; c.fillRect(x, y, w, 6); if (s) { c.fillStyle = b.color; c.fillRect(x, y, w * Math.min(1, 1 - Math.max(0, s.t) / s.cd), 6); } c.lineWidth = 1; c.strokeStyle = '#9a9a9a'; c.strokeRect(x, y, w, 6); });
+  panel(b, x, y, right) { // 아래 상태판: 이름·배지, 체력, 쿨타임
+    const c = this.c, w = 190, hh = 20, p = Math.max(0, b.hp / b.max), pl = Math.max(0, b.lag / b.max), nm = b.u.nick.length > 8 ? b.u.nick.slice(0, 8) + '…' : b.u.nick;
+    c.save(); if (b.dead) c.globalAlpha = .45;
+    c.font = '700 16px "IBM Plex Sans KR",sans-serif'; c.textBaseline = 'middle'; c.fillStyle = b.color; const nw = c.measureText(nm).width;
+    if (right) { c.textAlign = 'right'; c.fillText(nm, x + w, y + 8); drawTag(c, x + w - nw - 16, y + 8, `${b.side + 1}P`, b.color); }
+    else { c.textAlign = 'left'; c.fillText(nm, x, y + 8); drawTag(c, x + nw + 16, y + 8, `${b.side + 1}P`, b.color); }
+    if (b.dead && b.place) { c.textAlign = right ? 'left' : 'right'; c.fillStyle = '#888'; c.font = '600 12px "IBM Plex Sans KR",sans-serif'; c.fillText(`${b.place}등 탈락`, right ? x : x + w, y + 8); }
+    const hy = y + 18; c.fillStyle = '#d6d6d6'; c.fillRect(x, hy, w, hh); c.fillStyle = '#ffb3b3'; c.fillRect(x, hy, w * pl, hh);
+    c.fillStyle = p < .3 ? '#ff6b6b' : '#34c759'; c.fillRect(x, hy, w * p, hh);
+    if (b.shield > 0) { c.fillStyle = 'rgba(116,192,252,.7)'; c.fillRect(x, hy, Math.min(w, b.shield / b.max * w), 4); }
+    c.lineWidth = 1.5; c.strokeStyle = '#555'; c.strokeRect(x, hy, w, hh);
+    c.fillStyle = '#fff'; c.font = '600 13px "IBM Plex Sans KR",sans-serif'; c.textAlign = 'center'; c.fillText(`${Math.ceil(Math.max(0, b.hp))} / ${b.max}`, x + w / 2, hy + hh / 2 + 1);
+    (b.sk.length ? b.sk : [null]).slice(0, 2).forEach((s2, i) => { const yy = hy + hh + 4 + i * 7, ww = w / 2 - 2, xx = x + (i % 2) * (ww + 4); c.fillStyle = '#e9e9e9'; c.fillRect(x, yy, w, 5); if (s2) { c.fillStyle = b.color; c.fillRect(x, yy, w * Math.min(1, 1 - Math.max(0, s2.t) / s2.cd), 5); } });
+    c.restore(); c.textBaseline = 'alphabetic';
   }
   drawBall(b) {
     const c = this.c, r = b.r * b.sc;
@@ -361,6 +416,10 @@ class Game {
     c.restore();
     if (b.stunT > 0) { c.fillStyle = '#fab005'; for (let i = 0; i < 3; i++) { const a = this.t * 6 + i * 2.1; c.beginPath(); c.arc(b.x + Math.cos(a) * r * .8, b.y - r - 6 + Math.sin(a) * 4, 3.5, 0, 7); c.fill(); } }
     if (b.stuckT > 0) { c.strokeStyle = '#2f9e44'; c.lineWidth = 3.5; for (let i = 0; i < 3; i++) { c.beginPath(); c.ellipse(b.x, b.y, r + 2, r * .35, i * 1.05 + this.t, 0, 7); c.stroke(); } }
+    drawTag(c, b.x, b.y + r - 2, `${b.side + 1}P`, b.color);
+    const hw = 40, hp = Math.max(0, b.hp / b.max); c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(b.x - hw / 2, b.y + r + 8, hw, 5); c.fillStyle = hp < .3 ? '#ff6b6b' : '#34c759'; c.fillRect(b.x - hw / 2, b.y + r + 8, hw * hp, 5);
+    const sk0 = b.sk[0]; if (sk0 && this.started && !this.over && sk0.t < 3) { c.font = '700 12px "IBM Plex Sans KR",sans-serif'; c.textAlign = 'left'; c.lineWidth = 3; c.strokeStyle = '#fff'; const tx = `${Math.max(0, sk0.t).toFixed(2)}초`; c.strokeText(tx, b.x + r * .7, b.y - r - 4); c.fillStyle = '#e03131'; c.fillText(tx, b.x + r * .7, b.y - r - 4); }
+    if (this.over && b === this.winner) { c.fillStyle = '#f2c230'; c.beginPath(); const cx = b.x, cy = b.y - r - 14; c.moveTo(cx - 14, cy + 8); c.lineTo(cx - 14, cy - 4); c.lineTo(cx - 7, cy + 2); c.lineTo(cx, cy - 8); c.lineTo(cx + 7, cy + 2); c.lineTo(cx + 14, cy - 4); c.lineTo(cx + 14, cy + 8); c.closePath(); c.fill(); }
   }
   start() { // 고정 간격(1/60초)으로 계산해서 두 사람 화면이 똑같이 움직여요
     this.last = performance.now(); this.acc = 0;
@@ -407,18 +466,19 @@ function loadImg(src) { return new Promise(r => { const i = new Image(); i.onloa
 
 // ===== 매칭 (지금 접속한 다른 사람과 실시간 대결) / VS / 맵 선택 =====
 screen('match', el => {
+  el.addEventListener('click', e => { if (e.target.closest('[data-pr]')) { NAV.stack = [{ name: 'main', p: { tab: 'home' } }]; show('practice', {}, 'push'); } });
   const u = me(), tm = []; const later = (f, t) => tm.push(setTimeout(f, t));
   let stop = null, iv = 0;
   el._leave = () => { tm.forEach(clearTimeout); clearInterval(iv); stop && stop(); if (LIVE.match && !LIVE.match.going) LIVE.end(); };
   if (!LIVE.room) {
-    el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>${ic('users', 44)}<h2 class="mt-title">온라인에 연결되지 않았어요</h2><p class="muted center mt-p">다른 사람과 대결하려면 게임 주인에게 초대받은 계정으로 게임 페이지에 접속해야 해요</p><button class="btn-main" data-back>돌아가기</button></div>`;
+    el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>${ic('users', 44)}<h2 class="mt-title">온라인에 연결되지 않았어요</h2><p class="muted center mt-p">다른 사람과 대결하려면 게임 주인에게 초대받은 계정으로 게임 페이지에 접속해야 해요</p><button class="btn-main" data-pr>${ic('users', 18)} AI와 연습하기</button><button class="btn-ghost" data-back>돌아가기</button></div>`;
     return;
   }
   const searching = () => {
     el.innerHTML = `<div class="match"><button class="icon-btn mt-x" data-back>${ic('x')}</button>
       <div class="radar"><div class="radar-sweep"></div><div class="radar-ring r1"></div><div class="radar-ring r2"></div>${avImg(u, 'radar-me')}</div>
       <h2 class="mt-title">상대를 찾는 중<span class="dots"><i>.</i><i>.</i><i>.</i></span></h2><div class="mt-time">0:00</div>
-      <div class="mt-online"><i class="dot"></i> 지금 <b>${LIVE.online()}</b>명 접속 중</div></div>`;
+      <div class="mt-online"><i class="dot"></i> 지금 <b>${LIVE.online()}</b>명 접속 중</div><button class="btn-ghost mt-ai" data-pr>${ic('users', 18)} 기다리는 동안 AI와 연습</button></div>`;
     let s = 0; clearInterval(iv);
     iv = setInterval(() => { s++; const t = $('.mt-time', el); if (t) t.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; const o = $('.mt-online b', el); if (o) o.textContent = LIVE.online(); }, 1000);
     stop = LIVE.queue(u, found);
@@ -482,79 +542,104 @@ function mapSelect(el, u, opp, later) {
   read();
 }
 
-// ===== 게임 화면 (실시간 대결) =====
+// ===== AI와 연습 (혼자 테스트) =====
+screen('practice', (el, p) => {
+  p.ai = p.ai || 3; p.map = p.map || 'arena';
+  const keys = [...MAP_KEYS, 'random'];
+  el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>AI와 연습</h2><span></span></div>
+    <div class="scroll pad"><p class="muted sm">혼자 테스트하는 모드예요. 승수와 코인은 바뀌지 않아요.</p>
+    <label class="lbl">AI 상대</label><div class="seg2">${[1, 2, 3].map(n => `<button data-ai="${n}" class="${p.ai === n ? 'on' : ''}">${n}명 (${n + 1}인전)</button>`).join('')}</div>
+    <label class="lbl">맵</label><div class="ms-grid">${keys.map(k => k === 'random' ? `<button class="ms-card rnd ${p.map === k ? 'my-pick' : ''}" data-k="random"><div class="ms-dice">${ic('dice', 34)}</div><b>랜덤</b></button>` : `<button class="ms-card ${p.map === k ? 'my-pick' : ''}" data-k="${k}"><canvas width="200" height="120"></canvas><b>${MAPS[k].name}</b><small>${MAPS[k].desc}</small></button>`).join('')}</div>
+    <button class="btn-play w100 pr-go" id="pr-go">${ic('play', 22)} 연습 시작</button></div>`;
+  $$('.ms-card canvas', el).forEach(cv => mapPreview(cv, cv.parentElement.dataset.k));
+  el.onclick = e => {
+    const a = e.target.closest('[data-ai]'); if (a) { p.ai = +a.dataset.ai; $$('[data-ai]', el).forEach(b => b.classList.toggle('on', b === a)); }
+    const m = e.target.closest('.ms-card'); if (m) { p.map = m.dataset.k; $$('.ms-card', el).forEach(b => b.classList.toggle('my-pick', b === m)); }
+    if (e.target.closest('#pr-go')) go('game', { practice: true, ai: p.ai, map: p.map === 'random' ? pick(MAP_KEYS) : p.map, seed: 1 + Math.floor(Math.random() * 2147483000) }, 'zoom');
+  };
+});
+
+// ===== 게임 화면 (실시간 대결 / AI 연습) =====
 screen('game', async (el, p) => {
-  const u = me(), o = D.users[p.opp], L = LIVE.match && LIVE.match.opp === p.opp ? LIVE.match : null;
-  if (!L || !o) { toast('대결이 끝났어요'); return reset('main', { tab: 'home' }, 'back'); }
-  const M = L.M, host = L.host; let g = null, snapIv = 0, unPeers = null, lastSnap = null, ended = false;
-  el._leave = () => { clearInterval(snapIv); unPeers && unPeers(); if (g) { g.stop(); g.stopRec(); } LIVE.end(); };
-  el.innerHTML = `<div class="game"><div class="g-top"><button class="icon-btn g-quit">${ic('x')}</button><span class="g-map">${MAPS[p.map].name}</span><span class="g-live"><i class="dot"></i> 실시간</span></div>
-    <div class="g-cv-wrap"><canvas class="g-cv"></canvas><div class="g-count"></div></div><div class="g-cards"></div></div>`;
-  const [mySk, opSk, myImg, opImg] = await Promise.all([prepSkills(u), prepSkills(o), loadImg(avatarSrc(u)), loadImg(avatarSrc(o))]);
-  if (!el.isConnected) return;
-  const myC = ballColor(myImg), opC = ballColor(opImg);
-  const card = (x, side, col, sks) => `<div class="g-card ${side}" style="--bc:${col}">${avImg(x, 'av-c')}<div class="g-nm"><div class="g-name">${nameHTML(x)}</div><small>@${esc(x.handle)}</small>
-    ${side === 'opp' ? `<div class="g-acts">${isDev(u) ? `<button class="mini-ban" data-ban>${ic('ban', 13)} 밴</button>` : ''}<button class="mini-btn" data-rep>${ic('flag', 13)} 신고</button></div>` : ''}
-    <div class="g-sk">${sks.map(s => `<div class="gs"><span>${esc(s.s.name)}</span><i><b></b></i></div>`).join('') || '<small class="muted">기본 공격만</small>'}</div></div></div>`;
-  $('.g-cards', el).innerHTML = card(o, 'opp', opC, opSk) + card(u, 'me', myC, mySk);
-  // 두 사람 화면이 같은 세계를 보도록: 0번 공 = 손님, 1번 공 = 방장
-  const meD = { u, skills: mySk, img: myImg, color: myC }, opD = { u: o, skills: opSk, img: opImg, color: opC };
-  g = new Game($('.g-cv', el), { map: p.map, seed: p.seed, p0: host ? opD : meD, p1: host ? meD : opD, meIdx: host ? 1 : 0, authority: host, onEnd: w => finish(w) });
-  if (host) g.onKill = wi => M.presence({ end: { w: wi }, snap: g.snap() }).catch(() => { });
-  const bars = [[opSk, $$('.g-card.opp .gs', el)], [mySk, $$('.g-card.me .gs', el)]];
-  g.onFrame = () => bars.forEach(([sks, els]) => sks.forEach((s, i) => { const e = els[i]; if (!e) return; const pr = 1 - Math.max(0, s.t) / s.cd; e.querySelector('b').style.width = pr * 100 + '%'; e.classList.toggle('ready', pr > .97); }));
-  g.start();
-  if (isDev(u)) $('[data-ban]', el).onclick = () => banModal(o.handle);
-  $('[data-rep]', el).onclick = () => reportUser(o);
-  $('.g-quit', el).onclick = async () => { if (g.over) return; if (await ask('게임을 나가면 패배로 기록돼요. 나갈까요?', '나가기', true)) { ended = true; g.over = true; record(false); reset('main', { tab: 'home' }, 'back'); } };
-  unPeers = M.onPeers(ch => {
-    if (ch.left.some(pp => pp.presence && pp.presence.uid === o.uid)) { if (!g.over && g.started) { toast('상대가 나가서 이겼어요'); g.forceEnd(g.meIdx); } else if (!g.started) { toast('상대가 나갔어요'); reset('main', { tab: 'home' }, 'back'); } return; }
-    if (host) return;
-    const op = LIVE.pres(M, o.uid); if (!op) return;
-    if (op.snap && op.snap !== lastSnap && !g.over) { lastSnap = op.snap; g.applySnap(op.snap); }
-    if (op.end && !g.over) { if (op.snap) g.applySnap(op.snap); g.forceEnd(op.end.w); }
-  }, () => { });
-  // 둘 다 준비되면 동시에 시작
-  M.presence({ ready: 1 }).catch(() => { });
-  const cnt = $('.g-count', el);
-  cnt.innerHTML = '<span class="wait">상대를 기다리는 중</span>';
-  const ok = host ? await LIVE.waitFor(M, o.uid, op => op && op.ready, 15000) : await LIVE.waitFor(M, o.uid, op => op && op.go, 20000);
-  if (!el.isConnected) return;
-  if (!ok) { toast('상대와 연결이 끊겼어요'); return reset('main', { tab: 'home' }, 'back'); }
-  if (host) M.presence({ go: 1 }).catch(() => { });
-  for (const n of ['3', '2', '1', '시작']) {
-    if (!el.isConnected) return; cnt.innerHTML = `<span class="${n.length > 1 ? 'go' : ''}">${n}</span>`; AUD.sfx(n.length > 1 ? 'go' : 'beep'); await new Promise(r => setTimeout(r, n.length > 1 ? 650 : 850));
+  const u = me(), practice = !!p.practice, o = practice ? null : D.users[p.opp];
+  const L = !practice && LIVE.match && LIVE.match.opp === p.opp ? LIVE.match : null;
+  if (!practice && (!L || !o)) { toast('대결이 끝났어요'); return reset('main', { tab: 'home' }, 'back'); }
+  const M = L && L.M, host = practice || L.host; let g = null, snapIv = 0, unPeers = null, lastSnap = null, ended = false;
+  el._leave = () => { clearInterval(snapIv); unPeers && unPeers(); if (g) { g.stop(); g.stopRec(); } if (!practice) LIVE.end(); };
+  el.innerHTML = `<div class="game"><div class="g-top"><button class="icon-btn g-quit">${ic('x')}</button><span class="g-map">${MAPS[p.map].name}${practice ? ' · AI 연습' : ''}</span><span class="g-live">${practice ? '' : '<i class="dot"></i> 실시간'}</span></div>
+    <div class="g-cv-wrap"><canvas class="g-cv"></canvas></div><div class="g-cards"></div></div>`;
+  const white = await loadImg(avatarSrc({}));
+  const [mySk, myImg] = await Promise.all([prepSkills(u), loadImg(avatarSrc(u))]);
+  let players, meIdx;
+  if (practice) { players = [{ u, skills: mySk, img: myImg }, ...aiPlayers(p.ai, white)]; meIdx = 0; }
+  else {
+    const [opSk, opImg] = await Promise.all([prepSkills(o), loadImg(avatarSrc(o))]);
+    const meD = { u, skills: mySk, img: myImg }, opD = { u: o, skills: opSk, img: opImg };
+    players = host ? [opD, meD] : [meD, opD]; meIdx = host ? 1 : 0; // 두 화면이 같은 세계: 0번 = 손님, 1번 = 방장
   }
-  cnt.innerHTML = ''; g.started = true; g.startRec();
-  if (host) snapIv = setInterval(() => { if (!g.over) M.presence({ snap: g.snap() }).catch(() => { }); }, 100);
-  function record(win) { // 내 기록만 저장 (상대는 자기 화면에서 저장)
+  if (!el.isConnected) return;
+  players.forEach((pl, i) => pl.color = PCOL[i]);
+  g = new Game($('.g-cv', el), { map: p.map, seed: p.seed, players, meIdx, authority: host, onEnd: w => finish(w) });
+  if (!practice) {
+    const opB = g.balls[1 - meIdx], meB = g.balls[meIdx];
+    const card = (x, side, b) => `<div class="g-card ${side}" style="--bc:${b.color}">${avImg(x, 'av-c')}<div class="g-nm"><div class="g-name">${nameHTML(x)}</div><small>@${esc(x.handle)}</small>
+      ${side === 'opp' ? `<div class="g-acts">${isDev(u) ? `<button class="mini-ban" data-ban>${ic('ban', 13)} 밴</button>` : ''}<button class="mini-btn" data-rep>${ic('flag', 13)} 신고</button></div>` : ''}</div></div>`;
+    $('.g-cards', el).innerHTML = card(o, 'opp', opB) + card(u, 'me', meB);
+    if (isDev(u)) $('[data-ban]', el).onclick = () => banModal(o.handle);
+    $('[data-rep]', el).onclick = () => reportUser(o);
+    if (host) g.onKill = wi => M.presence({ end: { w: wi }, snap: g.snap() }).catch(() => { });
+    unPeers = M.onPeers(ch => {
+      if (ch.left.some(pp => pp.presence && pp.presence.uid === o.uid)) { if (!g.over && g.started) { toast('상대가 나가서 이겼어요'); g.forceEnd(g.meIdx); } else if (!g.started) { toast('상대가 나갔어요'); reset('main', { tab: 'home' }, 'back'); } return; }
+      if (host) return;
+      const op = LIVE.pres(M, o.uid); if (!op) return;
+      if (op.snap && op.snap !== lastSnap && !g.over) { lastSnap = op.snap; g.applySnap(op.snap); }
+      if (op.end && !g.over) { if (op.snap) g.applySnap(op.snap); g.forceEnd(op.end.w); }
+    }, () => { });
+  }
+  g.start();
+  $('.g-quit', el).onclick = async () => { if (g.over) return; if (await ask(practice ? '연습을 그만할까요?' : '게임을 나가면 패배로 기록돼요. 나갈까요?', '나가기', true)) { ended = true; g.over = true; record(false); reset('main', { tab: 'home' }, 'back'); } };
+  if (!practice) {
+    M.presence({ ready: 1 }).catch(() => { }); g.count = '대기 중'; g.countT = performance.now();
+    const ok = host ? await LIVE.waitFor(M, o.uid, op => op && op.ready, 15000) : await LIVE.waitFor(M, o.uid, op => op && op.go, 20000);
+    if (!el.isConnected) return;
+    if (!ok) { toast('상대와 연결이 끊겼어요'); return reset('main', { tab: 'home' }, 'back'); }
+    if (host) M.presence({ go: 1 }).catch(() => { });
+  }
+  for (const n of ['3', '2', '1', '시작']) { // 경기장 가운데 카운트다운
+    if (!el.isConnected) return; g.count = n; g.countT = performance.now(); AUD.sfx(n.length > 1 ? 'go' : 'beep'); await new Promise(r => setTimeout(r, n.length > 1 ? 600 : 850));
+  }
+  g.count = null; g.started = true; g.startRec();
+  if (!practice && host) snapIv = setInterval(() => { if (!g.over) M.presence({ snap: g.snap() }).catch(() => { }); }, 100);
+  function record(win) { // 실시간 대결만 기록 (연습은 기록 안 해요)
+    if (practice) return;
     u.wins += win ? 1 : 0; u.losses += win ? 0 : 1; if (win) u.coins += 1; save('users');
   }
   async function finish(w) {
     if (ended) return; ended = true; clearInterval(snapIv);
-    const win = w === g.balls[g.meIdx]; record(win); AUD.sfx(win ? 'win' : 'lose');
-    let thumb = ''; try { const t = document.createElement('canvas'); t.width = 180; t.height = 238; t.getContext('2d').drawImage(g.cv, 0, 0, 180, 238); thumb = t.toDataURL('image/jpeg', .6); } catch (e) { }
+    const mine = g.balls[g.meIdx], win = w === mine, place = mine.place || (win ? 1 : g.balls.length); record(win); AUD.sfx(win ? 'win' : 'lose');
+    let thumb = ''; try { const t = document.createElement('canvas'); t.width = 180; t.height = Math.round(180 * GH / GW); t.getContext('2d').drawImage(g.cv, 0, 0, t.width, t.height); thumb = t.toDataURL('image/jpeg', .6); } catch (e) { }
+    const title = practice ? (win ? '1등!' : `${place}등`) : (win ? '승리' : '패배');
     const res = h(`<div class="result ${win ? 'win' : 'lose'}"><div class="res-in">${win ? '<div class="confetti">' + Array.from({ length: 30 }, () => `<i style="--x:${rnd(-160, 160)}px;--d:${rnd(0, .6)}s;--c:${pick(['#ff6b6b', '#ffd43b', '#51cf66', '#4dabf7', '#cc5de8'])}"></i>`).join('') + '</div>' : ''}
-      <div class="res-title">${win ? '승리' : '패배'}</div>${avImg(w.u, 'av-c res-av')}<div class="res-name">${nameHTML(w.u)} 승리</div>
-      ${win ? `<div class="res-coin">${COIN}<b>+1 코인</b></div>` : '<div class="muted">다음엔 이길 수 있어요</div>'}
+      <div class="res-title">${title}</div>${w.ai ? `<img class="av-c res-av" src="${avatarSrc({})}" alt="">` : avImg(w.u, 'av-c res-av')}<div class="res-name">${w.ai ? esc(w.u.nick) : nameHTML(w.u)} 승리</div>
+      ${practice ? `<div class="muted">연습이라 기록은 바뀌지 않아요</div>` : win ? `<div class="res-coin">${COIN}<b>+1 코인</b></div>` : '<div class="muted">다음엔 이길 수 있어요</div>'}
       <div class="res-saved">${ic('film', 16)} ${SET.autoRec ? '플레이 영상이 자동 저장됐어요' : '자동 녹화가 꺼져 있어요'}</div>
       <div class="res-btns"><button class="btn-main" data-a="again">${ic('rotate', 18)} 다시하기</button><button class="btn-sec" data-a="video">${ic('film', 18)} 영상 만들기</button><button class="btn-ghost" data-a="home">${ic('home', 18)} 홈</button></div></div></div>`);
     await new Promise(r => setTimeout(r, 400)); const blob = await g.stopRec(); g.stop();
     let rec = null;
     if (blob && blob.size > 1000) {
       const key = await putBlob(blob, 'r');
-      rec = { id: uid6(), key, uid: u.uid, map: p.map, opp: o.uid, win, t: Date.now(), dur: Math.round(g.t), thumb };
-      D.recs.unshift(rec); const mine = D.recs.filter(r => r.uid === u.uid);
-      if (mine.length > 20) { const old = mine[mine.length - 1]; if (!D.posts.some(x => x.key === old.key)) IDB.del(old.key); D.recs = D.recs.filter(r => r !== old); }
+      rec = { id: uid6(), key, uid: u.uid, map: p.map, opp: practice ? null : o.uid, practice, win, t: Date.now(), dur: Math.round(g.t), thumb };
+      D.recs.unshift(rec); const mineRecs = D.recs.filter(r => r.uid === u.uid);
+      if (mineRecs.length > 20) { const old = mineRecs[mineRecs.length - 1]; if (!D.posts.some(x => x.key === old.key)) IDB.del(old.key); D.recs = D.recs.filter(r => r !== old); }
       save('recs');
     } else if (SET.autoRec) $('.res-saved', res).textContent = '이 브라우저는 영상 녹화를 지원하지 않아요';
-    LIVE.end();
+    if (!practice) LIVE.end();
     if (!el.isConnected) return; el.appendChild(res);
     $$('[data-a]', res).forEach(b => b.onclick = () => {
-      const a = b.dataset.a;
-      if (a === 'again') { NAV.stack = [{ name: 'main', p: { tab: 'home' } }]; show('match', {}, 'zoom'); }
+      const a = b.dataset.a; NAV.stack = [{ name: 'main', p: { tab: 'home' } }];
+      if (a === 'again') { if (practice) show('game', { ...p, seed: 1 + Math.floor(Math.random() * 2147483000) }, 'zoom'); else show('match', {}, 'zoom'); }
       if (a === 'home') reset('main', { tab: 'home' }, 'fade');
-      if (a === 'video') { NAV.stack = [{ name: 'main', p: { tab: 'home' } }]; if (rec) show('upload', { key: rec.key, kind: 'video' }); else show('create'); }
+      if (a === 'video') { if (rec) show('upload', { key: rec.key, kind: 'video' }); else show('create'); }
     });
   }
 });
