@@ -150,7 +150,7 @@ function newUser(o) {
   D.users[u.uid] = u; save('users'); return u;
 }
 const CRIT_PRICE = 100;
-const usable = (u, s) => !!s && (s.owner === u.uid || s.shared) && !(D.users[s.owner] || {}).banned;
+const usable = (u, s) => !!s && s.owner === u.uid; // 내 스킬만 쓸 수 있어요
 const isCrit = (u, s) => !!u.critUnlocked && !!s && u.crit === s.id;
 function loadout(u) { // 일반 스킬 1개 + (산 경우) 크리티컬 스킬 1개
   const out = (u.equipped || []).map(id => D.skills[id]).filter(s => usable(u, s)).slice(0, 1);

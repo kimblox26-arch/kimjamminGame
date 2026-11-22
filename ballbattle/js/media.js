@@ -29,6 +29,7 @@ const AUD = {
     const v = .9 + Math.random() * .2, R = (a, b) => a + Math.random() * (b - a);
     switch (n) {
       case 'click': this.tone('sine', 1500 * v, 800, .03, .04); break; // 버튼: 살짝 톡
+      case 'enter': this.noise(.6, .16, 'bandpass', 250, 3200, 0, 1.1, .25); [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone('sine', f, f, 1.2, .07, .22 + i * .07, .02)); [1568, 2093, 2637].forEach((f, i) => this.tone('triangle', f, f * 1.005, .5, .025, .55 + i * .09, .01)); this.tone('sine', 130.8, 130.8, 1.4, .12, .22, .05); break; // 입장: 휙 + 부드러운 화음
       case 'hit': this.noise(.06, .25, 'bandpass', 2600 * v, 1400, 0, 2.5); this.tone('triangle', 540 * v, 190, .08, .14); break; // 막대 딱
       case 'bump': this.tone('sine', 160 * v, 55, .2, .35); this.noise(.07, .14, 'lowpass', 900, 300); break; // 공끼리 쿵
       case 'thud': this.noise(.11, .22, 'lowpass', 1500 * v, 220); this.tone('sine', 240 * v, 90, .09, .15); break; // 탄환 퍽

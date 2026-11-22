@@ -84,7 +84,12 @@ function onGoogle(cred) {
     go('signup', { google: { sub: pl.sub, email: pl.email, pic: pl.picture } });
   } catch (e) { toast('구글 로그인에 실패했어요'); }
 }
-function enter(u) { setSession(u.uid); LIVE.hello(u); AUD.sfx('win'); toast(`${u.nick}님 환영해요!`); reset('main', { tab: 'home' }, 'portal'); }
+function enter(u) { setSession(u.uid); LIVE.hello(u); AUD.sfx('enter'); reset('main', { tab: 'home', welcome: true }, 'portal'); }
+function welcomeFx(root) { // 로그인하고 메인화면에 들어갈 때
+  const u = me(), cols = ['#FE2C55', '#25F4EE', '#ffd43b', '#51cf66', '#7048e8'];
+  const fx = h(`<div class="wfx"><div class="wfx-c"><div class="wfx-ring"></div><div class="wfx-ring r2"></div><div class="wfx-dots">${Array.from({ length: 18 }, (_, i) => `<i style="--a:${i * 20}deg;--c:${cols[i % 5]};--d:${.15 + (i % 3) * .05}s"></i>`).join('')}</div>${avImg(u, 'wfx-av')}</div><b class="wfx-t">${esc(u.nick)}님 환영해요</b><small class="wfx-s">@${esc(u.handle)}</small></div>`);
+  root.appendChild(fx); setTimeout(() => fx.classList.add('out'), 1500); setTimeout(() => fx.remove(), 2100);
+}
 
 screen('login', el => {
   el.innerHTML = `<div class="auth form">${floatBalls()}<div class="hdr clear"><button class="icon-btn" data-back>${ic('back')}</button><h2>로그인</h2><span></span></div>
@@ -151,10 +156,11 @@ function squareData(src, n = 200) {
 const TABS = [['rank', '랭킹', 'trophy'], ['feed', '영상', 'clapper'], ['create', '', 'plus'], ['home', '홈', 'home'], ['profile', '프로필', 'user']];
 const TAB_R = {};
 screen('main', (el, p) => {
-  el.innerHTML = `<div class="tab-content"></div><nav class="tabbar">${TABS.map(([k, l, i]) => k === 'create' ? `<button class="tb-create" data-t="create"><span>${ic('plus', 26)}</span></button>` : `<button class="tb tb-${k}" data-t="${k}">${ic(i, 24)}<small>${l}</small></button>`).join('')}</nav>`;
+  el.innerHTML = `<div class="tab-content"></div><nav class="tabbar">${TABS.map(([k, l, i]) => k === 'create' ? `<button class="tb-create" data-t="create"><span>${ic('plus', 26)}</span></button>` : `<button class="tb tb-${k}" data-t="${k}">${ic(i, 24)}<small>${l}</small></button>`).join('')}<i class="tb-ind"></i></nav>`;
   $$('.tabbar button', el).forEach(b => b.onclick = () => b.dataset.t === 'create' ? go('create', {}, 'up') : switchTab(el, b.dataset.t));
   el._leave = () => { const pg = $('.page:last-child', el); pg && pg._leave && pg._leave(); };
   switchTab(el, p.tab || 'home', true);
+  if (p.welcome) { delete p.welcome; welcomeFx(el); }
 });
 function switchTab(el, t, first) {
   if (el._tab === t && !first) return;
@@ -165,6 +171,7 @@ function switchTab(el, t, first) {
   if (old) { if (!first) { const r = ni > pi; old.style.animation = `${r ? 'tabOutL' : 'tabOutR'} .35s forwards`; page.style.animation = `${r ? 'tabInR' : 'tabInL'} .35s`; setTimeout(() => old.remove(), 350); } else old.remove(); }
   $$('.tabbar button', el).forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $('.tabbar', el).classList.toggle('light', t === 'profile');
+  requestAnimationFrame(() => { const b = $(`.tabbar [data-t="${t}"]`, el), ind = $('.tb-ind', el); if (b && ind) ind.style.transform = `translateX(${b.offsetLeft + b.offsetWidth / 2 - 14}px)`; });
 }
 
 // 홈
@@ -178,7 +185,7 @@ TAB_R.home = page => {
     <div class="home-body">
       <button class="play-card" id="hm-play"><canvas class="pc-cv"></canvas><span class="pc-txt"><b>플레이</b><small>지금 접속한 사람과 실시간 대결</small></span><span class="pc-go">${ic('play', 22)}</span></button>
       <div class="hm-tiles"><button class="tile" id="hm-sk">${ic('flask', 24)}<b>공 스킬 제작</b><small>${eq.length ? eq.map(s => esc(s.name)).join(' · ') : '장착한 스킬 없음'}</small></button>
-        <button class="tile" id="hm-sh">${ic('users', 24)}<b>다른 사람 스킬 쓰기</b><small>공유된 스킬 ${shared}개</small></button></div>
+        <button class="tile" id="hm-sh">${ic('users', 24)}<b>다른 사람 스킬 보기</b><small>공개된 스킬 ${shared}개</small></button></div>
       ${recs.length ? `<div class="hm-sec"><b>최근 대결</b><button data-more>전체 보기</button></div><div class="hm-recs">${recs.map(r => { const o = D.users[r.opp]; return `<button class="hm-rec" data-rec="${r.id}"><img src="${r.thumb}" alt=""><span class="wl ${r.win ? 'w' : 'l'}">${r.win ? '승' : '패'}</span><small>vs ${esc(o ? o.nick : '?')}</small></button>`; }).join('')}</div>` : ''}
     </div>`;
   mountBanner($('.ph', page), u);

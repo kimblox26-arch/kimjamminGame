@@ -1,7 +1,8 @@
 'use strict';
 // ===== 공 스킬 제작 / 융합 / 업그레이드 / 다른 사람 스킬 =====
 const SK_COLORS = ['#ff6a3d', '#ffd43b', '#7cff6b', '#25F4EE', '#3d8bff', '#b46bff', '#FE2C55', '#111111'];
-const compChips = s => s.spec ? [optName('spawn', s.spec.spawn), s.spec.spawn === 'dash' ? '' : optName('move', s.spec.move), s.spec.effect !== 'none' ? optName('effect', s.spec.effect) : '', `피해 ${s.spec.dmg}${s.spec.spawn !== 'dash' && s.spec.count > 1 ? '×' + s.spec.count : ''}`].filter(Boolean).map(t => `<span class="cchip">${t}</span>`).join('')
+const compChips = s => s.anim ? [`조각 ${s.anim.layers.length}개`, `${s.anim.dur.toFixed(1)}초`, ...[...new Set(s.anim.layers.map(L => L.effect).filter(v => v !== 'none'))].map(v => optName('effect', v)), `피해 ${s.anim.layers.reduce((a, L) => a + L.dmg, 0)}`].map(t => `<span class="cchip">${t}</span>`).join('')
+  : s.spec ? [optName('spawn', s.spec.spawn), s.spec.spawn === 'dash' ? '' : optName('move', s.spec.move), s.spec.effect !== 'none' ? optName('effect', s.spec.effect) : '', `피해 ${s.spec.dmg}${s.spec.spawn !== 'dash' && s.spec.count > 1 ? '×' + s.spec.count : ''}`].filter(Boolean).map(t => `<span class="cchip">${t}</span>`).join('')
   : (s.comps || []).map(c => `<span class="cchip">${ic(COMPS[c][1], 13)}${COMPS[c][0]}</span>`).join('');
 const skIcon = s => `<div class="sk-ic" style="--c:${s.color}">${s.pic ? `<img src="${s.pic}" alt="">` : ic(skIc(s), 26)}${(s.comps || []).length > 1 ? `<b>+${s.comps.length - 1}</b>` : ''}</div>`;
 function skCard(s, acts, extra = '') {
@@ -46,7 +47,7 @@ screen('skills', (el, p) => {
     if (anim) { body.style.animation = 'none'; void body.offsetWidth; body.style.animation = `${nx >= prev ? 'tabInR' : 'tabInL'} .35s`; }
     $('.coin-pill b', el).textContent = coinText(u);
   };
-  $$('.seg button', el).forEach(b => b.onclick = () => setTab(b.dataset.t));
+  $$('.seg button', el).forEach(b => b.onclick = () => b.dataset.t === 'new' ? go('skilledit') : setTab(b.dataset.t));
   el._leave = () => body._leave && body._leave();
   setTab(p.tab, false);
 });
@@ -54,7 +55,7 @@ screen('skills', (el, p) => {
 function skMine(body, u, p, setTab) {
   const mine = Object.values(D.skills).filter(s => s.owner === u.uid).sort((a, b) => b.created - a.created);
   body.innerHTML = `${slotsHTML(u)}
-    <div class="sk-list">${mine.length ? mine.map(s => { const on = (u.equipped || [])[0] === s.id, con = isCrit(u, s); return skCard(s, `<button class="sa ${on ? 'on' : ''}" data-a="eq">${on ? '해제' : '장착'}</button>${u.critUnlocked ? `<button class="sa crit ${con ? 'on' : ''}" data-a="crit">${con ? '크리티컬 해제' : '크리티컬'}</button>` : ''}<button class="sa gold" data-a="up" ${s.lv >= 10 ? 'disabled' : ''}>${ic('up', 14)}${s.lv >= 10 ? 'MAX' : COIN + s.lv}</button><button class="sa ${s.shared ? 'on' : ''}" data-a="share">${ic('share', 14)}${s.shared ? '공유중' : '공유'}</button><button class="sa" data-a="snd">${ic('volume', 14)}</button><button class="sa" data-a="edit">${ic('pencil', 14)}</button><button class="sa del" data-a="del">${ic('x', 14)}</button>`); }).join('') : '<p class="muted center">아직 스킬이 없어요</p>'}</div>
+    <div class="sk-list">${mine.length ? mine.map(s => { const on = (u.equipped || [])[0] === s.id, con = isCrit(u, s); return skCard(s, `<button class="sa ${on ? 'on' : ''}" data-a="eq">${on ? '해제' : '장착'}</button>${u.critUnlocked ? `<button class="sa crit ${con ? 'on' : ''}" data-a="crit">${con ? '크리티컬 해제' : '크리티컬'}</button>` : ''}<button class="sa gold" data-a="up" ${s.lv >= 10 ? 'disabled' : ''}>${ic('up', 14)}${s.lv >= 10 ? 'MAX' : COIN + s.lv}</button><button class="sa ${s.shared ? 'on' : ''}" data-a="share">${ic('eye', 14)}${s.shared ? '공개중' : '공개'}</button><button class="sa" data-a="snd">${ic('volume', 14)}</button><button class="sa" data-a="edit">${ic('pencil', 14)}</button><button class="sa del" data-a="del">${ic('x', 14)}</button>`); }).join('') : '<p class="muted center">아직 스킬이 없어요</p>'}</div>
     <p class="muted sm center">업그레이드: 레벨마다 위력 +15% · 비용 = 현재 레벨 코인 (1승 = 1코인)</p>`;
   body.onclick = async e => {
     const un = e.target.closest('[data-un]'); if (un) { equipToggle(u, un.dataset.un, !!un.dataset.crit); return skMine(body, u, p, setTab); }
@@ -67,9 +68,9 @@ function skMine(body, u, p, setTab) {
       const c = $(`[data-id="${s.id}"]`, body); c && c.classList.add('lvup'); toast(`${s.name} Lv.${s.lv} 달성!`);
       $('.coin-pill b').textContent = coinText(u);
     }
-    if (a === 'share') { s.shared = !s.shared; save('skills'); toast(s.shared ? '스킬을 공유했어요. 다른 사람이 쓸 수 있어요' : '공유를 껐어요'); skMine(body, u, p, setTab); }
+    if (a === 'share') { s.shared = !s.shared; save('skills'); toast(s.shared ? '스킬을 공개했어요. 다른 사람이 볼 수 있어요' : '공개를 껐어요'); skMine(body, u, p, setTab); }
     if (a === 'snd') AUD.skill(s.sound);
-    if (a === 'edit') { p.edit = s.id; setTab('new'); }
+    if (a === 'edit') go('skilledit', { id: s.id });
     if (a === 'del' && await ask(`'${esc(s.name)}' 스킬을 삭제할까요?`, '삭제', true)) { removeSkill(s); skMine(body, u, p, setTab); }
   };
 }
@@ -188,22 +189,16 @@ function skFuse(body, u, p, setTab) {
   render();
 }
 
-// 다른 사람이 공유한 스킬 쓰기
+// 다른 사람이 공개한 스킬 보기 (쓰지는 못해요)
 screen('shared', el => {
   const u = me();
-  const render = () => {
-    const list = Object.values(D.skills).filter(s => s.shared && s.owner !== u.uid && D.users[s.owner] && !D.users[s.owner].banned).sort((a, b) => b.lv - a.lv || b.created - a.created);
-    el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>다른 사람 스킬 쓰기</h2><span></span></div>
-      <div class="scroll pad"><p class="muted sm center">다른 사람이 <b>공유</b>한 스킬만 쓸 수 있어요. 내 스킬은 스킬 제작에서 공유할 수 있어요.</p>
-      ${slotsHTML(u)}
-      <div class="sk-list">${list.length ? list.map(s => { const o = D.users[s.owner], on = (u.equipped || [])[0] === s.id, con = isCrit(u, s); return skCard(s, `<button class="sa" data-a="snd">${ic('volume', 14)} 소리</button><button class="sa ${on ? 'on' : ''}" data-a="eq">${on ? '해제' : '장착해서 쓰기'}</button>${u.critUnlocked ? `<button class="sa crit ${con ? 'on' : ''}" data-a="crit">${con ? '크리티컬 해제' : '크리티컬로 쓰기'}</button>` : ''}`, `<div class="sk-owner">${avImg(o, 'av-xs')}<span>${nameHTML(o)}</span><small class="muted">@${esc(o.handle)}</small></div>`); }).join('') : '<p class="muted center">아직 공유된 스킬이 없어요</p>'}</div></div>`;
-  };
-  el.onclick = async e => {
-    const un = e.target.closest('[data-un]'); if (un) { equipToggle(u, un.dataset.un, !!un.dataset.crit); return render(); }
-    if (e.target.closest('[data-buy]')) { if (await buyCrit(u)) render(); return; }
-    const b = e.target.closest('[data-a]'); if (!b) return; const s = D.skills[b.closest('[data-id]').dataset.id], a = b.dataset.a;
-    if (a === 'snd') AUD.skill(s.sound);
-    if ((a === 'eq' || a === 'crit') && equipToggle(u, s.id, a === 'crit')) { toast((u.equipped || [])[0] === s.id || u.crit === s.id ? `'${s.name}' 장착` : '해제했어요'); render(); }
-  };
-  render();
+  const list = Object.values(D.skills).filter(s => s.shared && s.owner !== u.uid && D.users[s.owner] && !D.users[s.owner].banned).sort((a, b) => b.lv - a.lv || b.created - a.created);
+  el.innerHTML = `<div class="hdr"><button class="icon-btn" data-back>${ic('back')}</button><h2>다른 사람 스킬 보기</h2><span></span></div>
+    <div class="scroll pad"><div class="sk-list">${list.length ? list.map(s => { const o = D.users[s.owner]; return skCard(s, `<button class="sa" data-a="view">${ic('play', 14)} 미리보기</button><button class="sa" data-a="snd">${ic('volume', 14)} 소리</button>`, `<div class="sk-owner">${avImg(o, 'av-xs')}<span>${nameHTML(o)}</span><small class="muted">@${esc(o.handle)}</small></div>`); }).join('') : '<p class="muted center">아직 공개된 스킬이 없어요</p>'}</div></div>`;
+  el.onclick = e => { const b = e.target.closest('[data-a]'); if (!b) return; const s = D.skills[b.closest('[data-id]').dataset.id]; if (b.dataset.a === 'snd') AUD.skill(s.sound); if (b.dataset.a === 'view') viewSkill(s); };
 });
+function viewSkill(s) {
+  const m = modal(`<h3 class="m-title">${esc(s.name)}</h3><canvas class="vs-cv" width="300" height="300"></canvas><div class="cchips">${compChips(s)}</div><button class="btn-ghost w100" data-c>닫기</button>`);
+  const pv = specPreview($('.vs-cv', m), () => ({ ...s, sound: 'none', media: null }));
+  m._onclose = () => pv.stop(); $('[data-c]', m).onclick = () => m.close();
+}

@@ -16,7 +16,7 @@ const COMPS = {
 };
 const COMP_KEYS = Object.keys(COMPS);
 const SKILL_CD = 6; // 모든 스킬 쿨타임 동일
-const skillPower = s => (1 + .15 * (s.lv - 1)) * (s.fused ? 1.1 : 1) * (s.spec ? specScale({ ...SPEC0, ...s.spec }) : 1.4 / ((s.comps || []).length + .4));
+const skillPower = s => (1 + .15 * (s.lv - 1)) * (s.fused ? 1.1 : 1) * (s.anim ? animScale(s.anim) : s.spec ? specScale({ ...SPEC0, ...s.spec }) : 1.4 / ((s.comps || []).length + .4));
 const skillCD = () => SKILL_CD;
 function srand(s) { return () => (s = (s * 16807) % 2147483647) / 2147483647; }
 const GRAY = '#9aa0a6';
@@ -120,7 +120,7 @@ class Game {
   constructor(cv, o) {
     this.cv = cv; this.c = cv.getContext('2d'); this.o = o; this.map = o.map;
     this.dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = GW * this.dpr; cv.height = GH * this.dpr;
-    this.t = 0; this.parts = []; this.projs = []; this.specs = []; this.rings = []; this.beams = []; this.texts = []; this.timers = []; this.marks = []; this.ovs = []; this.bolts = [];
+    this.t = 0; this.parts = []; this.projs = []; this.specs = []; this.anims = []; this.rings = []; this.beams = []; this.texts = []; this.timers = []; this.marks = []; this.ovs = []; this.bolts = [];
     this.shake = 0; this.over = false; this.started = false; this.lastCol = -1;
     this.rng = srand(o.seed || 1 + Math.floor(Math.random() * 2147483000)); this.meIdx = o.meIdx ?? 1; this.authority = o.authority !== false;
     this.balls = [this.mkBall(0, o.p0), this.mkBall(1, o.p1)];
@@ -163,7 +163,7 @@ class Game {
       if (sk.el.tagName === 'VIDEO') { try { sk.el.currentTime = s.media.edits.start || 0; sk.el.playbackRate = s.media.edits.speed || 1; sk.el.play().catch(() => { }); } catch (x) { } }
       this.ovs.push({ b, sk, life: 1.8, ml: 1.8 });
     }
-    if (s.spec) this.castSpec(b, e, sk, pm); else (s.comps || []).forEach((c, i) => this.later(i * .12, () => !this.over && !b.dead && this.comp(c, b, e, pm, col)));
+    if (s.anim) this.castAnim(b, e, sk, pm); else if (s.spec) this.castSpec(b, e, sk, pm); else (s.comps || []).forEach((c, i) => this.later(i * .12, () => !this.over && !b.dead && this.comp(c, b, e, pm, col)));
   }
   comp(c, b, e, pm, col) {
     const ang = Math.atan2(e.y - b.y, e.x - b.x), dist = Math.hypot(e.x - b.x, e.y - b.y);
@@ -264,7 +264,7 @@ class Game {
       if (p.x < -10 || p.x > 410 || p.y < -10 || p.y > 410) p.life = 0;
     }
     this.projs = this.projs.filter(p => p.life > 0);
-    this.updSpecs(dt);
+    this.updSpecs(dt); this.updAnims(dt);
     for (const tm of [...this.timers]) { tm.t -= dt; if (tm.t <= 0) { tm.done = 1; tm.fn(); } }
     this.timers = this.timers.filter(t => !t.done);
     for (const p of this.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .95; p.vy *= .95; p.vy += p.g * dt; p.life -= dt; }
@@ -312,7 +312,7 @@ class Game {
     for (const b of this.balls) if (!b.dead) this.drawBall(b);
     for (const cl of this.clouds) drawCloud(c, cl.x, cl.y, cl.w, cl.h, .9);
     for (const p of this.projs) { c.fillStyle = p.col; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill(); }
-    this.drawSpecs(c);
+    this.drawSpecs(c); this.drawAnims(c);
     for (const bm of this.beams) { const a = bm.life / bm.ml; c.strokeStyle = bm.col; c.globalAlpha = a; c.lineWidth = bm.w * a; c.lineCap = 'round'; c.beginPath(); c.moveTo(bm.x1, bm.y1); c.lineTo(bm.b2.x, bm.b2.y); c.stroke(); c.globalAlpha = 1; }
     for (const bo of this.bolts) { const R = srand(bo.seed | 0 || 1); c.strokeStyle = '#fab005'; c.lineWidth = 3 * bo.life / bo.ml + 1; c.beginPath(); let x = bo.x + rnd(-30, 30), y = -10; c.moveTo(x, y); while (y < bo.y) { y += 25; x += (R() - .5) * 40; c.lineTo(y >= bo.y ? bo.x : x, Math.min(y, bo.y)); } c.stroke(); }
     for (const r of this.rings) { c.globalAlpha = r.life / r.ml * .8; c.strokeStyle = r.col; c.lineWidth = r.w; c.setLineDash([3, 4]); c.beginPath(); c.arc(r.x, r.y, r.r, 0, 7); c.stroke(); } c.setLineDash([]); c.globalAlpha = 1;
@@ -390,6 +390,7 @@ async function prepSkills(u) {
   return Promise.all(loadout(u).map(async s => {
     const sk = { s, crit: isCrit(u, s), cd: skillCD(s), t: skillCD(s) * (.35 + Math.random() * .3) };
     if (s.pic) { sk.sprite = new Image(); sk.sprite.src = s.pic; }
+    if (s.anim) sk.sprites = animSprites(s);
     if (AUD.isFile(s.sound)) sk.buf = await AUD.load(s.sound);
     if (s.media) {
       try {

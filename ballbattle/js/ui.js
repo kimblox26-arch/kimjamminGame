@@ -67,7 +67,12 @@ function refresh() { const c = NAV.cur; if (c) show(c.name, c.p, 'none'); }
 document.addEventListener('click', e => {
   if (e.target.closest('[data-back]')) back();
 });
-document.addEventListener('pointerdown', e => { if (e.target.closest('button')) AUD.sfx('click'); });
+document.addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) AUD.sfx('click');
+  const b = e.target.closest('.btn-main,.btn-sec,.btn-ghost,.btn-play,.btn-start,.btn-danger,.btn-google,.chip,.tile,.play-card,.st-row,.sheet-btn,.sa'); if (!b) return; // 누른 자리에서 퍼지는 물결
+  const r = b.getBoundingClientRect(), d = Math.max(r.width, r.height) * 1.2, s = document.createElement('span');
+  s.className = 'ripple'; s.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`; b.appendChild(s); setTimeout(() => s.remove(), 650);
+});
 
 // 상자 안에서 공 두 개가 튀는 애니메이션 (로딩·메인화면)
 function boxAnim(cv, { fill } = {}) {

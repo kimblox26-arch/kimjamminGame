@@ -16,7 +16,7 @@ function specCost(p) { // 강할수록 커지는 점수. 100을 넘으면 위력
     + ({ slow: 12, poison: 14, stun: 20, vamp: 14 }[p.effect] || 0) + .03 * p.knock + 2 * p.heal + 1.5 * p.shield + (p.speed > 450 ? 6 : 0);
 }
 const specScale = p => Math.min(1, SPEC_BUDGET / Math.max(1, specCost(p)));
-const skIc = s => s.spec ? SPEC_ICON[s.spec.spawn] || 'proj' : (COMPS[(s.comps || [])[0]] || [0, 'sparkle'])[1];
+const skIc = s => s.anim ? 'sparkle' : s.spec ? SPEC_ICON[s.spec.spawn] || 'proj' : (COMPS[(s.comps || [])[0]] || [0, 'sparkle'])[1];
 
 Object.assign(Game.prototype, {
   castSpec(b, e, sk, pm) {
@@ -89,6 +89,7 @@ function specPreview(cv, getS) {
   const build = () => {
     const s = getS(), sk = { s, crit: false, cd: 1.8, t: .5 };
     if (s.pic) { sk.sprite = new Image(); sk.sprite.src = s.pic; }
+    if (s.anim) sk.sprites = animSprites(s);
     g = new Game(document.createElement('canvas'), { map: 'arena', seed: 5, p0: { u: { nick: '과녁' }, skills: [], img: white, color: '#adb5bd' }, p1: { u: { nick: '나' }, skills: [sk], img: white, color: s.color }, meIdx: 1 });
     g.dpr = 1; g.cv.width = GW; g.cv.height = GH; g.started = true; g.balls.forEach(b => { b.hp = b.max = b.lag = 99999; });
   };
