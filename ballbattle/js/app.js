@@ -54,7 +54,19 @@ screen('auth', el => {
   $$('[data-go]', el).forEach(b => b.onclick = () => go(b.dataset.go));
   googleButton($('.g-btn-box', el));
 });
+async function quickLogin() {
+  try {
+    const snap = await NET.db.collection('data/users/' + NET.cid).get();
+    const accts = snap.docs.map(d => ({ uid: d.id, pv: d.data() })).filter(a => D.users[a.uid] && !D.users[a.uid].banned);
+    if (!accts.length) return toast('이 계정으로 만든 게임 아이디가 없어요. 먼저 회원가입을 해주세요');
+    const pickA = a => { Object.assign(D.users[a.uid], a.pv); enter(D.users[a.uid]); };
+    if (accts.length === 1) return pickA(accts[0]);
+    sheet('어떤 아이디로 들어갈까요?', accts.map(a => ({ label: '@' + esc(D.users[a.uid].handle), fn: () => pickA(a) })));
+  } catch (e) { toast('간편 로그인을 할 수 없어요'); }
+}
 function googleButton(box) {
+  // claude.ai 게임 페이지에서는 구글 로그인 스크립트를 불러올 수 없어서, 지금 로그인한 계정으로 바로 들어가요
+  if (NET.ok && NET.cid) { box.innerHTML = `<button class="btn-google">${ic('user', 20)} 지금 계정으로 간편 로그인</button>`; $('button', box).onclick = quickLogin; return; }
   const id = BB_CONFIG.GOOGLE_CLIENT_ID;
   box.innerHTML = `<button class="btn-google">${ic('google', 20)} Google 계정으로 로그인</button>`;
   if (!id) { $('button', box).onclick = () => toast('구글 로그인은 js/config.js 에 GOOGLE_CLIENT_ID 를 넣으면 켜져요'); return; }

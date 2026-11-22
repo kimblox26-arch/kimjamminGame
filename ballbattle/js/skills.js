@@ -1,8 +1,9 @@
 'use strict';
 // ===== 공 스킬 제작 / 융합 / 업그레이드 / 다른 사람 스킬 =====
 const SK_COLORS = ['#ff6a3d', '#ffd43b', '#7cff6b', '#25F4EE', '#3d8bff', '#b46bff', '#FE2C55', '#111111'];
-const compChips = s => s.comps.map(c => `<span class="cchip">${ic(COMPS[c][1], 13)}${COMPS[c][0]}</span>`).join('');
-const skIcon = s => `<div class="sk-ic" style="--c:${s.color}">${s.pic ? `<img src="${s.pic}" alt="">` : ic(COMPS[s.comps[0]][1], 26)}${s.comps.length > 1 ? `<b>+${s.comps.length - 1}</b>` : ''}</div>`;
+const compChips = s => s.spec ? [optName('spawn', s.spec.spawn), s.spec.spawn === 'dash' ? '' : optName('move', s.spec.move), s.spec.effect !== 'none' ? optName('effect', s.spec.effect) : '', `피해 ${s.spec.dmg}${s.spec.spawn !== 'dash' && s.spec.count > 1 ? '×' + s.spec.count : ''}`].filter(Boolean).map(t => `<span class="cchip">${t}</span>`).join('')
+  : (s.comps || []).map(c => `<span class="cchip">${ic(COMPS[c][1], 13)}${COMPS[c][0]}</span>`).join('');
+const skIcon = s => `<div class="sk-ic" style="--c:${s.color}">${s.pic ? `<img src="${s.pic}" alt="">` : ic(skIc(s), 26)}${(s.comps || []).length > 1 ? `<b>+${s.comps.length - 1}</b>` : ''}</div>`;
 function skCard(s, acts, extra = '') {
   return `<div class="sk-card" data-id="${s.id}" style="--c:${s.color}">${extra}<div class="sk-row">${skIcon(s)}<div class="sk-info"><div class="sk-name"><b>${esc(s.name)}</b><span class="lv">Lv.${s.lv}</span>${s.fused ? '<span class="fz">융합</span>' : ''}${s.media ? ic('film', 14) : ''}</div><div class="cchips">${compChips(s)}</div><small>쿨타임 ${skillCD(s)}초 · 위력 ×${skillPower(s).toFixed(2)}</small></div></div><div class="sk-acts">${acts}</div></div>`;
 }
@@ -13,7 +14,7 @@ function equipToggle(u, sid, crit) { // 일반 칸 1개, 크리티컬 칸 1개
 }
 function slotsHTML(u) {
   const n = (u.equipped || []).map(id => D.skills[id]).filter(s => usable(u, s))[0], c = u.critUnlocked && D.skills[u.crit];
-  const one = (s, label, crit) => s ? `<button class="slot on ${crit ? 'crit' : ''}" data-un="${s.id}" data-crit="${crit ? 1 : ''}" style="--c:${s.color}">${ic(COMPS[s.comps[0]][1], 22)}<small>${esc(s.name)}</small><em>${label}</em></button>` : `<div class="slot ${crit ? 'crit' : ''}">${ic('plus', 20)}<small>${label} 빈 칸</small></div>`;
+  const one = (s, label, crit) => s ? `<button class="slot on ${crit ? 'crit' : ''}" data-un="${s.id}" data-crit="${crit ? 1 : ''}" style="--c:${s.color}">${ic(skIc(s), 22)}<small>${esc(s.name)}</small><em>${label}</em></button>` : `<div class="slot ${crit ? 'crit' : ''}">${ic('plus', 20)}<small>${label} 빈 칸</small></div>`;
   return `<div class="slots">${one(n, '스킬', false)}${u.critUnlocked ? one(usable(u, c) ? c : null, '크리티컬', true) : `<button class="slot buy" data-buy>${ic('plus', 20)}<small>크리티컬 스킬 추가</small><span class="price">${COIN}${CRIT_PRICE}</span></button>`}</div>
     <p class="muted sm center">스킬은 1개만 장착돼요. 크리티컬 스킬은 위력이 2배예요</p>`;
 }
@@ -75,63 +76,84 @@ function skMine(body, u, p, setTab) {
 
 function skForm(body, u, p, setTab) {
   const ed = p.edit && D.skills[p.edit];
-  const st = ed ? JSON.parse(JSON.stringify(ed)) : { name: '', color: SK_COLORS[0], comps: [], cd: 6, sound: 'none', media: null, pic: null };
+  const st = ed ? JSON.parse(JSON.stringify(ed)) : { name: '', color: SK_COLORS[0], cd: 6, sound: 'none', media: null, pic: null };
+  const P = st.spec = { ...SPEC0, ...(st.spec || {}) };
+  const chips = k => `<div class="chips" data-ck="${k}">${SPEC_OPT[k].map(([v, n]) => `<button class="chip" data-v="${v}">${n}</button>`).join('')}</div>`;
+  const rng = (k, label, min, max, step, unit = '') => `<label class="ed-rng sp-rng"><span>${label}</span><input type="range" data-sk="${k}" min="${min}" max="${max}" step="${step}" value="${P[k]}"><output data-u="${unit}"></output></label>`;
+  const tg = (k, label) => `<button class="chip" data-tk="${k}">${label}</button>`;
   body.innerHTML = `<div class="sk-form">
+    <div class="sp-prev"><canvas width="300" height="300"></canvas><div class="sp-meter"><span>위력 사용량</span><div class="pow-bar"><i></i></div><b id="sp-cost"></b></div><small class="sp-warn"></small></div>
     <label class="lbl">스킬 이름</label><input class="inp" id="sf-n" maxlength="14" placeholder="예) 초록 폭풍" value="${esc(st.name)}">
     <label class="lbl">색상</label><div class="colors">${SK_COLORS.map(c => `<button class="sw" data-c="${c}" style="--c:${c}"></button>`).join('')}<input type="color" id="sf-c" value="${st.color}"></div>
-    <label class="lbl">효과 조합 <small class="muted">여러 개를 골라 섞을 수 있어요 (최대 4개)</small></label>
-    <div class="comp-grid">${COMP_KEYS.map(k => `<button class="comp" data-k="${k}">${ic(COMPS[k][1], 22)}<b>${COMPS[k][0]}</b><small>${COMPS[k][2]}</small></button>`).join('')}</div>
-    <div class="pow"><span>위력</span><div class="pow-bar"><i></i></div><b id="sf-pw"></b></div>
-    <label class="lbl">${ic('pencil', 16)} 스킬 그림·영상 <small class="muted">발동할 때 공 위에 나와요</small></label>
-    <div class="mbox"></div>
-    <div class="chips"><button class="chip on-key" id="sf-draw">${ic('pencil', 14)} 그림 그리기</button><button class="chip" id="sf-mp">${ic('upload', 14)} 갤러리에서 선택</button><button class="chip" id="sf-me">${ic('wand', 14)} 편집·배경제거</button><button class="chip" id="sf-md">${ic('x', 14)} 제거</button></div>
-    <label class="lbl">${ic('music', 16)} 스킬 소리 <small class="muted">영상 소리를 잘라서 만들어요</small></label>
-    <div class="snd-box"><span class="snd-st"></span><div class="chips"><button class="chip on-key" id="sf-sm">${ic('film', 14)} 영상에서 소리 만들기</button><button class="chip" id="sf-sp">${ic('play', 14)} 듣기</button><button class="chip" id="sf-sd">${ic('x', 14)} 없애기</button></div></div>
+    <div class="sp-sec"><h4>${ic('sparkle', 16)} 스타일</h4>
+      <label class="lbl">모양</label>${chips('shape')}
+      <div class="chips"><button class="chip on-key" id="sf-draw">${ic('pencil', 14)} 그림 그리기</button></div>
+      ${rng('size', '크기', 6, 40, 1)}
+      <div class="chips">${tg('trail', '꼬리 효과')}${tg('glow', '빛나기')}${tg('spin', '빙글빙글')}</div></div>
+    <div class="sp-sec"><h4>${ic('gauge', 16)} 작동 원리</h4>
+      <label class="lbl">어디서 나와요?</label>${chips('spawn')}
+      <label class="lbl">어떻게 움직여요?</label>${chips('move')}
+      ${rng('count', '개수', 1, 8, 1, '개')}${rng('spread', '퍼짐', 0, 360, 5, '°')}${rng('speed', '속도', 80, 600, 10)}${rng('life', '지속', .3, 5, .1, '초')}</div>
+    <div class="sp-sec"><h4>${ic('burst', 16)} 맞으면</h4>
+      ${rng('dmg', '피해', 1, 30, 1)}${rng('knock', '밀어내기', 0, 600, 10)}${rng('explode', '폭발 범위', 0, 120, 5)}
+      <label class="lbl">추가 효과</label>${chips('effect')}<div class="chips">${tg('pierce', '관통 (여러 번 맞힘)')}</div></div>
+    <div class="sp-sec"><h4>${ic('heal', 16)} 쓸 때 내 공</h4>${rng('heal', '회복', 0, 30, 1)}${rng('shield', '방어막', 0, 40, 1)}</div>
+    <div class="sp-sec"><h4>${ic('film', 16)} 발동할 때 나오는 영상·사진 <small class="muted">선택</small></h4><div class="mbox"></div>
+      <div class="chips"><button class="chip" id="sf-mp">${ic('upload', 14)} 갤러리에서 선택</button><button class="chip" id="sf-me">${ic('wand', 14)} 편집·배경제거</button><button class="chip" id="sf-md">${ic('x', 14)} 제거</button></div></div>
+    <div class="sp-sec"><h4>${ic('music', 16)} 스킬 소리 <small class="muted">영상 소리를 잘라서 만들어요</small></h4>
+      <div class="snd-box"><span class="snd-st"></span><div class="chips"><button class="chip on-key" id="sf-sm">${ic('film', 14)} 영상에서 소리 만들기</button><button class="chip" id="sf-sp">${ic('play', 14)} 듣기</button><button class="chip" id="sf-sd">${ic('x', 14)} 없애기</button></div></div></div>
     <button class="btn-play w100" id="sf-save">${ic('check', 20)} ${ed ? '수정 완료' : '스킬 만들기'}</button></div>`;
-  let player = null;
-  body._leave = () => player && player.destroy();
-  const sync = () => {
+  let player = null, rb = 0;
+  const prev = specPreview($('.sp-prev canvas', body), () => ({ ...st, sound: 'none', media: null, lv: ed ? ed.lv : 1, fused: ed ? ed.fused : false, spec: { ...P } }));
+  body._leave = () => { player && player.destroy(); prev.stop(); };
+  const sync = (rebuild = true) => {
     $$('.sw', body).forEach(b => b.classList.toggle('on', b.dataset.c === st.color));
-    $$('.comp', body).forEach(b => b.classList.toggle('on', st.comps.includes(b.dataset.k)));
+    $$('[data-ck]', body).forEach(g => $$('.chip', g).forEach(b => b.classList.toggle('on', P[g.dataset.ck] === b.dataset.v)));
+    $$('[data-tk]', body).forEach(b => b.classList.toggle('on', !!P[b.dataset.tk]));
+    $$('[data-sk]', body).forEach(i => { const o = i.nextElementSibling; o.textContent = (+P[i.dataset.sk]).toFixed(+i.step < 1 ? 1 : 0) + o.dataset.u; });
+    const cost = specCost(P), over = cost > SPEC_BUDGET, bar = $('.sp-meter .pow-bar i', body);
+    bar.style.width = Math.min(100, cost / SPEC_BUDGET * 100) + '%'; bar.style.background = over ? '#e03131' : ''; $('#sp-cost', body).textContent = `${Math.round(cost)} / ${SPEC_BUDGET}`;
+    $('.sp-warn', body).textContent = over ? `너무 강해서 위력이 ${Math.round(specScale(P) * 100)}%로 줄어요` : '';
     $('.snd-st', body).textContent = st.sound && st.sound.startsWith('data:') ? `영상 소리 ${st.sndLen ? st.sndLen + '초' : ''}` : st.sound && st.sound !== 'none' ? '예전 소리' : '소리 없음';
-    const tmp = { ...st, lv: ed ? ed.lv : 1, fused: ed ? ed.fused : false, comps: st.comps.length ? st.comps : ['proj'] };
-    const pw = st.comps.length ? skillPower(tmp) * Math.min(st.comps.length, 1 + (st.comps.length - 1) * .45) : 0;
-    $('#sf-pw', body).textContent = '×' + (st.comps.length ? skillPower(tmp).toFixed(2) + ' (각 효과)' : '-'); $('.pow-bar i', body).style.width = Math.min(100, pw * 40) + '%';
+    if (rebuild) { clearTimeout(rb); rb = setTimeout(() => prev.rebuild(), 150); }
   };
   const mediaBox = async () => {
     player && player.destroy(); player = null; const box = $('.mbox', body);
-    if (!st.media) { box.innerHTML = `<div class="mbox-empty">${ic('pencil', 30)}<small>그림을 그리거나 영상·사진을 넣어보세요</small></div>`; return; }
+    if (!st.media) { box.innerHTML = `<div class="mbox-empty">${ic('image', 28)}<small>없음</small></div>`; return; }
     box.innerHTML = ''; const url = await mediaSrc(st.media); if (!url) return;
     player = makePlayer(box, url, st.media.kind, st.media.edits, { fit: 'contain', muted: true }); player.play();
+  };
+  body.oninput = e => { const k = e.target.dataset.sk; if (k) { P[k] = +e.target.value; sync(); } };
+  body.onclick = e => {
+    const c = e.target.closest('[data-ck] .chip'); if (c) { const k = c.parentElement.dataset.ck; if (k === 'shape' && c.dataset.v === 'drawing' && !st.pic) { toast('먼저 그림을 그려주세요'); return $('#sf-draw', body).click(); } P[k] = c.dataset.v; return sync(); }
+    const t = e.target.closest('[data-tk]'); if (t) { P[t.dataset.tk] = !P[t.dataset.tk]; return sync(); }
   };
   $('#sf-n', body).oninput = e => st.name = e.target.value;
   $('#sf-c', body).oninput = e => { st.color = e.target.value; sync(); };
   $$('.sw', body).forEach(b => b.onclick = () => { st.color = b.dataset.c; $('#sf-c', body).value = st.color; sync(); });
-  $$('.comp', body).forEach(b => b.onclick = () => { const k = b.dataset.k, i = st.comps.indexOf(k); if (i >= 0) st.comps.splice(i, 1); else if (st.comps.length >= 4) toast('효과는 최대 4개까지 섞을 수 있어요'); else { st.comps.push(k); b.classList.add('pop'); setTimeout(() => b.classList.remove('pop'), 300); } sync(); });
-  $('#sf-sm', body).onclick = () => openSoundMaker((url, len) => { st.sound = url; st.sndLen = len; AUD.bufs[url] = null; AUD.skill(url); sync(); });
-  $('#sf-sp', body).onclick = () => { if (!st.sound || st.sound === 'none') return toast('먼저 소리를 만들어주세요'); AUD.skill(st.sound); };
-  $('#sf-sd', body).onclick = () => { st.sound = 'none'; st.sndLen = 0; sync(); };
   $('#sf-draw', body).onclick = async () => {
-    const base = st.media && st.media.drawn ? await mediaSrc(st.media) : null;
-    openDraw(base, async (blob, pic) => {
-      const key = await putBlob(blob, 'm'); st.media = { key, kind: 'image', edits: edits0(), drawn: true }; st.pic = pic; mediaBox();
-      const asset = await shareBlob(key); if (asset && st.media && st.media.key === key) st.media.asset = asset;
-    });
+    const base = st.drawKey ? await blobURL(st.drawKey) : st.pic;
+    openDraw(base, async (blob, pic) => { st.pic = pic; P.shape = 'drawing'; sync(); st.drawKey = await putBlob(blob, 'd'); });
   };
+  $('#sf-sm', body).onclick = () => openSoundMaker((url, len) => { st.sound = url; st.sndLen = len; AUD.bufs[url] = null; AUD.skill(url); sync(false); });
+  $('#sf-sp', body).onclick = () => { if (!st.sound || st.sound === 'none') return toast('먼저 소리를 만들어주세요'); AUD.skill(st.sound); };
+  $('#sf-sd', body).onclick = () => { st.sound = 'none'; st.sndLen = 0; sync(false); };
   $('#sf-mp', body).onclick = async () => {
     const f = await pickFile('image/*,video/*'); if (!f) return; if (f.size > 40e6) return toast('40MB 이하 파일만 넣을 수 있어요');
     const kind = f.type.startsWith('video') ? 'video' : 'image', key = await putBlob(f, 'm'), url = await blobURL(key);
-    openEditor(url, kind, { key: { mode: 'ai', c: '#00ff00', tol: 90, soft: 50 } }, async e => { st.media = { key, kind, edits: e }; st.pic = null; mediaBox(); const asset = await shareBlob(key); if (asset && st.media && st.media.key === key) st.media.asset = asset; }, { ratio: 1 });
+    openEditor(url, kind, { key: { mode: 'ai', c: '#00ff00', tol: 90, soft: 50 } }, async e => { st.media = { key, kind, edits: e }; mediaBox(); const asset = await shareBlob(key); if (asset && st.media && st.media.key === key) st.media.asset = asset; }, { ratio: 1 });
   };
   $('#sf-me', body).onclick = async () => { if (!st.media) return toast('먼저 영상이나 사진을 넣어주세요'); const url = await mediaSrc(st.media); openEditor(url, st.media.kind, st.media.edits, e => { st.media.edits = e; mediaBox(); }, { ratio: 1 }); };
-  $('#sf-md', body).onclick = () => { st.media = null; st.pic = null; mediaBox(); };
+  $('#sf-md', body).onclick = () => { st.media = null; mediaBox(); };
   $('#sf-save', body).onclick = () => {
-    const name = st.name.trim(); if (!name) return toast('스킬 이름을 적어주세요'); if (!st.comps.length) return toast('효과를 1개 이상 골라주세요');
-    if (ed) { Object.assign(ed, { name, color: st.color, comps: st.comps, cd: st.cd, sound: st.sound, sndLen: st.sndLen || 0, media: st.media, pic: st.pic || null }); save('skills'); toast('스킬을 수정했어요'); }
-    else { const s = mkSkill(u.uid, name, st.color, st.comps, st.cd, { sound: st.sound, sndLen: st.sndLen || 0, media: st.media, pic: st.pic || null }); if (!(u.equipped || []).some(id => usable(u, D.skills[id]))) equipToggle(u, s.id, false); save('skills'); toast(`'${name}' 스킬 완성!`); AUD.sfx('ding'); }
+    const name = st.name.trim(); if (!name) return toast('스킬 이름을 적어주세요');
+    if (P.shape === 'drawing' && !st.pic) P.shape = 'circle';
+    const data = { name, color: st.color, comps: [], cd: SKILL_CD, spec: { ...P }, sound: st.sound, sndLen: st.sndLen || 0, media: st.media, pic: st.pic || null, drawKey: st.drawKey || null };
+    if (ed) { Object.assign(ed, data); save('skills'); toast('스킬을 수정했어요'); }
+    else { const sk = mkSkill(u.uid, name, st.color, [], SKILL_CD, data); if (!(u.equipped || []).some(id => usable(u, D.skills[id]))) equipToggle(u, sk.id, false); save('skills'); toast(`'${name}' 스킬 완성!`); AUD.sfx('ding'); }
     setTab('mine');
   };
-  sync(); mediaBox();
+  sync(false); mediaBox();
 }
 
 function skFuse(body, u, p, setTab) {
@@ -146,13 +168,15 @@ function skFuse(body, u, p, setTab) {
     $$('.sk-list .sk-card', body).forEach(c => c.classList.toggle('sel', sel.some(s => s.id === c.dataset.id)));
     const r = $('.fuse-res', body);
     if (sel.length < 2) { r.innerHTML = ''; return; }
-    const [a, b] = sel, comps = [...new Set([...a.comps, ...b.comps])].slice(0, 5), cd = Math.round(((a.cd + b.cd) / 2 + 1) * 2) / 2;
-    const tmp = { name: a.name.slice(0, 7) + b.name.slice(0, 7), color: a.color, comps, cd, lv: 1, fused: true, sound: a.sound, media: a.media || b.media };
+    const [a, b] = sel, A = a.spec, B = b.spec;
+    const spec = A || B ? { ...SPEC0, ...(A || B), ...(A && B ? { effect: B.effect !== 'none' ? B.effect : A.effect, explode: Math.max(A.explode, B.explode), heal: Math.max(A.heal, B.heal), shield: Math.max(A.shield, B.shield), pierce: A.pierce || B.pierce, count: Math.max(A.count, B.count) } : {}) } : null;
+    const comps = spec ? [] : [...new Set([...(a.comps || []), ...(b.comps || [])])].slice(0, 5), cd = SKILL_CD;
+    const tmp = { name: a.name.slice(0, 7) + b.name.slice(0, 7), color: a.color, comps, cd, spec, lv: 1, fused: true, sound: a.sound, media: a.media || b.media, pic: a.pic || b.pic || null };
     r.innerHTML = `<div class="fuse-prev">${skCard(tmp, '')}<input class="inp" id="fz-n" maxlength="14" value="${esc(tmp.name)}"><button class="btn-play w100" id="fz-go">${ic('flask', 20)} 융합하기</button></div>`;
     $('#fz-go', body).onclick = () => {
       tmp.name = $('#fz-n', body).value.trim() || tmp.name;
       $('.fuse-slots', body).classList.add('merging'); AUD.sfx('boom');
-      setTimeout(() => { const s = mkSkill(u.uid, tmp.name, tmp.color, tmp.comps, tmp.cd, { fused: true, sound: tmp.sound, media: tmp.media ? JSON.parse(JSON.stringify(tmp.media)) : null }); save('skills'); AUD.sfx('ding'); toast(`융합 성공! '${s.name}'`); setTab('mine'); }, 900);
+      setTimeout(() => { const s = mkSkill(u.uid, tmp.name, tmp.color, tmp.comps, tmp.cd, { fused: true, spec: tmp.spec, pic: tmp.pic, sound: tmp.sound, media: tmp.media ? JSON.parse(JSON.stringify(tmp.media)) : null }); save('skills'); AUD.sfx('ding'); toast(`융합 성공! '${s.name}'`); setTab('mine'); }, 900);
     };
   };
   body.onclick = e => {

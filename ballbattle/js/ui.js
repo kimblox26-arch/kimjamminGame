@@ -27,7 +27,12 @@ function ask(msg, okLabel = '확인', danger) {
   });
 }
 function pickFile(accept) {
-  return new Promise(res => { const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.onchange = () => res(i.files[0] || null); i.click(); });
+  return new Promise(res => {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = accept;
+    i.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(i); i.onchange = () => { res(i.files[0] || null); i.remove(); }; i.click();
+    setTimeout(() => { if (i.isConnected && !i.files.length) i.remove(); }, 120000);
+  });
 }
 function loadScript(src) {
   return new Promise((res, rej) => { if ($(`script[src="${src}"]`)) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });

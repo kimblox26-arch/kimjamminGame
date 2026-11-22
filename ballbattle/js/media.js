@@ -15,12 +15,12 @@ const AUD = {
   o() { const c = this.init(); if (c && c.state === 'suspended') c.resume(); return c; },
   env(g, t, att, dur, vol) { g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + att); g.gain.exponentialRampToValueAtTime(.0001, t + att + dur); },
   tone(type, f0, f1, dur, vol = .2, delay = 0, att = .004) {
-    const c = this.o(); if (!c) return; const t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
+    if (this.quiet) return; const c = this.o(); if (!c) return; const t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
     o.type = type; o.frequency.setValueAtTime(f0, t); if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
     this.env(g, t, att, dur, vol); o.connect(g); g.connect(this.master); o.start(t); o.stop(t + att + dur + .05);
   },
   noise(dur, vol = .2, type = 'lowpass', f0 = 2000, f1 = f0, delay = 0, q = 1, att = .003) {
-    const c = this.o(); if (!c) return; const t = c.currentTime + delay, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    if (this.quiet) return; const c = this.o(); if (!c) return; const t = c.currentTime + delay, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
     s.buffer = this.nb; f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
     this.env(g, t, att, dur, vol); s.connect(f); f.connect(g); g.connect(this.master); s.start(t, Math.random() * 1.5); s.stop(t + att + dur + .05);
   },

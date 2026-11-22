@@ -54,7 +54,7 @@ function openDraw(baseSrc, onDone) {
   $('.ed-ok', m).onclick = () => {
     const d = x.getImageData(0, 0, 512, 512).data; let any = false; for (let i = 3; i < d.length; i += 16) if (d[i]) { any = true; break; }
     if (!any) return toast('그림을 그려주세요');
-    const t = document.createElement('canvas'); t.width = t.height = 96; t.getContext('2d').drawImage(cv, 0, 0, 96, 96);
+    const t = document.createElement('canvas'); t.width = t.height = 128; t.getContext('2d').drawImage(cv, 0, 0, 128, 128);
     cv.toBlob(b => { close(); onDone(b, t.toDataURL('image/png')); }, 'image/png');
   };
   ui();

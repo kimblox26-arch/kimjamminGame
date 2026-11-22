@@ -16,7 +16,7 @@ const COMPS = {
 };
 const COMP_KEYS = Object.keys(COMPS);
 const SKILL_CD = 6; // 모든 스킬 쿨타임 동일
-const skillPower = s => (1 + .15 * (s.lv - 1)) * (s.fused ? 1.1 : 1) * (1.4 / (s.comps.length + .4));
+const skillPower = s => (1 + .15 * (s.lv - 1)) * (s.fused ? 1.1 : 1) * (s.spec ? specScale({ ...SPEC0, ...s.spec }) : 1.4 / ((s.comps || []).length + .4));
 const skillCD = () => SKILL_CD;
 function srand(s) { return () => (s = (s * 16807) % 2147483647) / 2147483647; }
 const GRAY = '#9aa0a6';
@@ -115,12 +115,12 @@ function mapPreview(cv, mk) {
 
 // 캔버스 배치: 위 문구 / 가운데 박스(400x400) / 아래 이름·체력·쿨타임 (녹화 영상에도 그대로 나옴)
 const GW = 420, GH = 556, BX = 10, BY = 44;
-const SNAP_K = ['x', 'y', 'vx', 'vy', 'hp', 'shield', 'shieldT', 'slowT', 'stuckT', 'immT', 'poisonT', 'poisonD', 'growT', 'growDmg', 'dashT', 'dashDmg', 'wa', 'wd', 'wcd'];
+const SNAP_K = ['x', 'y', 'vx', 'vy', 'hp', 'shield', 'shieldT', 'slowT', 'stuckT', 'immT', 'poisonT', 'poisonD', 'growT', 'growDmg', 'dashT', 'dashDmg', 'wa', 'wd', 'wcd', 'stunT'];
 class Game {
   constructor(cv, o) {
     this.cv = cv; this.c = cv.getContext('2d'); this.o = o; this.map = o.map;
     this.dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = GW * this.dpr; cv.height = GH * this.dpr;
-    this.t = 0; this.parts = []; this.projs = []; this.rings = []; this.beams = []; this.texts = []; this.timers = []; this.marks = []; this.ovs = []; this.bolts = [];
+    this.t = 0; this.parts = []; this.projs = []; this.specs = []; this.rings = []; this.beams = []; this.texts = []; this.timers = []; this.marks = []; this.ovs = []; this.bolts = [];
     this.shake = 0; this.over = false; this.started = false; this.lastCol = -1;
     this.rng = srand(o.seed || 1 + Math.floor(Math.random() * 2147483000)); this.meIdx = o.meIdx ?? 1; this.authority = o.authority !== false;
     this.balls = [this.mkBall(0, o.p0), this.mkBall(1, o.p1)];
@@ -163,7 +163,7 @@ class Game {
       if (sk.el.tagName === 'VIDEO') { try { sk.el.currentTime = s.media.edits.start || 0; sk.el.playbackRate = s.media.edits.speed || 1; sk.el.play().catch(() => { }); } catch (x) { } }
       this.ovs.push({ b, sk, life: 1.8, ml: 1.8 });
     }
-    s.comps.forEach((c, i) => this.later(i * .12, () => !this.over && !b.dead && this.comp(c, b, e, pm, col)));
+    if (s.spec) this.castSpec(b, e, sk, pm); else (s.comps || []).forEach((c, i) => this.later(i * .12, () => !this.over && !b.dead && this.comp(c, b, e, pm, col)));
   }
   comp(c, b, e, pm, col) {
     const ang = Math.atan2(e.y - b.y, e.x - b.x), dist = Math.hypot(e.x - b.x, e.y - b.y);
@@ -186,7 +186,8 @@ class Game {
   }
   updBall(b, dt, e) {
     b.flash = Math.max(0, b.flash - dt); b.wcd -= dt;
-    for (const k of ['shieldT', 'slowT', 'immT', 'poisonT', 'growT', 'dashT']) b[k] = Math.max(0, b[k] - dt);
+    for (const k of ['shieldT', 'slowT', 'immT', 'poisonT', 'growT', 'dashT', 'stunT']) b[k] = Math.max(0, (b[k] || 0) - dt);
+    if (b.dashT <= 0) b.dashSpec = null;
     if (b.shieldT <= 0) b.shield = 0;
     b.sc += ((b.growT > 0 ? 1.5 : 1) - b.sc) * Math.min(1, dt * 8);
     b.sqx += (1 - b.sqx) * Math.min(1, dt * 10); b.sqy += (1 - b.sqy) * Math.min(1, dt * 10);
@@ -207,7 +208,7 @@ class Game {
         if (v) { v.st = 1; v.hold = b; b.stuckT = 1.6; this.text(b.x, b.y - r - 8, '걸림', '#2f9e44'); AUD.sfx('vine'); }
       }
     }
-    if (b.stuckT <= 0 && this.started) {
+    if (b.stuckT <= 0 && !(b.stunT > 0) && this.started) {
       const sp = 160 * (b.slowT > 0 ? .5 : 1) * (b.cloud ? .4 : 1) * (b.dashT > 0 ? 2.8 : 1);
       if (b.dashT > 0) { const a = Math.atan2(e.y - b.y, e.x - b.x), k = Math.min(1, dt * 10); b.vx += (Math.cos(a) * sp - b.vx) * k; b.vy += (Math.sin(a) * sp - b.vy) * k; this.part(b.x, b.y, b.color, 10, .4, 3); }
       const m = Math.hypot(b.vx, b.vy) || 1, nm = m + (sp - m) * Math.min(1, dt * 4); b.vx = b.vx / m * nm; b.vy = b.vy / m * nm;
@@ -235,6 +236,7 @@ class Game {
     if (this.t - this.lastCol > .3 && this.started) {
       this.lastCol = this.t; const cx = A.x + nx * A.r, cy = A.y + ny * A.r;
       const dA = 4 + (A.growT > 0 ? A.growDmg : 0) + (A.dashT > 0 ? A.dashDmg : 0), dB = 4 + (B.growT > 0 ? B.growDmg : 0) + (B.dashT > 0 ? B.dashDmg : 0);
+      for (const [X, Y] of [[A, B], [B, A]]) if (X.dashSpec && X.dashT > 0) { const ds = X.dashSpec; X.dashSpec = null; this.specHit({ ...ds, b: X, tg: Y }, Y, cx, cy); }
       if (A.dashT > 0) A.dashT = 0; if (B.dashT > 0) B.dashT = 0;
       this.hit(B, dA, A.color, 'bump'); this.hit(A, dB, B.color, null); this.burst(cx, cy, '#ced4da', 10, 200); this.ring(cx, cy, 30, '#ced4da', .25, 2);
       this.squash(A, Math.abs(nx) > Math.abs(ny) ? 1 : 0); this.squash(B, Math.abs(nx) > Math.abs(ny) ? 1 : 0);
@@ -262,6 +264,7 @@ class Game {
       if (p.x < -10 || p.x > 410 || p.y < -10 || p.y > 410) p.life = 0;
     }
     this.projs = this.projs.filter(p => p.life > 0);
+    this.updSpecs(dt);
     for (const tm of [...this.timers]) { tm.t -= dt; if (tm.t <= 0) { tm.done = 1; tm.fn(); } }
     this.timers = this.timers.filter(t => !t.done);
     for (const p of this.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .95; p.vy *= .95; p.vy += p.g * dt; p.life -= dt; }
@@ -309,6 +312,7 @@ class Game {
     for (const b of this.balls) if (!b.dead) this.drawBall(b);
     for (const cl of this.clouds) drawCloud(c, cl.x, cl.y, cl.w, cl.h, .9);
     for (const p of this.projs) { c.fillStyle = p.col; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill(); }
+    this.drawSpecs(c);
     for (const bm of this.beams) { const a = bm.life / bm.ml; c.strokeStyle = bm.col; c.globalAlpha = a; c.lineWidth = bm.w * a; c.lineCap = 'round'; c.beginPath(); c.moveTo(bm.x1, bm.y1); c.lineTo(bm.b2.x, bm.b2.y); c.stroke(); c.globalAlpha = 1; }
     for (const bo of this.bolts) { const R = srand(bo.seed | 0 || 1); c.strokeStyle = '#fab005'; c.lineWidth = 3 * bo.life / bo.ml + 1; c.beginPath(); let x = bo.x + rnd(-30, 30), y = -10; c.moveTo(x, y); while (y < bo.y) { y += 25; x += (R() - .5) * 40; c.lineTo(y >= bo.y ? bo.x : x, Math.min(y, bo.y)); } c.stroke(); }
     for (const r of this.rings) { c.globalAlpha = r.life / r.ml * .8; c.strokeStyle = r.col; c.lineWidth = r.w; c.setLineDash([3, 4]); c.beginPath(); c.arc(r.x, r.y, r.r, 0, 7); c.stroke(); } c.setLineDash([]); c.globalAlpha = 1;
@@ -355,6 +359,7 @@ class Game {
     if (b.shield > 0) { c.strokeStyle = '#74c0fc'; c.lineWidth = 2; c.fillStyle = 'rgba(116,192,252,.12)'; c.beginPath(); c.arc(0, 0, r + 6, 0, 7); c.fill(); c.stroke(); }
     if (b.growT > 0) { c.strokeStyle = '#fab005'; c.lineWidth = 2; c.setLineDash([4, 4]); c.beginPath(); c.arc(0, 0, r + 3, this.t * 3, this.t * 3 + 7); c.stroke(); c.setLineDash([]); }
     c.restore();
+    if (b.stunT > 0) { c.fillStyle = '#fab005'; for (let i = 0; i < 3; i++) { const a = this.t * 6 + i * 2.1; c.beginPath(); c.arc(b.x + Math.cos(a) * r * .8, b.y - r - 6 + Math.sin(a) * 4, 3.5, 0, 7); c.fill(); } }
     if (b.stuckT > 0) { c.strokeStyle = '#2f9e44'; c.lineWidth = 3.5; for (let i = 0; i < 3; i++) { c.beginPath(); c.ellipse(b.x, b.y, r + 2, r * .35, i * 1.05 + this.t, 0, 7); c.stroke(); } }
   }
   start() { // 고정 간격(1/60초)으로 계산해서 두 사람 화면이 똑같이 움직여요
@@ -384,6 +389,7 @@ class Game {
 async function prepSkills(u) {
   return Promise.all(loadout(u).map(async s => {
     const sk = { s, crit: isCrit(u, s), cd: skillCD(s), t: skillCD(s) * (.35 + Math.random() * .3) };
+    if (s.pic) { sk.sprite = new Image(); sk.sprite.src = s.pic; }
     if (AUD.isFile(s.sound)) sk.buf = await AUD.load(s.sound);
     if (s.media) {
       try {
