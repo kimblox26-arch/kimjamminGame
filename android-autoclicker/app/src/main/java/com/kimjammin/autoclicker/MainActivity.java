@@ -88,7 +88,7 @@ public class MainActivity extends Activity {
         status.setBackground(Ui.rounded(this, 0x33000000, 20, 0));
         root.addView(status, wrap(28));
 
-        root.addView(Ui.text(this, "마우스 최대 5개 · 볼륨 ↓ 비상정지", 12, 0x99FFFFFF, false), wrap(12));
+        root.addView(Ui.text(this, "마우스를 누르면 시작/정지 · 볼륨 ↓ 비상정지", 12, 0x99FFFFFF, false), wrap(12));
 
         setContentView(root);
     }

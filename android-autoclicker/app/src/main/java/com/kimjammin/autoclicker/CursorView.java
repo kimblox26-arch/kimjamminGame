@@ -13,9 +13,6 @@ public class CursorView extends View {
     static final String[] NAMES = {"기본 화살표", "치즈", "삼각자", "피라미드", "삼각형", "피자",
             "수박", "삼각김밥", "경고 표지판", "산", "삼각 깃발", "콘"};
     static final int DEFAULT = 11;
-    /** 스타일별 클릭 지점 (0~1 비율). 화살표는 끝, 나머지는 빨간 점 위치 */
-    private static final float[][] HOT = {{.03f, .04f}, {.67f, .63f}, {.33f, .67f}, {.5f, .67f}, {.5f, .67f},
-            {.5f, .33f}, {.5f, .37f}, {.5f, .62f}, {.5f, .62f}, {.5f, .65f}, {.3f, .4f}, {.04f, .05f}};
     private int style;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -34,11 +31,6 @@ public class CursorView extends View {
 
     private float pad() { return 2 * getResources().getDisplayMetrics().density; }
     private float side() { return Math.min(getWidth(), getHeight()) - 2 * pad(); }
-
-    float[] hot() {
-        float[] h = HOT[Math.max(0, Math.min(style, HOT.length - 1))];
-        return new float[]{pad() + h[0] * side(), pad() + h[1] * side()};
-    }
 
     private void color(int f, int l) { fill.setColor(f); line.setColor(l); }
 
@@ -63,9 +55,20 @@ public class CursorView extends View {
         float s = side();
         float w = Math.max(1.5f, s / 24f);
         cv.translate(pad(), pad());
-        line.setStrokeWidth(w);
         fill.setPathEffect(null);
         line.setPathEffect(null);
+        if (!(style == 0 || style == 2 || style == 11)) {
+            // 왼쪽 위가 뾰족하지 않은 모양: 왼쪽 위 빨간 삼각형 끝 = 클릭 위치
+            float k = s * .22f;
+            color(0xFFDC2626, 0xFF111827);
+            line.setStrokeWidth(w);
+            poly(cv, 1f, 0, 0, k, 0, 0, k);
+            float off = s * .14f;
+            cv.translate(off, off);
+            s -= off;
+            w = Math.max(1.5f, s / 24f);
+        }
+        line.setStrokeWidth(w);
         switch (style) {
             case 0: // 컴퓨터 기본 화살표
                 color(Color.WHITE, Color.BLACK);
@@ -160,18 +163,6 @@ public class CursorView extends View {
                 color(0xFF8B5CF6, 0xFF5B21B6);
                 poly(cv, s, .08f,.08f, 1f,.35f, .08f,.62f);
                 break;
-        }
-        if (style != 0 && style != 11) { // 클릭되는 위치 표시 (흰 테두리 빨간 점)
-            float[] h = HOT[Math.max(0, Math.min(style, HOT.length - 1))];
-            fill.setPathEffect(null);
-            line.setPathEffect(null);
-            fill.setColor(Color.WHITE);
-            cv.drawCircle(h[0] * s, h[1] * s, s * .07f, fill);
-            line.setColor(Color.BLACK);
-            line.setStrokeWidth(w);
-            cv.drawCircle(h[0] * s, h[1] * s, s * .07f, line);
-            fill.setColor(0xFFDC2626);
-            cv.drawCircle(h[0] * s, h[1] * s, s * .035f, fill);
         }
     }
 }
