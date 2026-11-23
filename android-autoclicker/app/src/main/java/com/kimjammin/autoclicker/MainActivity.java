@@ -2,62 +2,53 @@ package com.kimjammin.autoclicker;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.text.InputType;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
+    private TextView status;
+
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
-        SharedPreferences prefs = getSharedPreferences("cfg", MODE_PRIVATE);
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
-
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, pad, pad, pad);
+        root.setPadding(Ui.dp(this, 24), Ui.dp(this, 72), Ui.dp(this, 24), Ui.dp(this, 24));
+        root.setBackgroundColor(0xFFF5F7FA);
 
-        TextView help = new TextView(this);
-        help.setText("1) '접근성 설정 열기' → 오토 마우스 켜기\n"
-                + "2) 화면에 빨간 ⊕ 표적과 조작 패널이 뜹니다\n"
-                + "3) ⊕를 클릭할 위치로 끌어다 놓고 ▶ 누르기\n"
-                + "비상정지: 볼륨 아래 버튼\n\n클릭 간격 (ms, 0 = 최대 속도)");
-        root.addView(help);
+        root.addView(Ui.text(this, "오토 마우스", 30, 0xFF111827, true));
+        Ui.add(this, root, Ui.text(this, "화면 위에 마우스를 띄워 자동으로 클릭합니다", 14, 0xFF6B7280, false), 8);
 
-        EditText interval = new EditText(this);
-        interval.setInputType(InputType.TYPE_CLASS_NUMBER);
-        interval.setText(String.valueOf(prefs.getLong("interval", 1)));
-        root.addView(interval);
-
-        Button save = new Button(this);
-        save.setText("간격 저장");
-        save.setOnClickListener(v -> {
-            long ms;
-            try { ms = Long.parseLong(interval.getText().toString().trim()); } catch (Exception e) { ms = 1; }
-            prefs.edit().putLong("interval", Math.max(0, ms)).apply();
-            Toast.makeText(this, "저장됨: " + ms + "ms", Toast.LENGTH_SHORT).show();
+        Button start = Ui.button(this, "시작", true);
+        start.setOnClickListener(v -> {
+            if (ClickService.instance == null) {
+                Toast.makeText(this, "접근성에서 '오토 마우스'를 먼저 켜 주세요", Toast.LENGTH_LONG).show();
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            } else {
+                ClickService.instance.showPanel();
+                moveTaskToBack(true); // 다른 앱 위에 마우스가 보이도록 이 화면을 뒤로
+            }
         });
-        root.addView(save);
+        Ui.add(this, root, start, 48);
 
-        Button acc = new Button(this);
-        acc.setText("접근성 설정 열기");
-        acc.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        root.addView(acc);
+        Button settings = Ui.button(this, "설정", false);
+        settings.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        Ui.add(this, root, settings, 12);
 
-        Button show = new Button(this);
-        show.setText("패널 다시 띄우기");
-        show.setOnClickListener(v -> {
-            if (ClickService.instance != null) ClickService.instance.showOverlay();
-            else Toast.makeText(this, "먼저 접근성에서 오토 마우스를 켜세요", Toast.LENGTH_SHORT).show();
-        });
-        root.addView(show);
+        status = Ui.text(this, "", 13, 0xFF6B7280, false);
+        Ui.add(this, root, status, 24);
 
         setContentView(root);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        status.setText(ClickService.instance != null
+                ? "● 접근성 켜짐" : "○ 접근성 꺼짐 (시작을 누르면 설정으로 이동합니다)");
     }
 }

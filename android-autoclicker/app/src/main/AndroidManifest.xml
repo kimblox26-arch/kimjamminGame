@@ -1,11 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="오토 마우스" android:theme="@android:style/Theme.Material.Light.DarkActionBar">
+    <application android:label="오토 마우스" android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".SettingsActivity" android:label="설정" />
         <service android:name=".ClickService" android:exported="true"
             android:label="오토 마우스"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
