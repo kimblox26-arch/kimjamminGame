@@ -85,13 +85,22 @@ public class ClickService extends AccessibilityService {
         bar.addView(info);
         bar.addView(toggle);
         bar.addView(close);
-        toggle.setOnClickListener(v -> { if (running) stop(); else start(); });
-        close.setOnClickListener(v -> hidePanel());
+        // 자동 클릭이 사람 터치를 계속 취소시키므로, 손가락이 닿는 순간(DOWN)에 바로 반응
+        onDown(toggle, () -> { if (running) stop(); else start(); });
+        onDown(close, this::hidePanel);
+        onDown(info, this::stop);
 
         wm.addView(bar, params(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 0, dp(32), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
         if (mice.isEmpty()) addMouse();
         updateInfo();
+    }
+
+    private void onDown(View v, Runnable r) {
+        v.setOnTouchListener((view, e) -> {
+            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) r.run();
+            return true;
+        });
     }
 
     private TextView pill(String t, int color) {
