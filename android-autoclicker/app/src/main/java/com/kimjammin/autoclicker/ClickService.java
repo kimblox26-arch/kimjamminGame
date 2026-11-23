@@ -6,7 +6,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
@@ -17,14 +16,13 @@ import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.FrameLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
 
 /**
  * 화면에 마우스를 띄우고 자동 클릭.
- * - 마우스를 탭하면 시작/정지, 끌면 이동
- * - 클릭 위치는 마우스 창의 왼쪽 위 모서리 바로 바깥 → 실행 중에도 마우스가 터치를 받을 수 있음
+ * - 마우스를 탭하면 그 마우스만 시작/정지, 끌면 이동
+ * - 클릭 위치는 마우스 창의 왼쪽 위 모서리 바로 바깥 → 실행 중에도 마우스를 눌러 멈출 수 있음
  */
 public class ClickService extends AccessibilityService {
     static ClickService instance;
@@ -34,7 +32,7 @@ public class ClickService extends AccessibilityService {
     private final Handler h = new Handler(Looper.getMainLooper());
     private final ArrayList<Mouse> mice = new ArrayList<>();
     private WindowManager wm;
-    private boolean running;
+    private boolean looping;
     private int idx;
     private long interval, press;
 
@@ -43,12 +41,12 @@ public class ClickService extends AccessibilityService {
         wm = getSystemService(WindowManager.class);
     }
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {}
-    @Override public void onInterrupt() { stop(); }
+    @Override public void onInterrupt() { stopAll(); }
     @Override public boolean onUnbind(Intent i) { hideAll(); instance = null; return super.onUnbind(i); }
 
-    @Override protected boolean onKeyEvent(KeyEvent e) { // 볼륨 아래 = 비상정지
-        if (running && e.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (e.getAction() == KeyEvent.ACTION_DOWN) stop();
+    @Override protected boolean onKeyEvent(KeyEvent e) { // 볼륨 아래 = 모두 정지
+        if (anyRunning() && e.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN) stopAll();
             return true;
         }
         return false;
@@ -69,6 +67,16 @@ public class ClickService extends AccessibilityService {
     /** 투명도 1(불투명) ~ 100(가장 투명) → alpha 1.0 ~ 0.1 */
     static float alphaOf(int t) { return 1f - (Math.max(1, Math.min(t, 100)) - 1) / 99f * 0.9f; }
 
+    static int styleOf(SharedPreferences sp) {
+        int s = sp.getInt("style", CursorView.DEFAULT);
+        return s >= 0 && s < CursorView.NAMES.length ? s : CursorView.DEFAULT;
+    }
+
+    boolean anyRunning() {
+        for (Mouse m : mice) if (m.running) return true;
+        return false;
+    }
+
     /** 메인 화면 '시작': 마우스가 없으면 하나 띄우기 */
     void showPanel() {
         wm = getSystemService(WindowManager.class);
@@ -88,14 +96,14 @@ public class ClickService extends AccessibilityService {
 
     private Mouse newMouse(int x, int y) {
         SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
-        Mouse m = new Mouse(sp.getInt("style", CursorView.DEFAULT), sp.getInt("size", 5), x, y);
+        Mouse m = new Mouse(styleOf(sp), sp.getInt("size", 5), x, y);
         m.root.setAlpha(alphaOf(sp.getInt("alpha", 1)));
         return m;
     }
 
     /** 설정 저장 후 떠 있는 마우스에 바로 반영 (위치 유지) */
     void refreshMice() {
-        if (running || wm == null) return;
+        if (anyRunning() || wm == null) return;
         ArrayList<Mouse> old = new ArrayList<>(mice);
         mice.clear();
         for (Mouse o : old) {
@@ -107,41 +115,52 @@ public class ClickService extends AccessibilityService {
     }
 
     void removeMouse(Mouse m) {
-        if (running) return;
+        if (m.running) return;
         mice.remove(m);
         wm.removeView(m.root);
     }
 
     void hideAll() {
-        stop();
+        stopAll();
         if (wm != null) for (Mouse m : mice) wm.removeView(m.root);
         mice.clear();
     }
 
-    private void start() {
-        if (mice.isEmpty()) return;
+    private void startMouse(Mouse m) {
+        m.setRunning(true);
+        if (looping) return;
         SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
         interval = Math.max(0, sp.getLong("value", 1)) * UNIT_MS[sp.getInt("unit", 3)];
         press = Math.max(1, Math.min(sp.getLong("press", 5), 10000));
-        running = true;
+        looping = true;
         idx = 0;
-        for (Mouse m : mice) m.setRunning(true);
         h.post(this::clickNext);
     }
 
-    private void stop() {
-        running = false;
-        h.removeCallbacksAndMessages(null);
+    private void stopMouse(Mouse m) {
+        m.setRunning(false);
+        if (!anyRunning()) stopLoop();
+    }
+
+    private void stopAll() {
         for (Mouse m : mice) m.setRunning(false);
+        stopLoop();
+    }
+
+    private void stopLoop() {
+        looping = false;
+        h.removeCallbacksAndMessages(null);
     }
 
     /**
-     * 여러 번의 터치를 제스처 하나에 묶어서 보냄 (최대 20개, 약 0.2초 분량).
+     * 실행 중인 마우스들만 번갈아 클릭. 터치를 최대 20개씩 제스처 하나에 묶어서 보냄(약 0.2초 분량).
      * 한 번 클릭 주기 = 누르는 시간 + 쉬는 시간(간격, 최소 1ms)
      */
     private void clickNext() {
-        if (!running) return;
-        if (mice.isEmpty()) { stop(); return; }
+        if (!looping) return;
+        ArrayList<Mouse> act = new ArrayList<>();
+        for (Mouse m : mice) if (m.running) act.add(m);
+        if (act.isEmpty()) { stopLoop(); return; }
         long period = press + Math.max(1, interval);
         boolean batch = period <= 200;
         int n = batch ? (int) Math.max(1, Math.min(GestureDescription.getMaxStrokeCount(), 200 / period)) : 1;
@@ -149,9 +168,8 @@ public class ClickService extends AccessibilityService {
         int[] loc = new int[2];
         int out = dp(1) + 1; // 마우스 창 바로 바깥
         for (int i = 0; i < n; i++) {
-            if (idx >= mice.size()) idx = 0;
-            Mouse m = mice.get(idx++);
-            m.root.getLocationOnScreen(loc);
+            idx = (idx + 1) % act.size();
+            act.get(idx).root.getLocationOnScreen(loc);
             Path p = new Path();
             p.moveTo(Math.max(0, loc[0] - out), Math.max(0, loc[1] - out));
             b.addStroke(new GestureDescription.StrokeDescription(p, i * period, press));
@@ -164,7 +182,7 @@ public class ClickService extends AccessibilityService {
     }
 
     private void next(boolean batch) {
-        if (!running) return;
+        if (!looping) return;
         if (batch || interval <= 0) h.post(this::clickNext);
         else h.postDelayed(this::clickNext, interval);
     }
@@ -174,43 +192,32 @@ public class ClickService extends AccessibilityService {
         final int S;
         final FrameLayout root = new FrameLayout(ClickService.this);
         final CursorView shape;
-        final TextView plus, minus, menu;
+        final IconView plus, minus, menu;
         final WindowManager.LayoutParams lp;
+        boolean running;
 
         Mouse(int style, int size, int x, int y) {
             S = dp(24 + size * 6);
             shape = new CursorView(ClickService.this, style);
             root.addView(shape, new FrameLayout.LayoutParams(S, S, Gravity.TOP | Gravity.START));
-            plus = badge("+", 0xFF16A34A, Gravity.TOP | Gravity.END);
-            minus = badge("×", 0xFFDC2626, Gravity.BOTTOM | Gravity.START);
-            menu = badge("≡", 0xFF6B7280, Gravity.BOTTOM | Gravity.END);
+            plus = icon(0, Gravity.TOP | Gravity.END);
+            minus = icon(1, Gravity.BOTTOM | Gravity.START);
+            menu = icon(2, Gravity.BOTTOM | Gravity.END);
             plus.setOnClickListener(v -> addMouse());
             minus.setOnClickListener(v -> removeMouse(this));
             menu.setOnClickListener(v -> startActivity(new Intent(ClickService.this, SettingsActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
-            root.addView(plus);
-            root.addView(minus);
-            root.addView(menu);
-            lp = params(S + dp(12), S + dp(26), x, y);
+            lp = params(S + dp(14), S + dp(28), x, y);
             shape.setOnTouchListener(touch());
         }
 
-        private TextView badge(String t, int color, int gravity) {
-            TextView b = new TextView(ClickService.this);
-            b.setText(t);
-            b.setTextColor(0xFFFFFFFF);
-            b.setTextSize(15);
-            b.setGravity(Gravity.CENTER);
-            b.setIncludeFontPadding(false);
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            g.setColor(color);
-            b.setBackground(g);
-            b.setLayoutParams(new FrameLayout.LayoutParams(dp(22), dp(22), gravity));
-            return b;
+        private IconView icon(int type, int gravity) {
+            IconView v = new IconView(ClickService.this, type);
+            root.addView(v, new FrameLayout.LayoutParams(dp(26), dp(26), gravity));
+            return v;
         }
 
-        /** 탭 = 시작/정지, 끌기 = 이동 (실행 중엔 닿는 순간 바로 정지) */
+        /** 탭 = 이 마우스 시작/정지, 끌기 = 이동 (실행 중엔 닿는 순간 바로 정지) */
         private View.OnTouchListener touch() {
             final int slop = ViewConfiguration.get(ClickService.this).getScaledTouchSlop();
             return new View.OnTouchListener() {
@@ -221,7 +228,7 @@ public class ClickService extends AccessibilityService {
                     switch (e.getActionMasked()) {
                         case MotionEvent.ACTION_DOWN:
                             stoppedNow = running;
-                            if (running) { stop(); return true; }
+                            if (running) { stopMouse(Mouse.this); return true; }
                             sx = e.getRawX(); sy = e.getRawY(); ox = lp.x; oy = lp.y; moved = false;
                             return true;
                         case MotionEvent.ACTION_MOVE:
@@ -235,7 +242,7 @@ public class ClickService extends AccessibilityService {
                             }
                             return true;
                         case MotionEvent.ACTION_UP:
-                            if (!stoppedNow && !moved) start();
+                            if (!stoppedNow && !moved) startMouse(Mouse.this);
                             return true;
                     }
                     return true;
@@ -244,6 +251,7 @@ public class ClickService extends AccessibilityService {
         }
 
         void setRunning(boolean r) {
+            running = r;
             int vis = r ? View.GONE : View.VISIBLE;
             plus.setVisibility(vis);
             minus.setVisibility(vis);

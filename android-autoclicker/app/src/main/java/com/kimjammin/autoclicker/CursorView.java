@@ -11,8 +11,8 @@ import android.view.View;
 
 public class CursorView extends View {
     static final String[] NAMES = {"기본 화살표", "치즈", "삼각자", "피라미드", "삼각형", "피자",
-            "수박", "삼각김밥", "경고 표지판", "산", "삼각 깃발", "콘"};
-    static final int DEFAULT = 11;
+            "수박", "삼각김밥", "경고 표지판", "산", "삼각 깃발"};
+    static final int DEFAULT = 0;
     private int style;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -57,7 +57,7 @@ public class CursorView extends View {
         cv.translate(pad(), pad());
         fill.setPathEffect(null);
         line.setPathEffect(null);
-        if (!(style == 0 || style == 2 || style == 11)) {
+        if (!(style == 0 || style == 2)) {
             // 왼쪽 위가 뾰족하지 않은 모양: 왼쪽 위 빨간 삼각형 끝 = 클릭 위치
             float k = s * .22f;
             color(0xFFDC2626, 0xFF111827);
@@ -136,26 +136,6 @@ public class CursorView extends View {
                 color(Color.WHITE, 0xFF334155);
                 poly(cv, s, .5f,.05f, .68f,.37f, .32f,.37f);
                 break;
-            case 11: { // 콘 (뾰족한 끝을 클릭)
-                color(0xFF86EFAC, 0xFF111827);
-                line.setStrokeWidth(w * 1.3f);
-                path.reset();
-                path.moveTo(.03f*s, .03f*s);
-                path.quadTo(.62f*s, .12f*s, .892f*s, .468f*s);
-                path.lineTo(.468f*s, .892f*s);
-                path.quadTo(.12f*s, .62f*s, .03f*s, .03f*s);
-                path.close();
-                cv.drawPath(path, fill);
-                cv.drawPath(path, line);
-                cv.save();
-                cv.rotate(-45, .68f*s, .68f*s);
-                RectF o = new RectF(.38f*s, .48f*s, .98f*s, .88f*s);
-                fill.setColor(0xFFFDE68A);
-                cv.drawOval(o, fill);
-                cv.drawOval(o, line);
-                cv.restore();
-                break;
-            }
             default: // 삼각 깃발
                 line.setColor(0xFF374151); line.setStrokeWidth(s * .06f);
                 cv.drawLine(.06f*s, 0, .06f*s, s, line);
