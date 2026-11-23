@@ -107,10 +107,10 @@ public class SettingsActivity extends Activity {
         Ui.add(this, root, row, 8);
 
         // 누르는 시간 (너무 짧으면 일부 게임/웹이 터치를 무시함)
-        Ui.add(this, root, Ui.text(this, "누르는 시간 (밀리초) · 안 눌리면 늘리세요", 14, 0xFF374151, false), 24);
+        Ui.add(this, root, Ui.text(this, "누르는 시간 (밀리초) · 짧을수록 빠름, 안 눌리면 늘리기", 14, 0xFF374151, false), 24);
         EditText press = new EditText(this);
         press.setInputType(InputType.TYPE_CLASS_NUMBER);
-        press.setText(String.valueOf(sp.getLong("press", 20)));
+        press.setText(String.valueOf(sp.getLong("press", 5)));
         Ui.add(this, root, press, 8);
 
         Button save = Ui.button(this, "저장", true);
@@ -118,7 +118,7 @@ public class SettingsActivity extends Activity {
             long val;
             try { val = Long.parseLong(value.getText().toString().trim()); } catch (NumberFormatException e) { val = 1; }
             long pr;
-            try { pr = Long.parseLong(press.getText().toString().trim()); } catch (NumberFormatException e) { pr = 20; }
+            try { pr = Long.parseLong(press.getText().toString().trim()); } catch (NumberFormatException e) { pr = 5; }
             sp.edit()
                 .putLong("press", Math.max(1, Math.min(pr, 10000)))
                 .putInt("size", seek.getProgress() + 1)

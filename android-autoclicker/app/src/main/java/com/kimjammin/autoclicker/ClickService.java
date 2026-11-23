@@ -207,7 +207,7 @@ public class ClickService extends AccessibilityService {
         if (mice.isEmpty()) { addMouse(); return; } // 마우스가 없으면 하나 다시 띄우기
         SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
         interval = Math.max(0, sp.getLong("value", 1)) * UNIT_MS[sp.getInt("unit", 3)];
-        press = Math.max(1, Math.min(sp.getLong("press", 20), 10000));
+        press = Math.max(1, Math.min(sp.getLong("press", 5), 10000));
         running = true;
         count = lastCount = 0;
         lastTime = SystemClock.uptimeMillis();
@@ -226,29 +226,39 @@ public class ClickService extends AccessibilityService {
         updateInfo();
     }
 
-    /** 마우스를 하나씩 순서대로 클릭 (제스처 완료 후 다음 클릭) */
+    /**
+     * 여러 번의 터치를 제스처 하나에 묶어서 보냄 (최대 20개, 약 0.2초 분량).
+     * 터치마다 시스템과 주고받는 지연이 없어져 훨씬 빨라짐.
+     * 한 번 클릭 주기 = 누르는 시간 + 쉬는 시간(간격, 최소 1ms)
+     */
     private void clickNext() {
         if (!running) return;
         if (mice.isEmpty()) { stop(); return; }
-        if (idx >= mice.size()) idx = 0;
-        Mouse m = mice.get(idx++);
+        long period = press + Math.max(1, interval);
+        boolean batch = period <= 200;
+        int n = batch ? (int) Math.max(1, Math.min(GestureDescription.getMaxStrokeCount(), 200 / period)) : 1;
+        GestureDescription.Builder b = new GestureDescription.Builder();
         int[] loc = new int[2];
-        m.shape.getLocationOnScreen(loc);
-        float[] hot = m.shape.hot();
-        Path p = new Path();
-        p.moveTo(loc[0] + hot[0], loc[1] + hot[1]);
-        GestureDescription g = new GestureDescription.Builder()
-                .addStroke(new GestureDescription.StrokeDescription(p, 0, press)).build();
-        boolean ok = dispatchGesture(g, new GestureResultCallback() {
-            @Override public void onCompleted(GestureDescription d) { count++; next(); }
-            @Override public void onCancelled(GestureDescription d) { next(); }
+        for (int i = 0; i < n; i++) {
+            if (idx >= mice.size()) idx = 0;
+            Mouse m = mice.get(idx++);
+            m.shape.getLocationOnScreen(loc);
+            float[] hot = m.shape.hot();
+            Path p = new Path();
+            p.moveTo(loc[0] + hot[0], loc[1] + hot[1]);
+            b.addStroke(new GestureDescription.StrokeDescription(p, i * period, press));
+        }
+        final int sent = n;
+        boolean ok = dispatchGesture(b.build(), new GestureResultCallback() {
+            @Override public void onCompleted(GestureDescription d) { count += sent; next(batch); }
+            @Override public void onCancelled(GestureDescription d) { next(batch); }
         }, null);
-        if (!ok) next();
+        if (!ok) next(batch);
     }
 
-    private void next() {
+    private void next(boolean batch) {
         if (!running) return;
-        if (interval <= 0) h.post(this::clickNext);
+        if (batch || interval <= 0) h.post(this::clickNext);
         else h.postDelayed(this::clickNext, interval);
     }
 
