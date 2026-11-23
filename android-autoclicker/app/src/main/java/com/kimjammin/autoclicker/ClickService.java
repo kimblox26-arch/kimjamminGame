@@ -30,8 +30,8 @@ public class ClickService extends AccessibilityService {
     private final Handler h = new Handler(Looper.getMainLooper());
     private final ArrayList<Mouse> mice = new ArrayList<>();
     private WindowManager wm;
-    private LinearLayout bar;
-    private TextView toggle, info;
+    private LinearLayout bar, content;
+    private TextView toggle, info, tab;
     private boolean running;
     private int idx;
     private long interval, count, lastCount, lastTime;
@@ -63,37 +63,62 @@ public class ClickService extends AccessibilityService {
         return p;
     }
 
-    /** 패널 표시: 하단 조작바 + 마우스 1개 */
+    /** 패널 표시: 오른쪽 조작바 + 마우스 1개 */
     void showPanel() {
         if (bar != null) return;
         wm = getSystemService(WindowManager.class);
 
         bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(16), dp(8), dp(8), dp(8));
         GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(28));
+        float r = dp(20);
+        bg.setCornerRadii(new float[]{r, r, 0, 0, 0, 0, r, r}); // 왼쪽만 둥글게
         bg.setColor(0xE6111827);
         bar.setBackground(bg);
 
+        tab = new TextView(this); // 숨겼을 때 보이는 작은 손잡이
+        tab.setText("‹");
+        tab.setTextColor(0xFFFFFFFF);
+        tab.setTextSize(26);
+        tab.setGravity(Gravity.CENTER);
+        tab.setPadding(dp(10), dp(18), dp(10), dp(18));
+        tab.setVisibility(View.GONE);
+
+        content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_HORIZONTAL);
+        content.setPadding(dp(10), dp(12), dp(10), dp(12));
+
         info = new TextView(this);
         info.setTextColor(0xFFFFFFFF);
-        info.setTextSize(13);
-        info.setPadding(0, 0, dp(10), 0);
+        info.setTextSize(12);
+        info.setGravity(Gravity.CENTER);
         toggle = pill("▶ 실행", 0xFF2563EB);
+        TextView hide = pill("숨기기", 0xFF374151);
         TextView close = pill("닫기", 0xFF4B5563);
-        bar.addView(info);
-        bar.addView(toggle);
-        bar.addView(close);
+        content.addView(info);
+        content.addView(toggle);
+        content.addView(hide);
+        content.addView(close);
+        bar.addView(tab);
+        bar.addView(content);
+
         // 자동 클릭이 사람 터치를 계속 취소시키므로, 손가락이 닿는 순간(DOWN)에 바로 반응
         onDown(toggle, () -> { if (running) stop(); else start(); });
+        onDown(hide, () -> setBarHidden(true));
+        onDown(tab, () -> setBarHidden(false));
         onDown(close, this::hidePanel);
         onDown(info, this::stop);
 
         wm.addView(bar, params(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
-                0, dp(32), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+                0, 0, Gravity.END | Gravity.CENTER_VERTICAL));
         if (mice.isEmpty()) addMouse();
         updateInfo();
+    }
+
+    private void setBarHidden(boolean hidden) {
+        content.setVisibility(hidden ? View.GONE : View.VISIBLE);
+        tab.setVisibility(hidden ? View.VISIBLE : View.GONE);
     }
 
     private void onDown(View v, Runnable r) {
@@ -107,16 +132,16 @@ public class ClickService extends AccessibilityService {
         TextView b = new TextView(this);
         b.setText(t);
         b.setTextColor(0xFFFFFFFF);
-        b.setTextSize(14);
+        b.setTextSize(13);
         b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(14), dp(8), dp(14), dp(8));
+        b.setPadding(dp(12), dp(8), dp(12), dp(8));
         GradientDrawable g = new GradientDrawable();
-        g.setCornerRadius(dp(20));
+        g.setCornerRadius(dp(16));
         g.setColor(color);
         b.setBackground(g);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.leftMargin = dp(6);
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
         b.setLayoutParams(lp);
         return b;
     }
@@ -143,7 +168,7 @@ public class ClickService extends AccessibilityService {
     }
 
     private void updateInfo() {
-        if (info != null && !running) info.setText("마우스 " + mice.size() + "/" + MAX);
+        if (info != null && !running) info.setText("마우스\n" + mice.size() + "/" + MAX);
     }
 
     void hidePanel() {
@@ -210,7 +235,7 @@ public class ClickService extends AccessibilityService {
         long cps = (count - lastCount) * 1000 / Math.max(1, now - lastTime);
         lastCount = count;
         lastTime = now;
-        info.setText(cps + " 클릭/초 · 총 " + count);
+        info.setText(cps + "/초\n총 " + count);
         h.postDelayed(this::tick, 500);
     }
 

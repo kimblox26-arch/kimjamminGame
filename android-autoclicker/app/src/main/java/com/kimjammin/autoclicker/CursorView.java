@@ -3,12 +3,17 @@ package com.kimjammin.autoclicker;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.CornerPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.view.View;
 
 public class CursorView extends View {
-    static final String[] NAMES = {"기본 화살표", "치즈", "삼각자", "피라미드", "삼각형"};
+    static final String[] NAMES = {"기본 화살표", "치즈", "삼각자", "피라미드", "삼각형", "피자",
+            "수박", "삼각김밥", "경고 표지판", "산", "삼각 깃발"};
+    /** 스타일별 클릭 지점 (0~1 비율) */
+    private static final float[][] HOT = {{.12f, .45f}, {.67f, .63f}, {.33f, .67f}, {.5f, .67f}, {.5f, .67f},
+            {.5f, .33f}, {.5f, .37f}, {.5f, .62f}, {.5f, .62f}, {.5f, .65f}, {.3f, .4f}};
     private int style;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -20,6 +25,7 @@ public class CursorView extends View {
         fill.setStyle(Paint.Style.FILL);
         line.setStyle(Paint.Style.STROKE);
         line.setStrokeJoin(Paint.Join.ROUND);
+        line.setStrokeCap(Paint.Cap.ROUND);
     }
 
     void setStyle(int s) { style = s; invalidate(); }
@@ -27,11 +33,12 @@ public class CursorView extends View {
     private float pad() { return 2 * getResources().getDisplayMetrics().density; }
     private float side() { return Math.min(getWidth(), getHeight()) - 2 * pad(); }
 
-    /** 클릭이 찍히는 지점 (뷰 기준 픽셀). 화살표는 몸통 안쪽, 나머지는 중심. */
     float[] hot() {
-        boolean arrow = style == 0;
-        return new float[]{pad() + (arrow ? .12f : .5f) * side(), pad() + (arrow ? .45f : .5f) * side()};
+        float[] h = HOT[Math.max(0, Math.min(style, HOT.length - 1))];
+        return new float[]{pad() + h[0] * side(), pad() + h[1] * side()};
     }
+
+    private void color(int f, int l) { fill.setColor(f); line.setColor(l); }
 
     private void poly(Canvas cv, float s, float... p) {
         path.reset();
@@ -44,38 +51,92 @@ public class CursorView extends View {
         cv.drawPath(path, line);
     }
 
+    /** x, y, r 세 개씩 원 그리기 */
+    private void dots(Canvas cv, float s, int color, float... d) {
+        fill.setColor(color);
+        for (int i = 0; i + 2 < d.length; i += 3) cv.drawCircle(d[i] * s, d[i + 1] * s, d[i + 2] * s, fill);
+    }
+
     @Override protected void onDraw(Canvas cv) {
         float s = side();
+        float w = Math.max(1.5f, s / 24f);
         cv.translate(pad(), pad());
-        line.setStrokeWidth(Math.max(1.5f, s / 24f));
+        line.setStrokeWidth(w);
+        fill.setPathEffect(null);
+        line.setPathEffect(null);
         switch (style) {
             case 0: // 컴퓨터 기본 화살표
-                fill.setColor(Color.WHITE); line.setColor(Color.BLACK);
+                color(Color.WHITE, Color.BLACK);
                 poly(cv, s, 0,0, 0,.85f, .22f,.66f, .40f,1f, .52f,.93f, .36f,.60f, .64f,.60f);
                 break;
             case 1: // 치즈
-                fill.setColor(0xFFFFD54F); line.setColor(0xFFF9A825);
-                poly(cv, s, 0,.3f, .9f,0, 1f,.9f, .05f,1f);
-                fill.setColor(0xFFF9A825);
-                cv.drawCircle(.42f*s, .6f*s, .07f*s, fill);
-                cv.drawCircle(.70f*s, .42f*s, .05f*s, fill);
-                cv.drawCircle(.30f*s, .85f*s, .05f*s, fill);
+                color(0xFFFFD54F, 0xFFE0A800);
+                poly(cv, s, 0,.85f, 1f,.2f, 1f,.85f);
+                dots(cv, s, 0xFFF9A825, .7f,.65f,.07f, .86f,.45f,.05f, .45f,.75f,.05f);
                 break;
             case 2: // 삼각자
-                fill.setColor(0xFF90CAF9); line.setColor(0xFF1565C0);
+                color(0xFF90CAF9, 0xFF1565C0);
                 poly(cv, s, 0,0, 0,1f, 1f,1f);
-                fill.setColor(Color.WHITE);
-                cv.drawCircle(.30f*s, .70f*s, .10f*s, fill);
+                dots(cv, s, Color.WHITE, .3f,.7f,.1f);
                 break;
             case 3: // 피라미드
-                fill.setColor(0xFFE6C78A); line.setColor(0xFF8D6E63);
+                color(0xFFE6C78A, 0xFF8D6E63);
                 poly(cv, s, .5f,0, 1f,1f, 0,1f);
                 cv.drawLine(.25f*s, .5f*s, .75f*s, .5f*s, line);
                 cv.drawLine(.125f*s, .75f*s, .875f*s, .75f*s, line);
                 break;
-            default: // 삼각형
-                fill.setColor(0xFFEF9A9A); line.setColor(0xFFC62828);
+            case 4: // 삼각형
+                color(0xFFEF9A9A, 0xFFC62828);
                 poly(cv, s, .5f,0, 1f,1f, 0,1f);
+                break;
+            case 5: // 피자
+                color(0xFFFFC857, 0xFFB45309);
+                poly(cv, s, 0,.05f, 1f,.05f, .5f,1f);
+                line.setStrokeWidth(s * .1f); line.setColor(0xFFC2410C);
+                cv.drawLine(.03f*s, .05f*s, .97f*s, .05f*s, line);
+                dots(cv, s, 0xFFDC2626, .35f,.28f,.08f, .63f,.3f,.07f, .5f,.55f,.06f);
+                break;
+            case 6: // 수박
+                color(0xFFEF4444, 0xFFB91C1C);
+                poly(cv, s, 0,.08f, 1f,.08f, .5f,1f);
+                line.setStrokeWidth(s * .12f); line.setColor(0xFF16A34A);
+                cv.drawLine(.04f*s, .08f*s, .96f*s, .08f*s, line);
+                dots(cv, s, 0xFF111827, .35f,.32f,.03f, .62f,.32f,.03f, .48f,.5f,.03f, .5f,.7f,.03f);
+                break;
+            case 7: { // 삼각김밥
+                CornerPathEffect round = new CornerPathEffect(s * .15f);
+                fill.setPathEffect(round); line.setPathEffect(round);
+                color(Color.WHITE, 0xFF9CA3AF);
+                poly(cv, s, .5f,.03f, .97f,.92f, .03f,.92f);
+                fill.setPathEffect(null);
+                fill.setColor(0xFF1F2937);
+                cv.drawRect(.36f*s, .55f*s, .64f*s, .92f*s, fill);
+                break;
+            }
+            case 8: { // 경고 표지판
+                CornerPathEffect round = new CornerPathEffect(s * .06f);
+                fill.setPathEffect(round); line.setPathEffect(round);
+                color(0xFFFACC15, 0xFF111827);
+                line.setStrokeWidth(w * 1.5f);
+                poly(cv, s, .5f,.05f, .97f,.92f, .03f,.92f);
+                line.setPathEffect(null);
+                line.setStrokeWidth(s * .08f);
+                cv.drawLine(.5f*s, .38f*s, .5f*s, .62f*s, line);
+                dots(cv, s, 0xFF111827, .5f,.77f,.045f);
+                break;
+            }
+            case 9: // 산
+                color(0xFF64748B, 0xFF334155);
+                poly(cv, s, .5f,.05f, 1f,.95f, 0,.95f);
+                color(Color.WHITE, 0xFF334155);
+                poly(cv, s, .5f,.05f, .68f,.37f, .32f,.37f);
+                break;
+            default: // 삼각 깃발
+                line.setColor(0xFF374151); line.setStrokeWidth(s * .06f);
+                cv.drawLine(.06f*s, 0, .06f*s, s, line);
+                line.setStrokeWidth(w);
+                color(0xFF8B5CF6, 0xFF5B21B6);
+                poly(cv, s, .08f,.08f, 1f,.35f, .08f,.62f);
                 break;
         }
     }
