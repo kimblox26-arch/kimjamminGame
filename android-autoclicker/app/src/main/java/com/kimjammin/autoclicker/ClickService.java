@@ -229,6 +229,7 @@ public class ClickService extends AccessibilityService {
                         case MotionEvent.ACTION_DOWN:
                             stoppedNow = running;
                             if (running) { stopMouse(Mouse.this); return true; }
+                            if (anyRunning()) { startMouse(Mouse.this); stoppedNow = true; return true; }
                             sx = e.getRawX(); sy = e.getRawY(); ox = lp.x; oy = lp.y; moved = false;
                             return true;
                         case MotionEvent.ACTION_MOVE:

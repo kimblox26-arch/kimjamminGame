@@ -23,7 +23,7 @@ import android.widget.Toast;
 
 public class SettingsActivity extends Activity {
     private static final int BG = MainActivity.BG, CARD = MainActivity.CARD, LINE = MainActivity.LINE,
-            MUTED = MainActivity.MUTED, ACCENT = 0xFFA855F7;
+            MUTED = MainActivity.MUTED, TEXT = MainActivity.TEXT, ACCENT = MainActivity.ACCENT;
 
     private abstract static class OnSeek implements SeekBar.OnSeekBarChangeListener {
         @Override public void onStartTrackingTouch(SeekBar s) {}
@@ -46,17 +46,17 @@ public class SettingsActivity extends Activity {
         s.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, items) {
             @Override public View getView(int pos, View cv, ViewGroup parent) {
                 TextView t = (TextView) super.getView(pos, cv, parent);
-                t.setTextColor(Color.WHITE);
+                t.setTextColor(TEXT);
                 return t;
             }
             @Override public View getDropDownView(int pos, View cv, ViewGroup parent) {
                 TextView t = (TextView) super.getDropDownView(pos, cv, parent);
-                t.setTextColor(Color.WHITE);
+                t.setTextColor(TEXT);
                 return t;
             }
         });
         s.setSelection(Math.max(0, Math.min(sel, items.length - 1)));
-        s.setBackground(Ui.rounded(this, BG, 12, LINE));
+        s.setBackground(Ui.rounded(this, 0xFFF9FAFB, 12, LINE));
         s.setPopupBackgroundDrawable(Ui.rounded(this, CARD, 12, LINE));
         return s;
     }
@@ -65,8 +65,8 @@ public class SettingsActivity extends Activity {
         EditText e = new EditText(this);
         e.setInputType(InputType.TYPE_CLASS_NUMBER);
         e.setText(String.valueOf(v));
-        e.setTextColor(Color.WHITE);
-        e.setBackground(Ui.rounded(this, BG, 12, LINE));
+        e.setTextColor(TEXT);
+        e.setBackground(Ui.rounded(this, 0xFFF9FAFB, 12, LINE));
         e.setPadding(dp(14), dp(12), dp(14), dp(12));
         return e;
     }
@@ -86,7 +86,7 @@ public class SettingsActivity extends Activity {
         c.setOrientation(LinearLayout.VERTICAL);
         c.setPadding(dp(16), dp(14), dp(16), dp(16));
         c.setBackground(Ui.rounded(this, CARD, 18, LINE));
-        c.addView(Ui.text(this, title, 15, Color.WHITE, true));
+        c.addView(Ui.text(this, title, 15, TEXT, true));
         Ui.add(this, root, c, 12);
         return c;
     }
@@ -108,11 +108,11 @@ public class SettingsActivity extends Activity {
 
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView back = Ui.text(this, "‹", 32, Color.WHITE, false);
+        TextView back = Ui.text(this, "‹", 32, TEXT, false);
         back.setPadding(0, 0, dp(14), 0);
         back.setOnClickListener(v -> finish());
         head.addView(back);
-        head.addView(Ui.text(this, "설정", 24, Color.WHITE, true));
+        head.addView(Ui.text(this, "설정", 24, TEXT, true));
         root.addView(head);
 
         int style0 = ClickService.styleOf(sp), size0 = sp.getInt("size", 5), alpha0 = sp.getInt("alpha", 1);
@@ -171,12 +171,10 @@ public class SettingsActivity extends Activity {
         Ui.add(this, speed, press, 8);
 
         // 저장
-        TextView save = Ui.text(this, "저장", 17, Color.WHITE, true);
+        TextView save = Ui.text(this, "저장", 17, 0xFFFFFFFF, true);
         save.setGravity(Gravity.CENTER);
         save.setPadding(0, dp(16), 0, dp(16));
-        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, MainActivity.GRAD);
-        g.setCornerRadius(dp(16));
-        save.setBackground(g);
+        save.setBackground(Ui.rounded(this, ACCENT, 14, 0));
         save.setOnClickListener(v -> {
             sp.edit()
                 .putInt("style", style.getSelectedItemPosition())
