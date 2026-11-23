@@ -1,0 +1,12 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.kimjammin.autoclicker'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.kimjammin.autoclicker'
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+}
