@@ -22,7 +22,17 @@ jobs:
       - name: Publish to release (direct download link)
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          gh release delete autoclicker-latest -y --cleanup-tag || true
+          R=repos/$GITHUB_REPOSITORY
+          # 기존 릴리스(초안 포함)와 태그 정리
+          for id in $(gh api $R/releases --jq '.[] | select(.tag_name=="autoclicker-latest") | .id'); do
+            gh api -X DELETE $R/releases/$id
+          done
+          gh api -X DELETE $R/git/refs/tags/autoclicker-latest || true
+          sleep 3
           gh release create autoclicker-latest autoclicker.apk \
             --target "$GITHUB_SHA" --title "오토 마우스 APK" \
             --notes "폰에서 autoclicker.apk를 눌러 설치하세요."
+          sleep 2
+          gh release edit autoclicker-latest --draft=false || true
+          # 초안으로 남으면 실패 처리
+          test "$(gh api $R/releases/tags/autoclicker-latest --jq .draft)" = "false"
