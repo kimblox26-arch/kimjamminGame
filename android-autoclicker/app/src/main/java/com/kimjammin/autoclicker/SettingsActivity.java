@@ -12,6 +12,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -43,7 +44,7 @@ public class SettingsActivity extends Activity {
 
         // 미리보기
         int size0 = sp.getInt("size", 5);
-        CursorView preview = new CursorView(this, sp.getInt("style", 0));
+        CursorView preview = new CursorView(this, sp.getInt("style", CursorView.DEFAULT));
         FrameLayout box = new FrameLayout(this);
         box.setBackground(Ui.rounded(this, 0xFFFFFFFF, 16, 0));
         box.setMinimumHeight(Ui.dp(this, 140));
@@ -66,9 +67,27 @@ public class SettingsActivity extends Activity {
         });
         Ui.add(this, root, seek, 8);
 
+        // 투명도 1~100
+        int alpha0 = sp.getInt("alpha", 1);
+        preview.setAlpha(ClickService.alphaOf(alpha0));
+        TextView alphaLabel = Ui.text(this, "투명도: " + alpha0 + "  (1 불투명 · 100 가장 투명)", 14, 0xFF374151, false);
+        Ui.add(this, root, alphaLabel, 24);
+        SeekBar alphaSeek = new SeekBar(this);
+        alphaSeek.setMax(99);
+        alphaSeek.setProgress(alpha0 - 1);
+        alphaSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean user) {
+                alphaLabel.setText("투명도: " + (p + 1) + "  (1 불투명 · 100 가장 투명)");
+                preview.setAlpha(ClickService.alphaOf(p + 1));
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {}
+        });
+        Ui.add(this, root, alphaSeek, 8);
+
         // 마우스 스타일
         Ui.add(this, root, Ui.text(this, "마우스 스타일", 14, 0xFF374151, false), 24);
-        Spinner style = spinner(CursorView.NAMES, sp.getInt("style", 0));
+        Spinner style = spinner(CursorView.NAMES, sp.getInt("style", CursorView.DEFAULT));
         style.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) { preview.setStyle(pos); }
             @Override public void onNothingSelected(AdapterView<?> p) {}
@@ -103,15 +122,21 @@ public class SettingsActivity extends Activity {
             sp.edit()
                 .putLong("press", Math.max(1, Math.min(pr, 10000)))
                 .putInt("size", seek.getProgress() + 1)
+                .putInt("alpha", alphaSeek.getProgress() + 1)
                 .putInt("style", style.getSelectedItemPosition())
                 .putLong("value", Math.max(0, val))
                 .putInt("unit", unit.getSelectedItemPosition())
                 .apply();
+            if (ClickService.instance != null) ClickService.instance.refreshMice();
             Toast.makeText(this, "저장됨", Toast.LENGTH_SHORT).show();
             finish();
         });
         Ui.add(this, root, save, 32);
 
-        setContentView(root);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(0xFFF5F7FA);
+        scroll.setFillViewport(true);
+        scroll.addView(root);
+        setContentView(scroll);
     }
 }

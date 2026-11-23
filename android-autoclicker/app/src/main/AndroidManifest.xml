@@ -6,7 +6,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".SettingsActivity" android:label="설정" />
+        <activity android:name=".SettingsActivity" android:label="설정" android:taskAffinity="" android:excludeFromRecents="true" />
         <service android:name=".ClickService" android:exported="true"
             android:label="오토 마우스"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

@@ -6,14 +6,16 @@ import android.graphics.Color;
 import android.graphics.CornerPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RectF;
 import android.view.View;
 
 public class CursorView extends View {
     static final String[] NAMES = {"기본 화살표", "치즈", "삼각자", "피라미드", "삼각형", "피자",
-            "수박", "삼각김밥", "경고 표지판", "산", "삼각 깃발"};
+            "수박", "삼각김밥", "경고 표지판", "산", "삼각 깃발", "콘"};
+    static final int DEFAULT = 11;
     /** 스타일별 클릭 지점 (0~1 비율). 화살표는 끝, 나머지는 빨간 점 위치 */
     private static final float[][] HOT = {{.03f, .04f}, {.67f, .63f}, {.33f, .67f}, {.5f, .67f}, {.5f, .67f},
-            {.5f, .33f}, {.5f, .37f}, {.5f, .62f}, {.5f, .62f}, {.5f, .65f}, {.3f, .4f}};
+            {.5f, .33f}, {.5f, .37f}, {.5f, .62f}, {.5f, .62f}, {.5f, .65f}, {.3f, .4f}, {.04f, .05f}};
     private int style;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -131,6 +133,26 @@ public class CursorView extends View {
                 color(Color.WHITE, 0xFF334155);
                 poly(cv, s, .5f,.05f, .68f,.37f, .32f,.37f);
                 break;
+            case 11: { // 콘 (뾰족한 끝을 클릭)
+                color(0xFF86EFAC, 0xFF111827);
+                line.setStrokeWidth(w * 1.3f);
+                path.reset();
+                path.moveTo(.03f*s, .03f*s);
+                path.quadTo(.62f*s, .12f*s, .892f*s, .468f*s);
+                path.lineTo(.468f*s, .892f*s);
+                path.quadTo(.12f*s, .62f*s, .03f*s, .03f*s);
+                path.close();
+                cv.drawPath(path, fill);
+                cv.drawPath(path, line);
+                cv.save();
+                cv.rotate(-45, .68f*s, .68f*s);
+                RectF o = new RectF(.38f*s, .48f*s, .98f*s, .88f*s);
+                fill.setColor(0xFFFDE68A);
+                cv.drawOval(o, fill);
+                cv.drawOval(o, line);
+                cv.restore();
+                break;
+            }
             default: // 삼각 깃발
                 line.setColor(0xFF374151); line.setStrokeWidth(s * .06f);
                 cv.drawLine(.06f*s, 0, .06f*s, s, line);
@@ -139,7 +161,7 @@ public class CursorView extends View {
                 poly(cv, s, .08f,.08f, 1f,.35f, .08f,.62f);
                 break;
         }
-        if (style != 0) { // 클릭되는 위치 표시 (흰 테두리 빨간 점)
+        if (style != 0 && style != 11) { // 클릭되는 위치 표시 (흰 테두리 빨간 점)
             float[] h = HOT[Math.max(0, Math.min(style, HOT.length - 1))];
             fill.setPathEffect(null);
             line.setPathEffect(null);

@@ -42,6 +42,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        android.content.SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
+        if (!sp.getBoolean("cone_default", false))
+            sp.edit().putInt("style", CursorView.DEFAULT).putBoolean("cone_default", true).apply();
         getWindow().setStatusBarColor(0xFF1E1B4B);
         getWindow().setNavigationBarColor(0xFF1D4ED8);
 

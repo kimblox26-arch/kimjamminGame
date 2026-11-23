@@ -152,12 +152,34 @@ public class ClickService extends AccessibilityService {
             Toast.makeText(this, "마우스는 최대 " + MAX + "개까지 추가할 수 있어요", Toast.LENGTH_SHORT).show();
             return;
         }
-        SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
         int n = mice.size();
-        Mouse m = new Mouse(sp.getInt("style", 0), sp.getInt("size", 5), dp(120 + n * 40), dp(240 + n * 40));
+        Mouse m = newMouse(dp(120 + n * 40), dp(240 + n * 40));
         mice.add(m);
         wm.addView(m.root, m.lp);
         updateInfo();
+    }
+
+    /** 투명도 1(불투명) ~ 100(가장 투명) → alpha 1.0 ~ 0.1 */
+    static float alphaOf(int t) { return 1f - (Math.max(1, Math.min(t, 100)) - 1) / 99f * 0.9f; }
+
+    private Mouse newMouse(int x, int y) {
+        SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
+        Mouse m = new Mouse(sp.getInt("style", CursorView.DEFAULT), sp.getInt("size", 5), x, y);
+        m.root.setAlpha(alphaOf(sp.getInt("alpha", 1)));
+        return m;
+    }
+
+    /** 설정 저장 후 떠 있는 마우스에 바로 반영 (위치 유지) */
+    void refreshMice() {
+        if (bar == null || running) return;
+        ArrayList<Mouse> old = new ArrayList<>(mice);
+        mice.clear();
+        for (Mouse o : old) {
+            wm.removeView(o.root);
+            Mouse m = newMouse(o.lp.x, o.lp.y);
+            mice.add(m);
+            wm.addView(m.root, m.lp);
+        }
     }
 
     void removeMouse(Mouse m) {
@@ -182,7 +204,7 @@ public class ClickService extends AccessibilityService {
     }
 
     private void start() {
-        if (mice.isEmpty()) return;
+        if (mice.isEmpty()) { addMouse(); return; } // 마우스가 없으면 하나 다시 띄우기
         SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
         interval = Math.max(0, sp.getLong("value", 1)) * UNIT_MS[sp.getInt("unit", 3)];
         press = Math.max(1, Math.min(sp.getLong("press", 20), 10000));
@@ -245,7 +267,7 @@ public class ClickService extends AccessibilityService {
         final int S;
         final FrameLayout root = new FrameLayout(ClickService.this);
         final CursorView shape;
-        final TextView plus, minus;
+        final TextView plus, minus, menu;
         final WindowManager.LayoutParams lp;
 
         Mouse(int style, int size, int x, int y) {
@@ -253,12 +275,16 @@ public class ClickService extends AccessibilityService {
             shape = new CursorView(ClickService.this, style);
             root.addView(shape, new FrameLayout.LayoutParams(S, S, Gravity.TOP | Gravity.START));
             plus = badge("+", 0xFF16A34A, Gravity.TOP | Gravity.END);
-            minus = badge("×", 0xFFDC2626, Gravity.BOTTOM | Gravity.END);
+            minus = badge("×", 0xFFDC2626, Gravity.BOTTOM | Gravity.START);
+            menu = badge("≡", 0xFF6B7280, Gravity.BOTTOM | Gravity.END);
             plus.setOnClickListener(v -> addMouse());
             minus.setOnClickListener(v -> removeMouse(this));
+            menu.setOnClickListener(v -> startActivity(new Intent(ClickService.this, SettingsActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
             root.addView(plus);
             root.addView(minus);
-            lp = params(S + dp(12), S + dp(12), x, y, Gravity.TOP | Gravity.START);
+            root.addView(menu);
+            lp = params(S + dp(12), S + dp(26), x, y, Gravity.TOP | Gravity.START);
             shape.setOnTouchListener(drag());
         }
 
@@ -304,6 +330,7 @@ public class ClickService extends AccessibilityService {
             int vis = r ? View.GONE : View.VISIBLE;
             plus.setVisibility(vis);
             minus.setVisibility(vis);
+            menu.setVisibility(vis);
             wm.updateViewLayout(root, lp);
         }
     }
