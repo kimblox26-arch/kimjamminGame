@@ -34,7 +34,7 @@ public class ClickService extends AccessibilityService {
     private TextView toggle, info, tab;
     private boolean running;
     private int idx;
-    private long interval, count, lastCount, lastTime;
+    private long interval, press, count, lastCount, lastTime;
 
     @Override protected void onServiceConnected() {
         instance = this;
@@ -185,6 +185,7 @@ public class ClickService extends AccessibilityService {
         if (mice.isEmpty()) return;
         SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
         interval = Math.max(0, sp.getLong("value", 1)) * UNIT_MS[sp.getInt("unit", 3)];
+        press = Math.max(1, Math.min(sp.getLong("press", 20), 10000));
         running = true;
         count = lastCount = 0;
         lastTime = SystemClock.uptimeMillis();
@@ -215,7 +216,7 @@ public class ClickService extends AccessibilityService {
         Path p = new Path();
         p.moveTo(loc[0] + hot[0], loc[1] + hot[1]);
         GestureDescription g = new GestureDescription.Builder()
-                .addStroke(new GestureDescription.StrokeDescription(p, 0, 1)).build();
+                .addStroke(new GestureDescription.StrokeDescription(p, 0, press)).build();
         boolean ok = dispatchGesture(g, new GestureResultCallback() {
             @Override public void onCompleted(GestureDescription d) { count++; next(); }
             @Override public void onCancelled(GestureDescription d) { next(); }
