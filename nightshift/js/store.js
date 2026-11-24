@@ -33,6 +33,8 @@ const FONT = '"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif';
 export { productMesh, cigMesh } from './products.js';
 import { productMesh, cigMesh } from './products.js';
 import { buildCounter } from './counter.js';
+import { Merch } from './merch.js';
+import { addDecor } from './decor.js';
 // 새 로고 "달빛24": 초승달 + 글자. onDark=true 면 흰 글자
 export function drawBrand(g, x, y, h, onDark = true) {
   const r = h * 0.42, cx = x + r, cy = y + h / 2;
@@ -75,7 +77,7 @@ export function buildStore(renderer, scene, quality) {
     g.strokeStyle = '#a7a39b'; g.lineWidth = 3; g.strokeRect(0, 0, w, h); g.strokeRect(w / 2, 0, 0, h); g.strokeRect(0, h / 2, w, 0);
   });
   floorTex.repeat.set(8, 6.7);
-  const mFloor = std({ map: floorTex, roughness: 0.3, envMapIntensity: 0.5 });
+  const mFloor = std({ map: floorTex, roughness: 0.14, metalness: 0.05, envMapIntensity: 1.1 });
   const mWall = std({ color: 0xc9ccd0, roughness: 0.85 });
   const mBrand = std({ color: 0x14a38b, roughness: 0.5 });
   const mBrand2 = std({ color: 0xff7a2e, roughness: 0.5 });
@@ -102,12 +104,11 @@ export function buildStore(renderer, scene, quality) {
   B.box(mBrand, 0.02, 0.12, D1 - D0, W0 + 0.01, 0.06, 0); B.box(mBrand, 0.02, 0.12, D1 - D0, W1 - 0.01, 0.06, 0);
   B.box(mBrand, 0.02, 0.3, D1 - D0, W1 - 0.01, 2.55, 0); B.box(mBrand2, 0.02, 0.05, D1 - D0, W1 - 0.02, 2.38, 0);
   // LED 조명 패널 + 실제 조명
-  for (let x = -4; x <= 3.5; x += 2.5) for (let z = -2.8; z <= 3; z += 1.9) B.box(mLed, 1.2, 0.02, 0.18, x, H - 0.015, z);
   const hemi = new THREE.HemisphereLight(0xf4f8ff, 0x6a6458, 0.32); scene.add(hemi);
   [[-2.5, 0], [1.5, 0.5], [3.6, 0.8]].forEach(([x, z]) => { const p = new THREE.PointLight(0xfff6ea, 2.6, 9, 1.6); p.position.set(x, 2.6, z); scene.add(p); });
 
   // 앞쪽 유리벽 + 문
-  const mGlass = new THREE.MeshStandardMaterial({ color: 0x9fb8c8, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.16, envMapIntensity: 1.5, depthWrite: false });
+  const mGlass = new THREE.MeshStandardMaterial({ color: 0x9fb8c8, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.12, envMapIntensity: 0.6, depthWrite: false });
   const mFrame = std({ color: 0x3a3f47, metalness: 0.7, roughness: 0.35 });
   B.box(mFrame, W1 - W0, 0.1, 0.12, (W0 + W1) / 2, 0.05, D1);
   B.box(mFrame, W1 - W0, 0.5, 0.12, (W0 + W1) / 2, H - 0.25, D1);
@@ -136,11 +137,12 @@ export function buildStore(renderer, scene, quality) {
       const fx = cx + s * 0.25;
       B.box(mShelf, 0.45, 0.12, len, cx + s * 0.225, 0.06, cz);
       B.box(mDark, 0.02, 0.1, len, cx + s * 0.45, 0.06, cz);
-      for (let k = 0; k < 4; k++) {
-        const y = 0.12 + k * 0.33;
+      const nk = h > 1.6 ? 5 : 4;
+      for (let k = 0; k < nk; k++) {
+        const y = 0.12 + k * (h > 1.6 ? 0.34 : 0.33);
         if (k) B.box(mShelf, 0.42, 0.025, len, cx + s * 0.22, y, cz);
         B.box(mShelfEdge, 0.012, 0.045, len, cx + s * 0.435, y, cz);
-        shelfSlots.push({ x: fx, s, y: y + 0.013, z0: z0 + 0.08, z1: z1 - 0.08 });
+        shelfSlots.push({ x: fx, cx, s, k, y: y + 0.013, z0: z0 + 0.05, z1: z1 - 0.05 });
       }
     }
     B.box(mBrand, 0.5, 0.18, 0.02, cx, h + 0.12, z1 + 0.01); // 끝 표지
@@ -157,29 +159,38 @@ export function buildStore(renderer, scene, quality) {
   // 상품 채우기 (종류별 InstancedMesh)
   const inst = {}; const put = (key, x, y, z, ry) => { (inst[key] ||= []).push(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(1, 1, 1))); };
   const SPAN = { cup: 0.125, tri: 0.09, tray: 0.24, jar: 0.08, bottle: 0.075, can: 0.075, soju: 0.08, bag: 0.17, box: 0.21, small: 0.085 };
-  let si = 0;
+  const merch = new Merch();
+  // 곤돌라별 품목 (아래칸 → 위칸)
+  const PLAN = { '-3:-1': ['box', 'cup', 'cup', 'cup'], '-3:1': ['box', 'bag', 'bag', 'bag'], '-1:-1': ['box', 'box', 'small', 'small'], '-1:1': ['bag', 'box', 'bag', 'small'], '-4.85:1': ['box', 'bag', 'bag', 'bag', 'small'] };
   for (const sl of shelfSlots) {
-    const key = SHELF_ITEMS[(((si++ * 7 + Math.floor(sl.x * 3)) % SHELF_ITEMS.length) + SHELF_ITEMS.length) % SHELF_ITEMS.length], P = PRODUCTS[key], step = SPAN[P.kind];
-    for (let z = sl.z0; z < sl.z1; z += step) for (let d = 0; d < 2; d++) if (Math.random() > 0.06) put(key, sl.x + sl.s * (0.06 + d * 0.15), sl.y, z, sl.s > 0 ? Math.PI / 2 : -Math.PI / 2);
+    const kind = (PLAN[`${sl.cx}:${sl.s}`] || ['box'])[sl.k] || 'small';
+    merch.fillShelf(kind, sl.z0, sl.z1, sl.y, sl.cx + sl.s * 0.42, -sl.s, sl.s > 0 ? Math.PI / 2 : -Math.PI / 2, kind === 'bag' ? 3 : 3, 'z');
   }
   // 뒷벽 워크인 냉장고 (유리문 + 내부 조명)
   const FZ = D0 + 0.02, fx0 = -4.55, fx1 = 1.85, nDoor = 8, dw = (fx1 - fx0) / nDoor;
   const mFridgeIn = std({ color: 0xdfe6ec, roughness: 0.3, metalness: 0.2 });
-  B.box(mFridgeIn, fx1 - fx0, 2.2, 0.7, (fx0 + fx1) / 2, 1.1, FZ + 0.35);
+  // 워크인 냉장고 안: 앞이 뚫린 칸 (뒤판·바닥·천장·옆판) — 안에 음료가 보이도록
+  const mFridgeBack = new THREE.MeshStandardMaterial({ color: 0xf2f6fa, emissive: 0xdde8f2, emissiveIntensity: 0.55, roughness: 0.4 });
+  B.box(mFridgeBack, fx1 - fx0, 2.2, 0.04, (fx0 + fx1) / 2, 1.1, FZ + 0.02);
+  B.box(mFridgeIn, fx1 - fx0, 0.2, 0.7, (fx0 + fx1) / 2, 0.1, FZ + 0.35);
+  B.box(mFridgeIn, fx1 - fx0, 0.04, 0.7, (fx0 + fx1) / 2, 2.18, FZ + 0.35);
+  B.box(mFridgeIn, 0.04, 2.2, 0.7, fx0, 1.1, FZ + 0.35); B.box(mFridgeIn, 0.04, 2.2, 0.7, fx1, 1.1, FZ + 0.35);
   for (let i = 0; i < nDoor; i++) {
     const x = fx0 + dw * (i + 0.5);
     B.box(mDark, 0.05, 2.05, 0.06, fx0 + dw * i, 1.08, FZ + 0.72);
+    B.box(mMetal, 0.025, 0.9, 0.03, fx0 + dw * (i + 1) - 0.07, 1.15, FZ + 0.77);
     for (let k = 0; k < 5; k++) {
-      const y = 0.25 + k * 0.38; B.box(mMetal, dw - 0.06, 0.015, 0.55, x, y, FZ + 0.36);
-      const key = FRIDGE_ITEMS[(i * 3 + k * 5) % FRIDGE_ITEMS.length], step = SPAN[PRODUCTS[key].kind];
-      for (let xx = x - dw / 2 + 0.06; xx < x + dw / 2 - 0.04; xx += step) for (let d = 0; d < 2; d++) put(key, xx, y + 0.008, FZ + 0.6 - d * 0.12, 0);
+      const y = 0.25 + k * 0.38; B.box(mMetal, dw - 0.06, 0.015, 0.6, x, y, FZ + 0.36); B.box(mShelfEdge, dw - 0.06, 0.03, 0.01, x, y + 0.005, FZ + 0.665);
+      const kind = i < 2 ? ['jar', 'jar', 'bottle', 'bottle', 'can'][k] : i < 5 ? ['bottle', 'bottle', 'can', 'can', 'can'][k] : i < 7 ? ['can', 'can', 'bottle', 'can', 'bottle'][k] : ['soju', 'soju', 'soju', 'can', 'can'][k];
+      merch.fillShelf(kind, x - dw / 2 + 0.05, x + dw / 2 - 0.03, y + 0.008, FZ + 0.66, -1, 0, 5, 'x');
     }
     B.box(mLed, 0.03, 1.9, 0.02, fx0 + dw * i + 0.04, 1.1, FZ + 0.68);
   }
   B.box(mDark, fx1 - fx0, 0.35, 0.75, (fx0 + fx1) / 2, 2.38, FZ + 0.38);
   const fridgeSign = new THREE.Mesh(new THREE.PlaneGeometry(3, 0.25), new THREE.MeshBasicMaterial({ map: canvasTex('fsign', 768, 64, (g, w, h) => { g.fillStyle = '#0d1b2a'; g.fillRect(0, 0, w, h); g.fillStyle = '#7fe3ff'; g.font = `900 40px ${FONT}`; g.textAlign = 'center'; g.fillText('음료 · 주류 · 유제품', w / 2, 46); }) }));
   fridgeSign.position.set(-1.35, 2.38, FZ + 0.76); root.add(fridgeSign);
-  const fglass = new THREE.Mesh(new THREE.PlaneGeometry(fx1 - fx0, 2.0), mGlass); fglass.position.set((fx0 + fx1) / 2, 1.1, FZ + 0.74); fglass.renderOrder = 2; root.add(fglass);
+  const mFGlass = new THREE.MeshStandardMaterial({ color: 0xe8f4ff, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.07, envMapIntensity: 0.35, depthWrite: false });
+  const fglass = new THREE.Mesh(new THREE.PlaneGeometry(fx1 - fx0, 2.0), mFGlass); fglass.position.set((fx0 + fx1) / 2, 1.1, FZ + 0.74); fglass.renderOrder = 2; root.add(fglass);
   const fl = new THREE.PointLight(0xdff4ff, 1.5, 4, 2); fl.position.set(-1.3, 1.4, FZ + 1.2); scene.add(fl);
 
   // 직원 문 (창고)
@@ -227,10 +238,10 @@ export function buildStore(renderer, scene, quality) {
   const mwDoor = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.2), std({ color: 0x111, roughness: 0.1 })); mwDoor.position.set(4.149, CH + 0.16, -0.28); mwDoor.rotation.y = -Math.PI / 2; root.add(mwDoor);
   const cm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.55, 0.35), mDark); cm.position.set(4.35, CH + 0.3, 2.2); root.add(cm);
   // 아이스크림 냉동고, ATM, 쓰레기통, 우산꽂이
-  B.box(std({ color: 0xf4f6f8, roughness: 0.3 }), 1.4, 0.8, 0.65, -1.5, 0.4, 3.3);
-  B.box(mBrand2, 1.4, 0.08, 0.66, -1.5, 0.7, 3.3);
-  const icGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.55), mGlass); icGlass.rotation.x = -Math.PI / 2; icGlass.position.set(-1.5, 0.81, 3.3); root.add(icGlass);
-  for (let i = 0; i < 14; i++) put('icecream', -2.1 + (i % 7) * 0.18, 0.62, 3.15 + Math.floor(i / 7) * 0.25, 0.3);
+  B.box(std({ color: 0xf4f6f8, roughness: 0.3 }), 1.4, 0.8, 0.65, -1.1, 0.4, 3.3);
+  B.box(mBrand2, 1.4, 0.08, 0.66, -1.1, 0.7, 3.3);
+  const icGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.55), mGlass); icGlass.rotation.x = -Math.PI / 2; icGlass.position.set(-1.1, 0.81, 3.3); root.add(icGlass);
+  for (let i = 0; i < 14; i++) put('icecream', -1.7 + (i % 7) * 0.18, 0.62, 3.15 + Math.floor(i / 7) * 0.25, 0.3);
   B.box(std({ color: 0x2c4a7a, metalness: 0.4, roughness: 0.4 }), 0.7, 1.6, 0.6, -4.4, 0.8, 3.45);
   const atm = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.3), new THREE.MeshBasicMaterial({ map: canvasTex('atm', 256, 192, (g, w, h) => { g.fillStyle = '#0b5cd6'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = `900 40px ${FONT}`; g.textAlign = 'center'; g.fillText('ATM', w / 2, 80); g.font = `600 22px ${FONT}`; g.fillText('카드를 넣어주세요', w / 2, 130); }), toneMapped: false }));
   atm.position.set(-4.4, 1.25, 3.14); atm.rotation.y = Math.PI; root.add(atm);
@@ -244,12 +255,20 @@ export function buildStore(renderer, scene, quality) {
   const dome = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), std({ color: 0x111, roughness: 0.1 })); dome.rotation.x = Math.PI; dome.position.set(-0.5, H - 0.01, 0); root.add(dome);
   const dome2 = dome.clone(); dome2.position.set(2.0, H - 0.01, 3.2); root.add(dome2);
 
+  addDecor({ root, scene, B, std, canvasTex, drawBrand, FONT, renderer, shelfSlots, merch });
+  merch.build(root);
   for (const [key, mats] of Object.entries(inst)) {
     const proto = productMesh(key), im = new THREE.InstancedMesh(proto.geometry, proto.material, mats.length);
     mats.forEach((m, i) => im.setMatrixAt(i, m)); im.matrixAutoUpdate = false; root.add(im);
   }
   B.build(root);
   const outside = buildOutside(scene);
+  // 매장 안을 큐브카메라로 한 번 찍어서 반사·주변광으로 쓴다 (바닥·유리·캔에 진열대와 조명이 비침)
+  try {
+    const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+    const cc = new THREE.CubeCamera(0.05, 40, rt); cc.position.set(-0.8, 1.5, 0.4); scene.add(cc); cc.update(renderer, scene); scene.remove(cc);
+    const env = pmrem.fromCubemap(rt.texture).texture; scene.environment = env; rt.dispose();
+  } catch (e) { console.warn('env capture', e); }
   return { root, mw, door, doorAngle: 0, cigSlots, C, pos: C.pos, posScreenTex: C.posScreenTex, outside };
 }
 

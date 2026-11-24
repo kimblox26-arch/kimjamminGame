@@ -141,3 +141,15 @@ export function cigMesh(cig) {
   }
   return new THREE.Mesh(cigGeo, cigMats[cig.id]);
 }
+// 진열대용 저폴리 (멀리서 보이는 수천 개)
+const LOW = {
+  cup: () => merge([cyl(0.044, 0.058, 0.105, 0, 12, true), cyl(0.059, 0.059, 0.004, 0.104, 12), cyl(0.044, 0.044, 0.002, 0, 12)]),
+  jar: () => merge([lathe([[0, 0], [0.033, 0], [0.037, 0.03], [0.035, 0.07], [0.022, 0.095], [0.019, 0.105]], 10), cyl(0.02, 0.02, 0.012, 0.103, 8)]),
+  bottle: () => merge([cyl(0.0335, 0.0335, 0.07, 0.04, 10, true), lathe([[0, 0], [0.033, 0.01], [0.033, 0.14], [0.026, 0.168], [0.013, 0.195]], 10), cyl(0.0145, 0.0145, 0.018, 0.198, 8)]),
+  can: () => new THREE.CylinderGeometry(0.033, 0.033, 0.122, 12).translate(0, 0.061, 0),
+  soju: () => merge([lathe([[0, 0], [0.035, 0.005], [0.035, 0.14], [0.026, 0.17], [0.013, 0.2], [0.013, 0.222]], 10), cyl(0.0355, 0.0355, 0.06, 0.05, 10, true), cyl(0.014, 0.014, 0.016, 0.218, 8)]),
+  bag: () => { const g = new THREE.BoxGeometry(0.15, 0.21, 0.06, 2, 4, 1); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 0.105, x = p.getX(i) / 0.075; p.setZ(i, p.getZ(i) * (1 - 0.75 * y ** 4) * (1 - 0.3 * x * x)); } g.computeVertexNormals(); return g.translate(0, 0.105, 0); },
+};
+const lowCache = {};
+export function geoByKind(k) { return (lowCache[k] ||= (LOW[k] || GEO[k])()); }
+export const SHARED = sharedMat;
