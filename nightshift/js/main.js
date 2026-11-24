@@ -19,6 +19,7 @@ import { buildCity, makeTraffic } from './city.js';
 import { buildStorage, buildCourt } from './places.js';
 import { Mover, STORE_COLLIDERS } from './move.js';
 import { Crime } from './crime.js';
+import { makePistol, makeRifle } from './weapons.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 const settings = Object.assign({ quality: IS_MOBILE ? 'mid' : 'high', myVoice: 'm', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
@@ -88,18 +89,18 @@ function updateAim(dt) {
     hitD = hit.distance;
     if (o.userData.item) { const it = o.userData.item; if (it.scanned) continue; aim = { type: 'item', item: it, label: `${it.name} · ${it.price.toLocaleString()}원` }; }
     else if (o.userData.cig) aim = { type: 'cig', obj: o, label: `${o.userData.cig.id}번 ${o.userData.cig.name} · ${o.userData.cig.price.toLocaleString()}원` };
-    else aim = { type: o.userData.aim, label: { mw: '전자레인지', shop: '창고 상점', counter: '계산대' }[o.userData.aim] || '' };
+    else aim = { type: o.userData.aim, label: { mw: '전자레인지', guns: '총기 보관함', counter: '계산대' }[o.userData.aim] || '' };
     break;
   }
   // 사람 (총이면 멀리까지)
-  ray.far = crime.weapon === 'gun' ? 40 : 2.4;
+  ray.far = crime.weapon === 'fist' ? 2.4 : 40;
   const people = [...game.customers.filter(c => !c.dead).map(c => c.person.hitbox), ...(game.boss && !game.bossDead ? [game.boss.hitbox] : [])];
   const ph = ray.intersectObjects(people, false)[0];
   if (ph && ph.distance < hitD) { const pr = ph.object.userData.personRef, c = game.customers.find(x => x.person === pr) || (game.boss === pr ? game.bossC : null); if (c) aim = { type: 'person', c, label: `${c.type.name}` }; }
   game.aim = aim;
   const dot = $('dot'); dot.className = aim ? 'on ' + aim.type : '';
   $('aimLabel').textContent = aim ? aim.label : '';
-  $('bScan').querySelector('b').textContent = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', shop: '상점' }[aim?.type] || '바코드 찍기';
+  $('bScan').querySelector('b').textContent = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기' }[aim?.type] || '바코드 찍기';
   $('bScan').classList.toggle('ready', !!aim && !['counter', 'person'].includes(aim.type));
   $('bPay').classList.toggle('ready', !!aim && aim.type !== 'cig' && !!game.cur && !game.items.some(i => !i.scanned && !i.refund));
   $('bAtk').classList.toggle('ready', aim?.type === 'person');
@@ -146,11 +147,16 @@ async function boot() {
   const colliders = [...STORE_COLLIDERS];
   city = buildCity(scene, { onCollider: c => colliders.push(c) });
   storage = buildStorage(scene, c => colliders.push(c));
-  buildCourt(scene);
+  const courtB = buildCourt(scene);
   vehicles.car.visible = false; traffic = makeTraffic(scene, vehicles, audio, CAR_COLORS);
   mover = new Mover({ yawObj, camera, look, audio, colliders });
   game = new Game({ renderer, scene, camera, store, hands, audio, voice, settings, look });
   crime = new Crime({ game, scene, camera, yawObj, look, audio, hands, vehicles, mover });
+  // 총기 보관함 안: 소총 2정(세워서) + 권총 2정(선반 위)
+  { const cab = storage.cabinet; for (const dx of [-0.17, 0.17]) { const r = makeRifle(); r.rotation.set(Math.PI / 2, 0, 0); r.position.set(dx, 1.32, -0.2); cab.add(r); }
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 0.3), new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.6, roughness: 0.4 })); shelf.position.set(0, 0.42, -0.12); cab.add(shelf);
+    for (const dx of [-0.15, 0.15]) { const p = makePistol(); p.rotation.set(0, Math.PI / 2 + 0.2, Math.PI / 2); p.position.set(dx, 0.45, -0.12); cab.add(p); } }
+  crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court];
   crime.onExit = () => { crime.cleanup(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); startShift(1); };
   game.crime = crime; game.onShop = () => openShop(); game.mover = mover; game.yawObjDist = () => Math.hypot(yawObj.position.x - SPOT.cam.x, yawObj.position.z - SPOT.cam.z);
   game.onExit = () => toMenu(); game.onNext = (d) => startShift(d);
@@ -241,8 +247,10 @@ $('bTurn').onclick = () => look.turnTo(Math.abs(Math.atan2(Math.sin(look.yaw - M
 $('bMic').onclick = () => { audio.resume(); voice.toggle(); };
 $('b112').onclick = () => game.call112();
 $('bPause').onclick = () => pause();
-$('bAtk').onclick = () => { audio.resume(); if (game.aim?.type === 'person') crime.attack(game.aim.c); else if (crime.weapon === 'gun') { audio.play('gun', { vol: 1.4 }); crime.gunMesh.userData.flash.visible = true; setTimeout(() => (crime.gunMesh.userData.flash.visible = false), 60); } else toast('사람에게 점을 맞추세요'); };
-$('bWpn').onclick = () => crime.setWeapon(crime.weapon === 'gun' ? 'fist' : 'gun');
+const atk = $('bAtk');
+atk.addEventListener('pointerdown', e => { e.preventDefault(); audio.resume(); crime.press(); });
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) atk.addEventListener(ev, () => crime.release());
+$('bWpn').onclick = () => crime.cycle();
 $('pname').onchange = () => hands?.setName($('pname').value || '김잼민');
 
 // ── 메인 루프 ──

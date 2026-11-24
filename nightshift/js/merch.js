@@ -132,7 +132,7 @@ export class Merch {
     // 흐트러질 수 있는 상품: 따로 그려서 행렬만 바꾼다. 처음엔 40% 가 넘어져 있음
     for (const [kind, items] of Object.entries(this.looseList)) {
       const im = this.makeIM(kind, items, matsBy[kind] ||= KIND_MATS[kind]()); im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.userData.loose = true; root.add(im);
-      items.forEach((it, i) => { const e = { kind, im, i, proper: it.m.clone(), aisle: it.aisle, messy: false, pos: new THREE.Vector3().setFromMatrixPosition(it.m) }; this.loose.push(e); im.userData.entries ||= []; im.userData.entries[i] = e; if (Math.random() < 0.25) this.mess(e, true); });
+      items.forEach((it, i) => { const e = { kind, im, i, proper: it.m.clone(), aisle: it.aisle, messy: false, pos: new THREE.Vector3().setFromMatrixPosition(it.m) }; this.loose.push(e); im.userData.entries ||= []; im.userData.entries[i] = e; });
     }
     this.looseMeshes = Object.values(this.looseList).length ? root.children.filter(o => o.userData.loose) : [];
   }

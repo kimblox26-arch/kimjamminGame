@@ -127,7 +127,7 @@ export class Game {
         const shelf = fridge ? V3(tgt.x, 1.1, -3.6) : V3(ax < -3 ? -4.6 : (ax < -1 ? -2.6 : -0.6), 1.0, tgt.z);
         p.lookAt(shelf); await this.wait(rnd(1.2, 2.2));
         p.reach(shelf, 1100); await this.wait(rnd(1.2, 2.2));       // 진열대에서 물건 집기
-        if (Math.random() < 0.25) { const at = this.store.merch.knockNear(p.root.position); if (at) this.audio.play('thud', { pos: at, vol: 0.7, rate: 1.3 + Math.random() * 0.4 }); }
+
         if (c.trouble === 'thief' && !c.stolen) { c.stolen = pick(['chips', 'choco', 'battery']); this.cctv(true); this.audio.play('bag', { pos: p.root.position, vol: 0.2 }); }
         if (fridge) { this.audio.play('door', { pos: shelf, vol: 0.25, rate: 1.4 }); await p.walk([V3(tgt.x, 0, SPOT.frontZ - 0.3)]); }
       }
@@ -236,7 +236,7 @@ export class Game {
     if (a.type === 'cig') return this.takeCig(a.obj);
     if (a.type === 'mw') return this.heat();
     if (a.type === 'mess') return this.tidyItem(a.entry);
-    if (a.type === 'shop') return this.onShop?.();
+    if (a.type === 'guns') return this.crime?.takeFromCabinet();
     if (a.type === 'counter') return toast('계산은 <b>계산하기</b> 버튼이에요');
     toast('상품에 점을 맞춰 주세요');
   }
