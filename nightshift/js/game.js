@@ -367,7 +367,8 @@ export class Game {
     this.cash = []; H.hold('L', stack, 'pinch'); this.audio.play('bill', { pos: GIVE_AT, vol: 0.8 });
     this.recv = given; this.renderPos();
     await this.meSay(ME.recv, given);
-    this.drawerOpen = true; this.audio.play('register', { pos: SPOT.drawer, vol: 0.8 }); await this.wait(0.45);
+    const keep = [this.look.yaw, this.look.pitch]; this.look.turnTo(Math.PI / 2 - 0.45); this.look.pitchTo(-0.75);
+    this.drawerOpen = true; this.audio.play('register', { pos: SPOT.drawer, vol: 0.8 }); await this.wait(0.5);
     const big = DENOMS.find(d => d <= given && d >= 1000) || 1000;
     const slotP = D.slots[big].getWorldPosition(V3());
     await H.reachTo('L', slotP, 'pinch', 'down', 420);
@@ -387,12 +388,14 @@ export class Game {
         H.hold('R', pile, 'pinch');
         await this.wait(0.1);
       }
+      this.look.turnTo(keep[0]); this.look.pitchTo(Math.max(-0.45, keep[1]));
       await H.reachTo('R', GIVE_AT, 'pinch', 'up', 450);
       await this.meSay(ME.change, chg);
       c.person.reach(GIVE_AT, 1000); await this.wait(0.55);
       H.hold('R', null); this.audio.coins(GIVE_AT); this.say(c, this.fresh(c, L.takeChange));
       H.pose('R', 'open'); H.rest('R');
     }
+    if (chg <= 0) { this.look.turnTo(keep[0]); this.look.pitchTo(keep[1]); }
     await this.wait(0.3); this.drawerOpen = false; this.audio.play('thud', { pos: SPOT.drawer, vol: 0.5, rate: 0.8 });
   }
   cashFor(total) {

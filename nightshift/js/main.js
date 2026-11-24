@@ -13,6 +13,7 @@ import { Game } from './game.js';
 import { loadVehicles, CAR_COLORS } from './vehicles.js';
 import { TYPES } from './data.js';
 import { updateLiquids } from './products.js';
+import { billMesh, coinMesh } from './counter.js';
 import { $, show, modal, toast, mine, ic, paintIcons } from './ui.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -51,8 +52,10 @@ addEventListener('resize', resize);
 const look = {
   yaw: Math.PI / 2, pitch: -0.36, target: null, menu: true,
   turnTo(y) { let d = y - this.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); this.target = this.yaw + d; },
+  pitchTo(p) { this.ptarget = p; },
   update(dt) {
     if (this.target !== null) { const k = Math.min(1, dt * 6); this.yaw += (this.target - this.yaw) * k; if (Math.abs(this.target - this.yaw) < 0.002) this.target = null; }
+    if (this.ptarget != null) { this.pitch += (this.ptarget - this.pitch) * Math.min(1, dt * 5); if (Math.abs(this.ptarget - this.pitch) < 0.003) this.ptarget = null; }
     yawObj.rotation.y = this.yaw; camera.rotation.x = this.pitch;
   },
 };
@@ -62,7 +65,7 @@ addEventListener('pointermove', e => {
   if (!down || down.id !== e.pointerId || look.menu) return;
   const dx = e.clientX - down.lx, dy = e.clientY - down.ly; down.lx = e.clientX; down.ly = e.clientY;
   const s = 0.0042 * settings.sens * (IS_MOBILE ? 1.2 : 1);
-  look.target = null; look.yaw -= dx * s; look.pitch = Math.max(-1.25, Math.min(0.6, look.pitch - dy * s));
+  look.target = null; look.ptarget = null; look.yaw -= dx * s; look.pitch = Math.max(-1.25, Math.min(0.6, look.pitch - dy * s));
 });
 addEventListener('pointerup', e => { if (down && down.id === e.pointerId) down = null; });
 // 화면 가운데 점이 가리키는 것 (상품·담배·계산대·전자레인지)
@@ -128,7 +131,7 @@ async function boot() {
   ]);
   game = new Game({ renderer, scene, camera, store, hands, audio, voice, settings, look });
   game.onExit = () => toMenu(); game.onNext = (d) => startShift(d);
-  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES };
+  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh };
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
   const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 3.6), new THREE.MeshBasicMaterial()); hitBox.visible = false; hitBox.position.set(2.6, 0.93, 0.6); hitBox.userData.aim = 'counter'; scene.add(hitBox); store.counterHit = hitBox;

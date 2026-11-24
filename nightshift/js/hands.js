@@ -94,11 +94,15 @@ export async function buildHands(camera, yawObj, name) {
   }, false);
   const mVest = new THREE.MeshStandardMaterial({ map: vestTex, bumpMap: vestBump, bumpScale: 2.5, roughness: 0.75 });
   const mShirt = new THREE.MeshStandardMaterial({ map: cloth, bumpMap: wrinkle, bumpScale: 2, roughness: 0.95 });
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.175, 0.64, 32, 1, false, -Math.PI * 0.64, Math.PI * 1.28), mVest);
-  torso.scale.set(1, 1, 0.62); torso.position.set(0, -0.63, 0.06); torso.rotation.y = Math.PI; body.add(torso);
-  const under = new THREE.Mesh(new THREE.CylinderGeometry(0.195, 0.165, 0.64, 24), mShirt); under.scale.set(1, 1, 0.6); under.position.set(0, -0.63, 0.07); body.add(under);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.175, 0.64, 32, 1, true, -Math.PI * 0.64, Math.PI * 1.28), mVest);
+  torso.scale.set(1, 1, 0.62); torso.position.set(0, -0.72, 0.06); torso.rotation.y = Math.PI; body.add(torso);
+  // 어깨·가슴 윗부분 (둥글게) — 아래를 내려다보면 보임
+  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.205, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), mVest);
+  chest.scale.set(1, 0.42, 0.62); chest.position.set(0, -0.4, 0.06); chest.rotation.y = Math.PI; body.add(chest);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.1, 16), mShirt); neck.position.set(0, -0.33, 0.07); body.add(neck);
+  const under = new THREE.Mesh(new THREE.CylinderGeometry(0.195, 0.165, 0.64, 24), mShirt); under.scale.set(1, 1, 0.6); under.position.set(0, -0.72, 0.07); body.add(under);
   const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.032), new THREE.MeshStandardMaterial({ roughness: 0.25, metalness: 0.1 }));
-  tag.position.set(-0.085, -0.43, -0.066); tag.rotation.set(0.25, Math.PI, 0); body.add(tag);
+  tag.position.set(-0.085, -0.47, -0.07); tag.rotation.set(0.25, Math.PI, 0); body.add(tag);
   const setName = (n) => {
     const c = document.createElement('canvas'); c.width = 320; c.height = 120; const g = c.getContext('2d');
     g.fillStyle = '#f7f7f4'; g.fillRect(0, 0, 320, 120); g.fillStyle = '#1f2d4a'; g.fillRect(0, 0, 320, 30);
@@ -167,7 +171,7 @@ export async function buildHands(camera, yawObj, name) {
         if (vis) {
           const S = wp(h.rig, 'upperarm'), E = wp(h.rig, 'forearm'), Wr = wp(h.rig, 'wrist');
           const cuffEnd = Wr.clone().lerp(E, 0.24), cuffStart = Wr.clone().lerp(E, 0.3);
-          tube(sl.upper, S.clone().lerp(E, 0.35), E); tube(sl.fore, E, cuffEnd); tube(sl.cuff, cuffStart, cuffEnd.clone().lerp(Wr, 0.02)); sl.elbow.position.copy(E);
+          tube(sl.upper, S.clone().lerp(E, -0.6), E); tube(sl.fore, E, cuffEnd); tube(sl.cuff, cuffStart, cuffEnd.clone().lerp(Wr, 0.02)); sl.elbow.position.copy(E);
           // 쥔 물건 위치
           if (h.held) {
             // 손바닥 방향: 손목·검지뿌리·새끼뿌리 평면의 법선 중 손가락 끝이 굽는 쪽
