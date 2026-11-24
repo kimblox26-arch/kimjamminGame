@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#05070c">
+<title>야간 편의점</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- 로딩 -->
+<div id="loading" class="screen show">
+  <div class="load-box"><div class="logo">NIGHT<b>24</b></div><div class="bar"><i id="loadbar"></i></div><p id="loadtxt">편의점 문 여는 중…</p></div>
+</div>
+
+<!-- 메인 화면 -->
+<div id="menu" class="screen">
+  <div class="menu-left">
+    <div class="brand"><span class="neon">NIGHT<b>24</b></span><small>편의점 야간 알바</small></div>
+    <h1>야간 편의점</h1>
+    <p class="sub">밤 10시부터 아침 6시까지. 계산, 거스름돈, 담배, 진상 손님… 전부 당신 몫.</p>
+    <label class="name">명찰 이름 <input id="pname" maxlength="4" value="김잼민"></label>
+    <button class="btn big" id="bStart">출근하기</button>
+    <button class="btn" id="bNew">처음부터 (1일차)</button>
+    <button class="btn" id="bHelp">근무 수칙</button>
+    <button class="btn" id="bSet">설정</button>
+    <p class="rec" id="record"></p>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="top">
+    <div class="clock"><b id="clock">22:00</b><span id="day">1일차</span></div>
+    <div class="stat"><span>매출</span><b id="sales">0원</b></div>
+    <div class="stat"><span>평판</span><b id="rep">★★★☆☆</b></div>
+    <div class="cctv" id="cctv" title="CCTV">● CCTV</div>
+    <button class="ic" id="bPause">Ⅱ</button>
+  </div>
+  <div id="sub" class="subtitle"></div>
+  <div id="mine" class="mine"></div>
+  <div id="cust" class="cust hidden"><div class="cname" id="cname"></div><div class="mood"><i id="moodbar"></i></div><div class="want" id="cwant"></div></div>
+  <div class="bottom">
+    <button class="act" id="bPos"><span>🖥</span>포스</button>
+    <button class="act" id="bDrawer"><span>💴</span>돈통</button>
+    <button class="act" id="bBag"><span>🛍</span>봉투</button>
+    <button class="act" id="bTurn"><span>↻</span>뒤돌기</button>
+    <button class="act" id="bTalk"><span>💬</span>말하기</button>
+    <button class="mic" id="bMic"><span>🎤</span><em id="micTxt">누르고 말하기</em><i id="micLvl"></i></button>
+    <button class="act red" id="b112"><span>🚨</span>112</button>
+  </div>
+  <div id="hint" class="hint"></div>
+</div>
+
+<!-- 포스기 -->
+<div id="pos" class="panel hidden">
+  <div class="pos">
+    <div class="pos-head"><b>NIGHT24 POS</b><span id="posTime"></span><button class="x" data-close="pos">✕</button></div>
+    <div class="pos-body">
+      <div class="pos-list"><table><thead><tr><th>상품명</th><th>수량</th><th>금액</th></tr></thead><tbody id="posItems"></tbody></table></div>
+      <div class="pos-side">
+        <div class="sum"><span>합계</span><b id="posTotal">0</b></div>
+        <div class="sum"><span>받은 금액</span><b id="posRecv">0</b></div>
+        <div class="sum chg"><span>거스름돈</span><b id="posChange">-</b></div>
+        <div class="keys" id="posKeys"></div>
+        <div class="quick"><button data-q="1000">1천</button><button data-q="5000">5천</button><button data-q="10000">1만</button><button data-q="50000">5만</button></div>
+      </div>
+    </div>
+    <div class="pos-foot">
+      <button id="pCancel" class="gray">전체취소</button>
+      <button id="pVoid" class="gray">선택삭제</button>
+      <button id="pAge" class="gray">연령확인</button>
+      <button id="pCash" class="blue">현금결제</button>
+      <button id="pCard" class="green">카드결제</button>
+    </div>
+  </div>
+</div>
+
+<!-- 돈통 -->
+<div id="drawer" class="panel hidden">
+  <div class="drawer">
+    <div class="pos-head"><b>돈통</b><span>거슬러 줄 돈을 집으세요</span><button class="x" data-close="drawer">✕</button></div>
+    <div class="till" id="till"></div>
+    <div class="tray"><div class="tray-l"><span>손에 든 돈</span><b id="trayAmt">0원</b></div><div class="tray-cash" id="tray"></div>
+      <div class="tray-r"><button id="dReset" class="gray">다시</button><button id="dGive" class="blue">손님께 건네기</button></div></div>
+  </div>
+</div>
+
+<!-- 신분증 -->
+<div id="idcard" class="panel hidden">
+  <div class="idc">
+    <div class="idc-card"><div class="idc-title">주민등록증</div><div class="idc-photo" id="idPhoto"></div>
+      <div class="idc-info"><b id="idName">홍길동</b><span id="idNum">080512-3******</span><small id="idAddr">서울특별시 마포구</small><small class="idc-date">2024. 3. 2.</small><small>서울특별시 마포구청장</small></div></div>
+    <p class="idc-q">2026년 기준, <b>2007년생</b>까지 술·담배 구매 가능</p>
+    <div class="row"><button id="idOk" class="green">판매하기</button><button id="idNo" class="red">판매 거절</button></div>
+  </div>
+</div>
+
+<!-- 말하기 문장 -->
+<div id="talk" class="panel hidden"><div class="talk"><div class="pos-head"><b>할 말 고르기</b><span>마이크가 안 될 때</span><button class="x" data-close="talk">✕</button></div><div id="talkList" class="talk-list"></div>
+  <form id="talkForm"><input id="talkIn" placeholder="직접 입력해서 말하기" autocomplete="off"><button class="blue">말하기</button></form></div></div>
+
+<!-- 일시정지/설정/도움말/결과 -->
+<div id="modal" class="panel hidden"><div class="modal"><div id="modalBody"></div><div class="row" id="modalBtns"></div></div></div>
+<div id="toast"></div>
+<div id="fade"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

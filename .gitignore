@@ -3,3 +3,6 @@ dist/
 .DS_Store
 *.log
 .cache/
+nightshift/android/build/
+*.keystore
+*.idsig
