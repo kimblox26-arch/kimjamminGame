@@ -29,15 +29,20 @@ public class ClickService extends AccessibilityService {
     static final int MAX = 5;
     private static final long[] UNIT_MS = {3600000L, 60000L, 1000L, 1L};
     /** 렉 방지: 초당 최대 클릭 (0 = 제한 없음) */
-    static final int[] CAPS = {0, 60, 30, 20, 10, 5};
-    static final String[] CAP_NAMES = {"제한 없음", "초당 60번", "초당 30번", "초당 20번", "초당 10번", "초당 5번"};
+    static final int[] CAPS = {0, 60, 30, 20, 10, 5, 80};
+    static final String[] CAP_NAMES = {"제한 없음", "초당 60번", "초당 30번", "초당 20번", "초당 10번", "초당 5번",
+            "자동: 빠르게 + 잠깐씩 쉬기 (게임 추천)"};
+    private static final int AUTO = 6;
+    /** 자동 모드: BURST_MS 동안 빠르게 누르고 REST_MS 쉬어서 게임이 밀린 입력을 처리하게 함 */
+    private static final long BURST_MS = 2500, REST_MS = 600;
 
     private final Handler h = new Handler(Looper.getMainLooper());
     private final ArrayList<Mouse> mice = new ArrayList<>();
     private WindowManager wm;
     private boolean looping;
     private int idx;
-    private long interval, press, minPeriod;
+    private long interval, press, minPeriod, burstStart;
+    private boolean autoRest;
 
     @Override protected void onServiceConnected() {
         instance = this;
@@ -135,7 +140,10 @@ public class ClickService extends AccessibilityService {
         SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
         interval = Math.max(0, sp.getLong("value", 1)) * UNIT_MS[sp.getInt("unit", 3)];
         press = Math.max(1, Math.min(sp.getLong("press", 5), 10000));
-        int cap = CAPS[Math.max(0, Math.min(sp.getInt("cap", 0), CAPS.length - 1))];
+        int capIdx = Math.max(0, Math.min(sp.getInt("cap", 0), CAPS.length - 1));
+        int cap = CAPS[capIdx];
+        autoRest = capIdx == AUTO;
+        burstStart = android.os.SystemClock.uptimeMillis();
         minPeriod = cap > 0 ? 1000 / cap : 0;
         looping = true;
         idx = 0;
@@ -188,6 +196,11 @@ public class ClickService extends AccessibilityService {
 
     private void next(boolean batch) {
         if (!looping) return;
+        if (autoRest && android.os.SystemClock.uptimeMillis() - burstStart > BURST_MS) {
+            burstStart = android.os.SystemClock.uptimeMillis() + REST_MS;
+            h.postDelayed(this::clickNext, REST_MS);
+            return;
+        }
         if (batch || interval <= 0) h.post(this::clickNext);
         else h.postDelayed(this::clickNext, interval);
     }
