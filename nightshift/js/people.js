@@ -92,6 +92,9 @@ export class Person {
     if (this.kind === 'woman' && this.mats.Ch03_Body) this.mats.Ch03_Body.color.setHSL(Math.random(), 0.12, 0.85 + Math.random() * 0.15);
     this.head = findBone(this.model, 'Head'); this.spine = findBone(this.model, 'Spine2') || findBone(this.model, 'Spine1');
     this.rHand = findBone(this.model, 'RightHand');
+    this.rArm = findBone(this.model, 'RightArm'); this.rFore = findBone(this.model, 'RightForeArm');
+    this.reachW = 0; this.reachT = 0; this.reachP = new THREE.Vector3(); this.lookOff = 0; this.lookT = 2 + Math.random() * 4;
+    this.hairs = []; this.hairV = new THREE.Vector2(); this.hairO = new THREE.Vector2(); this.lastHead = null;
     this.accessories(type);
     // 동작
     this.mixer = new THREE.AnimationMixer(this.model);
@@ -133,7 +136,7 @@ export class Person {
       const hair = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.58), hm); hair.scale.set(1.03, 0.9, 1.12); hair.rotation.x = -0.25;
       const g = new THREE.Group(); g.add(hair);
       const fr = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 6, Math.PI * 0.12, Math.PI * 0.76, Math.PI * 0.3, Math.PI * 0.12), hm); fr.scale.set(1.04, 1, 1.13); g.add(fr);
-      add(g, 0, ht - 0.088, -0.012);
+      add(g, 0, ht - 0.088, -0.012); this.hairs.push(g);
     }
     if (type.id === 'boss') { const sideHair = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 20, Math.PI * 1.1), new THREE.MeshStandardMaterial({ color: '#8d8a86', roughness: 0.9 })); sideHair.rotation.set(Math.PI / 2, 0, Math.PI * 0.95); add(sideHair, 0, ht - 0.1, -0.015); }
     if (type.mask) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 8, -Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.35, Math.PI * 0.35), M('#222', 0.9)); m.scale.set(1.15, 1.1, 1); add(m, 0, ht - 0.175, 0.04); }
@@ -188,6 +191,37 @@ export class Person {
       _q.setFromEuler(new THREE.Euler(-pitch * 0.6, ya * 0.8, this.talk > 0 ? Math.sin(this.t * 3) * 0.04 : 0, 'YXZ'));
       this.head.quaternion.multiply(_q);
     }
+    // 가끔 두리번 (말 안 할 때)
+    if ((this.lookT -= dt) < 0) { this.lookT = 2.5 + Math.random() * 5; this.lookTgt = this.talk > 0 ? 0 : (Math.random() - 0.5) * 1.2; }
+    this.lookOff += ((this.lookTgt || 0) - this.lookOff) * Math.min(1, dt * 2.5);
+    if (this.head && Math.abs(this.lookOff) > 0.01) this.head.quaternion.multiply(_q.setFromEuler(new THREE.Euler(0, this.lookOff * 0.5, 0)));
+    // 팔 뻗기 (부드럽게 올렸다 내림)
+    if (this.reachT > 0) this.reachT -= dt;
+    this.reachW += ((this.reachT > 0 ? 1 : 0) - this.reachW) * Math.min(1, dt * 5);
+    if (this.reachW > 0.01 && this.rArm && this.rFore && this.rHand) {
+      this.model.updateMatrixWorld(true);
+      const sh = this.rArm.getWorldPosition(new THREE.Vector3());
+      const mid = sh.clone().lerp(this.reachP, 0.5).add(new THREE.Vector3(0, -0.12, 0));
+      this.aimBone(this.rArm, this.rFore, mid, this.reachW);
+      this.aimBone(this.rFore, this.rHand, this.reachP, this.reachW);
+    }
+    // 머리카락 흔들림: 머리 움직임 반대로 살짝 처졌다가 돌아옴
+    if (this.hairs.length && this.head) {
+      const hp = this.head.getWorldPosition(new THREE.Vector3());
+      if (this.lastHead) { const v = hp.clone().sub(this.lastHead).divideScalar(Math.max(dt, 1e-3)); this.hairV.x += (-v.x * 0.6 - this.hairO.x * 60 - this.hairV.x * 6) * dt; this.hairV.y += (-v.z * 0.6 - this.hairO.y * 60 - this.hairV.y * 6) * dt; }
+      this.lastHead = hp; this.hairO.addScaledVector(this.hairV, dt); this.hairO.clampLength(0, 0.12);
+      for (const h of this.hairs) { h.rotation.z = this.hairO.x * 0.6; h.rotation.x = (h.userData.rx ??= h.rotation.x) + this.hairO.y * 0.6; }
+    }
+  }
+  // 오른팔을 월드 좌표 p 쪽으로 뻗었다가(ms 동안) 돌아온다 — 물건 놓기, 카드·돈 건네기, 거스름돈 받기
+  reach(p, ms = 1400) { this.reachP.copy(p); this.reachT = ms / 1000; }
+  aimBone(bone, child, target, w) {
+    if (!bone || !child || w <= 0) return;
+    const bp = bone.getWorldPosition(new THREE.Vector3()), cp = child.getWorldPosition(new THREE.Vector3());
+    const cur = cp.sub(bp).normalize(), want = target.clone().sub(bp).normalize();
+    const d = new THREE.Quaternion().setFromUnitVectors(cur, want);
+    const bw = bone.getWorldQuaternion(new THREE.Quaternion()), pw = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+    const nw = d.multiply(bw); bone.quaternion.slerp(pw.invert().multiply(nw), w); bone.updateMatrixWorld(true);
   }
   dispose() { this.root.removeFromParent(); this.mixer.stopAllAction(); }
 }

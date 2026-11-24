@@ -11,11 +11,12 @@ import { Audio, Native, voiceGender } from './audio.js';
 import { Voice } from './voice.js';
 import { Game } from './game.js';
 import { loadVehicles, CAR_COLORS } from './vehicles.js';
-import { PHRASES, TYPES } from './data.js';
+import { TYPES } from './data.js';
+import { updateLiquids } from './products.js';
 import { $, show, modal, toast, mine, ic, paintIcons } from './ui.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
-const settings = Object.assign({ quality: IS_MOBILE ? 'mid' : 'high', diff: 'normal', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
+const settings = Object.assign({ quality: IS_MOBILE ? 'mid' : 'high', myVoice: 'm', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
 const saveSet = () => { try { localStorage.setItem('ns_set', JSON.stringify(settings)); } catch (e) { } };
 
 const canvas = $('gl');
@@ -63,24 +64,29 @@ addEventListener('pointermove', e => {
   const s = 0.0042 * settings.sens * (IS_MOBILE ? 1.2 : 1);
   look.target = null; look.yaw -= dx * s; look.pitch = Math.max(-1.25, Math.min(0.6, look.pitch - dy * s));
 });
-addEventListener('pointerup', e => {
-  if (!down || down.id !== e.pointerId) return;
-  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-  if (moved < 12 && performance.now() - down.t < 500 && !look.menu) tap(e.clientX, e.clientY);
-  down = null;
-});
-const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-function tap(x, y) {
-  if (!game?.running) return;
-  ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
-  const list = [...game.items.map(i => i.mesh), ...game.cash, ...(game.card ? [game.card] : []), ...store.cigSlots, store.pos, store.drawer, store.mw];
+addEventListener('pointerup', e => { if (down && down.id === e.pointerId) down = null; });
+// 화면 가운데 점이 가리키는 것 (상품·담배·계산대·전자레인지)
+const ray = new THREE.Raycaster(), center = new THREE.Vector2(0, 0);
+let aimT = 0;
+function updateAim(dt) {
+  if (!game?.running || (aimT += dt) < 0.08) return; aimT = 0;
+  ray.setFromCamera(center, camera); ray.far = 3.4;
+  const C = store.C, list = [...game.items.filter(i => !i.scanned || i.cig).map(i => i.mesh), ...store.cigSlots, store.mw, C.pos, C.drawer.group, C.reader, store.counterHit];
+  let aim = null;
   for (const hit of ray.intersectObjects(list, true)) {
-    if (hit.distance > 3.2) break;
-    let o = hit.object; while (o && !o.userData.tap && !o.userData.cig) o = o.parent;
+    let o = hit.object; while (o && !o.userData.item && !o.userData.cig && !o.userData.aim) o = o.parent;
     if (!o) continue;
-    if (o.userData.cig) return game.tapCig(o);
-    return o.userData.tap();
+    if (o.userData.item) { const it = o.userData.item; if (it.scanned) continue; aim = { type: 'item', item: it, label: `${it.name} · ${it.price.toLocaleString()}원` }; }
+    else if (o.userData.cig) aim = { type: 'cig', obj: o, label: `${o.userData.cig.id}번 ${o.userData.cig.name} · ${o.userData.cig.price.toLocaleString()}원` };
+    else aim = { type: o.userData.aim, label: o.userData.aim === 'mw' ? '전자레인지' : '계산대' };
+    break;
   }
+  game.aim = aim;
+  const dot = $('dot'); dot.className = aim ? 'on ' + aim.type : '';
+  $('aimLabel').textContent = aim ? aim.label : '';
+  $('bScan').querySelector('b').textContent = aim?.type === 'cig' ? '담배 꺼내기' : aim?.type === 'mw' ? '데우기' : '바코드 찍기';
+  $('bScan').classList.toggle('ready', !!aim && aim.type !== 'counter');
+  $('bPay').classList.toggle('ready', !!aim && aim.type !== 'cig' && !!game.cur && !game.items.some(i => !i.scanned && !i.refund));
 }
 // 키보드 (PC)
 addEventListener('keydown', e => {
@@ -101,7 +107,8 @@ const voice = new Voice({
   onState: (s, err) => {
     $('bMic').classList.toggle('on', s === 'on'); $('micTxt').textContent = s === 'on' ? '듣는 중… (다시 누르면 끝)' : '누르고 말하기';
     if (s !== 'on') $('micLvl').style.transform = 'scaleY(0)';
-    if (s === 'error') toast(err === 'unsupported' ? '이 브라우저는 음성인식이 안 돼요<br><small>' + ic('talk') + ' 말하기 버튼으로 문장을 고르세요</small>' : (err === 'no-speech' || err === '7' || err === '6' ? '잘 안 들렸어요. 다시 말해주세요' : (err === 'not-allowed' || err === 'perm' ? '마이크 권한을 허용해 주세요' : '음성인식 오류: ' + err)), 'bad', 2200);
+    if (s === 'error' && ['unsupported', 'not-allowed', 'perm', 'service-not-allowed'].includes(err) && game) { game.voiceOK = false; }
+    if (s === 'error') toast(err === 'unsupported' ? '이 기기는 음성인식이 안 돼요<br><small>상황마다 대답 버튼이 나와요</small>' : (err === 'no-speech' || err === '7' || err === '6' ? '잘 안 들렸어요. 다시 말해주세요' : (err === 'not-allowed' || err === 'perm' ? '마이크 권한을 허용해 주세요' : '음성인식 오류: ' + err)), 'bad', 2200);
   },
 });
 
@@ -122,9 +129,10 @@ async function boot() {
   game = new Game({ renderer, scene, camera, store, hands, audio, voice, settings, look });
   game.onExit = () => toMenu(); game.onNext = (d) => startShift(d);
   window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES };
-  store.pos.userData.tap = () => openPos();
-  store.drawer.userData.tap = () => { if (game.payMode === 'drawer') show('drawer'); else toast('결제할 때만 열 수 있어요'); };
-  store.mw.userData.tap = () => game.heat();
+  store.mw.userData.aim = 'mw';
+  for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
+  const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 3.6), new THREE.MeshBasicMaterial()); hitBox.visible = false; hitBox.position.set(2.6, 0.93, 0.6); hitBox.userData.aim = 'counter'; scene.add(hitBox); store.counterHit = hitBox;
+  game.voiceOK = voice.available;
   // 미리 한 번 그려서 셰이더 컴파일
   renderer.compile(scene, camera);
   show('loading', false);
@@ -140,7 +148,7 @@ function toMenu() {
   $('bStart').textContent = sv.day > 1 ? `출근하기 (${sv.day}일차)` : '출근하기';
   $('record').textContent = best.day ? `최고 기록: ${best.day}일차 · ${best.grade}등급` : '';
 }
-function setHands(on) { if (!hands) return; hands.hands.R.pivot.visible = hands.hands.L.pivot.visible = on; hands.body.visible = on; }
+function setHands(on) { if (!hands) return; hands.enabled = on; hands.body.visible = on; }
 function startShift(day) {
   const name = ($('pname').value || '김잼민').slice(0, 4);
   audio.resume(); audio.startAmbience(SPOT.outside);
@@ -174,7 +182,7 @@ function openSettings(back) {
   const engRow = eng?.list?.length ? `<div class="opt">음성 엔진 ${sel('sE', eng.list.map(e => [e.name, e.label]), Native.engine?.() || eng.current)}</div>` : '';
   modal(`<h2>설정</h2>
     <div class="opt">그래픽 ${sel('sQ', [['high', '상 (빛 번짐)'], ['mid', '중'], ['low', '하 (빠름)']], settings.quality)}</div>
-    <div class="opt">난이도 ${sel('sD', [['normal', '보통 (거스름돈 표시)'], ['hard', '어려움 (거스름돈 암산)']], settings.diff)}</div>
+    <div class="opt">내 목소리 ${sel('sMy', [['m', '남자'], ['f', '여자']], settings.myVoice || 'm')}</div>
     <div class="opt">손님 목소리 ${sel('sT', [['1', '켜기'], ['0', '끄기 (자막만)']], settings.tts ? '1' : '0')}</div>
     ${engRow}
     <div class="opt">남자 목소리 <span>${sel('sVM', vOpts, settings.voiceM || '')} <button class="gray mini" id="tVM">듣기</button></span></div>
@@ -183,7 +191,7 @@ function openSettings(back) {
     <p style="margin-top:10px;font-size:12px;color:#8a97a6">목소리: ${(audio.voices || []).length ? `한국어 목소리 ${audio.voices.length}개 (남 ${audio.vm.length} · 여 ${audio.vf.length})` : '한국어 목소리를 찾지 못했어요. 폰 설정 → 텍스트 음성 변환에서 한국어 음성 데이터를 설치하세요'}<br>
     음성인식: ${Native ? '앱 내장 (안드로이드 음성인식)' : (voice.available ? '브라우저 음성인식 (크롬 권장)' : '이 브라우저는 지원 안 함 → 말하기 버튼 사용')}</p>`,
     [['저장', 'blue', () => {
-      settings.quality = $('sQ').value; settings.diff = $('sD').value; settings.tts = $('sT').value === '1'; settings.sens = +$('sS').value;
+      settings.quality = $('sQ').value; settings.myVoice = $('sMy').value; settings.tts = $('sT').value === '1'; settings.sens = +$('sS').value;
       settings.voiceM = $('sVM').value; settings.voiceF = $('sVF').value;
       if ($('sE') && $('sE').value !== (Native.engine?.() || '')) { Native.setEngine($('sE').value); settings.voiceM = settings.voiceF = ''; }
       audio.voiceOn = settings.tts; saveSet(); reloadVoices(); applyQuality(); game?.renderPos(); if (back) pause();
@@ -201,20 +209,12 @@ window.__nativeBack = () => {
   pause();
 };
 // HUD 버튼
-function openPos() { if (!game.running) return; game.renderPos(); show('pos'); audio.play('key', { vol: 0.4 }); }
-$('bPos').onclick = openPos;
-$('bDrawer').onclick = () => store.drawer.userData.tap();
-$('bBag').onclick = () => game.bagBtn();
+$('bScan').onclick = () => { audio.resume(); game.doPrimary(); };
+$('bPay').onclick = () => { audio.resume(); game.doCheckout(); };
 $('bTurn').onclick = () => look.turnTo(Math.abs(Math.atan2(Math.sin(look.yaw - Math.PI / 2), Math.cos(look.yaw - Math.PI / 2))) < 1.5 ? -Math.PI / 2 : Math.PI / 2);
 $('bMic').onclick = () => { audio.resume(); voice.toggle(); };
 $('b112').onclick = () => game.call112();
 $('bPause').onclick = () => pause();
-$('bTalk').onclick = () => {
-  $('talkList').innerHTML = PHRASES.map(p => `<button>${p}</button>`).join('');
-  $('talkList').querySelectorAll('button').forEach(b => b.onclick = () => { show('talk', false); game.hear(b.textContent); });
-  show('talk');
-};
-$('talkForm').onsubmit = e => { e.preventDefault(); const v = $('talkIn').value.trim(); if (v) { show('talk', false); $('talkIn').value = ''; game.hear(v); } };
 $('pname').onchange = () => hands?.setName($('pname').value || '김잼민');
 
 // ── 메인 루프 ──
@@ -228,6 +228,7 @@ function loop() {
   look.update(dt);
   game?.update(dt * (window.__speed || 1));
   hands?.update(dt, t);
+  updateAim(dt); updateLiquids(dt);
   updateCar(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }
   camera.updateMatrixWorld();

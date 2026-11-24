@@ -140,3 +140,21 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none}
 #toast .ico{width:22px;height:22px;vertical-align:-5px;margin-right:4px}
 .modal li .ico{color:#7dffd9}
 .opt>span{display:flex;gap:6px;align-items:center}.opt select{max-width:46vw}.mini{padding:6px 10px;border-radius:8px;font-size:12px;font-weight:700}
+
+/* 로고 */
+.logo-svg{width:min(300px,70vw);height:auto;display:block;margin:0 auto}
+.brand .logo-svg{width:min(260px,60vw);margin:0}
+/* 조준점 */
+#dot{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2px solid rgba(255,255,255,.35);transition:all .15s;pointer-events:none}
+#dot i{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#fff;box-shadow:0 0 6px rgba(0,0,0,.8)}
+#dot.on{border-color:#7dffd9;transform:scale(1.15);box-shadow:0 0 12px rgba(47,211,180,.5)}
+#dot.on i{background:#7dffd9}#dot.on.cig{border-color:#ffd36b}#dot.on.cig i{background:#ffd36b}#dot.on.counter{border-color:#7fb7ff}#dot.on.counter i{background:#7fb7ff}
+#aimLabel{position:absolute;left:50%;top:calc(50% + 22px);transform:translateX(-50%);font-size:13px;font-weight:700;color:#fff;text-shadow:0 1px 3px #000,0 0 8px #000;white-space:nowrap;pointer-events:none}
+.big-act{pointer-events:auto;height:64px;min-width:112px;padding:0 14px;border-radius:16px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:16px;font-weight:900;color:#fff;border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(4px);opacity:.75;transition:opacity .15s,transform .1s}
+.big-act .ico{width:26px;height:26px}
+.big-act.scan{background:linear-gradient(180deg,#2b6fdc,#1b4fa8)}.big-act.pay{background:linear-gradient(180deg,#22b26b,#178a52)}
+.big-act.ready{opacity:1;box-shadow:0 0 0 2px rgba(255,255,255,.55),0 6px 20px rgba(0,0,0,.4)}
+.big-act:active{transform:scale(.96)}
+.choices{position:absolute;left:50%;bottom:150px;transform:translateX(-50%);display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:92vw;pointer-events:auto}
+.choices button{background:rgba(15,25,40,.88);border:1px solid #7dffd9;color:#e9fff9;border-radius:22px;padding:10px 16px;font-size:14px;font-weight:700}
+@media (max-height:430px){.big-act{height:54px;min-width:96px;font-size:14px}.choices{bottom:120px}}

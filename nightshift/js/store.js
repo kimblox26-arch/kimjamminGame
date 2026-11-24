@@ -30,60 +30,19 @@ export function canvasTex(key, w, h, draw, srgb = true) {
 }
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif';
 
-// ── 상품 모양 ──
-const lathe = (pts, seg = 16) => new THREE.LatheGeometry(pts.map(p => new THREE.Vector2(p[0], p[1])), seg);
-const PROD_GEO = {
-  cup: () => new THREE.CylinderGeometry(0.058, 0.044, 0.105, 18).translate(0, 0.0525, 0),
-  tri: () => { const g = new THREE.CylinderGeometry(0.07, 0.07, 0.035, 3); g.rotateX(Math.PI / 2); g.rotateZ(Math.PI / 2); return g.translate(0, 0.06, 0); },
-  tray: () => new THREE.BoxGeometry(0.21, 0.05, 0.16).translate(0, 0.025, 0),
-  jar: () => lathe([[0, 0], [0.032, 0], [0.036, 0.03], [0.034, 0.07], [0.02, 0.095], [0.018, 0.11], [0, 0.11]]),
-  bottle: () => lathe([[0, 0], [0.032, 0], [0.033, 0.14], [0.026, 0.17], [0.013, 0.2], [0.013, 0.215], [0, 0.215]]),
-  can: () => new THREE.CylinderGeometry(0.033, 0.033, 0.155, 18).translate(0, 0.0775, 0),
-  soju: () => lathe([[0, 0], [0.034, 0], [0.034, 0.14], [0.026, 0.17], [0.012, 0.2], [0.012, 0.225], [0, 0.225]]),
-  bag: () => { const g = new THREE.BoxGeometry(0.15, 0.21, 0.06, 4, 4, 2); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 0.105, x = p.getX(i) / 0.075; p.setZ(i, p.getZ(i) * (1 - 0.6 * y * y) * (1 - 0.3 * x * x)); } g.computeVertexNormals(); return g.translate(0, 0.105, 0); },
-  box: () => new THREE.BoxGeometry(0.19, 0.12, 0.07).translate(0, 0.06, 0),
-  small: () => new THREE.BoxGeometry(0.07, 0.1, 0.025).translate(0, 0.05, 0),
-  cig: () => new THREE.BoxGeometry(0.056, 0.088, 0.022).translate(0, 0.044, 0),
-};
-const geoCache = {}, matCache = {};
-export function productTex(key) {
-  const P = PRODUCTS[key];
-  return canvasTex('p_' + key, 256, 256, (g, w, h) => {
-    g.fillStyle = P.c1; g.fillRect(0, 0, w, h);
-    g.fillStyle = P.c2; g.globalAlpha = 0.9;
-    if (P.kind === 'can' || P.kind === 'cup' || P.kind === 'bottle' || P.kind === 'soju' || P.kind === 'jar') { g.fillRect(0, h * 0.3, w, h * 0.4); } else { g.beginPath(); g.arc(w * 0.5, h * 0.62, w * 0.34, 0, 7); g.fill(); }
-    g.globalAlpha = 1; g.fillStyle = P.c2 === '#ffffff' || P.c2 === '#fff' ? P.c1 : '#fff';
-    if (P.kind === 'can' || P.kind === 'cup' || P.kind === 'bottle' || P.kind === 'soju' || P.kind === 'jar') g.fillStyle = P.c1;
-    g.font = `900 ${P.txt.length > 3 ? 44 : 60}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(P.txt, w / 2, h / 2); g.fillText(P.txt, w / 2 + w, h / 2);
-    g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(0, 0, w, 10);
-  });
+export { productMesh, cigMesh } from './products.js';
+import { productMesh, cigMesh } from './products.js';
+import { buildCounter } from './counter.js';
+// 새 로고 "달빛24": 초승달 + 글자. onDark=true 면 흰 글자
+export function drawBrand(g, x, y, h, onDark = true) {
+  const r = h * 0.42, cx = x + r, cy = y + h / 2;
+  g.save(); g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.clip();
+  g.beginPath(); g.rect(cx - r - 2, cy - r - 2, r * 2 + 4, r * 2 + 4); g.arc(cx + r * 0.42, cy - r * 0.28, r * 0.86, 0, Math.PI * 2, true);
+  g.fillStyle = '#ffc53d'; g.fill('evenodd'); g.restore();
+  g.font = `900 ${h * 0.78}px ${FONT}`; g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+  g.fillStyle = onDark ? '#ffffff' : '#1f2d4a'; g.fillText('달빛', x + r * 2 + h * 0.12, y + h * 0.8);
+  const tw = g.measureText('달빛').width; g.fillStyle = '#2fd3b4'; g.fillText('24', x + r * 2 + h * 0.18 + tw, y + h * 0.8);
 }
-export function productMesh(key) {
-  const P = PRODUCTS[key];
-  geoCache[P.kind] ||= PROD_GEO[P.kind]();
-  if (!matCache[key]) {
-    const glassy = P.kind === 'bottle' || P.kind === 'soju';
-    matCache[key] = new THREE.MeshStandardMaterial({ map: productTex(key), roughness: glassy ? 0.15 : (P.kind === 'can' ? 0.3 : 0.6), metalness: P.kind === 'can' ? 0.6 : 0, transparent: P.kind === 'bottle', opacity: P.kind === 'bottle' ? 0.85 : 1 });
-  }
-  const m = new THREE.Mesh(geoCache[P.kind], matCache[key]); m.userData.key = key; return m;
-}
-export function cigMesh(cig) {
-  geoCache.cig ||= PROD_GEO.cig();
-  return new THREE.Mesh(geoCache.cig, cigMaterial(cig));
-}
-const cigMats = {};
-function cigMaterial(cig) {
-  if (cigMats[cig.id]) return cigMats[cig.id];
-  const t = canvasTex('cig' + cig.id, 128, 192, (g, w, h) => {
-    g.fillStyle = '#f4f4f2'; g.fillRect(0, 0, w, h); g.fillStyle = cig.color; g.fillRect(0, 0, w, h * 0.42);
-    g.fillStyle = '#fff'; g.font = `900 26px ${FONT}`; g.textAlign = 'center'; g.fillText(cig.name.split(' ')[0], w / 2, 50);
-    g.fillStyle = cig.color; g.font = `700 18px ${FONT}`; g.fillText(cig.name.split(' ')[1] || '', w / 2, 112);
-    g.fillStyle = '#111'; g.font = `700 11px ${FONT}`; g.fillText('흡연은 폐암 등 각종 질병의', w / 2, 150); g.fillText('원인이 됩니다', w / 2, 166);
-  });
-  return (cigMats[cig.id] = new THREE.MeshStandardMaterial({ map: t, roughness: 0.45 }));
-}
-
 // ── 정적 상자 합치기 ──
 class Batch {
   constructor() { this.g = new Map(); }
@@ -121,7 +80,9 @@ export function buildStore(renderer, scene, quality) {
   const mBrand = std({ color: 0x14a38b, roughness: 0.5 });
   const mBrand2 = std({ color: 0xff7a2e, roughness: 0.5 });
   const mShelf = std({ color: 0xf2f3f5, roughness: 0.4, metalness: 0.3 });
-  const mShelfEdge = std({ color: 0x1b8e7b, roughness: 0.4 });
+  const priceTex = canvasTex('price', 1024, 64, (g, w, h) => { g.fillStyle = '#f4f6f8'; g.fillRect(0, 0, w, h); for (let x = 6; x < w; x += 128) { const promo = Math.random() < 0.25; g.fillStyle = promo ? '#ffd400' : '#ffffff'; g.fillRect(x, 6, 116, h - 12); g.strokeStyle = '#c9ced4'; g.strokeRect(x, 6, 116, h - 12); g.fillStyle = promo ? '#d62828' : '#1f2d4a'; g.font = `900 26px ${FONT}`; g.fillText((1000 + (Math.random() * 40 | 0) * 100).toLocaleString(), x + 10, 44); g.font = `800 12px ${FONT}`; g.fillText(promo ? '1+1' : '원', x + 88, 44); } });
+  priceTex.repeat.set(5, 1);
+  const mShelfEdge = std({ map: priceTex, roughness: 0.5 });
   const mDark = std({ color: 0x23272e, roughness: 0.5, metalness: 0.4 });
   const mMetal = std({ color: 0xb8bec6, roughness: 0.25, metalness: 0.9 });
   const mCounter = std({ color: 0xf4f1ec, roughness: 0.35 });
@@ -185,6 +146,14 @@ export function buildStore(renderer, scene, quality) {
     B.box(mBrand, 0.5, 0.18, 0.02, cx, h + 0.12, z1 + 0.01); // 끝 표지
   };
   gondola(-3, -2, 2, 1.45, [-1, 1]); gondola(-1, -2, 2, 1.45, [-1, 1]); gondola(-4.85, -2.6, 2.6, 1.9, [1]);
+  // 천장에 매단 코너 안내판 (양면)
+  const aisleSign = (txt, sub, x, z) => {
+    const t = canvasTex('as_' + txt, 512, 160, (g, w, h) => { g.fillStyle = '#1f2d4a'; g.fillRect(0, 0, w, h); g.fillStyle = '#ffc53d'; g.fillRect(0, h - 14, w, 14); g.fillStyle = '#fff'; g.font = `900 64px ${FONT}`; g.textAlign = 'center'; g.fillText(txt, w / 2, 82); g.fillStyle = '#9fd8ff'; g.font = `700 26px ${FONT}`; g.fillText(sub, w / 2, 126); });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.34), new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, side: THREE.DoubleSide, emissive: 0x111111 }));
+    m.position.set(x, 2.32, z); m.rotation.y = Math.PI / 2; root.add(m);
+    B.box(mMetal, 0.01, 0.42, 0.01, x, 2.6, z - 0.45); B.box(mMetal, 0.01, 0.42, 0.01, x, 2.6, z + 0.45);
+  };
+  aisleSign('라면 · 즉석', 'NOODLE · INSTANT', -3.95, 0); aisleSign('과자 · 간식', 'SNACK', -2.0, 0); aisleSign('생활 · 잡화', 'DAILY', 0.25, -0.5);
   // 상품 채우기 (종류별 InstancedMesh)
   const inst = {}; const put = (key, x, y, z, ry) => { (inst[key] ||= []).push(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(1, 1, 1))); };
   const SPAN = { cup: 0.125, tri: 0.09, tray: 0.24, jar: 0.08, bottle: 0.075, can: 0.075, soju: 0.08, bag: 0.17, box: 0.21, small: 0.085 };
@@ -224,7 +193,7 @@ export function buildStore(renderer, scene, quality) {
   B.box(mWood, 0.04, CH - 0.05, CZ1 - CZ0, CX - 0.28, (CH - 0.05) / 2, (CZ0 + CZ1) / 2);
   B.box(mDark, 0.5, CH - 0.05, CZ1 - CZ0, CX + 0.02, (CH - 0.05) / 2, (CZ0 + CZ1) / 2);
   B.box(mBrand, 0.02, 0.16, CZ1 - CZ0, CX - 0.305, 0.75, (CZ0 + CZ1) / 2);
-  const front = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.38), new THREE.MeshBasicMaterial({ transparent: true, map: canvasTex('cfront', 1024, 160, (g, w, h) => { g.fillStyle = '#fff'; g.font = `900 92px ${FONT}`; g.fillText('NIGHT', 20, 120); g.fillStyle = '#ff7a2e'; g.fillText('24', 330, 120); g.fillStyle = 'rgba(255,255,255,.85)'; g.font = `700 44px ${FONT}`; g.fillText('언제나 당신 곁에', 520, 110); }) }));
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.38), new THREE.MeshBasicMaterial({ transparent: true, map: canvasTex('cfront', 1024, 160, (g, w, h) => { drawBrand(g, 30, 20, 110, true); g.fillStyle = 'rgba(255,255,255,.85)'; g.font = `700 42px ${FONT}`; g.fillText('밤에도 환한 우리 동네', 470, 98); }) }));
   front.position.set(CX - 0.32, 0.43, 0.6); front.rotation.y = -Math.PI / 2; root.add(front);
   // 뒤 카운터 + 담배 진열장
   B.box(mDark, 0.5, CH, 2.9, 4.35, CH / 2, 0.9);
@@ -252,28 +221,7 @@ export function buildStore(renderer, scene, quality) {
     const lab = new THREE.Mesh(new THREE.PlaneGeometry(R.z1 - R.z0, 0.085), new THREE.MeshBasicMaterial({ map: t }));
     lab.position.set(R.x - 0.185, R.y0 + r * rh - 0.05, (R.z0 + R.z1) / 2); lab.rotation.y = -Math.PI / 2; root.add(lab);
   }
-  // 계산대 위 물건: 포스, 카드단말기, 스캐너, 돈통
-  const pos = new THREE.Group(); pos.position.set(2.78, CH, 0.15);
-  const posStand = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.09, 0.22, 12), mDark); posStand.position.y = 0.11; pos.add(posStand);
-  const posScreenTex = canvasTex('posscreen', 512, 384, () => { });
-  const posMon = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.4), mDark); posMon.position.set(0, 0.34, 0); posMon.rotation.z = -0.25; pos.add(posMon);
-  const posScr = new THREE.Mesh(new THREE.PlaneGeometry(0.37, 0.27), new THREE.MeshBasicMaterial({ map: posScreenTex, toneMapped: false })); posScr.position.set(0.027, 0, 0); posScr.rotation.y = Math.PI / 2; posMon.add(posScr);
-  const custDisp = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.2), mDark); custDisp.position.set(-0.12, 0.32, 0.12); pos.add(custDisp);
-  const custScr = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.1), new THREE.MeshBasicMaterial({ color: 0x1a3550 })); custScr.position.set(-0.016, 0, 0); custScr.rotation.y = -Math.PI / 2; custDisp.add(custScr);
-  root.add(pos);
-  const drawer = new THREE.Group(); drawer.position.set(2.82, CH - 0.13, 0.15);
-  const dbox = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.42), mDark); drawer.add(dbox);
-  const dtray = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.08, 0.4), std({ color: 0x2a2f36 })); dtray.position.x = 0.01; drawer.add(dtray);
-  const dTill = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.38), new THREE.MeshBasicMaterial({ map: canvasTex('tilltop', 256, 256, (g, w, h) => { g.fillStyle = '#15181c'; g.fillRect(0, 0, w, h); const cs = ['#7fb26f', '#d9895a', '#6f99c9', '#e0b24b']; cs.forEach((c, i) => { g.fillStyle = c; g.fillRect(8 + i * 62, 10, 52, 150); }); ['#bbb', '#bbb', '#aaa', '#c98d4c'].forEach((c, i) => { g.fillStyle = c; for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(36 + i * 62, 190 + k * 4, 18, 0, 7); g.fill(); } }); }) }));
-  dTill.rotation.x = -Math.PI / 2; dTill.position.y = 0.041; dtray.add(dTill); root.add(drawer);
-  const reader = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.16), mDark); reader.position.set(2.42, CH + 0.03, 0.32); reader.rotation.z = 0.25; root.add(reader);
-  const readerScr = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.05), new THREE.MeshBasicMaterial({ color: 0x7fd0ff })); readerScr.position.set(-0.03, 0.026, -0.02); readerScr.rotation.x = -Math.PI / 2; reader.add(readerScr);
-  const scanner = new THREE.Group(); scanner.position.set(2.75, CH, 1.75);
-  const sBase = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.03, 16), mDark); scanner.add(sBase);
-  const sGun = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.05), std({ color: 0x15171a, roughness: 0.4 })); sGun.position.y = 0.09; sGun.rotation.z = 0.5; scanner.add(sGun);
-  const sHead = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.07), std({ color: 0x15171a, roughness: 0.4 })); sHead.position.set(-0.04, 0.16, 0); scanner.add(sHead);
-  const sLight = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 0.04), new THREE.MeshBasicMaterial({ color: 0xff2020 })); sLight.position.set(-0.096, 0.16, 0); sLight.rotation.y = -Math.PI / 2; scanner.add(sLight);
-  root.add(scanner);
+  const C = buildCounter(root, CH);
   // 뒤 카운터: 전자레인지, 커피머신, 영수증 꽂이
   const mw = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.28, 0.5), std({ color: 0xdedfe2, metalness: 0.4, roughness: 0.3 })); mw.position.set(4.35, CH + 0.16, -0.25); root.add(mw);
   const mwDoor = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.2), std({ color: 0x111, roughness: 0.1 })); mwDoor.position.set(4.149, CH + 0.16, -0.28); mwDoor.rotation.y = -Math.PI / 2; root.add(mwDoor);
@@ -302,7 +250,7 @@ export function buildStore(renderer, scene, quality) {
   }
   B.build(root);
   const outside = buildOutside(scene);
-  return { root, mw, door, doorAngle: 0, cigSlots, posScreenTex, pos, drawer: dtray, drawerOpen: 0, scanner, sLight, reader, readerScr, custScr, outside };
+  return { root, mw, door, doorAngle: 0, cigSlots, C, pos: C.pos, posScreenTex: C.posScreenTex, outside };
 }
 
 function buildOutside(scene) {
@@ -336,7 +284,7 @@ function buildOutside(scene) {
     const pl = new THREE.PointLight(0xffb060, 30, 14, 1.7); pl.position.set(x, 4.6, 7.6); g.add(pl);
   }
   // 간판 (가게 바깥)
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.55), new THREE.MeshBasicMaterial({ toneMapped: false, map: canvasTex('sign', 1024, 140, (c, w, h) => { c.fillStyle = '#0e8f7a'; c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.font = `900 100px ${FONT}`; c.fillText('NIGHT', 230, 108); c.fillStyle = '#ffb04a'; c.fillText('24', 560, 108); }) }));
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.55), new THREE.MeshBasicMaterial({ toneMapped: false, map: canvasTex('sign', 1024, 140, (c, w, h) => { const gr = c.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#24365a'); gr.addColorStop(1, '#152238'); c.fillStyle = gr; c.fillRect(0, 0, w, h); drawBrand(c, 250, 18, 104, true); c.fillStyle = 'rgba(255,255,255,.7)'; c.font = `700 30px ${FONT}`; c.fillText('24시 편의점', 660, 90); }) }));
   sign.position.set(-0.6, 3.15, 4.07); g.add(sign);
   B.box(std({ color: 0x23262b }), 9.8, 0.6, 0.3, -0.2, 3.1, 4.0);
   B.box(std({ color: 0x23262b }), 9.8, 0.4, 0.2, -0.2, 2.9, 3.95);
@@ -347,15 +295,3 @@ function buildOutside(scene) {
   return { group: g };
 }
 
-// 포스 화면 (3D 모니터)
-export function drawPosScreen(tex, st) {
-  const c = tex.image, g = c.getContext('2d'), w = c.width, h = c.height;
-  g.fillStyle = '#0e2747'; g.fillRect(0, 0, w, h);
-  g.fillStyle = '#1d4f8f'; g.fillRect(0, 0, w, 40); g.fillStyle = '#fff'; g.font = `700 22px ${FONT}`; g.fillText('NIGHT24 POS   ' + (st.clock || ''), 12, 28);
-  g.fillStyle = '#f3f6fa'; g.fillRect(10, 50, w * 0.6, h - 60);
-  g.fillStyle = '#111'; g.font = `600 18px ${FONT}`;
-  (st.items || []).slice(-9).forEach((it, i) => { g.fillText(it.name.slice(0, 11), 18, 76 + i * 30); g.textAlign = 'right'; g.fillText(it.price.toLocaleString(), w * 0.6, 76 + i * 30); g.textAlign = 'left'; });
-  g.fillStyle = '#9ff'; g.font = `800 20px ${FONT}`; g.fillText('합계', w * 0.64, 80); g.font = `900 34px ${FONT}`; g.fillText((st.total || 0).toLocaleString(), w * 0.64, 120);
-  g.fillStyle = '#ffd36b'; g.font = `800 20px ${FONT}`; g.fillText(st.msg || '', w * 0.64, 180);
-  tex.needsUpdate = true;
-}

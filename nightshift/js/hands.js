@@ -1,118 +1,191 @@
-// 1인칭 내 손·팔: 실제 사람 팔 조각 모델(CC BY 4.0) + 긴팔 티셔츠 소매 + 편의점 조끼(명찰)
+// 1인칭 내 손·팔: 실제 사람 손 모델 + 손가락 뼈 25개(handvr 리그)로 손가락 마디마다 따로 굽힌다.
+// 평소엔 화면 아래로 내려가 있다가, 물건을 집거나 돈을 넣을 때만 올라온다. 팔은 긴팔 티셔츠 소매.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { canvasTex } from './store.js';
+import { loadHandRigs, setSkinTone } from './rig/hand-rig.js';
+import { canvasTex, drawBrand } from './store.js';
 
-// 모델(왼팔) 관절 위치 (handvr/js/hand-rig.js 와 같은 값)
-const J = {
-  wrist: [0.0457, 0.1688, 0.1484], mid: [0.0696, 0.1227, 0.2474], idx: [0.0561, 0.1520, 0.2634], pinky: [0.0697, 0.0837, 0.1970],
-  elbow: [0.0295, 0.3395, -0.0790], shoulder: [-0.0250, 0.5740, -0.2940],
-};
-const V = (a, mx = 1) => new THREE.Vector3(a[0] * mx, a[1], a[2]);
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR",sans-serif';
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const FN = ['thumb', 'index-finger', 'middle-finger', 'ring-finger', 'pinky-finger'];
+// 21개 관절 순서 → 뼈 이름
+const J_NAMES = ['wrist', 'thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip',
+  ...FN.slice(1).flatMap(n => [`${n}-phalanx-proximal`, `${n}-phalanx-intermediate`, `${n}-phalanx-distal`, `${n}-tip`])];
 
-function basis(f, a) { // f: 손가락 방향, a: 새끼→검지 방향
-  const F = f.clone().normalize(), A = a.clone().addScaledVector(F, -a.dot(F)).normalize(), U = new THREE.Vector3().crossVectors(F, A);
-  return new THREE.Matrix4().makeBasis(A, U, F);
-}
+// 손 모양: 손가락별 [뿌리, 둘째, 끝마디] 추가 굽힘(도) + 벌림, 엄지 [굽힘1, 굽힘2, 손바닥 쪽으로 모으기 0~1]
+export const POSES = {
+  relax: { f: [[14, 20, 10], [16, 24, 12], [18, 26, 14], [22, 30, 16]], spread: 0, thumb: [10, 8, 0.15] },
+  open: { f: [[2, 4, 2], [2, 4, 2], [2, 4, 2], [3, 5, 3]], spread: 4, thumb: [0, 0, 0] },
+  grip: { f: [[42, 58, 30], [46, 62, 34], [50, 66, 36], [54, 70, 40]], spread: -3, thumb: [22, 22, 0.55] },
+  pinch: { f: [[34, 36, 14], [42, 58, 34], [52, 72, 44], [58, 78, 50]], spread: -2, thumb: [18, 16, 0.5] },
+  point: { f: [[2, 6, 2], [72, 92, 58], [78, 96, 60], [80, 96, 60]], spread: 0, thumb: [28, 30, 0.6] },
+  fist: { f: [[80, 100, 70], [84, 104, 72], [86, 104, 72], [88, 104, 72]], spread: -4, thumb: [34, 40, 0.75] },
+};
 
 export async function buildHands(camera, yawObj, name) {
-  const L = new GLTFLoader(), T = new THREE.TextureLoader();
-  const [gltf, map, nrm, orm] = await Promise.all([L.loadAsync('assets/models/arm.glb'), T.loadAsync('assets/models/arm-color.jpg'), T.loadAsync('assets/models/arm-normal.jpg'), T.loadAsync('assets/models/arm-orm.jpg')]);
-  map.colorSpace = THREE.SRGBColorSpace;
-  let geo; gltf.scene.traverse(o => { if (o.isMesh) geo = o.geometry; });
-  const skin = new THREE.MeshStandardMaterial({ map, normalMap: nrm, roughnessMap: orm, aoMap: orm, roughness: 0.75, envMapIntensity: 0.5, color: 0xfff1ea });
-  const cloth = canvasTex('cloth', 128, 128, (g, w, h) => { g.fillStyle = '#26324a'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(255,255,255,${0.03 + Math.random() * 0.03})`; g.fillRect(0, y, w, 1); } });
-  cloth.repeat.set(3, 3);
-  const mSleeve = new THREE.MeshStandardMaterial({ map: cloth, roughness: 0.95, envMapIntensity: 0.3 });
-  const mCuff = new THREE.MeshStandardMaterial({ color: 0x1d273a, roughness: 0.95 });
+  const rigs = await loadHandRigs();
+  setSkinTone('medium');
+  const cloth = canvasTex('cloth', 256, 256, (g, w, h) => {
+    g.fillStyle = '#28344c'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(255,255,255,${0.025 + Math.random() * 0.03})`; g.fillRect(0, y, w, 1); }
+    for (let x = 0; x < w; x += 3) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.05})`; g.fillRect(x, 0, 1, h); }
+  });
+  // 천 주름 (범프맵): 팔 방향으로 늘어진 굵은 주름 + 잔주름
+  const wrinkle = canvasTex('wrinkle', 256, 256, (g, w, h) => {
+    const id = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = 128 + 50 * Math.sin(y * 0.09 + Math.sin(x * 0.05) * 2.2) * Math.sin(x * 0.024 + 1) + 22 * Math.sin(y * 0.31 + x * 0.07) + (Math.random() - 0.5) * 18;
+      const i = (y * w + x) * 4; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255;
+    }
+    g.putImageData(id, 0, 0);
+  }, false);
+  cloth.repeat.set(2, 3); wrinkle.repeat.set(1, 2);
+  const mSleeve = new THREE.MeshStandardMaterial({ map: cloth, bumpMap: wrinkle, bumpScale: 3, roughness: 0.95, envMapIntensity: 0.3 });
+  const mCuff = new THREE.MeshStandardMaterial({ color: 0x1d273a, roughness: 0.95, bumpMap: wrinkle, bumpScale: 1 });
+  const unitTube = (r0, r1) => new THREE.CylinderGeometry(r1, r0, 1, 20, 1, true).translate(0, 0.5, 0);
 
-  // 팔뚝 중간~손끝만 남긴다 (어깨·위팔 맨살이 보이지 않게, 나머지는 긴 소매 안)
-  const W0 = V(J.wrist), F0 = W0.clone().sub(V(J.elbow)).normalize();
-  {
-    const pos = geo.attributes.position, idx = geo.index ? geo.index.array : [...Array(pos.count).keys()], keep = [], v = new THREE.Vector3();
-    const ok = i => v.fromBufferAttribute(pos, i).sub(W0).dot(F0) > -0.11;
+  // 리그 팔 메시에서 어깨·위팔 맨살 부분을 잘라낸다 (그 자리는 소매가 덮음)
+  for (const r of Object.values(rigs)) {
+    const g = r.mesh.geometry, pos = g.attributes.position, S = r.bindP.upperarm, E = r.bindP.forearm, se = E.clone().sub(S), l2 = se.lengthSq(), v = V();
+    const ok = i => v.fromBufferAttribute(pos, i).sub(S).dot(se) / l2 > 0.6;
+    const idx = g.index.array, keep = [];
     for (let i = 0; i < idx.length; i += 3) if (ok(idx[i]) && ok(idx[i + 1]) && ok(idx[i + 2])) keep.push(idx[i], idx[i + 1], idx[i + 2]);
-    geo = geo.clone(); geo.setIndex(keep);
+    g.setIndex(keep);
   }
-  const SH = { R: new THREE.Vector3(0.3, -0.46, 0.1), L: new THREE.Vector3(-0.3, -0.46, 0.1) }; // 화면 밖 어깨 위치(카메라 기준)
   const make = (side) => {
-    const mx = side === 'R' ? -1 : 1;
-    const wrist = V(J.wrist, mx), mid = V(J.mid, mx), palm = wrist.clone().lerp(mid, 0.55);
-    const fM = wrist.clone().sub(V(J.elbow, mx)).normalize(), aM = V(J.idx, mx).sub(V(J.pinky, mx));
-    const model = new THREE.Group();
-    const mesh = new THREE.Mesh(geo, skin); mesh.scale.x = mx; model.add(mesh);
-    // 긴팔 소매: 손목 6.5cm 뒤에서 화면 밖까지
-    const tube = (a, b, r0, r1, mat) => { const d = b.clone().sub(a), len = d.length(); const g = new THREE.CylinderGeometry(r1, r0, len, 18, 1, true); const m = new THREE.Mesh(g, mat); m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); m.material.side = THREE.DoubleSide; model.add(m); return m; };
-    const cuff = wrist.clone().addScaledVector(fM, -0.065);
-    tube(cuff, wrist.clone().addScaledVector(fM, -0.9), 0.047, 0.075, mSleeve);
-    tube(cuff.clone().addScaledVector(fM, -0.025), cuff.clone().addScaledVector(fM, 0.004), 0.049, 0.048, mCuff);
-    model.position.copy(palm).multiplyScalar(-1);
-    const pivot = new THREE.Group(); pivot.add(model);
-    const holder = new THREE.Group(); holder.position.set(0, -0.035, 0.0); pivot.add(holder); // 손바닥 아래 물건 놓는 곳
-    const inv = basis(fM, aM).invert();
-    const s = side === 'R' ? 1 : -1;
-    // 어깨에서 손 위치로 팔을 겨눈다 → 팔꿈치가 꺾여 보이지 않음. 손바닥은 아래(give 면 위)
-    const aim = (posCam, up, kind) => {
-      const f = posCam.clone().sub(SH[side]).normalize(); f.addScaledVector(up, -0.12).normalize();
-      const a = new THREE.Vector3().crossVectors(up, f).multiplyScalar(s).normalize(); if (kind === 'give') a.negate();
-      return new THREE.Quaternion().setFromRotationMatrix(basis(f, a).multiply(inv));
+    const rig = rigs[side], s = side === 'R' ? 1 : -1;
+    camera.add(rig.group);
+    // 소매 (팔 뼈를 따라감): 어깨→팔꿈치, 팔꿈치→손목 6cm 앞, 소맷부리
+    const upper = new THREE.Mesh(unitTube(0.072, 0.064), mSleeve), fore = new THREE.Mesh(unitTube(0.062, 0.05), mSleeve), cuff = new THREE.Mesh(unitTube(0.052, 0.051), mCuff);
+    const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.064, 16, 12), mSleeve);
+    for (const m of [upper, fore, cuff, elbow]) { m.material.side = THREE.DoubleSide; m.visible = false; camera.add(m); }
+    const local = J_NAMES.map(n => rig.bindP[n].clone());
+    const J = J_NAMES.map(() => V());
+    const h = {
+      side, s, rig, local, J, sleeves: { upper, fore, cuff, elbow },
+      pos: V(0.22 * s, -0.75, -0.3), F: V(-0.2 * s, 0.3, -1).normalize(), up: V(0, 1, 0),
+      tPos: V(0.22 * s, -0.75, -0.3), tF: V(-0.2 * s, 0.3, -1).normalize(), tUp: V(0, 1, 0), palmUp: false,
+      cur: structuredClone(POSES.relax), target: 'relax', shown: 0, want: false, held: null, holdMode: 'palm',
+      holder: new THREE.Group(),
     };
-    const restPos = new THREE.Vector3(0.2 * s, -0.28, -0.43);
-    const rest = { pos: restPos, q: aim(restPos, new THREE.Vector3(0, 1, 0)) };
-    pivot.position.copy(rest.pos); pivot.quaternion.copy(rest.q);
-    camera.add(pivot);
-    return { side, pivot, holder, rest, aim, tPos: rest.pos.clone(), tQ: rest.q.clone(), held: null, busy: false };
+    camera.add(h.holder);
+    return h;
   };
   const hands = { R: make('R'), L: make('L') };
 
-  // 몸통 + 조끼 (아래 보면 보임)
+  // ── 몸통 + 편의점 조끼 (아래 보면 보임) ──
   const body = new THREE.Group(); yawObj.add(body);
-  const vestTex = canvasTex('vest', 512, 512, (g, w, h) => {
-    g.fillStyle = '#0f8f7a'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
-    g.fillStyle = '#ff7a2e'; g.fillRect(0, h * 0.62, w, 26); g.fillStyle = '#fff'; g.fillRect(0, h * 0.62 + 26, w, 8);
-    g.fillStyle = '#c9ccd1'; g.fillRect(w / 2 - 5, 0, 10, h); // 지퍼
-    g.fillStyle = '#fff'; g.font = `900 40px ${FONT}`; g.fillText('NIGHT', w * 0.56, h * 0.3); g.fillStyle = '#ff9a4a'; g.fillText('24', w * 0.56 + 130, h * 0.3);
+  const vestTex = canvasTex('vest', 1024, 1024, (g, w, h) => {
+    g.fillStyle = '#1f2d4a'; g.fillRect(0, 0, w, h);                       // 남색 조끼
+    for (let y = 0; y < h; y += 3) for (let x = (y / 3) % 2 ? 0 : 1.5; x < w; x += 3) { g.fillStyle = `rgba(255,255,255,${0.02 + Math.random() * 0.025})`; g.fillRect(x, y, 1.5, 1.5); } // 원단 짜임
+    g.fillStyle = '#ffc53d'; g.fillRect(0, h * 0.6, w, 30); g.fillStyle = '#2fd3b4'; g.fillRect(0, h * 0.6 + 30, w, 10); // 반사띠
+    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 3; g.setLineDash([10, 7]);           // 박음질
+    g.strokeRect(w * 0.08, h * 0.7, w * 0.3, h * 0.18); g.strokeRect(w * 0.62, h * 0.7, w * 0.3, h * 0.18); // 주머니
+    g.setLineDash([]); g.fillStyle = '#9aa3ad'; g.fillRect(w / 2 - 7, 0, 14, h);           // 지퍼
+    for (let y = 0; y < h; y += 8) { g.fillStyle = '#d8dde2'; g.fillRect(w / 2 - 9 + (y / 8 % 2) * 9, y, 9, 4); }
+    drawBrand(g, w * 0.6, h * 0.22, 64, true);                                             // 가슴 로고 자수
   });
-  const mVest = new THREE.MeshStandardMaterial({ map: vestTex, roughness: 0.8 });
-  const mShirt = new THREE.MeshStandardMaterial({ map: cloth, roughness: 0.95 });
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.17, 0.62, 20, 1, false, -Math.PI * 0.62, Math.PI * 1.24), mVest);
-  torso.scale.set(1, 1, 0.62); torso.position.set(0, -0.62, 0.06); torso.rotation.y = Math.PI; body.add(torso);
-  const under = new THREE.Mesh(new THREE.CylinderGeometry(0.195, 0.165, 0.62, 20), mShirt); under.scale.set(1, 1, 0.6); under.position.set(0, -0.62, 0.07); body.add(under);
-  const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.03), new THREE.MeshStandardMaterial({ roughness: 0.3 }));
-  tag.position.set(-0.08, -0.43, -0.065); tag.rotation.set(-0.2, Math.PI, 0); tag.rotation.y = 0; tag.rotation.x = -0.25; body.add(tag);
+  const vestBump = canvasTex('vestbump', 512, 512, (g, w, h) => {
+    const id = g.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = 128 + 35 * Math.sin(x * 0.045 + Math.sin(y * 0.03) * 3) * Math.sin(y * 0.02) + ((x + y) % 4 < 2 ? 6 : -6) + (Math.random() - 0.5) * 10;
+      const i = (y * w + x) * 4; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255;
+    }
+    g.putImageData(id, 0, 0);
+  }, false);
+  const mVest = new THREE.MeshStandardMaterial({ map: vestTex, bumpMap: vestBump, bumpScale: 2.5, roughness: 0.75 });
+  const mShirt = new THREE.MeshStandardMaterial({ map: cloth, bumpMap: wrinkle, bumpScale: 2, roughness: 0.95 });
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.175, 0.64, 32, 1, false, -Math.PI * 0.64, Math.PI * 1.28), mVest);
+  torso.scale.set(1, 1, 0.62); torso.position.set(0, -0.63, 0.06); torso.rotation.y = Math.PI; body.add(torso);
+  const under = new THREE.Mesh(new THREE.CylinderGeometry(0.195, 0.165, 0.64, 24), mShirt); under.scale.set(1, 1, 0.6); under.position.set(0, -0.63, 0.07); body.add(under);
+  const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.032), new THREE.MeshStandardMaterial({ roughness: 0.25, metalness: 0.1 }));
+  tag.position.set(-0.085, -0.43, -0.066); tag.rotation.set(0.25, Math.PI, 0); body.add(tag);
   const setName = (n) => {
-    const c = document.createElement('canvas'); c.width = 256; c.height = 96; const g = c.getContext('2d');
-    g.fillStyle = '#fff'; g.fillRect(0, 0, 256, 96); g.fillStyle = '#0f8f7a'; g.fillRect(0, 0, 256, 22); g.fillStyle = '#fff'; g.font = `800 16px ${FONT}`; g.fillText('NIGHT24  STAFF', 10, 17);
-    g.fillStyle = '#111'; g.font = `900 46px ${FONT}`; g.textAlign = 'center'; g.fillText(n, 128, 78);
+    const c = document.createElement('canvas'); c.width = 320; c.height = 120; const g = c.getContext('2d');
+    g.fillStyle = '#f7f7f4'; g.fillRect(0, 0, 320, 120); g.fillStyle = '#1f2d4a'; g.fillRect(0, 0, 320, 30);
+    drawBrand(g, 10, 6, 20, false); g.fillStyle = '#ffd36b'; g.font = `800 15px ${FONT}`; g.textAlign = 'right'; g.fillText('STAFF', 308, 22);
+    g.fillStyle = '#111'; g.font = `900 56px ${FONT}`; g.textAlign = 'center'; g.fillText(n, 160, 98);
     tag.material.map?.dispose(); tag.material.map = new THREE.CanvasTexture(c); tag.material.map.colorSpace = THREE.SRGBColorSpace; tag.material.needsUpdate = true;
   };
   setName(name);
 
-  const tmp = new THREE.Vector3();
+  const tmp = V(), tq = new THREE.Quaternion(), camQ = new THREE.Quaternion();
+  const lerpPose = (cur, tgt, k) => {
+    cur.f.forEach((a, i) => a.forEach((v, j) => (a[j] = v + (tgt.f[i][j] - v) * k)));
+    cur.spread += (tgt.spread - cur.spread) * k; cur.thumb.forEach((v, j) => (cur.thumb[j] = v + (tgt.thumb[j] - v) * k));
+  };
+  // 손 모양(굽힘값) → 리그가 쓰는 관절 각도
+  const toRigPose = (rig, cur) => {
+    const A0 = rig.bindAng, out = { fingers: [null], thumb: null };
+    for (let f = 1; f < 5; f++) { const b = A0.fingers[f], c = cur.f[f - 1]; out.fingers[f] = { a: b.a + cur.spread * (f - 2.5) * 0.6, m: b.m + c[0], p: b.p + c[1], d: b.d + c[2] }; }
+    const t = A0.thumb, dir = t.dir.clone().lerp(V(0.55, 0.35 * (rig.side === 'R' ? 1 : 1), -0.75), cur.thumb[2] * 0.6).normalize();
+    out.thumb = { dir, t1: t.t1 + cur.thumb[0], t2: t.t2 + cur.thumb[1] };
+    return out;
+  };
+  const tube = (m, a, b) => { tmp.subVectors(b, a); const len = tmp.length(); m.position.copy(a); m.quaternion.setFromUnitVectors(V(0, 1, 0), tmp.normalize()); m.scale.set(1, len, 1); };
+  const wp = (rig, n) => camera.worldToLocal(rig.bone[n].getWorldPosition(V()));
+
   const api = {
-    hands, body, setName,
-    // 월드 좌표 p 로 손 뻗기 → 도착하면 resolve
-    reachTo(side, p, kind = 'reach', hold = 0.25) {
-      const h = hands[side]; h.busy = true;
-      tmp.copy(p).y += kind === 'give' ? 0 : 0.06; camera.worldToLocal(tmp);
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()).invert());
-      h.tPos.copy(tmp); h.tQ.copy(h.aim(tmp, up, kind));
-      return new Promise(r => setTimeout(() => r(), 260 + hold * 0));
-    },
-    // 물건이 화면 오른쪽이면 오른손, 왼쪽이면 왼손
+    hands, body, setName, enabled: true,
     sideOf(p) { tmp.copy(p); camera.worldToLocal(tmp); return tmp.x > -0.03 ? 'R' : 'L'; },
-    rest(side) { const h = hands[side]; h.tPos.copy(h.rest.pos); h.tQ.copy(h.rest.q); h.busy = false; },
-    hold(side, obj) { const h = hands[side]; if (h.held) h.held.removeFromParent(); h.held = obj; if (obj) { obj.position.set(0, -0.02, 0); obj.rotation.set(0, 0, 0); h.holder.add(obj); } },
+    // 월드 좌표 p 로 손 뻗기. pose: 손 모양, kind: 'down'(손바닥 아래) | 'up'(손바닥 위, 건네기) | 'front'(누르기)
+    reachTo(side, p, pose = 'open', kind = 'down', ms = 380) {
+      const h = hands[side]; h.want = true; h.target = pose;
+      camera.getWorldQuaternion(camQ).invert();
+      const up = V(0, 1, 0).applyQuaternion(camQ);
+      tmp.copy(p); if (kind === 'down') tmp.addScaledVector(V(0, 1, 0), 0.07); camera.worldToLocal(tmp);
+      const sh = V(0.2 * h.s, -0.35, 0.05), F = tmp.clone().sub(sh).normalize();
+      if (kind === 'down') F.addScaledVector(up, -0.6).normalize();
+      if (kind === 'front') F.addScaledVector(up, -0.2).normalize();
+      h.tF.copy(F); h.tUp.copy(up); h.palmUp = kind === 'up';
+      // 손목은 손바닥 중심이 목표에 오도록 손가락 방향 반대로 8cm
+      h.tPos.copy(tmp).addScaledVector(F, -0.08);
+      return new Promise(r => setTimeout(r, ms));
+    },
+    pose(side, pose) { hands[side].target = pose; },
+    rest(side) { const h = hands[side]; h.want = false; h.target = 'relax'; h.tPos.set(0.22 * h.s, -0.78, -0.25); h.tF.set(-0.2 * h.s, 0.4, -1).normalize(); h.palmUp = false; },
+    // 물건 쥐기: mode 'palm'(손바닥 아래 쥐기) | 'pinch'(엄지·검지 사이)
+    hold(side, obj, mode = 'palm') {
+      const h = hands[side]; if (h.held && h.held !== obj) h.held.removeFromParent();
+      h.held = obj; h.holdMode = mode;
+      if (obj) { h.holder.add(obj); obj.position.set(0, 0, 0); obj.rotation.set(0, 0, 0); }
+    },
     update(dt, t) {
       for (const h of Object.values(hands)) {
-        const k = 1 - Math.exp(-dt * 11);
-        const bob = h.busy ? 0 : Math.sin(t * 1.6 + (h.side === 'R' ? 0 : 1.3)) * 0.004;
-        h.pivot.position.lerp(tmp.copy(h.tPos).setY(h.tPos.y + bob), k);
-        h.pivot.quaternion.slerp(h.tQ, k);
+        const k = 1 - Math.exp(-dt * 9);
+        h.pos.lerp(h.tPos, k); h.F.lerp(h.tF, k).normalize(); h.up.lerp(h.tUp, k).normalize();
+        lerpPose(h.cur, POSES[h.target] || POSES.relax, 1 - Math.exp(-dt * 12));
+        h.shown = h.want ? 1 : (h.pos.y < -0.62 ? 0 : 1);
+        const vis = h.shown > 0 && api.enabled;
+        // 손바닥 좌표: F = 손가락 방향, L = 새끼→검지 방향 (오른손 손바닥이 아래면 왼쪽)
+        const L = V().crossVectors(h.up, h.F).multiplyScalar(h.s).normalize(); if (h.palmUp) L.negate();
+        const W = h.pos.clone().add(V(0, Math.sin(t * 1.7 + h.s) * 0.003, 0));
+        h.J[0].copy(W); h.J[9].copy(W).addScaledVector(h.F, 0.09);
+        h.J[5].copy(h.J[9]).addScaledVector(L, 0.022); h.J[17].copy(h.J[9]).addScaledVector(L, -0.03);
+        h.rig.update(h.J, h.local, toRigPose(h.rig, h.cur), null, dt, null, vis);
+        const sl = h.sleeves;
+        for (const m of Object.values(sl)) m.visible = vis;
+        if (vis) {
+          const S = wp(h.rig, 'upperarm'), E = wp(h.rig, 'forearm'), Wr = wp(h.rig, 'wrist');
+          const cuffEnd = Wr.clone().lerp(E, 0.24), cuffStart = Wr.clone().lerp(E, 0.3);
+          tube(sl.upper, S.clone().lerp(E, 0.35), E); tube(sl.fore, E, cuffEnd); tube(sl.cuff, cuffStart, cuffEnd.clone().lerp(Wr, 0.02)); sl.elbow.position.copy(E);
+          // 쥔 물건 위치
+          if (h.held) {
+            // 손바닥 방향: 손목·검지뿌리·새끼뿌리 평면의 법선 중 손가락 끝이 굽는 쪽
+            const I = wp(h.rig, 'index-finger-phalanx-proximal'), P = wp(h.rig, 'pinky-finger-phalanx-proximal'), Mt = wp(h.rig, 'middle-finger-tip'), Mm = wp(h.rig, 'middle-finger-phalanx-proximal');
+            const n = V().crossVectors(I.clone().sub(Wr), P.clone().sub(Wr)).normalize(); if (Mt.clone().sub(Wr).dot(n) < 0) n.negate();
+            const across = I.clone().sub(P).normalize(), fwd = Mm.clone().sub(Wr).normalize();
+            if (h.holdMode === 'pinch') { const a = wp(h.rig, 'thumb-tip'), b = wp(h.rig, 'index-finger-tip'); h.holder.position.copy(a).lerp(b, 0.5).addScaledVector(n, 0.004); }
+            else h.holder.position.copy(Wr).lerp(Mm, 0.75).addScaledVector(n, 0.04);
+            const y = across, z = n.clone().addScaledVector(y, -n.dot(y)).normalize(), x = V().crossVectors(y, z);
+            h.holder.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+            if (h.holdMode !== 'pinch') h.holder.position.addScaledVector(y, -0.03);
+            void fwd;
+          }
+        }
+        h.holder.visible = vis;
       }
     },
   };
+  for (const s of ['R', 'L']) api.rest(s);
   return api;
 }

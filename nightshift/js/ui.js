@@ -15,6 +15,7 @@ const P = {
   warn: '<path d="M12 3.2l9.6 17H2.4z"/><path d="M12 10v4.8M12 17.6v.01"/>',
   police: '<path d="M3 17v-3.2L5.2 9h13.6L21 13.8V17z"/><circle cx="7.5" cy="17.2" r="1.9"/><circle cx="16.5" cy="17.2" r="1.9"/><path d="M10 5.5h4M12 5.5V9"/>',
   check: '<path d="M5 12.6l4.4 4.4L19 7.4"/>',
+  scan: '<path d="M3 7V4.5A1.5 1.5 0 0 1 4.5 3H7M17 3h2.5A1.5 1.5 0 0 1 21 4.5V7M21 17v2.5a1.5 1.5 0 0 1-1.5 1.5H17M7 21H4.5A1.5 1.5 0 0 1 3 19.5V17"/><path d="M7 7v10M10 7v10M13.5 7v10M17 7v10" stroke-width="1.6"/><path d="M2.5 12h19" stroke="#ff4040" stroke-width="1.4"/>',
   card: '<rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 9.5h19M6 15h4"/>',
 };
 const STAR = '<path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/>';
