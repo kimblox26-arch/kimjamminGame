@@ -3,6 +3,12 @@ import * as THREE from 'three';
 
 const SFX = ['chime', 'door', 'register', 'bill', 'bag', 'step1', 'step2', 'thud', 'key', 'night', 'engine', 'whoosh'];
 export const Native = window.NativeApp || null;
+// 목소리 이름으로 성별 추정 (구글 TTS: ism/jeb/kob 여, jmh/kod 남 · 삼성 TTS: SMTf 여, SMTm 남 · 브라우저 음성 이름)
+export function voiceGender(n) {
+  if (/SMTm|male|남자|InJoon|Hyunsu|Bong|Gook|jmh|kod|-c-|Standard-C|Standard-D|Wavenet-C|Wavenet-D/i.test(n) && !/female/i.test(n)) return 'm';
+  if (/SMTf|female|여자|SunHi|JiMin|SeoHyeon|Yu ?Jin|Heami|ism|kob|jeb|Google 한국|Yuna|Sora|-a-|-b-|Standard-A|Standard-B/i.test(n)) return 'f';
+  return '?';
+}
 
 export class Audio {
   constructor() {
@@ -76,21 +82,38 @@ export class Audio {
   }
   setDoorOpen(open) { const s = this.outside; if (s) s.gain.gain.setTargetAtTime(open ? 2.2 : 0.7, this.ctx.currentTime, 0.25); }
   // ── 목소리 (TTS) ──
-  speak(text, { pitch = 1, rate = 1 } = {}, onEnd) {
-    const clean = text.replace(/\(.*?\)/g, '').replace(/[~…]/g, ' ').trim();
-    const est = Math.max(900, clean.length * 140 / rate);
+  // 남자/여자 목소리를 따로 골라 쓴다 (음높이를 억지로 바꾸지 않아야 자연스럽다)
+  loadVoices(settings = {}) {
+    let list = [];
+    try {
+      if (Native?.voices) list = JSON.parse(Native.voices() || '[]');
+      else if (window.speechSynthesis) list = speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).map(v => ({ name: v.name, quality: /natural|online|neural|wavenet/i.test(v.name) ? 500 : 300, network: !v.localService }));
+    } catch (e) { list = []; }
+    this.voices = list.filter(v => !v.notInstalled);
+    const order = (a, b) => (b.quality - a.quality) || (a.network - b.network) || a.name.localeCompare(b.name);
+    const pickList = (g, pref) => { const l = this.voices.filter(v => voiceGender(v.name) === g).sort(order).map(v => v.name); if (pref && this.voices.some(v => v.name === pref)) { l.splice(l.indexOf(pref), 1); l.unshift(pref); } return l; };
+    this.vm = pickList('m', settings.voiceM); this.vf = pickList('f', settings.voiceF);
+    return this.voices;
+  }
+  voiceFor(gender, idx = 0) { const l = gender === 'f' ? this.vf : this.vm; return l?.length ? l[idx % l.length] : ''; }
+  speak(text, { pitch = 1, rate = 1, gender = 'm', idx = 0 } = {}, onEnd) {
+    const clean = text.replace(/\(.*?\)/g, '').replace(/…/g, ', ').replace(/~/g, '').replace(/\s+/g, ' ').trim();
+    const voice = this.voiceFor(gender, idx);
+    if (voice) pitch = 1 + (pitch - 1) * 0.35;              // 진짜 남/여 목소리가 있으면 음높이는 살짝만
+    rate = 1 + (rate - 1) * 0.6;
+    const est = Math.max(900, clean.length * 150 / rate);
     if (!this.voiceOn || !clean) { setTimeout(() => onEnd?.(), clean ? est * 0.6 : 600); return est; }
     if (Native?.speak) {
       const id = 'u' + (++this.sid); if (onEnd) this.speakCbs[id] = onEnd;
-      Native.speak(clean, pitch, rate, id);
-      setTimeout(() => { if (this.speakCbs[id]) { delete this.speakCbs[id]; onEnd?.(); } }, est + 2500);
+      Native.speak(clean, pitch, rate, id, voice);
+      setTimeout(() => { if (this.speakCbs[id]) { delete this.speakCbs[id]; onEnd?.(); } }, est + 3000);
       return est;
     }
     if (window.speechSynthesis) {
       const u = new SpeechSynthesisUtterance(clean); u.lang = 'ko-KR'; u.pitch = pitch; u.rate = rate;
-      const v = speechSynthesis.getVoices().find(v => v.lang?.startsWith('ko')); if (v) u.voice = v;
+      const vs = speechSynthesis.getVoices(), v = vs.find(x => x.name === voice) || vs.find(x => /^ko/i.test(x.lang)); if (v) u.voice = v;
       let done = false; const fin = () => { if (!done) { done = true; onEnd?.(); } };
-      u.onend = fin; u.onerror = fin; speechSynthesis.speak(u); setTimeout(fin, est + 2500);
+      u.onend = fin; u.onerror = fin; speechSynthesis.speak(u); setTimeout(fin, est + 3000);
     } else setTimeout(() => onEnd?.(), est);
     return est;
   }

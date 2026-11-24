@@ -24,6 +24,18 @@ function retarget(srcScene, tgtScene, clip) {
   const srcBy = {}, srcOrder = [], srcRest = new Map(), tgtRest = new Map(), tgtBones = [];
   srcScene.traverse(o => { srcOrder.push(o); srcRest.set(o, qW(o)); if (o.name) srcBy[strip(o.name)] = o; });
   tgtScene.traverse(o => { tgtRest.set(o, qW(o)); if (o.isBone) tgtBones.push(o); });
+  // 기본자세 차이(T자/A자) 보정: 대상 뼈가 원본 뼈와 같은 방향을 가리키게 만드는 회전
+  const P = o => o.getWorldPosition(new THREE.Vector3());
+  const PREF = ['Spine', 'Neck', 'Head', 'Middle1'];
+  const mainChild = (o, ok) => { const ch = o.children.filter(c => c.name && ok(c)); return ch.find(c => PREF.some(p => strip(c.name).includes(p))) || ch[0]; };
+  const align = new Map();
+  for (const b of tgtBones) {
+    const src = srcBy[strip(b.name)]; if (!src) continue;
+    const ct = mainChild(b, c => c.isBone && srcBy[strip(c.name)]); if (!ct) continue;
+    const cs = srcBy[strip(ct.name)];
+    const dt = P(ct).sub(P(b)).normalize(), ds = P(cs).sub(P(src)).normalize();
+    if (dt.lengthSq() > 0.5 && ds.lengthSq() > 0.5) align.set(b, Q().setFromUnitVectors(dt, ds));
+  }
   const interp = {};
   for (const t of clip.tracks) if (t.name.endsWith('.quaternion')) interp[t.name.slice(0, -11)] = t.createInterpolant();
   const hip = clip.tracks.find(t => /Hips\.quaternion$/.test(t.name)) || clip.tracks[0];
@@ -39,7 +51,8 @@ function retarget(srcScene, tgtScene, clip) {
     for (const b of tgtBones) {
       const pw = tW.get(b.parent) || tgtRest.get(b.parent) || Q();
       const src = srcBy[strip(b.name)];
-      const w = src && sW.has(src) ? sW.get(src).clone().multiply(srcRest.get(src).clone().invert()).multiply(tgtRest.get(b)) : pw.clone().multiply(b.quaternion);
+      const rest = align.has(b) ? align.get(b).clone().multiply(tgtRest.get(b)) : tgtRest.get(b);
+      const w = src && sW.has(src) ? sW.get(src).clone().multiply(srcRest.get(src).clone().invert()).multiply(rest) : pw.clone().multiply(b.quaternion);
       tW.set(b, w);
       const l = pw.clone().invert().multiply(w); out.get(b).push(l.x, l.y, l.z, l.w);
     }
@@ -92,24 +105,27 @@ export class Person {
   accessories(type) {
     if (!this.head) return;
     this.head.updateWorldMatrix(true, false);
-    const s = this.head.getWorldScale(new THREE.Vector3()).x;
-    const add = (mesh, x, y, z) => { mesh.scale.multiplyScalar(1 / s); mesh.position.set(x / s, y / s, z / s); this.head.add(mesh); return mesh; };
+    // 머리 뼈 축이 모델마다 달라서, 모델 기준(위=+y, 앞=+z, 미터) 좌표계를 머리에 붙인다
+    const anchor = new THREE.Object3D(), hq = this.head.getWorldQuaternion(new THREE.Quaternion()), rq = this.root.getWorldQuaternion(new THREE.Quaternion());
+    anchor.quaternion.copy(hq.invert().multiply(rq)); anchor.scale.setScalar(1 / this.head.getWorldScale(new THREE.Vector3()).x); this.head.add(anchor);
+    const add = (mesh, x, y, z) => { mesh.position.set(x, y, z); anchor.add(mesh); return mesh; };
     const M = (c, r = 0.7, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
-    const hy = this.kind === 'woman' ? 0.1 : 0.11;
+    const topB = findBone(this.model, 'HeadTop_End'), hw = this.head.getWorldPosition(new THREE.Vector3());
+    const ht = topB ? (topB.getWorldPosition(new THREE.Vector3()).y - hw.y) : 0.2; // 머리뼈 → 정수리 높이(m)
     if (type.hat === 'cap') {
       const g = new THREE.Group(); const cm = M(type.top === '#111111' ? '#c02020' : '#1a1a1a');
       const dome = new THREE.Mesh(new THREE.SphereGeometry(0.105, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), cm); dome.scale.set(1, 0.75, 1.08); g.add(dome);
       const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.01, 18, 1, false, -Math.PI / 2, Math.PI), cm); brim.scale.set(1, 1, 0.9); brim.position.set(0, 0, 0.08); g.add(brim);
-      add(g, 0, hy, 0.005);
+      add(g, 0, ht - 0.075, 0.005);
     } else if (type.hat === 'helmet') {
       const g = new THREE.Group();
       const shell = new THREE.Mesh(new THREE.SphereGeometry(0.125, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), M('#f1f1f1', 0.25, 0.1)); shell.scale.set(1, 0.95, 1.12); g.add(shell);
       const stripe = new THREE.Mesh(new THREE.SphereGeometry(0.127, 6, 10, Math.PI / 2 - 0.15, 0.3, 0, Math.PI * 0.5), M('#1d6bd6', 0.3)); stripe.scale.copy(shell.scale); g.add(stripe);
-      add(g, 0, hy - 0.025, -0.01);
+      add(g, 0, ht - 0.11, -0.01);
     } else if (type.hat === 'beanie') {
-      const b = new THREE.Mesh(new THREE.SphereGeometry(0.108, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), M('#2f3a20', 0.95)); b.scale.set(1, 0.95, 1.06); add(b, 0, hy - 0.005, -0.005);
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.108, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), M('#2f3a20', 0.95)); b.scale.set(1, 0.95, 1.06); add(b, 0, ht - 0.095, -0.005);
     } else if (type.hat === 'hood') {
-      const h = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 12, Math.PI * 0.78, Math.PI * 1.44, 0, Math.PI * 0.7), M(type.top || '#222', 0.95)); h.material.side = THREE.DoubleSide; h.scale.set(1.05, 1.1, 1.1); add(h, 0, hy - 0.05, -0.035);
+      const h = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 12, Math.PI * 0.78, Math.PI * 1.44, 0, Math.PI * 0.7), M(type.top || '#222', 0.95)); h.material.side = THREE.DoubleSide; h.scale.set(1.05, 1.1, 1.1); add(h, 0, ht - 0.115, -0.035);
     }
     if (this.kind === 'man' && !type.hat && type.id !== 'boss') { // 머리카락
       const hc = pick(['#1a1410', '#221a14', '#0f0d0c', '#3a2a1e']);
@@ -117,20 +133,21 @@ export class Person {
       const hair = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.58), hm); hair.scale.set(1.03, 0.9, 1.12); hair.rotation.x = -0.25;
       const g = new THREE.Group(); g.add(hair);
       const fr = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 6, Math.PI * 0.12, Math.PI * 0.76, Math.PI * 0.3, Math.PI * 0.12), hm); fr.scale.set(1.04, 1, 1.13); g.add(fr);
-      add(g, 0, hy - 0.025, -0.012);
+      add(g, 0, ht - 0.088, -0.012);
     }
-    if (type.id === 'boss') { const sideHair = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 20, Math.PI * 1.1), new THREE.MeshStandardMaterial({ color: '#8d8a86', roughness: 0.9 })); sideHair.rotation.set(Math.PI / 2, 0, Math.PI * 0.95); add(sideHair, 0, 0.045, -0.015); }
-    if (type.mask) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 8, -Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.35, Math.PI * 0.35), M('#222', 0.9)); m.scale.set(1.15, 1.1, 1); add(m, 0, 0.0, 0.035); }
+    if (type.id === 'boss') { const sideHair = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 20, Math.PI * 1.1), new THREE.MeshStandardMaterial({ color: '#8d8a86', roughness: 0.9 })); sideHair.rotation.set(Math.PI / 2, 0, Math.PI * 0.95); add(sideHair, 0, ht - 0.1, -0.015); }
+    if (type.mask) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 8, -Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.35, Math.PI * 0.35), M('#222', 0.9)); m.scale.set(1.15, 1.1, 1); add(m, 0, ht - 0.175, 0.04); }
     if (type.glasses) {
       const g = new THREE.Group(), fm = M('#111', 0.3, 0.5);
       for (const x of [-0.033, 0.033]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.003, 6, 18), fm); r.position.x = x; g.add(r); }
       const br = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.003, 0.003), fm); g.add(br);
-      add(g, 0, 0.065, 0.085);
+      add(g, 0, ht - 0.115, 0.085);
     }
     if (type.bottle && this.rHand) {
-      const s2 = this.rHand.getWorldScale(new THREE.Vector3()).x;
+      const a = new THREE.Object3D(), hq = this.rHand.getWorldQuaternion(new THREE.Quaternion()), rq = this.root.getWorldQuaternion(new THREE.Quaternion());
+      a.quaternion.copy(hq.invert().multiply(rq)); a.scale.setScalar(1 / this.rHand.getWorldScale(new THREE.Vector3()).x); this.rHand.add(a);
       const b = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.033, 0.22, 12), new THREE.MeshStandardMaterial({ color: '#2e8b3e', roughness: 0.1, transparent: true, opacity: 0.85 }));
-      b.scale.setScalar(1 / s2); b.position.set(0, 0.08 / s2, 0.03 / s2); this.rHand.add(b);
+      b.position.set(0, -0.07, 0.03); a.add(b);
     }
   }
   play(name, fade = 0.3, once = false) {

@@ -7,11 +7,12 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildStore, SPOT } from './store.js';
 import { loadPeople, Person } from './people.js';
 import { buildHands } from './hands.js';
-import { Audio, Native } from './audio.js';
+import { Audio, Native, voiceGender } from './audio.js';
 import { Voice } from './voice.js';
 import { Game } from './game.js';
+import { loadVehicles, CAR_COLORS } from './vehicles.js';
 import { PHRASES, TYPES } from './data.js';
-import { $, show, modal, toast, mine } from './ui.js';
+import { $, show, modal, toast, mine, ic, paintIcons } from './ui.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 const settings = Object.assign({ quality: IS_MOBILE ? 'mid' : 'high', diff: 'normal', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
@@ -90,6 +91,9 @@ addEventListener('keydown', e => {
 
 // ── 소리·목소리·음성인식 ──
 const audio = new Audio(); audio.voiceOn = settings.tts;
+const reloadVoices = () => audio.loadVoices(settings);
+window.__nativeTtsReady = reloadVoices; reloadVoices();
+if (window.speechSynthesis) speechSynthesis.onvoiceschanged = reloadVoices;
 const voice = new Voice({
   onText: t => game?.hear(t),
   onPartial: t => mine(t, true),
@@ -97,11 +101,12 @@ const voice = new Voice({
   onState: (s, err) => {
     $('bMic').classList.toggle('on', s === 'on'); $('micTxt').textContent = s === 'on' ? '듣는 중… (다시 누르면 끝)' : '누르고 말하기';
     if (s !== 'on') $('micLvl').style.transform = 'scaleY(0)';
-    if (s === 'error') toast(err === 'unsupported' ? '이 브라우저는 음성인식이 안 돼요<br><small>💬 말하기 버튼으로 문장을 고르세요</small>' : (err === 'no-speech' || err === '7' || err === '6' ? '잘 안 들렸어요. 다시 말해주세요' : (err === 'not-allowed' || err === 'perm' ? '마이크 권한을 허용해 주세요' : '음성인식 오류: ' + err)), 'bad', 2200);
+    if (s === 'error') toast(err === 'unsupported' ? '이 브라우저는 음성인식이 안 돼요<br><small>' + ic('talk') + ' 말하기 버튼으로 문장을 고르세요</small>' : (err === 'no-speech' || err === '7' || err === '6' ? '잘 안 들렸어요. 다시 말해주세요' : (err === 'not-allowed' || err === 'perm' ? '마이크 권한을 허용해 주세요' : '음성인식 오류: ' + err)), 'bad', 2200);
   },
 });
 
-let store, hands, game;
+let store, hands, game, vehicles;
+paintIcons();
 async function boot() {
   const bar = $('loadbar'), txt = $('loadtxt'); let p = [0, 0, 0];
   const prog = () => (bar.style.width = (p[0] * 20 + p[1] * 60 + p[2] * 20) + '%');
@@ -112,6 +117,7 @@ async function boot() {
     audio.init(v => { p[0] = v; prog(); }),
     loadPeople(v => { p[1] = v; prog(); }),
     buildHands(camera, yawObj, $('pname').value).then(h => { hands = h; p[2] = 1; prog(); }),
+    loadVehicles(scene).then(v => { vehicles = v; window.__veh = v; }),
   ]);
   game = new Game({ renderer, scene, camera, store, hands, audio, voice, settings, look });
   game.onExit = () => toMenu(); game.onNext = (d) => startShift(d);
@@ -155,22 +161,35 @@ $('bHelp').onclick = () => help();
 $('bSet').onclick = () => openSettings();
 function help() {
   modal(`<h2>근무 수칙</h2>
-  <h3>조작</h3><ul><li>화면을 <b>끌어서</b> 둘러보기, <b>눌러서</b> 물건 집기</li><li>🎤 버튼을 누르고 <b>실제로 말하면</b> 손님이 알아듣고 반응해요 (PC는 스페이스바)</li><li>💬 말하기: 마이크가 안 될 때 문장을 골라 말하기</li></ul>
-  <h3>계산 순서</h3><ul><li>손님이 들어오면 <b>"어서오세요!"</b></li><li>계산대 위 상품을 눌러 바코드 찍기 · 담배는 <b>↻ 뒤돌아</b> 번호 찾아 집기</li><li>카드: 🖥 포스 → 카드결제</li><li>현금: 지폐 눌러 받기 → 포스에 <b>받은 금액</b> 입력 → 현금결제 → 💴 돈통에서 <b>거스름돈을 직접</b> 세서 건네기</li><li>끝나면 <b>"감사합니다, 안녕히 가세요!"</b></li></ul>
-  <h3>주의</h3><ul><li>술·담배: 어려 보이면 <b>"신분증 보여주세요"</b> (2007년생까지 판매 가능)</li><li>진상: 취객·반말·깎아달라·환불·도둑… 침착하게 말로 대처, 심하면 🚨112</li><li>CCTV 가 깜빡이면 누가 물건을 숨긴 것! "계산 안 하신 거 있으시죠?"</li><li>아침 6시에 사장님이 시재(돈통)를 점검합니다</li></ul>`, [['닫기', 'blue', () => { }]]);
+  <h3>조작</h3><ul><li>화면을 <b>끌어서</b> 둘러보기, <b>눌러서</b> 물건 집기</li><li>${ic('mic')} 버튼을 누르고 <b>실제로 말하면</b> 손님이 알아듣고 반응해요 (PC는 스페이스바)</li><li>${ic('talk')} 말하기: 마이크가 안 될 때 문장을 골라 말하기</li></ul>
+  <h3>계산 순서</h3><ul><li>손님이 들어오면 <b>"어서오세요!"</b></li><li>계산대 위 상품을 눌러 바코드 찍기 · 담배는 <b>${ic('turn')} 뒤돌아</b> 번호 찾아 집기</li><li>카드: ${ic('pos')} 포스 → 카드결제</li><li>현금: 지폐 눌러 받기 → 포스에 <b>받은 금액</b> 입력 → 현금결제 → ${ic('cash')} 돈통에서 <b>거스름돈을 직접</b> 세서 건네기</li><li>끝나면 <b>"감사합니다, 안녕히 가세요!"</b></li></ul>
+  <h3>주의</h3><ul><li>술·담배: 어려 보이면 <b>"신분증 보여주세요"</b> (2007년생까지 판매 가능)</li><li>진상: 취객·반말·깎아달라·환불·도둑… 침착하게 말로 대처, 심하면 ${ic('siren')} 112</li><li>CCTV 가 깜빡이면 누가 물건을 숨긴 것! "계산 안 하신 거 있으시죠?"</li><li>아침 6시에 사장님이 시재(돈통)를 점검합니다</li></ul>`, [['닫기', 'blue', () => { }]]);
 }
 function openSettings(back) {
+  reloadVoices();
   const sel = (id, opts, v) => `<select id="${id}">${opts.map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const vLabel = n => { const g = voiceGender(n), short = n.replace(/^ko-kr-x-|^ko-KR-?/i, '').replace(/-local$/i, ' (기기)').replace(/-network$/i, ' (온라인)'); return (g === 'm' ? '남 · ' : g === 'f' ? '여 · ' : '') + short; };
+  const vOpts = [['', '자동']].concat((audio.voices || []).map(v => [v.name, vLabel(v.name)]));
+  let eng = null; try { eng = Native?.engines ? JSON.parse(Native.engines()) : null; } catch (e) { }
+  const engRow = eng?.list?.length ? `<div class="opt">음성 엔진 ${sel('sE', eng.list.map(e => [e.name, e.label]), Native.engine?.() || eng.current)}</div>` : '';
   modal(`<h2>설정</h2>
     <div class="opt">그래픽 ${sel('sQ', [['high', '상 (빛 번짐)'], ['mid', '중'], ['low', '하 (빠름)']], settings.quality)}</div>
     <div class="opt">난이도 ${sel('sD', [['normal', '보통 (거스름돈 표시)'], ['hard', '어려움 (거스름돈 암산)']], settings.diff)}</div>
     <div class="opt">손님 목소리 ${sel('sT', [['1', '켜기'], ['0', '끄기 (자막만)']], settings.tts ? '1' : '0')}</div>
+    ${engRow}
+    <div class="opt">남자 목소리 <span>${sel('sVM', vOpts, settings.voiceM || '')} <button class="gray mini" id="tVM">듣기</button></span></div>
+    <div class="opt">여자 목소리 <span>${sel('sVF', vOpts, settings.voiceF || '')} <button class="gray mini" id="tVF">듣기</button></span></div>
     <div class="opt">시점 감도 ${sel('sS', [['0.6', '느리게'], ['1', '보통'], ['1.5', '빠르게']], String(settings.sens))}</div>
-    <p style="margin-top:10px;font-size:12px;color:#8a97a6">음성인식: ${Native ? '앱 내장 (안드로이드 음성인식)' : (voice.available ? '브라우저 음성인식 (크롬 권장)' : '이 브라우저는 지원 안 함 → 💬 말하기 사용')}</p>`,
+    <p style="margin-top:10px;font-size:12px;color:#8a97a6">목소리: ${(audio.voices || []).length ? `한국어 목소리 ${audio.voices.length}개 (남 ${audio.vm.length} · 여 ${audio.vf.length})` : '한국어 목소리를 찾지 못했어요. 폰 설정 → 텍스트 음성 변환에서 한국어 음성 데이터를 설치하세요'}<br>
+    음성인식: ${Native ? '앱 내장 (안드로이드 음성인식)' : (voice.available ? '브라우저 음성인식 (크롬 권장)' : '이 브라우저는 지원 안 함 → 말하기 버튼 사용')}</p>`,
     [['저장', 'blue', () => {
       settings.quality = $('sQ').value; settings.diff = $('sD').value; settings.tts = $('sT').value === '1'; settings.sens = +$('sS').value;
-      audio.voiceOn = settings.tts; saveSet(); applyQuality(); game?.renderPos(); if (back) pause();
+      settings.voiceM = $('sVM').value; settings.voiceF = $('sVF').value;
+      if ($('sE') && $('sE').value !== (Native.engine?.() || '')) { Native.setEngine($('sE').value); settings.voiceM = settings.voiceF = ''; }
+      audio.voiceOn = settings.tts; saveSet(); reloadVoices(); applyQuality(); game?.renderPos(); if (back) pause();
     }]]);
+  const test = (g, id) => { settings[g === 'm' ? 'voiceM' : 'voiceF'] = $(id).value; reloadVoices(); audio.resume(); audio.speak(g === 'm' ? '어서오세요. 봉투 필요하세요?' : '안녕하세요, 카드 결제 도와드릴게요.', { gender: g }); };
+  $('tVM').onclick = () => test('m', 'sVM'); $('tVF').onclick = () => test('f', 'sVF');
 }
 function pause() {
   if (!game?.running) return;
@@ -218,9 +237,17 @@ function loop() {
 // 지나가는 차
 let carT = 4, carSnd = null;
 function updateCar(dt) {
-  const car = store?.outside.car; if (!car) return;
-  if (!car.visible) { if ((carT -= dt) < 0) { car.visible = true; car.dir = Math.random() < 0.5 ? 1 : -1; car.position.set(-30 * car.dir, 0, car.dir > 0 ? 11.3 : 9.6); car.rotation.y = car.dir > 0 ? 0 : Math.PI; car.speed = 9 + Math.random() * 6; if (!look.menu || true) carSnd = audio.play('engine', { pos: car.position, vol: 1.2, loop: true, rate: 0.6 + car.speed / 30 }); } return; }
+  const car = vehicles?.car; if (!car) return;
+  if (!car.visible) {
+    if ((carT -= dt) < 0) {
+      car.visible = true; car.dir = Math.random() < 0.5 ? 1 : -1;
+      car.position.set(-32 * car.dir, 0, car.dir > 0 ? 11.4 : 9.4); car.rotation.y = car.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+      car.speed = 8 + Math.random() * 7; car.userData.paint?.color.setHex(CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)]);
+      carSnd = audio.play('engine', { pos: car.position, vol: 1.3, loop: true, rate: 0.55 + car.speed / 30 });
+    }
+    return;
+  }
   car.position.x += car.dir * car.speed * dt; audio.movePanner(carSnd, car.position);
-  if (Math.abs(car.position.x) > 30) { car.visible = false; carT = 6 + Math.random() * 14; try { carSnd?.stop(); } catch (e) { } carSnd = null; }
+  if (Math.abs(car.position.x) > 32) { car.visible = false; carT = 5 + Math.random() * 12; try { carSnd?.stop(); } catch (e) { } carSnd = null; }
 }
 boot().catch(e => { $('loadtxt').textContent = '오류: ' + e.message; console.error(e); });

@@ -27,31 +27,42 @@ export async function buildHands(camera, yawObj, name) {
   const mSleeve = new THREE.MeshStandardMaterial({ map: cloth, roughness: 0.95, envMapIntensity: 0.3 });
   const mCuff = new THREE.MeshStandardMaterial({ color: 0x1d273a, roughness: 0.95 });
 
+  // 팔뚝 중간~손끝만 남긴다 (어깨·위팔 맨살이 보이지 않게, 나머지는 긴 소매 안)
+  const W0 = V(J.wrist), F0 = W0.clone().sub(V(J.elbow)).normalize();
+  {
+    const pos = geo.attributes.position, idx = geo.index ? geo.index.array : [...Array(pos.count).keys()], keep = [], v = new THREE.Vector3();
+    const ok = i => v.fromBufferAttribute(pos, i).sub(W0).dot(F0) > -0.11;
+    for (let i = 0; i < idx.length; i += 3) if (ok(idx[i]) && ok(idx[i + 1]) && ok(idx[i + 2])) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+    geo = geo.clone(); geo.setIndex(keep);
+  }
+  const SH = { R: new THREE.Vector3(0.3, -0.46, 0.1), L: new THREE.Vector3(-0.3, -0.46, 0.1) }; // 화면 밖 어깨 위치(카메라 기준)
   const make = (side) => {
     const mx = side === 'R' ? -1 : 1;
     const wrist = V(J.wrist, mx), mid = V(J.mid, mx), palm = wrist.clone().lerp(mid, 0.55);
+    const fM = wrist.clone().sub(V(J.elbow, mx)).normalize(), aM = V(J.idx, mx).sub(V(J.pinky, mx));
     const model = new THREE.Group();
     const mesh = new THREE.Mesh(geo, skin); mesh.scale.x = mx; model.add(mesh);
-    // 소매: 어깨→팔꿈치, 팔꿈치→손목 6cm 앞
-    const sh = V(J.shoulder, mx), el = V(J.elbow, mx), cuffP = el.clone().lerp(wrist, 0.8);
-    const tube = (a, b, r0, r1, mat) => { const d = b.clone().sub(a), len = d.length(); const g = new THREE.CylinderGeometry(r1, r0, len, 16, 1, true); const m = new THREE.Mesh(g, mat); m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); m.material.side = THREE.DoubleSide; model.add(m); return m; };
-    tube(sh, el, 0.068, 0.058, mSleeve); tube(el, cuffP, 0.058, 0.047, mSleeve);
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.058, 14, 10), mSleeve); ball.position.copy(el); model.add(ball);
-    tube(cuffP.clone().lerp(el, 0.08), cuffP, 0.049, 0.048, mCuff);
+    // 긴팔 소매: 손목 6.5cm 뒤에서 화면 밖까지
+    const tube = (a, b, r0, r1, mat) => { const d = b.clone().sub(a), len = d.length(); const g = new THREE.CylinderGeometry(r1, r0, len, 18, 1, true); const m = new THREE.Mesh(g, mat); m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); m.material.side = THREE.DoubleSide; model.add(m); return m; };
+    const cuff = wrist.clone().addScaledVector(fM, -0.065);
+    tube(cuff, wrist.clone().addScaledVector(fM, -0.9), 0.047, 0.075, mSleeve);
+    tube(cuff.clone().addScaledVector(fM, -0.025), cuff.clone().addScaledVector(fM, 0.004), 0.049, 0.048, mCuff);
     model.position.copy(palm).multiplyScalar(-1);
     const pivot = new THREE.Group(); pivot.add(model);
     const holder = new THREE.Group(); holder.position.set(0, -0.035, 0.0); pivot.add(holder); // 손바닥 아래 물건 놓는 곳
-    // 모델 손 방향 → 원하는 방향
-    const fM = mid.clone().sub(wrist), aM = V(J.idx, mx).sub(V(J.pinky, mx));
     const inv = basis(fM, aM).invert();
-    const pose = (f, a) => new THREE.Quaternion().setFromRotationMatrix(basis(f, a).multiply(inv));
     const s = side === 'R' ? 1 : -1;
-    const rest = { pos: new THREE.Vector3(0.23 * s, -0.27, -0.44), q: pose(new THREE.Vector3(-0.35 * s, 0.25, -1), new THREE.Vector3(-s, -0.45, 0.1)) };
-    const reach = pose(new THREE.Vector3(-0.15 * s, -0.55, -1), new THREE.Vector3(-s, -0.1, 0));
-    const give = pose(new THREE.Vector3(-0.1 * s, 0.05, -1), new THREE.Vector3(-s * 0.3, -1, 0)); // 손바닥 위로
+    // 어깨에서 손 위치로 팔을 겨눈다 → 팔꿈치가 꺾여 보이지 않음. 손바닥은 아래(give 면 위)
+    const aim = (posCam, up, kind) => {
+      const f = posCam.clone().sub(SH[side]).normalize(); f.addScaledVector(up, -0.12).normalize();
+      const a = new THREE.Vector3().crossVectors(up, f).multiplyScalar(s).normalize(); if (kind === 'give') a.negate();
+      return new THREE.Quaternion().setFromRotationMatrix(basis(f, a).multiply(inv));
+    };
+    const restPos = new THREE.Vector3(0.2 * s, -0.28, -0.43);
+    const rest = { pos: restPos, q: aim(restPos, new THREE.Vector3(0, 1, 0)) };
     pivot.position.copy(rest.pos); pivot.quaternion.copy(rest.q);
     camera.add(pivot);
-    return { side, pivot, holder, rest, reach, give, tPos: rest.pos.clone(), tQ: rest.q.clone(), held: null, busy: false };
+    return { side, pivot, holder, rest, aim, tPos: rest.pos.clone(), tQ: rest.q.clone(), held: null, busy: false };
   };
   const hands = { R: make('R'), L: make('L') };
 
@@ -85,10 +96,13 @@ export async function buildHands(camera, yawObj, name) {
     // 월드 좌표 p 로 손 뻗기 → 도착하면 resolve
     reachTo(side, p, kind = 'reach', hold = 0.25) {
       const h = hands[side]; h.busy = true;
-      tmp.copy(p); camera.worldToLocal(tmp);
-      h.tPos.copy(tmp).add(new THREE.Vector3(0, 0.05, 0.03)); h.tQ.copy(kind === 'give' ? h.give : h.reach);
+      tmp.copy(p).y += kind === 'give' ? 0 : 0.06; camera.worldToLocal(tmp);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()).invert());
+      h.tPos.copy(tmp); h.tQ.copy(h.aim(tmp, up, kind));
       return new Promise(r => setTimeout(() => r(), 260 + hold * 0));
     },
+    // 물건이 화면 오른쪽이면 오른손, 왼쪽이면 왼손
+    sideOf(p) { tmp.copy(p); camera.worldToLocal(tmp); return tmp.x > -0.03 ? 'R' : 'L'; },
     rest(side) { const h = hands[side]; h.tPos.copy(h.rest.pos); h.tQ.copy(h.rest.q); h.busy = false; },
     hold(side, obj) { const h = hands[side]; if (h.held) h.held.removeFromParent(); h.held = obj; if (obj) { obj.position.set(0, -0.02, 0); obj.rotation.set(0, 0, 0); h.holder.add(obj); } },
     update(dt, t) {

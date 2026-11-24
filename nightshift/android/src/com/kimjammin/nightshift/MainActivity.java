@@ -24,7 +24,9 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import org.json.JSONArray;
 import org.json.JSONObject;
+import android.speech.tts.Voice;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -55,15 +57,33 @@ public class MainActivity extends Activity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) { return serve(r.getUrl()); }
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) { return !HOST.equals(r.getUrl().getHost()); }
         });
-        tts = new TextToSpeech(this, st -> {
-            if (st == TextToSpeech.SUCCESS) { tts.setLanguage(Locale.KOREAN); ttsReady = true; }
-        });
-        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-            @Override public void onStart(String id) { }
-            @Override public void onDone(String id) { js("window.__nativeTts&&__nativeTts('done'," + JSONObject.quote(id) + ")"); }
-            @Override public void onError(String id) { onDone(id); }
-        });
+        String eng = getSharedPreferences("ns", MODE_PRIVATE).getString("engine", null);
+        initTts(eng != null ? eng : (hasPkg("com.google.android.tts") ? "com.google.android.tts" : null));
         web.loadUrl("https://" + HOST + "/nightshift/index.html");
+    }
+
+    // 음성합성 엔진 준비 (구글 TTS 가 있으면 그걸 기본으로: 한국어 남/여 신경망 목소리)
+    void initTts(String engine) {
+        ttsReady = false;
+        if (tts != null) { try { tts.shutdown(); } catch (Exception e) { } }
+        TextToSpeech.OnInitListener l = st -> {
+            if (st == TextToSpeech.SUCCESS) {
+                tts.setLanguage(Locale.KOREAN); ttsReady = true;
+                tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override public void onStart(String id) { }
+                    @Override public void onDone(String id) { js("window.__nativeTts&&__nativeTts('done'," + JSONObject.quote(id) + ")"); }
+                    @Override public void onError(String id) { onDone(id); }
+                });
+                js("window.__nativeTtsReady&&__nativeTtsReady()");
+            } else if (engine != null) initTts(null);
+        };
+        tts = engine == null ? new TextToSpeech(this, l) : new TextToSpeech(this, l, engine);
+    }
+    boolean hasPkg(String p) { try { getPackageManager().getPackageInfo(p, 0); return true; } catch (Exception e) { return false; } }
+    Voice findVoice(String name) {
+        if (name == null || name.isEmpty()) return null;
+        try { for (Voice v : tts.getVoices()) if (name.equals(v.getName())) return v; } catch (Exception e) { }
+        return null;
     }
 
     // 앱 안의 assets/www 파일을 https://app.nightshift.local/ 주소로 제공 (ES 모듈이 동작하도록)
@@ -140,11 +160,39 @@ public class MainActivity extends Activity {
     }
 
     class Bridge {
-        @JavascriptInterface public void speak(String text, float pitch, float rate, String id) {
+        @JavascriptInterface public void speak(String text, float pitch, float rate, String id, String voice) {
             if (!ttsReady) { js("window.__nativeTts&&__nativeTts('done'," + JSONObject.quote(id) + ")"); return; }
+            Voice v = findVoice(voice);
+            if (v != null) tts.setVoice(v); else tts.setLanguage(Locale.KOREAN);
             tts.setPitch(pitch); tts.setSpeechRate(rate);
             Bundle p = new Bundle(); tts.speak(text, TextToSpeech.QUEUE_ADD, p, id);
         }
+        @JavascriptInterface public String voices() {
+            JSONArray a = new JSONArray();
+            if (!ttsReady) return "[]";
+            try {
+                for (Voice v : tts.getVoices()) {
+                    Locale l = v.getLocale(); if (l == null || !"ko".equals(l.getLanguage())) continue;
+                    JSONObject o = new JSONObject();
+                    o.put("name", v.getName()); o.put("quality", v.getQuality()); o.put("network", v.isNetworkConnectionRequired());
+                    o.put("notInstalled", v.getFeatures() != null && v.getFeatures().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED));
+                    a.put(o);
+                }
+            } catch (Exception e) { }
+            return a.toString();
+        }
+        @JavascriptInterface public String engines() {
+            JSONArray a = new JSONArray();
+            try {
+                for (TextToSpeech.EngineInfo e : tts.getEngines()) { JSONObject o = new JSONObject(); o.put("name", e.name); o.put("label", e.label); a.put(o); }
+                JSONObject r = new JSONObject(); r.put("list", a); r.put("current", tts.getDefaultEngine()); return r.toString();
+            } catch (Exception e) { return "{\"list\":[]}"; }
+        }
+        @JavascriptInterface public void setEngine(String pkg) {
+            getSharedPreferences("ns", MODE_PRIVATE).edit().putString("engine", pkg).apply();
+            ui.post(new Runnable() { public void run() { initTts(pkg); } });
+        }
+        @JavascriptInterface public String engine() { return getSharedPreferences("ns", MODE_PRIVATE).getString("engine", hasPkg("com.google.android.tts") ? "com.google.android.tts" : ""); }
         @JavascriptInterface public void stopSpeak() { if (tts != null) tts.stop(); }
         @JavascriptInterface public void startListen() { ui.post(new Runnable() { public void run() { MainActivity.this.beginListen(); } }); }
         @JavascriptInterface public void stopListen() { ui.post(() -> { if (sr != null) sr.stopListening(); }); }

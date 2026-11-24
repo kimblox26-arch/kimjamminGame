@@ -129,3 +129,14 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none}
 .sum{padding:2px 8px}.sum b{font-size:15px}.pos-head{padding:4px 10px}.pos-head .x{width:28px;height:28px}.pos-foot{padding:5px 8px}.pos-foot button{padding:8px 4px;font-size:13px}.pos-body{padding:6px}
 .act{width:54px;height:50px}.mic{height:62px;width:96px}.slot{height:26vh}
 .menu-left{gap:6px}.menu-left h1{font-size:30px}.sub,.brand{display:none}.btn{padding:8px 14px;font-size:14px}.btn.big{padding:11px 16px;font-size:17px}}
+
+.ico{width:1.1em;height:1.1em;vertical-align:-.2em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.act span .ico{width:24px;height:24px}.mic span .ico{width:28px;height:28px}.ic .ico,.x .ico{width:18px;height:18px}
+.ic,.x{display:flex;align-items:center;justify-content:center}
+.ico.star{fill:#3a4250;stroke:none;width:13px;height:13px;vertical-align:-1px}.ico.star.on{fill:#ffcf4a}
+.res .ico.star{width:16px;height:16px}
+.cctv .ico{width:15px;height:15px}
+.hint .ico{width:16px;height:16px;color:#7dffd9}
+#toast .ico{width:22px;height:22px;vertical-align:-5px;margin-right:4px}
+.modal li .ico{color:#7dffd9}
+.opt>span{display:flex;gap:6px;align-items:center}.opt select{max-width:46vw}.mini{padding:6px 10px;border-radius:8px;font-size:12px;font-weight:700}

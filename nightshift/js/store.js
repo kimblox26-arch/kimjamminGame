@@ -343,23 +343,8 @@ function buildOutside(scene) {
   // 가게 불빛이 인도에 비치는 것
   const pool = new THREE.Mesh(new THREE.PlaneGeometry(10, 3), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, map: canvasTex('pool', 256, 128, (c, w, h) => { const gr = c.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(255,250,235,.38)'); gr.addColorStop(1, 'rgba(255,250,235,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); }) }));
   pool.rotation.x = -Math.PI / 2; pool.position.set(-0.2, 0.075, 5.5); g.add(pool);
-  // 주차된 오토바이
-  const bike = new THREE.Group(); const bm = std({ color: 0xb31b1b, roughness: 0.3, metalness: 0.3 });
-  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.06, 8, 18), std({ color: 0x111 }));
-  const w1 = wheel.clone(); w1.position.set(-0.55, 0.28, 0); const w2 = wheel.clone(); w2.position.set(0.55, 0.28, 0); bike.add(w1, w2);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.35, 0.35), bm); body.position.set(0, 0.55, 0); bike.add(body);
-  const box = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.4, 0.45), std({ color: 0xeeeeee })); box.position.set(-0.45, 0.95, 0); bike.add(box);
-  bike.position.set(3.4, 0.06, 5.6); bike.rotation.y = 0.2; g.add(bike);
   B.build(g);
-  // 지나가는 차
-  const car = new THREE.Group();
-  const cb = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.7, 1.8), std({ color: 0x223355, roughness: 0.25, metalness: 0.6, envMapIntensity: 0.6 })); cb.position.y = 0.6; car.add(cb);
-  const ct = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.55, 1.6), std({ color: 0x111418, roughness: 0.1 })); ct.position.set(-0.2, 1.2, 0); car.add(ct);
-  const hl = new THREE.MeshBasicMaterial({ color: 0xffffee }), tl = new THREE.MeshBasicMaterial({ color: 0xff2020 });
-  [[2.11, 0.6], [-2.11, 0.6]].forEach(([x], i) => [-0.6, 0.6].forEach(z => { const l = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.3), i ? tl : hl); l.position.set(x, 0.65, z); car.add(l); }));
-  const beam = new THREE.SpotLight(0xfff2d0, 60, 25, 0.5, 0.6, 1.5); beam.position.set(2.2, 0.7, 0); beam.target.position.set(10, 0, 0); car.add(beam, beam.target);
-  car.visible = false; scene.add(car);
-  return { group: g, car };
+  return { group: g };
 }
 
 // 포스 화면 (3D 모니터)

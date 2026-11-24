@@ -26,6 +26,7 @@ python3 -m http.server 8080   (저장소 최상위에서)
 ## 만든 것
 - `js/store.js` 편의점 실내(진열대·워크인 냉장고·계산대·담배 진열장·전자레인지·ATM)와 바깥 밤거리
 - `js/people.js` 손님·사장님 3D 모델 + 동작 리타기팅(월드 회전 기준)
+- `js/vehicles.js` 실제 차량 모델(지나가는 자동차, 가게 앞 배달 스쿠터)
 - `js/hands.js` 1인칭 실제 사람 손·팔 모델 + 소매 + 편의점 조끼(명찰)
 - `js/game.js` 손님 흐름, 계산·거스름돈·담배·신분증·진상·사장님·음성 대화
 - `android/` WebView 앱 (네이티브 음성인식·TTS 연결), `android/build-apk.sh` 로 APK 빌드
@@ -33,5 +34,8 @@ python3 -m http.server 8080   (저장소 최상위에서)
 ## 에셋 출처
 - 손·팔: "Hand and arm - Zbrush sculpt" by Andy Woodhead (CC BY 4.0)
 - 사람 모델·동작: three.js 예제 모델 (Michelle, Ready Player Me 아바타, Mixamo X Bot 동작)
+- 자동차: "Jeep Wrangler Adventure Rubicon" by vecarz (Sketchfab, CC BY-NC-SA 4.0, 비상업용) — gkjohnson/3d-demo-data 에서 최적화
+- 배달 스쿠터: "Vino" by minghauLoh (https://sketchfab.com/3d-models/vino-2205f4e69bc64df3aab03c71ab9d7492, CC BY 4.0)
 - 효과음: `assets/sfx/CREDITS.md` 참고 (실제 녹음 효과음)
+- 목소리: 폰의 한국어 음성합성(구글 TTS 우선) — 손님마다 남/여 목소리를 따로 씀, 설정에서 고를 수 있음
 - 상품·담배·가게 이름은 모두 가상의 이름입니다

@@ -38,21 +38,21 @@
   <div class="top">
     <div class="clock"><b id="clock">22:00</b><span id="day">1일차</span></div>
     <div class="stat"><span>매출</span><b id="sales">0원</b></div>
-    <div class="stat"><span>평판</span><b id="rep">★★★☆☆</b></div>
-    <div class="cctv" id="cctv" title="CCTV">● CCTV</div>
-    <button class="ic" id="bPause">Ⅱ</button>
+    <div class="stat"><span>평판</span><b id="rep"></b></div>
+    <div class="cctv" id="cctv" title="CCTV"><span data-ic="cctv"></span> CCTV</div>
+    <button class="ic" id="bPause" data-ic="pause"></button>
   </div>
   <div id="sub" class="subtitle"></div>
   <div id="mine" class="mine"></div>
   <div id="cust" class="cust hidden"><div class="cname" id="cname"></div><div class="mood"><i id="moodbar"></i></div><div class="want" id="cwant"></div></div>
   <div class="bottom">
-    <button class="act" id="bPos"><span>🖥</span>포스</button>
-    <button class="act" id="bDrawer"><span>💴</span>돈통</button>
-    <button class="act" id="bBag"><span>🛍</span>봉투</button>
-    <button class="act" id="bTurn"><span>↻</span>뒤돌기</button>
-    <button class="act" id="bTalk"><span>💬</span>말하기</button>
-    <button class="mic" id="bMic"><span>🎤</span><em id="micTxt">누르고 말하기</em><i id="micLvl"></i></button>
-    <button class="act red" id="b112"><span>🚨</span>112</button>
+    <button class="act" id="bPos"><span data-ic="pos"></span>포스</button>
+    <button class="act" id="bDrawer"><span data-ic="cash"></span>돈통</button>
+    <button class="act" id="bBag"><span data-ic="bag"></span>봉투</button>
+    <button class="act" id="bTurn"><span data-ic="turn"></span>뒤돌기</button>
+    <button class="act" id="bTalk"><span data-ic="talk"></span>말하기</button>
+    <button class="mic" id="bMic"><span data-ic="mic"></span><em id="micTxt">누르고 말하기</em><i id="micLvl"></i></button>
+    <button class="act red" id="b112"><span data-ic="siren"></span>112</button>
   </div>
   <div id="hint" class="hint"></div>
 </div>
@@ -60,7 +60,7 @@
 <!-- 포스기 -->
 <div id="pos" class="panel hidden">
   <div class="pos">
-    <div class="pos-head"><b>NIGHT24 POS</b><span id="posTime"></span><button class="x" data-close="pos">✕</button></div>
+    <div class="pos-head"><b>NIGHT24 POS</b><span id="posTime"></span><button class="x" data-close="pos" data-ic="close"></button></div>
     <div class="pos-body">
       <div class="pos-list"><table><thead><tr><th>상품명</th><th>수량</th><th>금액</th></tr></thead><tbody id="posItems"></tbody></table></div>
       <div class="pos-side">
@@ -84,7 +84,7 @@
 <!-- 돈통 -->
 <div id="drawer" class="panel hidden">
   <div class="drawer">
-    <div class="pos-head"><b>돈통</b><span>거슬러 줄 돈을 집으세요</span><button class="x" data-close="drawer">✕</button></div>
+    <div class="pos-head"><b>돈통</b><span>거슬러 줄 돈을 집으세요</span><button class="x" data-close="drawer" data-ic="close"></button></div>
     <div class="till" id="till"></div>
     <div class="tray"><div class="tray-l"><span>손에 든 돈</span><b id="trayAmt">0원</b></div><div class="tray-cash" id="tray"></div>
       <div class="tray-r"><button id="dReset" class="gray">다시</button><button id="dGive" class="blue">손님께 건네기</button></div></div>
@@ -102,7 +102,7 @@
 </div>
 
 <!-- 말하기 문장 -->
-<div id="talk" class="panel hidden"><div class="talk"><div class="pos-head"><b>할 말 고르기</b><span>마이크가 안 될 때</span><button class="x" data-close="talk">✕</button></div><div id="talkList" class="talk-list"></div>
+<div id="talk" class="panel hidden"><div class="talk"><div class="pos-head"><b>할 말 고르기</b><span>마이크가 안 될 때</span><button class="x" data-close="talk" data-ic="close"></button></div><div id="talkList" class="talk-list"></div>
   <form id="talkForm"><input id="talkIn" placeholder="직접 입력해서 말하기" autocomplete="off"><button class="blue">말하기</button></form></div></div>
 
 <!-- 일시정지/설정/도움말/결과 -->

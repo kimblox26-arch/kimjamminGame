@@ -4,7 +4,7 @@ import { PRODUCTS, CIGS, TYPES, INTENTS, L, TROUBLE, BOSS, PHRASES } from './dat
 import { SPOT, productMesh, cigMesh, drawPosScreen, canvasTex } from './store.js';
 import { Person } from './people.js';
 import { parseWon } from './voice.js';
-import { $, won, subtitle, mine, toast, hint, show, modal, stars } from './ui.js';
+import { $, won, subtitle, mine, toast, hint, show, modal, stars, ic } from './ui.js';
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -69,7 +69,7 @@ export class Game {
     if (this.forceType) { const want = this.forceType.shift(); type = TYPES.find(t => t.id === want) || type; if (!this.forceType.length) this.forceType = null; }
     type = { ...type, bottle: type.id === 'drunk' };
     const p = new Person(type, this.audio);
-    const c = { type, person: p, trouble: type.trouble, mood: 70, idle: 0, order: [...pick(type.wants)], voice: type.voice };
+    const c = { type, person: p, trouble: type.trouble, mood: 70, idle: 0, order: [...pick(type.wants)], voice: type.voice, gender: type.model === 'woman' ? 'f' : 'm', vIdx: 1 + Math.floor(Math.random() * 5) };
     if (type.cig && Math.random() < type.cig) c.cig = pick(CIGS);
     if (c.trouble === 'minor' && !c.cig && Math.random() < 0.5) c.cig = pick(CIGS);
     if (c.trouble === 'refund') c.order = [];
@@ -158,7 +158,7 @@ export class Game {
     if (c.mood <= 0 && !c.paid) { this.say(c, pick(L.leaveAngry)); this.rep -= 8; this.st.angry++; c.person.gesture('headShake'); this.endTx(c, false); }
     $('moodbar').style.width = Math.max(0, Math.min(100, c.mood)) + '%';
     $('moodbar').style.background = c.mood > 55 ? '#2fd3b4' : c.mood > 30 ? '#ffb84a' : '#ff4d5e';
-    $('cwant').textContent = (c.cig ? `담배 요청: ${c.cig.name}${c.cigGiven ? ' ✔' : ''} · ` : '') + `상품 ${this.items.filter(i => i.scanned).length}/${this.items.filter(i => !i.refund).length} 스캔`;
+    $('cwant').textContent = (c.cig ? `담배 요청: ${c.cig.name}${c.cigGiven ? ' (완료)' : ''} · ` : '') + `상품 ${this.items.filter(i => i.scanned).length}/${this.items.filter(i => !i.refund).length} 스캔`;
   }
   offerPay(c) {
     const total = this.total();
@@ -229,20 +229,21 @@ export class Game {
     if (it.scanned || this.handBusy) return;
     if (it.refund) { this.say(c, '그거 아까 산 거라니까요. 환불이요!'); return; }
     this.handBusy = true; c && (c.idle = 0);
-    await this.hands.reachTo('R', it.mesh.position);
+    const hs = this.hands.sideOf(it.mesh.position);
+    await this.hands.reachTo(hs, it.mesh.position);
     await this.wait(0.12);
-    this.hands.hold('R', it.mesh);
-    await this.hands.reachTo('R', SPOT.scanner.clone().add(V3(-0.05, 0.02, 0)));
+    this.hands.hold(hs, it.mesh);
+    await this.hands.reachTo(hs, SPOT.scanner.clone().add(V3(-0.05, 0.02, 0)));
     await this.wait(0.15);
     this.audio.beep(SPOT.scanner); this.flashScanner();
     it.scanned = true; this.addLine(it.name, it.price, it.key || 'cig', it.adult);
     await this.wait(0.12);
-    this.hands.hold('R', null);
+    this.hands.hold(hs, null);
     const n = this.items.filter(x => x.scanned).length;
     it.mesh.position.set(2.5 + (n % 2) * 0.14, SPOT.counterY, 1.95 + Math.floor(n / 2) * 0.03 - 0.3 * (n > 6));
     it.mesh.rotation.set(0, rnd(-1, 1), 0);
     this.scene.add(it.mesh); this.audio.play('thud', { pos: it.mesh.position, vol: 0.3, rate: 1.8 });
-    this.hands.rest('R'); this.handBusy = false;
+    this.hands.rest(hs); this.handBusy = false;
   }
   flashScanner() { const l = this.store.sLight; l.material.color.set(0xffffff); setTimeout(() => l.material.color.set(0xff2020), 120); }
   addLine(name, price, key, adult) {
@@ -276,11 +277,12 @@ export class Game {
   async takeCash() {
     const c = this.cur; if (!c || !this.cash.length || this.handBusy) return;
     this.handBusy = true; c.idle = 0;
-    await this.hands.reachTo('L', this.cash[0].position);
+    const hs = this.hands.sideOf(this.cash[0].position); this.cashHand = hs;
+    await this.hands.reachTo(hs, this.cash[0].position);
     this.audio.play('bill', { pos: this.cash[0].position, vol: 0.8 });
     const stack = new THREE.Group(); for (const m of this.cash) { m.removeFromParent(); m.position.set(0, 0, 0); m.rotation.set(-Math.PI / 2, 0, Math.PI / 2); stack.add(m); }
-    this.hands.hold('L', stack); this.cashTaken = c.given; this.cash = [];
-    await this.wait(0.35); this.hands.rest('L');
+    this.hands.hold(hs, stack); this.cashTaken = c.given; this.cash = [];
+    await this.wait(0.35); this.hands.rest(hs);
     toast(`받은 돈 ${won(c.given)}`, 'good');
     await this.wait(0.3); this.handBusy = false;
   }
@@ -356,7 +358,7 @@ export class Game {
     this.click(); c.idle = 0;
     this.recvEntered = recv; this.changeDue = c.given - total; this.changeShown = recv - total;
     this.drawer += c.given; this.expected += total; this.sales += total; this.cashTaken = 0;
-    this.hands.hold('L', null);
+    this.hands.hold(this.cashHand || 'L', null);
     this.audio.play('register', { pos: SPOT.drawer, vol: 0.8 });
     this.payMode = 'drawer'; this.paidMethod = 'cash'; c.paid = true;
     if (this.changeDue <= 0 && this.changeShown <= 0) return this.finishTx();
@@ -370,16 +372,17 @@ export class Game {
     if (!this.card) return this.posError('손님이 아직 카드를 안 냈습니다');
     this.click(); this.payMode = 'card'; this.posMsg = '카드 결제 중…'; this.renderPos();
     show('pos', false);
-    await this.hands.reachTo('L', this.card.position);
-    this.hands.hold('L', this.card); this.card.rotation.set(0, 0, 0);
-    await this.hands.reachTo('L', SPOT.cardReader.clone().add(V3(0, 0.08, 0)));
+    const hs = this.hands.sideOf(this.card.position);
+    await this.hands.reachTo(hs, this.card.position);
+    this.hands.hold(hs, this.card); this.card.rotation.set(0, 0, 0);
+    await this.hands.reachTo(hs, SPOT.cardReader.clone().add(V3(0, 0.08, 0)));
     this.store.readerScr.material.color.set(0xffd36b);
     await this.wait(1.4);
     this.audio.beep(SPOT.cardReader); await this.wait(0.15); this.audio.beep(SPOT.cardReader);
     this.store.readerScr.material.color.set(0x7dffb0); this.posMsg = '승인 완료';
     this.sales += total; c.paid = true; this.paidMethod = 'card';
     for (let i = 0; i < 8; i++) this.audio.play('key', { pos: SPOT.pos, vol: 0.25, rate: 0.6, delay: 0.5 + i * 0.06 });
-    await this.wait(0.5); this.hands.hold('L', null); this.card = null; this.hands.rest('L');
+    await this.wait(0.5); this.hands.hold(hs, null); this.card = null; this.hands.rest(hs);
     this.store.readerScr.material.color.set(0x7fd0ff);
     this.finishTx();
   }
@@ -405,7 +408,7 @@ export class Game {
     this.payMode = null; this.posMsg = '';
     if (c.trouble === 'minor' && this.lines.some(l => l.adult) && !c.refusedSale) {
       this.st.minor++; this.rep -= 30;
-      setTimeout(() => toast('⚠ 미성년자에게 술·담배 판매!<br><small>적발되면 영업정지 + 벌금</small>', 'bad', 3500), 2500);
+      setTimeout(() => toast(ic('warn') + '미성년자에게 술·담배 판매!<br><small>적발되면 영업정지 + 벌금</small>', 'bad', 3500), 2500);
     }
     if (c.wantsHeat) { c.blocked = true; this.say(c, '이거 데워주세요'); this.heatPending = true; this.paidPending = c; toast('전자레인지(뒤쪽 카운터)를 누르세요'); return; }
     this.say(c, c.trouble === 'rude' ? '…' : pick(L.thanks));
@@ -463,7 +466,7 @@ export class Game {
   say(c, text, after) {
     subtitle(c.type.name, text, c.type.id === 'boss');
     c.person.talk = 1; c.person.smile = c.mood > 70 ? 0.4 : 0;
-    return new Promise(r => this.audio.speak(text, { pitch: c.voice[0], rate: c.voice[1] }, () => { c.person.talk = 0; after?.(); r(); }));
+    return new Promise(r => this.audio.speak(text, { pitch: c.voice[0], rate: c.voice[1], gender: c.gender, idx: c.vIdx }, () => { c.person.talk = 0; after?.(); r(); }));
   }
   hear(text) {
     if (!this.running) return;
@@ -483,7 +486,7 @@ export class Game {
     const T = TROUBLE[c.trouble];
     switch (intent) {
       case 'greet': if (!c.greeted) { c.greeted = true; c.mood += 6; this.say(c, pick(L.greetBack)); } else this.say(c, '네…'); break;
-      case 'bagask': c.bagAnswered = true; this.say(c, pick(c.wantsBag ? L.bagYes : L.bagNo)); if (c.wantsBag) hint('🛍 봉투 버튼을 누르세요'); break;
+      case 'bagask': c.bagAnswered = true; this.say(c, pick(c.wantsBag ? L.bagYes : L.bagNo)); if (c.wantsBag) hint(ic('bag') + ' 봉투 버튼을 누르세요'); break;
       case 'point': this.say(c, pick(Math.random() < 0.2 ? L.pointYes : L.pointNo)); c.mood += 2; break;
       case 'receipt': this.say(c, pick(Math.random() < 0.3 ? L.receiptYes : L.receiptNo)); c.mood += 2; break;
       case 'id': this.checkId(); break;
@@ -535,9 +538,9 @@ export class Game {
   }
   call112() {
     const c = this.cur || this.customers.find(x => x.lingering);
-    toast('🚨 112 신고 접수<br><small>경찰이 출동합니다</small>', '', 2200);
+    toast(ic('siren') + '112 신고 접수<br><small>경찰이 출동합니다</small>', '', 2200);
     if (!c) { this.rep -= 3; return; }
-    this.wait(4).then(() => { toast('🚔 경찰 도착', 'good'); this.kickOut(c, true); });
+    this.wait(4).then(() => { toast(ic('police') + '경찰 도착', 'good'); this.kickOut(c, true); });
   }
   bagBtn() {
     const c = this.cur; if (!c) return;
@@ -551,7 +554,7 @@ export class Game {
   sayBoss(text) { return this.boss ? this.say(this.bossC, text) : Promise.resolve(); }
   async bossScene(kind) {
     const p = new Person(BOSS_TYPE, this.audio); this.boss = p;
-    this.bossC = { type: BOSS_TYPE, person: p, voice: BOSS_TYPE.voice, mood: 80 };
+    this.bossC = { type: BOSS_TYPE, person: p, voice: BOSS_TYPE.voice, mood: 80, gender: 'm', vIdx: 0 };
     p.root.position.copy(SPOT.bossDoor); this.scene.add(p.root);
     this.audio.play('door', { pos: SPOT.bossDoor, vol: 0.5, rate: 0.8 });
     const prevYaw = this.look.yaw; this.look.turnTo(0.35);
@@ -606,22 +609,22 @@ export class Game {
   clock() { const m = Math.floor(this.min || 0), h = (22 + Math.floor(m / 60)) % 24; return `${String(h).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
   updateHud() {
     if ((this._hudT = (this._hudT || 0) + 1) % 10) return;
-    $('clock').textContent = this.clock(); $('day').textContent = `${this.day}일차`; $('sales').textContent = won(this.sales); $('rep').textContent = stars(this.rep);
+    $('clock').textContent = this.clock(); $('day').textContent = `${this.day}일차`; $('sales').textContent = won(this.sales); $('rep').innerHTML = stars(this.rep);
     $('posTime').textContent = this.clock();
   }
   updateHint() {
     const c = this.cur;
-    if (this.intro) return hint('사장님 말씀 듣는 중… (🎤 로 "네" 라고 대답해 보세요)');
-    if (!c) return hint(this.lastEntered && !this.lastEntered.greeted && this.lastEntered.greetUntil > this.t ? '🎤 손님이 들어왔어요! "어서오세요" 라고 말해보세요' : (this.min >= 480 ? '근무 끝! 마지막 손님을 기다리는 중' : ''));
+    if (this.intro) return hint(`사장님 말씀 듣는 중… (${ic('mic')} 로 "네" 라고 대답해 보세요)`);
+    if (!c) return hint(this.lastEntered && !this.lastEntered.greeted && this.lastEntered.greetUntil > this.t ? ic('mic') + ' 손님이 들어왔어요! "어서오세요" 라고 말해보세요' : (this.min >= 480 ? '근무 끝! 마지막 손님을 기다리는 중' : ''));
     if (c.waitReply === 'minorNoId') return hint('신분증이 없다고 합니다 → "죄송하지만 안 됩니다"');
-    if (c.waitReply) return hint('🎤 손님 요구에 대답하세요 ("죄송하지만 안 됩니다" 등)');
+    if (c.waitReply) return hint(ic('mic') + ' 손님 요구에 대답하세요 ("죄송하지만 안 됩니다" 등)');
     if (this.heatPending) return hint('뒤쪽 카운터의 전자레인지를 누르세요');
-    if (c.cig && !c.cigGiven) return hint(`↻ 뒤돌아서 ${c.cig.name} 담배를 누르세요`);
+    if (c.cig && !c.cigGiven) return hint(`${ic('turn')} 뒤돌아서 ${c.cig.name} 담배를 누르세요`);
     if (this.items.some(i => !i.scanned && !i.refund)) return hint('계산대 위 상품을 눌러 바코드를 찍으세요');
-    if (this.payMode === 'drawer') return hint(`💴 돈통에서 거스름돈을 집어 건네세요`);
+    if (this.payMode === 'drawer') return hint(`${ic('cash')} 돈통에서 거스름돈을 집어 건네세요`);
     if (this.cash.length) return hint('계산대 위 지폐를 눌러 돈을 받으세요');
-    if (this.cashTaken) return hint('🖥 포스: 받은 금액 입력 → 현금결제');
-    if (this.card) return hint('🖥 포스에서 카드결제를 누르세요');
+    if (this.cashTaken) return hint(ic('pos') + ' 포스: 받은 금액 입력 → 현금결제');
+    if (this.card) return hint(ic('pos') + ' 포스에서 카드결제를 누르세요');
     hint('');
   }
 }
