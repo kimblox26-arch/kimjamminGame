@@ -146,6 +146,8 @@ export async function buildHands(camera, yawObj, name) {
       return new Promise(r => setTimeout(r, ms));
     },
     pose(side, pose) { hands[side].target = pose; },
+    // 카메라 기준 고정 위치로 손 올리기 (총 들기, 손 들기)
+    raise(side, posCam, pose = 'grip') { const h = hands[side]; h.want = true; h.target = pose; h.tPos.copy(posCam); h.tF.set(-0.05 * h.s, posCam.y > 0 ? 1 : 0.05, -1).normalize(); h.tUp.set(0, 1, 0); h.palmUp = false; },
     rest(side) { const h = hands[side]; h.want = false; h.target = 'relax'; h.tPos.set(0.22 * h.s, -0.78, -0.25); h.tF.set(-0.2 * h.s, 0.4, -1).normalize(); h.palmUp = false; },
     // 물건 쥐기: mode 'palm'(손바닥 아래 쥐기) | 'pinch'(엄지·검지 사이)
     hold(side, obj, mode = 'palm') {

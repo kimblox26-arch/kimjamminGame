@@ -1,7 +1,7 @@
 // 소리: 실제 녹음 효과음(assets/sfx) + 3D 위치 + 손님/사장님 목소리(기기 TTS)
 import * as THREE from 'three';
 
-const SFX = ['chime', 'door', 'register', 'bill', 'bag', 'step1', 'step2', 'thud', 'key', 'night', 'engine', 'whoosh'];
+const SFX = ['chime', 'door', 'register', 'bill', 'bag', 'step1', 'step2', 'thud', 'key', 'night', 'engine', 'whoosh', 'gun', 'punch', 'hit', 'horn'];
 export const Native = window.NativeApp || null;
 // 목소리 이름으로 성별 추정 (구글 TTS: ism/jeb/kob 여, jmh/kod 남 · 삼성 TTS: SMTf 여, SMTm 남 · 브라우저 음성 이름)
 export function voiceGender(n) {
@@ -64,6 +64,34 @@ export class Audio {
     const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = ok ? 3100 : 820; f.Q.value = 3;
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.12, t + 0.005); g.gain.setValueAtTime(0.12, t + (ok ? 0.09 : 0.35)); g.gain.linearRampToValueAtTime(0, t + (ok ? 0.1 : 0.37));
     o.connect(f); f.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.4);
+  }
+  // 비닐봉투 바스락: 짧은 고음 잡음 조각을 불규칙하게 (실제 비닐 구김 소리 구조)
+  rustle(pos, dur = 0.6, vol = 0.5) {
+    const c = this.ctx; if (!c) return;
+    if (!this.noiseBuf) { const b = c.createBuffer(1, c.sampleRate, c.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; this.noiseBuf = b; }
+    const out = c.createGain(); out.gain.value = vol; let node = out;
+    if (pos) { const p = c.createPanner(); p.panningModel = 'HRTF'; p.refDistance = 1; p.positionX ? (p.positionX.value = pos.x, p.positionY.value = pos.y, p.positionZ.value = pos.z) : p.setPosition(pos.x, pos.y, pos.z); out.connect(p); node = p; }
+    node.connect(this.master);
+    const t0 = c.currentTime, n = Math.round(dur * 70);
+    for (let i = 0; i < n; i++) {
+      const s = c.createBufferSource(); s.buffer = this.noiseBuf;
+      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2500 + Math.random() * 6000; f.Q.value = 0.8 + Math.random() * 2;
+      const g = c.createGain(), t = t0 + Math.random() * dur, len = 0.004 + Math.random() * 0.03, a = (0.2 + Math.random()) * Math.sin(Math.PI * (t - t0) / dur);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(a, t + 0.002); g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      s.connect(f); f.connect(g); g.connect(out); s.start(t, Math.random() * 0.9, len + 0.01);
+    }
+  }
+  // 경찰 사이렌 (오르내리는 두 음) — stop() 으로 끔
+  siren(getPos) {
+    const c = this.ctx; if (!c) return { stop() { } };
+    const o = c.createOscillator(), o2 = c.createOscillator(), g = c.createGain(), p = c.createPanner(), lfo = c.createOscillator(), lg = c.createGain();
+    o.type = 'sawtooth'; o2.type = 'square'; o.frequency.value = 900; o2.frequency.value = 905; lfo.frequency.value = 0.22; lg.gain.value = 380;
+    lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency);
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 2600;
+    g.gain.value = 0.12; o.connect(f); o2.connect(f); f.connect(g); p.panningModel = 'HRTF'; p.refDistance = 4; p.rolloffFactor = 0.9; g.connect(p); p.connect(this.master);
+    o.start(); o2.start(); lfo.start();
+    const iv = setInterval(() => { const q = getPos?.(); if (q) this.movePanner({ panner: p }, q); }, 100);
+    return { stop: () => { clearInterval(iv); try { o.stop(); o2.stop(); lfo.stop(); } catch (e) { } } };
   }
   // 문 열림 차임 "딩~동" (실제 종소리 녹음을 두 음으로)
   chime(pos) { this.play('chime', { pos, vol: 0.55, rate: 1.26, dur: 0.9 }); this.play('chime', { pos, vol: 0.55, rate: 1.0, delay: 0.42 }); }

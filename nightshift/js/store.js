@@ -100,7 +100,7 @@ export function buildStore(renderer, scene, quality) {
   B.box(mCeil, W1 - W0, 0.02, D1 - D0, (W0 + W1) / 2, H, 0);
   B.box(mWall, 0.1, H, D1 - D0, W0 - 0.05, H / 2, 0);
   B.box(mWall, 0.1, H, D1 - D0, W1 + 0.05, H / 2, 0);
-  B.box(mWall, W1 - W0, H, 0.1, (W0 + W1) / 2, H / 2, D0 - 0.05);
+  B.box(mWall, 3.1 - W0, H, 0.1, (W0 + 3.1) / 2, H / 2, D0 - 0.05); B.box(mWall, W1 - 4.1, H, 0.1, (W1 + 4.1) / 2, H / 2, D0 - 0.05); B.box(mWall, 1.0, H - 2.12, 0.1, 3.6, (H + 2.12) / 2, D0 - 0.05);
   B.box(mBrand, 0.02, 0.12, D1 - D0, W0 + 0.01, 0.06, 0); B.box(mBrand, 0.02, 0.12, D1 - D0, W1 - 0.01, 0.06, 0);
   B.box(mBrand, 0.02, 0.3, D1 - D0, W1 - 0.01, 2.55, 0); B.box(mBrand2, 0.02, 0.05, D1 - D0, W1 - 0.02, 2.38, 0);
   // LED 조명 패널 + 실제 조명
@@ -194,9 +194,11 @@ export function buildStore(renderer, scene, quality) {
   const fl = new THREE.PointLight(0xdff4ff, 1.5, 4, 2); fl.position.set(-1.3, 1.4, FZ + 1.2); scene.add(fl);
 
   // 직원 문 (창고)
-  B.box(mWood, 1.0, 2.1, 0.06, 3.6, 1.05, D0 + 0.03);
+  const staffDoor = new THREE.Group(); staffDoor.position.set(3.11, 0, D0 - 0.02); root.add(staffDoor);
+  const sdm = new THREE.Mesh(new THREE.BoxGeometry(0.98, 2.1, 0.05), mWood); sdm.position.set(0.49, 1.05, 0); staffDoor.add(sdm);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), mMetal); knob.position.set(0.88, 1.0, 0.05); staffDoor.add(knob);
   const staff = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.14), new THREE.MeshBasicMaterial({ map: canvasTex('staff', 256, 72, (g, w, h) => { g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.fillStyle = '#c22'; g.font = `900 34px ${FONT}`; g.textAlign = 'center'; g.fillText('STAFF ONLY', w / 2, 48); }) }));
-  staff.position.set(3.6, 1.6, D0 + 0.07); root.add(staff);
+  staff.position.set(0.49, 1.6, 0.03); staffDoor.add(staff);
 
   // 계산대
   const CX = 2.6, CZ0 = -1.2, CZ1 = 2.4, CH = 0.95;
@@ -269,32 +271,13 @@ export function buildStore(renderer, scene, quality) {
     const cc = new THREE.CubeCamera(0.05, 40, rt); cc.position.set(-0.8, 1.5, 0.4); scene.add(cc); cc.update(renderer, scene); scene.remove(cc);
     const env = pmrem.fromCubemap(rt.texture).texture; scene.environment = env; rt.dispose();
   } catch (e) { console.warn('env capture', e); }
-  return { root, mw, door, doorAngle: 0, cigSlots, C, pos: C.pos, posScreenTex: C.posScreenTex, outside };
+  return { root, mw, door, doorAngle: 0, staffDoor, cigSlots, C, pos: C.pos, posScreenTex: C.posScreenTex, outside, merch };
 }
 
 function buildOutside(scene) {
   const g = new THREE.Group(); scene.add(g);
   const B = new Batch();
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.15, ...o });
-  const wet = canvasTex('asph', 256, 256, (c, w, h) => { c.fillStyle = '#1b1d21'; c.fillRect(0, 0, w, h); for (let i = 0; i < 6000; i++) { c.fillStyle = `rgba(255,255,255,${Math.random() * 0.06})`; c.fillRect(Math.random() * w, Math.random() * h, 2, 2); } });
-  wet.repeat.set(20, 4);
-  B.box(std({ map: wet, roughness: 0.35, envMapIntensity: 0.5 }), 60, 0.02, 8, 0, -0.03, 10.5);
-  const side = canvasTex('side', 256, 256, (c, w, h) => { c.fillStyle = '#6e6a64'; c.fillRect(0, 0, w, h); c.strokeStyle = '#4b4843'; c.lineWidth = 4; for (let i = 0; i <= 4; i++) { c.strokeRect(0, i * 64, w, 0); c.strokeRect(i * 64 + (i % 2) * 32, 0, 0, h); } });
-  side.repeat.set(30, 1.5);
-  B.box(std({ map: side }), 60, 0.12, 2.6, 0, 0.0, 5.3);
-  B.box(std({ color: 0x8a8a8a }), 60, 0.15, 0.2, 0, 0.02, 6.6);
-  for (let x = -28; x < 28; x += 4) B.box(new THREE.MeshBasicMaterial({ color: 0xc9c9c9 }), 2, 0.005, 0.12, x, -0.015, 10.5);
-  B.box(new THREE.MeshBasicMaterial({ color: 0xd8b13a }), 60, 0.005, 0.1, 0, -0.015, 8.0);
-  // 길 건너 건물들 (불 켜진 창문)
-  const win = canvasTex('bld', 512, 512, (c, w, h) => {
-    c.fillStyle = '#16181d'; c.fillRect(0, 0, w, h);
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { const on = Math.random() < 0.28; c.fillStyle = on ? ['#ffd99a', '#cfe6ff', '#ffefc9'][(x + y) % 3] : '#0d0f13'; c.fillRect(x * 64 + 10, y * 64 + 12, 44, 36); }
-  });
-  win.repeat.set(3, 1);
-  const mB = new THREE.MeshBasicMaterial({ map: win, color: 0x9a9a9a });
-  [[-14, 9, 8], [-4, 13, 10], [8, 7, 9], [18, 11, 8]].forEach(([x, hh, w]) => B.box(mB, w, hh, 4, x, hh / 2, 17));
-  const shopSign = canvasTex('shop', 512, 128, (c, w, h) => { c.fillStyle = '#300'; c.fillRect(0, 0, w, h); c.fillStyle = '#ff4040'; c.font = `900 70px ${FONT}`; c.textAlign = 'center'; c.fillText('24시 국밥', w / 2, 92); });
-  const ss = new THREE.Mesh(new THREE.PlaneGeometry(5, 1.2), new THREE.MeshBasicMaterial({ map: shopSign, toneMapped: false })); ss.position.set(-4, 3.2, 14.9); ss.rotation.y = Math.PI; g.add(ss);
   // 가로등
   const pole = std({ color: 0x3a3d42, metalness: 0.6, roughness: 0.4 });
   for (const x of [-7, 6]) {

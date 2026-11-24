@@ -4,3 +4,5 @@
 - door, register, bill, bag, step1, step2, key, whoosh: Phaser 3 examples assets — github.com/photonstorm/phaser3-examples
 - thud: Godot demo projects (ragdoll_physics)
 손님·사장님 목소리는 기기의 한국어 음성합성(TTS)을 씁니다.
+- gun, punch, hit: Phaser 3 examples assets (SoundEffects/pistol.wav, kyobi impact sounds)
+- horn: Godot demo projects (truck_town honk)

@@ -35,7 +35,8 @@ export class Game {
     this.day = day; this.name = name; this.min = 0; this.t = 0; this.running = true; this.paused = false; this.ending = false;
     this.customers = []; this.queue = []; this.cur = null; this.items = []; this.cash = []; this.lines = []; this.busy = false;
     this.drawer = 200000; this.expected = 200000; this.sales = 0; this.rep = 60; this.aim = null;
-    this.st = { served: 0, angry: 0, greet: 0, minor: 0, theft: 0, caught: 0, handled: 0, wrongCig: 0, refund: 0, bye: 0 };
+    this.st = { served: 0, angry: 0, greet: 0, minor: 0, theft: 0, caught: 0, handled: 0, wrongCig: 0, refund: 0, bye: 0, tidy: 0 };
+    this.violence = false; this.bossDead = false;
     this.nextSpawn = 6; this.bossVisitAt = rnd(220, 320); this.bossVisited = false; this.intro = true;
     this.renderPos(); this.updateHud(true); show('hud'); this.choices([]);
     this.bossScene('intro').then(() => { this.intro = false; });
@@ -56,7 +57,7 @@ export class Game {
     const camW = this.camera.getWorldPosition(this._cw || (this._cw = new THREE.Vector3()));
     for (const c of this.customers) c.person.update(dt, camW);
     this.boss?.update(dt, camW);
-    if (!this.intro && this.min < 455 && (this.nextSpawn -= dt) <= 0 && this.customers.length < 3) { this.spawn(); this.nextSpawn = rnd(18, 36) * Math.max(0.6, 1 - this.day * 0.06); }
+    if (!this.intro && !this.violence && this.min < 455 && (this.nextSpawn -= dt) <= 0 && this.customers.length < 3) { this.spawn(); this.nextSpawn = rnd(18, 36) * Math.max(0.6, 1 - this.day * 0.06); }
     if (!this.intro && !this.bossVisited && this.t > this.bossVisitAt && !this.cur) { this.bossVisited = true; this.bossScene('visit'); }
     if (this.min >= 480 && !this.customers.length && !this.ending && !this.boss) { this.ending = true; this.bossScene('end'); }
     const s = this.store, want = this.doorOpenUntil > this.t ? 1 : 0;
@@ -126,6 +127,7 @@ export class Game {
         const shelf = fridge ? V3(tgt.x, 1.1, -3.6) : V3(ax < -3 ? -4.6 : (ax < -1 ? -2.6 : -0.6), 1.0, tgt.z);
         p.lookAt(shelf); await this.wait(rnd(1.2, 2.2));
         p.reach(shelf, 1100); await this.wait(rnd(1.2, 2.2));       // 진열대에서 물건 집기
+        if (Math.random() < 0.25) { const at = this.store.merch.knockNear(p.root.position); if (at) this.audio.play('thud', { pos: at, vol: 0.7, rate: 1.3 + Math.random() * 0.4 }); }
         if (c.trouble === 'thief' && !c.stolen) { c.stolen = pick(['chips', 'choco', 'battery']); this.cctv(true); this.audio.play('bag', { pos: p.root.position, vol: 0.2 }); }
         if (fridge) { this.audio.play('door', { pos: shelf, vol: 0.25, rate: 1.4 }); await p.walk([V3(tgt.x, 0, SPOT.frontZ - 0.3)]); }
       }
@@ -176,6 +178,7 @@ export class Game {
     $('cwant').textContent = (c.cig ? `담배: ${c.cig.id}번 ${c.cig.name}${c.cigGiven ? ' (완료)' : ''} · ` : '') + `스캔 ${this.items.filter(i => i.scanned).length}/${this.items.filter(i => !i.refund).length}`;
   }
   async leave(c) {
+    if (c.dead) return;
     c.gone = true; c.atCounter = false;
     const i = this.queue.indexOf(c); if (i >= 0) this.queue.splice(i, 1);
     if (this.cur === c) { this.cur = null; show('cust', false); }
@@ -232,6 +235,8 @@ export class Game {
     if (a.type === 'item') return this.scanItem(a.item);
     if (a.type === 'cig') return this.takeCig(a.obj);
     if (a.type === 'mw') return this.heat();
+    if (a.type === 'mess') return this.tidyItem(a.entry);
+    if (a.type === 'shop') return this.onShop?.();
     if (a.type === 'counter') return toast('계산은 <b>계산하기</b> 버튼이에요');
     toast('상품에 점을 맞춰 주세요');
   }
@@ -316,9 +321,19 @@ export class Game {
   }
   async handOver(c) {
     // 손님이 물건(봉투)을 가져가며 인사
-    c.person.reach(BAG_AT, 900); await this.wait(0.5);
-    for (const it of this.items) it.mesh.visible = false; if (this.bagMesh) this.bagMesh.visible = false;
-    this.audio.play('bag', { pos: BAG_AT, vol: 0.6 });
+    if (this.bagMesh) {
+      const H = this.hands, bag = this.bagMesh, top = bag.position.clone().add(V3(0, 0.3, 0));
+      this.busy = true;
+      for (const it of this.items) { if (!it.mesh.visible || it.refund) continue; const sd = H.sideOf(it.mesh.position); await H.reachTo(sd, it.mesh.position, 'open', 'down', 220); H.pose(sd, 'grip'); H.hold(sd, it.mesh); await H.reachTo(sd, top, 'grip', 'down', 240); H.hold(sd, null); it.mesh.visible = false; this.audio.rustle(top, 0.35, 0.55); H.pose(sd, 'open'); H.rest(sd); }
+      bag.scale.set(1.05, 1, 1.25);
+      await H.reachTo('R', top.clone().add(V3(0, 0.05, 0)), 'open', 'down', 260); H.pose('R', 'pinch'); H.hold('R', bag, 'pinch'); bag.rotation.set(Math.PI, 0, 0); bag.position.set(0, -0.02, 0);
+      this.audio.rustle(GIVE_AT, 0.6, 0.6); await H.reachTo('R', GIVE_AT.clone().add(V3(0, 0.25, 0)), 'pinch', 'front', 420);
+      c.person.reach(GIVE_AT, 900); await this.wait(0.45); H.hold('R', null); this.audio.rustle(GIVE_AT, 0.5, 0.5); H.pose('R', 'open'); H.rest('R'); this.bagMesh = null;
+    } else {
+      c.person.reach(BAG_AT, 900); await this.wait(0.5);
+      for (const it of this.items) it.mesh.visible = false;
+      this.audio.play('bag', { pos: BAG_AT, vol: 0.6 });
+    }
     this.busy = false;
     await this.say(c, c.trouble === 'rude' ? (c.handledRude ? TROUBLE.rude.polite[1] : ['…', 'tired']) : this.fresh(c, L.thanks));
     this.endTx(c, true);
@@ -420,17 +435,47 @@ export class Game {
     const side = new THREE.MeshStandardMaterial({ color: 0x333333 });
     return new THREE.Mesh(new THREE.BoxGeometry(0.086, 0.0008, 0.054), [side, side, new THREE.MeshStandardMaterial({ map: t, roughness: 0.3, metalness: 0.2 }), side, side, side]);
   }
+  // 넘어진 상품 정리
+  async tidyItem(e) {
+    if (!e?.messy || this.busy) return; this.busy = true;
+    const H = this.hands, p = e.pos.clone(), cur = new THREE.Vector3().setFromMatrixPosition(e.cur), side = H.sideOf(cur);
+    await H.reachTo(side, cur, 'open', 'down', 300); H.pose(side, 'grip'); await this.wait(0.12);
+    this.store.merch.tidy(e); await H.reachTo(side, p, 'grip', 'front', 320);
+    this.audio.play('thud', { pos: p, vol: 0.4, rate: 1.7 }); H.pose(side, 'open'); H.rest(side);
+    this.st.tidy++; this.rep = Math.min(100, this.rep + 0.6); toast(ic('check') + '정리 완료', 'good', 700); this.busy = false;
+  }
+  // 구겨진 비닐봉투 (반투명, 주름, 손잡이)
+  makeBag() {
+    const w = 0.3, d = 0.15, h = 0.36, g = new THREE.BoxGeometry(w, h, d, 10, 12, 4), p = g.attributes.position;
+    const ph = [Math.random() * 6, Math.random() * 6, Math.random() * 6];
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), t = (y + h / 2) / h;
+      const n = Math.sin(x * 61 + ph[0]) * Math.sin(y * 47 + ph[1]) * 0.012 + Math.sin(x * 23 + y * 31 + ph[2]) * 0.009 + (Math.random() - 0.5) * 0.004;
+      p.setXYZ(i, x * (0.86 + 0.14 * t) + n, y + Math.abs(n) * 0.4, z * (0.55 + 0.45 * t) + n * 1.3);
+    }
+    // 윗면(입구)은 지움
+    const idx = g.index.array, keep = []; for (let i = 0; i < idx.length; i += 3) { if (![0, 1, 2].every(k => p.getY(idx[i + k]) > h / 2 - 0.02)) keep.push(idx[i], idx[i + 1], idx[i + 2]); } g.setIndex(keep);
+    g.computeVertexNormals(); g.translate(0, h / 2, 0);
+    const wr = document.createElement('canvas'); wr.width = wr.height = 256; const c = wr.getContext('2d'); c.fillStyle = '#808080'; c.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 70; i++) { c.strokeStyle = `rgba(${Math.random() < 0.5 ? '255,255,255' : '0,0,0'},${0.2 + Math.random() * 0.4})`; c.lineWidth = 1 + Math.random() * 2; c.beginPath(); let x = Math.random() * 256, y = Math.random() * 256; c.moveTo(x, y); for (let k = 0; k < 4; k++) { x += (Math.random() - 0.5) * 80; y += (Math.random() - 0.5) * 80; c.lineTo(x, y); } c.stroke(); }
+    const bump = new THREE.CanvasTexture(wr);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xf4f4ef, roughness: 0.5, transparent: true, opacity: 0.8, side: THREE.DoubleSide, bumpMap: bump, bumpScale: 2.5, envMapIntensity: 0.8 });
+    const bag = new THREE.Group(); bag.add(new THREE.Mesh(g, mat));
+    for (const sx of [-1, 1]) { const hd = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.008, 6, 16, Math.PI), mat); hd.position.set(sx * 0.07, h + 0.005, 0); bag.add(hd); }
+    const logo = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.07), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85, map: (() => { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128; const x = cv.getContext('2d'); x.fillStyle = '#1f2d4a'; x.font = '900 70px sans-serif'; x.fillText('달빛', 20, 85); x.fillStyle = '#2fd3b4'; x.fillText('24', 160, 85); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })() }));
+    logo.position.set(0, h * 0.55, d * 0.5 + 0.004); bag.add(logo);
+    return bag;
+  }
   // 봉투: 계산대 아래에서 꺼내 펼침 (유상 100원)
   async bagBtn(auto = false) {
     const c = this.cur; if (!c || this.bagMesh || (this.busy && !auto)) return;
     if (!c.wantsBag && !auto) { c.mood -= 2; this.say(c, ['아, 봉투는 괜찮아요.', 'calm']); return; }
     const H = this.hands; const wasBusy = this.busy; this.busy = true;
     await H.reachTo('R', V3(2.86, 0.7, 1.25), 'open', 'front', 320); H.pose('R', 'pinch');
-    const bag = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.3, 14, 4, true), new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: 0.75, transparent: true, opacity: 0.88, side: THREE.DoubleSide }));
-    const p = bag.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) * (1 + Math.sin(i * 1.7) * 0.06)); bag.geometry.computeVertexNormals();
-    H.hold('R', bag, 'pinch'); this.audio.play('bag', { pos: BAG_AT, vol: 0.7 });
+    const bag = this.makeBag(); this.audio.rustle(BAG_AT, 0.9, 0.6);
+    H.hold('R', bag, 'pinch');
     await H.reachTo('R', BAG_AT.clone().add(V3(0.05, 0.15, -0.05)), 'pinch', 'down', 380);
-    H.hold('R', null); this.scene.add(bag); bag.position.copy(BAG_AT).add(V3(0.06, 0.15, -0.06)); this.bagMesh = bag;
+    H.hold('R', null); this.scene.add(bag); bag.position.copy(BAG_AT).add(V3(0.08, 0, -0.1)); bag.rotation.set(0, Math.PI / 2 + rnd(-0.3, 0.3), 0); this.bagMesh = bag; this.audio.rustle(bag.position, 0.5, 0.5);
     if (!c.paid) this.addLine('봉투(유상)', 100, 'bag', false);
     await this.meSay(ME.bag); H.pose('R', 'open'); H.rest('R'); this.busy = wasBusy; c.wantsBag = false;
   }
@@ -574,13 +619,14 @@ export class Game {
     const diff = this.drawer - this.expected, st = this.st;
     const score = this.rep - st.minor * 25 - Math.abs(diff) / 1000 * 2 - st.theft / 1000 * 2 + st.handled * 2 + st.bye * 0.5;
     const grade = score >= 85 ? 'S' : score >= 70 ? 'A' : score >= 55 ? 'B' : score >= 40 ? 'C' : 'F';
+    try { const w = +(localStorage.getItem('ns_wallet') ?? 50000); localStorage.setItem('ns_wallet', String(w + WAGE * 8)); } catch (e) { }
     const best = JSON.parse(localStorage.getItem('ns_best') || '{}');
     try { localStorage.setItem('ns_save', JSON.stringify({ day: this.day + 1, name: this.name })); if (!best.day || this.day > best.day) localStorage.setItem('ns_best', JSON.stringify({ day: this.day, grade })); } catch (e) { }
     const line = (a, b) => `<span>${a}</span><b>${b}</b>`;
     modal(`<h2>${this.day}일차 근무 끝 — 06:00</h2><div class="grade">${grade}</div>
       <div class="res">${line('손님 응대', st.served + '명')}${line('매출', won(this.sales))}${line('시재 (돈통 차이)', (diff >= 0 ? '+' : '') + won(diff))}
       ${line('인사한 손님', st.greet + '명')}${line('배웅 인사', st.bye + '명')}${line('진상 대처', st.handled + '회')}${line('화나서 간 손님', st.angry + '명')}
-      ${line('담배 잘못 집음', st.wrongCig + '회')}${line('도난 피해', won(st.theft))}
+      ${line('담배 잘못 집음', st.wrongCig + '회')}${line('상품 정리', st.tidy + '개')}${line('도난 피해', won(st.theft))}
       ${line('미성년자 판매', st.minor ? `<span style="color:#ff6b7a">${st.minor}회</span>` : '0회')}${line('평판', stars(this.rep))}${line('오늘 일당 (시급 10,320원 × 8시간)', won(WAGE * 8))}</div>
       <p>${grade === 'F' ? '사장님: "…내일은 좀 더 잘 하자."' : grade === 'S' ? '사장님: "최고야! 정직원 할 생각 없어?"' : '사장님: "수고했어, 내일 봐~"'}</p>`,
       [['메인으로', 'gray', () => this.onExit()], [`${this.day + 1}일차 출근`, 'blue', () => this.onNext(this.day + 1)]]);
@@ -606,6 +652,8 @@ export class Game {
     const c = this.cur;
     if (this.intro) return hint(`사장님 말씀 듣는 중… (${ic('mic')} 로 "네" 라고 대답해 보세요)`);
     if (this.busy) return hint('');
+    if (c && this.mover && this.yawObjDist?.() > 2.4) return hint('손님이 계산대에서 기다려요 — 계산대로 돌아가세요');
+    if (!c && this.store.merch.messyCount() > 3 && !this.lastEntered?.greetUntil) return hint(`넘어진 상품 ${this.store.merch.messyCount()}개 — 점을 맞추고 <b>정리하기</b>`);
     if (!c) return hint(this.lastEntered && !this.lastEntered.greeted && this.lastEntered.greetUntil > this.t ? ic('mic') + ' 손님이 들어왔어요! "어서오세요" 라고 말해 보세요' : (this.min >= 480 ? '근무 끝! 마지막 손님을 기다리는 중' : ''));
     if (this.heatPending) return hint('뒤쪽 전자레인지에 점을 맞추고 <b>데우기</b>');
     if (c.waitReply) return hint(ic('mic') + ' 손님 요구에 대답하세요 ("죄송하지만 안 됩니다" 등)');

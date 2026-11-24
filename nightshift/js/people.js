@@ -97,6 +97,8 @@ export class Person {
     this.hairs = []; this.hairV = new THREE.Vector2(); this.hairO = new THREE.Vector2(); this.lastHead = null;
     this.accessories(type);
     // 동작
+    // 맞추기 판정용 보이지 않는 원기둥
+    const hb = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, this.height, 8), new THREE.MeshBasicMaterial()); hb.visible = false; hb.position.y = this.height / 2; hb.userData.personRef = this; this.root.add(hb); this.hitbox = hb;
     this.mixer = new THREE.AnimationMixer(this.model);
     this.act = {};
     for (const [k, c] of Object.entries(base.clips[this.kind])) this.act[k] = this.mixer.clipAction(c);
@@ -139,6 +141,13 @@ export class Person {
       add(g, 0, ht - 0.088, -0.012); this.hairs.push(g);
     }
     if (type.id === 'boss') { const sideHair = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 20, Math.PI * 1.1), new THREE.MeshStandardMaterial({ color: '#8d8a86', roughness: 0.9 })); sideHair.rotation.set(Math.PI / 2, 0, Math.PI * 0.95); add(sideHair, 0, ht - 0.1, -0.015); }
+    if (type.hat === 'police') {
+      const g = new THREE.Group(), cm = M('#14213d', 0.6);
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.1, 0.09, 20), cm); crown.position.y = 0.045; g.add(crown);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.01, 20, 1, false, -Math.PI / 2, Math.PI), M('#0b0b0b', 0.3)); brim.position.set(0, 0, 0.07); g.add(brim);
+      const badge = new THREE.Mesh(new THREE.CircleGeometry(0.022, 12), M('#d4af37', 0.3, 0.8)); badge.position.set(0, 0.05, 0.112); g.add(badge);
+      add(g, 0, ht - 0.07, 0.0);
+    }
     if (type.mask) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 8, -Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.35, Math.PI * 0.35), M('#222', 0.9)); m.scale.set(1.15, 1.1, 1); add(m, 0, ht - 0.175, 0.04); }
     if (type.glasses) {
       const g = new THREE.Group(), fm = M('#111', 0.3, 0.5);
@@ -164,8 +173,15 @@ export class Person {
   // 경로 걷기 (점 목록). 도착하면 resolve
   walk(points) { this.path = points.map(p => p.clone()); this.play('walk'); return new Promise(r => (this.onArrive = r)); }
   lookAt(p) { this.faceTarget = p.clone(); }
+  hurt() { this.hurtT = 0.45; this.gesture('headShake'); }
+  die() { this.dead = true; this.path = []; this.talk = 0; this.dieT = 0; this.cur?.fadeOut?.(0.2); }
   update(dt, camPos) {
+    if (this.dead) { // 뒤로 쓰러짐
+      this.dieT += dt; const k = Math.min(1, this.dieT / 0.75), e = k * k; this.model.rotation.x = -e * Math.PI / 2; this.model.position.y = 0.12 * e;
+      if (k < 1) this.mixer.update(dt * 0.3); return;
+    }
     this.t += dt; this.mixer.update(dt);
+    if (this.hurtT > 0) { this.hurtT -= dt; this.model.rotation.x = -Math.sin(this.hurtT / 0.45 * Math.PI) * 0.18; }
     const r = this.root;
     if (this.path.length) {
       const tgt = this.path[0]; _v.subVectors(tgt, r.position); _v.y = 0; const d = _v.length();
