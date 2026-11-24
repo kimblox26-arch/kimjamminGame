@@ -28,13 +28,16 @@ public class ClickService extends AccessibilityService {
     static ClickService instance;
     static final int MAX = 5;
     private static final long[] UNIT_MS = {3600000L, 60000L, 1000L, 1L};
+    /** 렉 방지: 초당 최대 클릭 (0 = 제한 없음) */
+    static final int[] CAPS = {0, 60, 30, 20, 10, 5};
+    static final String[] CAP_NAMES = {"제한 없음", "초당 60번", "초당 30번", "초당 20번", "초당 10번", "초당 5번"};
 
     private final Handler h = new Handler(Looper.getMainLooper());
     private final ArrayList<Mouse> mice = new ArrayList<>();
     private WindowManager wm;
     private boolean looping;
     private int idx;
-    private long interval, press;
+    private long interval, press, minPeriod;
 
     @Override protected void onServiceConnected() {
         instance = this;
@@ -132,6 +135,8 @@ public class ClickService extends AccessibilityService {
         SharedPreferences sp = getSharedPreferences("cfg", MODE_PRIVATE);
         interval = Math.max(0, sp.getLong("value", 1)) * UNIT_MS[sp.getInt("unit", 3)];
         press = Math.max(1, Math.min(sp.getLong("press", 5), 10000));
+        int cap = CAPS[Math.max(0, Math.min(sp.getInt("cap", 0), CAPS.length - 1))];
+        minPeriod = cap > 0 ? 1000 / cap : 0;
         looping = true;
         idx = 0;
         h.post(this::clickNext);
@@ -161,7 +166,7 @@ public class ClickService extends AccessibilityService {
         ArrayList<Mouse> act = new ArrayList<>();
         for (Mouse m : mice) if (m.running) act.add(m);
         if (act.isEmpty()) { stopLoop(); return; }
-        long period = press + Math.max(1, interval);
+        long period = Math.max(press + Math.max(1, interval), minPeriod);
         boolean batch = period <= 200;
         int n = batch ? (int) Math.max(1, Math.min(GestureDescription.getMaxStrokeCount(), 200 / period)) : 1;
         GestureDescription.Builder b = new GestureDescription.Builder();

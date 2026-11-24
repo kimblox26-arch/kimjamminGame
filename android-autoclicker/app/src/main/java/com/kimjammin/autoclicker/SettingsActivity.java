@@ -169,6 +169,9 @@ public class SettingsActivity extends Activity {
         Ui.add(this, speed, muted("누르는 시간 (밀리초) · 짧을수록 빠름, 안 눌리면 늘리기"), 14);
         EditText press = number(sp.getLong("press", 5));
         Ui.add(this, speed, press, 8);
+        Ui.add(this, speed, muted("렉 방지 (게임이 버벅이면 낮추세요)"), 14);
+        Spinner cap = spinner(ClickService.CAP_NAMES, sp.getInt("cap", 0));
+        Ui.add(this, speed, cap, 8);
 
         // 저장
         TextView save = Ui.text(this, "저장", 17, 0xFFFFFFFF, true);
@@ -182,6 +185,7 @@ public class SettingsActivity extends Activity {
                 .putInt("alpha", alpha.getProgress() + 1)
                 .putLong("value", Math.max(0, parse(value, 1)))
                 .putInt("unit", unit.getSelectedItemPosition())
+                .putInt("cap", cap.getSelectedItemPosition())
                 .putLong("press", Math.max(1, Math.min(parse(press, 5), 10000)))
                 .apply();
             if (ClickService.instance != null) ClickService.instance.refreshMice();
