@@ -226,3 +226,10 @@ body:not(.armed) #bAtk{display:none!important}
 #bRun.on{background:rgba(47,211,180,.55)}
 body.court-mode #bRun,body.riding #bRun{display:none!important}
 #sub,#mine,#toast{display:none!important}
+
+/* 사진 모드 */
+body.photo #hud{visibility:hidden}
+#photoUI{position:fixed;inset:auto 0 calc(max(14px,env(safe-area-inset-bottom)) + 6px) 0;display:flex;justify-content:center;gap:18px;z-index:35}
+#photoUI #shutter{width:74px;height:74px;border-radius:50%;border:5px solid #fff;background:rgba(255,255,255,.25);color:#fff;font-size:26px}
+#photoUI #photoX{padding:0 18px;border-radius:20px;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.3)}
+#fade.flash{opacity:1!important;background:#fff!important;transition:none!important}

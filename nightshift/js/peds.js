@@ -89,7 +89,7 @@ export class Pedestrians {
       this.t = 0.6;
       for (const c of [...this.list]) if (!c.dead && (c.ug !== ug || c.person.root.position.distanceTo(me) > 80)) this.remove(c);
       for (const c of [...this.list]) if (c.dead && c.person.root.position.distanceTo(me) > 90) this.remove(c);
-      if (this.list.filter(c => !c.dead).length < (ug ? 6 : 10)) this.spawn(ug);
+      const cap = window.__q === 'low' ? [3, 5] : window.__q === 'mid' ? [4, 7] : [6, 10]; if (this.list.filter(c => !c.dead).length < (ug ? cap[0] : cap[1])) this.spawn(ug);
     }
     const dead = [...this.list.filter(c => c.dead), ...this.game.customers.filter(c => c.dead), ...this.crime.officers.filter(o => o.dead).map(o => o.ref)];
     for (const c of this.list) {

@@ -45,7 +45,7 @@ export class Missions {
     const w = this.money(0), next = this.STORY.find(m => !this.done.has(m.id));
     const list = this.STORY.map((m, i) => `<div class="opt"><span><b>${i + 1}. ${m.title}</b><br><small style="color:#8a97a6">${m.desc}</small></span><b style="color:${this.done.has(m.id) ? '#2fd3b4' : this.active?.id === m.id ? '#ffd36b' : '#8a97a6'}">${this.done.has(m.id) ? '완료' : this.active?.id === m.id ? '진행 중' : m === next ? '가능' : '잠김'}</b></div>`).join('');
     modal(`<h2>${ic('pos')} 내 휴대폰</h2><p>지갑 <b>${won(w)}</b> · 일자리 <b>${this.job ? this.job.name : '없음'}</b></p><h3 style="margin:10px 0 4px">스토리 미션</h3>${list}`,
-      [['닫기', 'gray', () => { }], ['지도', 'gray', () => this.minimap.open(true)],
+      [['닫기', 'gray', () => { }], ['지도', 'gray', () => this.minimap.open(true)], ['카메라', 'gray', () => this.features?.photoMode()], ['갤러리', 'gray', () => this.features?.galleryView()], ['통계', 'gray', () => this.features?.statsView()], ['ATM 잔고', 'gray', () => this.features?.atm()],
         ...(next && !this.active ? [[`미션: ${next.title}`, 'blue', () => this.start(next)]] : []),
         ['일자리', 'blue', () => this.jobs()]]);
   }
@@ -73,7 +73,7 @@ export class Missions {
         const ty = pk(TYPES.filter(t => !t.trouble)), P = new Person(ty, this.audio); P.root.position.copy(dest).add(V3(0.8, 0, 0.8)); P.lookAt(this.yawObj.position); this.scene.add(P.root); this.extra.push({ type: ty, person: P, voice: ty.voice, gender: ty.model === 'woman' ? 'f' : 'm', vIdx: 2, mood: 70 });
         const c = this.extra[this.extra.length - 1]; P.gesture('agree'); this.game.say(c, pk([['오, 빨리 오셨네요! 감사합니다.', 'happy'], ['수고하셨어요~ 맛있게 먹을게요.', 'happy'], ['아, 좀 늦었네요… 그래도 감사해요.', 'tired']]));
         setTimeout(() => { P.dispose(); this.extra.splice(this.extra.indexOf(c), 1); }, 6000);
-        const pay = 4000 + Math.round(dest.distanceTo(V3(1.1, 0, 5.8)) * 20 / 100) * 100 + (t0 < 60 ? 1000 : 0); this.money(pay, t0 < 60 ? '배달 완료 (빠른 배달 팁)' : '배달 완료'); count++;
+        this.features?.stat('deliveries'); const pay = 4000 + Math.round(dest.distanceTo(V3(1.1, 0, 5.8)) * 20 / 100) * 100 + (t0 < 60 ? 1000 : 0); this.money(pay, t0 < 60 ? '배달 완료 (빠른 배달 팁)' : '배달 완료'); count++;
         if (count >= n) { self.job = null; onDone?.(); } else pickup();
       });
     });
@@ -92,7 +92,7 @@ export class Missions {
         P.root.visible = false; this.audio.play('door', { vol: 0.8, rate: 1.2 }); this.game.say(pax, pk(RIDE)); const dest = this.sidewalkPoint(120, 260), dist = dest.distanceTo(at);
         this.goal('손님 목적지까지 운전', dest, 7, () => {
           this.audio.play('door', { vol: 0.8, rate: 1.2 }); P.root.visible = true; P.root.position.copy(dest); P.PT.up = 0; this.game.say(pax, pk([['감사합니다, 수고하세요~', 'happy'], ['카드로 할게요. 안녕히 가세요.', 'calm']]));
-          const fare = 4800 + Math.round(dist * 10 / 100) * 100; this.money(fare, '택시 요금'); count++;
+          this.features?.stat('taxi'); const fare = 4800 + Math.round(dist * 10 / 100) * 100; this.money(fare, '택시 요금'); count++;
           const pp = pax; setTimeout(() => { pp.person.dispose(); this.extra.splice(this.extra.indexOf(pp), 1); }, 5000); pax = null;
           if (count >= n) { self.job = null; onDone?.(); } else next();
         }, { cond: () => inTaxi() && Math.abs(this.drive.ride.v) < 2 });

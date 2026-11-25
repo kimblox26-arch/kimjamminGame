@@ -167,10 +167,13 @@ export function buildCity(scene, { onCollider, holes = [] }) {
   const mPole = M({ color: 0x3a3d42, metalness: 0.6, roughness: 0.4 }), mBulb = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc77a).multiplyScalar(3) });
   const poolTex = ctex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(255,190,110,.45)'); gr.addColorStop(1, 'rgba(255,190,110,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }, false);
   const mPool = new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  const coneTex = ctex(32, 128, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(255,200,130,.55)'); gr.addColorStop(1, 'rgba(255,200,130,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }, false);
+  const mCone = new THREE.MeshBasicMaterial({ map: coneTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: 0.22, fog: true });
+  const lampCone = (x, y, z) => { const g = new THREE.CylinderGeometry(0.18, 2.4, y, 18, 1, true); g.translate(x, y / 2, z); add(mCone, g); };
   const lampPool = (x, z) => { const g = new THREE.PlaneGeometry(9, 9); g.rotateX(-Math.PI / 2); g.translate(x, 0.02, z); add(mPool, g); };
   const lamps = [];
-  const lampX = (x, z, dz) => { lamps.push({ x, z: z + dz * 1.5, tx: x, tz: z + dz * 2.5 }); onCollider?.({ x0: x - 0.14, x1: x + 0.14, z0: z - 0.14, z1: z + 0.14 }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 0.1, 0.1, 1.6, x, 6.4, z + dz * 0.8); box(mBulb, 0.5, 0.1, 0.22, x, 6.3, z + dz * 1.5); lampPool(x, z + dz * 2.5); };
-  const lampZ = (x, z, dx) => { lamps.push({ x: x + dx * 1.5, z, tx: x + dx * 2.5, tz: z }); onCollider?.({ x0: x - 0.14, x1: x + 0.14, z0: z - 0.14, z1: z + 0.14 }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 1.6, 0.1, 0.1, x + dx * 0.8, 6.4, z); box(mBulb, 0.22, 0.1, 0.5, x + dx * 1.5, 6.3, z); lampPool(x + dx * 2.5, z); };
+  const lampX = (x, z, dz) => { lamps.push({ x, z: z + dz * 1.5, tx: x, tz: z + dz * 2.5 }); onCollider?.({ x0: x - 0.14, x1: x + 0.14, z0: z - 0.14, z1: z + 0.14 }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 0.1, 0.1, 1.6, x, 6.4, z + dz * 0.8); box(mBulb, 0.5, 0.1, 0.22, x, 6.3, z + dz * 1.5); lampPool(x, z + dz * 2.5); lampCone(x, 6.25, z + dz * 1.5); };
+  const lampZ = (x, z, dx) => { lamps.push({ x: x + dx * 1.5, z, tx: x + dx * 2.5, tz: z }); onCollider?.({ x0: x - 0.14, x1: x + 0.14, z0: z - 0.14, z1: z + 0.14 }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 1.6, 0.1, 0.1, x + dx * 0.8, 6.4, z); box(mBulb, 0.22, 0.1, 0.5, x + dx * 1.5, 6.3, z); lampPool(x + dx * 2.5, z); lampCone(x + dx * 1.5, 6.25, z); };
   const park = (bx0, bx1, bz0, bz1) => {
     const cx = (bx0 + bx1) / 2, cz = (bz0 + bz1) / 2, mPath = M(pbr('pave', [6, 1], { color: 0xc8bba8 })), mGrass = M({ map: tex('grass_col.jpg', [(bx1 - bx0) / 6, (bz1 - bz0) / 6]), normalMap: tex('grass_nrm.jpg', [(bx1 - bx0) / 6, (bz1 - bz0) / 6], false), color: 0x7a8a70, roughness: 0.95 });
     box(mGrass, bx1 - bx0, 0.04, bz1 - bz0, cx, 0.01, cz); box(mPath, bx1 - bx0, 0.05, 3, cx, 0.02, cz); box(mPath, 3, 0.05, bz1 - bz0, cx, 0.02, cz);
@@ -290,8 +293,20 @@ function busMesh(color, num, dest) {
 export const BUS_STOPS = [16, -105, 135, 255, -215];
 export function makeTraffic(scene, vehicles, audio, CAR_COLORS, hooks = {}) {
   const list = [], base = vehicles.car;
+  // 멀리 있는 차는 가벼운 모형(차체·유리·바퀴·불빛)으로 그림 — 가까워지면 진짜 모델
+  const loGeo = {}, loMats = {};
+  const makeLo = (color) => {
+    const S = base.userData.size, g = new THREE.Group(); g.userData.lo = true;
+    const paint = loMats[color] ||= new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.4 }), glass = loMats.g ||= new THREE.MeshStandardMaterial({ color: 0x0b0f14, roughness: 0.1, metalness: 0.6 }), tire = loMats.t ||= new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }), lit = loMats.l ||= new THREE.MeshBasicMaterial({ color: 0xfff2c8 }), red = loMats.r ||= new THREE.MeshBasicMaterial({ color: 0xaa1010 });
+    const bx = (sx, sy, sz, m, x, y, z) => { const k = sx + ',' + sy + ',' + sz, b = new THREE.Mesh(loGeo[k] ||= new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); g.add(b); };
+    bx(S.x * 0.96, S.y * 0.38, S.z * 0.96, paint, 0, S.y * 0.42, 0); bx(S.x * 0.86, S.y * 0.32, S.z * 0.5, glass, 0, S.y * 0.78, -S.z * 0.06);
+    for (const z of [-S.z * 0.32, S.z * 0.32]) for (const x of [-S.x * 0.46, S.x * 0.46]) bx(0.28, S.y * 0.38, S.y * 0.38, tire, x, S.y * 0.19, z);
+    bx(S.x * 0.7, 0.08, 0.04, lit, 0, S.y * 0.5, S.z * 0.49); bx(S.x * 0.7, 0.08, 0.04, red, 0, S.y * 0.5, -S.z * 0.49);
+    g.visible = false; return g;
+  };
   const cloneCar = (color, taxi) => {
     const c = base.clone(true); c.visible = true; c.userData.size = base.userData.size;
+    const lo = makeLo(color); c.add(lo); c.userData.loMesh = lo;
     c.traverse(o => { if (o.isMesh && o.material === base.userData.paint) { o.material = o.material.clone(); o.material.color.setHex(color); } });
     if (taxi) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.25), new THREE.MeshBasicMaterial({ toneMapped: false, map: ctex(128, 64, (g, w, h) => { g.fillStyle = '#ffcc00'; g.fillRect(0, 0, w, h); g.fillStyle = '#111'; g.font = `900 30px ${FONT}`; g.fillText('TAXI', 26, 44); }, false) })); s.position.set(0, base.userData.size.y + 0.12, 0); c.add(s); }
     c.children.forEach(o => { if (o.isSpotLight) o.visible = false; }); c.traverse(o => { if (o.isMesh) o.castShadow = true; });
@@ -313,10 +328,10 @@ export function makeTraffic(scene, vehicles, audio, CAR_COLORS, hooks = {}) {
   };
   spawn(cloneCar(0xf4f4f2), ML[0], -60, 11, 'car'); spawn(cloneCar(0xff9f1c, true), ML[1], 20, 10, 'taxi'); spawn(busMesh('#1d5fc8', '472', '신촌역'), ML[1], -90, 8, 'bus');
   spawn(busMesh('#2e9b48', '7016', '달빛시장'), ML[0], 80, 7.5, 'bus'); spawn(cloneCar(0x1c2c52), NL[6], 0, 12, 'car'); spawn(cloneCar(0x7a1414), NL[9], 40, 11, 'car'); spawn(cloneCar(0x111214), BL, 0, 13, 'car');
-  for (const [col, L, at] of [[0xc21a1a, ML[1], -40], [0xf2c230, ML[0], 60], [0x111111, NL[3], 20], [0xe8e8e8, lanes[2], -100]]) spawn(cloneFerrari(col), L, at, rnd(13, 17), 'car', true);
+  spawn(cloneFerrari(0xf2c230), ML[0], 60, rnd(13, 17), 'car', true);
   // 도시 곳곳 차량 (소리는 가까운 큰길 차만)
   const COLS = [0xf4f4f2, 0x111214, 0x8c9096, 0x1c2c52, 0x7a1414, 0xd8d8d8, 0x2b2b2b, 0x3a4a3a];
-  for (const L of lanes) { const n = L === ML[0] || L === ML[1] ? 2 : 1; for (let i = 0; i < n; i++) { const taxi = Math.random() < 0.2; spawn(Math.random() < 0.12 ? busMesh(R(['#1d5fc8', '#2e9b48', '#e2a400']), R(['472', '7016', '6411', '02']), R(['신촌역', '달빛시장', '시청', '종점'])) : cloneCar(taxi ? 0xff9f1c : R(COLS), taxi), L, (Math.random() * 2 - 1) * L.len, rnd(9, 14), 'car', true); } }
+  for (const L of lanes) { if (Math.abs(L.c) > 200 && L.axis === 'z') continue; if (L.axis === 'x' && Math.abs(L.c) > 160) continue; const n = L === ML[0] || L === ML[1] ? 2 : 1; for (let i = 0; i < n; i++) { const taxi = Math.random() < 0.2; spawn(Math.random() < 0.12 ? busMesh(R(['#1d5fc8', '#2e9b48', '#e2a400']), R(['472', '7016', '6411', '02']), R(['신촌역', '달빛시장', '시청', '종점'])) : cloneCar(taxi ? 0xff9f1c : R(COLS), taxi), L, (Math.random() * 2 - 1) * L.len, rnd(9, 14), 'car', true); } }
   const tmp = new THREE.Vector3();
   return {
     list,
@@ -345,7 +360,8 @@ export function makeTraffic(scene, vehicles, audio, CAR_COLORS, hooks = {}) {
         v.mesh.rotation.y = L.axis === 'x' ? (L.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (L.dir > 0 ? 0 : Math.PI);
         if (v.snd) audio.movePanner(v.snd, v.mesh.position);
         if (v.mesh.userData.wheels) for (const w of v.mesh.userData.wheels) w.rotation.x += v.cur * dt / 0.34;
-        if (player || v.far !== undefined) { const far = player ? v.mesh.position.distanceToSquared(player) > 150 * 150 : false; if (far !== v.far) { v.far = far; v.mesh.visible = !far; } }
+        if (player || v.far !== undefined) { const d2 = player ? v.mesh.position.distanceToSquared(player) : 0, far = d2 > 110 * 110; if (far !== v.far) { v.far = far; v.mesh.visible = !far; }
+          const lo = v.mesh.userData.loMesh; if (lo && !far) { const useLo = d2 > 32 * 32 && !v.taken; if (useLo !== v.useLo) { v.useLo = useLo; for (const ch of v.mesh.children) ch.visible = ch === lo ? useLo : (ch.isSpotLight ? false : !useLo); } } }
       }
     },
   };

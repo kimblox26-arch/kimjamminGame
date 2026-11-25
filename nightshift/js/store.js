@@ -80,7 +80,7 @@ export function buildStore(renderer, scene, quality) {
   floorTex.repeat.set(8, 6.7);
   void floorTex; const mFloor = std({ ...pbr('tile', [4.2, 3.4]), metalness: 0.02, envMapIntensity: 1.2, normalScale: new THREE.Vector2(0.6, 0.6) });   // 60cm 광택 포셀린 타일
   const mWall = std({ color: 0xc9ccd0, roughness: 0.85 });
-  const mBrand = std({ color: 0x14a38b, roughness: 0.5 });
+  const mBrand = std({ color: 0x167a69, roughness: 0.55 });
   const mBrand2 = std({ color: 0xff7a2e, roughness: 0.5 });
   const mShelf = std({ color: 0xf2f3f5, roughness: 0.4, metalness: 0.3 });
   const priceTex = canvasTex('price', 1024, 64, (g, w, h) => { g.fillStyle = '#f4f6f8'; g.fillRect(0, 0, w, h); for (let x = 6; x < w; x += 128) { const promo = Math.random() < 0.25; g.fillStyle = promo ? '#ffd400' : '#ffffff'; g.fillRect(x, 6, 116, h - 12); g.strokeStyle = '#c9ced4'; g.strokeRect(x, 6, 116, h - 12); g.fillStyle = promo ? '#d62828' : '#1f2d4a'; g.font = `900 26px ${FONT}`; g.fillText((1000 + (Math.random() * 40 | 0) * 100).toLocaleString(), x + 10, 44); g.font = `800 12px ${FONT}`; g.fillText(promo ? '1+1' : '원', x + 88, 44); } });
@@ -106,7 +106,7 @@ export function buildStore(renderer, scene, quality) {
   B.box(mBrand, 0.02, 0.3, D1 - D0, W1 - 0.01, 2.55, 0); B.box(mBrand2, 0.02, 0.05, D1 - D0, W1 - 0.02, 2.38, 0);
   // LED 조명 패널 + 실제 조명
   const hemi = new THREE.HemisphereLight(0xf4f8ff, 0x6a6458, 0.32); scene.add(hemi);
-  [[-2.5, 0], [1.5, 0.5], [3.6, 0.8]].forEach(([x, z]) => { const p = new THREE.PointLight(0xfff6ea, 2.6, 9, 1.6); p.position.set(x, 2.6, z); scene.add(p); });
+  [[-2.5, 0], [1.5, 0.5], [3.6, 0.8]].forEach(([x, z]) => { const p = new THREE.PointLight(0xfff4e8, 2.2, 9, 1.6); p.position.set(x, 2.6, z); scene.add(p); });
 
   // 앞쪽 유리벽 + 문
   const mGlass = new THREE.MeshStandardMaterial({ color: 0x9fb8c8, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.12, envMapIntensity: 0.6, depthWrite: false });

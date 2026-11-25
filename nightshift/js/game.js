@@ -8,6 +8,7 @@ import { Person } from './people.js';
 import { $, won, subtitle, mine, toast, hint, show, modal, stars, ic } from './ui.js';
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
+let parcelM = null; const PARCEL = () => parcelM ||= (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 192; const g = c.getContext('2d'); g.fillStyle = '#b98d5a'; g.fillRect(0, 0, 256, 192); g.fillStyle = '#e8e4d8'; g.fillRect(70, 20, 150, 110); g.fillStyle = '#222'; g.font = '700 16px sans-serif'; g.fillText('편의점택배', 84, 46); g.fillRect(84, 60, 120, 28); g.fillStyle = 'rgba(255,255,255,.85)'; for (let x = 86; x < 202; x += 4) g.fillRect(x, 62, Math.random() < 0.5 ? 1 : 2, 24); g.fillStyle = '#c9b07a'; g.fillRect(0, 86, 256, 18); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return new THREE.MeshStandardMaterial({ map: t, roughness: 0.9 }); })();
 const rnd = (a, b) => a + Math.random() * (b - a);
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const WAGE = 10320, SHIFT_SEC = 13 * 60, DENOMS = [50000, 10000, 5000, 1000, 500, 100, 50, 10];
@@ -100,7 +101,7 @@ export class Game {
     if (this.forceType) { const want = this.forceType.shift(); type = TYPES.find(t => t.id === want) || type; if (!this.forceType.length) this.forceType = null; }
     type = { ...type, bottle: type.id === 'drunk' };
     const p = new Person(type, this.audio);
-    const c = { type, person: p, trouble: type.trouble, mood: 70, idle: 0, stage: 0, order: [...pick(type.wants)], voice: type.voice, gender: type.model === 'woman' ? 'f' : 'm', vIdx: 1 + Math.floor(Math.random() * 5) };
+    const c = { parcel: !type.trouble && Math.random() < 0.12, type, person: p, trouble: type.trouble, mood: 70, idle: 0, stage: 0, order: [...pick(type.wants)], voice: type.voice, gender: type.model === 'woman' ? 'f' : 'm', vIdx: 1 + Math.floor(Math.random() * 5) };
     if (type.cig && Math.random() < type.cig) c.cig = pick(CIGS);
     if (c.trouble === 'minor' && !c.cig && Math.random() < 0.5) c.cig = pick(CIGS);
     if (c.trouble === 'refund') c.order = [];
@@ -296,9 +297,18 @@ export class Game {
     if (!c || c.done) return;
     if (c.trouble === 'refund') { this.busy = true; await this.meSay(ME.noRefund); await this.say(c, this.fresh(c, TROUBLE.refund.refused)); this.st.handled++; this.busy = false; return this.endTx(c, true); }
     // 계산하기 한 번이면 끝까지 자동: 남은 상품 바코드 차례로 찍기 → 담배 꺼내기 → 결제
-    for (const it of this.items.filter(i => !i.scanned && !i.refund)) { await this.scanItem(it); await this.wait(0.1); if (c.gone) return; }
-    if (c.cig && !c.cigGiven) { const slot = this.store.cigSlots.find(s => s.userData.cig?.id === c.cig.id); if (slot) { await this.takeCig(slot); await this.wait(0.2); } }
+    const scanAll = async () => { for (let k = 0, it; k < 30 && (it = this.items.find(i => !i.scanned && !i.refund)); k++) { await this.scanItem(it); await this.wait(0.1); if (c.gone) return false; } return true; };
+    if (!await scanAll()) return;
+    if (c.cig && !c.cigGiven) { const slot = this.store.cigSlots.find(s => s.userData.cig?.id === c.cig.id); if (slot) { await this.takeCig(slot); await this.wait(0.2); } if (!await scanAll()) return; }
     if (this.items.some(i => !i.scanned && !i.refund)) return;
+    // 택배 접수: 손님이 상자를 올려놓음 → 무게 재고 송장 출력 → 선불 4,000원 추가
+    if (c.parcel && !c.parcelDone) {
+      c.parcelDone = true; this.busy = true;
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.22, 0.26), PARCEL()); box.position.copy(this.slotPos(this.items.length + 1)); box.position.y += 0.11; box.rotation.y = 0.3; this.scene.add(box);
+      await this.say(c, ['아, 택배도 하나 보낼게요. 선불로요.', 'calm']);
+      await this.hands.reachTo('R', box.position, 'open', 'down', 420); this.audio.beep(box.position, true); this.audio.play('register', { vol: 0.4, rate: 1.3, delay: 0.3 });
+      this.addLine('편의점 택배 (선불)', 4000); await this.wait(0.6); this.hands.rest('R'); box.position.x += 0.6; await this.wait(0.3); box.removeFromParent(); this.busy = false;
+    }
     if (!this.lines.length) return toast('찍은 상품이 없어요');
     // 술·담배 → 연령 확인
     if (this.lines.some(l => l.adult) && !c.idChecked) {

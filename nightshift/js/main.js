@@ -23,6 +23,9 @@ import { makePistol, makeRifle } from './weapons.js';
 import { MiniMap } from './map.js';
 import { Pedestrians } from './peds.js';
 import { HAIR_TIME } from './hair.js';
+import { LightManager, mergeStatic } from './perf.js';
+import { Features } from './features.js';
+import { productMesh } from './products.js';
 import { Crowd } from './crowd.js';
 import { Driving } from './drive.js';
 import { Missions } from './missions.js';
@@ -36,13 +39,14 @@ import { LUTCubeLoader } from 'three/addons/loaders/LUTCubeLoader.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
-const settings = Object.assign({ quality: IS_MOBILE ? 'high' : 'ultra', myVoice: 'm', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
-if (settings.gv !== 2) { settings.gv = 2; settings.quality = IS_MOBILE ? 'high' : 'ultra'; }   // 그래픽 대폭 향상 버전: 기본 품질 올림
+const settings = Object.assign({ quality: IS_MOBILE ? 'mid' : 'high', myVoice: 'm', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
+if (settings.gv !== 3) { settings.gv = 3; settings.quality = IS_MOBILE ? 'mid' : 'high'; }   // 렉 줄인 버전: 폰 기본 '중'(빛 번짐·색보정), PC '상'
+window.__q = settings.quality;   // 그래픽 대폭 향상 버전: 기본 품질 올림
 const saveSet = () => { try { localStorage.setItem('ns_set', JSON.stringify(settings)); } catch (e) { } };
 
 const canvas = $('gl');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !== 'low', powerPreference: 'high-performance' });
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.9;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.85;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(68, 1, 0.03, 260);
@@ -53,20 +57,20 @@ let composer = null;
 let lut = null; new LUTCubeLoader().load('assets/tex/grade.cube', r => { lut = r; if (lutPass) lutPass.lut = r.texture3D; });
 let lutPass = null;
 function applyQuality() {
-  const q = settings.quality, pr = { ultra: Math.min(devicePixelRatio, 2), high: Math.min(devicePixelRatio, 1.6), mid: Math.min(devicePixelRatio, 1.3), low: Math.min(devicePixelRatio, 0.9) }[q] || 1;
+  const q = settings.quality, pr = { ultra: Math.min(devicePixelRatio, 2), high: Math.min(devicePixelRatio, 1.5), mid: Math.min(devicePixelRatio, 1.2), low: Math.min(devicePixelRatio, 0.85) }[q] || 1;
   renderer.setPixelRatio(pr); resize();
   const sh = q === 'ultra' || q === 'high'; if (renderer.shadowMap.enabled !== sh) { renderer.shadowMap.enabled = sh; renderer.shadowMap.type = THREE.PCFSoftShadowMap; scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => (m.needsUpdate = true)); }); }
   if (keyLight) { keyLight.castShadow = sh; keyLight.shadow.mapSize.setScalar(q === 'ultra' ? 2048 : 1024); keyLight.shadow.map?.dispose(); keyLight.shadow.map = null; }
   composer = null; lutPass = null;
   if (q !== 'low') {
-    const w = innerWidth, h = innerHeight; composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType, samples: q === 'ultra' || q === 'high' ? 4 : 0 }));
+    const w = innerWidth, h = innerHeight; composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType, samples: q === 'ultra' ? 4 : 0 }));
     composer.addPass(new RenderPass(scene, camera));
     if (q === 'ultra') { const ao = new GTAOPass(scene, camera, w, h); ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.5, thickness: 1.2, scale: 1.1, samples: 12 }); ao.blendIntensity = 0.85; composer.addPass(ao); }
     // 빛 번짐 전에 잘못된 값(NaN·무한대) 지우기 — 한 점이라도 있으면 번짐이 화면 전체로 퍼져 검게 됨
     composer.addPass(new ShaderPass({ uniforms: { tDiffuse: { value: null } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
       fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.,0.,0.,1.); gl_FragColor = vec4(min(c.rgb, vec3(60.)), c.a); }' }));
-    composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), q === 'mid' ? 0.4 : 0.55, 0.55, 1.4));
-    if (q !== 'mid') { lutPass = new LUTPass({ intensity: 0.32 }); if (lut) lutPass.lut = lut.texture3D; composer.addPass(lutPass); }
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.5, 1.75));
+    { lutPass = new LUTPass({ intensity: 0.22 }); if (lut) lutPass.lut = lut.texture3D; composer.addPass(lutPass); }
     composer.addPass(new OutputPass());
     if (q !== 'mid') composer.addPass(new SMAAPass(w * pr, h * pr));
     composer.setSize(w, h);
@@ -112,7 +116,7 @@ let aimT = 0;
 function updateAim(dt) {
   if (!game?.running || (aimT += dt) < 0.08) return; aimT = 0;
   ray.setFromCamera(center, camera); ray.far = 3.4;
-  const C = store.C, list = [...game.items.filter(i => !i.scanned || i.cig).map(i => i.mesh), ...store.cigSlots, store.mw, C.pos, C.drawer.group, C.reader, store.counterHit, ...armory.hits, ...cafe.hits, prison.ventHit, prison.holeHit, ...(store.merch.looseMeshes || [])];
+  const C = store.C, list = [...game.items.filter(i => !i.scanned || i.cig).map(i => i.mesh), ...store.cigSlots, store.mw, C.pos, C.drawer.group, C.reader, store.counterHit, ...armory.hits, ...cafe.hits, prison.ventHit, prison.holeHit, ...(features?.aimTargets() || []), ...(store.merch.looseMeshes || [])];
   let aim = null, hitD = 99;
   for (const hit of ray.intersectObjects(list, true)) {
     let o = hit.object;
@@ -122,7 +126,7 @@ function updateAim(dt) {
     hitD = hit.distance;
     if (o.userData.item) { const it = o.userData.item; if (it.scanned) continue; aim = { type: 'item', item: it, label: `${it.name} · ${it.price.toLocaleString()}원` }; }
     else if (o.userData.cig) aim = { type: 'cig', obj: o, label: `${o.userData.cig.id}번 ${o.userData.cig.name} · ${o.userData.cig.price.toLocaleString()}원` };
-    else aim = { type: o.userData.aim, label: { mw: '전자레인지', guns: '총기 보관함', counter: '계산대', ammo: '탄약 상자', cafe: '카운터 · 아메리카노 4,500원', vent: '헐거운 환풍구', fence: '울타리 개구멍' }[o.userData.aim] || '' };
+    else aim = { type: o.userData.aim, obj: o, label: { mw: '전자레인지', guns: '총기 보관함', counter: '계산대', ammo: '탄약 상자', cafe: '카운터 · 아메리카노 4,500원', vent: '헐거운 환풍구', fence: '울타리 개구멍' }[o.userData.aim] || features?.label(o.userData.aim) || '' };
     break;
   }
   // 사람 (총이면 멀리까지)
@@ -133,7 +137,7 @@ function updateAim(dt) {
   game.aim = aim;
   const dot = $('dot'); dot.className = aim ? 'on ' + aim.type : '';
   $('aimLabel').textContent = aim ? aim.label : '';
-  let lab = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기', ammo: '탄약 보충', cafe: '커피 주문', vent: '환풍구 뜯기', fence: '개구멍 통과' }[aim?.type], ready = !!aim && !['counter', 'person'].includes(aim.type);
+  let lab = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기', ammo: '탄약 보충', cafe: '커피 주문', vent: '환풍구 뜯기', fence: '개구멍 통과', atm: 'ATM', noodle: '컵라면 먹기', spill: '닦기' }[aim?.type], ready = !!aim && !['counter', 'person'].includes(aim.type);
   if (driving.ride) { lab = driving.ride.kind === 'bus' ? '버스 내리기' : '내리기'; ready = true; }
   else if (!aim || aim.type === 'person') { const n = driving.near(); if (n) { lab = driving.label(n); ready = true; } else if (nearElevator()) { lab = '엘리베이터'; ready = true; } }
   $('bScan').querySelector('b').textContent = lab || '바코드 찍기';
@@ -166,7 +170,8 @@ const voice = new Voice({
   },
 });
 
-let cityEnv = null, lampT = 0;
+const _camW = new THREE.Vector3();
+let cityEnv = null, lampT = 0, lightMgr = null, features = null;
 let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap, under, sky, hemi, ugLight, peds, crowd, driving, missions, armory, tower, cafe, prison, animals;
 paintIcons();
 async function boot() {
@@ -215,7 +220,8 @@ async function boot() {
     return out;
   } });
   missions = new Missions({ scene, audio, game, crime, peds, yawObj, look, traffic, drive: driving, minimap, city, tower: TOWER, extra: crime.extra }); crime.money = (n, w) => missions.money(n, w); missions.money(0);
-  crime.onEscape = () => toast('탈옥수가 됐어요. 경찰을 피해 도시로 숨어드세요! (휴대폰에서 미션·일자리)', 'bad', 4000);
+  features = new Features({ scene, camera, yawObj, audio, game, hands, missions, crime, renderer, drive: driving, productMesh, render: () => (composer ? composer.render() : renderer.render(scene, camera)) }); missions.features = features; features.skyMat = sky?.children[0]?.material;
+  crime.onEscape = () => (features.stat('escapes'), toast('탈옥수가 됐어요. 경찰을 피해 도시로 숨어드세요! (휴대폰에서 미션·일자리)', 'bad', 4000));
   crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court, under.group, armory.group, tower.group, cafe.group, prison.group];
   crime.onExit = () => { crime.cleanup(); peds.clear(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); peds.clear(); startShift(1); };
   game.crime = crime; game.onShop = () => openShop(); game.mover = mover; game.yawObjDist = () => Math.hypot(yawObj.position.x - SPOT.cam.x, yawObj.position.z - SPOT.cam.z);
@@ -224,7 +230,14 @@ async function boot() {
   scene.traverse(o => { if (o.isMesh) { o.receiveShadow = true; if (o.isSkinnedMesh) o.castShadow = true; } });
   for (const o of store.root.children) if (o.isMesh && (!o.isInstancedMesh || settings.quality === 'ultra')) o.castShadow = true;
   try { const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.UnsignedByteType }), cc = new THREE.CubeCamera(0.1, 200, rt); cc.position.set(8, 2.4, 10.5); scene.add(cc); const sv = sky.visible; cc.update(renderer, scene); scene.remove(cc); cityEnv = new THREE.PMREMGenerator(renderer).fromCubemap(rt.texture).texture; rt.dispose(); void sv; } catch (e) { console.warn('city env', e); }
-  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide };
+  // 성능: 실내 소품 재질별로 합치기 + 조명 관리자(내 주변 4개만)
+  // 편의점: 상호작용 물체(상품·담배·계산대 장비·문·전자레인지 등)는 빼고 진열대·벽·장식만 합침
+  { const C = store.C, keepSet = new Set([C.pos, C.drawer?.group, C.reader, store.mw, store.door, store.staffDoor, C.scanner?.stand, C.scanner?.gun, C.printer, C.paper, C.monitor, store.counterHit, ...(store.cigSlots || [])].filter(Boolean));
+    const skipStore = o => keepSet.has(o) || (o.userData && Object.keys(o.userData).length > 0) || o.isInstancedMesh;
+    console.log('perf: store merged', mergeStatic(store.root, skipStore)); }
+  let merged = 0; for (const [g, skip] of [[tower.group, o => o === tower.evCar], [cafe.group, () => false], [armory.group, () => false], [prison.group, o => o === prison.vent || o === prison.tw], [storage.group, () => false], [courtB.court, () => false]]) merged += mergeStatic(g, skip);
+  lightMgr = new LightManager(scene, [keyLight, ugLight, crime.fx.flashLight]); const nl = lightMgr.harvest(); console.log('perf: merged', merged, 'lights pooled', nl);
+  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide, features };
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
   const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 3.6), new THREE.MeshBasicMaterial()); hitBox.visible = false; hitBox.position.set(2.6, 0.93, 0.6); hitBox.userData.aim = 'counter'; scene.add(hitBox); store.counterHit = hitBox;
@@ -310,6 +323,7 @@ $('bScan').onclick = () => {
   if (driving.ride) return driving.exit();
   if (a?.type === 'ammo') { crime.ammo = { pistol: 15, rifle: 30 }; crime.hud(); audio.play('key', { vol: 0.9, rate: 0.7 }); audio.play('bag', { vol: 0.5, rate: 0.6 }); return toast('탄약을 가득 채웠어요', 'good', 1500); }
   if (a?.type === 'cafe') { if (missions.money(0) < 4500) return toast('돈이 부족해요', 'bad', 1500); missions.money(-4500, '아메리카노'); crime.hp = Math.min(100, crime.hp + 30); crime.hpHud(); audio.play('register', { vol: 0.6 }); return game.say({ type: { name: '바리스타', id: 'barista' }, person: { talk: 0, gesture() { }, smile: 0 }, voice: [1.15, 1.02], gender: 'f', vIdx: 2, mood: 70 }, ['아메리카노 나왔습니다~ 맛있게 드세요!', 'happy']); }
+  if (a && ['atm', 'noodle', 'spill'].includes(a.type)) return features.act(a);
   if (a?.type === 'vent') return crime.ventTry();
   if (a?.type === 'fence') return crime.escape();
   if (!a || a.type === 'person') { const n = driving.near(); if (n) return driving.enter(n); if (nearElevator()) return elevatorMenu(); }
@@ -363,10 +377,11 @@ function loop() {
   hands?.update(dt, t);
   updateAim(dt); updateLiquids(dt);
   if (game?.running) minimap?.update(dt);
+  if (game?.running) features?.update(dt, crime.indoor() || yawObj.position.y - 1.55 < -1);
   if (game?.running && !crime?.inCourt) { peds?.update(dt, !crime.inPrison); crowd?.update(dt); driving?.update(dt); missions?.update(dt); animals?.update(dt, yawObj.position); store.merch.update(dt); const cw = camera.getWorldPosition(new THREE.Vector3()); for (const c of crime.extra) c.person.update(dt, cw); }
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }
-  envUpdate(dt); HAIR_TIME.value += dt;
+  envUpdate(dt); HAIR_TIME.value += dt; lightMgr?.update(dt, camera.getWorldPosition(_camW));
   if (fridgeDoor) { const near = yawObj.position.distanceTo(fridgeDoor.pos.clone().setY(yawObj.position.y)) < 2.1; const k0 = fridgeDoor.k; fridgeDoor.k += ((near ? 1 : 0) - fridgeDoor.k) * Math.min(1, dt * 3); fridgeDoor.piv.rotation.y = -fridgeDoor.k * 1.35; if (near && k0 < 0.05) audio.play('door', { pos: fridgeDoor.pos, vol: 0.4, rate: 1.6 }); }
   camera.updateMatrixWorld();
   audio.setListener(camera.getWorldPosition(new THREE.Vector3()), camera.getWorldQuaternion(new THREE.Quaternion()));
@@ -384,9 +399,9 @@ function placeProps(col) {
 }
 // 밤하늘(그라데이션·별·달) — 내 위치를 따라다님
 function buildSky() {
-  const geo = new THREE.SphereGeometry(240, 32, 16), mat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false,
+  const geo = new THREE.SphereGeometry(240, 32, 16), mat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: { uDawn: { value: 0 } },
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
-    fragmentShader: 'varying vec3 vP; void main(){ float h = clamp(vP.y, -0.1, 1.); vec3 top = vec3(0.01,0.015,0.04), hor = vec3(0.09,0.07,0.09); vec3 c = mix(hor, top, pow(max(h,0.),0.45)); gl_FragColor = vec4(c,1.); }' });
+    fragmentShader: 'uniform float uDawn; varying vec3 vP; void main(){ float h = clamp(vP.y, -0.1, 1.); vec3 top = mix(vec3(0.01,0.015,0.04), vec3(0.16,0.27,0.48), uDawn), hor = mix(vec3(0.09,0.07,0.09), vec3(0.95,0.55,0.38), uDawn); vec3 c = mix(hor, top, pow(max(h,0.),0.45)); gl_FragColor = vec4(c,1.); }' });
   sky = new THREE.Group(); const dome = new THREE.Mesh(geo, mat); dome.renderOrder = -2; sky.add(dome);
   const mc = document.createElement('canvas'); mc.width = mc.height = 128; const g = mc.getContext('2d'); const gr = g.createRadialGradient(64, 64, 20, 64, 64, 64); gr.addColorStop(0, 'rgba(255,250,230,1)'); gr.addColorStop(0.42, 'rgba(255,245,215,1)'); gr.addColorStop(0.5, 'rgba(255,240,200,.35)'); gr.addColorStop(1, 'rgba(255,240,200,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); g.fillStyle = 'rgba(200,190,170,.35)'; for (const [x, y, r] of [[54, 52, 7], [72, 70, 9], [60, 78, 5]]) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
   const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(mc), fog: false, depthWrite: false })); moon.position.set(-90, 120, -170); moon.scale.setScalar(26); sky.add(moon);
@@ -403,7 +418,7 @@ function envUpdate(dt) {
   scene.fog.near += (fn - scene.fog.near) * k; scene.fog.far += (ff - scene.fog.far) * k;
   sky.position.copy(camera.getWorldPosition(new THREE.Vector3())); sky.visible = !ug;
   ugLight.intensity += ((ug ? 14 : 0) - ugLight.intensity) * k; ugLight.position.set(p.x, UNDER.ceil - 0.5, p.z);
-  if (hemi) { hemi.intensity += ((ug ? 0.85 : inStore ? 0.32 : 1.0) - hemi.intensity) * k; hemi.groundColor.setHex(inStore || ug ? 0x6a6458 : 0x8a6a48); }   // 바깥: 도시 불빛이 퍼진 밤 주변광
+  if (hemi) { hemi.intensity += ((ug ? 0.85 : inStore ? 0.32 : 1.0 + (features?.dawn || 0) * 0.8) - hemi.intensity) * k; if (features?.flashK && !inStore && !ug) hemi.intensity = 1 + features.flashK; hemi.groundColor.setHex(inStore || ug ? 0x6a6458 : 0x8a6a48); }   // 바깥: 도시 불빛이 퍼진 밤 주변광
   // 반사 환경: 매장·지하 안 / 거리
   const want = (inStore || ug) ? scene.userData.storeEnv : (cityEnv || scene.userData.storeEnv); if (want && scene.environment !== want) scene.environment = want;
   // 그림자 조명 위치

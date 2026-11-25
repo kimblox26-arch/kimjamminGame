@@ -149,12 +149,14 @@ const flashTex = ctex(128, 128, (g, w, h) => { const gr = g.createRadialGradient
 const bloodTex = ctex(128, 128, (g, w, h) => { for (let i = 0; i < 26; i++) { const r = 6 + Math.random() * 22, x = 64 + (Math.random() - 0.5) * 70, y = 64 + (Math.random() - 0.5) * 70; const gr = g.createRadialGradient(x, y, 1, x, y, r); gr.addColorStop(0, 'rgba(90,0,0,.95)'); gr.addColorStop(0.7, 'rgba(110,5,5,.85)'); gr.addColorStop(1, 'rgba(110,5,5,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); } });
 const holeTex = ctex(64, 64, (g, w, h) => { const gr = g.createRadialGradient(32, 32, 1, 32, 32, 30); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.25, 'rgba(20,20,20,.9)'); gr.addColorStop(0.5, 'rgba(60,60,60,.4)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
 export class FX {
-  constructor(scene) { this.scene = scene; this.parts = []; this.decals = []; this.brass = new THREE.MeshStandardMaterial({ color: 0xc9a040, metalness: 0.9, roughness: 0.3 }); this.bloodM = new THREE.MeshBasicMaterial({ color: 0x7a0000 }); }
+  constructor(scene) { this.scene = scene; this.flashLight = (() => { const l = new THREE.PointLight(0xffb050, 0, 7, 1.6); scene.add(l); return l; })(); this.parts = []; this.decals = []; this.brass = new THREE.MeshStandardMaterial({ color: 0xc9a040, metalness: 0.9, roughness: 0.3 }); this.bloodM = new THREE.MeshBasicMaterial({ color: 0x7a0000 }); }
   muzzle(gun) {
     const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
     f.scale.setScalar(gun.userData.auto ? 0.22 : 0.16); f.position.copy(gun.userData.muzzle); f.material.rotation = Math.random() * 6; gun.add(f);
-    const L = new THREE.PointLight(0xffb050, 25, 6); L.position.copy(gun.userData.muzzle); gun.add(L);
-    setTimeout(() => { gun.remove(f); gun.remove(L); f.material.dispose(); }, 55);
+    // 총구 섬광 조명은 하나를 계속 두고 켰다 끔 (조명 개수가 바뀌면 화면이 끊김)
+    const L = this.flashLight ||= (() => { const l = new THREE.PointLight(0xffb050, 0, 7, 1.6); this.scene.add(l); return l; })();
+    gun.localToWorld(L.position.copy(gun.userData.muzzle)); L.intensity = 25; clearTimeout(this.flT); this.flT = setTimeout(() => (L.intensity = 0), 55);
+    setTimeout(() => { gun.remove(f); f.material.dispose(); }, 55);
     // 탄피 배출
     const s = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.02, 8), this.brass); gun.localToWorld(s.position.copy(gun.userData.eject)); this.scene.add(s);
     const right = new THREE.Vector3(1, 0.6, 0.2).applyQuaternion(gun.getWorldQuaternion(new THREE.Quaternion()));

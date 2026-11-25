@@ -56,7 +56,8 @@ function build(style, ht) {
   };
   const partAl = 0.42;
   const fromPart = (p, n, phi, al) => { const s = Math.sign(Math.sin(al - partAl)) || 1, v = new THREE.Vector3(Math.cos(al) * s, -0.15, -Math.sin(al) * s); v.addScaledVector(n, -v.dot(n)); return v.normalize().lerp(down(p, n), phi > 1.1 ? 0.7 : 0.15).normalize(); };
-  const N = { soft: 1500, side: 1000, buzz: 1700, sides: 700, bald: 300 }[style] || 900;
+  const HS = window.__q === 'low' ? 0.4 : window.__q === 'mid' ? 0.6 : 1;
+  const N = HS * { soft: 1500, side: 1000, buzz: 1700, sides: 700, bald: 300 }[style] || 900 * HS;
   for (let i = 0; i < N; i++) {
     const al = Math.random() * Math.PI * 2, mp = maxPhi(al), u = Math.random(), phi = Math.acos(1 - u * (1 - Math.cos(mp)));
     const layer = [0.0025, 0.005, 0.008][i % 3], shade = 0.7 + Math.random() * 0.4, top = phi < 1.0, front = Math.cos(al) > 0.25;

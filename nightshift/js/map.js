@@ -33,7 +33,8 @@ export class MiniMap {
     for (const cx of NS) { g.moveTo(cx, Z0); g.lineTo(cx, Z1); }
     g.stroke(); g.setLineDash([]);
     // 건물 (높을수록 밝게)
-    for (const b of this.city.blds) { const l = 16 + Math.min(18, b.h * 0.4); g.fillStyle = `hsl(215,12%,${l}%)`; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 0.4 / s * 2; g.strokeRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); }
+    const vw = big ? 160 : 60, mx = this.yawObj.position.x, mz = this.yawObj.position.z;
+    for (const b of this.city.blds) { if (b.x1 < mx - vw || b.x0 > mx + vw || b.z1 < mz - vw || b.z0 > mz + vw) continue; const l = 16 + Math.min(18, b.h * 0.4); g.fillStyle = `hsl(215,12%,${l}%)`; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 0.4 / s * 2; g.strokeRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); }
     for (const p of PLACES) { g.fillStyle = p.col; g.globalAlpha = 0.85; g.fillRect(p.x0, p.z0, p.x1 - p.x0, p.z1 - p.z0); g.globalAlpha = 1; }
     // 공원·학교 운동장
     for (const p of this.city.parks || []) { g.fillStyle = '#1e3a22'; g.fillRect(p.x - 40, p.z - 33, 80, 66); g.fillStyle = '#0d2236'; g.beginPath(); g.arc(p.x + 18, p.z - 14, 9, 0, 7); g.fill(); }
@@ -84,7 +85,7 @@ export class MiniMap {
     }
   }
   update(dt) {
-    if ((this.t += dt) < 1 / 12) return; this.t = 0;
+    if ((this.t += dt) < 1 / 7) return; this.t = 0;
     if (this.mini.offsetParent) this.draw(this.mini, false);
     if (this.isOpen) this.draw(this.bigC, true);
   }
