@@ -21,7 +21,8 @@ export function buildStorage(scene, collide) {
   const L = new THREE.PointLight(0xe8f0ff, 3.2, 7, 1.6); L.position.set(cx, H - 0.25, cz); g.add(L);
   // 재고 랙 + 박스 (골판지)
   const cardT = (txt) => ctex(256, 192, (c, w, h) => { c.fillStyle = '#b98d5a'; c.fillRect(0, 0, w, h); for (let i = 0; i < 1200; i++) { c.fillStyle = `rgba(80,50,20,${Math.random() * 0.12})`; c.fillRect(Math.random() * w, Math.random() * h, 4, 1); } c.fillStyle = '#4a2f16'; c.font = `900 34px ${FONT}`; c.fillText(txt, 18, 80); c.font = `700 18px ${FONT}`; c.fillText('취급주의 ↑', 18, 130); c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(0, h / 2 - 6, w, 12); });
-  const cards = ['컵라면 24입', '생수 20입', '과자 12입', '콜라 24캔', '삼각김밥', '맥주 24캔', '우유 24입'].map(t => M({ map: cardT(t), roughness: 0.95 }));
+  const cardN = new THREE.TextureLoader().load('assets/tex/card_nrm.jpg');
+  const cards = ['신라면 컵 24입', '삼다수 20입', '새우깡 12입', '코카콜라 24캔', '삼각김밥', '카스 24캔', '바나나맛우유'].map(t => M({ map: cardT(t), roughness: 0.92, normalMap: cardN, normalScale: new THREE.Vector2(0.6, 0.6) }));
   const rack = M({ color: 0x2f5d8a, roughness: 0.5, metalness: 0.5 });
   for (let k = 0; k < 4; k++) box(g, rack, 0.6, 0.03, 3.4, x0 + 0.35, 0.15 + k * 0.6, cz);
   for (const zz of [z0 + 0.4, cz, z1 - 0.4]) box(g, rack, 0.05, 2.2, 0.05, x0 + 0.62, 1.1, zz), box(g, rack, 0.05, 2.2, 0.05, x0 + 0.08, 1.1, zz);

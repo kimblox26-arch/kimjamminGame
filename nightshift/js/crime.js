@@ -28,6 +28,7 @@ const SURR = [['쏘, 쏘지 마세요!', 'scared'], ['잠깐만요! 잠깐만!',
 // 무기·부위별 피해 (머리 = 즉사)
 const DMG = { fist: { head: 30, chest: 20, stomach: 24, arm: 12, leg: 12 }, pistol: { head: 999, chest: 60, stomach: 45, arm: 26, leg: 30 }, rifle: { head: 999, chest: 48, stomach: 38, arm: 22, leg: 26 } };
 const pk = a => a[Math.random() * a.length | 0];
+let crackM = null; const CRACK = () => crackM ||= new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, map: (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); g.strokeStyle = 'rgba(255,255,255,.85)'; for (let i = 0; i < 16; i++) { const a = Math.random() * 6.28; g.lineWidth = 1 + Math.random() * 1.5; g.beginPath(); g.moveTo(128, 128); let x = 128, y = 128; for (let k = 0; k < 6; k++) { x += Math.cos(a + (Math.random() - 0.5) * 0.6) * 20; y += Math.sin(a + (Math.random() - 0.5) * 0.6) * 20; g.lineTo(x, y); } g.stroke(); } for (let r = 20; r < 90; r += 22) { g.beginPath(); g.arc(128, 128, r + Math.random() * 8, 0, 7); g.lineWidth = 0.8; g.stroke(); } g.fillStyle = 'rgba(30,30,30,.9)'; g.beginPath(); g.arc(128, 128, 6, 0, 7); g.fill(); return new THREE.CanvasTexture(c); })() });
 
 export class Crime {
   constructor(app) { Object.assign(this, app); this.fx = new FX(this.scene); this.guns = {}; this.reset(); }
@@ -45,20 +46,24 @@ export class Crime {
   }
   gun(k) { return (this.guns[k] ||= k === 'rifle' ? makeRifle() : makePistol()); }
   cycle() { const o = this.owned(), order = ['fist', ...(o.pistol ? ['pistol'] : []), ...(o.rifle ? ['rifle'] : [])]; this.setWeapon(order[(order.indexOf(this.weapon) + 1) % order.length]); }
-  setWeapon(w) {
-    this.weapon = w;
+  setWeapon(w, instant) {
+    // 총 넣기: 총을 허리 쪽으로 내리는 동작 뒤에 사라짐
+    if (w === 'fist' && this.weapon !== 'fist' && this.gs && !instant && !this.holsterT) { this.holsterT = 0.38; this.audio.play('bag', { vol: 0.45, rate: 0.55 }); return; }
+    this.holsterT = 0; this.weapon = w; document.body.classList.toggle('armed', w !== 'fist');
     if (w === 'fist') { for (const k of ['pistol', 'rifle']) this.guns[k]?.removeFromParent(); this.hands.hold('R', null); this.hands.rest('R'); this.hands.rest('L'); }
     else {
       // 총은 화면 앞 고정 위치(1인칭 슈팅 방식), 손은 손잡이·총열 덮개를 쥠
       for (const k of ['pistol', 'rifle']) this.guns[k]?.removeFromParent();
       const gm = this.gun(w); this.hands.hold('R', null); this.hands.hold('L', null); this.camera.add(gm);
-      this.gs = { t: 0, sx: 0, sy: 0, kick: 0, run: 0, mv: 0, py: this.look.yaw, pp: this.look.pitch, draw: 1 };
+      // 꺼내기: 허리춤에서 뽑아 올림(0.55초) → 앞으로 겨눔 → 왼손으로 슬라이드/장전손잡이 당겨 장전
+      this.gs = { t: 0, sx: 0, sy: 0, kick: 0, run: 0, mv: 0, py: this.look.yaw, pp: this.look.pitch, draw: 1, drawT: 0 };
       this.updateGun(0);
-      this.audio.play('key', { vol: 0.7, rate: 0.6 }); this.audio.play('bill', { vol: 0.5, rate: 0.5, delay: 0.12 });
+      this.audio.play('bag', { vol: 0.5, rate: 0.6 }); this.audio.play('key', { vol: 0.7, rate: 0.55, delay: 0.08 });
+      this.rackDelay = 0.55;
     }
     this.reloadT = 0; this.hud();
   }
-  hud() { const w = this.weapon; $('bWpn').querySelector('b').textContent = w === 'fist' ? '주먹' : `${w === 'rifle' ? '소총' : '권총'} ${this.ammo[w]}`; }
+  hud() { const w = this.weapon; $('bWpn').querySelector('b').textContent = w === 'fist' ? '총 꺼내기' : `${w === 'rifle' ? '소총' : '권총'} ${this.ammo[w]}`; }
   // 탄창 갈기: 총 기울이기 → 빈 탄창 떨어짐 → 왼손이 허리춤에서 새 탄창 → 꽂기 → 슬라이드/장전손잡이 당기기
   reload() {
     const w = this.weapon; if (w === 'fist' || this.reloadT > 0 || this.ammo[w] === this.gun(w).userData.cap) return;
@@ -73,27 +78,31 @@ export class Crime {
     const k = Math.min(1, dt * 7), cl = (v, a) => Math.max(-a, Math.min(a, v));
     if (dt > 0) { gs.sx += (cl(dy / dt * 0.012, 0.035) - gs.sx) * k; gs.sy += (cl(dp / dt * 0.012, 0.03) - gs.sy) * k; }
     gs.mv += ((m?.moving ? 1 : 0) - gs.mv) * Math.min(1, dt * 6); gs.run += ((m?.running ? 1 : 0) - gs.run) * Math.min(1, dt * 5);
-    gs.kick *= Math.exp(-dt * 16); gs.draw *= Math.exp(-dt * 7);
+    gs.kick *= Math.exp(-dt * 16);
+    gs.drawT += dt; { const k = Math.min(1, gs.drawT / 0.55); gs.draw = Math.pow(1 - k, 3); }
+    if (this.holsterT > 0) { this.holsterT -= dt; gs.draw = 1 - Math.pow(Math.max(0, this.holsterT) / 0.38, 2); if (this.holsterT <= 0) { this.setWeapon('fist', true); return; } }
+    if (this.rackDelay > 0 && (this.rackDelay -= dt) <= 0 && !(this.reloadT > 0)) { this.RT = 1.5; this.reloadT = this.RT * 0.38; this.rl = { dropped: true, inserted: true, racked: false, hand: true, rackOnly: true }; }
     const ph = (m?.phase || 0) * 0.5, mv = gs.mv * (1 - gs.run * 0.5), run = gs.run, br = Math.sin(gs.t * 1.7);
     const p = ud.base.clone();
     p.x += Math.sin(ph) * 0.011 * mv + gs.sx * 0.6 + ud.run.p.x * run;
-    p.y += -Math.abs(Math.cos(ph)) * 0.012 * mv + br * 0.0016 - gs.sy * 0.5 + ud.run.p.y * run - gs.draw * 0.25 + gs.kick * 0.012;
+    p.y += -Math.abs(Math.cos(ph)) * 0.012 * mv + br * 0.0016 - gs.sy * 0.5 + ud.run.p.y * run - gs.draw * 0.3 + gs.kick * 0.012; p.x += gs.draw * 0.09; p.z += gs.draw * 0.16;
     p.z += ud.run.p.z * run + gs.kick * (ud.auto ? 0.035 : 0.05);
     // 장전 동작
     let tilt = 0, rp = -1;
     if (this.reloadT > 0) {
       this.reloadT -= dt; rp = 1 - Math.max(0, this.reloadT) / this.RT; const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-      tilt = ss(0, 0.15, rp) * (1 - ss(0.82, 1, rp));
-      if (rp > 0.12 && !this.rl.dropped) { this.rl.dropped = true; const m = ud.mag.clone(true); gm.updateMatrixWorld(true); ud.mag.getWorldPosition(m.position); ud.mag.getWorldQuaternion(m.quaternion); m.scale.copy(gm.scale); this.fx.drop(m, V3(0, -0.5, 0)); ud.mag.visible = false; this.audio.play('key', { vol: 0.8, rate: 0.7 }); this.audio.play('thud', { vol: 0.3, rate: 2.2, delay: 0.45 }); }
+      tilt = this.rl.rackOnly ? ss(0.62, 0.7, rp) * (1 - ss(0.84, 1, rp)) * 0.6 : ss(0, 0.15, rp) * (1 - ss(0.82, 1, rp));
+      if (rp > 0.12 && !this.rl.dropped) { this.rl.dropped = true; const m = ud.mag.clone(true); gm.updateMatrixWorld(true); ud.mag.getWorldPosition(m.position); ud.mag.getWorldQuaternion(m.quaternion); m.scale.copy(gm.scale); this.fx.drop(m, V3(0, -0.5, 0)); ud.mag.visible = false; this.audio.play('reload_rifle', { vol: 0.9, offset: 0, dur: 0.32 }); this.audio.play('thud', { vol: 0.3, rate: 2.2, delay: 0.45 }); }
       if (rp > 0.36 && !this.rl.hand) { this.rl.hand = ud.mag.clone(true); this.rl.hand.visible = true; this.rl.hand.scale.copy(gm.scale); this.hands.hold('L', this.rl.hand); this.rl.hand.position.set(0, 0, 0); }
-      if (rp > 0.62 && !this.rl.inserted) { this.rl.inserted = true; this.hands.hold('L', null); this.rl.hand = null; ud.mag.visible = true; this.audio.play('key', { vol: 1, rate: 0.6 }); this.audio.play('thud', { vol: 0.35, rate: 2.6 }); }
-      if (rp > 0.74 && !this.rl.racked) { this.rl.racked = true; this.audio.play('key', { vol: 1, rate: 0.45 }); this.audio.play('bill', { vol: 0.4, rate: 0.6 }); }
-      if (this.reloadT <= 0) { this.reloadT = 0; this.ammo[this.weapon] = ud.cap; this.hud(); }
+      if (rp > 0.62 && !this.rl.inserted) { this.rl.inserted = true; this.hands.hold('L', null); this.rl.hand = null; ud.mag.visible = true; if (ud.slide) this.audio.play('reload_pistol', { vol: 1.1, offset: 0.02, dur: 0.5 }); else this.audio.play('reload_rifle', { vol: 1.1, offset: 0.08, dur: 0.42 }); }
+      if (rp > 0.72 && !this.rl.racked) { this.rl.racked = true; if (ud.slide) this.audio.play('reload_pistol', { vol: 1.2, offset: 0.66, dur: 0.37 }); else this.audio.play('reload_rifle', { vol: 1.2, offset: 0.5, dur: 0.7 }); }
+      if (this.reloadT <= 0) { this.reloadT = 0; if (!this.rl.rackOnly) this.ammo[this.weapon] = ud.cap; this.hud(); }
       p.y -= 0.025 * tilt; p.x -= 0.015 * tilt; p.z += 0.02 * tilt;
     }
     gm.position.copy(p);
     const r0 = ud.rot0 || [0, 0, 0];
-    gm.rotation.set(r0[0] + ud.run.r[0] * run + gs.kick * (ud.auto ? 0.1 : 0.32) + gs.sy * 1.2 - gs.draw * 0.9 + br * 0.004, r0[1] + ud.run.r[1] * run + gs.sx * 1.5 + Math.sin(ph) * 0.012 * mv, ud.run.r[2] * run + Math.sin(ph) * 0.03 * mv + gs.sx * 0.8);
+    gm.rotation.set(r0[0] + ud.run.r[0] * run + gs.kick * (ud.auto ? 0.1 : 0.32) + gs.sy * 1.2 - gs.draw * 1.25 + br * 0.004, r0[1] + ud.run.r[1] * run + gs.sx * 1.5 + Math.sin(ph) * 0.012 * mv, ud.run.r[2] * run + Math.sin(ph) * 0.03 * mv + gs.sx * 0.8);
+    gm.rotation.z += gs.draw * 0.5; gm.rotation.y -= gs.draw * 0.35;
     if (tilt) { gm.rotation.z += 0.55 * tilt; gm.rotation.x += 0.22 * tilt; gm.rotation.y -= 0.15 * tilt; }
     // 슬라이드·노리쇠 후퇴 (쏠 때 / 탄 다 쓰면 슬라이드 열린 채)
     const rack = rp > 0.74 && rp < 0.84 ? Math.sin((rp - 0.74) / 0.1 * Math.PI) : 0, open = this.ammo[this.weapon] === 0 && rp < 0.74;
@@ -107,7 +116,7 @@ export class Crime {
         const belt = V3(-0.1, -0.46, -0.22), well = ud.magwell.clone().add(V3(-0.01, -0.03, 0)).applyMatrix4(gm.matrix), rk = (ud.slide ? V3(0, 0.03, 0.02) : V3(0.0, 0.03, 0.09)).applyMatrix4(gm.matrix);
         const seg = (a, b, x0, x1) => { const t = Math.min(1, Math.max(0, (rp - x0) / (x1 - x0))); return a.clone().lerp(b, t * t * (3 - 2 * t)); };
         if (rp < 0.12) {} else if (rp < 0.36) { hp = seg(hp, belt, 0.12, 0.36); pose = 'grip'; } else if (rp < 0.62) { hp = seg(belt, well, 0.36, 0.6); pose = 'grip'; F = V3(0.15, 0.85, -0.5); up = V3(-0.9, 0.1, 0.4); }
-        else if (rp < 0.86) { hp = seg(well, rk.clone().add(V3(0, 0, rack * 0.035)), 0.62, 0.72); pose = 'pinch'; F = V3(0.6, 0.1, -0.8); up = V3(-0.2, 0.95, 0.1); } else hp = seg(rk, hp, 0.86, 1);
+        else if (rp < 0.86) { hp = seg(this.rl.rackOnly ? hp : well, rk.clone().add(V3(0, 0, rack * 0.035)), 0.62, 0.72); pose = 'pinch'; F = V3(0.6, 0.1, -0.8); up = V3(-0.2, 0.95, 0.1); } else hp = seg(rk, hp, 0.86, 1);
       }
       this.hands.place(side, hp, F, up, pose);
     }
@@ -132,8 +141,9 @@ export class Crime {
     const pos = c.person.head ? c.person.head.getWorldPosition(V3()) : c.person.root.position;
     this.audio.play(name, { pos, vol: kind === 'breath' ? 0.8 : 1.3, rate: 0.93 + Math.random() * 0.14, delay });
   }
+  indoor() { const p = this.yawObj.position, f = p.y - 1.55; return this.inCourt || this.inPrison || f < -1 || f > 2 || (p.x > -5.6 && p.x < 20 && p.z > -16 && p.z < 4.2) || (p.x > 20.5 && p.x < 42.6 && p.z > -6 && p.z < 3.9); }
   // 공격 버튼 누름/뗌 (소총은 누르고 있으면 연사)
-  press() { if (this.weapon === 'rifle') this.firing = true; else this.attack(); }
+  press() { if (this.weapon === 'fist' || this.holsterT > 0 || this.gs?.draw > 0.2) return; if (this.weapon === 'rifle') this.firing = true; else this.attack(); }
   release() { this.firing = false; }
   targets() {
     const g = this.game, list = [];
@@ -158,16 +168,17 @@ export class Crime {
     }
     const gm = this.gun(this.weapon);
     if (this.reloadT > 0) return;
-    if (this.ammo[this.weapon] <= 0) { this.audio.play('key', { vol: 0.6, rate: 2.2 }); this.firing = false; this.reload(); return; }
+    if (this.ammo[this.weapon] <= 0) { this.audio.play('dryfire', { vol: 0.9 }); this.firing = false; this.reload(); return; }
     this.ammo[this.weapon]--; this.hud(); if (this.ammo[this.weapon] === 0) setTimeout(() => this.reload(), 350);
-    this.audio.play('gun', { pos: this.camera.getWorldPosition(V3()), vol: this.weapon === 'rifle' ? 1.3 : 1.6, rate: this.weapon === 'rifle' ? 0.9 + Math.random() * 0.1 : 1 });
+    this.audio.play(this.weapon === 'rifle' ? (this.indoor() ? 'rifle_in' : (Math.random() < 0.5 ? 'rifle_shot1' : 'rifle_shot2')) : 'pistol_shot', { vol: this.weapon === 'rifle' ? 1.5 : 1.7, rate: 0.96 + Math.random() * 0.08 });
     this.fx.muzzle(gm); this.look.pitch += this.weapon === 'rifle' ? 0.01 + Math.random() * 0.006 : 0.035; this.look.yaw += (Math.random() - 0.5) * 0.008; if (this.gs) this.gs.kick = 1;
     if (!this.inCourt) this.peds?.gunshot(this.camera.getWorldPosition(V3()));
-    const world = this.worldRoots.filter(Boolean), wh = ray.intersectObjects(world, true).find(h => h.object.visible && !h.object.userData.loose);
+    const carList = (this.drive?.traffic?.list || []).filter(v => v.mesh.visible && v.mesh.position.distanceTo(this.yawObj.position) < 70);
+    const world = [...this.worldRoots.filter(Boolean), ...carList.map(v => v.mesh)], wh = ray.intersectObjects(world, true).find(h => h.object.visible && !h.object.userData.loose && !h.object.isSprite);
     let hitC = null, z = null;
     for (const h of hits) { if (wh && h.distance > wh.distance) break; const c = T.find(t => t[0] === h.object)[1]; z = this.zoneHit(c.person, ray.ray); if (z) { hitC = c; break; } }
     if (hitC) { this.fx.blood(z.point, ray.ray.direction, z.zone === 'head' ? 34 : 16); this.hit(hitC, DMG[this.weapon][z.zone], z, ray.ray.direction); }
-    else { if (wh) this.fx.impact(wh); this.panic(); if (!this.inCourt) { this.game.violence = true; this.callPolice(); } else this.courtChaos(); }
+    else { if (wh) { const d = this.fx.impact(wh); const car = carList.find(v => { let o = wh.object; while (o) { if (o === v.mesh) return true; o = o.parent; } return false; }); if (car) this.carDamage(car, wh, d); } this.panic(); if (!this.inCourt) { this.game.violence = true; this.callPolice(); } else this.courtChaos(); }
   }
   hit(c, dmg, z, dir) {
     const g = this.game, p = c.person; if (!c.wantedHit) { c.wantedHit = true; this.wanted.add(c.officer ? 2 : 1, c.officer ? '경찰 공격' : '폭행'); }
@@ -235,7 +246,8 @@ export class Crime {
   update(dt) {
     if (!window.__fxFreeze) this.fx.update(dt, this.audio);
     if (this.firing && (this.cool -= dt) <= 0) { this.cool = 0.11; this.attack(); }
-    this.updateGun(dt); this.reactions(dt); this.playerUpdate(dt); if (this.inPrison || this.prisonGuards.length) this.prisonUpdate(dt);
+    this.updateGun(dt); this.reactions(dt); this.playerUpdate(dt);
+    if (this.smoking && (this.smokeT = (this.smokeT || 0) - dt) < 0) { this.smokeT = 0.18; for (const v of this.smoking) { const S = v.mesh.userData.size || { y: 1.5, z: 4 }; this.fx.smoke(v.mesh.localToWorld(V3(0, S.y * 0.75, S.z * 0.35)), 0x333333); } } if (this.inPrison || this.prisonGuards.length) this.prisonUpdate(dt);
     for (const P of this.cars || []) {
       P.t += dt; const blink = Math.floor(P.t * 6) % 2; P.l1.visible = !!blink; P.l2.visible = !blink; P.pl.color.setHex(blink ? 0xff2020 : 0x2060ff);
       if (P.phase === 'drive') { const d = P.stopX - P.car.position.x; P.car.position.x += Math.sign(d) * Math.min(Math.abs(d), Math.min(16, Math.max(2, d * 0.8)) * dt); if (Math.abs(d) < 0.05) { P.phase = 'out'; this.officersOut(P); } }
@@ -247,7 +259,9 @@ export class Crime {
         const od = o.root.position.distanceTo(V3(me.x, o.root.position.y, me.z));
         if (od > 70) { const a = Math.random() * 6.28; o.root.position.set(me.x + Math.cos(a) * 32, me.y - 1.55 < -1 ? me.y - 1.55 : 0, me.z + Math.sin(a) * 32); o.path = []; }
         if (this.lv >= 3 && od < 24 && this.shootAt(o, dt)) continue;
-        if (!o.path.length) o.walk([V3(me.x, Math.max(-4.2, me.y - 1.55 < -1 ? me.y - 1.55 : 0), me.z)]); else o.path[o.path.length - 1].set(me.x, me.y - 1.55 < -1 ? me.y - 1.55 : 0, me.z);
+        const behind = me.x > 2.3 && me.x < 4.8 && me.z > -4 && me.z < 2.5, op = o.root.position;
+        if (behind && op.x < 2.3 && op.z > -4 && op.z < 4.2) { if (!o.path.length || o.path.length < 2) o.walk([V3(2.0, 0, 3.05), V3(3.4, 0, 3.05), V3(me.x, 0, me.z)]); else o.path[o.path.length - 1].set(me.x, 0, me.z); }
+        else if (!o.path.length) o.walk([V3(me.x, Math.max(-4.2, me.y - 1.55 < -1 ? me.y - 1.55 : 0), me.z)]); else o.path[o.path.length - 1].set(me.x, me.y - 1.55 < -1 ? me.y - 1.55 : 0, me.z);
         if (o.root.position.distanceTo(V3(me.x, 0, me.z)) < 1.4) { this.arrest(o); break; }
       }
     }
@@ -342,7 +356,7 @@ export class Crime {
     toast(ic('siren') + '법정 비상! 경찰 특공대 진입', 'bad', 2500);
     for (const c of this.courtPeople) if (c.role === 'guard' && !c.dead) c.person.walk([this.yawObj.position.clone().setY(0)]);
     setTimeout(() => {
-      this.firing = false; $('fade').classList.add('on'); this.audio.play('gun', { vol: 1.8, rate: 0.8 }); this.audio.play('punch', { vol: 1.5, rate: 0.7, delay: 0.2 });
+      this.firing = false; $('fade').classList.add('on'); this.audio.play('rifle_in', { vol: 1.8 }); this.audio.play('rifle_in', { vol: 1.6, delay: 0.12 }); this.audio.play('punch', { vol: 1.5, rate: 0.7, delay: 0.2 });
       setTimeout(() => this.ending(true, '사형'), 1400);
     }, 7000);
   }
@@ -395,7 +409,7 @@ export class Crime {
     const hp = o.rHand?.getWorldPosition(V3()) || o.root.position.clone().add(V3(0, 1.3, 0)); o.gun.position.copy(hp); o.gun.lookAt(me); o.gun.rotateY(Math.PI);
     o.reach(me.clone().setY(me.y - 0.2), 400);
     if ((o.shootT = (o.shootT ?? 1) - dt) < 0) {
-      o.shootT = 1.1 + Math.random() * 1.2; this.audio.play('gun', { pos: hp, vol: 1.4, rate: 0.95 + Math.random() * 0.1 }); this.fx.muzzle(o.gun);
+      o.shootT = 1.1 + Math.random() * 1.2; this.audio.play('pistol_shot', { pos: hp, vol: 1.6, rate: 0.95 + Math.random() * 0.1 }); this.fx.muzzle(o.gun);
       const d = o.root.position.distanceTo(me); if (Math.random() < 0.55 - d * 0.015) this.hurtMe(9 + Math.random() * 7, o.root.position); else this.audio.play('whoosh', { pos: me.clone().add(V3((Math.random() - 0.5) * 2, 0, (Math.random() - 0.5) * 2)), vol: 0.7, rate: 1.8 });
     }
     if (o.root.position.distanceTo(me) < 7) { o.pause?.(false); return false; }
@@ -411,10 +425,20 @@ export class Crime {
     if (c.hp !== undefined && c.hp < 35 && !c.down) { c.aggro = false; c.state = 'walk'; P.speed = 3.6; this.peds?.flee(c); return; }
     if (d > 35 || this.inCourt || this.arrested) { c.aggro = false; c.state = 'walk'; return; }
     if (c.armed && d < 12 && d > 3) { P.pause?.(true); P.lookAt(me); if (!c.gun) { c.gun = makePistol(); this.scene.add(c.gun); } const hp = P.rHand.getWorldPosition(V3()); c.gun.position.copy(hp); c.gun.lookAt(me); c.gun.rotateY(Math.PI); P.reach(me, 400);
-      if ((c.shootT = (c.shootT ?? 0.8) - dt) < 0) { c.shootT = 1.3 + Math.random(); this.audio.play('gun', { pos: hp, vol: 1.3 }); this.fx.muzzle(c.gun); if (Math.random() < 0.45) this.hurtMe(8 + Math.random() * 6); } return; }
+      if ((c.shootT = (c.shootT ?? 0.8) - dt) < 0) { c.shootT = 1.3 + Math.random(); this.audio.play('pistol_shot', { pos: hp, vol: 1.5, rate: 0.97 + Math.random() * 0.06 }); this.fx.muzzle(c.gun); if (Math.random() < 0.45) this.hurtMe(8 + Math.random() * 6); } return; }
     P.pause?.(false);
     if (d > 1.1) { if (!P.path.length || (c.chaseT = (c.chaseT || 0) - dt) < 0) { c.chaseT = 0.5; P.walk([V3(me.x, P.root.position.y, me.z)]); } }
     else { P.path = []; P.lookAt(me); if ((c.punchT = (c.punchT ?? 0.4) - dt) < 0) { c.punchT = 0.9 + Math.random() * 0.5; P.reach(me.clone().setY(me.y - 0.25), 350); setTimeout(() => { if (!c.dead && P.root.position.distanceTo(V3(me.x, P.root.position.y, me.z)) < 1.5) { this.audio.play('punch', { vol: 1.1, rate: 0.9 + Math.random() * 0.2 }); this.hurtMe(7 + Math.random() * 5); } }, 180); } }
+  }
+  // 총 맞은 차: 탄흔이 차에 붙어 다니고, 유리는 금 가고, 많이 맞으면 연기 나며 멈춤 (운전자는 도망)
+  carDamage(v, hit, decal) {
+    if (decal) hit.object.attach(decal);
+    const glass = /glass/i.test(hit.object.material?.name || '') || hit.object.material?.transparent;
+    this.audio.play(glass ? 'bill' : 'key', { pos: hit.point, vol: glass ? 0.9 : 1, rate: glass ? 2.2 : 1.7 + Math.random() * 0.4 });
+    if (glass) { const cr = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 0.35), CRACK()); cr.position.copy(hit.point); const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : V3(0, 1, 0); cr.lookAt(hit.point.clone().add(n)); cr.position.addScaledVector(n, 0.004); this.scene.add(cr); hit.object.attach(cr); }
+    v.dmg = (v.dmg || 0) + 1;
+    if (v.dmg >= 3 && !v.stopped && !v.parked) { v.stopped = true; v.taken = true; v.parked = true; v.cur = 0; const S = v.mesh.userData.size || { x: 2, z: 4 }; this.peds?.addFleeing(v.mesh.localToWorld(V3(S.x / 2 + 0.9, 0, S.z * 0.1)), this.yawObj.position.clone()); if (v.snd) v.snd.stop?.(); }
+    if (v.dmg >= 7) (this.smoking ||= new Set()).add(v);
   }
   // 차에 치임 (지나가는 차 / 내가 운전한 차)
   carHit(c, dir, speed, byMe) {

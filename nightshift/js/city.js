@@ -15,7 +15,7 @@ const ROADW = 8;
 
 // 건물 외벽 (창문 불빛은 발광 텍스처)
 function facade(kind) {
-  return ctex(512, 512, (g, w, h) => {
+  return ctex(1024, 1024, (g, w, h) => {
     const base = { apt: '#bdb3a2', office: '#1d2833', old: '#8f8a80', brick: '#7a3d2c', stone: '#3b3f45', glass: '#16202c' }[kind];
     g.fillStyle = base; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 1500; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},${Math.random() * 0.05})`; g.fillRect(Math.random() * w, Math.random() * h, 3, 3); }
@@ -31,8 +31,14 @@ function facade(kind) {
         if (on && Math.random() < 0.5) { g.fillStyle = 'rgba(80,60,40,.5)'; g.fillRect(wx, wy, ww * 0.45, wh); } // 커튼
         g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(wx + ww / 2 - 1, wy, 2, wh);
         if (kind === 'apt') { g.fillStyle = '#d8d0c2'; g.fillRect(x + 6, wy + wh, w / bays - 12, 10); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(x + 6, wy + wh + 10, w / bays - 12, 4); }
+        g.fillStyle = 'rgba(230,230,225,.5)'; g.fillRect(wx - 4, wy - 4, ww + 8, 4); g.fillRect(wx - 4, wy + wh, ww + 8, 6);   // 창틀
       }
+      // 세월 흔적: 창 아래로 흘러내린 빗물 자국
+      if (kind !== 'glass') for (let k = 0; k < 3; k++) { const sx = x + 20 + Math.random() * (w / bays - 40), sy = y + h / floors - 26, sl = 40 + Math.random() * 120; const gr = g.createLinearGradient(0, sy, 0, sy + sl); gr.addColorStop(0, `rgba(20,18,15,${0.18 + Math.random() * 0.2})`); gr.addColorStop(1, 'rgba(20,18,15,0)'); g.fillStyle = gr; g.fillRect(sx, sy, 2 + Math.random() * 6, sl); }
     }
+    // 얼룩 반점·이끼·밑동 때
+    if (kind !== 'glass') { for (let i = 0; i < 40; i++) { const r = 10 + Math.random() * 60, x = Math.random() * w, y = Math.random() * h; const gr = g.createRadialGradient(x, y, 1, x, y, r); gr.addColorStop(0, `rgba(${Math.random() < 0.2 ? '40,60,30' : '30,25,20'},${0.06 + Math.random() * 0.1})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }
+      const gb = g.createLinearGradient(0, h * 0.85, 0, h); gb.addColorStop(0, 'rgba(25,20,15,0)'); gb.addColorStop(1, 'rgba(25,20,15,.35)'); g.fillStyle = gb; g.fillRect(0, h * 0.85, w, h * 0.15); }
   });
 }
 // 같은 그림에서 불 켜진 창만 남긴 발광맵
@@ -98,6 +104,8 @@ export function buildCity(scene, { onCollider, holes = [] }) {
   const FM = {}; for (const k of KINDS) { const t = facade(k); FM[k] = M({ map: t, emissiveMap: emissiveOf(t), emissive: 0xffffff, emissiveIntensity: 0.9, roughness: k === 'glass' || k === 'office' ? 0.2 : 0.85, envMapIntensity: k === 'glass' ? 1.2 : 0.3, bumpMap: k === 'brick' ? tex('brick_bump.jpg', [1, 1], false) : t, bumpScale: k === 'brick' ? 2.5 : 1.2 }); }
   const mRoof = M({ color: 0x2a2d31 }), mSign = new THREE.MeshBasicMaterial({ map: signTex, toneMapped: false }), mShopWin = new THREE.MeshBasicMaterial({ map: winTex, color: 0xbbbbbb, toneMapped: false });
   const mShutter = M({ map: shutterTex, roughness: 0.5, metalness: 0.4 }), mAptNum = M({ map: aptNumTex, roughness: 0.8, emissive: 0xffffff, emissiveMap: aptNumTex, emissiveIntensity: 0.25 });
+  const mAC = M({ color: 0xd8d6d0, roughness: 0.55, metalness: 0.2 }), mPipe = M({ color: 0x7d7f80, roughness: 0.5, metalness: 0.5 });
+  const mGrille = M({ map: ctex(64, 64, (g, w, h) => { g.fillStyle = '#9a9a96'; g.fillRect(0, 0, w, h); g.fillStyle = '#2a2a28'; for (let y = 4; y < h; y += 6) g.fillRect(4, y, w - 8, 3); g.beginPath(); g.arc(w / 2, h / 2, 22, 0, 7); g.strokeStyle = '#555'; g.lineWidth = 3; g.stroke(); }, false), roughness: 0.6, metalness: 0.4 });
   const cross = M({ color: 0xff2030, emissive: 0xff1020, emissiveIntensity: 2.2 }), mRooftop = M({ color: 0x5a5e64, roughness: 0.7, metalness: 0.3 });
   const blds = [];
   const plane = (mat, w, h, x, y, z, ry = 0, uvf) => { const g = new THREE.PlaneGeometry(w, h); if (uvf) uvf(g.attributes.uv); g.rotateY(ry); g.translate(x, y, z); add(mat, g); };
@@ -114,6 +122,12 @@ export function buildCity(scene, { onCollider, holes = [] }) {
         plane(Math.random() < 0.55 ? mShopWin : mShutter, wv, 2.6, x + wv / 2, 1.35, fz, ry);
         plane(mSign, wv, 1.1, x + wv / 2, 3.35, fz + dir * 0.02, ry, u => { for (let i = 0; i < u.count; i++) u.setXY(i, (shop % 4 + u.getX(i)) / 4, 1 - (Math.floor(shop / 4) + 1 - u.getY(i)) / 4); });
       }
+    }
+    // 벽에 붙은 실외기·배수관 (세월 흔적 있는 생활감)
+    if (h > 6 && kind !== 'glass' && kind !== 'office' && frontZ != null) {
+      const fz = frontZ > (z0 + z1) / 2 ? z1 : z0, dir = frontZ > (z0 + z1) / 2 ? 1 : -1;
+      for (let i = 0; i < Math.min(6, (h / 3 | 0)); i++) if (Math.random() < 0.55) { const ax = rnd(x0 + 1, x1 - 1), ay = 4.5 + (Math.random() * (h - 6) / 3 | 0) * 3 + 0.4; box(mAC, 0.8, 0.55, 0.32, ax, ay, fz + dir * 0.17); box(mGrille, 0.6, 0.4, 0.01, ax, ay, fz + dir * 0.335); box(mPipe, 0.04, 0.04, 0.4, ax + 0.3, ay - 0.3, fz + dir * 0.1); }
+      for (const px of [x0 + 0.25, x1 - 0.25]) if (Math.random() < 0.6) { const pg = new THREE.CylinderGeometry(0.05, 0.05, h, 8); pg.translate(px, h / 2, fz + dir * 0.07); add(mPipe, pg); }
     }
     // 옥상: 물탱크·실외기 / 교회 십자가
     if (h > 12 && Math.random() < 0.5) box(mRooftop, rnd(1.5, 3), rnd(1.2, 2.2), rnd(1.5, 3), rnd(x0 + 2, x1 - 2), h + 1, rnd(z0 + 2, z1 - 2));
@@ -143,6 +157,7 @@ export function buildCity(scene, { onCollider, holes = [] }) {
   const mCard = new THREE.MeshStandardMaterial({ map: tex('leaf.png'), alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.75, envMapIntensity: 0.25 }); mCard.onBeforeCompile = mLeaf.onBeforeCompile;
   const limb = (a, b, r0, r1) => { const d = b.clone().sub(a), g = new THREE.CylinderGeometry(r1, r0, d.length(), 7, 1, true); g.translate(0, d.length() / 2, 0); g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); g.translate(a.x, a.y, a.z); add(mBark, g); };
   const tree = (x, z, s = 1) => {
+    onCollider?.({ x0: x - 0.2 * s, x1: x + 0.2 * s, z0: z - 0.2 * s, z1: z + 0.2 * s });
     const V = (a, b, c) => new THREE.Vector3(a, b, c), top = V(x + rnd(-0.2, 0.2), 3.2 * s, z + rnd(-0.2, 0.2)); limb(V(x, 0, z), top, 0.15 * s, 0.09 * s);
     for (let i = 0; i < 4; i++) { const a = i * 1.57 + rnd(-0.4, 0.4), e = V(x + Math.cos(a) * 1.1 * s, (3.6 + rnd(0, 0.9)) * s, z + Math.sin(a) * 1.1 * s); limb(V(x, (2.2 + i * 0.25) * s, z), e, 0.07 * s, 0.03 * s); }
     const cy = 3.9 * s, n = 26;
@@ -154,8 +169,8 @@ export function buildCity(scene, { onCollider, holes = [] }) {
   const mPool = new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
   const lampPool = (x, z) => { const g = new THREE.PlaneGeometry(9, 9); g.rotateX(-Math.PI / 2); g.translate(x, 0.02, z); add(mPool, g); };
   const lamps = [];
-  const lampX = (x, z, dz) => { lamps.push({ x, z: z + dz * 1.5, tx: x, tz: z + dz * 2.5 }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 0.1, 0.1, 1.6, x, 6.4, z + dz * 0.8); box(mBulb, 0.5, 0.1, 0.22, x, 6.3, z + dz * 1.5); lampPool(x, z + dz * 2.5); };
-  const lampZ = (x, z, dx) => { lamps.push({ x: x + dx * 1.5, z, tx: x + dx * 2.5, tz: z }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 1.6, 0.1, 0.1, x + dx * 0.8, 6.4, z); box(mBulb, 0.22, 0.1, 0.5, x + dx * 1.5, 6.3, z); lampPool(x + dx * 2.5, z); };
+  const lampX = (x, z, dz) => { lamps.push({ x, z: z + dz * 1.5, tx: x, tz: z + dz * 2.5 }); onCollider?.({ x0: x - 0.14, x1: x + 0.14, z0: z - 0.14, z1: z + 0.14 }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 0.1, 0.1, 1.6, x, 6.4, z + dz * 0.8); box(mBulb, 0.5, 0.1, 0.22, x, 6.3, z + dz * 1.5); lampPool(x, z + dz * 2.5); };
+  const lampZ = (x, z, dx) => { lamps.push({ x: x + dx * 1.5, z, tx: x + dx * 2.5, tz: z }); onCollider?.({ x0: x - 0.14, x1: x + 0.14, z0: z - 0.14, z1: z + 0.14 }); box(mPole, 0.16, 6.5, 0.16, x, 3.25, z); box(mPole, 1.6, 0.1, 0.1, x + dx * 0.8, 6.4, z); box(mBulb, 0.22, 0.1, 0.5, x + dx * 1.5, 6.3, z); lampPool(x + dx * 2.5, z); };
   const park = (bx0, bx1, bz0, bz1) => {
     const cx = (bx0 + bx1) / 2, cz = (bz0 + bz1) / 2, mPath = M(pbr('pave', [6, 1], { color: 0xc8bba8 })), mGrass = M({ map: tex('grass_col.jpg', [(bx1 - bx0) / 6, (bz1 - bz0) / 6]), normalMap: tex('grass_nrm.jpg', [(bx1 - bx0) / 6, (bz1 - bz0) / 6], false), color: 0x7a8a70, roughness: 0.95 });
     box(mGrass, bx1 - bx0, 0.04, bz1 - bz0, cx, 0.01, cz); box(mPath, bx1 - bx0, 0.05, 3, cx, 0.02, cz); box(mPath, 3, 0.05, bz1 - bz0, cx, 0.02, cz);
@@ -253,8 +268,14 @@ function busMesh(color, num, dest) {
   const back = ctex(256, 320, (c, w, h) => { c.fillStyle = color; c.fillRect(0, 0, w, h); c.fillStyle = '#111'; c.fillRect(30, 30, w - 60, 90); c.fillStyle = '#ff2020'; c.fillRect(16, 250, 46, 30); c.fillRect(w - 62, 250, 46, 30); c.fillStyle = '#fff'; c.font = `900 40px ${FONT}`; c.fillText(num, 80, 200); }, false);
   const ms = new THREE.MeshStandardMaterial({ map: side, roughness: 0.35, emissive: 0xffffff, emissiveMap: side, emissiveIntensity: 0.25 }), mf = new THREE.MeshStandardMaterial({ map: front, roughness: 0.3, emissive: 0xffffff, emissiveMap: front, emissiveIntensity: 0.35 }), mb = new THREE.MeshStandardMaterial({ map: back, roughness: 0.35, emissive: 0xffffff, emissiveMap: back, emissiveIntensity: 0.3 }), mt = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.5 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(L, H, W), [mf, mb, mt, mt, ms, ms]); body.position.y = H / 2 + 0.35; g.add(body);
-  const wm = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-  for (const x of [-3.6, 3.4]) for (const z of [-1.1, 1.1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 16), wm); w.rotation.x = Math.PI / 2; w.position.set(x, 0.5, z); g.add(w); }
+  const wm = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.85 }), rimM = new THREE.MeshStandardMaterial({ color: 0xc8ccd2, metalness: 0.9, roughness: 0.3 }), blk = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 });
+  for (const x of [-3.6, 3.4]) for (const z of [-1.1, 1.1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 24), wm); w.rotation.x = Math.PI / 2; w.position.set(x, 0.5, z); g.add(w); const r = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.32, 16), rimM); r.rotation.x = Math.PI / 2; r.position.set(x, 0.5, z); g.add(r); const arch = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.05, 20, 1, true, 0, Math.PI), blk); arch.rotation.set(Math.PI / 2, 0, 0); arch.position.set(x, 0.55, z * 1.12); g.add(arch); }
+  // 범퍼·사이드미러·지붕 냉방기·와이퍼·측면 띠
+  for (const sx of [1, -1]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.35, W + 0.04), blk); b.position.set(sx * (L / 2 + 0.05), 0.55, 0); g.add(b); }
+  for (const s of [-1, 1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.04), blk); arm.position.set(L / 2 + 0.2, 2.6, s * (W / 2 + 0.05)); g.add(arm); const mir = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.45, 0.25), blk); mir.position.set(L / 2 + 0.42, 2.35, s * (W / 2 + 0.12)); g.add(mir); }
+  const ac = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.3, 1.6), new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.5 })); ac.position.set(-0.5, H + 0.5, 0); g.add(ac);
+  for (const z of [-0.5, 0.5]) { const wp = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.9, 0.04), blk); wp.position.set(L / 2 + 0.01, 1.4, z); wp.rotation.x = 0.6 * Math.sign(z); g.add(wp); }
+  for (const z of [-W / 2 - 0.005, W / 2 + 0.005]) { const st = new THREE.Mesh(new THREE.BoxGeometry(L - 0.4, 0.08, 0.01), rimM); st.position.set(0, 1.05, z); g.add(st); }
   // 오른쪽(인도 쪽) 앞문·뒷문: 정류장에서 접히며 열림
   const dm = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.75 }), fm = new THREE.MeshStandardMaterial({ color: 0x333, metalness: 0.5, roughness: 0.4 });
   const doors = [];

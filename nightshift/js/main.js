@@ -22,6 +22,7 @@ import { Crime } from './crime.js';
 import { makePistol, makeRifle } from './weapons.js';
 import { MiniMap } from './map.js';
 import { Pedestrians } from './peds.js';
+import { HAIR_TIME } from './hair.js';
 import { Crowd } from './crowd.js';
 import { Driving } from './drive.js';
 import { Missions } from './missions.js';
@@ -58,7 +59,7 @@ function applyQuality() {
   if (keyLight) { keyLight.castShadow = sh; keyLight.shadow.mapSize.setScalar(q === 'ultra' ? 2048 : 1024); keyLight.shadow.map?.dispose(); keyLight.shadow.map = null; }
   composer = null; lutPass = null;
   if (q !== 'low') {
-    const w = innerWidth, h = innerHeight; composer = new EffectComposer(renderer);
+    const w = innerWidth, h = innerHeight; composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w * pr, h * pr, { type: THREE.HalfFloatType, samples: q === 'ultra' || q === 'high' ? 4 : 0 }));
     composer.addPass(new RenderPass(scene, camera));
     if (q === 'ultra') { const ao = new GTAOPass(scene, camera, w, h); ao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.5, thickness: 1.2, scale: 1.1, samples: 12 }); ao.blendIntensity = 0.85; composer.addPass(ao); }
     // 빛 번짐 전에 잘못된 값(NaN·무한대) 지우기 — 한 점이라도 있으면 번짐이 화면 전체로 퍼져 검게 됨
@@ -200,7 +201,7 @@ async function boot() {
   peds = new Pedestrians({ scene, audio, game, crime, yawObj, camera }); crime.peds = peds; crime.extra = []; crime.prison = prison; courtB.prison.visible = false;
   crowd = new Crowd({ game, crime, peds, yawObj, colliders, mover });
   driving = new Driving({ scene, camera, yawObj, look, mover, audio, hands, vehicles, traffic, crime, game, colliders, crowd }); crime.drive = driving;
-  driving.hitPerson = (c, dir, sp, byMe) => crime.carHit(c, dir, sp, byMe);
+  driving.hitPerson = (c, dir, sp, byMe) => crime.carHit(c, dir, sp, byMe); crowd.traffic = traffic; crowd.drive = driving;
   driving.spawnDriver = car => { const S = car.userData.size; return peds.addFleeing(car.localToWorld(new THREE.Vector3(S.x / 2 + 0.9, 0, S.z * 0.1)), yawObj.position.clone()); };
   mover.onBump = (p, sp) => { store.merch.shake(p); audio.play('bag', { pos: p, vol: 0.3, rate: 1.9 }); audio.play('key', { pos: p, vol: 0.25, rate: 1.6 }); if (sp > 2.4 && Math.random() < 0.45) store.merch.knockNear(p, 1.4); };
   minimap = new MiniMap({ city, yawObj, look, markers: () => {
@@ -222,7 +223,7 @@ async function boot() {
   // 그림자 받기·드리우기 + 바깥(거리) 반사 환경맵 한 번 찍기
   scene.traverse(o => { if (o.isMesh) { o.receiveShadow = true; if (o.isSkinnedMesh) o.castShadow = true; } });
   for (const o of store.root.children) if (o.isMesh && (!o.isInstancedMesh || settings.quality === 'ultra')) o.castShadow = true;
-  try { const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType }), cc = new THREE.CubeCamera(0.1, 200, rt); cc.position.set(8, 2.4, 10.5); scene.add(cc); const sv = sky.visible; cc.update(renderer, scene); scene.remove(cc); cityEnv = new THREE.PMREMGenerator(renderer).fromCubemap(rt.texture).texture; rt.dispose(); void sv; } catch (e) { console.warn('city env', e); }
+  try { const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.UnsignedByteType }), cc = new THREE.CubeCamera(0.1, 200, rt); cc.position.set(8, 2.4, 10.5); scene.add(cc); const sv = sky.visible; cc.update(renderer, scene); scene.remove(cc); cityEnv = new THREE.PMREMGenerator(renderer).fromCubemap(rt.texture).texture; rt.dispose(); void sv; } catch (e) { console.warn('city env', e); }
   window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide };
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
@@ -334,6 +335,9 @@ $('bTurn').onclick = () => look.turnTo(Math.abs(Math.atan2(Math.sin(look.yaw - M
 $('bMic').onclick = () => { audio.resume(); voice.toggle(); };
 $('b112').onclick = () => game.call112();
 $('bPause').onclick = () => pause();
+// 달리기 버튼 (누르고 있는 동안)
+{ const b = $('bRun'), on = v => { mover.runHold = v; b.classList.toggle('on', v); };
+  b.addEventListener('pointerdown', e => { e.preventDefault(); on(true); }); for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => on(false)); }
 const atk = $('bAtk');
 atk.addEventListener('pointerdown', e => { e.preventDefault(); audio.resume(); crime.press(); });
 for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) atk.addEventListener(ev, () => crime.release());
@@ -362,7 +366,7 @@ function loop() {
   if (game?.running && !crime?.inCourt) { peds?.update(dt, !crime.inPrison); crowd?.update(dt); driving?.update(dt); missions?.update(dt); animals?.update(dt, yawObj.position); store.merch.update(dt); const cw = camera.getWorldPosition(new THREE.Vector3()); for (const c of crime.extra) c.person.update(dt, cw); }
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }
-  envUpdate(dt);
+  envUpdate(dt); HAIR_TIME.value += dt;
   if (fridgeDoor) { const near = yawObj.position.distanceTo(fridgeDoor.pos.clone().setY(yawObj.position.y)) < 2.1; const k0 = fridgeDoor.k; fridgeDoor.k += ((near ? 1 : 0) - fridgeDoor.k) * Math.min(1, dt * 3); fridgeDoor.piv.rotation.y = -fridgeDoor.k * 1.35; if (near && k0 < 0.05) audio.play('door', { pos: fridgeDoor.pos, vol: 0.4, rate: 1.6 }); }
   camera.updateMatrixWorld();
   audio.setListener(camera.getWorldPosition(new THREE.Vector3()), camera.getWorldQuaternion(new THREE.Quaternion()));
@@ -399,14 +403,14 @@ function envUpdate(dt) {
   scene.fog.near += (fn - scene.fog.near) * k; scene.fog.far += (ff - scene.fog.far) * k;
   sky.position.copy(camera.getWorldPosition(new THREE.Vector3())); sky.visible = !ug;
   ugLight.intensity += ((ug ? 14 : 0) - ugLight.intensity) * k; ugLight.position.set(p.x, UNDER.ceil - 0.5, p.z);
-  if (hemi) hemi.intensity += ((ug ? 0.85 : 0.32) - hemi.intensity) * k;
+  if (hemi) { hemi.intensity += ((ug ? 0.85 : inStore ? 0.32 : 1.0) - hemi.intensity) * k; hemi.groundColor.setHex(inStore || ug ? 0x6a6458 : 0x8a6a48); }   // 바깥: 도시 불빛이 퍼진 밤 주변광
   // 반사 환경: 매장·지하 안 / 거리
   const want = (inStore || ug) ? scene.userData.storeEnv : (cityEnv || scene.userData.storeEnv); if (want && scene.environment !== want) scene.environment = want;
   // 그림자 조명 위치
   if (keyLight && (lampT -= dt) < 0) {
     lampT = 0.4; const L = keyLight, f = p.y - 1.55;
     if (inStore) { L.position.set(-0.3, 2.95, 0.2); L.target.position.set(-0.3, 0, 0.7); L.intensity = 9; L.distance = 12; L.angle = 1.25; L.color.setHex(0xfff6ea); }
-    else if (Math.abs(f) < 0.6 && city?.lamps?.length) { let best = null, bd = 1e9; for (const l of city.lamps) { const d = (l.x - p.x) ** 2 + (l.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } } L.position.set(best.x, 6.2, best.z); L.target.position.set(best.tx, 0, best.tz); L.intensity = 70; L.distance = 30; L.angle = 0.85; L.color.setHex(0xffc98a); }
+    else if (Math.abs(f) < 0.6 && city?.lamps?.length) { let best = null, bd = 1e9; for (const l of city.lamps) { const d = (l.x - p.x) ** 2 + (l.z - p.z) ** 2; if (d < bd) { bd = d; best = l; } } L.position.set(best.x, 6.2, best.z); L.target.position.set(best.tx, 0, best.tz); L.intensity = 45; L.distance = 30; L.angle = 0.95; L.color.setHex(0xffc98a); }
     else { L.intensity = 0; }   // 다른 실내는 자체 조명만
     L.target.updateMatrixWorld();
   }

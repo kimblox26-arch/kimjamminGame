@@ -18,3 +18,4 @@
 - 벽돌·원목·잔디 텍스처: three.js examples textures (MIT) · 대리석: Godot demo projects material_testers (MIT) · 나뭇잎 사진: Godot demo truck_town (MIT)
 - 색보정 LUT(grade.cube): pmndrs/drei-assets (MIT)
 - 아스팔트·보도블록·콘크리트·바닥 타일 텍스처: 이 게임용으로 직접 생성
+- 총소리·장전 (CDDA-Soundpacks CC-Sounds 경유): pistol_shot = "9mm Gunshot" GoodSoundForYou (CC BY 3.0) · rifle_shot1/2, rifle_in, reload_pistol = DoctorBoomstick 실제 5.56mm 소총·베레타 녹음 (CC BY 4.0) · brass1/2 = FST180081 (CC BY 4.0) · dryfire = Sophia_C (CC BY 4.0) · reload_rifle = magnuswaker (CC0)

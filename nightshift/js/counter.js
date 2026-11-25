@@ -72,7 +72,7 @@ export function buildCounter(root, CH) {
   const capG = new THREE.BoxGeometry(0.048, 0.012, 0.03); capG.translate(0, 0.006, 0);
   KEYS.forEach((row, r) => row.forEach((t, c) => { const side = M({ color: keyCol[t] ? new THREE.Color(keyCol[t]).multiplyScalar(0.7) : (/\d/.test(t) ? 0xc9cdd2 : 0x434a54), roughness: 0.6 }); const k = new THREE.Mesh(capG, [side, side, keyMat(t), side, side, side]); k.position.set(-0.12 + c * 0.058, 0.025, -0.055 + r * 0.037); kb.add(k); }));
   // ── 탁상 계산기 (태양전지·LCD·키) : 프린터 옆 ──
-  const calc = new THREE.Group(); calc.position.set(2.82, CH, -0.55); calc.rotation.set(0, Math.PI / 2 - 0.25, 0); root.add(calc);
+  const calc = new THREE.Group(); calc.position.set(2.84, CH, 0.62); calc.rotation.set(0, Math.PI / 2 + 0.12, 0); root.add(calc);   // 포스기 오른쪽, 내 손이 닿는 자리
   const cBody = rbox(0.11, 0.022, 0.16, 0.012, M({ color: 0x2b2e33, roughness: 0.45 })); cBody.rotation.y = Math.PI / 2; cBody.position.y = 0.011; calc.add(cBody);
   const lcdC = document.createElement('canvas'); lcdC.width = 256; lcdC.height = 64; const lcdT = new THREE.CanvasTexture(lcdC); lcdT.colorSpace = THREE.SRGBColorSpace;
   const lcd = new THREE.Mesh(new THREE.PlaneGeometry(0.085, 0.022), M({ map: lcdT, roughness: 0.25 })); lcd.rotation.x = -Math.PI / 2 + 0.25; lcd.position.set(0, 0.027, -0.05); calc.add(lcd);

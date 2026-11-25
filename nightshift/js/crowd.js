@@ -41,6 +41,13 @@ export class Crowd {
         if (d < R && d > 1e-4) { p.x = qx + dx / d * R; p.z = qz + dz / d * R; }
       }
     }
+    // 차 ↔ 나·사람: 서 있거나 달리는 차를 통과하지 못하고 밀려남
+    const me0 = this.yawObj.position, cars = (this.traffic?.list || []).filter(v => v.mesh.visible && v.mesh !== this.drive?.ride?.obj && Math.abs(v.mesh.position.x - me0.x) < 40 && Math.abs(v.mesh.position.z - me0.z) < 40);
+    const pushCar = (p, rad, v) => { const m = v.mesh, S = m.userData.size || { x: 2, z: 4.4 }, a = m.rotation.y, c = Math.cos(a), sn = Math.sin(a), dx = p.x - m.position.x, dz = p.z - m.position.z;
+      const lx = dx * c - dz * sn, lz = dx * sn + dz * c, hx = S.x / 2, hz = S.z / 2, qx = Math.max(-hx, Math.min(lx, hx)), qz = Math.max(-hz, Math.min(lz, hz)); let ex = lx - qx, ez = lz - qz, d = Math.hypot(ex, ez);
+      if (d >= rad) return false; if (d < 1e-4) { const o = [hx - Math.abs(lx), hz - Math.abs(lz)]; if (o[0] < o[1]) { ex = Math.sign(lx) || 1; ez = 0; } else { ez = Math.sign(lz) || 1; ex = 0; } d = 0; }
+      const k = (rad - d) / (Math.hypot(ex, ez) || 1), wx = ex * k, wz = ez * k; p.x += wx * c + wz * sn; p.z += -wx * sn + wz * c; return true; };
+    for (const v of cars) { if (Math.abs(me0.y - 1.55) < 1 && this.mover?.enabled) pushCar(me0, 0.32, v); for (const c of L) if (!c.dead && Math.abs(c.person.root.position.y) < 1) pushCar(c.person.root.position, 0.28, v); }
     // 나 ↔ 사람 (통과 못 함, 부딪히면 반응)
     if (this.mover?.enabled && !this.mover.riding) {
       const me = this.yawObj.position, feet = me.y - 1.55;

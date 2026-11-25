@@ -35,7 +35,7 @@ export class Mover {
     const k = this.keys; let x = this.vec.x, y = this.vec.y;
     if (k.KeyW || k.ArrowUp) y -= 1; if (k.KeyS || k.ArrowDown) y += 1; if (k.KeyA || k.ArrowLeft) x -= 1; if (k.KeyD || k.ArrowRight) x += 1;
     const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
-    const run = k.ShiftLeft || k.ShiftRight || Math.hypot(this.vec.x, this.vec.y) > 0.95;
+    const run = this.runHold || k.ShiftLeft || k.ShiftRight || Math.hypot(this.vec.x, this.vec.y) > 0.95;
     const speed = (run ? 3.6 : 2.0) * Math.min(1, Math.hypot(x, y));
     const p = this.yawObj.position, yaw = this.look.yaw;
     if (speed > 0.05) {

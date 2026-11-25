@@ -27,6 +27,8 @@ function prism(pts, L, m, bevel = 0.001) {
 const stipple = ctex(256, 256, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0, 0, w, h); for (let i = 0; i < 5000; i++) { g.fillStyle = Math.random() < 0.5 ? '#3a3a3a' : '#c8c8c8'; g.beginPath(); g.arc(Math.random() * w, Math.random() * h, 1 + Math.random() * 1.6, 0, 7); g.fill(); } }, [6, 6]);
 const brushed = ctex(256, 64, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0, 0, w, h); for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},${Math.random() * 0.25})`; g.fillRect(0, Math.random() * h, w, 1); } }, [2, 2]);
 const DOT = new THREE.MeshBasicMaterial({ color: 0xf4f4e8, toneMapped: false }), TRIT = new THREE.MeshBasicMaterial({ color: 0x9dff7a, toneMapped: false });
+// 각인(레이저 마킹) 글자판: 총 옆면에 붙는 얇은 판
+function engrave(lines, w, h, px = 26) { const t = ctex(512, Math.round(512 * h / w), (g, W, H) => { g.clearRect(0, 0, W, H); g.fillStyle = 'rgba(205,205,200,.75)'; g.font = `700 ${px}px monospace`; lines.forEach((l, i) => g.fillText(l, 6, px + i * (px + 6))); }); t.colorSpace = THREE.SRGBColorSpace; return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, metalness: 0.6, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2 })); }
 // 권총 (총구 = -z). 실제 9mm 자동권총 비율: 슬라이드(톱니·배출구·약실 덮개 보임), 폴리머 프레임(레일·방아쇠울·돌기 손잡이·비버테일), 탄창 바닥판, 조작부, 야광 가늠쇠
 export function makePistol() {
   const g = new THREE.Group();
@@ -64,6 +66,8 @@ export function makePistol() {
   const mag = new THREE.Group(); g.add(mag);
   const mb = side([[-0.022, -0.096], [-0.066, -0.1], [-0.069, -0.108], [-0.024, -0.104]], 0.0255, frameM, 0.0012); mag.add(mb);
   const mbody = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.09, 0.032), steel); mbody.position.set(0, -0.06, 0.032); mbody.rotation.x = -0.22; mag.add(mbody); mbody.visible = false;
+  for (const sx of [-1, 1]) { const e = engrave(sx > 0 ? ['DALBIT ARMS  9x19'] : ['DB-17  AUSTRIA'], 0.085, 0.011, 34); e.position.set(sx * 0.0131, 0.03, -0.085); e.rotation.y = sx * Math.PI / 2; slide.add(e); }
+  { const e = engrave(['SN 26KR0412'], 0.04, 0.006, 40); e.position.set(0.0124, 0.006, -0.06); e.rotation.y = Math.PI / 2; g.add(e); }
   g.userData.mag = mag; g.userData.slide = slide; g.userData.cap = 15; g.userData.magwell = V(0, -0.1, 0.035);
   g.userData.muzzle = new THREE.Vector3(0, 0.033, -0.17); g.userData.eject = new THREE.Vector3(0.012, 0.047, -0.033); g.userData.auto = false; g.userData.name = '권총';
   // 두 손 파지(이등변 자세): 오른손 = 손잡이 감싸고 검지는 방아쇠, 왼손 = 오른손을 감싸 받침. p=손목, F=손가락 방향, up=손등 방향
@@ -128,6 +132,8 @@ export function makeRifle() {
   const magG = new THREE.Group(); magG.position.set(0, -0.034, -0.088); g.add(magG);
   magG.add(new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ color: 0x232426, metalness: 0.4, roughness: 0.55 })));
   const bp = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.008, 0.07), poly); bp.position.set(0, -0.198, 0.008); bp.rotation.x = 0.12; magG.add(bp);
+  { const e = engrave(['SAFE', '', 'SEMI', '', 'AUTO'], 0.022, 0.03, 30); e.position.set(-0.0156, -0.02, 0.055); e.rotation.y = -Math.PI / 2; g.add(e); }
+  { const e = engrave(['DALBIT DEFENSE  M4-K', 'CAL 5.56 NATO  SN 0412'], 0.08, 0.016, 26); e.position.set(-0.0156, -0.022, -0.03); e.rotation.y = -Math.PI / 2; g.add(e); }
   g.userData.mag = magG; g.userData.bolt = bolt; g.userData.cap = 30; g.userData.magwell = V(0, -0.06, -0.09);
   g.userData.muzzle = new THREE.Vector3(0, 0.004, -0.73); g.userData.eject = new THREE.Vector3(0.02, 0.01, -0.01); g.userData.auto = true; g.userData.name = '소총';
   // 오른손 = 권총손잡이, 왼손 = 총열 덮개 아래 받침. 달릴 땐 총구를 왼쪽 아래로 내림(로우 레디)
@@ -156,9 +162,9 @@ export class FX {
     this.smoke(gun.localToWorld(gun.userData.muzzle.clone()));
   }
   // 총구 연기 (천천히 퍼지며 사라짐)
-  smoke(p) {
-    for (let i = 0; i < 2; i++) { const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xb8b8b8, transparent: true, depthWrite: false, opacity: 0.3 })); m.position.copy(p); m.material.rotation = Math.random() * 6; this.scene.add(m);
-      this.parts.push({ m, v: new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.25 + Math.random() * 0.2, (Math.random() - 0.5) * 0.3), life: 1.3, L: 1.3, smoke: true, s0: 0.04, s1: 0.28 + Math.random() * 0.15 }); }
+  smoke(p, color = 0xb8b8b8, sc = 1) {
+    for (let i = 0; i < 2; i++) { const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color, transparent: true, depthWrite: false, opacity: 0.3 })); m.position.copy(p); m.material.rotation = Math.random() * 6; this.scene.add(m);
+      this.parts.push({ m, v: new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.25 + Math.random() * 0.2, (Math.random() - 0.5) * 0.3), life: 1.3, L: 1.3, smoke: true, s0: 0.04 * sc, s1: (0.28 + Math.random() * 0.15) * sc }); }
   }
   // 떨어지는 물건 (빈 탄창)
   drop(obj, v) { this.scene.add(obj); this.parts.push({ m: obj, v, spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0), life: 8, bounce: true, tink: true, fl: floorAt(obj.position) }); }
@@ -182,7 +188,11 @@ export class FX {
     const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
     const d = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.05), new THREE.MeshBasicMaterial({ map: holeTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
     d.position.copy(hit.point).addScaledVector(n, 0.003); d.lookAt(d.position.clone().add(n)); this.scene.add(d); this.decals.push(d);
+    // 벽 조각·먼지
+    for (let i = 0; i < 5; i++) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.012), this.chipM ||= new THREE.MeshStandardMaterial({ color: 0x8a857c, roughness: 0.9 })); c.position.copy(hit.point); this.scene.add(c); this.parts.push({ m: c, v: n.clone().multiplyScalar(1.5 + Math.random() * 2).add(new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 1.5, (Math.random() - 0.5) * 2)), spin: new THREE.Vector3(9, 7, 0), life: 1.6, bounce: true, fl: floorAt(hit.point) }); }
+    this.smoke(hit.point.clone().addScaledVector(n, 0.05), 0xb8b0a4, 0.5);
     for (let i = 0; i < 6; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.006, 4, 3), new THREE.MeshBasicMaterial({ color: 0xffd080, toneMapped: false })); s.position.copy(hit.point); this.scene.add(s); this.parts.push({ m: s, v: n.clone().multiplyScalar(2).add(new THREE.Vector3((Math.random() - 0.5) * 3, Math.random() * 2, (Math.random() - 0.5) * 3)), life: 0.25, fl: floorAt(hit.point) }); }
+    return d;
   }
   update(dt, audio) {
     for (let i = this.parts.length - 1; i >= 0; i--) {
@@ -193,7 +203,7 @@ export class FX {
       const fl = p.fl ?? 0;
       if (p.m.position.y < fl + 0.005) {
         if (p.blood) { if (Math.random() < 0.35) this.splat(p.m.position); p.life = 0; }
-        else if (p.bounce && p.v.y < -0.5) { p.v.y *= -0.35; p.v.x *= 0.5; p.v.z *= 0.5; p.m.position.y = fl + 0.005; if (p.tink) { audio?.play('key', { pos: p.m.position, vol: 0.25, rate: 2.4 + Math.random() }); p.tink = p.v.y > 0.6; } }
+        else if (p.bounce && p.v.y < -0.5) { p.v.y *= -0.35; p.v.x *= 0.5; p.v.z *= 0.5; p.m.position.y = fl + 0.005; if (p.tink) { audio?.play(Math.random() < 0.5 ? 'brass1' : 'brass2', { pos: p.m.position, vol: 0.45, rate: 0.95 + Math.random() * 0.15, dur: 0.6 }); p.tink = false; } }
         else { p.m.position.y = fl + 0.005; p.v.set(0, 0, 0); if (p.spin) p.spin.set(0, 0, 0); }
       }
       if (p.life <= 0) { p.m.removeFromParent(); this.parts.splice(i, 1); }

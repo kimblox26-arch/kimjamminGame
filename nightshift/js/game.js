@@ -293,11 +293,12 @@ export class Game {
   async doCheckout() {
     if (!this.running || this.busy) return;
     const c = this.cur;
-    if (!this.aim || this.aim.type === 'cig') return toast('계산대(포스기)에 점을 맞추고 눌러 주세요');
-    if (!c || c.done) return toast('계산할 손님이 없어요');
+    if (!c || c.done) return;
     if (c.trouble === 'refund') { this.busy = true; await this.meSay(ME.noRefund); await this.say(c, this.fresh(c, TROUBLE.refund.refused)); this.st.handled++; this.busy = false; return this.endTx(c, true); }
-    if (this.items.some(i => !i.scanned && !i.refund)) return toast('아직 바코드 안 찍은 상품이 있어요');
-    if (c.cig && !c.cigGiven) return toast(`손님이 ${c.cig.id}번 ${c.cig.name} 담배도 달라고 했어요`);
+    // 계산하기 한 번이면 끝까지 자동: 남은 상품 바코드 차례로 찍기 → 담배 꺼내기 → 결제
+    for (const it of this.items.filter(i => !i.scanned && !i.refund)) { await this.scanItem(it); await this.wait(0.1); if (c.gone) return; }
+    if (c.cig && !c.cigGiven) { const slot = this.store.cigSlots.find(s => s.userData.cig?.id === c.cig.id); if (slot) { await this.takeCig(slot); await this.wait(0.2); } }
+    if (this.items.some(i => !i.scanned && !i.refund)) return;
     if (!this.lines.length) return toast('찍은 상품이 없어요');
     // 술·담배 → 연령 확인
     if (this.lines.some(l => l.adult) && !c.idChecked) {

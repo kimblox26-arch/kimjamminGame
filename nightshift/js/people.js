@@ -5,6 +5,9 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { hairMesh } from './hair.js';
 
 const base = {};
+const TL = new THREE.TextureLoader(); let clothT, skinT;
+const CLOTH = () => clothT ||= Object.assign(TL.load('assets/tex/cloth_nrm.jpg'), { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, repeat: new THREE.Vector2(3, 3) });
+const SKIN = () => skinT ||= Object.assign(TL.load('assets/tex/skin_bump.jpg'), { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, repeat: new THREE.Vector2(4, 4) });
 const PHONE_BODY = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.3, metalness: 0.6 }), PHONE_SCR = new THREE.MeshBasicMaterial({ color: 0x9cc8ff, toneMapped: false });
 const pick = a => a[Math.floor(Math.random() * a.length)];
 export async function loadPeople(onProgress) {
@@ -79,6 +82,11 @@ export class Person {
       if (mn === 'Wolf3D_Headwear') o.visible = !!type.cowboy;
       if (mn === 'Wolf3D_Beard') o.visible = type.id === 'boss' || type.id === 'drunk' || Math.random() < 0.15;
     });
+    // 옷 주름(노멀맵)·피부 모공(범프)·실제 같은 거칠기
+    for (const [n, m] of Object.entries(this.mats)) {
+      if (/Outfit|Ch03|cloth|Top|Bottom/i.test(n)) { m.normalMap = CLOTH(); m.normalScale = new THREE.Vector2(0.9, 0.9); m.roughness = Math.max(m.roughness ?? 0.8, 0.82); m.needsUpdate = true; }
+      if (/Skin|Body|Head/i.test(n) && !/Outfit/.test(n)) { m.bumpMap = SKIN(); m.bumpScale = 0.25; m.roughness = 0.55; m.needsUpdate = true; }
+    }
     // 키 맞추기
     this.model.updateMatrixWorld(true);
     const top = findBone(this.model, 'HeadTop_End') || findBone(this.model, 'Head');
@@ -148,8 +156,8 @@ export class Person {
       const h = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 12, Math.PI * 0.78, Math.PI * 1.44, 0, Math.PI * 0.7), M(type.top || '#222', 0.95)); h.material.side = THREE.DoubleSide; h.scale.set(1.05, 1.1, 1.1); add(h, 0, ht - 0.115, -0.035);
     }
     if (this.kind === 'man') { // 머리카락 (머리결 카드 수백 장)
-      const style = type.id === 'boss' ? 'bald' : type.hat ? (type.hat === 'cap' || type.hat === 'police' ? 'sides' : null) : pick(['short', 'short', 'side', 'side', 'buzz']);
-      if (style) { const g = hairMesh(style, type.id === 'boss' ? '#8f8b86' : pick(['#16110d', '#1d1712', '#0e0c0b', '#2e2219', '#3a2a1e']), ht); add(g, 0, 0, 0); this.hairs.push(g); }
+      const style = type.id === 'boss' ? 'bald' : type.hat ? (type.hat === 'cap' || type.hat === 'police' ? 'sides' : null) : pick(['soft', 'soft', 'soft', 'side', 'buzz']);
+      if (style) { const g = hairMesh(style, type.id === 'boss' ? '#8f8b86' : pick(['#1a120d', '#20160f', '#120d0a', '#2a1c13', '#33241a']), ht); add(g, 0, 0, 0); this.hairs.push(g); }
     }
     if (type.hat === 'police') {
       const g = new THREE.Group(), cm = M('#14213d', 0.6);
@@ -253,13 +261,16 @@ export class Person {
     if (this.path.length && !this.frozen && !this.down) {
       const tgt = this.path[0]; _v.subVectors(tgt, r.position); _v.y = 0; const d = _v.length();
       const want = Math.atan2(_v.x, _v.z); this.face = want;
-      const step = this.speed * dt;
+      // 자연스럽게: 출발할 때 천천히 빨라지고, 멈출 곳 앞에서 서서히 느려짐 (끝 지점 0.9m 안)
+      const last = this.path.length === 1, wantSp = this.speed * (last ? Math.min(1, 0.35 + d / 0.9) : 1);
+      this.curSp = (this.curSp ?? 0) + (wantSp - (this.curSp ?? 0)) * Math.min(1, dt * 3.2);
+      const step = Math.max(0.15 * dt, this.curSp * dt);
       r.position.y += (tgt.y - r.position.y) * Math.min(1, step / Math.max(d, 1e-3));
       // 다른 사람에 밀려 지점에 딱 못 닿아도 도착으로 침 (+ 1.5초 넘게 못 가면 건너뜀)
       this.stuckT = (this.stuckT || 0) + dt; if (d < (this.lastD ?? 1e9) - 0.05) { this.stuckT = 0; this.lastD = d; }
-      if (d <= Math.max(step, 0.32) || this.stuckT > 1.5) { this.stuckT = 0; this.lastD = undefined; if (d <= 0.32) r.position.copy(tgt); this.path.shift(); if (!this.path.length) { this.play('idle'); const f = this.onArrive; this.onArrive = null; f?.(); } }
+      if (d <= Math.max(step, 0.32) || this.stuckT > 1.5) { this.stuckT = 0; this.lastD = undefined; if (d <= 0.32) r.position.copy(tgt); this.path.shift(); if (!this.path.length) { this.curSp = 0; this.play('idle'); const f = this.onArrive; this.onArrive = null; f?.(); } }
       else r.position.addScaledVector(_v.normalize(), step);
-      this.act.walk.timeScale = this.speed / 1.05 * (this.P.clutch > 0.5 ? 0.8 : 1); if (this.act.run) this.act.run.timeScale = Math.max(0.7, this.speed / 3.6);
+      this.act.walk.timeScale = Math.max(0.45, (this.curSp ?? this.speed) / 1.05) * (this.P.clutch > 0.5 ? 0.8 : 1); if (this.act.run) this.act.run.timeScale = Math.max(0.7, this.speed / 3.6);
       if (this.cur === this.act.walk && this.speed > 2.2) this.play('run', 0.2);
       if ((this.stepT -= dt) <= 0) { this.stepT = 0.52 / this.speed; this.audio.play(Math.random() < 0.5 ? 'step1' : 'step2', { pos: r.position, vol: 0.5, rate: 0.85 + Math.random() * 0.2 }); }
     } else if (this.faceTarget) { _v.subVectors(this.faceTarget, r.position); this.face = Math.atan2(_v.x, _v.z); }

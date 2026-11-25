@@ -219,3 +219,10 @@ body.riding #speedo{display:block} body.riding #bView{display:flex} body.in-car 
 body.riding #bPay,body.riding #bBag,body.riding #bMic,body.riding #bTurn,body.riding #bAtk,body.riding #bWpn,body.riding #dot,body.riding #aimLabel{display:none!important}
 body.court-mode #stars,body.court-mode #objective,body.court-mode #hpbar{display:none!important}
 body.outside #bPay,body.outside #bBag,body.outside #bTurn{display:none!important}
+
+/* 공격 버튼 → 총을 들었을 때만 '발사' */
+body:not(.armed) #bAtk{display:none!important}
+#bRun{position:absolute;left:calc(max(14px,env(safe-area-inset-left)) + 150px);bottom:calc(max(10px,env(safe-area-inset-bottom)) + 28px);width:64px;height:64px;border-radius:50%;background:rgba(28,38,58,.7)}
+#bRun.on{background:rgba(47,211,180,.55)}
+body.court-mode #bRun,body.riding #bRun{display:none!important}
+#sub,#mine,#toast{display:none!important}
