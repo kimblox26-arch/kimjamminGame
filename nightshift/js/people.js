@@ -219,9 +219,12 @@ export class Person {
     Object.assign(this.PT, { up: 0, beg: 0, clutch: zone === 'head' ? 0 : 1, hunch: zone === 'stomach' ? 1 : 0.4, kneel: zone === 'stomach' || zone === 'chest' || kneeling ? 1 : 0.5, knee1: 0 });
     this.spreadSign = Math.random() < 0.5 ? 1 : -1;
   }
+  // 차에 치이거나 밀려서 날아감 (속도 벡터, 점점 느려짐)
+  knock(v) { this.kv = v.clone(); }
   // 바닥에 누운 위치(피 웅덩이용)
   bodyCenter() { return this.root.position.clone().add(this.fallW ? this.fallW.clone().multiplyScalar(this.height * 0.45) : new THREE.Vector3()); }
   update(dt, camPos) {
+    if (this.kv) { this.root.position.addScaledVector(this.kv, dt); this.kv.multiplyScalar(Math.exp(-dt * 3.2)); if (this.kv.lengthSq() < 0.01) this.kv = null; if (this.still) { this.root.updateMatrixWorld(true); return; } }
     if (this.dead) {
       if (this.still) return;
       this.dieT += dt; this.t += dt; const T = this.dieT;
@@ -252,7 +255,9 @@ export class Person {
       const want = Math.atan2(_v.x, _v.z); this.face = want;
       const step = this.speed * dt;
       r.position.y += (tgt.y - r.position.y) * Math.min(1, step / Math.max(d, 1e-3));
-      if (d <= step) { r.position.copy(tgt); this.path.shift(); if (!this.path.length) { this.play('idle'); const f = this.onArrive; this.onArrive = null; f?.(); } }
+      // 다른 사람에 밀려 지점에 딱 못 닿아도 도착으로 침 (+ 1.5초 넘게 못 가면 건너뜀)
+      this.stuckT = (this.stuckT || 0) + dt; if (d < (this.lastD ?? 1e9) - 0.05) { this.stuckT = 0; this.lastD = d; }
+      if (d <= Math.max(step, 0.32) || this.stuckT > 1.5) { this.stuckT = 0; this.lastD = undefined; if (d <= 0.32) r.position.copy(tgt); this.path.shift(); if (!this.path.length) { this.play('idle'); const f = this.onArrive; this.onArrive = null; f?.(); } }
       else r.position.addScaledVector(_v.normalize(), step);
       this.act.walk.timeScale = this.speed / 1.05 * (this.P.clutch > 0.5 ? 0.8 : 1); if (this.act.run) this.act.run.timeScale = Math.max(0.7, this.speed / 3.6);
       if (this.cur === this.act.walk && this.speed > 2.2) this.play('run', 0.2);

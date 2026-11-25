@@ -197,3 +197,25 @@ body.court-mode #mmap,body.court-mode #hud .top,body.court-mode #bScan,body.cour
 #bigmap .mleg{position:absolute;left:max(14px,env(safe-area-inset-left));bottom:14px;display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:#c8d2dc;background:rgba(0,0,0,.55);padding:7px 10px;border-radius:10px;max-width:70vw}
 #bigmap .mleg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 #bigmap .mclose{position:absolute;right:16px;top:12px;margin:0;font-size:12px;color:#8a97a6}
+
+/* GTA식 HUD: 수배 별·체력·목표·속도계·탈것 버튼 */
+#stars{display:flex;gap:1px;font-size:20px;line-height:1;text-shadow:0 1px 3px #000}
+#stars i{font-style:normal;color:rgba(255,255,255,.25)} #stars i.on{color:#ffd36b;animation:blinkS .6s infinite alternate}
+@keyframes blinkS{to{color:#ff6b6b}}
+.stat.money b{color:#7fe3a0}
+#hpbar{position:absolute;left:max(14px,env(safe-area-inset-left));bottom:calc(max(10px,env(safe-area-inset-bottom)) + 150px);width:120px;height:8px;border-radius:5px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.2);overflow:hidden;--hp:100%}
+#hpbar i{display:block;height:100%;width:var(--hp);background:linear-gradient(90deg,#2fd36b,#9be36b);transition:width .2s}
+#hpbar.low i{background:linear-gradient(90deg,#ff3b3b,#ff8a5b)}
+#hurtfx{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(190,0,0,.65) 100%)}
+#hurtfx.on{animation:hurtA .55s ease-out}
+@keyframes hurtA{from{opacity:1}to{opacity:0}}
+#objective{position:absolute;left:50%;top:calc(max(8px,env(safe-area-inset-top)) + 46px);transform:translateX(-50%);display:none;align-items:center;gap:8px;background:rgba(0,0,0,.6);border:1px solid rgba(255,211,107,.5);border-radius:18px;padding:5px 12px;font-size:13px;max-width:70vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#objective.on{display:flex} #objective em{font-style:normal;color:#ffd36b;display:inline-block;font-size:14px} #objective i{font-style:normal;color:#ffd36b;font-weight:800}
+#speedo{display:none;position:absolute;left:50%;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 14px);transform:translateX(-50%);font-size:22px;font-weight:900;color:#fff;text-shadow:0 2px 6px #000;background:rgba(0,0,0,.45);padding:4px 14px;border-radius:14px}
+#bView,#bHorn{display:none;position:absolute;width:62px;height:62px;border-radius:50%;background:rgba(28,38,58,.72)}
+#bView{right:calc(max(10px,env(safe-area-inset-right)) + 8px);bottom:calc(max(10px,env(safe-area-inset-bottom)) + 124px)}
+#bHorn{right:calc(max(10px,env(safe-area-inset-right)) + 122px);bottom:calc(max(10px,env(safe-area-inset-bottom)) + 10px)}
+body.riding #speedo{display:block} body.riding #bView{display:flex} body.in-car #bHorn{display:flex}
+body.riding #bPay,body.riding #bBag,body.riding #bMic,body.riding #bTurn,body.riding #bAtk,body.riding #bWpn,body.riding #dot,body.riding #aimLabel{display:none!important}
+body.court-mode #stars,body.court-mode #objective,body.court-mode #hpbar{display:none!important}
+body.outside #bPay,body.outside #bBag,body.outside #bTurn{display:none!important}

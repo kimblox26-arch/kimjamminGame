@@ -58,7 +58,7 @@ export class MiniMap {
     const blink = Math.floor(performance.now() / 250) % 2;
     for (const m of this.markers()) {
       const r = (m.r || 1) * (big ? 2.2 : 1.6);
-      g.fillStyle = m.kind === 'police' ? (blink ? '#ff3b3b' : '#3b7bff') : m.kind === 'dead' ? '#b3131b' : m.kind === 'cop' ? '#3b7bff' : '#f2f2f2';
+      g.fillStyle = m.kind === 'police' ? (blink ? '#ff3b3b' : '#3b7bff') : m.kind === 'dead' ? '#b3131b' : m.kind === 'cop' ? '#3b7bff' : m.kind === 'goal' ? (blink ? '#ffd36b' : '#ff9f1c') : '#f2f2f2';
       g.beginPath(); g.arc(m.x, m.z, r * (m.kind === 'police' ? 1.4 : 1), 0, 7); g.fill();
     }
     // 나 (화살표)

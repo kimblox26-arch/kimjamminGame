@@ -94,6 +94,7 @@ const KIND_MATS = {
 export const SPAN = { cup: 0.122, tri: 0.09, tray: 0.24, jar: 0.078, bottle: 0.074, can: 0.072, soju: 0.078, bag: 0.165, box: 0.205, small: 0.082 };
 
 const tagGeo = new THREE.PlaneGeometry(0.078, 0.039).translate(0, -0.0195, 0);
+const _sm = new THREE.Matrix4(), _sr = new THREE.Matrix4(), _se = new THREE.Euler();
 export class Merch {
   constructor() { this.list = {}; this.tags = {}; this.looseList = {}; this.loose = []; }
   mat(x, y, z, ry, s = 1, rx = 0, rz = 0) { return new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(s, s, s)); }
@@ -113,7 +114,7 @@ export class Merch {
       const n = Math.random() < 0.07 ? 0 : Math.random() < 0.25 ? rows - 1 : rows;
       for (let d = 0; d < n; d++) {
         const dd = zFront + depthDir * (d * (kind === 'bag' ? 0.07 : step * 1.05) + 0.04);
-        const loose = d === 0 && kind !== 'soju' && Math.random() < 0.05 ? { dir: -depthDir, axis } : null;   // 맨 앞줄 일부는 손님이 건드리면 넘어짐
+        const loose = d === 0 && kind !== 'soju' && Math.random() < 0.14 ? { dir: -depthDir, axis } : null;   // 맨 앞줄 일부는 손님이 건드리면 넘어짐
         axis === 'x' ? this.add(kind, pos, y, dd, ry, cell, 1, loose) : this.add(kind, dd, y, pos, ry, cell, 1, loose);
       }
       pos += step * (1.02 + Math.random() * 0.06); left--;
@@ -154,5 +155,14 @@ export class Merch {
     step();
   }
   knockNear(pos, maxD = 2.5) { const c = this.loose.filter(e => !e.messy && e.pos.distanceTo(pos) < maxD); if (!c.length) return null; return this.mess(c[Math.random() * c.length | 0]); }
+  // 부딪힘: 근처 물건이 흔들흔들, 세게 부딪히면 하나 떨어짐
+  shake(pos, r = 1.3) { for (const e of this.loose) if (!e.messy && !e.anim && e.pos.distanceTo(pos) < r) e.shakeT = 0.7 + Math.random() * 0.3; }
+  update(dt) {
+    for (const e of this.loose) {
+      if (!(e.shakeT > 0)) continue; e.shakeT -= dt; if (e.messy || e.anim) { e.shakeT = 0; continue; }
+      const k = Math.max(0, e.shakeT), a = Math.sin(k * 38) * 0.09 * k;
+      _sm.copy(e.proper).multiply(_sr.makeRotationFromEuler(_se.set(a * 0.6, 0, a))); e.im.setMatrixAt(e.i, k > 0 ? _sm : e.proper); e.im.instanceMatrix.needsUpdate = true;
+    }
+  }
   messyCount() { return this.loose.filter(e => e.messy).length; }
 }

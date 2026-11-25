@@ -2,6 +2,7 @@
 // 밤이라 가게 대부분은 셔터가 내려져 있고, 몇 곳만 불이 켜져 있음. 기둥 광고판, 벤치, 출구 안내판, 자판기.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RAMPS, FLOORS } from './zones.js';
 
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 export const UNDER = {
@@ -9,13 +10,9 @@ export const UNDER = {
   hall: { x0: 34, x1: 76, z0: 3.0, z1: 18.0 },
   stairs: [{ x0: 26, x1: 34, z0: 4.2, z1: 6.0, exit: 1 }, { x0: 26, x1: 34, z0: 15.0, z1: 16.8, exit: 2 }],
 };
-// 발밑 높이: 계단은 비탈, 지하에 있으면 지하 바닥
-export function groundAt(x, z, feetY) {
-  for (const s of UNDER.stairs) if (x > s.x0 && x < s.x1 + 0.8 && z > s.z0 - 0.05 && z < s.z1 + 0.05) return UNDER.y * Math.min(1, (x - s.x0) / (s.x1 - s.x0));
-  const h = UNDER.hall;
-  if (feetY < -2 && x > h.x0 - 0.5 && x < h.x1 && z > h.z0 && z < h.z1) return UNDER.y;
-  return 0;
-}
+export { groundAt } from './zones.js';
+for (const s of UNDER.stairs) RAMPS.push({ x0: s.x0, x1: s.x1 + 0.8, z0: s.z0 - 0.05, z1: s.z1 + 0.05, axis: 'x', from: s.x0, to: s.x1, y0: 0, y1: UNDER.y });
+FLOORS.push({ x0: UNDER.hall.x0 - 0.5, x1: UNDER.hall.x1, z0: UNDER.hall.z0, z1: UNDER.hall.z1, y: UNDER.y });
 function ctex(w, h, draw, rep) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; } return t; }
 const rnd = (a, b) => a + Math.random() * (b - a);
 

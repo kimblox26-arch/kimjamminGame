@@ -40,12 +40,19 @@
     <div class="stat"><span>매출</span><b id="sales">0원</b></div>
     <div class="stat"><span>평판</span><b id="rep"></b></div>
     <div class="cctv" id="cctv" title="CCTV"><span data-ic="cctv"></span> CCTV</div>
+    <div class="stat money"><span>지갑</span><b id="money">0원</b></div>
+    <div id="stars"></div>
+    <button class="ic" id="bPhone" title="휴대폰"><svg viewBox="0 0 24 24" width="22" height="22"><rect x="6" y="2" width="12" height="20" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/></svg></button>
     <button class="ic" id="bPause" data-ic="pause"></button>
   </div>
   <div id="sub" class="subtitle"></div>
   <div id="mine" class="mine"></div>
   <div id="cust" class="cust hidden"><div class="cname" id="cname"></div><div class="mood"><i id="moodbar"></i></div><div class="want" id="cwant"></div></div>
   <canvas id="mmap" title="지도"></canvas>
+  <div id="objective"><em>▲</em><b></b><i></i></div>
+  <div id="hpbar"><i></i></div>
+  <div id="speedo"></div>
+  <button class="round-act view" id="bView"><b>시점</b></button><button class="round-act horn" id="bHorn"><b>경적</b></button>
   <div id="dot"><i></i></div><div id="aimLabel"></div>
   <div id="choices" class="choices hidden"></div>
   <div id="joy"><i></i></div>
@@ -76,6 +83,7 @@
 <div id="bigmap" class="hidden"><canvas></canvas><div class="mleg"><span><i style="background:#ffd36b"></i>나</span><span><i style="background:#2fd3b4"></i>편의점</span><span><i style="background:#c9a26b"></i>창고</span><span><i style="background:#f2f2f2"></i>사람</span><span><i style="background:#3b7bff"></i>경찰</span><span><i style="background:#b3131b"></i>쓰러진 사람</span></div><p class="mclose">화면을 누르면 닫혀요</p></div>
 <div id="toast"></div>
 <div id="fade"></div>
+<div id="hurtfx"></div>
 
 <script type="module" src="js/main.js"></script>
 </body>

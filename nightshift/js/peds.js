@@ -39,9 +39,10 @@ export class Pedestrians {
     if (!near.length) return;
     const seg = pk(near), m = this.along(seg, me);
     let s = Math.max(seg.a, Math.min(seg.b, m + (Math.random() < 0.5 ? -1 : 1) * (ug ? 6 + Math.random() * 18 : 14 + Math.random() * 30)));
-    const type = { ...pk(this.types) }, P = new Person(type, this.audio);
+    const thug = Math.random() < 0.12, type = thug ? { id: 'thug', name: '동네 깡패', model: 'man', h: 1.8, top: '#121212', bottom: '#1a1a1a', hat: Math.random() < 0.5 ? 'cap' : null, voice: [0.85, 1.05] } : { ...pk(this.types) }, P = new Person(type, this.audio);
     P.root.position.copy(this.pt(seg, s)); P.speed = 0.95 + Math.random() * 0.45; this.scene.add(P.root);
-    const c = { type, person: P, voice: type.voice, gender: type.model === 'woman' ? 'f' : 'm', vIdx: Math.random() * 6 | 0, mood: 50, ped: true, seg, ug, state: 'walk', wait: 0 };
+    const c = { type, person: P, voice: type.voice, gender: type.model === 'woman' ? 'f' : 'm', vIdx: Math.random() * 6 | 0, mood: 50, ped: true, seg, ug, state: 'walk', wait: 0, thug, armed: thug && Math.random() < 0.3 };
+    if (thug && Math.random() < 0.15) setTimeout(() => { if (!c.dead && c.person.root.position.distanceTo(this.yawObj.position) < 12) this.crime.provoke(c); }, 4000);
     const r = Math.random(); if (r < 0.22) { P.PT.phone = 1; P.keepPhone = true; } else if (r < 0.32) { P.PT.call = 1; c.caller = true; }
     P.fidget = !P.keepPhone && !c.caller; this.next(c); this.list.push(c);
   }
@@ -53,12 +54,21 @@ export class Pedestrians {
     s = Math.max(seg.a, Math.min(seg.b, s));
     c.person.walk([this.pt(seg, s)]).then(() => { if (c.dead || c.down) return; if (c.state === 'flee') { c.state = 'hide'; c.person.PT.cover = 1; c.person.PT.kneel = 0.6; return; } c.wait = 1 + Math.random() * 4; });
   }
+  // 차에서 끌려 나온 운전자 등: 그 자리에서 도망
+  addFleeing(pos, from) {
+    const type = { ...pk(this.types) }, P = new Person(type, this.audio); P.root.position.copy(pos).setY(0); this.scene.add(P.root);
+    const me = this.yawObj.position, seg = this.segs.filter(s => !s.ug).sort((a, b) => this.dist(a, pos) - this.dist(b, pos))[0];
+    const c = { type, person: P, voice: type.voice, gender: type.model === 'woman' ? 'f' : 'm', vIdx: Math.random() * 6 | 0, mood: 0, ped: true, seg, ug: false, state: 'flee', from: from || me.clone() };
+    this.list.push(c); P.speed = 4; const away = pos.clone().sub(c.from).setY(0).normalize(); P.walk([pos.clone().addScaledVector(away, 25).setY(0)]); this.crime.vox(c, 'scream', 0.2);
+    return c;
+  }
   remove(c) { c.person.dispose(); this.list.splice(this.list.indexOf(c), 1); }
   // 총소리 들림
   gunshot(from) {
     const g = this.game;
     for (const c of this.list) {
-      if (c.dead || c.down) continue; const d = c.person.root.position.distanceTo(from); if (d > 55 || c.state === 'flee' || c.state === 'cower') continue;
+      if (c.dead || c.down || c.aggro) continue; const d = c.person.root.position.distanceTo(from); if (d > 55 || c.state === 'flee' || c.state === 'cower') continue;
+      if (c.thug && d < 30 && Math.random() < (c.armed ? 0.8 : 0.4)) { this.crime.provoke(c); continue; }
       const P = c.person; c.state = 'startle'; c.alertT = 0.35 + Math.random() * 0.5; c.from = from.clone(); P.pause(true); P.lookAt(from); P.PT.phone = 0; P.PT.call = 0; P.keepPhone = false; P.fidget = false;
       P.fl.push({ zone: 'chest', side: 'R', t: 0, T: 0.25, axis: V3(0, 1, 0).cross(P.root.position.clone().sub(from).setY(0).normalize()).normalize(), amp: 0.5 });
       if (d < 30 && Math.random() < 0.7) this.crime.vox(c, 'scream', Math.random() * 0.4);
@@ -84,6 +94,7 @@ export class Pedestrians {
     const dead = [...this.list.filter(c => c.dead), ...this.game.customers.filter(c => c.dead), ...this.crime.officers.filter(o => o.dead).map(o => o.ref)];
     for (const c of this.list) {
       const P = c.person; P.update(dt, cam); if (c.dead || c.down) continue;
+      if (c.aggro) { this.crime.fight(c, dt); continue; }
       if (c.state === 'walk' && c.wait > 0 && (c.wait -= dt) <= 0) this.next(c);
       if (c.state === 'walk' && c.caller && this.chatCool < 0 && P.root.position.distanceTo(me) < 9) { this.chatCool = 14; this.game.say(c, pk(CHAT)); }
       // 쓰러진 사람 발견

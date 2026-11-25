@@ -22,6 +22,11 @@ import { Crime } from './crime.js';
 import { makePistol, makeRifle } from './weapons.js';
 import { MiniMap } from './map.js';
 import { Pedestrians } from './peds.js';
+import { Crowd } from './crowd.js';
+import { Driving } from './drive.js';
+import { Missions } from './missions.js';
+import { buildArmory, buildTower, buildCafe, buildPrison, Animals, TOWER, ARMORY } from './world2.js';
+import { PRISON } from './places.js';
 import { buildUnderpass, UNDER } from './underpass.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -82,7 +87,7 @@ let aimT = 0;
 function updateAim(dt) {
   if (!game?.running || (aimT += dt) < 0.08) return; aimT = 0;
   ray.setFromCamera(center, camera); ray.far = 3.4;
-  const C = store.C, list = [...game.items.filter(i => !i.scanned || i.cig).map(i => i.mesh), ...store.cigSlots, store.mw, C.pos, C.drawer.group, C.reader, store.counterHit, storage.shop, ...(store.merch.looseMeshes || [])];
+  const C = store.C, list = [...game.items.filter(i => !i.scanned || i.cig).map(i => i.mesh), ...store.cigSlots, store.mw, C.pos, C.drawer.group, C.reader, store.counterHit, ...armory.hits, ...cafe.hits, prison.ventHit, prison.holeHit, ...(store.merch.looseMeshes || [])];
   let aim = null, hitD = 99;
   for (const hit of ray.intersectObjects(list, true)) {
     let o = hit.object;
@@ -92,7 +97,7 @@ function updateAim(dt) {
     hitD = hit.distance;
     if (o.userData.item) { const it = o.userData.item; if (it.scanned) continue; aim = { type: 'item', item: it, label: `${it.name} · ${it.price.toLocaleString()}원` }; }
     else if (o.userData.cig) aim = { type: 'cig', obj: o, label: `${o.userData.cig.id}번 ${o.userData.cig.name} · ${o.userData.cig.price.toLocaleString()}원` };
-    else aim = { type: o.userData.aim, label: { mw: '전자레인지', guns: '총기 보관함', counter: '계산대' }[o.userData.aim] || '' };
+    else aim = { type: o.userData.aim, label: { mw: '전자레인지', guns: '총기 보관함', counter: '계산대', ammo: '탄약 상자', cafe: '카운터 · 아메리카노 4,500원', vent: '헐거운 환풍구', fence: '울타리 개구멍' }[o.userData.aim] || '' };
     break;
   }
   // 사람 (총이면 멀리까지)
@@ -103,8 +108,11 @@ function updateAim(dt) {
   game.aim = aim;
   const dot = $('dot'); dot.className = aim ? 'on ' + aim.type : '';
   $('aimLabel').textContent = aim ? aim.label : '';
-  $('bScan').querySelector('b').textContent = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기' }[aim?.type] || '바코드 찍기';
-  $('bScan').classList.toggle('ready', !!aim && !['counter', 'person'].includes(aim.type));
+  let lab = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기', ammo: '탄약 보충', cafe: '커피 주문', vent: '환풍구 뜯기', fence: '개구멍 통과' }[aim?.type], ready = !!aim && !['counter', 'person'].includes(aim.type);
+  if (driving.ride) { lab = driving.ride.kind === 'bus' ? '버스 내리기' : '내리기'; ready = true; }
+  else if (!aim || aim.type === 'person') { const n = driving.near(); if (n) { lab = driving.label(n); ready = true; } else if (nearElevator()) { lab = '엘리베이터'; ready = true; } }
+  $('bScan').querySelector('b').textContent = lab || '바코드 찍기';
+  $('bScan').classList.toggle('ready', ready);
   $('bPay').classList.toggle('ready', !!aim && aim.type !== 'cig' && !!game.cur && !game.items.some(i => !i.scanned && !i.refund));
   $('bAtk').classList.toggle('ready', aim?.type === 'person');
 }
@@ -133,7 +141,7 @@ const voice = new Voice({
   },
 });
 
-let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap, under, sky, hemi, ugLight, peds;
+let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap, under, sky, hemi, ugLight, peds, crowd, driving, missions, armory, tower, cafe, prison, animals;
 paintIcons();
 async function boot() {
   const bar = $('loadbar'), txt = $('loadtxt'); let p = [0, 0, 0];
@@ -149,33 +157,42 @@ async function boot() {
   ]);
   // 도시·창고·법정·충돌·이동·범죄
   const colliders = [...STORE_COLLIDERS];
-  city = buildCity(scene, { onCollider: c => colliders.push(c), holes: UNDER.stairs });
+  city = buildCity(scene, { onCollider: c => colliders.push(c), holes: [...UNDER.stairs, ARMORY.stair] });
+  for (let i = colliders.length - 1; i >= 0; i--) { const c = colliders[i]; if (Math.abs(c.z0 + 14.1) < 0.05 && (Math.abs(c.x0 - 20.4) < 0.05 || Math.abs(c.x0 - 4.9) < 0.05)) colliders.splice(i, 1); }  // 들어갈 수 있는 건물(달빛타워·카페)은 벽만
+  const col = c => colliders.push(c);
+  armory = buildArmory(scene, col); tower = buildTower(scene, col); cafe = buildCafe(scene, col, audio); prison = buildPrison(scene, col, PRISON); animals = new Animals(scene, audio);
   under = buildUnderpass(scene, c => colliders.push(c)); buildSky();
   storage = buildStorage(scene, c => colliders.push(c));
   const courtB = buildCourt(scene);
-  vehicles.car.visible = false; traffic = makeTraffic(scene, vehicles, audio, CAR_COLORS);
+  vehicles.car.visible = false; traffic = makeTraffic(scene, vehicles, audio, CAR_COLORS, {
+    obstacles: () => { const out = [], me = yawObj.position; if (game?.running) out.push({ x: me.x, z: me.z, player: true }); for (const c of crowd?.people() || []) { const p = c.person?.root?.position; if (p && !c.dead && Math.abs(p.y) < 1 && Math.abs(p.z - 10.5) < 400) out.push({ x: p.x, z: p.z, person: c }); } return out; },
+    hit: (c, v, dir, sp) => crime.carHit(c, dir, sp, false) });
   mover = new Mover({ yawObj, camera, look, audio, colliders }); Person.blockers = colliders;
   game = new Game({ renderer, scene, camera, store, hands, audio, voice, settings, look });
   crime = new Crime({ game, scene, camera, yawObj, look, audio, hands, vehicles, mover });
-  // 총기 보관함 안: 소총 2정(세워서) + 권총 2정(선반 위)
-  { const cab = storage.cabinet; for (const dx of [-0.17, 0.17]) { const r = makeRifle(); r.rotation.set(Math.PI / 2, 0, 0); r.position.set(dx, 1.32, -0.2); cab.add(r); }
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 0.3), new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.6, roughness: 0.4 })); shelf.position.set(0, 0.42, -0.12); cab.add(shelf);
-    for (const dx of [-0.15, 0.15]) { const p = makePistol(); p.rotation.set(0, Math.PI / 2 + 0.2, Math.PI / 2); p.position.set(dx, 0.45, -0.12); cab.add(p); } }
-  peds = new Pedestrians({ scene, audio, game, crime, yawObj, camera }); crime.peds = peds;
+  peds = new Pedestrians({ scene, audio, game, crime, yawObj, camera }); crime.peds = peds; crime.extra = []; crime.prison = prison; courtB.prison.visible = false;
+  crowd = new Crowd({ game, crime, peds, yawObj, colliders, mover });
+  driving = new Driving({ scene, camera, yawObj, look, mover, audio, hands, vehicles, traffic, crime, game, colliders, crowd }); crime.drive = driving;
+  driving.hitPerson = (c, dir, sp, byMe) => crime.carHit(c, dir, sp, byMe);
+  driving.spawnDriver = car => { const S = car.userData.size; return peds.addFleeing(car.localToWorld(new THREE.Vector3(S.x / 2 + 0.9, 0, S.z * 0.1)), yawObj.position.clone()); };
+  mover.onBump = (p, sp) => { store.merch.shake(p); audio.play('bag', { pos: p, vol: 0.3, rate: 1.9 }); audio.play('key', { pos: p, vol: 0.25, rate: 1.6 }); if (sp > 2.4 && Math.random() < 0.45) store.merch.knockNear(p, 1.4); };
   minimap = new MiniMap({ city, yawObj, look, markers: () => {
     const out = [];
     for (const c of peds.list) out.push({ x: c.person.root.position.x, z: c.person.root.position.z, kind: c.dead ? 'dead' : 'person' });
     for (const c of game.customers) out.push({ x: c.person.root.position.x, z: c.person.root.position.z, kind: c.dead ? 'dead' : 'person' });
     if (game.boss) out.push({ x: game.boss.root.position.x, z: game.boss.root.position.z, kind: game.bossDead ? 'dead' : 'person' });
     for (const o of crime.officers) out.push({ x: o.root.position.x, z: o.root.position.z, kind: o.dead ? 'dead' : 'cop' });
+    out.push(...(missions?.markers() || []));
     for (const P of crime.cars || []) out.push({ x: P.car.position.x, z: P.car.position.z, kind: 'police', r: 1.6 });
     return out;
   } });
-  crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court, under.group];
+  missions = new Missions({ scene, audio, game, crime, peds, yawObj, look, traffic, drive: driving, minimap, city, tower: TOWER, extra: crime.extra }); crime.money = (n, w) => missions.money(n, w); missions.money(0);
+  crime.onEscape = () => toast('탈옥수가 됐어요. 경찰을 피해 도시로 숨어드세요! (휴대폰에서 미션·일자리)', 'bad', 4000);
+  crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court, under.group, armory.group, tower.group, cafe.group, prison.group];
   crime.onExit = () => { crime.cleanup(); peds.clear(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); peds.clear(); startShift(1); };
   game.crime = crime; game.onShop = () => openShop(); game.mover = mover; game.yawObjDist = () => Math.hypot(yawObj.position.x - SPOT.cam.x, yawObj.position.z - SPOT.cam.z);
   game.onExit = () => toMenu(); game.onNext = (d) => startShift(d);
-  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds };
+  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide };
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
   const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 3.6), new THREE.MeshBasicMaterial()); hitBox.visible = false; hitBox.position.set(2.6, 0.93, 0.6); hitBox.userData.aim = 'counter'; scene.add(hitBox); store.counterHit = hitBox;
@@ -256,7 +273,31 @@ window.__nativeBack = () => {
   pause();
 };
 // HUD 버튼
-$('bScan').onclick = () => { audio.resume(); game.doPrimary(); };
+$('bScan').onclick = () => {
+  audio.resume(); const a = game.aim;
+  if (driving.ride) return driving.exit();
+  if (a?.type === 'ammo') { crime.ammo = { pistol: 15, rifle: 30 }; crime.hud(); audio.play('key', { vol: 0.9, rate: 0.7 }); audio.play('bag', { vol: 0.5, rate: 0.6 }); return toast('탄약을 가득 채웠어요', 'good', 1500); }
+  if (a?.type === 'cafe') { if (missions.money(0) < 4500) return toast('돈이 부족해요', 'bad', 1500); missions.money(-4500, '아메리카노'); crime.hp = Math.min(100, crime.hp + 30); crime.hpHud(); audio.play('register', { vol: 0.6 }); return game.say({ type: { name: '바리스타', id: 'barista' }, person: { talk: 0, gesture() { }, smile: 0 }, voice: [1.15, 1.02], gender: 'f', vIdx: 2, mood: 70 }, ['아메리카노 나왔습니다~ 맛있게 드세요!', 'happy']); }
+  if (a?.type === 'vent') return crime.ventTry();
+  if (a?.type === 'fence') return crime.escape();
+  if (!a || a.type === 'person') { const n = driving.near(); if (n) return driving.enter(n); if (nearElevator()) return elevatorMenu(); }
+  game.doPrimary();
+};
+// 엘리베이터: 앞에 서면 버튼 → 층 고르기 → 문 닫힘 → 칸이 올라감(안에서) → 문 열림 '띵'
+function nearElevator() { const p = yawObj.position, E = TOWER.ev, f = p.y - 1.55; return !driving.ride && p.x > E.x0 - 0.4 && p.x < E.x1 + 0.4 && p.z > E.z1 - 1.6 && p.z < E.z1 + 1.6 && tower.stops.some(y => Math.abs(y - f) < 0.6); }
+function elevatorMenu() {
+  const f = yawObj.position.y - 1.55, cur = tower.stops.reduce((a, y) => Math.abs(y - f) < Math.abs(a - f) ? y : a, 0);
+  modal(`<h2>엘리베이터</h2><p>몇 층으로 갈까요?</p>`, [['1층 로비', 'gray', () => elevatorRide(cur, 0)], ['5층 사무실', 'blue', () => elevatorRide(cur, TOWER.f5)], ['옥상 (R)', 'blue', () => elevatorRide(cur, TOWER.roof)], ['닫기', 'gray', () => { }]]);
+}
+async function elevatorRide(from, to) {
+  if (from === to) return; const car = tower.evCar, E = TOWER.ev, cx = (E.x0 + E.x1) / 2, sleep = ms => new Promise(r => setTimeout(r, ms));
+  mover.enabled = false; car.position.y = from; tower.setDoors(1); audio.play('chime', { vol: 0.5, rate: 1.6 });
+  yawObj.position.set(cx, from + 1.55, car.position.z - 0.1); look.yaw = Math.PI; await sleep(500); tower.setDoors(0); audio.play('door', { vol: 0.5, rate: 1.4 });
+  const t0 = performance.now(), dur = 1500 + Math.abs(to - from) * 90, hum = audio.play('engine', { vol: 0.35, rate: 0.32, loop: true });
+  await new Promise(res => { const step = () => { const k = Math.min(1, (performance.now() - t0) / dur), e = k * k * (3 - 2 * k); car.position.y = from + (to - from) * e; yawObj.position.y = car.position.y + 1.55; if (k < 1) requestAnimationFrame(step); else res(); }; step(); });
+  hum?.stop?.(); audio.play('chime', { vol: 0.8, rate: 1.9 }); tower.setDoors(1); await sleep(400);
+  yawObj.position.set(cx, to + 1.55, E.z1 + 0.6); look.yaw = Math.PI; mover.enabled = true; toast({ 0: '1층 로비', [TOWER.f5]: '5층 사무실', [TOWER.roof]: '옥상' }[to] + '입니다', '', 1500);
+}
 $('bPay').onclick = () => { audio.resume(); game.doCheckout(); };
 $('bTurn').onclick = () => look.turnTo(Math.abs(Math.atan2(Math.sin(look.yaw - Math.PI / 2), Math.cos(look.yaw - Math.PI / 2))) < 1.5 ? -Math.PI / 2 : Math.PI / 2);
 $('bMic').onclick = () => { audio.resume(); voice.toggle(); };
@@ -287,7 +328,7 @@ function loop() {
   hands?.update(dt, t);
   updateAim(dt); updateLiquids(dt);
   if (game?.running) minimap?.update(dt);
-  if (game?.running && !crime?.inCourt) peds?.update(dt, true);
+  if (game?.running && !crime?.inCourt) { peds?.update(dt, !crime.inPrison); crowd?.update(dt); driving?.update(dt); missions?.update(dt); animals?.update(dt, yawObj.position); store.merch.update(dt); const cw = camera.getWorldPosition(new THREE.Vector3()); for (const c of crime.extra) c.person.update(dt, cw); }
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }
   envUpdate(dt);
@@ -313,6 +354,7 @@ function buildSky() {
 // 실내·바깥·지하에 따라 안개 거리와 빛 바꾸기
 function envUpdate(dt) {
   if (!sky) return;
+  { const p = yawObj.position, inS = p.x > -5.6 && p.x < 5.2 && p.z > -8.4 && p.z < 4.4 && p.y < 3 && p.y > 0 && !crime?.inPrison; document.body.classList.toggle('outside', !inS); }
   const p = yawObj.position, feet = p.y - 1.55, ug = feet < -1.2 && Math.abs(p.z) < 40, inStore = p.x > -5.4 && p.x < 5 && p.z > -8.2 && p.z < 4.2 && !ug;
   const k = Math.min(1, dt * 2.5), fn = ug ? 10 : inStore ? 14 : 30, ff = ug ? 60 : inStore ? 50 : 200;
   scene.fog.near += (fn - scene.fog.near) * k; scene.fog.far += (ff - scene.fog.far) * k;

@@ -59,7 +59,7 @@ export class Game {
     this.boss?.update(dt, camW);
     if (!this.intro && !this.violence && this.min < 455 && (this.nextSpawn -= dt) <= 0 && this.customers.length < 3) { this.spawn(); this.nextSpawn = rnd(18, 36) * Math.max(0.6, 1 - this.day * 0.06); }
     if (!this.intro && !this.bossVisited && this.t > this.bossVisitAt && !this.cur) { this.bossVisited = true; this.bossScene('visit'); }
-    if (this.min >= 480 && !this.customers.length && !this.ending && !this.boss) { this.ending = true; this.bossScene('end'); }
+    if (this.min >= 480 && !this.freeRoam && !this.customers.length && !this.ending && !this.boss) { this.ending = true; this.bossScene('end'); }
     const s = this.store, want = this.doorOpenUntil > this.t ? 1 : 0;
     s.doorAngle += (want - s.doorAngle) * Math.min(1, dt * 5); s.door.rotation.y = -s.doorAngle * 1.3;
     const D = s.C.drawer; D.open += ((this.drawerOpen ? 1 : 0) - D.open) * Math.min(1, dt * 7); D.tray.position.x = D.open * 0.3;
@@ -79,7 +79,10 @@ export class Game {
     c.person.talk = 1; c.person.smile = emo === 'happy' ? 0.6 : (c.mood > 70 ? 0.25 : 0);
     if (emo === 'angry' || emo === 'annoyed') { if (Math.random() < 0.5) c.person.gesture('headShake'); } else if (Math.random() < 0.3) c.person.gesture('agree');
     const [ep, er] = EMO[emo] || EMO.calm;
-    return new Promise(r => this.audio.speak(text, { pitch: c.voice[0] * ep, rate: c.voice[1] * er, gender: c.gender, idx: c.vIdx }, () => { c.person.talk = 0; after?.(); r(); }));
+    // 사람처럼: 가끔 '음…', '아,' 같은 말버릇과 쉼, 말할 때마다 빠르기·높이가 조금씩 다름
+    let spoken = text; if (spoken.length > 8 && Math.random() < 0.22 && !/^(아|어|음|그|저기|야|헉|꺄)/.test(spoken)) spoken = pick(['음… ', '아, ', '어… ', '그… ', '저기… ']) + spoken;
+    spoken = spoken.replace(/([.?!])\s+/g, '$1 … ');
+    return new Promise(r => this.audio.speak(spoken, { pitch: c.voice[0] * ep * (0.97 + Math.random() * 0.06), rate: c.voice[1] * er * (0.95 + Math.random() * 0.1), gender: c.gender, idx: c.vIdx }, () => { c.person.talk = 0; after?.(); r(); }));
   }
   // 점원(나)이 하는 말: 자막엔 숫자, 목소리는 한국어 읽기
   meSay(arr, n) {

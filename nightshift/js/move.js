@@ -1,6 +1,6 @@
 // 걸어 다니기: 왼쪽 아래 조이스틱(모바일) / WASD·방향키(PC, Shift 달리기), 벽·진열대 충돌, 자동문, 발소리, 걸을 때 화면 흔들림
 import * as THREE from 'three';
-import { groundAt } from './underpass.js';
+import { groundAt, activeAt } from './zones.js';
 
 const RAD = 0.28;
 // 매장 안 가구·벽 (x0,x1,z0,z1)
@@ -15,6 +15,7 @@ export const STORE_COLLIDERS = [
   { x0: -3.98, x1: -2.26, z0: 3.4, z1: 3.85 }, { x0: -2.38, x1: -1.92, z0: 3.4, z1: 3.82 }, { x0: 0.08, x1: 0.52, z0: 3.38, z1: 3.82 },
 ];
 
+for (const i of [6, 7, 8, 9, 12]) STORE_COLLIDERS[i].shelf = true;   // 부딪히면 물건이 흔들리는 진열대
 export class Mover {
   constructor({ yawObj, camera, look, audio, colliders }) {
     Object.assign(this, { yawObj, camera, look, audio });
@@ -43,7 +44,8 @@ export class Mover {
       const mx = (fx * -y + rx * x), mz = (fz * -y + rz * x), n = Math.hypot(mx, mz) || 1;
       const step = speed * dt;
       p.x += mx / n * step; p.z += mz / n * step;
-      this.collide(p);
+      this.bumped = null; this.collide(p);
+      if (this.bumped && (this.bumpCool = (this.bumpCool || 0) - dt) < 0) { this.bumpCool = 0.5; this.onBump?.(p.clone(), run ? speed : speed * 0.6); }
       this.stepAcc += step; this.phase += step * 3.4;
       if (this.stepAcc > (run ? 0.85 : 0.7)) { this.stepAcc = 0; const out = (p.z > 4.1 || p.z < -8.1) && p.y > 0; this.audio.play(this.foot++ % 2 ? 'step1' : 'step2', { pos: new THREE.Vector3(p.x, p.y - 1.45, p.z), vol: out ? 0.7 : 0.55, rate: (out ? 0.8 : 1.05) + Math.random() * 0.1 }); }
       this.look.target = null;
@@ -56,11 +58,12 @@ export class Mover {
     this.moving = speed > 0.05; this.running = this.moving && run;
   }
   collide(p) {
-    const lv = p.y - 1.55 < -1.5 ? -1 : 0;   // 지상(0) / 지하(-1) 충돌 구분
+    const feet = p.y - 1.55;   // 높이(지상·지하·건물 층)에 맞는 충돌만
     for (let it = 0; it < 2; it++) for (const c of this.colliders) {
-      const cl = c.lv ?? 0; if (cl !== 'all' && cl !== lv) continue;
+      if (p.x < c.x0 - 1 || p.x > c.x1 + 1 || p.z < c.z0 - 1 || p.z > c.z1 + 1 || !activeAt(c, feet)) continue;
       const qx = Math.max(c.x0, Math.min(p.x, c.x1)), qz = Math.max(c.z0, Math.min(p.z, c.z1)), dx = p.x - qx, dz = p.z - qz, d = Math.hypot(dx, dz);
       if (d < RAD) {
+        if (c.shelf && it === 0) this.bumped = c;
         if (d > 1e-4) { p.x = qx + dx / d * RAD; p.z = qz + dz / d * RAD; }
         else { const o = [p.x - c.x0, c.x1 - p.x, p.z - c.z0, c.z1 - p.z], m = Math.min(...o), i = o.indexOf(m); if (i === 0) p.x = c.x0 - RAD; else if (i === 1) p.x = c.x1 + RAD; else if (i === 2) p.z = c.z0 - RAD; else p.z = c.z1 + RAD; }
       }

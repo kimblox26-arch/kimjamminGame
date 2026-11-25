@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR",sans-serif';
+const WIND = { value: 0 };
 const R = (a) => a[Math.random() * a.length | 0], rnd = (a, b) => a + Math.random() * (b - a);
 function ctex(w, h, draw, repeat = true) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; }
 // 도로망: 큰길(z 6.6~14.4, x 방향) + 세로길 x=-45, x=50 + 뒷길 z=-70
@@ -129,6 +130,11 @@ export function buildCity(scene, { onCollider, holes = [] }) {
   };
   // 공원: 나무·산책로·연못·벤치·가로등
   const mTrunk = M({ color: 0x3b2a1f }), mLeaf = M({ color: 0x1f3a22, roughness: 0.95 }), mLeaf2 = M({ color: 0x2a4a26, roughness: 0.95 });
+  // 바람에 흔들리는 나뭇잎 (높을수록 크게, 잎은 파르르)
+  for (const m of [mLeaf, mLeaf2]) m.onBeforeCompile = sh => { sh.uniforms.uTime = WIND; sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+    float hh = max(0., position.y - 2.3); float gust = 0.6 + 0.4 * sin(uTime * 0.37 + position.x * 0.01);
+    transformed.x += (sin(uTime * 1.3 + position.x * 0.35 + position.z * 0.2) * 0.07 * hh + sin(uTime * 7.0 + position.y * 9.0 + position.x * 5.0) * 0.012) * gust;
+    transformed.z += (cos(uTime * 1.1 + position.z * 0.3) * 0.05 * hh + cos(uTime * 6.3 + position.z * 8.0) * 0.012) * gust;`); };
   const tree = (x, z, s = 1) => { box(mTrunk, 0.22 * s, 2.6 * s, 0.22 * s, x, 1.3 * s, z); for (let i = 0; i < 3; i++) add(i % 2 ? mLeaf : mLeaf2, new THREE.IcosahedronGeometry(rnd(0.9, 1.3) * s, 1).translate(x + rnd(-0.5, 0.5) * s, rnd(3, 4.2) * s, z + rnd(-0.5, 0.5) * s)); box(M({ color: 0x4a4038 }), 1.1, 0.12, 1.1, x, 0.06, z); };
   const mPole = M({ color: 0x3a3d42, metalness: 0.6, roughness: 0.4 }), mBulb = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc77a).multiplyScalar(3) });
   const poolTex = ctex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w / 2); gr.addColorStop(0, 'rgba(255,190,110,.45)'); gr.addColorStop(1, 'rgba(255,190,110,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }, false);
@@ -164,7 +170,7 @@ export function buildCity(scene, { onCollider, holes = [] }) {
     const cx = (bx0 + bx1) / 2, cz = (bz0 + bz1) / 2, edgeN = j === 0, edgeS = j === EW.length;
     if (cx > -45 && cx < 50 && cz > -72 && cz < 10) { // 우리 가게 블록 (가게·창고·이웃 상가)
       building(-24, -5.3, -14, 3.9, 14, 'old', 10); building(-37.6, -24.5, -14, 3.9, 22, 'apt', 10);
-      building(5.0, 20, -14, 3.9, 11, 'brick', 10); building(-5.2, 4.9, -16, -8.4, 14, 'stone', null); building(20.5, 42.6, -14, 3.9, 26, 'office', 10);
+      building(5.0, 20, -14, 3.9, 11, 'brick', 10, false); building(-5.2, 4.9, -16, -8.4, 14, 'stone', null); building(20.5, 42.6, -14, 3.9, 26, 'office', 10, false);
       row(bx0, bx1, bz0, bz0 + rnd(12, 16), bz0 - 1, ['apt', 'brick', 'stone', 'old'], 8, 30);
       continue;
     }
@@ -213,12 +219,13 @@ export function buildCity(scene, { onCollider, holes = [] }) {
   const bsign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.5), new THREE.MeshBasicMaterial({ toneMapped: false, map: ctex(256, 140, (g, w, h) => { g.fillStyle = '#0b5cd6'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = `900 34px ${FONT}`; g.fillText('달빛시장 앞', 16, 50); g.font = `700 24px ${FONT}`; g.fillText('472  740  N62', 16, 100); }, false) }));
   bsign.position.set(-2.4, 2.4, 0.3); stop.add(bsign); box(mPole, 0.08, 2.8, 0.08, 16 - 2.4, 1.4, ROADS.main.z0 - 1.3);
   onCollider?.({ x0: 13.8, x1: 18.2, z0: ROADS.main.z0 - 2.45, z1: ROADS.main.z0 - 2.25 });
+  for (const x of BUS_STOPS.slice(1)) { box(mPole, 0.08, 2.8, 0.08, x - 2.4, 1.4, ROADS.main.z0 - 1.3); const sg = bsign.clone(); sg.position.set(x - 2.4, 2.4, ROADS.main.z0 - 1.25); root.add(sg); box(M({ color: 0x8a6a4b }), 2.0, 0.08, 0.4, x, 0.48, ROADS.main.z0 - 2.2); }
 
   // 합치기
   for (const [mat, list] of geos) { const m = new THREE.Mesh(mergeGeometries(list.map(g => { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); return g; })), mat); m.matrixAutoUpdate = false; root.add(m); }
   // 신호 바뀌기
   let sig = 0, sigT = 0;
-  const update = (dt) => { if ((sigT += dt) > [12, 3, 12][sig]) { sigT = 0; sig = (sig + 1) % 3; } lights.forEach((b, i) => b.forEach((m, k) => (m.material.opacity = 1, m.visible = k === (i % 2 ? (2 - sig + 3) % 3 : sig)))); };
+  const update = (dt) => { WIND.value += dt; if ((sigT += dt) > [12, 3, 12][sig]) { sigT = 0; sig = (sig + 1) % 3; } lights.forEach((b, i) => b.forEach((m, k) => (m.material.opacity = 1, m.visible = k === (i % 2 ? (2 - sig + 3) % 3 : sig)))); };
   return { root, update, blds, ROADW, parks: parkLabel, schools: schoolLabel };
 }
 
@@ -234,11 +241,19 @@ function busMesh(color, num, dest) {
   const body = new THREE.Mesh(new THREE.BoxGeometry(L, H, W), [mf, mb, mt, mt, ms, ms]); body.position.y = H / 2 + 0.35; g.add(body);
   const wm = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
   for (const x of [-3.6, 3.4]) for (const z of [-1.1, 1.1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.3, 16), wm); w.rotation.x = Math.PI / 2; w.position.set(x, 0.5, z); g.add(w); }
+  // 오른쪽(인도 쪽) 앞문·뒷문: 정류장에서 접히며 열림
+  const dm = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.75 }), fm = new THREE.MeshStandardMaterial({ color: 0x333, metalness: 0.5, roughness: 0.4 });
+  const doors = [];
+  for (const dx of [4.55, 0.35]) for (const s of [-1, 1]) { const piv = new THREE.Group(); piv.position.set(dx + s * 0.5, 0.35, W / 2 + 0.03); g.add(piv); const pnl = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.35, 0.04), dm); pnl.position.set(-s * 0.25, 1.2, 0); piv.add(pnl); const fr = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.06, 0.05), fm); fr.position.set(-s * 0.25, 2.38, 0); piv.add(fr); doors.push([piv, s]); }
+  g.userData.doors = doors;
   g.rotation.y = 0; g.userData.size = new THREE.Vector3(W, H, L);
   // 모델 앞을 +z 로 (지프와 같게)
-  const holder = new THREE.Group(); g.rotation.y = -Math.PI / 2; holder.add(g); holder.userData.size = new THREE.Vector3(W, H, L); return holder;
+  const holder = new THREE.Group(); g.rotation.y = -Math.PI / 2; holder.add(g); holder.userData.size = new THREE.Vector3(W, H, L); holder.userData.bus = g; holder.userData.num = num;
+  holder.userData.doorK = 0; holder.userData.setDoors = k => { holder.userData.doorK = k; for (const [piv, s] of doors) piv.rotation.y = s * k * 1.35; };
+  return holder;
 }
-export function makeTraffic(scene, vehicles, audio, CAR_COLORS) {
+export const BUS_STOPS = [16, -105, 135, 255, -215];
+export function makeTraffic(scene, vehicles, audio, CAR_COLORS, hooks = {}) {
   const list = [], base = vehicles.car;
   const cloneCar = (color, taxi) => {
     const c = base.clone(true); c.visible = true; c.userData.size = base.userData.size;
@@ -266,14 +281,26 @@ export function makeTraffic(scene, vehicles, audio, CAR_COLORS) {
   const tmp = new THREE.Vector3();
   return {
     list,
+    // 길가에 세워 둔 차 (택시 일자리 등)
+    spawnParked(color, taxi, x, z, ry) { const m = cloneCar(color, taxi); const v = spawn(m, ML[0], 0, 0, 'car', true); v.taken = true; v.parked = true; m.position.set(x, 0, z); m.rotation.y = ry; return v; },
     update(dt, player) {
       for (const v of list) {
         const L = v.lane; let speed = v.speed;
         const pos = L.axis === 'x' ? tmp.set(v.s, 0, L.c) : tmp.set(L.c, 0, v.s + (L.off || 0));
-        // 앞에 사람이 있으면 멈추고 경적
-        if (player) { const ahead = L.axis === 'x' ? (player.x - v.s) * L.dir : (player.z - (v.s + (L.off || 0))) * L.dir, side = L.axis === 'x' ? Math.abs(player.z - L.c) : Math.abs(player.x - L.c);
-          if (ahead > 0 && ahead < 9 && side < 2) { speed = 0; if (v.honked <= 0) { audio.play('horn', { pos, vol: 1.2 }); v.honked = 6; } } }
+        if (v.taken) continue;
+        // 버스: 정류장에 서서 문 열기
+        if (v.kind === 'bus' && L === ML[0]) { const st = BUS_STOPS.find(x => Math.abs(v.s - x) < 0.6 && v.lastStop !== x); if (st !== undefined && !(v.stopT > 0)) { v.stopT = 8; v.lastStop = st; v.mesh.userData.setDoors?.(1); audio.play('door', { pos, vol: 0.7, rate: 0.6 }); } }
+        if (v.stopT > 0) { v.stopT -= dt; speed = 0; if (v.stopT <= 0.6) v.mesh.userData.setDoors?.(0); if (v.hold) v.stopT = Math.max(v.stopT, 1); }
+        // 앞에 사람·차가 있으면 멈추고 경적, 피할 새 없이 치면 사람이 다침
+        const fx = L.axis === 'x' ? L.dir : 0, fz = L.axis === 'z' ? L.dir : 0, half = (v.mesh.userData.size?.z || 4.4) / 2;
+        const obs = hooks.obstacles?.() || []; for (const w of list) if (w !== v && w.mesh.visible) obs.push({ x: w.mesh.position.x, z: w.mesh.position.z, car: true });
+        for (const o of obs) {
+          const dx = o.x - pos.x, dz = o.z - pos.z, ahead = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+          if (ahead > 0 && ahead < half + (o.car ? 7 : 9) && side < 1.7) { speed = Math.min(speed, Math.max(0, (ahead - half - 2) * 1.2)); if (o.player && v.honked <= 0) { audio.play('horn', { pos, vol: 1.2 }); v.honked = 6; } }
+          if (o.person && ahead > -half && ahead < half + 0.4 && side < 1.15 && (v.cur || 0) > 2.5) hooks.hit?.(o.person, v, new THREE.Vector3(fx, 0, fz), v.cur);
+        }
         v.honked -= dt; v.cur = (v.cur ?? speed) + (speed - (v.cur ?? speed)) * Math.min(1, dt * 2);
+        if (v.stopT > 0 && speed === 0) v.cur = Math.max(0, v.cur - dt * 6);
         v.s += L.dir * v.cur * dt; if (v.s > L.len) v.s = -L.len; if (v.s < -L.len) v.s = L.len;
         v.mesh.position.copy(L.axis === 'x' ? tmp.set(v.s, 0, L.c) : tmp.set(L.c, 0, v.s + (L.off || 0)));
         v.mesh.rotation.y = L.axis === 'x' ? (L.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (L.dir > 0 ? 0 : Math.PI);

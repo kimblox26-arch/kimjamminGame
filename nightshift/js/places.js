@@ -11,7 +11,8 @@ export function buildStorage(scene, collide) {
   const g = new THREE.Group(); scene.add(g);
   const { x0, x1, z0, z1 } = STORAGE, H = 2.8, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
   const floorT = ctex(256, 256, (c, w, h) => { c.fillStyle = '#5d646b'; c.fillRect(0, 0, w, h); for (let i = 0; i < 5000; i++) { c.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`; c.fillRect(Math.random() * w, Math.random() * h, 3, 3); } }, [3, 3]);
-  box(g, M({ map: floorT, roughness: 0.35 }), x1 - x0, 0.02, z1 - z0, cx, -0.01, cz);
+  const fm = M({ map: floorT, roughness: 0.35 });   // 바닥 (지하 무기고 계단 구멍 x 2.2~3.0, z -8~-4.7)
+  box(g, fm, 2.2 - x0, 0.02, z1 - z0, (x0 + 2.2) / 2, -0.01, cz); box(g, fm, x1 - 3.0, 0.02, z1 - z0, (3.0 + x1) / 2, -0.01, cz); box(g, fm, 0.8, 0.02, z1 + 4.7, 2.6, -0.01, (z1 - 4.7) / 2);
   const wall = M({ color: 0xb8bcc0, roughness: 0.9 });
   box(g, wall, x1 - x0, 0.02, z1 - z0, cx, H, cz); box(g, wall, 0.1, H, z1 - z0, x0 - 0.05, H / 2, cz); box(g, wall, 0.1, H, z1 - z0, x1 + 0.05, H / 2, cz); box(g, wall, x1 - x0, H, 0.1, cx, H / 2, z0 - 0.05);
   collide({ x0: x0 - 0.2, x1: x0, z0, z1 }); collide({ x0: x1, x1: x1 + 0.2, z0, z1 }); collide({ x0, x1, z0: z0 - 0.2, z1: z0 });
@@ -27,10 +28,15 @@ export function buildStorage(scene, collide) {
   for (let k = 0; k < 4; k++) for (let i = 0; i < 6; i++) if (Math.random() > 0.15) { const b = box(g, cards[(Math.random() * cards.length) | 0], 0.5, 0.34 + Math.random() * 0.1, 0.48, x0 + 0.36, 0.17 + k * 0.6 + 0.2, z0 + 0.5 + i * 0.52); b.rotation.y = (Math.random() - 0.5) * 0.15; }
   collide({ x0, x1: x0 + 0.7, z0, z1 });
   // 음료 상자 더미, 대걸레 통
-  for (let i = 0; i < 5; i++) box(g, M({ color: [0x1b6b3a, 0xc4161c][i % 2], roughness: 0.6 }), 0.45, 0.28, 0.35, cx - 0.2, 0.14 + i * 0.29, z0 + 0.35);
-  collide({ x0: cx - 0.45, x1: cx + 0.05, z0, z1: z0 + 0.55 });
-  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.32, 14), M({ color: 0xe6c200 })); bucket.position.set(cx + 0.5, 0.16, z0 + 0.4); g.add(bucket);
-  box(g, M({ color: 0x8a6a4b }), 0.03, 1.3, 0.03, cx + 0.5, 0.75, z0 + 0.35).rotation.z = 0.15;
+  for (let i = 0; i < 5; i++) box(g, M({ color: [0x1b6b3a, 0xc4161c][i % 2], roughness: 0.6 }), 0.45, 0.28, 0.35, cx + 0.6, 0.14 + i * 0.29, z0 + 0.35);
+  collide({ x0: cx + 0.35, x1: cx + 0.85, z0, z1: z0 + 0.55 });
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.32, 14), M({ color: 0xe6c200 })); bucket.position.set(x1 - 0.5, 0.16, z0 + 0.3); g.add(bucket);
+  box(g, M({ color: 0x8a6a4b }), 0.03, 1.3, 0.03, x1 - 0.5, 0.75, z0 + 0.25).rotation.z = 0.15;
+  // 소화기 · 근무표 게시판 · 벽시계 · 지하 계단 안내
+  const ext = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.5, 14), M({ color: 0xc1121f, roughness: 0.35 })); ext.position.set(x0 + 0.85, 0.27, z1 - 0.15); g.add(ext);
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.6), M({ map: ctex(360, 240, (c, w, h) => { c.fillStyle = '#c9a26b'; c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.fillRect(20, 20, 200, 200); c.fillStyle = '#111'; c.font = `900 22px ${FONT}`; c.fillText('11월 근무표', 34, 50); c.font = `600 15px ${FONT}`; ['월 김잼민 22-06', '화 김잼민 22-06', '수 박민수 22-06', '목 김잼민 22-06', '금 이지은 22-06', '토 김잼민 22-06'].forEach((t, i) => c.fillText(t, 34, 80 + i * 22)); c.fillStyle = '#ffe066'; c.fillRect(240, 30, 100, 90); c.fillStyle = '#333'; c.font = `700 13px ${FONT}`; c.fillText('유통기한', 252, 60); c.fillText('매일 확인!', 252, 82); c.fillStyle = '#ff9aa2'; c.fillRect(240, 135, 100, 80); c.fillStyle = '#333'; c.fillText('지하 무기고', 250, 165); c.fillText('관계자만', 252, 187); }), roughness: 0.9 }));
+  board.position.set(x0 + 0.01 + 0.7, 1.6, z1 - 0.06); board.rotation.y = Math.PI; g.add(board);
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.18), new THREE.MeshBasicMaterial({ map: ctex(256, 92, (c, w, h) => { c.fillStyle = '#e9c46a'; c.fillRect(0, 0, w, h); c.fillStyle = '#111'; c.font = `900 34px ${FONT}`; c.fillText('↓ 지하', 70, 58); }), toneMapped: false })); sign.position.set(2.6, 1.9, z0 + 0.06); g.add(sign);
   // 사물함 (직원 조끼)
   const locker = M({ color: 0x9aa3ad, roughness: 0.45, metalness: 0.6 });
   for (let i = 0; i < 3; i++) { const d = box(g, locker, 0.5, 1.8, 0.45, x1 - 0.3, 0.9, z1 - 0.6 - i * 0.52); box(g, M({ color: 0x333 }), 0.02, 0.12, 0.02, x1 - 0.56, 1.0, z1 - 0.45 - i * 0.52); void d; }
@@ -41,20 +47,7 @@ export function buildStorage(scene, collide) {
   const cctvT = ctex(320, 240, (c, w, h) => { c.fillStyle = '#000'; c.fillRect(0, 0, w, h); for (let q = 0; q < 4; q++) { const x = (q % 2) * w / 2, y = Math.floor(q / 2) * h / 2; c.fillStyle = `rgb(${60 + q * 10},${70 + q * 8},${60 + q * 10})`; c.fillRect(x + 3, y + 3, w / 2 - 6, h / 2 - 6); c.fillStyle = 'rgba(200,220,200,.4)'; c.fillRect(x + 20, y + 40, 50, 60); c.fillRect(x + 90, y + 30, 40, 70); c.fillStyle = '#fff'; c.font = '700 12px monospace'; c.fillText('CAM0' + (q + 1) + '  REC', x + 8, y + 18); } });
   const mon = box(g, M({ color: 0x111 }), 0.06, 0.32, 0.42, x1 - 0.45, 0.98, z0 + 1.3); const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.28), new THREE.MeshBasicMaterial({ map: cctvT, toneMapped: false })); scr.position.set(-0.031, 0, 0); scr.rotation.y = -Math.PI / 2; mon.add(scr);
   collide({ x0: x1 - 0.65, x1, z0: z0 + 0.7, z1: z0 + 1.9 });
-  // ── 총기 보관함 (유리문 철제 옷장, 안에 권총·소총 걸려 있음) ──
-  const cab = new THREE.Group(); cab.position.set(cx + 0.55, 0, z0 + 0.36); g.add(cab);
-  const cm = M({ color: 0x3a3f45, roughness: 0.4, metalness: 0.75 }), inside = M({ color: 0x1a1c1f, roughness: 0.9, bumpMap: ctex(64, 64, (c) => { c.fillStyle = '#777'; c.fillRect(0, 0, 64, 64); c.fillStyle = '#222'; for (let y = 4; y < 64; y += 10) for (let x = 4; x < 64; x += 10) { c.beginPath(); c.arc(x, y, 2, 0, 7); c.fill(); } }, [4, 8]), bumpScale: 2 });
-  box(cab, cm, 0.9, 1.95, 0.04, 0, 0.975, -0.28); box(cab, cm, 0.04, 1.95, 0.6, -0.45, 0.975, 0); box(cab, cm, 0.04, 1.95, 0.6, 0.45, 0.975, 0); box(cab, cm, 0.9, 0.04, 0.6, 0, 1.95, 0); box(cab, cm, 0.9, 0.08, 0.6, 0, 0.04, 0);
-  box(cab, inside, 0.86, 1.85, 0.01, 0, 0.98, -0.255);
-  const glassM = M({ color: 0xcfe3f0, transparent: true, opacity: 0.18, roughness: 0.03, metalness: 0.1, envMapIntensity: 1.5, depthWrite: false });
-  for (const sx of [-0.225, 0.225]) { box(cab, glassM, 0.43, 1.8, 0.01, sx, 0.99, 0.3); box(cab, cm, 0.03, 1.85, 0.03, sx * 2 - Math.sign(sx) * 0.0, 0.99, 0.3); }
-  box(cab, M({ color: 0xc9ced4, metalness: 0.9, roughness: 0.25 }), 0.02, 0.18, 0.03, 0.03, 1.05, 0.33);
-  const lock = new THREE.PointLight(0xfff0d0, 1.2, 1.6); lock.position.set(0, 1.85, 0); cab.add(lock);
-  cab.userData.slots = { rifle: new THREE.Vector3(0, 1.25, -0.18), pistol: new THREE.Vector3(0, 0.62, -0.18) };
-  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.95, 0.62), new THREE.MeshBasicMaterial()); hit.visible = false; hit.position.y = 0.975; hit.userData.aim = 'guns'; cab.add(hit);
-  collide({ x0: cx + 0.08, x1: cx + 1.02, z0, z1: z0 + 0.7 });
-  const body = hit;
-  return { group: g, shop: body, cabinet: cab, light: L };
+  return { group: g, shop: null, cabinet: null, light: L };
 }
 
 // 법정 (멀리 떨어진 곳에 만들어 두고 체포되면 카메라를 옮긴다)
