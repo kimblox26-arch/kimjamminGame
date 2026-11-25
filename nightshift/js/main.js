@@ -21,6 +21,8 @@ import { Mover, STORE_COLLIDERS } from './move.js';
 import { Crime } from './crime.js';
 import { makePistol, makeRifle } from './weapons.js';
 import { MiniMap } from './map.js';
+import { Pedestrians } from './peds.js';
+import { buildUnderpass, UNDER } from './underpass.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 const settings = Object.assign({ quality: IS_MOBILE ? 'mid' : 'high', myVoice: 'm', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
@@ -31,7 +33,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.9;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(68, 1, 0.03, 80);
+const camera = new THREE.PerspectiveCamera(68, 1, 0.03, 260);
 const yawObj = new THREE.Group(); yawObj.add(camera); scene.add(yawObj);
 let composer = null;
 
@@ -111,6 +113,7 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   if (e.code === 'Space' && game?.running) { e.preventDefault(); voice.toggle(); }
   if (e.key === 'Escape') pause();
+  if (e.code === 'KeyR' && game?.running) crime?.reload();
 });
 
 // ── 소리·목소리·음성인식 ──
@@ -130,7 +133,7 @@ const voice = new Voice({
   },
 });
 
-let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap;
+let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap, under, sky, hemi, ugLight, peds;
 paintIcons();
 async function boot() {
   const bar = $('loadbar'), txt = $('loadtxt'); let p = [0, 0, 0];
@@ -146,7 +149,8 @@ async function boot() {
   ]);
   // 도시·창고·법정·충돌·이동·범죄
   const colliders = [...STORE_COLLIDERS];
-  city = buildCity(scene, { onCollider: c => colliders.push(c) });
+  city = buildCity(scene, { onCollider: c => colliders.push(c), holes: UNDER.stairs });
+  under = buildUnderpass(scene, c => colliders.push(c)); buildSky();
   storage = buildStorage(scene, c => colliders.push(c));
   const courtB = buildCourt(scene);
   vehicles.car.visible = false; traffic = makeTraffic(scene, vehicles, audio, CAR_COLORS);
@@ -157,19 +161,21 @@ async function boot() {
   { const cab = storage.cabinet; for (const dx of [-0.17, 0.17]) { const r = makeRifle(); r.rotation.set(Math.PI / 2, 0, 0); r.position.set(dx, 1.32, -0.2); cab.add(r); }
     const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 0.3), new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.6, roughness: 0.4 })); shelf.position.set(0, 0.42, -0.12); cab.add(shelf);
     for (const dx of [-0.15, 0.15]) { const p = makePistol(); p.rotation.set(0, Math.PI / 2 + 0.2, Math.PI / 2); p.position.set(dx, 0.45, -0.12); cab.add(p); } }
+  peds = new Pedestrians({ scene, audio, game, crime, yawObj, camera }); crime.peds = peds;
   minimap = new MiniMap({ city, yawObj, look, markers: () => {
     const out = [];
+    for (const c of peds.list) out.push({ x: c.person.root.position.x, z: c.person.root.position.z, kind: c.dead ? 'dead' : 'person' });
     for (const c of game.customers) out.push({ x: c.person.root.position.x, z: c.person.root.position.z, kind: c.dead ? 'dead' : 'person' });
     if (game.boss) out.push({ x: game.boss.root.position.x, z: game.boss.root.position.z, kind: game.bossDead ? 'dead' : 'person' });
     for (const o of crime.officers) out.push({ x: o.root.position.x, z: o.root.position.z, kind: o.dead ? 'dead' : 'cop' });
     for (const P of crime.cars || []) out.push({ x: P.car.position.x, z: P.car.position.z, kind: 'police', r: 1.6 });
     return out;
   } });
-  crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court];
-  crime.onExit = () => { crime.cleanup(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); startShift(1); };
+  crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court, under.group];
+  crime.onExit = () => { crime.cleanup(); peds.clear(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); peds.clear(); startShift(1); };
   game.crime = crime; game.onShop = () => openShop(); game.mover = mover; game.yawObjDist = () => Math.hypot(yawObj.position.x - SPOT.cam.x, yawObj.position.z - SPOT.cam.z);
   game.onExit = () => toMenu(); game.onNext = (d) => startShift(d);
-  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic };
+  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds };
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
   const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 3.6), new THREE.MeshBasicMaterial()); hitBox.visible = false; hitBox.position.set(2.6, 0.93, 0.6); hitBox.userData.aim = 'counter'; scene.add(hitBox); store.counterHit = hitBox;
@@ -259,7 +265,11 @@ $('bPause').onclick = () => pause();
 const atk = $('bAtk');
 atk.addEventListener('pointerdown', e => { e.preventDefault(); audio.resume(); crime.press(); });
 for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) atk.addEventListener(ev, () => crime.release());
-$('bWpn').onclick = () => crime.cycle();
+// 무기 버튼: 짧게 = 무기 바꾸기, 길게 누르기 = 탄창 갈기
+{ let t0 = 0, lp = null; const b = $('bWpn');
+  b.addEventListener('pointerdown', () => { t0 = performance.now(); lp = setTimeout(() => { lp = null; crime.reload(); }, 450); });
+  b.addEventListener('pointerup', () => { if (lp) { clearTimeout(lp); lp = null; crime.cycle(); } });
+  b.addEventListener('pointerleave', () => { if (lp) { clearTimeout(lp); lp = null; } }); void t0; }
 $('pname').onchange = () => hands?.setName($('pname').value || '김잼민');
 
 // ── 메인 루프 ──
@@ -277,11 +287,38 @@ function loop() {
   hands?.update(dt, t);
   updateAim(dt); updateLiquids(dt);
   if (game?.running) minimap?.update(dt);
+  if (game?.running && !crime?.inCourt) peds?.update(dt, true);
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }
+  envUpdate(dt);
   camera.updateMatrixWorld();
   audio.setListener(camera.getWorldPosition(new THREE.Vector3()), camera.getWorldQuaternion(new THREE.Quaternion()));
   composer ? composer.render() : renderer.render(scene, camera);
+}
+// 밤하늘(그라데이션·별·달) — 내 위치를 따라다님
+function buildSky() {
+  const geo = new THREE.SphereGeometry(240, 32, 16), mat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
+    fragmentShader: 'varying vec3 vP; void main(){ float h = clamp(vP.y, -0.1, 1.); vec3 top = vec3(0.01,0.015,0.04), hor = vec3(0.09,0.07,0.09); vec3 c = mix(hor, top, pow(max(h,0.),0.45)); gl_FragColor = vec4(c,1.); }' });
+  sky = new THREE.Group(); const dome = new THREE.Mesh(geo, mat); dome.renderOrder = -2; sky.add(dome);
+  const sp = []; for (let i = 0; i < 900; i++) { const v = new THREE.Vector3().randomDirection(); if (v.y < 0.12) v.y = 0.12 + Math.random() * 0.8; v.normalize().multiplyScalar(230); sp.push(v.x, v.y, v.z); }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+  sky.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 1.3, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.75, depthWrite: false })));
+  const mc = document.createElement('canvas'); mc.width = mc.height = 128; const g = mc.getContext('2d'); const gr = g.createRadialGradient(64, 64, 20, 64, 64, 64); gr.addColorStop(0, 'rgba(255,250,230,1)'); gr.addColorStop(0.42, 'rgba(255,245,215,1)'); gr.addColorStop(0.5, 'rgba(255,240,200,.35)'); gr.addColorStop(1, 'rgba(255,240,200,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); g.fillStyle = 'rgba(200,190,170,.35)'; for (const [x, y, r] of [[54, 52, 7], [72, 70, 9], [60, 78, 5]]) { g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+  const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(mc), fog: false, depthWrite: false })); moon.position.set(-90, 120, -170); moon.scale.setScalar(26); sky.add(moon);
+  scene.add(sky);
+  scene.traverse(o => { if (o.isHemisphereLight) hemi = o; });
+  ugLight = new THREE.PointLight(0xf2f6ff, 0, 16, 1.4); scene.add(ugLight);
+}
+// 실내·바깥·지하에 따라 안개 거리와 빛 바꾸기
+function envUpdate(dt) {
+  if (!sky) return;
+  const p = yawObj.position, feet = p.y - 1.55, ug = feet < -1.2 && Math.abs(p.z) < 40, inStore = p.x > -5.4 && p.x < 5 && p.z > -8.2 && p.z < 4.2 && !ug;
+  const k = Math.min(1, dt * 2.5), fn = ug ? 10 : inStore ? 14 : 30, ff = ug ? 60 : inStore ? 50 : 200;
+  scene.fog.near += (fn - scene.fog.near) * k; scene.fog.far += (ff - scene.fog.far) * k;
+  sky.position.copy(camera.getWorldPosition(new THREE.Vector3())); sky.visible = !ug;
+  ugLight.intensity += ((ug ? 14 : 0) - ugLight.intensity) * k; ugLight.position.set(p.x, UNDER.ceil - 0.5, p.z);
+  if (hemi) hemi.intensity += ((ug ? 0.85 : 0.32) - hemi.intensity) * k;
 }
 // 지나가는 차
 // 문: 가까이 가면 자동으로 열림 (출입문은 딩동)

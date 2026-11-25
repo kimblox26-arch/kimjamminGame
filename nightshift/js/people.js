@@ -2,8 +2,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { hairMesh } from './hair.js';
 
 const base = {};
+const PHONE_BODY = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.3, metalness: 0.6 }), PHONE_SCR = new THREE.MeshBasicMaterial({ color: 0x9cc8ff, toneMapped: false });
 const pick = a => a[Math.floor(Math.random() * a.length)];
 export async function loadPeople(onProgress) {
   const L = new GLTFLoader(); let n = 0;
@@ -100,10 +102,15 @@ export class Person {
     this.model.updateMatrixWorld(true);
     this.kneeH = (this.B.L.leg?.getWorldPosition(new THREE.Vector3()).y || this.height * 0.28) - 0.03;
     // 몸 반응 상태: 무릎 꿇기·한쪽 무릎·웅크림·손 들기·빌기(손 비비기)·상처 움켜쥐기
-    this.P = { kneel: 0, knee1: 0, hunch: 0, up: 0, beg: 0, clutch: 0, spread: 0 }; this.PT = { ...this.P }; this.fl = []; this.side = 'R'; this.zone = null;
+    this.P = { kneel: 0, knee1: 0, hunch: 0, up: 0, beg: 0, clutch: 0, spread: 0, phone: 0, call: 0, cover: 0, mouth: 0, watch: 0 }; this.PT = { ...this.P }; this.fl = []; this.side = 'R'; this.zone = null;
     this.reachW = 0; this.reachT = 0; this.reachP = new THREE.Vector3(); this.lookOff = 0; this.lookT = 2 + Math.random() * 4;
     this.hairs = []; this.hairV = new THREE.Vector2(); this.hairO = new THREE.Vector2(); this.lastHead = null;
     this.accessories(type);
+    // 휴대폰 (매 프레임 오른손 손가락 쪽에 놓고 화면이 얼굴을 향하게; 볼 때·통화할 때만 보임)
+    { const ph = new THREE.Group(); ph.add(new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.15, 0.008), new THREE.MeshStandardMaterial({ color: pick([0xd9dadf, 0x1d3d6b, 0xe8c8c8, 0xc9b28a, 0x7fa8c9]), roughness: 0.35, metalness: 0.5 })));
+      const sc = new THREE.Mesh(new THREE.PlaneGeometry(0.064, 0.138), PHONE_SCR); sc.position.z = 0.0045; ph.add(sc);
+      ph.visible = false; this.root.add(ph); this.phoneObj = ph; this.rMid = findBone(this.model, 'RightHandMiddle1'); }
+    this.fidget = false; this.fidT = 4 + Math.random() * 8;
     // 동작
     // 맞추기 판정용 보이지 않는 원기둥
     const hb = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, this.height, 8), new THREE.MeshBasicMaterial()); hb.visible = false; hb.position.y = this.height / 2; hb.userData.personRef = this; this.root.add(hb); this.hitbox = hb;
@@ -140,15 +147,10 @@ export class Person {
     } else if (type.hat === 'hood') {
       const h = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 12, Math.PI * 0.78, Math.PI * 1.44, 0, Math.PI * 0.7), M(type.top || '#222', 0.95)); h.material.side = THREE.DoubleSide; h.scale.set(1.05, 1.1, 1.1); add(h, 0, ht - 0.115, -0.035);
     }
-    if (this.kind === 'man' && !type.hat && type.id !== 'boss') { // 머리카락
-      const hc = pick(['#1a1410', '#221a14', '#0f0d0c', '#3a2a1e']);
-      const hm = new THREE.MeshStandardMaterial({ color: hc, roughness: 0.85 });
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.58), hm); hair.scale.set(1.03, 0.9, 1.12); hair.rotation.x = -0.25;
-      const g = new THREE.Group(); g.add(hair);
-      const fr = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 6, Math.PI * 0.12, Math.PI * 0.76, Math.PI * 0.3, Math.PI * 0.12), hm); fr.scale.set(1.04, 1, 1.13); g.add(fr);
-      add(g, 0, ht - 0.088, -0.012); this.hairs.push(g);
+    if (this.kind === 'man') { // 머리카락 (머리결 카드 수백 장)
+      const style = type.id === 'boss' ? 'bald' : type.hat ? (type.hat === 'cap' || type.hat === 'police' ? 'sides' : null) : pick(['short', 'short', 'side', 'side', 'buzz']);
+      if (style) { const g = hairMesh(style, type.id === 'boss' ? '#8f8b86' : pick(['#16110d', '#1d1712', '#0e0c0b', '#2e2219', '#3a2a1e']), ht); add(g, 0, 0, 0); this.hairs.push(g); }
     }
-    if (type.id === 'boss') { const sideHair = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 20, Math.PI * 1.1), new THREE.MeshStandardMaterial({ color: '#8d8a86', roughness: 0.9 })); sideHair.rotation.set(Math.PI / 2, 0, Math.PI * 0.95); add(sideHair, 0, ht - 0.1, -0.015); }
     if (type.hat === 'police') {
       const g = new THREE.Group(), cm = M('#14213d', 0.6);
       const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.1, 0.09, 20), cm); crown.position.y = 0.045; g.add(crown);
@@ -179,9 +181,11 @@ export class Person {
   }
   gesture(name) { if (!this.path.length) this.play(name, 0.25, true); }
   // 경로 걷기 (점 목록). 도착하면 resolve
-  walk(points) { if (this.down || this.dead) return new Promise(() => { }); this.path = points.map(p => p.clone()); if (!this.frozen) this.play('walk'); return new Promise(r => (this.onArrive = r)); }
+  walk(points) { if (this.down || this.dead) return new Promise(() => { }); this.path = points.map(p => p.clone()); if (!this.frozen) this.play(this.speed > 2.2 ? 'run' : 'walk'); return new Promise(r => (this.onArrive = r)); }
   // 총구를 겨누면 그 자리에 멈춰 손 듦 (풀리면 다시 걸음)
-  freeze(on) { if (on === !!this.frozen || this.dead) return; this.frozen = on; this.surrender(on); if (!this.down) this.play(on || !this.path.length ? 'idle' : 'walk', 0.25); }
+  freeze(on) { if (on === !!this.frozen || this.dead) return; this.frozen = on; this.surrender(on); if (!this.down) this.play(on || !this.path.length ? 'idle' : (this.speed > 2.2 ? 'run' : 'walk'), 0.25); }
+  // 걷던 걸 잠깐 멈춤 (손은 안 듦) — 놀라서 멈칫, 통화, 시체 발견
+  pause(on) { if (this.dead || on === !!this.frozen) return; this.frozen = on; if (!this.down) this.play(on || !this.path.length ? 'idle' : (this.speed > 2.2 ? 'run' : 'walk'), 0.2); }
   lookAt(p) { this.faceTarget = p.clone(); }
   // 맞은 부위별 움찔: zone = head|chest|stomach|arm|leg, dir = 총알 방향(월드), side = 'L'|'R'
   hurt(zone = 'chest', dir = new THREE.Vector3(0, 0, -1), side = 'R') {
@@ -216,7 +220,7 @@ export class Person {
     this.spreadSign = Math.random() < 0.5 ? 1 : -1;
   }
   // 바닥에 누운 위치(피 웅덩이용)
-  bodyCenter() { return this.root.position.clone().add(this.fallW ? this.fallW.clone().multiplyScalar(this.height * 0.45) : new THREE.Vector3()).setY(0); }
+  bodyCenter() { return this.root.position.clone().add(this.fallW ? this.fallW.clone().multiplyScalar(this.height * 0.45) : new THREE.Vector3()); }
   update(dt, camPos) {
     if (this.dead) {
       if (this.still) return;
@@ -247,9 +251,11 @@ export class Person {
       const tgt = this.path[0]; _v.subVectors(tgt, r.position); _v.y = 0; const d = _v.length();
       const want = Math.atan2(_v.x, _v.z); this.face = want;
       const step = this.speed * dt;
+      r.position.y += (tgt.y - r.position.y) * Math.min(1, step / Math.max(d, 1e-3));
       if (d <= step) { r.position.copy(tgt); this.path.shift(); if (!this.path.length) { this.play('idle'); const f = this.onArrive; this.onArrive = null; f?.(); } }
       else r.position.addScaledVector(_v.normalize(), step);
-      this.act.walk.timeScale = this.speed / 1.05 * (this.P.clutch > 0.5 ? 0.8 : 1);
+      this.act.walk.timeScale = this.speed / 1.05 * (this.P.clutch > 0.5 ? 0.8 : 1); if (this.act.run) this.act.run.timeScale = Math.max(0.7, this.speed / 3.6);
+      if (this.cur === this.act.walk && this.speed > 2.2) this.play('run', 0.2);
       if ((this.stepT -= dt) <= 0) { this.stepT = 0.52 / this.speed; this.audio.play(Math.random() < 0.5 ? 'step1' : 'step2', { pos: r.position, vol: 0.5, rate: 0.85 + Math.random() * 0.2 }); }
     } else if (this.faceTarget) { _v.subVectors(this.faceTarget, r.position); this.face = Math.atan2(_v.x, _v.z); }
     // 부드럽게 돌기
@@ -267,6 +273,13 @@ export class Person {
       _q.setFromEuler(new THREE.Euler(-pitch * 0.6, ya * 0.8, this.talk > 0 ? Math.sin(this.t * 3) * 0.04 : 0, 'YXZ'));
       this.head.quaternion.multiply(_q);
     }
+    // 기다리는 동안 휴대폰 보기·시계 보기 (손님·행인)
+    if (this.fidget && !this.down && !this.frozen && !this.talk && this.PT.call < 0.5) {
+      if ((this.fidT -= dt) < 0) { const r = Math.random(); this.fidT = 6 + Math.random() * 10; this.PT.phone = r < 0.5 ? 1 : 0; this.PT.watch = r > 0.5 && r < 0.7 ? 1 : 0; this.fidEnd = r < 0.5 ? 3 + Math.random() * 5 : 1.6; }
+      if (this.fidEnd !== undefined && (this.fidEnd -= dt) < 0) { this.PT.phone = 0; this.PT.watch = 0; this.fidEnd = undefined; }
+    } else if (!this.keepPhone) { this.PT.phone = 0; this.PT.watch = 0; }
+    if (this.phoneObj) { const on = this.P.phone > 0.3 || this.P.call > 0.3; this.phoneObj.visible = on;
+      if (on && this.rHand && this.rMid) { this.model.updateMatrixWorld(true); const hp = this.rHand.getWorldPosition(new THREE.Vector3()), fd = this.rMid.getWorldPosition(new THREE.Vector3()).sub(hp).normalize(); this.phoneObj.position.copy(this.root.worldToLocal(hp.addScaledVector(fd, 0.05))); this.phoneObj.lookAt(this.head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.08, 0))); } }
     // 가끔 두리번 (말 안 할 때)
     if ((this.lookT -= dt) < 0) { this.lookT = 2.5 + Math.random() * 5; this.lookTgt = this.talk > 0 ? 0 : (Math.random() - 0.5) * 1.2; }
     this.lookOff += ((this.lookTgt || 0) - this.lookOff) * Math.min(1, dt * 2.5);
@@ -321,6 +334,8 @@ export class Person {
       else if (f.zone === 'arm') { this.rotW(S.arm, f.axis, a * 0.9); this.rotW(S.fore, f.axis, a * 0.5); this.rotW(B.spine2, f.axis, a * 0.12); }
       else if (f.zone === 'leg') { this.rotW(S.up, f.axis, a * 0.35); this.rotW(S.leg, R, a * 0.7); this.rotW(B.spine, f.axis, a * 0.1); }
     }
+    if (P.phone + P.watch > 0.01) this.rotW(B.neck, R, 0.32 * Math.max(P.phone, P.watch));
+    if (P.cover > 0.01) { this.rotW(B.neck, R, 0.45 * P.cover); this.rotW(B.spine2, R, Math.sin(t * 25) * 0.02 * P.cover); }
     // 빌 때 고개 숙였다 들었다
     if (P.beg > 0.01) this.rotW(B.neck, R, P.beg * (0.25 + 0.18 * Math.sin(t * 4.2)));
     // 팔
@@ -342,6 +357,12 @@ export class Person {
         else if (z === 'head' && s === 'R') tgt = B.head.getWorldPosition(new THREE.Vector3()).addScaledVector(F, 0.1);
         if (tgt) this.armTo(S, sh.clone().lerp(tgt, 0.5).addScaledVector(out, 0.14).addScaledVector(U, -0.1), tgt, P.clutch * (1 - P.up) * (1 - P.beg));
       }
+      const hp = B.head.getWorldPosition(new THREE.Vector3()), tr = Math.sin(t * 23 + (s === 'L' ? 2 : 0)) * 0.008;
+      if (s === 'R' && P.phone > 0.01) this.armTo(S, sh.clone().addScaledVector(out, 0.06).addScaledVector(U, -0.25).addScaledVector(F, 0.06), sp2.clone().addScaledVector(F, 0.3).addScaledVector(U, 0.03).addScaledVector(out, 0.07), P.phone * (1 - P.up));
+      if (s === 'R' && P.call > 0.01) this.armTo(S, sh.clone().addScaledVector(out, 0.16).addScaledVector(U, -0.17).addScaledVector(F, 0.1), hp.clone().addScaledVector(out, 0.095).addScaledVector(F, 0.03).addScaledVector(U, 0.06), P.call * (1 - P.up));
+      if (s === 'L' && P.watch > 0.01) this.armTo(S, sh.clone().addScaledVector(out, 0.08).addScaledVector(U, -0.24).addScaledVector(F, 0.08), sp2.clone().addScaledVector(F, 0.28).addScaledVector(U, 0.06).addScaledVector(out, 0.02), P.watch);
+      if (s === 'L' && P.mouth > 0.01) this.armTo(S, sh.clone().addScaledVector(U, -0.16).addScaledVector(F, 0.16).addScaledVector(out, 0.06), hp.clone().addScaledVector(F, 0.11).addScaledVector(U, 0.035 + tr), P.mouth);
+      if (P.cover > 0.01) this.armTo(S, sh.clone().addScaledVector(out, 0.17).addScaledVector(U, 0.08).addScaledVector(F, 0.16), hp.clone().addScaledVector(U, 0.1 + tr).addScaledVector(out, 0.06).addScaledVector(F, -0.01), P.cover);
       if (P.spread > 0.01) { // 쓰러진 뒤 팔이 축 늘어져 벌어짐
         const a = s === 'L' ? 1 : -1, v = this.spreadSign * a;
         this.armTo(S, sh.clone().addScaledVector(out, 0.24).addScaledVector(U, -0.06 + 0.07 * v).addScaledVector(F, 0.03), sh.clone().addScaledVector(out, 0.42).addScaledVector(U, -0.12 + 0.2 * v).addScaledVector(F, 0.07 - 0.04 * v), P.spread);

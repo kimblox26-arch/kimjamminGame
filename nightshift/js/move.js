@@ -1,5 +1,6 @@
 // 걸어 다니기: 왼쪽 아래 조이스틱(모바일) / WASD·방향키(PC, Shift 달리기), 벽·진열대 충돌, 자동문, 발소리, 걸을 때 화면 흔들림
 import * as THREE from 'three';
+import { groundAt } from './underpass.js';
 
 const RAD = 0.28;
 // 매장 안 가구·벽 (x0,x1,z0,z1)
@@ -44,16 +45,20 @@ export class Mover {
       p.x += mx / n * step; p.z += mz / n * step;
       this.collide(p);
       this.stepAcc += step; this.phase += step * 3.4;
-      if (this.stepAcc > (run ? 0.85 : 0.7)) { this.stepAcc = 0; const out = p.z > 4.1 || p.z < -8.1; this.audio.play(this.foot++ % 2 ? 'step1' : 'step2', { pos: new THREE.Vector3(p.x, 0.1, p.z), vol: out ? 0.7 : 0.55, rate: (out ? 0.8 : 1.05) + Math.random() * 0.1 }); }
+      if (this.stepAcc > (run ? 0.85 : 0.7)) { this.stepAcc = 0; const out = (p.z > 4.1 || p.z < -8.1) && p.y > 0; this.audio.play(this.foot++ % 2 ? 'step1' : 'step2', { pos: new THREE.Vector3(p.x, p.y - 1.45, p.z), vol: out ? 0.7 : 0.55, rate: (out ? 0.8 : 1.05) + Math.random() * 0.1 }); }
       this.look.target = null;
     }
+    // 계단·지하: 발밑 높이 따라가기
+    const g = groundAt(p.x, p.z, p.y - 1.55); p.y += (g + 1.55 - p.y) * Math.min(1, dt * 14);
     const bob = speed > 0.05 ? 1 : 0;
     this.camera.position.y += (Math.sin(this.phase) * 0.022 * bob - this.camera.position.y) * Math.min(1, dt * 10);
     this.camera.position.x = Math.sin(this.phase * 0.5) * 0.012 * bob;
     this.moving = speed > 0.05; this.running = this.moving && run;
   }
   collide(p) {
+    const lv = p.y - 1.55 < -1.5 ? -1 : 0;   // 지상(0) / 지하(-1) 충돌 구분
     for (let it = 0; it < 2; it++) for (const c of this.colliders) {
+      const cl = c.lv ?? 0; if (cl !== 'all' && cl !== lv) continue;
       const qx = Math.max(c.x0, Math.min(p.x, c.x1)), qz = Math.max(c.z0, Math.min(p.z, c.z1)), dx = p.x - qx, dz = p.z - qz, d = Math.hypot(dx, dz);
       if (d < RAD) {
         if (d > 1e-4) { p.x = qx + dx / d * RAD; p.z = qz + dz / d * RAD; }

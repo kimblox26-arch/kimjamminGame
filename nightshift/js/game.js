@@ -55,7 +55,7 @@ export class Game {
     }
     if (!this.intro) this.min = Math.min(480, this.min + dt * 480 / SHIFT_SEC);
     const camW = this.camera.getWorldPosition(this._cw || (this._cw = new THREE.Vector3()));
-    for (const c of this.customers) c.person.update(dt, camW);
+    for (const c of this.customers) { c.person.fidget = !c.atCounter && !c.fleeing && !c.surr && !c.begging; c.person.update(dt, camW); }
     this.boss?.update(dt, camW);
     if (!this.intro && !this.violence && this.min < 455 && (this.nextSpawn -= dt) <= 0 && this.customers.length < 3) { this.spawn(); this.nextSpawn = rnd(18, 36) * Math.max(0.6, 1 - this.day * 0.06); }
     if (!this.intro && !this.bossVisited && this.t > this.bossVisitAt && !this.cur) { this.bossVisited = true; this.bossScene('visit'); }
