@@ -10,6 +10,7 @@ import { UNDER } from './underpass.js';
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z), pk = a => a[Math.random() * a.length | 0];
 const CALL = [['여보세요, 경찰이죠? 여기 총소리가 났어요!', 'scared'], ['112죠? 사람이 총에 맞았어요! 빨리 와 주세요!', 'scared'], ['여기 달빛대로 편의점 근처인데요, 총 든 사람이 있어요!', 'scared']];
 const BODY = [['헉… 사, 사람이 쓰러져 있어…!', 'scared'], ['꺄악! 피… 피야!', 'scared'], ['저기요! 괜찮으세요? 저기요!', 'scared']];
+const MURDER = [['저 사람… 사람 죽인 그 사람이야!', 'scared'], ['살인자다! 다들 도망쳐!', 'scared'], ['꺄악! 저 사람이 사람을 죽였어!', 'scared'], ['저, 저기요! 저 사람 살인범이에요! 112! 112!', 'scared']];
 const CHAT = [['응, 나 지금 집 가는 중이야.', 'calm'], ['아 진짜? 대박이다 ㅋㅋ', 'happy'], ['내일 아침에 전화할게. 응, 끊어.', 'tired'], ['엄마, 나 거의 다 왔어.', 'calm'], ['야근 끝났어… 너무 피곤하다.', 'tired']];
 
 function sidewalks() {
@@ -76,6 +77,15 @@ export class Pedestrians {
       void g;
     }
   }
+  // 살인을 직접 본 사람들: 비명 → 도망치거나 신고
+  witness(pos) {
+    for (const c of this.list) {
+      if (c.dead || c.down || c.aggro || c.knows) continue; const d = c.person.root.position.distanceTo(pos); if (d > 28) continue;
+      c.knows = true; if (c.state === 'flee' || c.state === 'cower') continue;
+      const P = c.person; c.state = 'shock'; c.alertT = 0.6 + Math.random() * 0.8; c.from = pos.clone(); P.pause(true); P.lookAt(pos); P.PT.mouth = 1; P.PT.phone = 0; P.keepPhone = false; P.fidget = false;
+      c.plan = Math.random() < 0.35 ? 'call' : 'flee'; if (Math.random() < 0.6) this.crime.vox(c, 'scream', Math.random() * 0.4);
+    }
+  }
   flee(c) {
     const P = c.person; c.state = 'flee'; P.pause(false); P.PT.cover = 0; P.PT.kneel = 0; P.PT.call = 0; P.speed = 3.8 + Math.random() * 1.2;
     const dir = Math.sign(this.along(c.seg, P.root.position) - this.along(c.seg, c.from || this.yawObj.position)) || 1;
@@ -96,6 +106,10 @@ export class Pedestrians {
       const P = c.person; P.update(dt, cam); if (c.dead || c.down) continue;
       if (c.aggro) { this.crime.fight(c, dt); continue; }
       if (c.state === 'walk' && c.wait > 0 && (c.wait -= dt) <= 0) this.next(c);
+      // 사람을 죽인 적이 있으면: 나를 알아본 행인이 비명 지르고 도망치거나 신고 (다치게만 했으면 그냥 지나감)
+      if (c.state === 'walk' && !c.knows && this.crime.kills > 0 && !this.crime.inPrison) { const v = me.clone().sub(P.root.position).setY(0), dm = v.length(); if (dm < 13 && dm > 0.1 && v.normalize().dot(P.root.getWorldDirection(V3())) > 0.2) {
+        c.knows = true; c.state = 'shock'; c.alertT = 0.7; c.from = me.clone(); P.pause(true); P.lookAt(me); P.PT.mouth = 1; P.PT.phone = 0; P.keepPhone = false; P.fidget = false;
+        if (this.chatCool < 4) { this.chatCool = 6; this.game.say(c, pk(MURDER)); } this.crime.vox(c, 'scream', 0.3); c.plan = Math.random() < 0.4 ? 'call' : 'flee'; continue; } }
       if (c.state === 'walk' && c.caller && this.chatCool < 0 && P.root.position.distanceTo(me) < 9) { this.chatCool = 14; this.game.say(c, pk(CHAT)); }
       // 쓰러진 사람 발견
       if ((c.state === 'walk') && dead.length) for (const d of dead) if (d.person.root.position.distanceTo(P.root.position) < 7) {

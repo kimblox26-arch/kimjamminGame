@@ -132,6 +132,8 @@ export async function buildHands(camera, yawObj, name) {
 
   const api = {
     hands, body, setName, enabled: true,
+    // 수감되면 수용복(회청색 상의, 조끼·명찰 없음) / 풀려나면 원래대로
+    prison(on) { mSleeve.color.setHex(on ? 0x8a9db0 : 0xffffff); mShirt.color.setHex(on ? 0x8a9db0 : 0xffffff); torso.visible = chest.visible = tag.visible = !on; },
     sideOf(p) { tmp.copy(p); camera.worldToLocal(tmp); return tmp.x > -0.03 ? 'R' : 'L'; },
     // 월드 좌표 p 로 손 뻗기. pose: 손 모양, kind: 'down'(손바닥 아래) | 'up'(손바닥 위, 건네기) | 'front'(누르기)
     reachTo(side, p, pose = 'open', kind = 'down', ms = 380) {

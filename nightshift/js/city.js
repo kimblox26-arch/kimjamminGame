@@ -206,6 +206,7 @@ export function buildCity(scene, { onCollider, holes = [] }) {
       row(bx0, bx1, bz0, bz0 + rnd(12, 16), bz0 - 1, ['apt', 'brick', 'stone', 'old'], 8, 30);
       continue;
     }
+    if (cx > -330 && cx < -235 && edgeS) continue;   // 달빛교도소 자리 (prison.js)
     if (cx > -140 && cx < -45 && cz > 90 && cz < 170) { park(bx0, bx1, bz0, bz1); continue; }
     if (cx > 50 && cx < 145 && cz > 90 && cz < 170) { school(bx0, bx1, bz0, bz1); continue; }
     if (cz < -152) { aptComplex(bx0, bx1, bz0, bz1); continue; }

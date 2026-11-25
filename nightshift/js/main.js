@@ -29,7 +29,8 @@ import { productMesh } from './products.js';
 import { Crowd } from './crowd.js';
 import { Driving } from './drive.js';
 import { Missions } from './missions.js';
-import { buildArmory, buildTower, buildCafe, buildPrison, Animals, TOWER, ARMORY } from './world2.js';
+import { buildArmory, buildTower, buildCafe, Animals, TOWER, ARMORY } from './world2.js';
+import { buildPrison } from './prison.js';
 import { PRISON } from './places.js';
 import { buildUnderpass, UNDER } from './underpass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
@@ -140,11 +141,13 @@ function updateAim(dt) {
   let lab = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기', ammo: '탄약 보충', cafe: '커피 주문', vent: '환풍구 뜯기', fence: '개구멍 통과', atm: 'ATM', noodle: '컵라면 먹기', spill: '닦기' }[aim?.type], ready = !!aim && !['counter', 'person'].includes(aim.type);
   if (driving.ride) { lab = driving.ride.kind === 'bus' ? '버스 내리기' : '내리기'; ready = true; }
   else if (!aim || aim.type === 'person') { const n = driving.near(); if (n) { lab = driving.label(n); ready = true; } else if (nearElevator()) { lab = '엘리베이터'; ready = true; } }
+  { const nr = !driving.ride && !crime.inPrison && driving.near(), br = $('bRide'); br.classList.toggle('hidden', !nr); if (nr) { const t = driving.label(nr); if (br.dataset.t !== t) { br.dataset.t = t; br.querySelector('b').textContent = t; } br._n = nr; } }
   $('bScan').querySelector('b').textContent = lab || '바코드 찍기';
   $('bScan').classList.toggle('ready', ready);
   $('bPay').classList.toggle('ready', !!aim && aim.type !== 'cig' && !!game.cur && !game.items.some(i => !i.scanned && !i.refund));
   $('bAtk').classList.toggle('ready', aim?.type === 'person');
 }
+$('bRide').addEventListener('click', e => { e.stopPropagation(); const n = $('bRide')._n; if (!driving.ride && n && driving.near()) driving.enter(driving.near()); });
 // 키보드 (PC)
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -217,10 +220,12 @@ async function boot() {
     for (const o of crime.officers) out.push({ x: o.root.position.x, z: o.root.position.z, kind: o.dead ? 'dead' : 'cop' });
     out.push(...(missions?.markers() || []));
     for (const P of crime.cars || []) out.push({ x: P.car.position.x, z: P.car.position.z, kind: 'police', r: 1.6 });
+    for (const v of traffic.list) if (v.mesh.visible && v.parked && v.mesh !== driving.ride?.obj) out.push({ x: v.mesh.position.x, z: v.mesh.position.z, kind: 'ride', r: 1.3 });
+    for (const b of driving.bikes) out.push({ x: b.position.x, z: b.position.z, kind: 'ride', r: 0.8 });
     return out;
   } });
   missions = new Missions({ scene, audio, game, crime, peds, yawObj, look, traffic, drive: driving, minimap, city, tower: TOWER, extra: crime.extra }); crime.money = (n, w) => missions.money(n, w); missions.money(0);
-  features = new Features({ scene, camera, yawObj, audio, game, hands, missions, crime, renderer, drive: driving, productMesh, render: () => (composer ? composer.render() : renderer.render(scene, camera)) }); missions.features = features; features.skyMat = sky?.children[0]?.material;
+  features = new Features({ scene, camera, yawObj, audio, game, hands, missions, crime, renderer, drive: driving, productMesh, render: () => (composer ? composer.render() : renderer.render(scene, camera)) }); missions.features = features; features.skyMat = sky?.children[0]?.material; crime.features = features;
   crime.onEscape = () => (features.stat('escapes'), toast('탈옥수가 됐어요. 경찰을 피해 도시로 숨어드세요! (휴대폰에서 미션·일자리)', 'bad', 4000));
   crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court, under.group, armory.group, tower.group, cafe.group, prison.group];
   crime.onExit = () => { crime.cleanup(); peds.clear(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); peds.clear(); startShift(1); };
@@ -235,8 +240,8 @@ async function boot() {
   { const C = store.C, keepSet = new Set([C.pos, C.drawer?.group, C.reader, store.mw, store.door, store.staffDoor, C.scanner?.stand, C.scanner?.gun, C.printer, C.paper, C.monitor, store.counterHit, ...(store.cigSlots || [])].filter(Boolean));
     const skipStore = o => keepSet.has(o) || (o.userData && Object.keys(o.userData).length > 0) || o.isInstancedMesh;
     console.log('perf: store merged', mergeStatic(store.root, skipStore)); }
-  let merged = 0; for (const [g, skip] of [[tower.group, o => o === tower.evCar], [cafe.group, () => false], [armory.group, () => false], [prison.group, o => o === prison.vent || o === prison.tw], [storage.group, () => false], [courtB.court, () => false]]) merged += mergeStatic(g, skip);
-  lightMgr = new LightManager(scene, [keyLight, ugLight, crime.fx.flashLight]); const nl = lightMgr.harvest(); console.log('perf: merged', merged, 'lights pooled', nl);
+  let merged = 0; for (const [g, skip] of [[tower.group, o => o === tower.evCar], [cafe.group, () => false], [armory.group, () => false], [prison.group, o => o === prison.vent], [storage.group, () => false], [courtB.court, () => false]]) merged += mergeStatic(g, skip);
+  lightMgr = new LightManager(scene, [keyLight, ugLight, crime.fx.flashLight, prison.spot]); const nl = lightMgr.harvest(); console.log('perf: merged', merged, 'lights pooled', nl);
   window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide, features };
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
@@ -378,6 +383,7 @@ function loop() {
   updateAim(dt); updateLiquids(dt);
   if (game?.running) minimap?.update(dt);
   if (game?.running) features?.update(dt, crime.indoor() || yawObj.position.y - 1.55 < -1);
+  prison?.tick?.(dt, yawObj.position);
   if (game?.running && !crime?.inCourt) { peds?.update(dt, !crime.inPrison); crowd?.update(dt); driving?.update(dt); missions?.update(dt); animals?.update(dt, yawObj.position); store.merch.update(dt); const cw = camera.getWorldPosition(new THREE.Vector3()); for (const c of crime.extra) c.person.update(dt, cw); }
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }

@@ -15,6 +15,7 @@ const P = {
   warn: '<path d="M12 3.2l9.6 17H2.4z"/><path d="M12 10v4.8M12 17.6v.01"/>',
   police: '<path d="M3 17v-3.2L5.2 9h13.6L21 13.8V17z"/><circle cx="7.5" cy="17.2" r="1.9"/><circle cx="16.5" cy="17.2" r="1.9"/><path d="M10 5.5h4M12 5.5V9"/>',
   check: '<path d="M5 12.6l4.4 4.4L19 7.4"/>',
+  car: '<path d="M3.5 16.5v-3.8l2.2-5.2h12.6l2.2 5.2v3.8z"/><path d="M5.6 12.4h12.8"/><circle cx="7.6" cy="16.8" r="1.9"/><circle cx="16.4" cy="16.8" r="1.9"/>',
   scan: '<path d="M3 7V4.5A1.5 1.5 0 0 1 4.5 3H7M17 3h2.5A1.5 1.5 0 0 1 21 4.5V7M21 17v2.5a1.5 1.5 0 0 1-1.5 1.5H17M7 21H4.5A1.5 1.5 0 0 1 3 19.5V17"/><path d="M7 7v10M10 7v10M13.5 7v10M17 7v10" stroke-width="1.6"/><path d="M2.5 12h19" stroke="#ff4040" stroke-width="1.4"/>',
   fist: '<path d="M7 11V7.5a1.5 1.5 0 0 1 3 0V10M10 9.5V6a1.5 1.5 0 0 1 3 0v4M13 9.5V6.5a1.5 1.5 0 0 1 3 0V11M16 10V8.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6 6 0 0 1-6-6v-2.5a1.5 1.5 0 0 1 3 0V14"/>',
   gun: '<path d="M3 8h16l1 3h-6l-1 2h-3l-1 6H5l1-6H3z"/><path d="M11 13v2h2"/>',

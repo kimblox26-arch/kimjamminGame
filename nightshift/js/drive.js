@@ -72,16 +72,22 @@ export class Driving {
     if (this.ride) return null;
     const me = this.yawObj.position; if (me.y - 1.55 < -1 || me.y - 1.55 > 2) return null;
     let best = null, bd = 2.4;
-    const consider = (obj, kind, ref, pt) => { const d = Math.hypot(pt.x - me.x, pt.z - me.z); if (d < bd) { bd = d; best = { obj, kind, ref }; } };
+    const consider = (obj, kind, ref, pt, dist) => { const d = dist ?? Math.hypot(pt.x - me.x, pt.z - me.z); if (d < bd) { bd = d; best = { obj, kind, ref }; } };
     for (const v of this.traffic.list) {
       if (!v.mesh.visible) continue;
       if (v.kind === 'bus') { if (v.mesh.userData.doorK > 0.5) consider(v.mesh, 'bus', v, v.mesh.localToWorld(V3(-1.6, 0, 4.4))); continue; }
-      const S = v.mesh.userData.size; consider(v.mesh, 'car', v, v.mesh.localToWorld(V3(S.x / 2 + 0.5, 0, S.z * 0.1)));
+      if ((v.cur || 0) > 3) continue;   // 달리는 차는 못 탐 (멈추면 탈 수 있음)
+      // 차 어느 쪽이든 차체에서 1.5m 안이면 탈 수 있음
+      const m = v.mesh, S = m.userData.size || { x: 2, z: 4.4 }, a = m.rotation.y, c = Math.cos(a), sn = Math.sin(a), dx = me.x - m.position.x, dz = me.z - m.position.z;
+      const lx = dx * c - dz * sn, lz = dx * sn + dz * c, ex = Math.max(0, Math.abs(lx) - S.x / 2), ez = Math.max(0, Math.abs(lz) - S.z / 2);
+      consider(m, 'car', v, null, Math.hypot(ex, ez) + 0.8);
     }
     for (const b of this.bikes) consider(b, 'bike', null, b.position);
     if (this.scooter) consider(this.scooter, 'scooter', null, this.scooter.position);
     return best;
   }
+  // 점 p에서 차체(회전된 상자)까지 거리
+  boxGap(m, p) { const S = m.userData.size || { x: 2, z: 4.4 }, a = m.rotation.y, c = Math.cos(a), sn = Math.sin(a), dx = p.x - m.position.x, dz = p.z - m.position.z, lx = dx * c - dz * sn, lz = dx * sn + dz * c; return Math.hypot(Math.max(0, Math.abs(lx) - S.x / 2), Math.max(0, Math.abs(lz) - S.z / 2)); }
   label(n) { return { car: '차 타기', bike: '자전거 타기', scooter: '스쿠터 타기', bus: '버스 타기' }[n.kind]; }
   async enter(n) {
     const { obj, kind, ref } = n; this.mover.enabled = false; this.mover.riding = true; this.hands.rest('R'); this.hands.rest('L');
@@ -112,10 +118,10 @@ export class Driving {
     }
     this.look.pitch = r0pitch(kind); this.lookOff = 0; this.lastYaw = undefined; this.place(); document.body.classList.add('riding'); document.body.classList.toggle('in-car', kind === 'car'); this.hud();
   }
-  exit() {
+  exit(force) {
     const r = this.ride; if (!r) return;
-    if (r.kind !== 'bus' && Math.abs(r.v) > 2.5) { toast('속도를 줄여야 내릴 수 있어요', 'bad', 1500); return; }
-    if (r.kind === 'bus' && !(r.ref.stopT > 0)) { toast('정류장에서 내릴 수 있어요', 'bad', 1500); return; }
+    if (!force && r.kind !== 'bus' && Math.abs(r.v) > 2.5) { toast('속도를 줄여야 내릴 수 있어요', 'bad', 1500); return; }
+    if (!force && r.kind === 'bus' && !(r.ref.stopT > 0)) { toast('정류장에서 내릴 수 있어요', 'bad', 1500); return; }
     const o = r.obj, S = o.userData.size || V3(0.6, 1, 1.7);
     let out = r.kind === 'car' ? V3(S.x / 2 + 0.75, 0, S.z * 0.1) : r.kind === 'bus' ? V3(-1.9, 0, 4.4) : V3(0.8, 0, 0);
     out = o.localToWorld(out); out.y = 1.55;

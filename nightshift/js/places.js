@@ -52,7 +52,7 @@ export function buildStorage(scene, collide) {
 }
 
 // 법정 (멀리 떨어진 곳에 만들어 두고 체포되면 카메라를 옮긴다)
-export const COURT = new THREE.Vector3(0, 0, 600), PRISON = new THREE.Vector3(30, 0, 600);
+export const COURT = new THREE.Vector3(0, 0, 600), PRISON = new THREE.Vector3(-282.5, 0, 226);   // 달빛교도소: 도시 남서쪽 블록 (차로 갈 수 있음)
 export function buildCourt(scene) {
   const g = new THREE.Group(); g.position.copy(COURT); scene.add(g);
   const W = 16, D = 15, H = 5.6;

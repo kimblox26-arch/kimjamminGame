@@ -233,3 +233,11 @@ body.photo #hud{visibility:hidden}
 #photoUI #shutter{width:74px;height:74px;border-radius:50%;border:5px solid #fff;background:rgba(255,255,255,.25);color:#fff;font-size:26px}
 #photoUI #photoX{padding:0 18px;border-radius:20px;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.3)}
 #fade.flash{opacity:1!important;background:#fff!important;transition:none!important}
+#bRide{position:absolute;right:calc(max(14px,env(safe-area-inset-right)) + 200px);bottom:calc(max(12px,env(safe-area-inset-bottom)) + 96px);width:76px;height:76px;background:rgba(47,160,211,.78);border-color:rgba(255,255,255,.55);animation:ridePulse 1.6s ease-in-out infinite}
+#bRide .ico{width:30px;height:30px}
+@keyframes ridePulse{0%,100%{box-shadow:0 0 0 0 rgba(47,160,211,.55)}50%{box-shadow:0 0 0 10px rgba(47,160,211,0)}}
+body.riding #bRide,body.court-mode #bRide{display:none!important}
+@media (max-height:430px){#bRide{width:64px;height:64px;right:calc(max(14px,env(safe-area-inset-right)) + 176px);bottom:calc(max(12px,env(safe-area-inset-bottom)) + 84px)}}
+#bigmap .mzoom{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:14px;display:flex;flex-direction:column;gap:8px}
+#bigmap .mzoom button{min-width:48px;height:48px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:rgba(20,28,40,.85);color:#fff;font-size:22px;font-weight:900;padding:0 10px}
+#bigmap .mzoom button[data-z="0"]{font-size:12px}
