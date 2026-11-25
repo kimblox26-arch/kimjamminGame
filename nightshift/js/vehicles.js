@@ -57,8 +57,13 @@ function paintOf(group) {
 export async function loadVehicles(scene, onProgress) {
   const L = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   let done = 0;
-  const get = n => L.loadAsync(`assets/models/${n}.glb`).then(g => { onProgress?.(++done / 2); return g.scene; });
-  const [carS, scootS] = await Promise.all([get('car'), get('scooter')]);
+  const get = n => L.loadAsync(`assets/models/${n}.glb`).then(g => { onProgress?.(++done / 6); return g.scene; });
+  const [carS, scootS, ferS, fridgeS, sofaS, chairS] = await Promise.all([get('car'), get('scooter'), get('ferrari'), get('fridge'), get('sofa'), get('chair')]);
+  // 스포츠카 (페라리 458): 바퀴·핸들이 따로 움직임, 실내(가죽 시트·카본) 있음
+  const ferrari = new THREE.Group(); { const m = ferS; m.rotation.y = Math.PI; m.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(m); m.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2); ferrari.add(m); ferrari.userData.size = box.getSize(new THREE.Vector3());
+    m.traverse(o => { if (!o.isMesh) return; o.castShadow = true; const mt = o.material; mt.envMapIntensity = 0.9; if (mt.name === 'Body_Color') { o.material = new THREE.MeshPhysicalMaterial({ color: 0xc21a1a, metalness: 0.6, roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.2 }); o.material.name = 'Body_Color'; } if (/Glass/i.test(mt.name)) { mt.transparent = true; mt.opacity = mt.name === 'Glass_Gray' ? 0.35 : 0.7; mt.depthWrite = false; } });
+    ferrari.userData.ferrari = true; ferrari.visible = false; scene.add(ferrari); }
+  const prop = (s) => { s.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.material.transmission) { o.material.transmission = 0; o.material.transparent = true; o.material.opacity = 0.28; o.material.depthWrite = false; } } }); return s; };
 
   // 가게 앞 인도에 세워둔 배달 스쿠터 + 배달통
   const scooter = prep(scootS, { night: 0.7 });
@@ -73,6 +78,6 @@ export async function loadVehicles(scene, onProgress) {
   car.userData.paint = paintOf(car);
   const beam = new THREE.SpotLight(0xfff2d0, 80, 30, 0.45, 0.6, 1.5); beam.position.set(0, 0.8, car.userData.size.z / 2); beam.target.position.set(0, 0, 12); car.add(beam, beam.target);
   car.visible = false; scene.add(car);
-  return { car, scooter };
+  return { car, scooter, ferrari, fridge: prop(fridgeS), sofa: prop(sofaS), chair: prop(chairS) };
 }
 export const CAR_COLORS = [0xf4f4f2, 0x111214, 0x9aa1a8, 0x1c2c52, 0x7a1414, 0x2d3b2a];

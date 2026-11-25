@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { RAMPS, FLOORS } from './zones.js';
 import { Person } from './people.js';
 import { makePistol, makeRifle } from './weapons.js';
+import { tex, pbr } from './tex.js';
 
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -12,7 +13,9 @@ const M = o => new THREE.MeshStandardMaterial({ roughness: 0.7, envMapIntensity:
 const B = (p, m, sx, sy, sz, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); p.add(b); return b; };
 const label = (txt, w, h, bg, fg, px = 64) => ctex(w, h, (g, W, H) => { g.fillStyle = bg; g.fillRect(0, 0, W, H); g.fillStyle = fg; g.font = `900 ${px}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, W / 2, H / 2); });
 const plane = (p, mat, w, h, x, y, z, ry = 0) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat); m.position.set(x, y, z); m.rotation.y = ry; p.add(m); return m; };
-const concT = () => ctex(256, 256, (g, w, h) => { g.fillStyle = '#7c8086'; g.fillRect(0, 0, w, h); for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},${Math.random() * 0.08})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } }, [2, 2]);
+const concT0 = () => ctex(256, 256, (g, w, h) => { g.fillStyle = '#7c8086'; g.fillRect(0, 0, w, h); for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},${Math.random() * 0.08})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } }, [2, 2]);
+const concT = () => tex('concrete_col.jpg', [3, 2]);
+const concM = (o = {}) => M({ ...pbr('concrete', [3, 2]), ...o });
 // 벽 (방 둘레) + 충돌: rect, 높이, 바닥 y, 문 틈 [{side:'n|s|w|e', a, b}], opt = 충돌 옵션(lv 또는 y0/y1)
 function room(p, collide, r, H, y, mat, gaps = [], opt = {}) {
   const T = 0.15, seg = (side, a, b) => {
@@ -34,7 +37,7 @@ export function buildArmory(scene, collide) {
   const { stair: S, room: R, y: Y } = ARMORY, CY = -0.3;
   RAMPS.push({ x0: S.x0, x1: S.x1, z0: S.z0 - 0.4, z1: S.z1, axis: 'z', from: S.z1, to: S.z0, y0: 0, y1: Y });
   FLOORS.push({ x0: R.x0, x1: R.x1, z0: R.z0, z1: R.z1, y: Y });
-  const conc = M({ map: concT(), roughness: 0.85 }), steel = M({ color: 0x3a3f45, metalness: 0.75, roughness: 0.38 }), yel = M({ color: 0xe0b020, roughness: 0.5 });
+  const conc = concM(), steel = M({ color: 0x3a3f45, metalness: 0.75, roughness: 0.38 }), yel = M({ color: 0xe0b020, roughness: 0.5 });
   // 계단 (17칸) + 옆벽 + 창고 쪽 난간
   const N = 17, run = (S.z1 - S.z0) / N, rise = -Y / N;
   for (let i = 0; i < N; i++) { const z = S.z1 - (i + 0.5) * run, top = -(i + 1) * rise; B(g, M({ color: 0x6b6f75, roughness: 0.8 }), S.x1 - S.x0, 0.3, run, (S.x0 + S.x1) / 2, top - 0.15, z); B(g, yel, S.x1 - S.x0 - 0.06, 0.012, 0.04, (S.x0 + S.x1) / 2, top + 0.006, z + run / 2 - 0.03); }
@@ -85,7 +88,8 @@ export function buildArmory(scene, collide) {
 export const TOWER = { x0: 20.5, x1: 42.6, z0: -14, z1: 3.9, h: 26, lobby: { x0: 20.8, x1: 42.3, z0: -6, z1: 3.75 }, door: [22.6, 24.8], f5: 12, roof: 26.4, ev: { x0: 37, x1: 39.2, z0: -5.9, z1: -4.1 } };
 export function buildTower(scene, collide) {
   const g = new THREE.Group(); scene.add(g); const T = TOWER, Lb = T.lobby, E = T.ev;
-  const marble = M({ map: ctex(256, 256, (q, w, h) => { q.fillStyle = '#e8e4dc'; q.fillRect(0, 0, w, h); for (let i = 0; i < 40; i++) { q.strokeStyle = `rgba(120,110,100,${Math.random() * 0.25})`; q.lineWidth = Math.random() * 2; q.beginPath(); q.moveTo(Math.random() * w, 0); q.bezierCurveTo(Math.random() * w, h / 3, Math.random() * w, h * 2 / 3, Math.random() * w, h); q.stroke(); } }, [4, 2]), roughness: 0.18, envMapIntensity: 1 });
+  const marble0 = M({ map: ctex(256, 256, (q, w, h) => { q.fillStyle = '#e8e4dc'; q.fillRect(0, 0, w, h); for (let i = 0; i < 40; i++) { q.strokeStyle = `rgba(120,110,100,${Math.random() * 0.25})`; q.lineWidth = Math.random() * 2; q.beginPath(); q.moveTo(Math.random() * w, 0); q.bezierCurveTo(Math.random() * w, h / 3, Math.random() * w, h * 2 / 3, Math.random() * w, h); q.stroke(); } }, [4, 2]), roughness: 0.18, envMapIntensity: 1 });
+  void marble0; const marble = M({ map: tex('marble_col.jpg', [5, 4]), roughness: 0.12, envMapIntensity: 1.3 });
   const wallM = M({ color: 0xd9d6cf, roughness: 0.6 }), dark = M({ color: 0x2b2f36, metalness: 0.5, roughness: 0.4 }), glass = M({ color: 0xbcd4e6, transparent: true, opacity: 0.22, roughness: 0.03, envMapIntensity: 1.5, depthWrite: false, side: THREE.DoubleSide });
   // 뒤쪽(로비 뒤) 막힌 부분 충돌
   collide({ x0: T.x0 - 0.1, x1: T.x1 + 0.1, z0: T.z0 - 0.1, z1: Lb.z0 });
@@ -99,7 +103,7 @@ export function buildTower(scene, collide) {
   const sign = plane(g, new THREE.MeshBasicMaterial({ map: label('DALBIT TOWER  달빛타워', 1024, 160, '#1b2433', '#e9c46a', 84), toneMapped: false }), 6, 0.9, 31.5, 4.6, T.z1 + 0.05);
   void sign;
   const desk = B(g, M({ color: 0x3e2c22, roughness: 0.4 }), 3.2, 1.05, 0.8, 30, 0.525, -2.5); void desk; collide({ x0: 28.4, x1: 31.6, z0: -2.9, z1: -2.1 });
-  B(g, M({ color: 0x1d1f22, roughness: 0.8 }), 2.2, 0.45, 0.8, 25, 0.225, -4.6); B(g, M({ color: 0x1d1f22, roughness: 0.8 }), 2.2, 0.5, 0.2, 25, 0.6, -4.95); collide({ x0: 23.9, x1: 26.1, z0: -5.1, z1: -4.2 });
+  collide({ x0: 23.9, x1: 26.1, z0: -5.1, z1: -4.2 });
   for (const x of [21.5, 41.6]) { B(g, M({ color: 0x6b4a2e }), 0.5, 0.5, 0.5, x, 0.25, 3.1); for (let i = 0; i < 3; i++) { const l = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 1), M({ color: 0x2f6b2f })); l.position.set(x, 0.9 + i * 0.25, 3.1); g.add(l); } }
   const LL = new THREE.PointLight(0xfff3e0, 10, 16, 1.3); LL.position.set(31, 3.8, -1); g.add(LL);
   // 엘리베이터 (로비 뒤): 통로 벽·문·버튼, 칸은 층마다 따라다님
@@ -147,10 +151,10 @@ export const CAFE = { x0: 5.3, x1: 19.7, z0: -6, z1: 3.75, door: [11.8, 13.6] };
 export function buildCafe(scene, collide, audio) {
   const g = new THREE.Group(); scene.add(g); const C = CAFE;
   collide({ x0: 4.9, x1: 20.1, z0: -14.1, z1: C.z0 });
-  const floor = M({ map: ctex(256, 256, (q, w, h) => { for (let i = 0; i < 8; i++) { q.fillStyle = `hsl(28,${35 + Math.random() * 10}%,${30 + Math.random() * 8}%)`; q.fillRect(0, i * 32, w, 31); } }, [3, 6]), roughness: 0.45 });
+  const floor = M({ map: tex('wood_col.jpg', [5, 4]), bumpMap: tex('wood_bump.jpg', [5, 4], false), bumpScale: 1.5, roughnessMap: tex('wood_rgh.jpg', [5, 4], false), roughness: 1, envMapIntensity: 0.8 });
   B(g, floor, C.x1 - C.x0, 0.03, C.z1 - C.z0, (C.x0 + C.x1) / 2, 0.015, (C.z0 + C.z1) / 2);
   B(g, M({ color: 0x3b3029, roughness: 0.9 }), C.x1 - C.x0, 0.05, C.z1 - C.z0, (C.x0 + C.x1) / 2, 3.4, (C.z0 + C.z1) / 2);
-  const brick = M({ map: ctex(256, 256, (q, w, h) => { q.fillStyle = '#7a4a36'; q.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 16) for (let x = (y / 16 % 2) * 24; x < w; x += 48) { q.fillStyle = `hsl(15,${30 + Math.random() * 15}%,${28 + Math.random() * 10}%)`; q.fillRect(x + 1, y + 1, 46, 14); } }, [4, 2]), roughness: 0.9 });
+  const brick = M({ map: tex('brick_col.jpg', [6, 2]), bumpMap: tex('brick_bump.jpg', [6, 2], false), bumpScale: 3, roughnessMap: tex('brick_rgh.jpg', [6, 2], false), roughness: 1 });
   room(g, collide, C, 3.4, 0, brick, [{ side: 's', a: C.door[0], b: C.door[1] }]);
   const glass = M({ color: 0xffe2b8, transparent: true, opacity: 0.25, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide });
   plane(g, glass, C.door[1] - C.door[0], 2.4, (C.door[0] + C.door[1]) / 2, 1.2, 3.97);
@@ -177,7 +181,7 @@ export function buildCafe(scene, collide, audio) {
 // ── 교도소: 감방 4칸 + 복도 + 운동장(철조망 울타리·감시탑·탐조등) + 순찰 교도관. 탈옥: 환풍구 → 운동장 → 개구멍 ──
 export function buildPrison(scene, collide, base) {
   const g = new THREE.Group(); g.position.copy(base); scene.add(g);
-  const conc = M({ map: concT(), roughness: 0.9 }), bar = M({ color: 0x2a2d31, metalness: 0.8, roughness: 0.35 }), floorM = M({ color: 0x5d6166, roughness: 0.6 });
+  const conc = concM({ color: 0xb0b4b8 }), bar = M({ color: 0x2a2d31, metalness: 0.8, roughness: 0.35 }), floorM = M({ ...pbr('concrete', [8, 4]), color: 0x8a8e94 });
   const W = (x0, x1, z0, z1) => collide({ x0: base.x + x0, x1: base.x + x1, z0: base.z + z0, z1: base.z + z1 });
   // 감방 동: x -8..8, z -4..4 (감방 z -4..-0.5, 복도 z -0.5..4)
   B(g, floorM, 16, 0.04, 8, 0, 0.02, 0); B(g, M({ color: 0x55595e }), 16, 0.05, 8, 0, 3.2, 0);

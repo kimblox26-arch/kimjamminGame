@@ -87,7 +87,7 @@ export class Driving {
     const { obj, kind, ref } = n; this.mover.enabled = false; this.mover.riding = true; this.hands.rest('R'); this.hands.rest('L');
     this.crime.setWeapon?.('fist');
     const S0 = obj.userData.size || V3(0.6, 1, 1.7);
-    this.ride = { obj, kind, ref, v: 0, steer: 0, ry: obj.rotation.y, lean: 0, eye: kind === 'car' ? V3(S0.x * 0.2, S0.y * 0.72, -S0.z * 0.06) : kind === 'bus' ? V3(0.75, 1.65, -1.2) : kind === 'bike' ? V3(0, 1.72, -0.28) : V3(0, 1.6, -0.25), entering: kind === 'car' };
+    this.ride = { obj, kind, ref, v: 0, steer: 0, ry: obj.rotation.y, lean: 0, eye: kind === 'car' ? (obj.userData.ferrari ? V3(0.35, 1.12, -0.25) : V3(S0.x * 0.2, S0.y * 0.72, -S0.z * 0.06)) : kind === 'bus' ? V3(0.75, 1.65, -1.2) : kind === 'bike' ? V3(0, 1.72, -0.28) : V3(0, 1.6, -0.25), entering: kind === 'car' };
     if (kind === 'car') {
       if (ref && !ref.taken) {
         ref.taken = true; ref.cur = 0;
@@ -95,9 +95,9 @@ export class Driving {
           const drv = this.spawnDriver?.(obj); if (drv) { this.game.say(drv, pk(JACKED)); this.crime.wanted?.add(1, '차량 탈취'); }
         }
       }
-      const door = splitDoor(obj); this.audio.play('door', { pos: obj.position, vol: 0.9, rate: 1.25 });
+      const door = obj.userData.ferrari ? new THREE.Object3D() : splitDoor(obj); this.audio.play('door', { pos: obj.position, vol: 0.9, rate: 1.25 });
       await this.anim(t => (door.rotation.y = -t * 1.15), 450);
-      this.ride.eye = V3(obj.userData.size.x * 0.2, obj.userData.size.y * 0.72, -obj.userData.size.z * 0.06);
+      
       this.place(); await this.anim(t => (door.rotation.y = -1.15 * (1 - t)), 400);
       this.audio.play('door', { pos: obj.position, vol: 1, rate: 0.9 }); this.audio.play('key', { vol: 0.8, rate: 0.7, delay: 0.5 });
       this.ride.snd = ref?.snd || this.audio.play('engine', { pos: obj.position, loop: true, vol: 1.2, rate: 0.5, delay: 0.9 }); this.ride.entering = false;
@@ -119,7 +119,7 @@ export class Driving {
     const o = r.obj, S = o.userData.size || V3(0.6, 1, 1.7);
     let out = r.kind === 'car' ? V3(S.x / 2 + 0.75, 0, S.z * 0.1) : r.kind === 'bus' ? V3(-1.9, 0, 4.4) : V3(0.8, 0, 0);
     out = o.localToWorld(out); out.y = 1.55;
-    if (r.kind === 'car') { const door = splitDoor(o); this.audio.play('door', { pos: o.position, vol: 0.9, rate: 1.25 }); this.anim(t => (door.rotation.y = -Math.sin(t * Math.PI) * 1.1), 900).then(() => this.audio.play('door', { pos: o.position, vol: 1, rate: 0.9 })); if (r.ref) { r.ref.parked = true; r.ref.cur = 0; } if (r.snd && !r.ref?.snd) r.snd.stop?.(); }
+    if (r.kind === 'car') { const door = o.userData.ferrari ? new THREE.Object3D() : splitDoor(o); this.audio.play('door', { pos: o.position, vol: 0.9, rate: 1.25 }); this.anim(t => (door.rotation.y = -Math.sin(t * Math.PI) * 1.1), 900).then(() => this.audio.play('door', { pos: o.position, vol: 1, rate: 0.9 })); if (r.ref) { r.ref.parked = true; r.ref.cur = 0; } if (r.snd && !r.ref?.snd) r.snd.stop?.(); }
     if (r.kind === 'scooter' && r.snd) r.snd.stop?.();
     if (r.kind === 'bus') this.busInterior(o, false);
     this.yawObj.position.copy(out); this.look.yaw = (r.obj.rotation.y + Math.PI); this.look.pitch = 0;
@@ -145,7 +145,7 @@ export class Driving {
       this.place(); this.look.yaw += 0; if (this.speedEl) this.speedEl.textContent = r.ref.stopT > 0 ? '정류장 · 내리기 가능' : `${r.ref.num || ''}번 버스`; return;
     }
     let thr = -vec.y, st = -vec.x; if (k.KeyW || k.ArrowUp) thr = 1; if (k.KeyS || k.ArrowDown) thr = -1; if (k.KeyA || k.ArrowLeft) st = 1; if (k.KeyD || k.ArrowRight) st = -1;
-    const spec = { car: { acc: 6, max: 24, rev: 6, wb: 2.6, steer: 0.55, brake: 11 }, scooter: { acc: 4.5, max: 14, rev: 0, wb: 1.3, steer: 0.6, brake: 9 }, bike: { acc: 2.4, max: 7.5, rev: 0, wb: 1.05, steer: 0.65, brake: 7 } }[r.kind];
+    const spec = { car: o.userData.ferrari ? { acc: 9, max: 42, rev: 7, wb: 2.65, steer: 0.5, brake: 14 } : { acc: 6, max: 24, rev: 6, wb: 2.6, steer: 0.55, brake: 11 }, scooter: { acc: 4.5, max: 14, rev: 0, wb: 1.3, steer: 0.6, brake: 9 }, bike: { acc: 2.4, max: 7.5, rev: 0, wb: 1.05, steer: 0.65, brake: 7 } }[r.kind];
     if (thr > 0.15) r.v += (r.v < 0 ? spec.brake : spec.acc) * thr * dt; else if (thr < -0.15) r.v -= (r.v > 0.3 ? spec.brake : spec.acc * 0.6) * -thr * dt; else r.v -= Math.sign(r.v) * Math.min(Math.abs(r.v), (0.8 + Math.abs(r.v) * 0.05) * dt);
     r.v = Math.max(-spec.rev, Math.min(spec.max, r.v));
     r.steer += (st * spec.steer * (1 - Math.min(0.5, Math.abs(r.v) / 50)) - r.steer) * Math.min(1, dt * 5);
@@ -172,6 +172,7 @@ export class Driving {
       const rel = p.clone().sub(o.position), ahead = rel.dot(fwd), side = Math.abs(rel.x * fwd.z - rel.z * fwd.x);
       if (Math.abs(ahead) < (r.kind === 'car' ? S.z / 2 + 0.35 : 0.9) && side < (r.kind === 'car' ? S.x / 2 + 0.25 : 0.45) && Math.abs(r.v) > 1.5) this.hitPerson?.(c, fwd.clone().multiplyScalar(Math.sign(r.v)), Math.abs(r.v), true);
     }
+    if (o.userData.wheels) o.userData.wheels.forEach((w, i) => { w.rotation.x += r.v * dt / 0.34; if (i < 2) w.rotation.y = r.steer; });
     // 바퀴·페달·기울기
     if (r.kind === 'bike') { o.userData.wheels.forEach(w => (w.rotation.x += r.v * dt / 0.34)); o.userData.crank.rotation.x += r.v * dt / 0.34 * 0.55; o.userData.bar.rotation.y = r.steer * 0.8; }
     r.lean += ((r.kind === 'car' ? 0 : -r.steer * Math.min(1, Math.abs(r.v) / 5) * 0.5) - r.lean) * Math.min(1, dt * 4); o.rotation.z = r.lean;

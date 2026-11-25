@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RAMPS, FLOORS } from './zones.js';
+import { pbr } from './tex.js';
 
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 export const UNDER = {
@@ -29,8 +30,8 @@ export function buildUnderpass(scene, onCollider) {
   const floorT = ctex(512, 512, (g, w, h) => { g.fillStyle = '#b9b3a8'; g.fillRect(0, 0, w, h); for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { g.fillStyle = (x + y) % 2 ? '#c4beb3' : '#aea89c'; g.fillRect(x * 128 + 1, y * 128 + 1, 126, 126); for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(${Math.random() < 0.5 ? '60,55,50' : '235,230,220'},${Math.random() * 0.35})`; g.fillRect(x * 128 + Math.random() * 126, y * 128 + Math.random() * 126, 2, 2); } } g.fillStyle = 'rgba(80,75,70,.6)'; for (let i = 0; i <= 4; i++) { g.fillRect(i * 128 - 1, 0, 2, h); g.fillRect(0, i * 128 - 1, w, 2); } }, true);
   const wallT = ctex(256, 256, (g, w, h) => { g.fillStyle = '#e4e0d6'; g.fillRect(0, 0, w, h); for (let y = 0; y < 8; y++) for (let x = 0; x < 4; x++) { g.fillStyle = `hsl(40,${10 + Math.random() * 6}%,${84 + Math.random() * 5}%)`; g.fillRect(x * 64 + 1, y * 32 + 1, 62, 30); } }, true);
   const ceilT = ctex(256, 256, (g, w, h) => { g.fillStyle = '#c9ccd0'; g.fillRect(0, 0, w, h); for (let i = 0; i <= 4; i++) { g.fillStyle = '#8f9399'; g.fillRect(i * 64 - 1, 0, 2, h); g.fillRect(0, i * 64 - 1, w, 2); } for (let i = 0; i < 900; i++) { g.fillStyle = 'rgba(90,90,95,.25)'; g.fillRect(Math.random() * w, Math.random() * h, 1, 1); } }, true);
-  const mFloor = M({ map: floorT, roughness: 0.16, envMapIntensity: 1.1 }), mWall = M({ map: wallT, roughness: 0.35 }), mCeil = M({ map: ceilT, roughness: 0.9 });
-  const mStep = M({ color: 0x8e8a84, roughness: 0.75 }), mNose = M({ color: 0xd8b13a, roughness: 0.6 }), mSteel = M({ color: 0xb8bec6, metalness: 0.85, roughness: 0.25 });
+  void floorT; const mFloor = M({ ...pbr('tile', [1, 1]), envMapIntensity: 1.2 }), mWall = M({ map: wallT, roughness: 0.35 }), mCeil = M({ map: ceilT, roughness: 0.9 });
+  const mStep = M(pbr('concrete', [1, 1])), mNose = M({ color: 0xd8b13a, roughness: 0.6 }), mSteel = M({ color: 0xb8bec6, metalness: 0.85, roughness: 0.25 });
   const mGlass = M({ color: 0xcfe3f0, transparent: true, opacity: 0.22, roughness: 0.05, envMapIntensity: 1.2, side: THREE.DoubleSide });
   const mLight = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xf4f8ff).multiplyScalar(1.6), toneMapped: false });
   // ── 넓은 홀 ──

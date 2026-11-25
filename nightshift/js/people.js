@@ -15,7 +15,7 @@ export async function loadPeople(onProgress) {
   base.clips = { man: {}, woman: {} };
   for (const k of ['man', 'woman']) for (const clip of base.anim.animations) base.clips[k][clip.name] = retarget(base.anim.scene, base[k].scene, clip);
   // 정면 방향 맞추기 위해 기본 자세 정보
-  for (const k of ['man', 'woman']) base[k].scene.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; } });
+  for (const k of ['man', 'woman']) base[k].scene.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
 }
 
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion(), _ax = new THREE.Vector3(), _ay = new THREE.Vector3(), _az = new THREE.Vector3();

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { pbr, tex } from './tex.js';
 import { PRODUCTS, SHELF_ITEMS, FRIDGE_ITEMS, CIGS } from './data.js';
 
 export const SPOT = {
@@ -77,7 +78,7 @@ export function buildStore(renderer, scene, quality) {
     g.strokeStyle = '#a7a39b'; g.lineWidth = 3; g.strokeRect(0, 0, w, h); g.strokeRect(w / 2, 0, 0, h); g.strokeRect(0, h / 2, w, 0);
   });
   floorTex.repeat.set(8, 6.7);
-  const mFloor = std({ map: floorTex, roughness: 0.14, metalness: 0.05, envMapIntensity: 1.1 });
+  void floorTex; const mFloor = std({ ...pbr('tile', [4.2, 3.4]), metalness: 0.02, envMapIntensity: 1.2, normalScale: new THREE.Vector2(0.6, 0.6) });   // 60cm 광택 포셀린 타일
   const mWall = std({ color: 0xc9ccd0, roughness: 0.85 });
   const mBrand = std({ color: 0x14a38b, roughness: 0.5 });
   const mBrand2 = std({ color: 0xff7a2e, roughness: 0.5 });
@@ -269,7 +270,7 @@ export function buildStore(renderer, scene, quality) {
   try {
     const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
     const cc = new THREE.CubeCamera(0.05, 40, rt); cc.position.set(-0.8, 1.5, 0.4); scene.add(cc); cc.update(renderer, scene); scene.remove(cc);
-    const env = pmrem.fromCubemap(rt.texture).texture; scene.environment = env; rt.dispose();
+    const env = pmrem.fromCubemap(rt.texture).texture; scene.environment = env; scene.userData.storeEnv = env; rt.dispose();
   } catch (e) { console.warn('env capture', e); }
   return { root, mw, door, doorAngle: 0, staffDoor, cigSlots, C, pos: C.pos, posScreenTex: C.posScreenTex, outside, merch };
 }

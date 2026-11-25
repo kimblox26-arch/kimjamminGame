@@ -362,9 +362,9 @@ export class Crime {
   // ── 수배 등급(별 0~5) · 내 체력 · 경찰 사격 · 깡패 · 차 사고 · 교도소 ──
   get wanted() {
     const me = this;
-    return { add(n, why) { if (me.inCourt || me.inPrison || me.arrested) return; const old = me.lv; me.lv = Math.min(5, Math.max(me.lv, 0) + n); me.lvT = 0; me.starsHud(); if (me.lv > old) { toast(ic('siren') + `수배 ${'★'.repeat(me.lv)} · ${why}`, 'bad', 2000); if (me.lv >= 1) { me.game.violence = true; me.callPolice(); } if (me.lv >= 3 && me.backup < me.lv - 1) { me.backup++; setTimeout(() => me.policeArrive(true), 4000); } } }, get level() { return me.lv; } };
+    return { add(n, why) { if (me.inCourt || me.inPrison || me.arrested) return; const old = me.lv; me.lv = Math.min(5, Math.max(me.lv, 0) + n); me.lvT = 0; me.starsHud(); if (me.lv > old) { toast(ic('siren') + `경찰이 쫓아요 · ${why}`, 'bad', 2000); if (me.lv >= 1) { me.game.violence = true; me.callPolice(); } if (me.lv >= 3 && me.backup < me.lv - 1) { me.backup++; setTimeout(() => me.policeArrive(true), 4000); } } }, get level() { return me.lv; } };
   }
-  starsHud() { const el = $('stars'); if (el) el.innerHTML = this.lv ? [1, 2, 3, 4, 5].map(i => `<i class="${i <= this.lv ? 'on' : ''}">★</i>`).join('') : ''; }
+  starsHud() { const el = $('stars'); if (el) el.innerHTML = ''; }   // 수배 별 표시는 없앰 (경찰 추적은 그대로)
   hpHud() { const el = $('hpbar'); if (el) { el.style.setProperty('--hp', Math.max(0, this.hp) + '%'); el.classList.toggle('low', this.hp < 35); } }
   hurtMe(dmg, from) {
     if (this.dead || this.inCourt || this.arrested) return; this.hp -= dmg; this.hurtT = 0; this.hpHud();
@@ -384,7 +384,7 @@ export class Crime {
     // 별 내려가기: 경찰이 가까이 없으면 25초마다 하나씩
     if (this.lv > 0 && !this.arrested && !this.inCourt) {
       const me = this.yawObj.position, near = this.officers.some(o => !o.dead && o.root.position.distanceTo(me) < 40);
-      if (!near && (this.lvT += dt) > 25) { this.lvT = 0; this.lv--; this.starsHud(); if (!this.lv) { toast('수배가 풀렸어요', 'good', 1800); this.called = false; this.backup = 0; for (const o of this.officers) o.chase = false; } }
+      if (!near && (this.lvT += dt) > 25) { this.lvT = 0; this.lv--; this.starsHud(); if (!this.lv) { toast('경찰 추적이 끝났어요', 'good', 1800); this.called = false; this.backup = 0; for (const o of this.officers) o.chase = false; } }
       if (near) this.lvT = 0;
     }
   }
