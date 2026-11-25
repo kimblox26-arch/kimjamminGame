@@ -1,7 +1,7 @@
 // 소리: 실제 녹음 효과음(assets/sfx) + 3D 위치 + 손님/사장님 목소리(기기 TTS)
 import * as THREE from 'three';
 
-const SFX = ['chime', 'door', 'register', 'bill', 'bag', 'step1', 'step2', 'thud', 'key', 'night', 'engine', 'whoosh', 'gun', 'punch', 'hit', 'horn'];
+const SFX = ['chime', 'door', 'register', 'bill', 'bag', 'step1', 'step2', 'thud', 'key', 'night', 'engine', 'whoosh', 'gun', 'punch', 'hit', 'horn', 'scream_f1', 'scream_f2', 'scream_m1', 'scream_m2', 'hurt_m1', 'hurt_m2', 'hurt_m3', 'hurt_m4', 'hurt_f1', 'hurt_f2', 'hurt_f3', 'die_m1', 'die_m2', 'die_m3', 'die_f1', 'die_f2', 'die_f3', 'breath_f', 'breath_m'];
 export const Native = window.NativeApp || null;
 // 목소리 이름으로 성별 추정 (구글 TTS: ism/jeb/kob 여, jmh/kod 남 · 삼성 TTS: SMTf 여, SMTm 남 · 브라우저 음성 이름)
 export function voiceGender(n) {

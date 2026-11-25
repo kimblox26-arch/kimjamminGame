@@ -77,7 +77,9 @@ export function buildCity(scene, { onCollider }) {
   const FM = {}; for (const k of KINDS) { const t = facade(k); FM[k] = M({ map: t, emissiveMap: emissiveOf(t), emissive: 0xffffff, emissiveIntensity: 0.9, roughness: k === 'glass' || k === 'office' ? 0.25 : 0.85, envMapIntensity: k === 'glass' ? 0.8 : 0.2 }); }
   const mRoof = M({ color: 0x2a2d31 }), mSign = new THREE.MeshBasicMaterial({ map: signTex, toneMapped: false }), mShopWin = new THREE.MeshBasicMaterial({ map: winTex, color: 0xbbbbbb, toneMapped: false });
   const cross = M({ color: 0xff2030, emissive: 0xff1020, emissiveIntensity: 2.2 });
+  const blds = [];
   const building = (x0, x1, z0, z1, h, kind, frontZ) => {
+    blds.push({ x0, x1, z0, z1, h });
     const sx = x1 - x0, sz = z1 - z0, g = new THREE.BoxGeometry(sx, h, sz), uv = g.attributes.uv;
     for (let i = 0; i < uv.count; i++) { const face = Math.floor(i / 4); const W = face < 2 ? sz : sx; uv.setXY(i, uv.getX(i) * W / 12, uv.getY(i) * h / 12); }
     g.translate((x0 + x1) / 2, h / 2, (z0 + z1) / 2); add(FM[kind], g); box(mRoof, sx + 0.3, 0.4, sz + 0.3, (x0 + x1) / 2, h + 0.2, (z0 + z1) / 2);
@@ -149,7 +151,7 @@ export function buildCity(scene, { onCollider }) {
   // 신호 바뀌기
   let sig = 0, sigT = 0;
   const update = (dt) => { if ((sigT += dt) > [12, 3, 12][sig]) { sigT = 0; sig = (sig + 1) % 3; } lights.forEach((b, i) => b.forEach((m, k) => (m.material.opacity = 1, m.visible = k === (i % 2 ? (2 - sig + 3) % 3 : sig)))); };
-  return { root, update };
+  return { root, update, blds, ROADW };
 }
 
 // ── 차량: 승용차·택시(지프 모델 색칠), 시내버스(직접 만듦) ──

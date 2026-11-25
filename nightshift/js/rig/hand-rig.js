@@ -22,7 +22,7 @@ import { makeSkin } from './skin.js';
 import { FINGERS } from './hands.js';
 import { measureAngles, palmBasis, thumbHinge } from './finger-pose.js';
 
-export const SKIN_TONES = { light: 0xf3cbb0, medium: 0xdca47f, tan: 0xb87b53, deep: 0x7b4a2f };
+export const SKIN_TONES = { asian: 0xeab995, light: 0xf3cbb0, medium: 0xdca47f, tan: 0xb87b53, deep: 0x7b4a2f };
 
 const FN = ['thumb', 'index-finger', 'middle-finger', 'ring-finger', 'pinky-finger'];
 // 손가락별 뼈 사슬 (MediaPipe 관절 FINGERS[f] 와 1:1)

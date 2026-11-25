@@ -188,4 +188,12 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none}
 #joy{bottom:max(18px,env(safe-area-inset-bottom));left:max(22px,env(safe-area-inset-left))}
 @media (max-height:430px){#bScan{width:88px;height:88px}#bPay{width:72px;height:72px;right:calc(var(--r) + 104px)}#bAtk{width:70px;height:70px;bottom:calc(var(--b) + 104px)}#bWpn{width:54px;height:54px;right:calc(var(--r) + 90px);bottom:calc(var(--b) + 88px)}#bMic{width:66px;height:66px;right:calc(var(--r) + 186px)}#bBag{width:50px;height:50px;right:calc(var(--r) + 168px);bottom:calc(var(--b) + 82px)}#bTurn{width:50px;height:50px;bottom:calc(var(--b) + 184px)}}
 /* 법정에서는 공격·무기 버튼만 */
-body.court-mode #hud .top,body.court-mode #bScan,body.court-mode #bPay,body.court-mode #bMic,body.court-mode #bBag,body.court-mode #bTurn,body.court-mode #b112,body.court-mode #joy,body.court-mode #hint{display:none!important}
+body.court-mode #mmap,body.court-mode #hud .top,body.court-mode #bScan,body.court-mode #bPay,body.court-mode #bMic,body.court-mode #bBag,body.court-mode #bTurn,body.court-mode #b112,body.court-mode #joy,body.court-mode #hint{display:none!important}
+
+/* 지도 */
+#mmap{position:absolute;top:calc(max(8px,env(safe-area-inset-top)) + 50px);left:max(10px,env(safe-area-inset-left));width:112px;height:112px;border-radius:50%;border:2px solid rgba(255,255,255,.28);box-shadow:0 4px 16px rgba(0,0,0,.5),inset 0 0 0 1px rgba(0,0,0,.6);background:#10151c;pointer-events:auto;cursor:pointer}
+#bigmap{position:fixed;inset:0;z-index:40;background:rgba(5,8,12,.94)}
+#bigmap canvas{position:absolute;inset:0;width:100%;height:100%}
+#bigmap .mleg{position:absolute;left:max(14px,env(safe-area-inset-left));bottom:14px;display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:#c8d2dc;background:rgba(0,0,0,.55);padding:7px 10px;border-radius:10px;max-width:70vw}
+#bigmap .mleg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+#bigmap .mclose{position:absolute;right:16px;top:12px;margin:0;font-size:12px;color:#8a97a6}

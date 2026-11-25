@@ -13,7 +13,7 @@ const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const WAGE = 10320, SHIFT_SEC = 13 * 60, DENOMS = [50000, 10000, 5000, 1000, 500, 100, 50, 10];
 const BOSS_TYPE = { id: 'boss', name: '사장님', model: 'man', h: 1.73, top: '#6b5a48', bottom: '#2c2c30', glasses: true, voice: [0.95, 1.0] };
 // 감정 → 목소리 높이·빠르기
-const EMO = { calm: [1, 1], happy: [1.05, 1.04], annoyed: [0.98, 1.08], angry: [0.95, 1.14], shy: [1.04, 0.92], drunk: [0.93, 0.8], tired: [0.97, 0.93] };
+const EMO = { sad: [1.1, 1.06], scared: [1.12, 1.18], calm: [1, 1], happy: [1.05, 1.04], annoyed: [0.98, 1.08], angry: [0.95, 1.14], shy: [1.04, 0.92], drunk: [0.93, 0.8], tired: [0.97, 0.93] };
 const SCAN_AT = V3(2.66, 1.12, 0.95), GIVE_AT = V3(2.42, 1.04, 0.78), BAG_AT = V3(2.56, 0.95, 1.5);
 
 function route(from, to) {

@@ -7,6 +7,7 @@ const serr = ctex(128, 32, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0,
 const steel = (o = {}) => new THREE.MeshStandardMaterial({ color: 0x24262a, metalness: 0.85, roughness: 0.32, envMapIntensity: 1.2, ...o });
 const poly = (o = {}) => new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: 0.1, roughness: 0.75, bumpMap: noiseBump(), bumpScale: 1.2, ...o });
 const B = (g, sx, sy, sz, x, y, z, m, rx = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); b.rotation.x = rx; g.add(b); return b; };
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const C = (g, r, l, x, y, z, m, seg = 16) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, seg), m); c.rotation.x = Math.PI / 2; c.position.set(x, y, z); g.add(c); return c; };
 
 // 권총 (총구 = -z). 길이 약 19cm
@@ -20,12 +21,16 @@ export function makePistol() {
   B(g, 0.004, 0.006, 0.006, 0, 0.05, -0.14, st); B(g, 0.016, 0.006, 0.006, 0, 0.05, 0.028, st); // 가늠쇠·가늠자
   B(g, 0.028, 0.02, 0.14, 0, 0.008, -0.05, pl);                      // 프레임
   B(g, 0.024, 0.006, 0.05, 0, -0.004, -0.095, pl);                   // 레일
-  const grip = B(g, 0.029, 0.11, 0.048, 0, -0.045, 0.01, poly({ bumpScale: 3 })); grip.rotation.x = 0.22;
-  const mag = B(g, 0.024, 0.012, 0.042, 0, -0.1, 0.022, dark); mag.rotation.x = 0.22;
+  const grip = B(g, 0.029, 0.11, 0.048, 0, -0.045, 0.01, poly({ bumpScale: 3 })); grip.rotation.x = -0.22;
+  const mag = B(g, 0.024, 0.012, 0.042, 0, -0.1, 0.022, dark); mag.rotation.x = -0.22;
   const tg = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.0035, 8, 16, Math.PI), pl); tg.rotation.set(0, Math.PI / 2, Math.PI); tg.position.set(0, -0.004, -0.02); g.add(tg);
   const trig = B(g, 0.005, 0.016, 0.004, 0, -0.008, -0.018, st); trig.rotation.x = 0.3;
   B(g, 0.01, 0.012, 0.01, 0, 0.04, 0.038, st);                       // 공이치기
   g.userData.muzzle = new THREE.Vector3(0, 0.034, -0.17); g.userData.eject = new THREE.Vector3(0.02, 0.04, -0.03); g.userData.auto = false; g.userData.name = '권총'; void bore;
+  // 두 손 파지(이등변 자세): 오른손 = 손잡이 감싸고 검지는 방아쇠, 왼손 = 오른손을 감싸 받침. p=손목, F=손가락 방향, up=손등 방향
+  g.userData.base = V(0.095, -0.118, -0.42); g.userData.rot0 = [0.03, 0.03, 0]; g.userData.run = { p: V(-0.02, -0.07, 0.06), r: [-0.55, 0.35, 0.2] };
+  g.userData.hold = { R: { p: V(0.026, -0.078, 0.062), F: V(-0.1, 0.12, -1), up: V(1, 0.1, 0), pose: 'trigger' }, L: { p: V(-0.04, -0.105, 0.028), F: V(0.3, 0.38, -0.87), up: V(-0.95, 0.2, 0.05), pose: 'support' } };
+  g.scale.setScalar(1.2);
   return g;
 }
 // 소총 (총구 = -z). 길이 약 85cm
@@ -43,13 +48,16 @@ export function makeRifle() {
   const ms = new THREE.Shape(); ms.moveTo(0, 0); ms.lineTo(0.06, 0); ms.quadraticCurveTo(0.08, -0.1, 0.05, -0.2); ms.lineTo(-0.01, -0.19); ms.quadraticCurveTo(0.015, -0.09, 0, 0);
   const mg = new THREE.ExtrudeGeometry(ms, { depth: 0.028, bevelEnabled: true, bevelSize: 0.003, bevelThickness: 0.003, bevelSegments: 1 }); mg.translate(-0.03, 0, -0.014); mg.rotateY(Math.PI / 2);
   const mag = new THREE.Mesh(mg, dark); mag.position.set(0, -0.025, -0.08); g.add(mag);
-  const grip = B(g, 0.032, 0.11, 0.045, 0, -0.07, 0.04, poly({ bumpScale: 3 })); grip.rotation.x = 0.35;
+  const grip = B(g, 0.032, 0.11, 0.045, 0, -0.07, 0.04, poly({ bumpScale: 3 })); grip.rotation.x = -0.35;
   const tg = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.004, 8, 16, Math.PI), st); tg.rotation.set(0, Math.PI / 2, Math.PI); tg.position.set(0, -0.028, -0.0); g.add(tg);
   B(g, 0.04, 0.05, 0.06, 0, 0.0, 0.1, pl); const stock = B(g, 0.042, 0.11, 0.2, 0, -0.025, 0.24, pl); stock.rotation.x = -0.05; B(g, 0.046, 0.12, 0.02, 0, -0.03, 0.345, poly({ color: 0x101010 }));
   // 도트사이트
   B(g, 0.03, 0.035, 0.07, 0, 0.065, -0.07, dark); const lens = new THREE.Mesh(new THREE.CircleGeometry(0.013, 16), new THREE.MeshStandardMaterial({ color: 0x334455, metalness: 0.9, roughness: 0.05, transparent: true, opacity: 0.7 })); lens.position.set(0, 0.07, -0.106); g.add(lens);
   const dot = new THREE.Mesh(new THREE.CircleGeometry(0.0015, 8), new THREE.MeshBasicMaterial({ color: 0xff2020, toneMapped: false })); dot.position.set(0, 0.07, -0.035); dot.rotation.y = Math.PI; g.add(dot);
   g.userData.muzzle = new THREE.Vector3(0, 0.004, -0.72); g.userData.eject = new THREE.Vector3(0.03, 0.02, -0.06); g.userData.auto = true; g.userData.name = '소총'; void hg; void mz;
+  // 오른손 = 권총손잡이, 왼손 = 총열 덮개 아래 받침. 달릴 땐 총구를 왼쪽 아래로 내림(로우 레디)
+  g.userData.base = V(0.125, -0.165, -0.3); g.userData.rot0 = [0.02, 0.04, 0]; g.userData.run = { p: V(-0.03, -0.06, 0.05), r: [-0.5, 0.55, 0.35] };
+  g.userData.hold = { R: { p: V(0.03, -0.085, 0.11), F: V(-0.08, 0.1, -1), up: V(1, 0.15, 0), pose: 'trigger' }, L: { p: V(-0.04, -0.075, -0.25), F: V(0.55, 0.28, -0.78), up: V(-0.45, -0.88, 0), pose: 'support' } };
   return g;
 }
 

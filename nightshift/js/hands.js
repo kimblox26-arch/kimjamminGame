@@ -18,12 +18,14 @@ export const POSES = {
   grip: { f: [[42, 58, 30], [46, 62, 34], [50, 66, 36], [54, 70, 40]], spread: -3, thumb: [22, 22, 0.55] },
   pinch: { f: [[34, 36, 14], [42, 58, 34], [52, 72, 44], [58, 78, 50]], spread: -2, thumb: [18, 16, 0.5] },
   point: { f: [[2, 6, 2], [72, 92, 58], [78, 96, 60], [80, 96, 60]], spread: 0, thumb: [28, 30, 0.6] },
+  trigger: { f: [[24, 30, 12], [58, 72, 44], [62, 74, 46], [66, 76, 48]], spread: -3, thumb: [16, 14, 0.7] },
+  support: { f: [[48, 56, 30], [52, 60, 32], [55, 62, 34], [58, 64, 36]], spread: -2, thumb: [8, 6, 0.35] },
   fist: { f: [[80, 100, 70], [84, 104, 72], [86, 104, 72], [88, 104, 72]], spread: -4, thumb: [34, 40, 0.75] },
 };
 
 export async function buildHands(camera, yawObj, name) {
   const rigs = await loadHandRigs();
-  setSkinTone('medium');
+  setSkinTone('asian');
   const cloth = canvasTex('cloth', 256, 256, (g, w, h) => {
     g.fillStyle = '#28344c'; g.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(255,255,255,${0.025 + Math.random() * 0.03})`; g.fillRect(0, y, w, 1); }
@@ -133,7 +135,7 @@ export async function buildHands(camera, yawObj, name) {
     sideOf(p) { tmp.copy(p); camera.worldToLocal(tmp); return tmp.x > -0.03 ? 'R' : 'L'; },
     // 월드 좌표 p 로 손 뻗기. pose: 손 모양, kind: 'down'(손바닥 아래) | 'up'(손바닥 위, 건네기) | 'front'(누르기)
     reachTo(side, p, pose = 'open', kind = 'down', ms = 380) {
-      const h = hands[side]; h.want = true; h.target = pose;
+      const h = hands[side]; h.fast = false; h.want = true; h.target = pose;
       camera.getWorldQuaternion(camQ).invert();
       const up = V(0, 1, 0).applyQuaternion(camQ);
       tmp.copy(p); if (kind === 'down') tmp.addScaledVector(V(0, 1, 0), 0.07); camera.worldToLocal(tmp);
@@ -146,9 +148,11 @@ export async function buildHands(camera, yawObj, name) {
       return new Promise(r => setTimeout(r, ms));
     },
     pose(side, pose) { hands[side].target = pose; },
+    // 총 쥐기: 카메라 기준 손목 위치·손가락 방향(F)·손등 방향(up)을 매 프레임 지정 (총에 딱 붙어 따라감)
+    place(side, pos, F, up, pose) { const h = hands[side]; h.want = true; h.target = pose; h.fast = true; h.tPos.copy(pos); h.tF.copy(F).normalize(); h.tUp.copy(up).addScaledVector(h.tF, -up.dot(h.tF)).normalize(); h.palmUp = false; },
     // 카메라 기준 고정 위치로 손 올리기 (총 들기, 손 들기)
-    raise(side, posCam, pose = 'grip') { const h = hands[side]; h.want = true; h.target = pose; h.tPos.copy(posCam); h.tF.set(-0.05 * h.s, posCam.y > 0 ? 1 : 0.05, -1).normalize(); h.tUp.set(0, 1, 0); h.palmUp = false; },
-    rest(side) { const h = hands[side]; h.want = false; h.target = 'relax'; h.tPos.set(0.22 * h.s, -0.78, -0.25); h.tF.set(-0.2 * h.s, 0.4, -1).normalize(); h.palmUp = false; },
+    raise(side, posCam, pose = 'grip') { const h = hands[side]; h.fast = false; h.want = true; h.target = pose; h.tPos.copy(posCam); h.tF.set(-0.05 * h.s, posCam.y > 0 ? 1 : 0.05, -1).normalize(); h.tUp.set(0, 1, 0); h.palmUp = false; },
+    rest(side) { const h = hands[side]; h.fast = false; h.want = false; h.target = 'relax'; h.tPos.set(0.22 * h.s, -0.78, -0.25); h.tF.set(-0.2 * h.s, 0.4, -1).normalize(); h.palmUp = false; },
     // 물건 쥐기: mode 'palm'(손바닥 아래 쥐기) | 'pinch'(엄지·검지 사이)
     hold(side, obj, mode = 'palm') {
       const h = hands[side]; if (h.held && h.held !== obj) h.held.removeFromParent();
@@ -157,7 +161,7 @@ export async function buildHands(camera, yawObj, name) {
     },
     update(dt, t) {
       for (const h of Object.values(hands)) {
-        const k = 1 - Math.exp(-dt * 9);
+        const k = h.fast ? 1 : 1 - Math.exp(-dt * 9);
         h.pos.lerp(h.tPos, k); h.F.lerp(h.tF, k).normalize(); h.up.lerp(h.tUp, k).normalize();
         lerpPose(h.cur, POSES[h.target] || POSES.relax, 1 - Math.exp(-dt * 12));
         h.shown = h.want ? 1 : (h.pos.y < -0.62 ? 0 : 1);

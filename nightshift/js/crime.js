@@ -16,12 +16,22 @@ const ROLES = {
   aud: { id: 'aud', name: '방청객', model: 'man', h: 1.72, top: '#555b63', bottom: '#2b2b2b', voice: [1.0, 1.0] },
   audw: { id: 'audw', name: '방청객', model: 'woman', h: 1.62, voice: [1.15, 1.0] },
 };
-const PAIN = [['아악!', 'angry'], ['으윽…!', 'angry'], ['살려 주세요!', 'angry'], ['커헉…', 'angry']];
-const SCREAM = [['꺄아악!', 'angry'], ['총이야! 엎드려!', 'angry'], ['사, 살려 줘!', 'angry'], ['도망쳐!', 'angry']];
+const PAIN = {
+  head: [['으… 윽…', 'sad']], chest: [['커헉… 숨이… 안 쉬어져…', 'sad'], ['으윽…! 가슴이…', 'sad']],
+  stomach: [['으윽… 배가…', 'sad'], ['아… 아파… 너무 아파…', 'sad']], arm: [['아악! 내 팔!', 'angry'], ['팔이… 팔이…!', 'sad']],
+  leg: [['아아악! 다리…!', 'angry'], ['다리가… 다리가 안 움직여…', 'sad']],
+};
+const SCREAM = [['꺄아악!', 'scared'], ['총이야! 엎드려!', 'scared'], ['사, 살려 줘!', 'scared'], ['도망쳐! 빨리!', 'scared'], ['누가 경찰 좀 불러요!', 'scared']];
+const BEG = [['제발… 살려 주세요…', 'sad'], ['쏘지 마세요, 제발요!', 'scared'], ['잘못했어요… 진짜 잘못했어요…', 'sad'], ['집에 애가 있어요… 제발…', 'sad'], ['돈 다 드릴게요! 살려만 주세요!', 'scared'],
+  ['아무한테도 말 안 할게요… 제발…', 'sad'], ['엄마… 엄마…', 'sad'], ['한 번만… 한 번만 봐주세요…', 'sad'], ['죽고 싶지 않아요… 제발…', 'sad']];
+const SURR = [['쏘, 쏘지 마세요!', 'scared'], ['잠깐만요! 잠깐만!', 'scared'], ['손 들었어요! 손 들었어요!', 'scared'], ['저 아무것도 안 했어요!', 'scared'], ['왜, 왜 이러세요…!', 'scared']];
+// 무기·부위별 피해 (머리 = 즉사)
+const DMG = { fist: { head: 30, chest: 20, stomach: 24, arm: 12, leg: 12 }, pistol: { head: 999, chest: 60, stomach: 45, arm: 26, leg: 30 }, rifle: { head: 999, chest: 48, stomach: 38, arm: 22, leg: 26 } };
+const pk = a => a[Math.random() * a.length | 0];
 
 export class Crime {
   constructor(app) { Object.assign(this, app); this.fx = new FX(this.scene); this.guns = {}; this.reset(); }
-  reset() { this.assaults = 0; this.kills = 0; this.police = null; this.called = false; this.arrested = false; this.officers = []; this.weapon = 'fist'; this.inCourt = false; this.courtPeople = []; this.chaos = false; this.firing = false; this.cool = 0; this.backup = 0; }
+  reset() { this.gs = null; this.begCool = 0; this.surCool = 0; this.aimedC = null; this.assaults = 0; this.kills = 0; this.police = null; this.called = false; this.arrested = false; this.officers = []; this.weapon = 'fist'; this.inCourt = false; this.courtPeople = []; this.chaos = false; this.firing = false; this.cool = 0; this.backup = 0; }
   owned() { try { return JSON.parse(localStorage.getItem('ns_guns') || '{}'); } catch (e) { return {}; } }
   get hasGun() { const o = this.owned(); return !!(o.pistol || o.rifle); }
   // 보관함에서 총 꺼내기 (무료)
@@ -41,12 +51,52 @@ export class Crime {
     else {
       // 총은 화면 앞 고정 위치(1인칭 슈팅 방식), 손은 손잡이·총열 덮개를 쥠
       for (const k of ['pistol', 'rifle']) this.guns[k]?.removeFromParent();
-      const gm = this.gun(w); this.hands.hold('R', null); this.camera.add(gm); gm.rotation.set(0, 0, 0);
-      if (w === 'rifle') { gm.position.set(0.15, -0.2, -0.36); this.hands.raise('R', V3(0.15, -0.3, -0.33), 'grip'); this.hands.raise('L', V3(0.13, -0.22, -0.66), 'grip'); }
-      else { gm.position.set(0.15, -0.16, -0.42); this.hands.raise('R', V3(0.15, -0.22, -0.38), 'grip'); this.hands.rest('L'); }
-      this.audio.play('key', { vol: 0.7, rate: 0.6 });
+      const gm = this.gun(w); this.hands.hold('R', null); this.hands.hold('L', null); this.camera.add(gm);
+      this.gs = { t: 0, sx: 0, sy: 0, kick: 0, run: 0, mv: 0, py: this.look.yaw, pp: this.look.pitch, draw: 1 };
+      this.updateGun(0);
+      this.audio.play('key', { vol: 0.7, rate: 0.6 }); this.audio.play('bill', { vol: 0.5, rate: 0.5, delay: 0.12 });
     }
     $('bWpn').querySelector('b').textContent = { fist: '주먹', pistol: '권총', rifle: '소총' }[w];
+  }
+  // 총 든 자세: 걸을 때 흔들림(발걸음에 맞춰), 고개 돌리면 살짝 늦게 따라옴, 달리면 총구 내림, 쏘면 반동, 숨쉬기
+  updateGun(dt) {
+    const gm = this.guns[this.weapon], gs = this.gs; if (!gm || this.weapon === 'fist' || !gm.parent || !gs) return;
+    const ud = gm.userData, m = this.mover, L = this.look; gs.t += dt;
+    let dy = L.yaw - gs.py; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const dp = L.pitch - gs.pp; gs.py = L.yaw; gs.pp = L.pitch;
+    const k = Math.min(1, dt * 7), cl = (v, a) => Math.max(-a, Math.min(a, v));
+    if (dt > 0) { gs.sx += (cl(dy / dt * 0.012, 0.035) - gs.sx) * k; gs.sy += (cl(dp / dt * 0.012, 0.03) - gs.sy) * k; }
+    gs.mv += ((m?.moving ? 1 : 0) - gs.mv) * Math.min(1, dt * 6); gs.run += ((m?.running ? 1 : 0) - gs.run) * Math.min(1, dt * 5);
+    gs.kick *= Math.exp(-dt * 16); gs.draw *= Math.exp(-dt * 7);
+    const ph = (m?.phase || 0) * 0.5, mv = gs.mv * (1 - gs.run * 0.5), run = gs.run, br = Math.sin(gs.t * 1.7);
+    const p = ud.base.clone();
+    p.x += Math.sin(ph) * 0.011 * mv + gs.sx * 0.6 + ud.run.p.x * run;
+    p.y += -Math.abs(Math.cos(ph)) * 0.012 * mv + br * 0.0016 - gs.sy * 0.5 + ud.run.p.y * run - gs.draw * 0.25 + gs.kick * 0.012;
+    p.z += ud.run.p.z * run + gs.kick * (ud.auto ? 0.035 : 0.05);
+    gm.position.copy(p);
+    const r0 = ud.rot0 || [0, 0, 0];
+    gm.rotation.set(r0[0] + ud.run.r[0] * run + gs.kick * (ud.auto ? 0.1 : 0.32) + gs.sy * 1.2 - gs.draw * 0.9 + br * 0.004, r0[1] + ud.run.r[1] * run + gs.sx * 1.5 + Math.sin(ph) * 0.012 * mv, ud.run.r[2] * run + Math.sin(ph) * 0.03 * mv + gs.sx * 0.8);
+    gm.updateMatrix();
+    for (const side of ['R', 'L']) { const h = ud.hold[side]; if (!h) continue; this.hands.place(side, h.p.clone().applyMatrix4(gm.matrix), h.F.clone().applyQuaternion(gm.quaternion), h.up.clone().applyQuaternion(gm.quaternion), h.pose); }
+  }
+  // 총알이 몸 어디에 맞았나: 뼈 사이 선분(머리·가슴·배·팔·다리)과 총알 선의 거리
+  zoneHit(person, ray) {
+    const B = person.B; if (!B?.head || person.dead) return null;
+    const P = b => b.getWorldPosition(V3()), pr = V3(), ps = V3();
+    const segs = [['head', P(B.head), B.top ? P(B.top) : P(B.head).add(V3(0, 0.2, 0)), 0.12], ['chest', P(B.spine1), P(B.neck), 0.19], ['stomach', P(B.hips), P(B.spine1), 0.18]];
+    for (const s of ['L', 'R']) { const S = B[s]; if (S.arm) segs.push(['arm', P(S.arm), P(S.fore), 0.07, s], ['arm', P(S.fore), P(S.hand), 0.06, s]); if (S.up) segs.push(['leg', P(S.up), P(S.leg), 0.1, s], ['leg', P(S.leg), P(S.foot), 0.075, s]); }
+    let best = null;
+    for (const [zone, a, b, r, side] of segs) {
+      const d = Math.sqrt(ray.distanceSqToSegment(a, b, pr, ps)); if (d > r) continue;
+      const t = pr.distanceTo(ray.origin) - (zone === 'head' ? 0.05 : 0);
+      if (!best || t < best.t) best = { zone, side: side || (Math.random() < 0.5 ? 'L' : 'R'), point: pr.clone(), t };
+    }
+    return best;
+  }
+  vox(c, kind, delay = 0) {
+    const f = (c.gender || (c.person.kind === 'woman' ? 'f' : 'm')) === 'f', n = { scream: 2, hurt: f ? 3 : 4, die: 3 }[kind] || 1;
+    const name = kind === 'breath' ? `breath_${f ? 'f' : 'm'}` : `${kind}_${f ? 'f' : 'm'}${1 + (Math.random() * n | 0)}`;
+    const pos = c.person.head ? c.person.head.getWorldPosition(V3()) : c.person.root.position;
+    this.audio.play(name, { pos, vol: kind === 'breath' ? 0.8 : 1.3, rate: 0.93 + Math.random() * 0.14, delay });
   }
   // 공격 버튼 누름/뗌 (소총은 누르고 있으면 연사)
   press() { if (this.weapon === 'rifle') this.firing = true; else this.attack(); }
@@ -62,43 +112,55 @@ export class Crime {
   async attack() {
     if (this.arrested && !this.inCourt) return;
     const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(0, 0), this.camera); ray.far = this.weapon === 'fist' ? 2.2 : 60;
-    const T = this.targets(), ph = ray.intersectObjects(T.map(t => t[0]), false)[0];
+    const T = this.targets(), hits = ray.intersectObjects(T.map(t => t[0]), false), ph = hits[0];
     if (this.weapon === 'fist') {
       if (!ph) return;
-      const c = T.find(t => t[0] === ph.object)[1];
-      this.hands.pose('R', 'fist'); await this.hands.reachTo('R', ph.point, 'fist', 'front', 130);
-      this.audio.play('punch', { pos: ph.point, vol: 1.2, rate: 1.1 + Math.random() * 0.2 }); this.fx.blood(ph.point, ray.ray.direction, 4); this.hit(c, 34, ph.point, ray.ray.direction);
+      const c = T.find(t => t[0] === ph.object)[1], z = this.zoneHit(c.person, ray.ray) || { zone: 'chest', side: 'R', point: ph.point };
+      this.hands.pose('R', 'fist'); await this.hands.reachTo('R', z.point, 'fist', 'front', 130);
+      this.audio.play('punch', { pos: z.point, vol: 1.2, rate: 1.1 + Math.random() * 0.2 }); this.fx.blood(z.point, ray.ray.direction, 4); this.hit(c, DMG.fist[z.zone], z, ray.ray.direction);
       setTimeout(() => { this.hands.pose('R', 'relax'); this.hands.rest('R'); }, 160);
       return;
     }
     const gm = this.gun(this.weapon);
     this.audio.play('gun', { pos: this.camera.getWorldPosition(V3()), vol: this.weapon === 'rifle' ? 1.3 : 1.6, rate: this.weapon === 'rifle' ? 0.9 + Math.random() * 0.1 : 1 });
-    this.fx.muzzle(gm); this.look.pitch += this.weapon === 'rifle' ? 0.012 : 0.04; gm.rotation.x = 0.18; gm.position.z += 0.03; setTimeout(() => { gm.rotation.x = 0; gm.position.z -= 0.03; }, 70);
+    this.fx.muzzle(gm); this.look.pitch += this.weapon === 'rifle' ? 0.01 + Math.random() * 0.006 : 0.035; this.look.yaw += (Math.random() - 0.5) * 0.008; if (this.gs) this.gs.kick = 1;
     const world = this.worldRoots.filter(Boolean), wh = ray.intersectObjects(world, true).find(h => h.object.visible && !h.object.userData.loose);
-    if (ph && (!wh || ph.distance < wh.distance)) { const c = T.find(t => t[0] === ph.object)[1]; this.fx.blood(ph.point, ray.ray.direction, 16); this.hit(c, this.weapon === 'rifle' ? 40 : 55, ph.point, ray.ray.direction); }
+    let hitC = null, z = null;
+    for (const h of hits) { if (wh && h.distance > wh.distance) break; const c = T.find(t => t[0] === h.object)[1]; z = this.zoneHit(c.person, ray.ray); if (z) { hitC = c; break; } }
+    if (hitC) { this.fx.blood(z.point, ray.ray.direction, z.zone === 'head' ? 34 : 16); this.hit(hitC, DMG[this.weapon][z.zone], z, ray.ray.direction); }
     else { if (wh) this.fx.impact(wh); this.panic(); if (!this.inCourt) { this.game.violence = true; this.callPolice(); } else this.courtChaos(); }
   }
-  hit(c, dmg, point) {
-    const g = this.game;
+  hit(c, dmg, z, dir) {
+    const g = this.game, p = c.person;
     c.hp = (c.hp ?? 100) - dmg; this.assaults++;
-    if (c.hp <= 0) this.kill(c, point);
-    else { c.person.hurt(); g.say(c, PAIN[Math.random() * PAIN.length | 0]); c.mood = 0; }
+    if (c.hp <= 0) this.kill(c, { zone: z.zone, side: z.side, dir });
+    else {
+      p.hurt(z.zone, dir, z.side); this.vox(c, 'hurt'); c.mood = 0; c.wound = z.zone;
+      if (Math.random() < 0.6) setTimeout(() => { if (!c.dead) g.say(c, pk(PAIN[z.zone])); }, 450);
+      const tough = c.officer || c.role === 'guard';
+      if (z.zone === 'leg') { p.goDown(z.side); c.down = true; if (c.officer) c.officer.chase = false; }
+      else if (!tough && (z.zone === 'stomach' || Math.random() < 0.45)) { p.kneel(); c.down = true; }
+      else if (!tough) { p.speed = 1.25; }
+      if (c.down && !tough) { c.begging = true; c.begT = 1.4; c.done = true; setTimeout(() => !c.dead && p.beg(true), 1100); }
+      if (Math.random() < 0.5) setTimeout(() => !c.dead && this.vox(c, 'breath'), 1500);
+    }
     this.panic(c);
     if (this.inCourt) this.courtChaos(); else { g.violence = true; this.callPolice(); }
   }
   // 총소리·폭력에 다들 비명 지르며 도망
   panic(except) {
     const g = this.game;
-    for (const o of g.customers) if (o !== except && !o.dead && !o.fleeing) { o.fleeing = true; o.person.speed = 2.8; o.done = true; if (g.cur === o) { g.cur = null; show('cust', false); } if (Math.random() < 0.7) g.say(o, SCREAM[Math.random() * SCREAM.length | 0]); if (!o.gone) g.leave(o); }
-    for (const o of this.courtPeople) if (o !== except && !o.dead && !o.fleeing && o.role !== 'guard') { o.fleeing = true; o.person.speed = 2.6; o.person.walk([V3(COURT.x + (Math.random() - 0.5) * 3, 0, COURT.z + 6.8)]); if (Math.random() < 0.4) g.say(o, SCREAM[Math.random() * SCREAM.length | 0]); }
+    for (const o of g.customers) if (o !== except && !o.dead && !o.fleeing) { o.fleeing = true; o.person.speed = 2.8; o.done = true; if (g.cur === o) { g.cur = null; show('cust', false); } if (Math.random() < 0.8) this.vox(o, 'scream', Math.random() * 0.5); if (Math.random() < 0.35) setTimeout(() => g.say(o, pk(SCREAM)), 700); if (!o.gone) g.leave(o); }
+    for (const o of this.courtPeople) if (o !== except && !o.dead && !o.fleeing && o.role !== 'guard') { o.fleeing = true; o.person.speed = 2.6; o.person.walk([V3(COURT.x + (Math.random() - 0.5) * 3, 0, COURT.z + 6.8)]); if (Math.random() < 0.75) this.vox(o, 'scream', Math.random() * 0.6); if (Math.random() < 0.25) setTimeout(() => g.say(o, pk(SCREAM)), 800); }
   }
-  kill(c, point) {
-    const g = this.game; this.kills++; c.dead = true; c.done = true; c.gone = true;
+  kill(c, info = {}) {
+    const g = this.game, p = c.person; this.kills++; c.dead = true; c.done = true; c.gone = true; c.begging = false;
     if (g.cur === c) { g.cur = null; show('cust', false); }
     const qi = g.queue.indexOf(c); if (qi >= 0) g.queue.splice(qi, 1);
-    c.person.die(); this.audio.play('thud', { pos: c.person.root.position, vol: 1.2, rate: 0.6 });
-    const bp = c.person.root.position.clone(), back = c.person.root.getWorldDirection(V3()).multiplyScalar(-0.7);
-    setTimeout(() => this.fx.pool(bp.add(back).setY(0), 1.3), 700);
+    if (info.zone !== 'head') this.vox(c, 'die', 0.05); if (c.talk !== undefined) p.talk = 0;
+    p.die(info); const land = (p.Ta + p.Tb * 0.92) || 0.8;
+    this.audio.play('thud', { pos: p.root.position, vol: 1.3, rate: 0.55 + Math.random() * 0.1, delay: land });
+    setTimeout(() => this.fx.pool(p.bodyCenter(), info.zone === 'head' ? 1.1 : 1.35), land * 1000 + 300);
     if (c === g.bossC) g.bossDead = true;
     if (c.officer) { c.officer.dead = true; this.backup++; if (this.backup <= 2) setTimeout(() => this.policeArrive(true), 7000); }
   }
@@ -125,6 +187,7 @@ export class Crime {
   update(dt) {
     if (!window.__fxFreeze) this.fx.update(dt, this.audio);
     if (this.firing && (this.cool -= dt) <= 0) { this.cool = 0.11; this.attack(); }
+    this.updateGun(dt); this.reactions(dt);
     for (const P of this.cars || []) {
       P.t += dt; const blink = Math.floor(P.t * 6) % 2; P.l1.visible = !!blink; P.l2.visible = !blink; P.pl.color.setHex(blink ? 0xff2020 : 0x2060ff);
       if (P.phase === 'drive') { const d = P.stopX - P.car.position.x; P.car.position.x += Math.sign(d) * Math.min(Math.abs(d), Math.min(16, Math.max(2, d * 0.8)) * dt); if (Math.abs(d) < 0.05) { P.phase = 'out'; this.officersOut(P); } }
@@ -132,7 +195,7 @@ export class Crime {
     if (!this.arrested && !this.inCourt) {
       const me = this.yawObj.position;
       for (const o of this.officers) {
-        if (o.dead || !o.chase) continue;
+        if (o.dead || !o.chase || o.down) continue;
         if (!o.path.length) o.walk([V3(me.x, 0, me.z)]); else o.path[o.path.length - 1].set(me.x, 0, me.z);
         if (o.root.position.distanceTo(V3(me.x, 0, me.z)) < 1.4) { this.arrest(o); break; }
       }
@@ -141,6 +204,29 @@ export class Crime {
     for (const o of this.officers) o.update(dt, cam);
     for (const c of this.courtPeople) c.person.update(dt, cam);
   }
+  // 총구를 겨누면 손 들고 멈춤, 다친 사람은 무릎 꿇고 손 비비며 살려 달라고 빎
+  reactions(dt) {
+    const g = this.game; this.begCool -= dt; this.surCool -= dt;
+    let aimed = null;
+    if (this.weapon !== 'fist' && !this.arrested) {
+      const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(0, 0), this.camera); ray.far = 14;
+      const T = this.targets(), h = ray.intersectObjects(T.map(t => t[0]), false)[0]; if (h) aimed = T.find(t => t[0] === h.object)[1];
+    }
+    const all = [...g.customers, ...this.courtPeople]; if (g.bossC && !g.bossDead) all.push(g.bossC);
+    for (const c of all) {
+      if (c.dead || !c.person) continue; const p = c.person, tough = c.officer || c.role === 'guard';
+      if (c === aimed && !tough) {
+        c.aimT = (c.aimT || 0) + dt; c.unaimT = 0;
+        if (c.aimT > 0.3 && !c.surr && !c.begging) { c.surr = true; p.freeze(true); if (this.surCool <= 0) { this.surCool = 2.2; this.vox(c, 'breath'); g.say(c, pk(SURR)); } }
+      } else if (c.surr) { c.aimT = 0; if ((c.unaimT = (c.unaimT || 0) + dt) > 1.6) { c.surr = false; p.freeze(false); } }
+      if (c.begging) {
+        c.begT -= dt * (c === aimed ? 1.7 : 1);
+        if (c.begT <= 0 && this.begCool <= 0 && !p.talk) { c.begT = 3.2 + Math.random() * 2.5; this.begCool = 1.4; g.say(c, this.freshBeg(c)); if (Math.random() < 0.5) this.vox(c, 'breath', 0.2); }
+      }
+    }
+    this.aimedC = aimed;
+  }
+  freshBeg(c) { c.begUsed ||= []; let l = BEG.filter(b => !c.begUsed.includes(b)); if (!l.length) { c.begUsed = []; l = BEG; } const b = pk(l); c.begUsed.push(b); return b; }
   officersOut(P) {
     const g = this.game;
     for (let i = 0; i < 2; i++) {

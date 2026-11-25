@@ -50,7 +50,7 @@ export class Mover {
     const bob = speed > 0.05 ? 1 : 0;
     this.camera.position.y += (Math.sin(this.phase) * 0.022 * bob - this.camera.position.y) * Math.min(1, dt * 10);
     this.camera.position.x = Math.sin(this.phase * 0.5) * 0.012 * bob;
-    this.moving = speed > 0.05;
+    this.moving = speed > 0.05; this.running = this.moving && run;
   }
   collide(p) {
     for (let it = 0; it < 2; it++) for (const c of this.colliders) {

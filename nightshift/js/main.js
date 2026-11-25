@@ -20,6 +20,7 @@ import { buildStorage, buildCourt } from './places.js';
 import { Mover, STORE_COLLIDERS } from './move.js';
 import { Crime } from './crime.js';
 import { makePistol, makeRifle } from './weapons.js';
+import { MiniMap } from './map.js';
 
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 const settings = Object.assign({ quality: IS_MOBILE ? 'mid' : 'high', myVoice: 'm', tts: true, sens: 1 }, JSON.parse(localStorage.getItem('ns_set') || '{}'));
@@ -129,7 +130,7 @@ const voice = new Voice({
   },
 });
 
-let store, hands, game, vehicles, city, traffic, storage, mover, crime;
+let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap;
 paintIcons();
 async function boot() {
   const bar = $('loadbar'), txt = $('loadtxt'); let p = [0, 0, 0];
@@ -149,13 +150,21 @@ async function boot() {
   storage = buildStorage(scene, c => colliders.push(c));
   const courtB = buildCourt(scene);
   vehicles.car.visible = false; traffic = makeTraffic(scene, vehicles, audio, CAR_COLORS);
-  mover = new Mover({ yawObj, camera, look, audio, colliders });
+  mover = new Mover({ yawObj, camera, look, audio, colliders }); Person.blockers = colliders;
   game = new Game({ renderer, scene, camera, store, hands, audio, voice, settings, look });
   crime = new Crime({ game, scene, camera, yawObj, look, audio, hands, vehicles, mover });
   // 총기 보관함 안: 소총 2정(세워서) + 권총 2정(선반 위)
   { const cab = storage.cabinet; for (const dx of [-0.17, 0.17]) { const r = makeRifle(); r.rotation.set(Math.PI / 2, 0, 0); r.position.set(dx, 1.32, -0.2); cab.add(r); }
     const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 0.3), new THREE.MeshStandardMaterial({ color: 0x2a2d31, metalness: 0.6, roughness: 0.4 })); shelf.position.set(0, 0.42, -0.12); cab.add(shelf);
     for (const dx of [-0.15, 0.15]) { const p = makePistol(); p.rotation.set(0, Math.PI / 2 + 0.2, Math.PI / 2); p.position.set(dx, 0.45, -0.12); cab.add(p); } }
+  minimap = new MiniMap({ city, yawObj, look, markers: () => {
+    const out = [];
+    for (const c of game.customers) out.push({ x: c.person.root.position.x, z: c.person.root.position.z, kind: c.dead ? 'dead' : 'person' });
+    if (game.boss) out.push({ x: game.boss.root.position.x, z: game.boss.root.position.z, kind: game.bossDead ? 'dead' : 'person' });
+    for (const o of crime.officers) out.push({ x: o.root.position.x, z: o.root.position.z, kind: o.dead ? 'dead' : 'cop' });
+    for (const P of crime.cars || []) out.push({ x: P.car.position.x, z: P.car.position.z, kind: 'police', r: 1.6 });
+    return out;
+  } });
   crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court];
   crime.onExit = () => { crime.cleanup(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); startShift(1); };
   game.crime = crime; game.onShop = () => openShop(); game.mover = mover; game.yawObjDist = () => Math.hypot(yawObj.position.x - SPOT.cam.x, yawObj.position.z - SPOT.cam.z);
@@ -263,10 +272,11 @@ function loop() {
   }
   look.update(dt);
   game?.update(dt * (window.__speed || 1));
-  hands?.update(dt, t);
-  updateAim(dt); updateLiquids(dt);
   if (game?.running) mover.update(dt);
   traffic?.update(dt, game?.running ? yawObj.position : null); city?.update(dt); crime?.update(dt);
+  hands?.update(dt, t);
+  updateAim(dt); updateLiquids(dt);
+  if (game?.running) minimap?.update(dt);
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }
   camera.updateMatrixWorld();

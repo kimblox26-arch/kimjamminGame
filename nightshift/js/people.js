@@ -16,7 +16,7 @@ export async function loadPeople(onProgress) {
   for (const k of ['man', 'woman']) base[k].scene.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = false; } });
 }
 
-const _v = new THREE.Vector3(), _q = new THREE.Quaternion();
+const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion(), _ax = new THREE.Vector3(), _ay = new THREE.Vector3(), _az = new THREE.Vector3();
 const strip = n => n.replace('mixamorig', '');
 function retarget(srcScene, tgtScene, clip) {
   srcScene.updateMatrixWorld(true); tgtScene.updateMatrixWorld(true);
@@ -93,6 +93,14 @@ export class Person {
     this.head = findBone(this.model, 'Head'); this.spine = findBone(this.model, 'Spine2') || findBone(this.model, 'Spine1');
     this.rHand = findBone(this.model, 'RightHand');
     this.rArm = findBone(this.model, 'RightArm'); this.rFore = findBone(this.model, 'RightForeArm');
+    const fb = n => findBone(this.model, n);
+    this.B = { hips: fb('Hips'), spine: fb('Spine'), spine1: fb('Spine1'), spine2: this.spine, neck: fb('Neck'), head: this.head, top: top,
+      L: { arm: fb('LeftArm'), fore: fb('LeftForeArm'), hand: fb('LeftHand'), up: fb('LeftUpLeg'), leg: fb('LeftLeg'), foot: fb('LeftFoot') },
+      R: { arm: this.rArm, fore: this.rFore, hand: this.rHand, up: fb('RightUpLeg'), leg: fb('RightLeg'), foot: fb('RightFoot') } };
+    this.model.updateMatrixWorld(true);
+    this.kneeH = (this.B.L.leg?.getWorldPosition(new THREE.Vector3()).y || this.height * 0.28) - 0.03;
+    // 몸 반응 상태: 무릎 꿇기·한쪽 무릎·웅크림·손 들기·빌기(손 비비기)·상처 움켜쥐기
+    this.P = { kneel: 0, knee1: 0, hunch: 0, up: 0, beg: 0, clutch: 0, spread: 0 }; this.PT = { ...this.P }; this.fl = []; this.side = 'R'; this.zone = null;
     this.reachW = 0; this.reachT = 0; this.reachP = new THREE.Vector3(); this.lookOff = 0; this.lookT = 2 + Math.random() * 4;
     this.hairs = []; this.hairV = new THREE.Vector2(); this.hairO = new THREE.Vector2(); this.lastHead = null;
     this.accessories(type);
@@ -171,25 +179,77 @@ export class Person {
   }
   gesture(name) { if (!this.path.length) this.play(name, 0.25, true); }
   // 경로 걷기 (점 목록). 도착하면 resolve
-  walk(points) { this.path = points.map(p => p.clone()); this.play('walk'); return new Promise(r => (this.onArrive = r)); }
+  walk(points) { if (this.down || this.dead) return new Promise(() => { }); this.path = points.map(p => p.clone()); if (!this.frozen) this.play('walk'); return new Promise(r => (this.onArrive = r)); }
+  // 총구를 겨누면 그 자리에 멈춰 손 듦 (풀리면 다시 걸음)
+  freeze(on) { if (on === !!this.frozen || this.dead) return; this.frozen = on; this.surrender(on); if (!this.down) this.play(on || !this.path.length ? 'idle' : 'walk', 0.25); }
   lookAt(p) { this.faceTarget = p.clone(); }
-  hurt() { this.hurtT = 0.45; this.gesture('headShake'); }
-  die() { this.dead = true; this.path = []; this.talk = 0; this.dieT = 0; this.cur?.fadeOut?.(0.2); }
+  // 맞은 부위별 움찔: zone = head|chest|stomach|arm|leg, dir = 총알 방향(월드), side = 'L'|'R'
+  hurt(zone = 'chest', dir = new THREE.Vector3(0, 0, -1), side = 'R') {
+    const d = dir.clone().setY(0).normalize();
+    this.fl.push({ zone, side, t: 0, T: zone === 'leg' ? 0.5 : 0.38, axis: new THREE.Vector3(0, 1, 0).cross(d).normalize(), amp: 1 });
+    this.zone = zone; this.side = side; this.PT.clutch = zone === 'head' ? 0.6 : 1;
+    if (zone === 'chest' || zone === 'stomach') this.PT.hunch = zone === 'stomach' ? 0.9 : 0.5;
+  }
+  // 다리 맞음 → 한쪽 무릎 꿇고 주저앉음 (못 걸음)
+  goDown(side = 'R') { this.down = true; this.side = side; this.path = []; this.PT.knee1 = 1; this.play('idle', 0.3); }
+  kneel() { this.down = true; this.path = []; this.PT.kneel = 1; this.PT.knee1 = 0; this.play('idle', 0.3); }
+  surrender(on) { this.PT.up = on ? 1 : 0; if (on) this.PT.beg = 0; }
+  beg(on) { this.PT.beg = on ? 1 : 0; if (on) { this.PT.up = 0; this.PT.clutch = 0; } }
+  // 죽음: 부위·총알 방향에 따라 쓰러지는 방식이 다름
+  die({ zone = 'chest', dir = null, side = 'R' } = {}) {
+    this.dead = true; this.path = []; this.talk = 0; this.dieT = 0; this.zone = zone; this.side = side;
+    const r = this.root, d = (dir ? dir.clone() : r.getWorldDirection(new THREE.Vector3()).negate()).setY(0).normalize();
+    const kneeling = this.P.kneel > 0.5 || this.P.knee1 > 0.5;
+    // 넘어지는 방향(월드): 머리·가슴 → 총알 방향(뒤로), 배 → 앞으로 고꾸라짐, 다리·팔 → 맞은 쪽 옆으로, 무릎 꿇고 있었으면 앞으로
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(r.quaternion).multiplyScalar(side === 'R' ? -1 : 1);
+    let f = zone === 'stomach' || kneeling ? d.clone().negate() : (zone === 'arm' || zone === 'leg') ? right.add(d.clone().multiplyScalar(0.6)).normalize() : d.clone();
+    if (zone === 'head' && Math.random() < 0.35) f = d.clone().negate();
+    // 진열대·벽 속으로 쓰러지지 않게: 막히면 옆이나 반대쪽으로
+    const B0 = Person.blockers || [], blocked = v => { for (let d0 = 0.5; d0 <= 1.6; d0 += 0.35) { const x = r.position.x + v.x * d0, z = r.position.z + v.z * d0; if (B0.some(b => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1)) return true; } return false; };
+    if (blocked(f)) { const alt = [f.clone().applyAxisAngle(_ay.set(0, 1, 0), Math.PI / 2), f.clone().applyAxisAngle(_ay.set(0, 1, 0), -Math.PI / 2), f.clone().negate()].find(v => !blocked(v)); if (alt) f = alt; }
+    this.fallW = f; this.fallLocal = f.clone().applyQuaternion(r.quaternion.clone().invert()).normalize();
+    this.fallAxis = new THREE.Vector3(0, 1, 0).cross(this.fallLocal).normalize();
+    this.Ta = zone === 'head' ? 0.08 : zone === 'stomach' ? 0.75 : zone === 'chest' ? 0.42 : 0.3;
+    this.Tb = zone === 'head' ? 0.5 : 0.62; this.stagger = zone === 'chest' && !blocked(d) ? d.clone().multiplyScalar(0.5) : null;
+    this.fl.push({ zone, side, t: 0, T: 0.3, axis: new THREE.Vector3(0, 1, 0).cross(d).normalize(), amp: zone === 'head' ? 1.6 : 1 });
+    Object.assign(this.PT, { up: 0, beg: 0, clutch: zone === 'head' ? 0 : 1, hunch: zone === 'stomach' ? 1 : 0.4, kneel: zone === 'stomach' || zone === 'chest' || kneeling ? 1 : 0.5, knee1: 0 });
+    this.spreadSign = Math.random() < 0.5 ? 1 : -1;
+  }
+  // 바닥에 누운 위치(피 웅덩이용)
+  bodyCenter() { return this.root.position.clone().add(this.fallW ? this.fallW.clone().multiplyScalar(this.height * 0.45) : new THREE.Vector3()).setY(0); }
   update(dt, camPos) {
-    if (this.dead) { // 뒤로 쓰러짐
-      this.dieT += dt; const k = Math.min(1, this.dieT / 0.75), e = k * k; this.model.rotation.x = -e * Math.PI / 2; this.model.position.y = 0.12 * e;
-      if (k < 1) this.mixer.update(dt * 0.3); return;
+    if (this.dead) {
+      if (this.still) return;
+      this.dieT += dt; this.t += dt; const T = this.dieT;
+      this.mixer.update(T < this.Ta ? dt * 0.4 : 0);
+      // 1단계: 다리 풀림·움켜쥠·비틀거림  2단계: 넘어짐  3단계: 바닥에 튕기고 멈춤
+      if (this.stagger && T < this.Ta) this.root.position.addScaledVector(this.stagger, dt / this.Ta);
+      let ang = 0, lift = 0;
+      if (T >= this.Ta) {
+        const k = Math.min(1, (T - this.Ta) / this.Tb), e = k * k * (1.6 - 0.6 * k);
+        const bounce = T > this.Ta + this.Tb ? Math.exp(-(T - this.Ta - this.Tb) * 9) * Math.sin((T - this.Ta - this.Tb) * 22) * 0.05 : 0;
+        ang = e * Math.PI / 2 * 0.985 - bounce; lift = e;
+        Object.assign(this.PT, { kneel: 0, clutch: k > 0.35 ? 0 : this.PT.clutch, hunch: 0.15, spread: k > 0.45 ? 1 : 0 });
+        if (T > this.Ta + this.Tb + 0.5) this.stillNext = true;
+      }
+      this.model.quaternion.setFromAxisAngle(this.fallAxis, ang);
+      this.posture(dt * (T >= this.Ta ? 2.2 : 1));
+      const kn = Math.max(this.P.kneel, this.P.knee1);
+      this.model.position.y = -this.kneeH * kn * (1 - lift) + 0.11 * lift;
+      if (this.stillNext) this.still = true;
+      return;
     }
-    this.t += dt; this.mixer.update(dt);
-    if (this.hurtT > 0) { this.hurtT -= dt; this.model.rotation.x = -Math.sin(this.hurtT / 0.45 * Math.PI) * 0.18; }
+    this.t += dt; this.mixer.update(this.frozen ? dt * 0.5 : dt);
+    this.posture(dt);
+    this.model.position.y = -this.kneeH * Math.max(this.P.kneel, this.P.knee1 * 0.97);
     const r = this.root;
-    if (this.path.length) {
+    if (this.path.length && !this.frozen && !this.down) {
       const tgt = this.path[0]; _v.subVectors(tgt, r.position); _v.y = 0; const d = _v.length();
       const want = Math.atan2(_v.x, _v.z); this.face = want;
       const step = this.speed * dt;
       if (d <= step) { r.position.copy(tgt); this.path.shift(); if (!this.path.length) { this.play('idle'); const f = this.onArrive; this.onArrive = null; f?.(); } }
       else r.position.addScaledVector(_v.normalize(), step);
-      this.act.walk.timeScale = this.speed / 1.05;
+      this.act.walk.timeScale = this.speed / 1.05 * (this.P.clutch > 0.5 ? 0.8 : 1);
       if ((this.stepT -= dt) <= 0) { this.stepT = 0.52 / this.speed; this.audio.play(Math.random() < 0.5 ? 'step1' : 'step2', { pos: r.position, vol: 0.5, rate: 0.85 + Math.random() * 0.2 }); }
     } else if (this.faceTarget) { _v.subVectors(this.faceTarget, r.position); this.face = Math.atan2(_v.x, _v.z); }
     // 부드럽게 돌기
@@ -199,7 +259,7 @@ export class Person {
     // 말할 때 입 (모프) + 고개
     const mouth = this.talk > 0 ? Math.max(0, Math.sin(this.t * 17) * 0.5 + Math.sin(this.t * 7.3) * 0.4) * 0.8 : 0;
     for (const m of this.morphs) { m.morphTargetInfluences[m.morphTargetDictionary.mouthOpen] = mouth; m.morphTargetInfluences[m.morphTargetDictionary.mouthSmile] = this.smile || 0; }
-    if (this.head && camPos && !this.path.length) {
+    if (this.head && camPos && (!this.path.length || this.frozen || this.down)) {
       // 머리를 카메라 쪽으로 살짝 (뼈 회전 덧붙이기)
       this.head.getWorldPosition(_v); const dx = camPos.x - _v.x, dz = camPos.z - _v.z, dyy = camPos.y - _v.y;
       const yaw = Math.atan2(dx, dz) - r.rotation.y, pitch = Math.atan2(dyy, Math.hypot(dx, dz));
@@ -228,6 +288,66 @@ export class Person {
       this.lastHead = hp; this.hairO.addScaledVector(this.hairV, dt); this.hairO.clampLength(0, 0.12);
       for (const h of this.hairs) { h.rotation.z = this.hairO.x * 0.6; h.rotation.x = (h.userData.rx ??= h.rotation.x) + this.hairO.y * 0.6; }
     }
+  }
+  // ── 몸 자세 (애니메이션 위에 뼈 회전을 덧붙임). 축은 몸 기준(오른쪽·위·앞) ──
+  rotW(bone, axis, a) {
+    if (!bone || Math.abs(a) < 1e-4) return;
+    const bw = bone.getWorldQuaternion(_qa), pw = bone.parent.getWorldQuaternion(_qb).invert();
+    bone.quaternion.copy(pw.multiply(_qc.setFromAxisAngle(axis, a).multiply(bw))); bone.updateMatrixWorld(true);
+  }
+  armTo(S, elbow, hand, w) { if (w < 0.01 || !S.arm) return; this.aimBone(S.arm, S.fore, elbow, w); this.aimBone(S.fore, S.hand, hand, w); }
+  posture(dt) {
+    const P = this.P, PT = this.PT, k = Math.min(1, dt * 6);
+    for (const key in P) P[key] += (PT[key] - P[key]) * k;
+    for (const f of this.fl) f.t += dt; this.fl = this.fl.filter(f => f.t < f.T);
+    let any = this.fl.length > 0; for (const key in P) if (P[key] > 0.01) any = true;
+    if (!any) return;
+    const B = this.B, t = this.t;
+    this.model.updateMatrixWorld(true);
+    const Q = this.model.getWorldQuaternion(new THREE.Quaternion()), R = _ax.set(1, 0, 0).applyQuaternion(Q).clone(), U = _ay.set(0, 1, 0).applyQuaternion(Q).clone(), F = _az.set(0, 0, 1).applyQuaternion(Q).clone();
+    const sideB = s => s === 'R' ? B.R : B.L, other = s => s === 'R' ? 'L' : 'R';
+    // 다리: 두 무릎 꿇기 / 한쪽 무릎 꿇기(다친 다리가 바닥)
+    if (P.kneel > 0.01) { for (const S of [B.L, B.R]) { this.rotW(S.up, R, -0.12 * P.kneel); this.rotW(S.leg, R, 1.55 * P.kneel); this.rotW(S.foot, R, 0.5 * P.kneel); } }
+    if (P.knee1 > 0.01) { const d = sideB(this.side), o = sideB(other(this.side)); this.rotW(d.up, R, 0.05 * P.knee1); this.rotW(d.leg, R, 1.55 * P.knee1); this.rotW(d.foot, R, 0.6 * P.knee1); this.rotW(o.up, R, -1.45 * P.knee1); this.rotW(o.leg, R, 1.45 * P.knee1); }
+    // 허리 굽힘 (배·가슴 맞음, 빌 때)
+    const hunch = P.hunch + P.beg * 0.35 + P.knee1 * 0.15;
+    if (hunch > 0.01) { this.rotW(B.spine, R, 0.32 * hunch); this.rotW(B.spine1, R, 0.22 * hunch); this.rotW(B.spine2, R, 0.12 * hunch); }
+    // 맞은 순간 움찔 (총알 방향으로 젖혀짐)
+    for (const f of this.fl) {
+      const a = Math.sin(Math.PI * f.t / f.T) * f.amp, S = sideB(f.side);
+      if (f.zone === 'head') { this.rotW(B.neck, f.axis, a * 0.45); this.rotW(B.head, f.axis, a * 0.55); this.rotW(B.spine2, f.axis, a * 0.12); }
+      else if (f.zone === 'chest') { this.rotW(B.spine1, f.axis, a * 0.28); this.rotW(B.spine2, f.axis, a * 0.3); this.rotW(B.head, f.axis, a * 0.2); }
+      else if (f.zone === 'stomach') { this.rotW(B.spine, R, a * 0.45); this.rotW(B.spine1, R, a * 0.3); }
+      else if (f.zone === 'arm') { this.rotW(S.arm, f.axis, a * 0.9); this.rotW(S.fore, f.axis, a * 0.5); this.rotW(B.spine2, f.axis, a * 0.12); }
+      else if (f.zone === 'leg') { this.rotW(S.up, f.axis, a * 0.35); this.rotW(S.leg, R, a * 0.7); this.rotW(B.spine, f.axis, a * 0.1); }
+    }
+    // 빌 때 고개 숙였다 들었다
+    if (P.beg > 0.01) this.rotW(B.neck, R, P.beg * (0.25 + 0.18 * Math.sin(t * 4.2)));
+    // 팔
+    const sp2 = B.spine2.getWorldPosition(new THREE.Vector3());
+    for (const s of ['L', 'R']) {
+      const S = sideB(s); if (!S.arm) continue;
+      const sh = S.arm.getWorldPosition(new THREE.Vector3()), out = sh.clone().sub(sp2); out.addScaledVector(U, -out.dot(U)).normalize();
+      if (P.up > 0.01) { const sh2 = Math.sin(t * 11 + (s === 'L' ? 1 : 0)) * 0.015; this.armTo(S, sh.clone().addScaledVector(out, 0.24).addScaledVector(U, 0.06).addScaledVector(F, 0.06), sh.clone().addScaledVector(out, 0.2).addScaledVector(U, 0.4 + sh2).addScaledVector(F, 0.1), P.up); }
+      if (P.beg > 0.01) { // 두 손 모아 싹싹 비비기
+        const rub = Math.sin(t * 9) * 0.025 * (s === 'L' ? 1 : -1), c = sp2.clone().addScaledVector(F, 0.3).addScaledVector(U, 0.06 + Math.sin(t * 4.2) * 0.04);
+        this.armTo(S, sh.clone().addScaledVector(F, 0.12).addScaledVector(U, -0.2).addScaledVector(out, 0.1), c.addScaledVector(out, 0.012).addScaledVector(U, rub), P.beg);
+      }
+      if (P.clutch > 0.01) { // 상처 움켜쥐기
+        const z = this.zone; let tgt = null;
+        if (z === 'chest') tgt = sp2.clone().addScaledVector(F, 0.13).addScaledVector(U, 0.02).addScaledVector(out, s === this.side ? 0.05 : -0.02);
+        else if (z === 'stomach') tgt = B.spine.getWorldPosition(new THREE.Vector3()).addScaledVector(F, 0.15).addScaledVector(out, 0.04);
+        else if (z === 'arm' && s !== this.side) tgt = sideB(this.side).fore.getWorldPosition(new THREE.Vector3()).addScaledVector(F, 0.05);
+        else if (z === 'leg' && s === this.side) tgt = sideB(s).leg.getWorldPosition(new THREE.Vector3()).addScaledVector(F, 0.1).addScaledVector(U, 0.08);
+        else if (z === 'head' && s === 'R') tgt = B.head.getWorldPosition(new THREE.Vector3()).addScaledVector(F, 0.1);
+        if (tgt) this.armTo(S, sh.clone().lerp(tgt, 0.5).addScaledVector(out, 0.14).addScaledVector(U, -0.1), tgt, P.clutch * (1 - P.up) * (1 - P.beg));
+      }
+      if (P.spread > 0.01) { // 쓰러진 뒤 팔이 축 늘어져 벌어짐
+        const a = s === 'L' ? 1 : -1, v = this.spreadSign * a;
+        this.armTo(S, sh.clone().addScaledVector(out, 0.24).addScaledVector(U, -0.06 + 0.07 * v).addScaledVector(F, 0.03), sh.clone().addScaledVector(out, 0.42).addScaledVector(U, -0.12 + 0.2 * v).addScaledVector(F, 0.07 - 0.04 * v), P.spread);
+      }
+    }
+    if (P.spread > 0.01) this.rotW(B.head, F, 0.45 * this.spreadSign * P.spread);
   }
   // 오른팔을 월드 좌표 p 쪽으로 뻗었다가(ms 동안) 돌아온다 — 물건 놓기, 카드·돈 건네기, 거스름돈 받기
   reach(p, ms = 1400) { this.reachP.copy(p); this.reachT = ms / 1000; }
