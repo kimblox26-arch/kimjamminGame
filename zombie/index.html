@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>서울 감염 — 좀비 서바이벌</title>
+<meta name="description" content="서울에서 시작되는 좀비 아포칼립스. 긴급재난문자로 깨어나 살아남아라.">
+<link rel="stylesheet" href="./style.css?v=1">
+<script type="importmap">
+{ "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="fx-blur"></div>
+<div id="fx-lid-top" class="lid"></div><div id="fx-lid-bot" class="lid"></div>
+<div id="fx-fade"></div>
+<div id="fx-hurt"></div>
+
+<!-- 인게임 HUD (인트로 동안 숨김) -->
+<div id="hud" class="hidden">
+  <div id="clock">
+    <div id="clock-date">2026년 11월 26일 (목)</div>
+    <div id="clock-time">오전 08:00</div>
+    <div id="clock-day">생존 1일차</div>
+  </div>
+  <div id="compass"><div id="compass-strip"></div><div id="compass-obj"></div><div id="compass-needle"></div></div>
+  <div id="tasks"></div>
+  <div id="stats">
+    <div class="stat"><span>체력</span><div class="bar"><i id="bar-hp"></i></div></div>
+    <div class="stat"><span>기력</span><div class="bar"><i id="bar-st"></i></div></div>
+    <div class="stat"><span>배고픔</span><div class="bar"><i id="bar-food"></i></div></div>
+    <div class="stat"><span>갈증</span><div class="bar"><i id="bar-water"></i></div></div>
+    <div id="emotion"><b id="emo-label">평온</b><div class="emo-bars"><div>공포 <div class="bar sm"><i id="bar-fear"></i></div></div><div>스트레스 <div class="bar sm"><i id="bar-stress"></i></div></div><div>희망 <div class="bar sm"><i id="bar-hope"></i></div></div></div></div>
+  </div>
+  <div id="weapon"><div id="weapon-name">맨손</div><div id="weapon-ammo"></div><div id="quick">H 치료 · X 먹기 · Z 마시기 · F 손전등 · Tab 가방 · M 지도</div></div>
+  <div id="crosshair"></div>
+  <div id="prompt"></div>
+  <div id="hold"><i id="hold-bar"></i></div>
+  <div id="notify"></div>
+  <div id="fps"></div>
+</div>
+<div id="center-task"></div>
+<div id="subtitle"></div>
+<button id="menu-btn" class="hidden" title="메뉴 (Esc)">☰ 메뉴</button>
+
+<!-- 타이틀 -->
+<div id="title-screen">
+  <div class="title-bg"></div>
+  <div class="title-box">
+    <div class="title-small">2026. 11. 26. 서울</div>
+    <h1>서울 감염</h1>
+    <div class="title-sub">DAY ZERO — 좀비 서바이벌</div>
+    <button id="btn-start" disabled>세계 생성 중…</button>
+    <button id="btn-continue" class="ghost hidden">이어하기</button>
+    <label class="opt"><input type="checkbox" id="opt-optimize"> 최적화 모드 (저사양 PC · 노트북)</label>
+    <div class="title-note">헤드폰 권장 · 마우스로 시점 · WASD 이동 · E 상호작용</div>
+    <div id="load-bar"><i></i></div>
+  </div>
+</div>
+
+<!-- 메뉴 -->
+<div id="menu" class="hidden">
+  <div class="panel">
+    <h2>일시정지</h2>
+    <button data-act="resume">계속하기</button>
+    <button data-act="skip" id="btn-skip">인트로 건너뛰기</button>
+    <button data-act="map">지도 보기</button>
+    <button data-act="save">저장하기</button>
+    <button data-act="controls">조작법</button>
+    <h3>설정</h3>
+    <label class="row"><span>최적화 모드</span><input type="checkbox" id="set-optimize"></label>
+    <label class="row"><span>그래픽 품질</span>
+      <select id="set-quality"><option value="low">낮음</option><option value="medium">중간</option><option value="high">높음</option><option value="ultra">울트라</option></select></label>
+    <label class="row"><span>전체 음량</span><input type="range" id="set-volume" min="0" max="1" step="0.05"></label>
+    <label class="row"><span>음성(TTS)</span><input type="checkbox" id="set-voice"></label>
+    <label class="row"><span>자막</span><input type="checkbox" id="set-subs"></label>
+    <label class="row"><span>마우스 감도</span><input type="range" id="set-sens" min="0.2" max="2.5" step="0.05"></label>
+    <label class="row"><span>시야각(FOV)</span><input type="range" id="set-fov" min="60" max="95" step="1"></label>
+    <label class="row"><span>FPS 표시</span><input type="checkbox" id="set-fps"></label>
+    <div id="controls-help" class="hidden">
+      WASD 이동 · Shift 달리기 · C 앉기 · Space 점프<br>
+      마우스 왼쪽 공격/사격 · 오른쪽 조준 · R 재장전<br>
+      1~5 무기 · E 상호작용(길게 누르기) · F 손전등<br>
+      H 치료 · X 먹기 · Z 물 마시기 · Tab 가방 · M 지도<br>
+      차량: W/S 가속·후진, A/D 조향, Space 브레이크, E 하차
+    </div>
+  </div>
+</div>
+
+<div id="map-screen" class="hidden"><canvas id="map-canvas"></canvas><div id="map-info"></div><div class="map-help">휠: 확대/축소 · 드래그: 이동 · M/Esc: 닫기</div></div>
+<div id="inventory" class="hidden"><div class="panel"><h2>가방</h2><div id="inv-list"></div><div class="inv-help">항목을 클릭하면 사용합니다 · Tab 닫기</div></div></div>
+<div id="death" class="hidden"><h1>당신은 감염되었습니다</h1><p id="death-info"></p><button id="btn-retry">마지막 저장 지점에서 다시</button></div>
+<div id="ending" class="hidden"><h1>생존</h1><p id="ending-info"></p><button id="btn-freeplay">계속 탐험하기</button></div>
+
+<script type="module" src="./js/main.js?v=1"></script>
+</body>
+</html>
