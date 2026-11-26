@@ -70,7 +70,7 @@ export function addDecor({ root, scene, B, std, canvasTex, FONT, shelfSlots, mer
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.1, 8), white); pole.position.y = 1.05; t.add(pole);
     const umb = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.42, 16, 1, true), new THREE.MeshStandardMaterial({ map: parasolTex, roughness: 0.7, side: THREE.DoubleSide })); umb.position.y = 2.05; t.add(umb);
     for (let i = 0; i < 3; i++) {
-      const a = i * 2.1 + 0.5, ch = new THREE.Group(); ch.position.set(Math.cos(a) * 0.65, 0, Math.sin(a) * 0.65); ch.rotation.y = -a - Math.PI / 2; t.add(ch);
+      const a = i * 2.1 + 0.5, ch = new THREE.Group(); ch.position.set(Math.cos(a) * 0.65, 0, Math.sin(a) * 0.65); ch.rotation.y = -a - Math.PI / 2; t.add(ch); (scene.userData.physChairs ||= []).push(ch);
       const seat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.4), green); seat.position.y = 0.42; ch.add(seat);
       const back = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.36, 0.03), green); back.position.set(0, 0.62, -0.2); back.rotation.x = -0.12; ch.add(back);
       for (const [lx, lz] of [[-0.18, -0.17], [0.18, -0.17], [-0.18, 0.17], [0.18, 0.17]]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.018, 0.42, 6), green); l.position.set(lx, 0.21, lz); ch.add(l); }

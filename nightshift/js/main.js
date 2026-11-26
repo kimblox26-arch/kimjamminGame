@@ -15,7 +15,7 @@ import { TYPES } from './data.js';
 import { updateLiquids } from './products.js';
 import { billMesh, coinMesh } from './counter.js';
 import { $, show, modal, toast, mine, ic, paintIcons, won } from './ui.js';
-import { buildCity, makeTraffic } from './city.js';
+import { buildCity, makeTraffic, ROADS } from './city.js';
 import { buildStorage, buildCourt } from './places.js';
 import { Mover, STORE_COLLIDERS } from './move.js';
 import { Crime } from './crime.js';
@@ -31,6 +31,8 @@ import { Driving } from './drive.js';
 import { Missions } from './missions.js';
 import { buildArmory, buildTower, buildCafe, Animals, TOWER, ARMORY } from './world2.js';
 import { buildPrison } from './prison.js';
+import { Physics, StreetProps } from './physics.js';
+import { Metro } from './metro.js';
 import { PRISON } from './places.js';
 import { buildUnderpass, UNDER } from './underpass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
@@ -50,7 +52,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality !
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.85;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(68, 1, 0.03, 260);
+const camera = new THREE.PerspectiveCamera(68, 1, 0.03, 720);
 const yawObj = new THREE.Group(); yawObj.add(camera); scene.add(yawObj);
 let composer = null;
 
@@ -175,6 +177,7 @@ const voice = new Voice({
 
 const _camW = new THREE.Vector3();
 let cityEnv = null, lampT = 0, lightMgr = null, features = null;
+let physics, streetProps, metro;
 let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap, under, sky, hemi, ugLight, peds, crowd, driving, missions, armory, tower, cafe, prison, animals;
 paintIcons();
 async function boot() {
@@ -210,6 +213,20 @@ async function boot() {
   crowd = new Crowd({ game, crime, peds, yawObj, colliders, mover });
   driving = new Driving({ scene, camera, yawObj, look, mover, audio, hands, vehicles, traffic, crime, game, colliders, crowd }); crime.drive = driving;
   driving.hitPerson = (c, dir, sp, byMe) => crime.carHit(c, dir, sp, byMe); crowd.traffic = traffic; crowd.drive = driving;
+  // 물리엔진: 건물·차·사람·물건이 서로 겹치지 않고 부딪힘
+  physics = new Physics({ scene, colliders, audio }); driving.phys = physics;
+  for (const ch of scene.userData.physChairs || []) physics.addProp(ch, { hx: 0.22, hy: 0.4, hz: 0.21, mass: 2.5, snd: 'plastic' });
+  const W2c = city.ROADW / 2, segs = (lines, a0, a1, cut) => { const out = []; let a = a0; for (const c of [...cut].sort((p, q) => p - q)) { if (c - W2c - 3 > a) out.push([a, c - W2c - 3]); a = Math.max(a, c + W2c + 3); } if (a1 > a) out.push([a, a1]); return out; };
+  const coreCurbs = me => { const out = [], R = 60; if (me.x < ROADS.X0 - 80 || me.x > ROADS.X1 + 80 || me.z < ROADS.Z0 - 80 || me.z > ROADS.Z1 + 80) return out;
+    for (const r of ROADS.EW) { if (Math.abs(r.z0 - me.z) > R + 10) continue; for (const [a, b] of segs(null, Math.max(ROADS.X0, me.x - R), Math.min(ROADS.X1, me.x + R), ROADS.NS)) { out.push({ ax: 'x', c: r.z0, a: r === ROADS.main ? Math.max(a, b > 16 && a < -16 ? a : a) : a, b, out: -1, main: r === ROADS.main }); out.push({ ax: 'x', c: r.z1, a, b, out: 1 }); } }
+    for (const cx of ROADS.NS) { if (Math.abs(cx - me.x) > R + 10) continue; for (const [a, b] of segs(null, Math.max(ROADS.Z0, me.z - R), Math.min(ROADS.Z1, me.z + R), ROADS.EW.map(r => (r.z0 + r.z1) / 2))) { out.push({ ax: 'z', c: cx - W2c, a, b, out: -1 }); out.push({ ax: 'z', c: cx + W2c, a, b, out: 1 }); } }
+    return out.filter(s => !(s.main && s.out === -1 && me.x > -40 && me.x < 40) || true).map(s => s.main && s.out === -1 ? { ...s, skip: [-16, 20] } : s); };
+  // 수도권(서울 크기) 확장: 가까운 구역만 그때그때 만듦
+  metro = new Metro({ scene, city, colliders, lamps: city.lamps,
+    spawnCar: (x, z, ry, moving) => { const v = traffic.spawnParked(CAR_COLORS[Math.random() * CAR_COLORS.length | 0], Math.random() < 0.12, x, z, ry); if (moving) v.snd = audio.play('engine', { pos: v.mesh.position, loop: true, vol: 0.9, rate: 0.6 }); return v; },
+    removeCar: v => { if (driving.ride?.obj === v.mesh) return; const i = traffic.list.indexOf(v); if (i >= 0) traffic.list.splice(i, 1); v.snd?.stop?.(); v.snd = null; v.mesh.removeFromParent(); } });
+  metro.audio = audio; metro.ride = () => driving.ride?.obj; peds.extraSegs = me => metro.sidewalks(me);
+  streetProps = new StreetProps({ physics, scene, colliders, curbs: me => coreCurbs(me).concat(metro.curbs(me)) });
   driving.spawnDriver = car => { const S = car.userData.size; return peds.addFleeing(car.localToWorld(new THREE.Vector3(S.x / 2 + 0.9, 0, S.z * 0.1)), yawObj.position.clone()); };
   mover.onBump = (p, sp) => { store.merch.shake(p); audio.play('bag', { pos: p, vol: 0.3, rate: 1.9 }); audio.play('key', { pos: p, vol: 0.25, rate: 1.6 }); if (sp > 2.4 && Math.random() < 0.45) store.merch.knockNear(p, 1.4); };
   minimap = new MiniMap({ city, yawObj, look, markers: () => {
@@ -223,9 +240,9 @@ async function boot() {
     for (const v of traffic.list) if (v.mesh.visible && v.parked && v.mesh !== driving.ride?.obj) out.push({ x: v.mesh.position.x, z: v.mesh.position.z, kind: 'ride', r: 1.3 });
     for (const b of driving.bikes) out.push({ x: b.position.x, z: b.position.z, kind: 'ride', r: 0.8 });
     return out;
-  } });
+  } }); minimap.metro = metro;
   missions = new Missions({ scene, audio, game, crime, peds, yawObj, look, traffic, drive: driving, minimap, city, tower: TOWER, extra: crime.extra }); crime.money = (n, w) => missions.money(n, w); missions.money(0);
-  features = new Features({ scene, camera, yawObj, audio, game, hands, missions, crime, renderer, drive: driving, productMesh, render: () => (composer ? composer.render() : renderer.render(scene, camera)) }); missions.features = features; features.skyMat = sky?.children[0]?.material; crime.features = features;
+  features = new Features({ scene, camera, yawObj, audio, game, hands, missions, crime, renderer, drive: driving, productMesh, render: () => (composer ? composer.render() : renderer.render(scene, camera)) }); missions.features = features; features.skyMat = sky?.children[0]?.material; crime.features = features; peds.features = features;
   crime.onEscape = () => (features.stat('escapes'), toast('탈옥수가 됐어요. 경찰을 피해 도시로 숨어드세요! (휴대폰에서 미션·일자리)', 'bad', 4000));
   crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court, under.group, armory.group, tower.group, cafe.group, prison.group];
   crime.onExit = () => { crime.cleanup(); peds.clear(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); peds.clear(); startShift(1); };
@@ -242,7 +259,7 @@ async function boot() {
     console.log('perf: store merged', mergeStatic(store.root, skipStore)); }
   let merged = 0; for (const [g, skip] of [[tower.group, o => o === tower.evCar], [cafe.group, () => false], [armory.group, () => false], [prison.group, o => o === prison.vent], [storage.group, () => false], [courtB.court, () => false]]) merged += mergeStatic(g, skip);
   lightMgr = new LightManager(scene, [keyLight, ugLight, crime.fx.flashLight, prison.spot]); const nl = lightMgr.harvest(); console.log('perf: merged', merged, 'lights pooled', nl);
-  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide, features };
+  window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide, features, get physics() { return physics; }, get metro() { return metro; }, get streetProps() { return streetProps; } };
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
   const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 3.6), new THREE.MeshBasicMaterial()); hitBox.visible = false; hitBox.position.set(2.6, 0.93, 0.6); hitBox.userData.aim = 'counter'; scene.add(hitBox); store.counterHit = hitBox;
@@ -383,8 +400,8 @@ function loop() {
   updateAim(dt); updateLiquids(dt);
   if (game?.running) minimap?.update(dt);
   if (game?.running) features?.update(dt, crime.indoor() || yawObj.position.y - 1.55 < -1);
-  prison?.tick?.(dt, yawObj.position);
-  if (game?.running && !crime?.inCourt) { peds?.update(dt, !crime.inPrison); crowd?.update(dt); driving?.update(dt); missions?.update(dt); animals?.update(dt, yawObj.position); store.merch.update(dt); const cw = camera.getWorldPosition(new THREE.Vector3()); for (const c of crime.extra) c.person.update(dt, cw); }
+  prison?.tick?.(dt, yawObj.position); metro?.update(dt, yawObj.position);
+  if (game?.running && !crime?.inCourt) { peds?.update(dt, !crime.inPrison); crowd?.update(dt); driving?.update(dt); physics?.update(dt, yawObj.position, crowd.people(), traffic.list); streetProps?.update(dt, yawObj.position); missions?.update(dt); animals?.update(dt, yawObj.position); store.merch.update(dt); const cw = camera.getWorldPosition(new THREE.Vector3()); for (const c of crime.extra) c.person.update(dt, cw); }
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }
   envUpdate(dt); HAIR_TIME.value += dt; lightMgr?.update(dt, camera.getWorldPosition(_camW));
@@ -420,7 +437,7 @@ function envUpdate(dt) {
   if (!sky) return;
   { const p = yawObj.position, inS = p.x > -5.6 && p.x < 5.2 && p.z > -8.4 && p.z < 4.4 && p.y < 3 && p.y > 0 && !crime?.inPrison; document.body.classList.toggle('outside', !inS); }
   const p = yawObj.position, feet = p.y - 1.55, ug = feet < -1.2 && Math.abs(p.z) < 40, inStore = p.x > -5.4 && p.x < 5 && p.z > -8.2 && p.z < 4.2 && !ug;
-  const k = Math.min(1, dt * 2.5), fn = ug ? 10 : inStore ? 14 : 30, ff = ug ? 60 : inStore ? 50 : 200;
+  const k = Math.min(1, dt * 2.5), fn = ug ? 10 : inStore ? 14 : 40, ff = ug ? 60 : inStore ? 50 : (window.__q === 'low' ? 330 : window.__q === 'mid' ? 440 : 560);
   scene.fog.near += (fn - scene.fog.near) * k; scene.fog.far += (ff - scene.fog.far) * k;
   sky.position.copy(camera.getWorldPosition(new THREE.Vector3())); sky.visible = !ug;
   ugLight.intensity += ((ug ? 14 : 0) - ugLight.intensity) * k; ugLight.position.set(p.x, UNDER.ceil - 0.5, p.z);

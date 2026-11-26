@@ -90,7 +90,7 @@ export class Driving {
   boxGap(m, p) { const S = m.userData.size || { x: 2, z: 4.4 }, a = m.rotation.y, c = Math.cos(a), sn = Math.sin(a), dx = p.x - m.position.x, dz = p.z - m.position.z, lx = dx * c - dz * sn, lz = dx * sn + dz * c; return Math.hypot(Math.max(0, Math.abs(lx) - S.x / 2), Math.max(0, Math.abs(lz) - S.z / 2)); }
   label(n) { return { car: '차 타기', bike: '자전거 타기', scooter: '스쿠터 타기', bus: '버스 타기' }[n.kind]; }
   async enter(n) {
-    const { obj, kind, ref } = n; this.mover.enabled = false; this.mover.riding = true; this.hands.rest('R'); this.hands.rest('L');
+    const { obj, kind, ref } = n; if (ref) ref.riding = true; this.mover.enabled = false; this.mover.riding = true; this.hands.rest('R'); this.hands.rest('L');
     this.crime.setWeapon?.('fist');
     const S0 = obj.userData.size || V3(0.6, 1, 1.7);
     this.ride = { obj, kind, ref, v: 0, steer: 0, ry: obj.rotation.y, lean: 0, eye: kind === 'car' ? (obj.userData.ferrari ? V3(0.35, 1.12, -0.25) : V3(S0.x * 0.2, S0.y * 0.72, -S0.z * 0.06)) : kind === 'bus' ? V3(0.75, 1.65, -1.2) : kind === 'bike' ? V3(0, 1.72, -0.28) : V3(0, 1.6, -0.25), entering: kind === 'car' };
@@ -129,8 +129,14 @@ export class Driving {
     if (r.kind === 'scooter' && r.snd) r.snd.stop?.();
     if (r.kind === 'bus') this.busInterior(o, false);
     this.yawObj.position.copy(out); this.look.yaw = (r.obj.rotation.y + Math.PI); this.look.pitch = 0;
-    this.ride = null; this.mover.enabled = true; this.mover.riding = false; this.hands.rest('R'); this.hands.rest('L'); this.hands.enabled = true;
+    this.phys?.rideEnd(); if (r.ref) r.ref.riding = false;     this.ride = null; this.mover.enabled = true; this.mover.riding = false; this.hands.rest('R'); this.hands.rest('L'); this.hands.enabled = true;
     document.body.classList.remove('riding', 'in-car'); this.camera.position.set(0, 0, 0);
+  }
+  // 물리 충돌: 세기에 따라 쿵 소리·화면 흔들림, 지나가던 차를 크게 들이받으면 난폭 운전으로 신고됨
+  crashHit(v, body) {
+    const r = this.ride; if (!r || v < 2 || (this.crashT || 0) > performance.now()) return; this.crashT = performance.now() + 250; const o = r.obj;
+    this.audio.play('thud', { pos: o.position, vol: Math.min(1.8, v / 7), rate: 0.5 }); this.audio.play('punch', { pos: o.position, vol: Math.min(1.4, v / 9), rate: 0.6 }); if (v > 6) this.audio.play('hit', { pos: o.position, vol: Math.min(1.5, v / 10), rate: 0.45 });
+    this.shake = Math.min(0.35, v / 35); if (v > 9 && body?.userData?.key?.mesh && !body.userData.key.parked) this.crime.wanted?.add(1, '난폭 운전');
   }
   anim(f, ms) { return new Promise(res => { const t0 = performance.now(); const step = () => { const t = Math.min(1, (performance.now() - t0) / ms); f(t); if (t < 1) requestAnimationFrame(step); else res(); }; step(); }); }
   horn() { const r = this.ride; if (!r || r.kind === 'bus' || r.kind === 'bike') { if (r?.kind === 'bike') this.audio.play('key', { vol: 0.8, rate: 3 }); return; } this.audio.play('horn', { pos: r.obj.position, vol: 1.4 }); this.honked?.(r.obj.position); }
@@ -150,17 +156,27 @@ export class Driving {
     if (r.kind === 'bus') { // 승객: 버스가 가는 대로
       this.place(); this.look.yaw += 0; if (this.speedEl) this.speedEl.textContent = r.ref.stopT > 0 ? '정류장 · 내리기 가능' : `${r.ref.num || ''}번 버스`; return;
     }
+    if (this.phys && r.kind !== 'bus') {
+      if (!this.phys.ride || this.phys.ride.obj !== o) { const S1 = o.userData.size || V3(0.6, 1, 1.7); this.phys.rideStart(o, S1, r.kind === 'car' ? (o.userData.ferrari ? 1500 : 1300) : r.kind === 'scooter' ? 160 : 95, (v, body) => this.crashHit(v, body)); }
+      const vel = this.phys.rideRead(o); if (vel) { const f0 = V3(Math.sin(o.rotation.y), 0, Math.cos(o.rotation.y)), bv = vel.x * f0.x + vel.z * f0.z; if (Math.abs(bv - r.v) > 0.6) r.v = bv; }
+    }
     let thr = -vec.y, st = -vec.x; if (k.KeyW || k.ArrowUp) thr = 1; if (k.KeyS || k.ArrowDown) thr = -1; if (k.KeyA || k.ArrowLeft) st = 1; if (k.KeyD || k.ArrowRight) st = -1;
     const spec = { car: o.userData.ferrari ? { acc: 9, max: 42, rev: 7, wb: 2.65, steer: 0.5, brake: 14 } : { acc: 6, max: 24, rev: 6, wb: 2.6, steer: 0.55, brake: 11 }, scooter: { acc: 4.5, max: 14, rev: 0, wb: 1.3, steer: 0.6, brake: 9 }, bike: { acc: 2.4, max: 7.5, rev: 0, wb: 1.05, steer: 0.65, brake: 7 } }[r.kind];
     if (thr > 0.15) r.v += (r.v < 0 ? spec.brake : spec.acc) * thr * dt; else if (thr < -0.15) r.v -= (r.v > 0.3 ? spec.brake : spec.acc * 0.6) * -thr * dt; else r.v -= Math.sign(r.v) * Math.min(Math.abs(r.v), (0.8 + Math.abs(r.v) * 0.05) * dt);
     r.v = Math.max(-spec.rev, Math.min(spec.max, r.v));
     r.steer += (st * spec.steer * (1 - Math.min(0.5, Math.abs(r.v) / 50)) - r.steer) * Math.min(1, dt * 5);
+    const S = o.userData.size || V3(0.6, 1, 1.7), P = this.phys;
+    let crash = 0;
+    if (P) {
+      // 물리엔진: 질량 있는 차체가 벽·차·물건과 실제로 부딪힘 (속도·회전은 운전 입력으로, 막히면 물리 결과를 따름)
+      o.rotation.y += 0; const fwd = V3(Math.sin(o.rotation.y), 0, Math.cos(o.rotation.y));
+      P.rideDrive(fwd, r.v, r.v / spec.wb * Math.tan(r.steer));
+    } else {
     o.rotation.y += r.v / spec.wb * Math.tan(r.steer) * dt;
-    const fwd = V3(Math.sin(o.rotation.y), 0, Math.cos(o.rotation.y)), prev = o.position.clone();
+    const fwd = V3(Math.sin(o.rotation.y), 0, Math.cos(o.rotation.y));
     o.position.addScaledVector(fwd, r.v * dt);
     // 부딪힘: 건물·벽 (차는 앞·가운데·뒤 원 3개)
-    const S = o.userData.size || V3(0.6, 1, 1.7), rad = r.kind === 'car' ? S.x / 2 + 0.05 : 0.35, offs = r.kind === 'car' ? [-S.z / 2 + rad, 0, S.z / 2 - rad] : [0];
-    let crash = 0;
+    const rad = r.kind === 'car' ? S.x / 2 + 0.05 : 0.35, offs = r.kind === 'car' ? [-S.z / 2 + rad, 0, S.z / 2 - rad] : [0];
     for (const off of offs) {
       const c = o.position.clone().addScaledVector(fwd, off);
       for (const q of this.colliders) {
@@ -170,6 +186,8 @@ export class Driving {
       }
       for (const w of this.traffic.list) { if (w.mesh === o || !w.mesh.visible) continue; const d = w.mesh.position.distanceTo(c); const rr = rad + (w.kind === 'bus' ? 1.6 : 1.1); if (d < rr) { o.position.addScaledVector(c.clone().sub(w.mesh.position).setY(0).normalize(), rr - d); crash = Math.max(crash, Math.abs(r.v)); w.cur = 0; } }
     }
+    }
+    const fwd = V3(Math.sin(o.rotation.y), 0, Math.cos(o.rotation.y));
     if (crash > 2) { this.audio.play('thud', { pos: o.position, vol: Math.min(1.8, crash / 8), rate: 0.5 }); this.audio.play('punch', { pos: o.position, vol: Math.min(1.4, crash / 10), rate: 0.6 }); this.shake = Math.min(0.3, crash / 40); r.v *= -0.25; if (crash > 12) this.crime.wanted?.add(0, ''); }
     else if (crash) r.v *= 0.6;
     // 사람 치기

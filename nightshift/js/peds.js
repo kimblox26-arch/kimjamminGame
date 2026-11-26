@@ -8,6 +8,13 @@ import { ROADS } from './city.js';
 import { UNDER } from './underpass.js';
 
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z), pk = a => a[Math.random() * a.length | 0];
+// 소지품: 백팩(등), 쇼핑백(왼손), 우산(비 오면 펴서 듦)
+const MAT = {}, mat = (c, r = 0.6, side) => (MAT[c + '' + side] ||= new THREE.MeshStandardMaterial({ color: c, roughness: r, side: side ? THREE.DoubleSide : THREE.FrontSide }));
+function anchorOn(P, bone) { P.root.updateMatrixWorld(true); const a = new THREE.Object3D(), bq = bone.getWorldQuaternion(new THREE.Quaternion()), rq = P.root.getWorldQuaternion(new THREE.Quaternion()); a.quaternion.copy(bq.invert().multiply(rq)); a.scale.setScalar(1 / bone.getWorldScale(V3()).x); bone.add(a); return a; }
+function backpack(col) { const g = new THREE.Group(); const b = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.14), mat(col, 0.8)); g.add(b); const pk2 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.16, 0.05), mat(col, 0.85)); pk2.position.set(0, -0.1, -0.09); g.add(pk2); for (const x of [-0.09, 0.09]) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.42, 0.02), mat(0x1a1a1a, 0.7)); st.position.set(x, 0.02, 0.08); g.add(st); } return g; }
+function shopBag(col) { const g = new THREE.Group(); const b = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.1), mat(col, 0.7)); b.position.y = -0.22; g.add(b); const h = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.006, 4, 10, Math.PI), mat(0x222222)); h.position.y = -0.07; h.rotation.z = Math.PI; g.add(h); return g; }
+function umbrella(col) { const g = new THREE.Group(); const c = new THREE.Mesh(new THREE.ConeGeometry(0.56, 0.26, 14, 1, true), mat(col, 0.45, true)); c.position.y = 0.9; g.add(c); for (let i = 0; i < 7; i++) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.6, 3), mat(0x2a2a2a)); const a = i / 7 * Math.PI * 2; r.position.set(Math.cos(a) * 0.27, 0.86, Math.sin(a) * 0.27); r.rotation.set(Math.sin(a) * 1.13, 0, -Math.cos(a) * 1.13); g.add(r); } const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.95, 5), mat(0x222222)); sh.position.y = 0.5; g.add(sh); const hd = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.008, 4, 8, Math.PI), mat(0x3a2a1a)); hd.position.y = 0.02; hd.rotation.z = Math.PI; g.add(hd); return g; }
+const UMB = [0x1b1b1b, 0x22345e, 0x7a1f2b, 0x2d5a3a, 0xd0d0cc, 0x4f3a6e, 0x1f6f7a];
 const CALL = [['여보세요, 경찰이죠? 여기 총소리가 났어요!', 'scared'], ['112죠? 사람이 총에 맞았어요! 빨리 와 주세요!', 'scared'], ['여기 달빛대로 편의점 근처인데요, 총 든 사람이 있어요!', 'scared']];
 const BODY = [['헉… 사, 사람이 쓰러져 있어…!', 'scared'], ['꺄악! 피… 피야!', 'scared'], ['저기요! 괜찮으세요? 저기요!', 'scared']];
 const MURDER = [['저 사람… 사람 죽인 그 사람이야!', 'scared'], ['살인자다! 다들 도망쳐!', 'scared'], ['꺄악! 저 사람이 사람을 죽였어!', 'scared'], ['저, 저기요! 저 사람 살인범이에요! 112! 112!', 'scared']];
@@ -36,7 +43,7 @@ export class Pedestrians {
   pt(seg, s) { return seg.axis === 'x' ? V3(s, seg.y, seg.c) : V3(seg.c, seg.y, s); }
   along(seg, p) { return seg.axis === 'x' ? p.x : p.z; }
   spawn(ug) {
-    const me = this.yawObj.position, near = this.segs.filter(s => !!s.ug === ug && this.dist(s, me) < 55);
+    const me = this.yawObj.position, near = [...this.segs, ...(ug ? [] : this.extraSegs?.(me) || [])].filter(s => !!s.ug === ug && this.dist(s, me) < 55);
     if (!near.length) return;
     const seg = pk(near), m = this.along(seg, me);
     let s = Math.max(seg.a, Math.min(seg.b, m + (Math.random() < 0.5 ? -1 : 1) * (ug ? 6 + Math.random() * 18 : 14 + Math.random() * 30)));
@@ -46,6 +53,11 @@ export class Pedestrians {
     if (thug && Math.random() < 0.15) setTimeout(() => { if (!c.dead && c.person.root.position.distanceTo(this.yawObj.position) < 12) this.crime.provoke(c); }, 4000);
     const r = Math.random(); if (r < 0.22) { P.PT.phone = 1; P.keepPhone = true; } else if (r < 0.32) { P.PT.call = 1; c.caller = true; }
     P.fidget = !P.keepPhone && !c.caller; this.next(c); this.list.push(c);
+    // 소지품
+    c.umbOk = Math.random() < 0.75; const ac = Math.random();
+    try { if (ac < 0.26 && P.B?.spine2) { const bp = backpack(pk([0x1d1d1f, 0x2b3a55, 0x5a2a2a, 0x3a4a3a, 0x6b6b6b])); bp.position.set(0, -0.05, -0.17); anchorOn(P, P.B.spine2).add(bp); }
+      else if (ac < 0.46 && P.B?.L?.hand && !P.keepPhone) anchorOn(P, P.B.L.hand).add(shopBag(pk([0xf2f2f2, 0xe9d8b4, 0x2fb36b, 0xd23a3a])));
+    } catch (e) { }
   }
   dist(seg, p) { const s = Math.max(seg.a, Math.min(seg.b, this.along(seg, p))), q = this.pt(seg, s); return Math.hypot(q.x - p.x, q.z - p.z) + Math.abs((seg.y || 0) - (p.y - 1.55)) * 3; }
   next(c, away) {
@@ -103,7 +115,12 @@ export class Pedestrians {
     }
     const dead = [...this.list.filter(c => c.dead), ...this.game.customers.filter(c => c.dead), ...this.crime.officers.filter(o => o.dead).map(o => o.ref)];
     for (const c of this.list) {
-      const P = c.person; P.update(dt, cam); if (c.dead || c.down) continue;
+      const P = c.person; P.update(dt, cam);
+      // 비 오면 우산 펴고(손에 쥔 채로 머리 위), 그치면 접음
+      const wantU = !c.dead && !c.down && c.umbOk && !c.ug && this.features?.rain && c.state !== 'flee';
+      if (wantU && !c.umb) { c.umb = umbrella(pk(UMB)); P.root.add(c.umb); } else if (!wantU && c.umb) { c.umb.removeFromParent(); c.umb = null; }
+      if (c.umb && P.rHand) { const h = P.type?.h || 1.7, hp = P.root.localToWorld(V3(0.16, h * 0.62, 0.22)); P.reach(hp, 300); P.rHand.getWorldPosition(this._hw ||= V3()); const l = P.root.worldToLocal(this._hw.clone()); c.umb.position.lerp(l, 0.5); }
+      if (c.dead || c.down) continue;
       if (c.aggro) { this.crime.fight(c, dt); continue; }
       if (c.state === 'walk' && c.wait > 0 && (c.wait -= dt) <= 0) this.next(c);
       // 사람을 죽인 적이 있으면: 나를 알아본 행인이 비명 지르고 도망치거나 신고 (다치게만 했으면 그냥 지나감)

@@ -4,6 +4,8 @@ import { STORAGE } from './places.js';
 import { UNDER } from './underpass.js';
 import { PRISON } from './places.js';
 import { TOWER, CAFE } from './world2.js';
+import { nsLines, ewLines, zoneOf, planOf, roadW, isBridge, CORE, RIVER, CBDS, METRO } from './metro.js';
+const ZC = { cbd: '#2c2a40', apt: '#262d36', villa: '#23272d', shops: '#2b2924', park: '#1b3320', forest: '#15291a', school: '#302a1e', river: '#0d2236' };
 
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 const PLACES = [
@@ -23,13 +25,16 @@ export class MiniMap {
     this.big.addEventListener('pointerdown', e => { e.stopPropagation(); if (e.target.closest('.mzoom')) return; drag = { x: e.clientX, y: e.clientY, px: this.pan.x, pz: this.pan.z, moved: 0 }; });
     this.big.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y, k = Math.min(2, devicePixelRatio || 1) / (this.bigS || 1); drag.moved = Math.max(drag.moved, Math.hypot(dx, dy)); this.pan.x = drag.px - dx * k; this.pan.z = drag.pz - dy * k; this.draw(this.bigC, true); });
     this.big.addEventListener('pointerup', e => { if (drag && drag.moved < 8 && !e.target.closest('.mzoom')) this.open(false); drag = null; });
-    for (const b of this.big.querySelectorAll('.mzoom button')) b.addEventListener('pointerdown', e => { e.stopPropagation(); const z = +b.dataset.z; if (z) this.zoom = Math.min(6, Math.max(0.18, this.zoom * z)); else { this.pan = { x: 0, z: 0 }; this.zoom = 1; } this.draw(this.bigC, true); });
+    for (const b of this.big.querySelectorAll('.mzoom button')) b.addEventListener('pointerdown', e => { e.stopPropagation(); const z = +b.dataset.z; if (z) this.zoom = Math.min(6, Math.max(0.004, this.zoom * z)); else { this.pan = { x: 0, z: 0 }; this.zoom = 1; } this.draw(this.bigC, true); });
   }
   open(on) { this.big.classList.toggle('hidden', !on); this.isOpen = on; if (on) { this.pan = { x: 0, z: 0 }; this.draw(this.bigC, true); } }
   // 도시 그리기 (월드 x→오른쪽, z→아래)
   world(g, s, big) {
-    const W = this.city.ROADW, { X0, X1, Z0, Z1, EW, NS } = ROADS, B = 520;
-    g.fillStyle = '#0b0f14'; g.fillRect(-B, -B, B * 2, B * 2); g.fillStyle = '#10151c'; g.fillRect(X0, Z0, X1 - X0, Z1 - Z0);
+    const W = this.city.ROADW, { X0, X1, Z0, Z1, EW, NS } = ROADS;
+    const vr = big ? this.view || 160 : 110, vcx = big ? this.cx : this.yawObj.position.x, vcz = big ? this.cz : this.yawObj.position.z, vx0 = Math.max(METRO.x0, vcx - vr), vx1 = Math.min(METRO.x1, vcx + vr), vz0 = Math.max(METRO.z0, vcz - vr), vz1 = Math.min(METRO.z1, vcz + vr);
+    g.fillStyle = '#05070a'; g.fillRect(vcx - vr * 1.5, vcz - vr * 1.5, vr * 3, vr * 3); g.fillStyle = '#0b0f14'; g.fillRect(vx0, vz0, vx1 - vx0, vz1 - vz0);
+    this.metroLayer(g, s, vx0, vx1, vz0, vz1);
+    g.fillStyle = '#10151c'; g.fillRect(X0, Z0, X1 - X0, Z1 - Z0);
     // 보도
     g.fillStyle = '#262c34';
     for (const r of EW) g.fillRect(X0, r.z0 - 3.2, X1 - X0, r.z1 - r.z0 + 6.4);
@@ -61,6 +66,22 @@ export class MiniMap {
     // 버스 정류장
     g.fillStyle = '#4aa3ff'; g.fillRect(13.8, ROADS.main.z0 - 2.5, 4.4, 1);
   }
+  // 수도권: 구역 색 · 한강 · 도로 · (확대하면) 건물
+  metroLayer(g, s, vx0, vx1, vz0, vz1) {
+    if (!this.metro) return;
+    const xs = nsLines(vx0 - 200, vx1 + 200), zs = ewLines(vz0 - 200, vz1 + 200), n = xs.length * zs.length;
+    if (n < 6000) for (let i = 0; i < xs.length - 1; i++) for (let j = 0; j < zs.length - 1; j++) {
+      const xa = xs[i], xb = xs[i + 1], za = zs[j], zb = zs[j + 1]; if (xa >= CORE.x0 && xb <= CORE.x1 && za >= CORE.z0 && zb <= CORE.z1) continue;
+      const zn = zoneOf(xa, xb, za, zb); g.fillStyle = ZC[zn]; g.fillRect(xa, za, xb - xa, zb - za);
+      if (s > 0.6 && n < 500 && zn !== 'river') { const p = planOf(xa, xb, za, zb); for (const b of p.blds) { g.fillStyle = b.tower ? '#55657c' : b.apt ? '#6c665a' : `hsl(215,12%,${16 + Math.min(18, b.h * 0.4)}%)`; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); } }
+    }
+    g.fillStyle = '#0d2a44'; g.fillRect(vx0, RIVER.z0, vx1 - vx0, RIVER.z1 - RIVER.z0);
+    g.fillStyle = '#3b424c'; const mw = 1.3 / s;
+    for (const x of xs) { if (x < vx0 - 20 || x > vx1 + 20) continue; const w = Math.max(roadW(x, 1), mw), inner = x > CORE.x0 && x < CORE.x1, br = isBridge(x);
+      for (let [a, b] of inner ? [[vz0, ROADS.Z0], [ROADS.Z1, vz1]] : [[vz0, vz1]]) { if (b <= a) continue; if (!br && a < RIVER.sRoad && b > RIVER.nRoad) { if (a < RIVER.nRoad) g.fillRect(x - w / 2, a, w, RIVER.nRoad - a); if (b > RIVER.sRoad) g.fillRect(x - w / 2, RIVER.sRoad, w, b - RIVER.sRoad); } else g.fillRect(x - w / 2, a, w, b - a); } }
+    for (const z of zs) { if (z < vz0 - 20 || z > vz1 + 20 || (z > RIVER.nRoad + 1 && z < RIVER.sRoad - 1)) continue; const w = Math.max(roadW(z, 0), mw), inner = z > CORE.z0 && z < CORE.z1;
+      for (const [a, b] of inner ? [[vx0, ROADS.X0], [ROADS.X1, vx1]] : [[vx0, vx1]]) if (b > a) g.fillRect(a, z - w / 2, b - a, w); }
+  }
   label(g, x, y, txt, col, size) { g.font = `800 ${size}px ${FONT}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(txt, x, y); g.fillStyle = col; g.fillText(txt, x, y); }
   draw(cv, big) {
     const dpr = Math.min(2, devicePixelRatio || 1), w = cv.clientWidth * dpr, h = cv.clientHeight * dpr;
@@ -85,7 +106,11 @@ export class MiniMap {
     g.restore();
     // 이름표 (화면 좌표)
     const toScr = (x, z) => { let dx = (x - cx) * s, dz = (z - cz) * s; if (!big) { const c = Math.cos(yaw), si = Math.sin(yaw); [dx, dz] = [dx * c - dz * si, dx * si + dz * c]; } return [w / 2 + dx, h / 2 + dz]; };
-    if (big) {
+    if (big && this.zoom < 0.3) {
+      for (const c of CBDS) { const q = toScr(c.x, c.z); this.label(g, q[0], q[1], c.name, '#c9b8ff', 14 * dpr); }
+      { const q = toScr(0, (RIVER.z0 + RIVER.z1) / 2); this.label(g, q[0], q[1], '한강', '#7fb2ff', 16 * dpr); const q2 = toScr(0, -30); this.label(g, q2[0], q2[1], '달빛동', '#2fd3b4', 15 * dpr); const q3 = toScr(PRISON.x, PRISON.z); if (this.zoom > 0.08) this.label(g, q3[0], q3[1] + 18 * dpr, '달빛교도소', '#e0785a', 13 * dpr); }
+      const mp = toScr(me.x, me.z); this.label(g, mp[0], mp[1] + 22 * dpr, '나', '#ffd36b', 12 * dpr);
+    } else if (big) {
       for (const p of PLACES) { const [x, y] = toScr((p.x0 + p.x1) / 2, (p.z0 + p.z1) / 2); this.label(g, x, y - 12 * dpr, p.name, p.col, 13 * dpr); }
       const bs = toScr(16, ROADS.main.z0 - 4); this.label(g, bs[0], bs[1], '버스 정류장', '#4aa3ff', 11 * dpr);
       const RN = ['북부순환로', '아파트길', '뒷골목길', '달빛대로', '시장길', '남부로'];
@@ -95,6 +120,9 @@ export class MiniMap {
       for (const p of this.city.schools || []) { const q = toScr(p.x, p.z); this.label(g, q[0], q[1], '달빛초등학교', '#f0c27a', 13 * dpr); }
       for (const [t, x, z] of [['아파트 단지', -40, -200], ['아파트 단지', 190, -200], ['도심 빌딩가', 290, -30], ['옛 골목', -290, -30], ['도심 빌딩가', 290, 130]]) { const q = toScr(x, z); this.label(g, q[0], q[1], t, '#aab4c0', 14 * dpr); }
       { const q = toScr(PRISON.x, PRISON.z - 10); this.label(g, q[0], q[1], '달빛교도소', '#e0785a', 15 * dpr); }
+      for (const c of CBDS) { const q = toScr(c.x, c.z); this.label(g, q[0], q[1], c.name, '#c9b8ff', 14 * dpr); }
+      for (const x of [cx - 900 / this.zoom, cx, cx + 900 / this.zoom]) { const q = toScr(x, (RIVER.z0 + RIVER.z1) / 2); this.label(g, q[0], q[1], '한강', '#7fb2ff', 16 * dpr); }
+      if (this.zoom < 0.3) { const q = toScr(0, -30); this.label(g, q[0], q[1], '달빛동', '#2fd3b4', 15 * dpr); }
       const mp = toScr(me.x, me.z); this.label(g, mp[0], mp[1] + 22 * dpr, '나', '#ffd36b', 12 * dpr);
     } else {
       // 북쪽 표시

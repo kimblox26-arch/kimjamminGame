@@ -220,7 +220,7 @@ export function buildCity(scene, { onCollider, holes = [] }) {
     if (iz1 - iz0 > 10) row(bx0 + 3, bx1 - 3, iz0, Math.min(iz1, iz0 + rnd(10, 20)), null, kinds, hMin * 0.8, hMax * 0.7, wMin, wMax, false);
   }
   // 도시 끝 (못 나가게)
-  for (const c of [{ x0: X0 - 60, x1: X0 - 1, z0: Z0 - 60, z1: Z1 + 60 }, { x0: X1 + 1, x1: X1 + 60, z0: Z0 - 60, z1: Z1 + 60 }, { x0: X0, x1: X1, z0: Z0 - 60, z1: Z0 - 1 }, { x0: X0, x1: X1, z0: Z1 + 1, z1: Z1 + 60 }]) onCollider?.(c);
+  // (도시 끝 벽은 없앰: 바깥 수도권(metro.js)으로 이어짐)
   // ── 가로등 · 가로수 (모든 길 양옆) ──
   const storeFront = (x, z) => x > -14 && x < 14 && z > 0 && z < 7;
   for (const r of EW) for (let x = X0 + 6; x < X1 - 6; x += 30) {
@@ -259,7 +259,7 @@ export function buildCity(scene, { onCollider, holes = [] }) {
   // 신호 바뀌기
   let sig = 0, sigT = 0;
   const update = (dt) => { WIND.value += dt; if ((sigT += dt) > [12, 3, 12][sig]) { sigT = 0; sig = (sig + 1) % 3; } lights.forEach((b, i) => b.forEach((m, k) => (m.material.opacity = 1, m.visible = k === (i % 2 ? (2 - sig + 3) % 3 : sig)))); };
-  return { root, update, blds, ROADW, parks: parkLabel, schools: schoolLabel, lamps };
+  return { root, update, blds, ROADW, parks: parkLabel, schools: schoolLabel, lamps, mats: { FM, mRoof, mSign, mShopWin, mShutter, mAptNum, mAsph, mPave, mCurb, mLine, mYellow, mPole, mBulb, mCone, mBark, mCard, mAC, mGrille, mRooftop, nShops: SHOPS.length, M } };
 }
 
 // ── 차량: 승용차·택시(지프 모델 색칠), 시내버스(직접 만듦) ──
@@ -339,10 +339,12 @@ export function makeTraffic(scene, vehicles, audio, CAR_COLORS, hooks = {}) {
     // 길가에 세워 둔 차 (택시 일자리 등)
     spawnParked(color, taxi, x, z, ry, ferrari) { const m = ferrari ? cloneFerrari(color) : cloneCar(color, taxi); const v = spawn(m, ML[0], 0, 0, 'car', true); v.taken = true; v.parked = true; m.position.set(x, 0, z); m.rotation.y = ry; return v; },
     update(dt, player) {
+      // 멀면 숨기고, 32m 넘으면 단순 모델 (세워진 차도 똑같이; 내가 탄 차는 항상 자세히)
+      const lod = v => { if (!player) return; const d2 = v.mesh.position.distanceToSquared(player), far = d2 > 110 * 110 && !v.riding; if (far !== v.far) { v.far = far; v.mesh.visible = !far; } const lo = v.mesh.userData.loMesh; if (lo && !far) { const useLo = d2 > 32 * 32 && !v.riding; if (useLo !== v.useLo) { v.useLo = useLo; for (const ch of v.mesh.children) ch.visible = ch === lo ? useLo : (ch.isSpotLight ? false : !useLo); } } };
       for (const v of list) {
         const L = v.lane; let speed = v.speed;
         const pos = L.axis === 'x' ? tmp.set(v.s, 0, L.c) : tmp.set(L.c, 0, v.s + (L.off || 0));
-        if (v.taken) continue;
+        if (v.taken) { lod(v); continue; }
         // 버스: 정류장에 서서 문 열기
         if (v.kind === 'bus' && L === ML[0]) { const st = BUS_STOPS.find(x => Math.abs(v.s - x) < 0.6 && v.lastStop !== x); if (st !== undefined && !(v.stopT > 0)) { v.stopT = 8; v.lastStop = st; v.mesh.userData.setDoors?.(1); audio.play('door', { pos, vol: 0.7, rate: 0.6 }); } }
         if (v.stopT > 0) { v.stopT -= dt; speed = 0; if (v.stopT <= 0.6) v.mesh.userData.setDoors?.(0); if (v.hold) v.stopT = Math.max(v.stopT, 1); }

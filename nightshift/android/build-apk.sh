@@ -10,6 +10,7 @@ rm -rf "$OUT"; mkdir -p "$OUT/assets/www/nightshift" "$OUT/assets/www/vendor/thr
 # 웹 게임 파일 → assets/www
 cp -r "$ROOT/nightshift/index.html" "$ROOT/nightshift/style.css" "$ROOT/nightshift/js" "$ROOT/nightshift/assets" "$OUT/assets/www/nightshift/"
 cp -r "$ROOT/vendor/three/three.module.min.js" "$ROOT/vendor/three/addons" "$OUT/assets/www/vendor/three/"
+mkdir -p "$OUT/assets/www/vendor/cannon-es" && cp "$ROOT/vendor/cannon-es/cannon-es.js" "$OUT/assets/www/vendor/cannon-es/"
 # 리소스·매니페스트
 "$BT/aapt2" compile --dir "$D/res" -o "$OUT/res.zip"
 "$BT/aapt2" link -o "$OUT/base.apk" -I "$PLAT" --manifest "$D/AndroidManifest.xml" "$OUT/res.zip" -A "$OUT/assets" --java "$OUT/gen" -0 ogg -0 glb -0 jpg -0 png
