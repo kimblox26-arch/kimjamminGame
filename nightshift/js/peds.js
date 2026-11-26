@@ -124,7 +124,7 @@ export class Pedestrians {
       if (c.aggro) { this.crime.fight(c, dt); continue; }
       if (c.state === 'walk' && c.wait > 0 && (c.wait -= dt) <= 0) this.next(c);
       // 사람을 죽인 적이 있으면: 나를 알아본 행인이 비명 지르고 도망치거나 신고 (다치게만 했으면 그냥 지나감)
-      if (c.state === 'walk' && !c.knows && this.crime.kills > 0 && !this.crime.inPrison) { const v = me.clone().sub(P.root.position).setY(0), dm = v.length(); if (dm < 13 && dm > 0.1 && v.normalize().dot(P.root.getWorldDirection(V3())) > 0.2) {
+      if (c.state === 'walk' && !c.knows && (this.crime.kills > 0 || this.crime.infamous) && !this.crime.inPrison) { const v = me.clone().sub(P.root.position).setY(0), dm = v.length(); if (dm < 13 && dm > 0.1 && v.normalize().dot(P.root.getWorldDirection(V3())) > 0.2) {
         c.knows = true; c.state = 'shock'; c.alertT = 0.7; c.from = me.clone(); P.pause(true); P.lookAt(me); P.PT.mouth = 1; P.PT.phone = 0; P.keepPhone = false; P.fidget = false;
         if (this.chatCool < 4) { this.chatCool = 6; this.game.say(c, pk(MURDER)); } this.crime.vox(c, 'scream', 0.3); c.plan = Math.random() < 0.4 ? 'call' : 'flee'; continue; } }
       if (c.state === 'walk' && c.caller && this.chatCool < 0 && P.root.position.distanceTo(me) < 9) { this.chatCool = 14; this.game.say(c, pk(CHAT)); }

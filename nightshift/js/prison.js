@@ -32,15 +32,15 @@ export function buildPrison(scene, collide, base) {
     const gr = q.createLinearGradient(0, h * 0.9, 0, h); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.25)'); q.fillStyle = gr; q.fillRect(0, h * 0.9, w, h * 0.1);
   });
   const mWall = M({ map: wallTex, roughness: 0.85 });
-  const mWallMark = M({ map: ctex(512, 512, (q, w, h) => { q.drawImage(wallTex.image, 0, 0); q.strokeStyle = 'rgba(30,30,30,.55)'; q.lineWidth = 3; // 날짜 세는 금·낙서
-    for (let k = 0; k < 6; k++) { const x0 = 70 + k * 46; for (let i = 0; i < 4; i++) { q.beginPath(); q.moveTo(x0 + i * 7, 150); q.lineTo(x0 + i * 7, 186); q.stroke(); } q.beginPath(); q.moveTo(x0 - 4, 182); q.lineTo(x0 + 26, 152); q.stroke(); }
-    q.font = `600 26px ${FONT}`; q.fillStyle = 'rgba(40,40,40,.45)'; q.fillText('엄마 보고싶다', 300, 250); q.fillText('2611', 120, 260); }), roughness: 0.85 });
-  const lino = M({ map: ctex(256, 256, (q, w, h) => { q.fillStyle = '#b8a888'; q.fillRect(0, 0, w, h); noise(q, w, h, 3000, 0.06, true); q.strokeStyle = 'rgba(0,0,0,.12)'; q.strokeRect(0, 0, w, h); }), roughness: 0.55, envMapIntensity: 0.6 });
+  const mWallMark = M({ map: ctex(512, 512, (q, w, h) => { q.drawImage(wallTex.image, 0, 0); q.strokeStyle = 'rgba(40,40,40,.35)'; q.lineWidth = 1.5; // 침대 옆 벽에 작게 긁어 새긴 날짜 세기
+    for (let k = 0; k < 5; k++) { const x0 = 30 + k * 18; for (let i = 0; i < 4; i++) { q.beginPath(); q.moveTo(x0 + i * 3, 330); q.lineTo(x0 + i * 3, 346); q.stroke(); } q.beginPath(); q.moveTo(x0 - 2, 344); q.lineTo(x0 + 11, 332); q.stroke(); }
+    q.font = `500 11px ${FONT}`; q.fillStyle = 'rgba(50,50,50,.35)'; q.fillText('버티자', 40, 372); }), roughness: 0.85 });
+  const lino = M({ map: ctex(256, 256, (q, w, h) => { q.fillStyle = '#d2c4a2'; q.fillRect(0, 0, w, h); noise(q, w, h, 3000, 0.05, true); q.strokeStyle = 'rgba(0,0,0,.12)'; q.strokeRect(0, 0, w, h); }), roughness: 0.55, envMapIntensity: 0.6 });
   const floorC = M({ ...pbr('concrete', [1, 1]), color: 0x9a9894, roughness: 0.55, envMapIntensity: 0.7 });
   const steel = M({ color: 0x3b3f45, metalness: 0.85, roughness: 0.38 }), bars = M({ color: 0x2c3036, metalness: 0.9, roughness: 0.32 });
   const steelLight = M({ color: 0x8c949c, metalness: 0.8, roughness: 0.4 }), stainless = M({ color: 0xd2d6da, metalness: 0.95, roughness: 0.22 });
-  const mattress = M({ color: 0x3a4a5c, roughness: 0.6 }), blanket = M({ map: ctex(128, 128, (q, w, h) => { q.fillStyle = '#6b5e4e'; q.fillRect(0, 0, w, h); noise(q, w, h, 1500, 0.12); q.fillStyle = 'rgba(30,20,10,.25)'; for (let y = 0; y < h; y += 16) q.fillRect(0, y, w, 2); }), roughness: 0.95 });
-  const pillow = M({ color: 0xd6d2c6, roughness: 0.9 }), paintYel = new THREE.MeshStandardMaterial({ color: 0xd7a91d, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 }), paintW = new THREE.MeshStandardMaterial({ color: 0xe6e6e0, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2 });
+  const mattress = M({ color: 0x55697f, roughness: 0.6 }), blanket = M({ map: ctex(128, 128, (q, w, h) => { q.fillStyle = '#6b5e4e'; q.fillRect(0, 0, w, h); noise(q, w, h, 1500, 0.12); q.fillStyle = 'rgba(30,20,10,.25)'; for (let y = 0; y < h; y += 16) q.fillRect(0, y, w, 2); }), roughness: 0.95 });
+  const pillow = M({ color: 0xe8e6df, roughness: 0.9 }), sheet = M({ color: 0xdedcd4, roughness: 0.95 }), paintYel = new THREE.MeshStandardMaterial({ color: 0xd7a91d, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 }), paintW = new THREE.MeshStandardMaterial({ color: 0xe6e6e0, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2 });
   const glow = c => new THREE.MeshBasicMaterial({ color: new THREE.Color(c), toneMapped: false });
   const darkGlass = M({ color: 0x0c1118, metalness: 0.3, roughness: 0.15, envMapIntensity: 1 }), litWin = new THREE.MeshBasicMaterial({ map: ctex(128, 64, (q, w, h) => { q.fillStyle = '#7d7356'; q.fillRect(0, 0, w, h); q.fillStyle = 'rgba(40,34,20,.45)'; for (let y = 3; y < h; y += 6) q.fillRect(0, y, w, 2); }) });
   const asph = M({ ...pbr('asphalt', [1, 1]), color: 0x8a8a8a, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
@@ -141,9 +141,10 @@ export function buildPrison(scene, collide, base) {
   // 감방 8칸
   const plateT = n => sign(128, 64, (q, w, h) => { q.fillStyle = '#28323c'; q.fillRect(0, 0, w, h); q.fillStyle = '#fff'; q.font = `800 38px ${FONT}`; q.textAlign = 'center'; q.fillText(`${100 + n}`, w / 2, 45); });
   for (let i = 0; i < cells.length; i++) {
-    const cx = cells[i], x0 = cx - 2.5, x1 = cx + 2.5, wallM = i === 1 ? mWallMark : mWall;
+    const cx = cells[i], x0 = cx - 2.5, x1 = cx + 2.5, wallM = mWall;
     box(g, lino, 4.75, 0.03, CZ - BZ0 - 0.3, cx, 0.02, (BZ0 + 0.3 + CZ) / 2, 2);
     box(g, wallM, 4.75, 3.9, 0.02, cx, 1.95, BZ0 + 0.31, 4); // 뒷벽 (안쪽 면)
+    if (i === 1) box(g, mWallMark, 0.02, 3.9, 2.6, x0 + 0.14, 1.95, BZ0 + 1.6, 4); // 침대 옆 벽 낙서
     if (i === 0) box(g, conc, 0.25, 3.9, CZ - BZ0, x0, 1.95, (BZ0 + CZ) / 2, 3);
     box(g, conc, 0.25, 3.9, CZ - BZ0 - 0.3, x1, 1.95, (BZ0 + 0.3 + CZ) / 2, 3); box(g, wallM, 0.02, 3.9, CZ - BZ0 - 0.3, x1 - 0.13, 1.95, (BZ0 + 0.3 + CZ) / 2, 4); box(g, mWall, 0.02, 3.9, CZ - BZ0 - 0.3, x0 + 0.13, 1.95, (BZ0 + 0.3 + CZ) / 2, 4);
     W(x1 - 0.15, x1 + 0.15, BZ0, CZ); if (i === 0) W(x0 - 0.15, x0 + 0.15, BZ0, CZ);
@@ -155,19 +156,20 @@ export function buildPrison(scene, collide, base) {
     // 2층 침대 (서쪽 벽)
     const bxl = x0 + 0.62, bz = BZ0 + 0.3 + 1.05;
     for (const [dx, dz] of [[-0.42, -0.98], [0.42, -0.98], [-0.42, 0.98], [0.42, 0.98]]) cyl(g, steelLight, 0.03, 1.8, bxl + dx, 0.9, bz + dz, 6);
-    for (const y of [0.42, 1.48]) { box(g, steelLight, 0.9, 0.05, 2.0, bxl, y, bz); box(g, mattress, 0.84, 0.13, 1.92, bxl, y + 0.09, bz); box(g, pillow, 0.55, 0.1, 0.32, bxl, y + 0.2, bz - 0.74).rotation.z = 0.05; box(g, blanket, 0.86, 0.06, 0.8, bxl, y + 0.18, bz + 0.45); }
+    for (const y of [0.42, 1.48]) { box(g, steelLight, 0.92, 0.05, 2.02, bxl, y, bz); box(g, mattress, 0.86, 0.16, 1.94, bxl, y + 0.105, bz); box(g, sheet, 0.87, 0.01, 1.95, bxl, y + 0.19, bz); box(g, pillow, 0.55, 0.11, 0.34, bxl, y + 0.245, bz - 0.74); box(g, blanket, 0.6, 0.12, 0.42, bxl, y + 0.25, bz + 0.65); }
     for (let k = 0; k < 4; k++) box(g, steelLight, 0.03, 0.03, 0.34, bxl + 0.45, 0.6 + k * 0.28, bz + 0.98).rotation.y = Math.PI / 2;
     W(x0 + 0.1, x0 + 1.1, BZ0 + 0.3, BZ0 + 2.45);
     // 화장실 칸막이 + 스테인리스 변기·세면대 일체형 + 거울판
-    box(g, wallM, 0.08, 1.4, 1.3, x1 - 1.35, 0.7, BZ0 + 0.95, 4); box(g, stainless, 0.5, 0.42, 0.6, x1 - 0.55, 0.21, BZ0 + 0.66); box(g, M({ color: 0x0d0f12, roughness: 0.2 }), 0.36, 0.02, 0.36, x1 - 0.55, 0.425, BZ0 + 0.72);
+    box(g, stainless, 0.5, 0.42, 0.6, x1 - 0.55, 0.21, BZ0 + 0.66); box(g, M({ color: 0x0d0f12, roughness: 0.2 }), 0.36, 0.02, 0.36, x1 - 0.55, 0.425, BZ0 + 0.72);
     box(g, stainless, 0.55, 0.5, 0.25, x1 - 0.55, 0.72, BZ0 + 0.44); box(g, stainless, 0.5, 0.06, 0.32, x1 - 0.55, 1.0, BZ0 + 0.5); box(g, stainless, 0.4, 0.3, 0.02, x1 - 0.55, 1.6, BZ0 + 0.33);
-    W(x1 - 1.4, x1 - 0.1, BZ0 + 0.3, BZ0 + 1.6);
+    W(x1 - 0.85, x1 - 0.25, BZ0 + 0.3, BZ0 + 1.0);
     // 선반 + 소지품 (책·컵·칫솔)
     box(g, steelLight, 0.3, 0.03, 1.2, x1 - 0.3, 1.5, BZ0 + 2.8); for (let k = 0; k < 4; k++) box(g, M({ color: [0x7a2e2e, 0x2e4f7a, 0xd8c9a0, 0x3d6b4a][k], roughness: 0.8 }), 0.18, 0.24, 0.04, x1 - 0.3, 1.64, BZ0 + 2.4 + k * 0.05);
     cyl(g, M({ color: 0xe9e4d8, roughness: 0.6 }), 0.04, 0.1, x1 - 0.3, 1.565, BZ0 + 3.1, 10); cyl(g, M({ color: 0x5a9ad8 }), 0.006, 0.18, x1 - 0.31, 1.62, BZ0 + 3.1, 4, 0, 0.2);
     // 작은 철제 책상 + 걸상 (바닥 고정)
     box(g, steelLight, 0.5, 0.04, 0.8, x1 - 0.35, 0.75, BZ0 + 3.5); box(g, steelLight, 0.04, 0.75, 0.04, x1 - 0.55, 0.37, BZ0 + 3.5); cyl(g, steelLight, 0.16, 0.04, x1 - 0.85, 0.45, BZ0 + 3.5, 12); cyl(g, steelLight, 0.03, 0.45, x1 - 0.85, 0.22, BZ0 + 3.5, 6);
     W(x1 - 0.65, x1 - 0.1, BZ0 + 3.05, BZ0 + 3.95);
+    box(g, M({ color: 0x15171a, roughness: 0.4 }), 0.62, 0.4, 0.08, cx + 0.9, 2.55, BZ0 + 0.38); box(g, M({ color: 0x0a0c10, roughness: 0.15, emissive: 0x1d3048, emissiveIntensity: i === 1 ? 0.9 : 0.3 }), 0.54, 0.32, 0.01, cx + 0.9, 2.55, BZ0 + 0.425); // 벽걸이 TV
     // 높은 창 (안쪽): 바깥 달빛
     box(g, glow(0x2a3448), 1.0, 0.55, 0.02, cx + 1.2, 2.9, BZ0 + 0.33); for (let k = 0; k < 4; k++) box(g, bars, 0.035, 0.6, 0.04, cx + 0.84 + k * 0.24, 2.9, BZ0 + 0.35);
     // 천장 철망 등
@@ -190,7 +192,7 @@ export function buildPrison(scene, collide, base) {
   for (let x = -16; x <= 16; x += 8) { box(g, steel, 1.4, 0.1, 0.4, x, BH - 0.25, 18.5); box(g, glow(0xe8eef6), 1.3, 0.03, 0.3, x, BH - 0.31, 18.5); }
   const L1 = new THREE.PointLight(0xdfe6f0, 9, 24, 1.3); L1.position.set(-8, 6.5, 17); g.add(L1);
   const L2 = new THREE.PointLight(0xdfe6f0, 9, 24, 1.3); L2.position.set(10, 6.5, 17); g.add(L2);
-  const Lc = new THREE.PointLight(0xffe8c8, 3.2, 7, 1.5); Lc.position.set(cells[1], 3.5, BZ0 + 2.6); g.add(Lc);
+  const Lc = new THREE.PointLight(0xffe8c8, 7, 9, 1.4); Lc.position.set(cells[1], 3.5, BZ0 + 2.6); g.add(Lc);
 
   // ── 운동장: x -26..26, z -34..5.7 (철조망 울타리, 서북쪽 개구멍) ──
   const yard = { x0: -26, x1: 26, z0: -34, z1: 5.7 };
@@ -239,7 +241,7 @@ export function buildPrison(scene, collide, base) {
   const update = t => { for (const f of flags) { const p = f.geometry.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i) + 0.9; p.setZ(i, Math.sin(t * 3 + x * 3) * 0.08 * x); } p.needsUpdate = true; } };
 
   // ── 호송차 실내 (멀리 떨어진 곳, 사방이 막힘) ──
-  const van = V3(30, 0, 660), vg = new THREE.Group(); vg.position.copy(van); scene.add(vg);
+  const van = V3(20030, 0, 660), vg = new THREE.Group(); vg.position.copy(van); scene.add(vg);
   box(vg, M({ color: 0x2b2f36 }), 5, 0.05, 2.2, 0, 0.4, 0); box(vg, M({ color: 0x3a3f45 }), 5, 0.05, 2.2, 0, 2.3, 0);
   for (const z of [-1.1, 1.1]) { box(vg, M({ color: 0x4a5058 }), 5, 1.9, 0.05, 0, 1.35, z); for (let x = -2; x <= 2; x += 1) { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.35), new THREE.MeshBasicMaterial({ color: 0x0a0d14 })); w.position.set(x, 1.6, z * 0.97); w.rotation.y = z > 0 ? Math.PI : 0; vg.add(w); for (let k = 0; k < 4; k++) box(vg, bars, 0.025, 0.4, 0.025, x - 0.22 + k * 0.15, 1.6, z * 0.95); } }
   box(vg, M({ color: 0x4a5058 }), 0.05, 1.9, 2.2, -2.5, 1.35, 0); box(vg, M({ color: 0x4a5058 }), 0.05, 1.9, 2.2, 2.5, 1.35, 0);
@@ -247,10 +249,11 @@ export function buildPrison(scene, collide, base) {
   box(vg, M({ color: 0x6b6f75 }), 4, 0.08, 0.45, 0, 0.85, 0.75); box(vg, M({ color: 0x6b6f75 }), 4, 0.08, 0.45, 0, 0.85, -0.75);
   const vl = new THREE.PointLight(0xbfd0ff, 2.5, 5, 1.6); vl.position.set(0, 2.1, 0); vg.add(vl);
 
+  const bedHit = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 2.1), new THREE.MeshBasicMaterial()); bedHit.visible = false; bedHit.position.set(cells[1] - 2.5 + 0.62, 0.6, BZ0 + 1.35); bedHit.userData.aim = 'bed'; g.add(bedHit);
   const L = (x, y, z) => base.clone().add(V3(x, y, z));
   let T = 0;
   const api = {
-    group: g, van, cells, vent, ventHit, holeHit, yard, spot, beam, tw, aimSpot, update,
+    group: g, van, cells, vent, ventHit, holeHit, bedHit, yard, spot, beam, tw, aimSpot, update,
     cellPos: i => L(cells[i], 1.55, BZ0 + 2.6),
     ductOut: L(cells[1] - 0.2, 1.55, BZ0 - 1.6),
     outside: L(-30, 1.55, -Z - 3.5),

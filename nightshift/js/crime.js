@@ -1,5 +1,6 @@
 // 무기(주먹·권총·소총) → 피·탄흔 → 경찰 출동(지원 포함) → 체포 → 법정(사람들 있음) 선고 → 게임 오버
 import * as THREE from 'three';
+import { lineClear, findPath } from './nav.js';
 import { Person } from './people.js';
 import { COURT, PRISON } from './places.js';
 import { makePistol, makeRifle, FX } from './weapons.js';
@@ -8,6 +9,18 @@ import { $, toast, modal, show, ic } from './ui.js';
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const INMATE = { id: 'inmate', name: '수용자', model: 'man', h: 1.76, voice: [0.9, 1.0] };
 const INMATE_LINES = [['콜록콜록… 아, 여기 공기 진짜 안 좋네.', 'tired'], ['너 무슨 일로 들어왔냐?', 'calm'], ['조용히 해라, 교도관 온다.', 'calm'], ['나가면 제일 먼저 국밥 한 그릇 먹을 거다.', 'tired'], ['밤마다 환풍구에서 바람 소리가 나… 저거 나사 헐거운 거 아니냐?', 'calm']];
+// 실제 대한민국 법 조항 (혐의 → 적용 법조·법정형)
+const LAW = {
+  '살인': ['형법 제250조 제1항 살인죄', '사형, 무기 또는 5년 이상의 징역'],
+  '경찰 살해': ['형법 제250조 제1항 살인죄 및 제136조 공무집행방해죄', '사형, 무기 또는 5년 이상의 징역'],
+  '폭행': ['형법 제260조 제1항 폭행죄', '2년 이하의 징역 또는 500만원 이하의 벌금'],
+  '특수상해': ['형법 제258조의2 특수상해죄', '1년 이상 10년 이하의 징역'],
+  '경찰 공격': ['형법 제136조 제1항 공무집행방해죄', '5년 이하의 징역 또는 1천만원 이하의 벌금'],
+  '차량 탈취': ['형법 제333조 강도죄', '3년 이상의 유기징역'],
+  '교통사고': ['교통사고처리 특례법 제3조 제1항 (치상)', '5년 이하의 금고 또는 2천만원 이하의 벌금'],
+  '난폭 운전': ['도로교통법 제46조의3 난폭운전', '1년 이하의 징역 또는 500만원 이하의 벌금'],
+  '탈옥수': ['형법 제145조 제1항 도주죄', '1년 이하의 징역'],
+};
 const POLICE = { id: 'police', name: '경찰관', model: 'man', h: 1.8, top: '#1b2a49', bottom: '#1b2a49', hat: 'police', voice: [0.95, 1.05] };
 const ROLES = {
   judge: { id: 'judge', name: '재판장', model: 'man', h: 1.75, top: '#0d0d0f', bottom: '#0d0d0f', glasses: true, voice: [0.9, 0.95] },
@@ -183,7 +196,7 @@ export class Crime {
     else { if (wh) { const d = this.fx.impact(wh); const car = carList.find(v => { let o = wh.object; while (o) { if (o === v.mesh) return true; o = o.parent; } return false; }); if (car) this.carDamage(car, wh, d); } this.panic(); if (!this.inCourt) { this.game.violence = true; this.callPolice(); } else this.courtChaos(); }
   }
   hit(c, dmg, z, dir) {
-    const g = this.game, p = c.person; if (!c.wantedHit) { c.wantedHit = true; this.assaults++; this.wanted.add(c.officer ? 2 : 1, c.officer ? '경찰 공격' : '폭행'); }
+    const g = this.game, p = c.person; if (!c.wantedHit) { c.wantedHit = true; this.assaults++; this.wanted.add(c.officer ? 2 : 1, c.officer ? '경찰 공격' : this.weapon !== 'fist' ? '특수상해' : '폭행'); }
     if (c.officer) this.copAttacked = true;
     if (c.thug || (c.ped && Math.random() < 0.15)) this.provoke(c);
     c.hp = (c.hp ?? 100) - dmg;
@@ -258,20 +271,25 @@ export class Crime {
       P.t += dt; const blink = Math.floor(P.t * 6) % 2; P.l1.visible = !!blink; P.l2.visible = !blink; P.pl.color.setHex(blink ? 0xff2020 : 0x2060ff);
       if (P.phase === 'drive') { const d = P.stopX - P.car.position.x, me = this.yawObj.position, ahead = (me.x - P.car.position.x) * Math.sign(d); const blocked = Math.abs(me.z - P.car.position.z) < 1.8 && ahead > 0 && ahead < 4.2 && Math.abs(me.y - 1.55) < 1; if (!blocked) P.car.position.x += Math.sign(d) * Math.min(Math.abs(d), Math.min(16, Math.max(2, d * 0.8)) * dt); if (Math.abs(d) < 0.05) { P.phase = 'out'; this.officersOut(P); } }
     }
-    if (!this.arrested && !this.inCourt) {
+    if (!this.arrested && !this.inCourt && !this.inPrison) {
       const me = this.yawObj.position;
       for (const o of this.officers) {
         if (o.dead || !o.chase || o.down) continue;
         const od = o.root.position.distanceTo(V3(me.x, o.root.position.y, me.z));
         if (od > 70) { const a = Math.random() * 6.28; o.root.position.set(me.x + Math.cos(a) * 32, me.y - 1.55 < -1 ? me.y - 1.55 : 0, me.z + Math.sin(a) * 32); o.path = []; }
-        if ((this.kills > 0 || this.copAttacked) && od < 24 && this.shootAt(o, dt)) continue;
+        if ((this.kills > 0 || this.copAttacked || this.infamous) && od < 24 && this.shootAt(o, dt)) continue;
         const ride = this.drive?.ride, fast = ride && Math.abs(ride.v) > 2.5, op = o.root.position, fy = me.y - 1.55 < -1 ? Math.max(-4.2, me.y - 1.55) : 0;
         // 나에게서 0.9m 앞에서 멈춤 (몸을 뚫고 지나가지 않게)
         const to = V3(me.x - op.x, 0, me.z - op.z), dd = to.length(), stand = dd > 0.95 ? V3(me.x, fy, me.z).addScaledVector(to.normalize(), -0.9).addScaledVector(V3(-to.z, 0, to.x), (o.flank ??= this.officers.indexOf(o) % 2 ? 0.75 : -0.75) * Math.min(1, dd / 3)) : op.clone();
         const behind = me.x > 2.3 && me.x < 4.8 && me.z > -4 && me.z < 2.5;
         if (behind && op.x < 2.3 && op.z > -4 && op.z < 4.2) { if (!o.path.length || o.path.length < 2) o.walk([V3(2.0, 0, 3.05), V3(3.4, 0, 3.05), stand]); else o.path[o.path.length - 1].copy(stand); }
         else if (dd <= 0.95) { o.path = []; o.lookAt(me); }
-        else if (!o.path.length) o.walk([stand]); else o.path[o.path.length - 1].copy(stand);
+        else {
+          // 건물·벽이 가로막으면 돌아가는 길을 찾아서 옴 (뚫고 지나가지 않음)
+          const inS = op.x > -5.6 && op.x < 5.2 && op.z > -8.4 && op.z < 4.4;
+          if ((o.navT = (o.navT || 0) - dt) < 0) { o.navT = 0.9; o.navDirect = inS || !this.colliders || lineClear(this.colliders, op, stand, fy); if (!o.navDirect) { const pth = findPath(this.colliders, op, stand, fy); o.walk(pth?.length ? pth : [stand]); } }
+          if (o.navDirect) { if (!o.path.length) o.walk([stand]); else o.path[o.path.length - 1].copy(stand); }
+        }
         if ((ride ? this.drive.boxGap(ride.obj, op) < 0.75 || dd < 2.6 : dd < 1.4) && !fast) { this.arrest(o); break; }
       }
     }
@@ -325,64 +343,112 @@ export class Crime {
     this.audio.play('key', { vol: 1, rate: 0.5 }); this.audio.play('thud', { vol: 0.6, rate: 2.5 });
     await g.say(oc, ['당신은 변호인을 선임할 수 있고, 진술을 거부할 수 있습니다.', 'calm']);
     for (const P of this.cars || []) P.siren.stop();
-    $('fade').classList.add('on');
-    setTimeout(() => this.court(), 1600);
+    $('fade').dataset.t = '체포됨'; $('fade').classList.add('on');
+    setTimeout(() => { $('fade').dataset.t = ''; this.court(); }, 1900);
   }
   // ── 법정: 판사 3명·검사·변호인·경위·방청객 ──
+  // 경찰·순찰차 모두 철수 (체포·재판·수감·출소 때)
+  clearPolice() {
+    for (const o of this.officers) o.dispose(); this.officers = [];
+    for (const P of this.cars || []) { P.siren?.stop(); P.car.removeFromParent(); } this.cars = []; this.police = null;
+    this.called = false; this.backup = 0; this.lv = 0; this.lvT = 0; this.starsHud();
+  }
+  // 양형: 실제 법정형 범위 안에서 (GTA처럼 게임은 계속됨: 벌금 → 바로 석방, 징역 → 교도소)
+  sentence() {
+    const c = this.charges, k = this.kills, prev = this.sentenceLeft || 0;
+    if (c.has('탈옥수') && this.sentenceNow?.death) return { death: true, label: '사형' };
+    if (c.has('탈옥수') && this.sentenceNow?.life) return { life: true, label: '무기징역' };
+    if (k >= 3 || c.has('경찰 살해')) return { death: true, label: '사형' };
+    if (k === 2) return { life: true, label: '무기징역' };
+    let years = k === 1 ? 15 : 0, fine = 0;
+    if (c.has('특수상해')) years += Math.min(6, 1 + this.assaults);
+    else if (c.has('폭행')) fine += Math.min(5000000, 2000000 + (this.assaults - 1) * 1000000);
+    if (this.copAttacked) years += 2;
+    if (c.has('차량 탈취')) years += 3;
+    if (c.has('교통사고')) fine += 5000000;
+    if (c.has('난폭 운전')) fine += 2000000;
+    if (c.has('탈옥수')) years += 1 + prev;
+    years = Math.min(30, years);
+    if (years > 0) return { years, label: `징역 ${years}년` };
+    return { fine: Math.max(fine, 1000000), label: `벌금 ${Math.round(Math.max(fine, 1000000) / 10000).toLocaleString()}만원` };
+  }
   async court() {
-    const g = this.game; this.inCourt = true; g.running = false;
+    const g = this.game; this.inCourt = true; g.running = false; this.clearPolice(); this.arrested = false;
     ['cust', 'idcard'].forEach(id => show(id, false)); show('hud'); document.body.classList.add('court-mode');
     const court = this.courtGroup, S = court.userData.seats, at = (a) => V3(COURT.x + a[0], a[1], COURT.z + a[2]);
-    const add = (role, pos, face, line) => { const p = new Person(ROLES[role], this.audio); p.root.position.copy(at(pos)); p.lookAt(face || this.camera.getWorldPosition(V3())); this.scene.add(p.root); const c = { type: ROLES[role], person: p, voice: ROLES[role].voice, gender: ROLES[role].model === 'woman' ? 'f' : 'm', vIdx: 2 + this.courtPeople.length % 4, mood: 50, role }; this.courtPeople.push(c); return c; };
+    // 법정 안을 걸어 다닐 수 있게: 벽·법대·책상·방청석 충돌
+    if (!this.courtCols) { const C = (x0, x1, z0, z1) => ({ x0: COURT.x + x0, x1: COURT.x + x1, z0: COURT.z + z0, z1: COURT.z + z1 }); this.courtCols = [C(-8.2, -7.9, -7.5, 7.5), C(7.9, 8.2, -7.5, 7.5), C(-8, 8, -7.8, -4.9), C(-8, 8, 7.4, 7.8), C(-2, 2, -4.5, -3.7), C(-5.8, -2.6, -2.1, -1.1), C(2.6, 5.8, -2.1, -1.1), C(-0.7, 0.7, -2.85, -1.95), C(-7.4, -1.2, 1.55, 1.65), C(1.2, 7.4, 1.55, 1.65), C(-6.8, -1.2, 2.5, 7), C(1.2, 6.8, 2.5, 7)]; this.colliders?.push(...this.courtCols); }
+    const add = (role, pos, face) => { const p = new Person(ROLES[role], this.audio); p.root.position.copy(at(pos)); p.lookAt(face || this.camera.getWorldPosition(V3())); this.scene.add(p.root); const c = { type: ROLES[role], person: p, voice: ROLES[role].voice, gender: ROLES[role].model === 'woman' ? 'f' : 'm', vIdx: this.courtPeople.length, mood: 50, role }; this.courtPeople.push(c); return c; };
     const judge = add('judge', S.judges[1]); add('judge2', S.judges[0]); add('judge', S.judges[2]);
-    add('pros', S.prosecutor, at([4, 1, -1])); add('lawyer', S.lawyer, at([-4, 1, -1])); add('aud', S.clerk);
+    const pros = add('pros', S.prosecutor, at([4, 1, -1])), lawyer = add('lawyer', S.lawyer, at([-4, 1, -1])); add('aud', S.clerk);
     S.guards.forEach(p => add('guard', p)); S.audience.forEach((p, i) => add(i % 2 ? 'audw' : 'aud', p, at([0, 1, -6])));
     this.courtPeople[2].type = { ...ROLES.judge, name: '배석판사' };
     this.yawObj.position.copy(COURT).add(V3(3.6, 1.55, -0.2)); this.look.yaw = 0.25; this.look.pitch = 0.1; this.look.target = null; this.look.frozen = false;
     for (const s of ['R', 'L']) { this.hands.hold(s, null); this.hands.rest(s); }
     if (this.weapon !== 'fist') this.setWeapon(this.weapon);
+    this.mover.enabled = true; this.hands.enabled = true;   // 재판 중에도 걸어 다닐 수 있음
     $('fade').classList.remove('on');
-    const jc = judge, sleep = ms => new Promise(r => setTimeout(r, ms));
+    const jc = judge, sleep = ms => new Promise(r => setTimeout(r, ms)), sen = this.sentence(), charges = [...this.charges].filter(k => LAW[k]);
+    if (this.kills && !charges.includes('살인') && !charges.includes('경찰 살해')) charges.unshift('살인');
+    if (!charges.length) charges.push('폭행');
+    const laws = charges.map(k => LAW[k][0]).join(', ');
     await sleep(1200);
     const gavel = () => { for (let i = 0; i < 3; i++) this.audio.play('thud', { vol: 1.4, rate: 0.75, delay: i * 0.45 }); };
+    const ask = sen.death ? '사형' : sen.life ? '무기징역' : sen.years ? `징역 ${sen.years + 2}년` : `벌금 ${Math.round(sen.fine * 1.5 / 10000)}만원`;
     const steps = [
       () => { gavel(); return sleep(1500); },
-      () => g.say(jc, ['지금부터 2026고합 제1024호 사건의 판결을 선고하겠습니다. 피고인은 일어서 주십시오.', 'calm']),
-      () => g.say(jc, [`피고인 ${g.name}은, ${this.kills ? `${this.kills}명을 살해하였습니다` : this.assaults ? `${this.assaults}명을 폭행하였으나 사망에 이르지는 않았습니다` : `${[...this.charges].join(', ') || '공무집행방해'}의 죄를 저질렀습니다`}. ${this.kills ? '그 죄질이 매우 무겁습니다.' : '다만 사람의 목숨을 빼앗지는 않았습니다.'}`, 'calm']),
+      () => g.say(jc, ['지금부터 2026고합 제1024호 사건 공판을 시작합니다. 피고인은 일어서 주십시오.', 'calm']),
+      () => g.say(pros, [`피고인은 ${charges.join(', ')} 혐의로 기소되었습니다. 적용 법조는 ${laws}입니다.`, 'calm']),
+      () => g.say(pros, [`죄질이 ${this.kills ? '극히 불량하고 유족이 엄벌을 탄원하고 있으므로' : '가볍지 않으므로'} 피고인에게 ${ask}을 구형합니다.`, 'angry']),
+      () => g.say(lawyer, [this.kills ? '피고인은 깊이 반성하고 있습니다. 재판부의 선처를 부탁드립니다.' : '피해 정도가 크지 않고 피고인이 초범인 점을 참작해 주십시오.', 'calm']),
+      () => g.say(jc, [`피고인 ${g.name}은, ${this.kills ? `${this.kills}명을 살해하였고` : this.assaults ? `${this.assaults}명에게 폭력을 행사하였으나 사망에 이르지는 않았고` : `${charges.join(', ')}의 죄를 범하였고`}, 법정형은 ${LAW[charges[0]][1]}입니다.`, 'calm']),
     ];
-    for (const st of steps) { if (this.chaos) return; await st(); await sleep(400); }
+    for (const st of steps) { if (this.chaos) return; await st(); await sleep(350); }
     if (this.chaos) return;
-    const death = this.kills >= 2 || (this.kills === 1 && Math.random() < 0.5), years = Math.min(10, 1 + this.assaults + (this.charges.has('차량 탈취') ? 1 : 0) + (this.copAttacked ? 2 : 0));
-    const verdict = death ? '사형' : this.kills ? '무기징역' : `징역 ${years}년`;
-    await g.say(jc, [`따라서 피고인을 ${verdict}에 처한다.`, 'angry']);
+    await g.say(jc, [`주문. 피고인을 ${sen.label}에 처한다.${sen.fine ? ' 벌금을 납입하지 아니하는 경우 노역장에 유치한다.' : ''}`, 'angry']);
     if (this.chaos) return; gavel(); await sleep(1800); if (this.chaos) return;
-    this.ending(death, verdict);
+    this.ending(sen);
   }
-  // 법정에서 폭력 → 경위·특공대 진압 → 사형
+  // 법정에서 폭력 → 경위·특공대 진압 (GTA처럼 쓰러지면 병원에서 깨어남)
   courtChaos() {
     if (this.chaos) return; this.chaos = true;
     const g = this.game; this.audio.stopSpeak?.();
     const guard = this.courtPeople.find(c => c.role === 'guard' && !c.dead);
     if (guard) g.say(guard, ['총 버려! 엎드려!', 'angry']);
-    toast(ic('siren') + '법정 비상! 경찰 특공대 진입', 'bad', 2500);
     for (const c of this.courtPeople) if (c.role === 'guard' && !c.dead) c.person.walk([this.yawObj.position.clone().setY(0)]);
     setTimeout(() => {
-      this.firing = false; $('fade').classList.add('on'); this.audio.play('rifle_in', { vol: 1.8 }); this.audio.play('rifle_in', { vol: 1.6, delay: 0.12 }); this.audio.play('punch', { vol: 1.5, rate: 0.7, delay: 0.2 });
-      setTimeout(() => this.ending(true, '사형'), 1400);
-    }, 7000);
+      this.firing = false; this.audio.play('rifle_in', { vol: 1.8 }); this.audio.play('rifle_in', { vol: 1.6, delay: 0.12 }); this.audio.play('punch', { vol: 1.5, rate: 0.7, delay: 0.2 });
+      setTimeout(() => { this.leaveCourt(); this.wasted(); }, 600);
+    }, 6000);
   }
-  ending(death, verdict) {
-    if (!death && this.prison) return this.toPrison(verdict);
-    this.firing = false; document.body.classList.remove('court-mode'); show('hud', false);
-    for (const s of ['R', 'L']) this.hands.hold(s, null); for (const k of ['pistol', 'rifle']) this.guns[k]?.removeFromParent(); this.hands.enabled = false; this.hands.body.visible = false;
-    $('fade').classList.add('on');
-    setTimeout(() => {
-      if (!death) { this.yawObj.position.copy(PRISON).add(V3(0, 1.6, -0.6)); this.look.yaw = Math.PI; this.look.pitch = -0.05; this.look.frozen = true; this.audio.play('door', { vol: 1, rate: 0.5 }); this.audio.play('thud', { vol: 1, rate: 0.5 }); }
-      $('fade').classList.remove('on');
-      try { localStorage.removeItem('ns_save'); } catch (e) { }
-      setTimeout(() => modal(`<h2>${death ? '사형 선고' : '교도소 수감'}</h2><div class="grade" style="color:#ff6b7a">GAME OVER</div><p>${death ? '법원은 피고인에게 사형을 선고했습니다.' : `${verdict} — 이제 편의점 대신 교도소에서 밤을 보냅니다.`}</p><p style="color:#8a97a6;font-size:13px">게임 속 폭력도 대가를 치릅니다. 다시 성실한 알바생으로 시작해 볼까요?</p>`,
-        [['메인으로', 'gray', () => this.onExit()], ['처음부터', 'blue', () => this.onRestart()]]), death ? 600 : 2200);
-    }, 1500);
+  leaveCourt() { for (const c of this.courtPeople) c.person.dispose(); this.courtPeople = []; this.inCourt = false; this.chaos = false; document.body.classList.remove('court-mode'); this.game.running = true; }
+  // 판결 뒤: 벌금이면 내고 바로 석방, 징역·무기·사형이면 교도소
+  ending(sen) {
+    if (sen.fine) {
+      $('fade').dataset.t = `${sen.label} 납부 · 석방`; $('fade').classList.add('on'); this.money?.(-sen.fine, '벌금'); try { localStorage.removeItem('ns_guns'); } catch (e) { } this.setWeapon('fist');
+      setTimeout(() => { this.leaveCourt(); this.charges.clear(); this.assaults = 0; this.copAttacked = false; this.arrested = false;
+        this.yawObj.position.set(16, 1.55, 3.2); this.look.yaw = Math.PI; this.look.pitch = 0; this.mover.enabled = true; this.hands.enabled = true; $('fade').dataset.t = ''; $('fade').classList.remove('on'); }, 2200);
+      return;
+    }
+    this.sentenceNow = sen; this.sentenceLeft = sen.years || 0;
+    this.toPrison(sen.label);
+  }
+  // 감방 침대에서 잠자기 = 형기 보내기 (징역은 다 채우면 출소, 무기징역은 20년 뒤 가석방, 사형수는 탈옥만 가능)
+  async sleepInCell() {
+    const sen = this.sentenceNow || { years: 1 }; if (this.sleeping) return; if (sen.death) { this.inmates[0] && this.game.say(this.inmates[0].ref, ['사형수는 잠을 자도 나갈 날이 안 와… 나가려면 저 환풍구뿐이지.', 'calm']); return; }
+    this.sleeping = true; const f = $('fade'), step = sen.life ? 7 : Math.max(1, Math.ceil((sen.years || 1) / 3));
+    this.served = (this.served || 0) + step; const need = sen.life ? 20 : sen.years || 1;
+    f.dataset.t = `${Math.min(this.served, need)}년 뒤…`; f.classList.add('on'); this.mover.enabled = false; this.audio.play('thud', { vol: 0.4, rate: 0.8 });
+    await new Promise(r => setTimeout(r, 2600));
+    if (this.served >= need) { f.dataset.t = sen.life ? '모범수 가석방' : '형기 만료 · 출소'; await new Promise(r => setTimeout(r, 1600)); this.release(); }
+    else { this.sentenceLeft = need - this.served; f.dataset.t = ''; f.classList.remove('on'); this.mover.enabled = true; }
+    this.sleeping = false;
+  }
+  release() {
+    const f = $('fade'); for (const o of [...this.prisonGuards, ...this.inmates]) o.dispose(); this.prisonGuards = []; this.inmates = []; this.hands.prison?.(false);
+    this.inPrison = false; this.inYard = false; this.served = 0; this.sentenceNow = null; this.infamous = false; this.sentenceLeft = 0; this.charges.clear(); this.kills = 0; this.assaults = 0; this.copAttacked = false; this.clearPolice();
+    this.yawObj.position.copy(this.prison.outside); this.look.yaw = 0; this.look.pitch = 0; this.mover.enabled = true; this.game.running = true; $('bWpn')?.classList.remove('hidden');
+    f.dataset.t = ''; f.classList.remove('on'); this.audio.play('door', { vol: 1, rate: 0.6 });
   }
   // ── 수배 등급(별 0~5) · 내 체력 · 경찰 사격 · 깡패 · 차 사고 · 교도소 ──
   get wanted() {
@@ -399,11 +465,11 @@ export class Crime {
     if (this.hp <= 0) this.wasted();
   }
   wasted() {
-    this.dead = true; this.firing = false; this.mover.enabled = false; this.drive?.ride && this.drive.exit?.();
-    $('fade').classList.add('on'); toast('<b style="font-size:22px">사망</b><br>응급실로 옮겨졌습니다', 'bad', 3000);
+    this.dead = true; this.firing = false; this.mover.enabled = false; this.drive?.ride && this.drive.exit?.(true);
+    $('fade').dataset.t = '사망 · 달빛병원 응급실로'; $('fade').classList.add('on'); toast('<b style="font-size:22px">사망</b><br>응급실로 옮겨졌습니다', 'bad', 3000);
     setTimeout(() => { for (const o of this.officers) o.dispose(); this.officers = []; for (const P of this.cars || []) { P.siren.stop(); P.car.removeFromParent(); } this.cars = []; this.called = false; this.backup = 0;
       this.lv = 0; this.starsHud(); this.hp = 100; this.hpHud(); this.dead = false; this.yawObj.position.set(1.1, 1.55, 6.2); this.look.yaw = Math.PI; this.look.pitch = 0;
-      this.money?.(-30000, '병원비'); $('fade').classList.remove('on'); this.mover.enabled = true; toast('달빛병원에서 퇴원했어요 (병원비 -30,000원)', '', 2600); }, 3200);
+      this.money?.(-30000, '병원비'); $('fade').dataset.t = ''; $('fade').classList.remove('on'); this.mover.enabled = true; toast('달빛병원에서 퇴원했어요 (병원비 -30,000원)', '', 2600); }, 3200);
   }
   playerUpdate(dt) {
     if ((this.hurtT += dt) > 5 && this.hp < 100 && !this.dead) { this.hp = Math.min(100, this.hp + dt * 2); this.hpHud(); }
@@ -439,7 +505,7 @@ export class Crime {
     if (c.armed && d < 12 && d > 3) { P.pause?.(true); P.lookAt(me); if (!c.gun) { c.gun = makePistol(); this.scene.add(c.gun); } const hp = P.rHand.getWorldPosition(V3()); c.gun.position.copy(hp); c.gun.lookAt(me); c.gun.rotateY(Math.PI); P.reach(me, 400);
       if ((c.shootT = (c.shootT ?? 0.8) - dt) < 0) { c.shootT = 1.3 + Math.random(); this.audio.play('pistol_shot', { pos: hp, vol: 1.5, rate: 0.97 + Math.random() * 0.06 }); this.fx.muzzle(c.gun); if (Math.random() < 0.45) this.hurtMe(8 + Math.random() * 6); } return; }
     P.pause?.(false);
-    if (d > 1.1) { if (!P.path.length || (c.chaseT = (c.chaseT || 0) - dt) < 0) { c.chaseT = 0.5; P.walk([V3(me.x, P.root.position.y, me.z)]); } }
+    if (d > 1.1) { if (!P.path.length || (c.chaseT = (c.chaseT || 0) - dt) < 0) { c.chaseT = 0.6; const tgt = V3(me.x, P.root.position.y, me.z), pp = P.root.position; const pth = this.colliders && !lineClear(this.colliders, pp, tgt, pp.y) ? findPath(this.colliders, pp, tgt, pp.y) : null; P.walk(pth?.length ? pth : [tgt]); } }
     else { P.path = []; P.lookAt(me); if ((c.punchT = (c.punchT ?? 0.4) - dt) < 0) { c.punchT = 0.9 + Math.random() * 0.5; P.reach(me.clone().setY(me.y - 0.25), 350); setTimeout(() => { if (!c.dead && P.root.position.distanceTo(V3(me.x, P.root.position.y, me.z)) < 1.5) { this.audio.play('punch', { vol: 1.1, rate: 0.9 + Math.random() * 0.2 }); this.hurtMe(7 + Math.random() * 5); } }, 180); } }
   }
   // 총 맞은 차: 탄흔이 차에 붙어 다니고, 유리는 금 가고, 많이 맞으면 연기 나며 멈춤 (운전자는 도망)
@@ -468,7 +534,8 @@ export class Crime {
   // ── 교도소: 호송 → 감방 → 환풍구 → 운동장(교도관·탐조등 피하기) → 개구멍 → 탈옥 ──
   toPrison(verdict) {
     const pr = this.prison; this.firing = false; document.body.classList.remove('court-mode');
-    for (const c of this.courtPeople) c.person.dispose(); this.courtPeople = []; this.inCourt = false; this.chaos = false;
+    for (const c of this.courtPeople) c.person.dispose(); this.courtPeople = []; this.inCourt = false; this.chaos = false; this.clearPolice();
+    if (this.kills > 0) this.infamous = true; this.charges.clear(); this.kills = 0; this.assaults = 0; this.copAttacked = false; this.served = 0;
     try { localStorage.removeItem('ns_guns'); } catch (e) { } this.setWeapon('fist'); $('bWpn').classList.add('hidden');
     $('fade').classList.add('on'); this.audio.play('door', { vol: 1, rate: 0.5 });
     setTimeout(() => {
@@ -479,7 +546,7 @@ export class Crime {
     }, 1400);
   }
   inCell() {
-    const pr = this.prison; this.inPrison = true; this.arrested = false; this.ventN = 0; pr.vent.position.y = 0.5; pr.vent.rotation.x = 0; pr.vent.visible = true;
+    const pr = this.prison; this.clearPolice(); this.inPrison = true; this.arrested = false; this.ventN = 0; pr.vent.position.y = 0.5; pr.vent.rotation.x = 0; pr.vent.visible = true;
     this.yawObj.position.copy(pr.cellPos(1)); this.look.yaw = Math.PI; this.look.pitch = 0; this.look.frozen = false; this.hands.enabled = true; this.hands.body.visible = true;
     this.mover.enabled = true; this.game.running = true; this.game.freeRoam = true; this.game.violence = true; show('hud'); this.lv = 0; this.starsHud();
     if (!this.prisonGuards.length) for (const route of this.prison.patrols) { const o = new Person(POLICE, this.audio); o.root.position.copy(route[0]); this.scene.add(o.root); o.speed = 1.1; o.ref = { type: { ...POLICE, name: '교도관' }, person: o, voice: POLICE.voice, gender: 'm', vIdx: 4, mood: 50 }; o.patrol = route; o.pi = 0; this.prisonGuards.push(o); }

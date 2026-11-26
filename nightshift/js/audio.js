@@ -127,8 +127,8 @@ export class Audio {
   speak(text, { pitch = 1, rate = 1, gender = 'm', idx = 0 } = {}, onEnd) {
     const clean = text.replace(/\(.*?\)/g, '').replace(/…/g, ', ').replace(/~/g, '').replace(/\s+/g, ' ').trim();
     const voice = this.voiceFor(gender, idx);
-    if (voice) pitch = 1 + (pitch - 1) * 0.35;              // 진짜 남/여 목소리가 있으면 음높이는 살짝만
-    rate = 1 + (rate - 1) * 0.6;
+    if (voice) pitch = 1 + (pitch - 1) * 0.7;               // 진짜 남/여 목소리가 있어도 사람마다 음높이 차이가 들리게
+    rate = 1 + (rate - 1) * 0.85;
     const est = Math.max(900, clean.length * 150 / rate);
     if (!this.voiceOn || !clean) { setTimeout(() => onEnd?.(), clean ? est * 0.6 : 600); return est; }
     if (Native?.speak) {

@@ -33,7 +33,9 @@ export class Crowd {
     }
     // 사람 ↔ 벽·진열대 (움직이는 사람만)
     for (const c of L) {
-      const P = c.person, p = P.root.position; if (c.dead || P.dead || (!P.path.length && !P.kv) || !(c.ped || c.thief) || c.officer) continue;   // 행인만 (손님·경찰은 정해진 길로 다님)
+      const P = c.person, p = P.root.position; if (c.dead || P.dead || (!P.path.length && !P.kv)) continue;
+      // 가게 안 손님·경찰(정해진 길)만 빼고 모두 벽·진열대·기둥을 뚫지 못함
+      const inS = p.x > -5.6 && p.x < 5.2 && p.z > -8.4 && p.z < 4.4 && p.y < 2; if (inS && !(c.ped || c.thief)) continue;
       const feet = p.y;
       for (const k of this.colliders) {
         if (p.x < k.x0 - R || p.x > k.x1 + R || p.z < k.z0 - R || p.z > k.z1 + R || !activeAt(k, feet)) continue;

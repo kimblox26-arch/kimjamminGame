@@ -119,7 +119,7 @@ let aimT = 0;
 function updateAim(dt) {
   if (!game?.running || (aimT += dt) < 0.08) return; aimT = 0;
   ray.setFromCamera(center, camera); ray.far = 3.4;
-  const C = store.C, list = [...game.items.filter(i => !i.scanned || i.cig).map(i => i.mesh), ...store.cigSlots, store.mw, C.pos, C.drawer.group, C.reader, store.counterHit, ...armory.hits, ...cafe.hits, prison.ventHit, prison.holeHit, ...(features?.aimTargets() || []), ...(store.merch.looseMeshes || [])];
+  const C = store.C, list = [...game.items.filter(i => !i.scanned || i.cig).map(i => i.mesh), ...store.cigSlots, store.mw, C.pos, C.drawer.group, C.reader, store.counterHit, ...armory.hits, ...cafe.hits, prison.ventHit, prison.holeHit, prison.bedHit, ...(features?.aimTargets() || []), ...(store.merch.looseMeshes || [])];
   let aim = null, hitD = 99;
   for (const hit of ray.intersectObjects(list, true)) {
     let o = hit.object;
@@ -129,7 +129,7 @@ function updateAim(dt) {
     hitD = hit.distance;
     if (o.userData.item) { const it = o.userData.item; if (it.scanned) continue; aim = { type: 'item', item: it, label: `${it.name} · ${it.price.toLocaleString()}원` }; }
     else if (o.userData.cig) aim = { type: 'cig', obj: o, label: `${o.userData.cig.id}번 ${o.userData.cig.name} · ${o.userData.cig.price.toLocaleString()}원` };
-    else aim = { type: o.userData.aim, obj: o, label: { mw: '전자레인지', guns: '총기 보관함', counter: '계산대', ammo: '탄약 상자', cafe: '카운터 · 아메리카노 4,500원', vent: '헐거운 환풍구', fence: '울타리 개구멍' }[o.userData.aim] || features?.label(o.userData.aim) || '' };
+    else aim = { type: o.userData.aim, obj: o, label: { mw: '전자레인지', guns: '총기 보관함', counter: '계산대', ammo: '탄약 상자', cafe: '카운터 · 아메리카노 4,500원', vent: '헐거운 환풍구', fence: '울타리 개구멍', bed: '침대' }[o.userData.aim] || features?.label(o.userData.aim) || '' };
     break;
   }
   // 사람 (총이면 멀리까지)
@@ -137,10 +137,11 @@ function updateAim(dt) {
   const people = [...game.customers.filter(c => !c.dead).map(c => c.person.hitbox), ...(game.boss && !game.bossDead ? [game.boss.hitbox] : [])];
   const ph = ray.intersectObjects(people, false)[0];
   if (ph && ph.distance < hitD) { const pr = ph.object.userData.personRef, c = game.customers.find(x => x.person === pr) || (game.boss === pr ? game.bossC : null); if (c) aim = { type: 'person', c, label: `${c.type.name}` }; }
+  if (aim?.type === 'bed') { const sn = crime.sentenceNow; aim.label = !sn ? '침대' : sn.death ? '침대 · 사형수 (출소 없음)' : sn.life ? `침대 · 무기징역 (가석방까지 ${Math.max(0, 20 - (crime.served || 0))}년)` : `침대 · 남은 형기 ${Math.max(0, (sn.years || 0) - (crime.served || 0))}년`; }
   game.aim = aim;
   const dot = $('dot'); dot.className = aim ? 'on ' + aim.type : '';
   $('aimLabel').textContent = aim ? aim.label : '';
-  let lab = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기', ammo: '탄약 보충', cafe: '커피 주문', vent: '환풍구 뜯기', fence: '개구멍 통과', atm: 'ATM', noodle: '컵라면 먹기', spill: '닦기' }[aim?.type], ready = !!aim && !['counter', 'person'].includes(aim.type);
+  let lab = { cig: '담배 꺼내기', mw: '데우기', mess: '정리하기', guns: '총 꺼내기', ammo: '탄약 보충', cafe: '커피 주문', vent: '환풍구 뜯기', fence: '개구멍 통과', bed: '잠자기 (형기 보내기)', atm: 'ATM', noodle: '컵라면 먹기', spill: '닦기' }[aim?.type], ready = !!aim && !['counter', 'person'].includes(aim.type);
   if (driving.ride) { lab = driving.ride.kind === 'bus' ? '버스 내리기' : '내리기'; ready = true; }
   else if (!aim || aim.type === 'person') { const n = driving.near(); if (n) { lab = driving.label(n); ready = true; } else if (nearElevator()) { lab = '엘리베이터'; ready = true; } }
   { const nr = !driving.ride && !crime.inPrison && driving.near(), br = $('bRide'); br.classList.toggle('hidden', !nr); if (nr) { const t = driving.label(nr); if (br.dataset.t !== t) { br.dataset.t = t; br.querySelector('b').textContent = t; } br._n = nr; } }
@@ -153,7 +154,7 @@ $('bRide').addEventListener('click', e => { e.stopPropagation(); const n = $('bR
 // 키보드 (PC)
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
-  if (e.code === 'Space' && game?.running) { e.preventDefault(); voice.toggle(); }
+  if (e.code === 'Space' && game?.running) { e.preventDefault(); }
   if (e.key === 'Escape') pause();
   if (e.code === 'KeyR' && game?.running) crime?.reload();
 });
@@ -208,7 +209,7 @@ async function boot() {
   mover = new Mover({ yawObj, camera, look, audio, colliders }); Person.blockers = colliders;
   traffic.spawnParked(0xc21a1a, false, -30, 5.5, Math.PI / 2, true);   // 가게 옆에 세워 둔 빨간 페라리
   game = new Game({ renderer, scene, camera, store, hands, audio, voice, settings, look });
-  crime = new Crime({ game, scene, camera, yawObj, look, audio, hands, vehicles, mover });
+  crime = new Crime({ game, scene, camera, yawObj, look, audio, hands, vehicles, mover, colliders });
   peds = new Pedestrians({ scene, audio, game, crime, yawObj, camera }); crime.peds = peds; crime.extra = []; crime.prison = prison; courtB.prison.visible = false;
   crowd = new Crowd({ game, crime, peds, yawObj, colliders, mover });
   driving = new Driving({ scene, camera, yawObj, look, mover, audio, hands, vehicles, traffic, crime, game, colliders, crowd }); crime.drive = driving;
@@ -263,7 +264,7 @@ async function boot() {
   store.mw.userData.aim = 'mw';
   for (const o of [store.C.pos, store.C.drawer.group, store.C.reader]) o.userData.aim = 'counter';
   const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.08, 3.6), new THREE.MeshBasicMaterial()); hitBox.visible = false; hitBox.position.set(2.6, 0.93, 0.6); hitBox.userData.aim = 'counter'; scene.add(hitBox); store.counterHit = hitBox;
-  game.voiceOK = voice.available;
+  game.voiceOK = false;   // 직접 말하기 없앰: 대답은 화면 선택지로
   // 미리 한 번 그려서 셰이더 컴파일
   renderer.compile(scene, camera);
   show('loading', false);
@@ -347,6 +348,7 @@ $('bScan').onclick = () => {
   if (a?.type === 'cafe') { if (missions.money(0) < 4500) return toast('돈이 부족해요', 'bad', 1500); missions.money(-4500, '아메리카노'); crime.hp = Math.min(100, crime.hp + 30); crime.hpHud(); audio.play('register', { vol: 0.6 }); return game.say({ type: { name: '바리스타', id: 'barista' }, person: { talk: 0, gesture() { }, smile: 0 }, voice: [1.15, 1.02], gender: 'f', vIdx: 2, mood: 70 }, ['아메리카노 나왔습니다~ 맛있게 드세요!', 'happy']); }
   if (a && ['atm', 'noodle', 'spill'].includes(a.type)) return features.act(a);
   if (a?.type === 'vent') return crime.ventTry();
+  if (a?.type === 'bed') return crime.sleepInCell();
   if (a?.type === 'fence') return crime.escape();
   if (!a || a.type === 'person') { const n = driving.near(); if (n) return driving.enter(n); if (nearElevator()) return elevatorMenu(); }
   game.doPrimary();
@@ -368,7 +370,7 @@ async function elevatorRide(from, to) {
 }
 $('bPay').onclick = () => { audio.resume(); game.doCheckout(); };
 $('bTurn').onclick = () => look.turnTo(Math.abs(Math.atan2(Math.sin(look.yaw - Math.PI / 2), Math.cos(look.yaw - Math.PI / 2))) < 1.5 ? -Math.PI / 2 : Math.PI / 2);
-$('bMic').onclick = () => { audio.resume(); voice.toggle(); };
+$('bMic').onclick = () => { audio.resume(); };
 $('b112').onclick = () => game.call112();
 $('bPause').onclick = () => pause();
 // 달리기 버튼 (누르고 있는 동안)
@@ -394,7 +396,7 @@ function loop() {
   }
   look.update(dt);
   game?.update(dt * (window.__speed || 1));
-  if (game?.running) mover.update(dt);
+  if (game?.running || crime?.inCourt) mover.update(dt);
   traffic?.update(dt, game?.running ? yawObj.position : null); city?.update(dt); crime?.update(dt);
   hands?.update(dt, t);
   updateAim(dt); updateLiquids(dt);

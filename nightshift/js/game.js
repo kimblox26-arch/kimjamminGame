@@ -83,7 +83,10 @@ export class Game {
     // 사람처럼: 가끔 '음…', '아,' 같은 말버릇과 쉼, 말할 때마다 빠르기·높이가 조금씩 다름
     let spoken = text; if (spoken.length > 8 && Math.random() < 0.22 && !/^(아|어|음|그|저기|야|헉|꺄)/.test(spoken)) spoken = pick(['음… ', '아, ', '어… ', '그… ', '저기… ']) + spoken;
     spoken = spoken.replace(/([.?!])\s+/g, '$1 … ');
-    return new Promise(r => this.audio.speak(spoken, { pitch: c.voice[0] * ep * (0.97 + Math.random() * 0.06), rate: c.voice[1] * er * (0.95 + Math.random() * 0.1), gender: c.gender, idx: c.vIdx }, () => { c.person.talk = 0; after?.(); r(); }));
+    // 사람마다 목소리가 다르게: 처음 말할 때 그 사람만의 음높이·빠르기·목소리 종류를 정해 둠 (나이·체격 느낌)
+    const vp = c.vprof ||= (() => { const old = /boss|old|grand|judge/.test(c.type?.id || '') || Math.random() < 0.15, young = !old && Math.random() < 0.3; return [(old ? 0.82 : young ? 1.12 : 0.92) + Math.random() * 0.16, (old ? 0.86 : young ? 1.08 : 0.94) + Math.random() * 0.14, Math.random() * 8 | 0]; })();
+    const pitch = Math.min(1.7, Math.max(0.55, (c.voice?.[0] || 1) * vp[0] * ep * (0.98 + Math.random() * 0.04))), rate = Math.min(1.5, Math.max(0.7, (c.voice?.[1] || 1) * vp[1] * er * (0.97 + Math.random() * 0.06)));
+    return new Promise(r => this.audio.speak(spoken, { pitch, rate, gender: c.gender, idx: (c.vIdx || 0) + vp[2] }, () => { c.person.talk = 0; after?.(); r(); }));
   }
   // 점원(나)이 하는 말: 자막엔 숫자, 목소리는 한국어 읽기
   meSay(arr, n) {
