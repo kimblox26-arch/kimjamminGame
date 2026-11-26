@@ -20,6 +20,7 @@ const LAW = {
   '교통사고': ['교통사고처리 특례법 제3조 제1항 (치상)', '5년 이하의 금고 또는 2천만원 이하의 벌금'],
   '난폭 운전': ['도로교통법 제46조의3 난폭운전', '1년 이하의 징역 또는 500만원 이하의 벌금'],
   '탈옥수': ['형법 제145조 제1항 도주죄', '1년 이하의 징역'],
+  '법정 도주': ['형법 제145조 제1항 도주죄', '1년 이하의 징역'],
 };
 const POLICE = { id: 'police', name: '경찰관', model: 'man', h: 1.8, top: '#1b2a49', bottom: '#1b2a49', hat: 'police', voice: [0.95, 1.05] };
 const ROLES = {
@@ -264,6 +265,9 @@ export class Crime {
   }
   update(dt) {
     if (!window.__fxFreeze) this.fx.update(dt, this.audio);
+    // 재판 중 법정 밖으로 나가면 도주 / 도망친 뒤 법정 사람들 정리
+    if (this.inCourt && !this.chaos) { const p = this.yawObj.position; if (Math.abs(p.x - COURT.x) > 8.1 || Math.abs(p.z - COURT.z) > 7.65) this.courtEscape(false); }
+    if (!this.inCourt && this.courtPeople.length && this.courtLeftAt && (performance.now() - this.courtLeftAt > 90000 || this.yawObj.position.distanceTo(COURT) > 80)) { for (const c of this.courtPeople) c.person.dispose(); this.courtPeople = []; this.courtLeftAt = 0; }
     if (this.firing && (this.cool -= dt) <= 0) { this.cool = 0.11; this.attack(); }
     this.updateGun(dt); this.reactions(dt); this.playerUpdate(dt);
     if (this.smoking && (this.smokeT = (this.smokeT || 0) - dt) < 0) { this.smokeT = 0.18; for (const v of this.smoking) { const S = v.mesh.userData.size || { y: 1.5, z: 4 }; this.fx.smoke(v.mesh.localToWorld(V3(0, S.y * 0.75, S.z * 0.35)), 0x333333); } } if (this.inPrison || this.prisonGuards.length) this.prisonUpdate(dt);
@@ -274,7 +278,10 @@ export class Crime {
     if (!this.arrested && !this.inCourt && !this.inPrison) {
       const me = this.yawObj.position;
       for (const o of this.officers) {
-        if (o.dead || !o.chase || o.down) continue;
+        if (o.dead || o.down) continue;
+        // 수배 중에 경찰에게 닿으면 바로 체포 (빠르게 달리는 차 안이면 제외)
+        if (this.lv > 0 && Math.hypot(o.root.position.x - me.x, o.root.position.z - me.z) < 1.05 && Math.abs(o.root.position.y - (me.y - 1.55)) < 1 && !(this.drive?.ride && Math.abs(this.drive.ride.v) > 2.5)) { this.arrest(o); break; }
+        if (!o.chase) continue;
         const od = o.root.position.distanceTo(V3(me.x, o.root.position.y, me.z));
         if (od > 70) { const a = Math.random() * 6.28; o.root.position.set(me.x + Math.cos(a) * 32, me.y - 1.55 < -1 ? me.y - 1.55 : 0, me.z + Math.sin(a) * 32); o.path = []; }
         if ((this.kills > 0 || this.copAttacked || this.infamous) && od < 24 && this.shootAt(o, dt)) continue;
@@ -368,6 +375,7 @@ export class Crime {
     if (c.has('교통사고')) fine += 5000000;
     if (c.has('난폭 운전')) fine += 2000000;
     if (c.has('탈옥수')) years += 1 + prev;
+    if (c.has('법정 도주')) years += 1;
     years = Math.min(30, years);
     if (years > 0) return { years, label: `징역 ${years}년` };
     return { fine: Math.max(fine, 1000000), label: `벌금 ${Math.round(Math.max(fine, 1000000) / 10000).toLocaleString()}만원` };
@@ -377,7 +385,7 @@ export class Crime {
     ['cust', 'idcard'].forEach(id => show(id, false)); show('hud'); document.body.classList.add('court-mode');
     const court = this.courtGroup, S = court.userData.seats, at = (a) => V3(COURT.x + a[0], a[1], COURT.z + a[2]);
     // 법정 안을 걸어 다닐 수 있게: 벽·법대·책상·방청석 충돌
-    if (!this.courtCols) { const C = (x0, x1, z0, z1) => ({ x0: COURT.x + x0, x1: COURT.x + x1, z0: COURT.z + z0, z1: COURT.z + z1 }); this.courtCols = [C(-8.2, -7.9, -7.5, 7.5), C(7.9, 8.2, -7.5, 7.5), C(-8, 8, -7.8, -4.9), C(-8, 8, 7.4, 7.8), C(-2, 2, -4.5, -3.7), C(-5.8, -2.6, -2.1, -1.1), C(2.6, 5.8, -2.1, -1.1), C(-0.7, 0.7, -2.85, -1.95), C(-7.4, -1.2, 1.55, 1.65), C(1.2, 7.4, 1.55, 1.65), C(-6.8, -1.2, 2.5, 7), C(1.2, 6.8, 2.5, 7)]; this.colliders?.push(...this.courtCols); }
+    for (const c of this.courtPeople) c.person.dispose(); this.courtPeople = []; this.chaos = false; if (this.courthouse) this.courthouse.lockCourt = false;
     const add = (role, pos, face) => { const p = new Person(ROLES[role], this.audio); p.root.position.copy(at(pos)); p.lookAt(face || this.camera.getWorldPosition(V3())); this.scene.add(p.root); const c = { type: ROLES[role], person: p, voice: ROLES[role].voice, gender: ROLES[role].model === 'woman' ? 'f' : 'm', vIdx: this.courtPeople.length, mood: 50, role }; this.courtPeople.push(c); return c; };
     const judge = add('judge', S.judges[1]); add('judge2', S.judges[0]); add('judge', S.judges[2]);
     const pros = add('pros', S.prosecutor, at([4, 1, -1])), lawyer = add('lawyer', S.lawyer, at([-4, 1, -1])); add('aud', S.clerk);
@@ -409,17 +417,16 @@ export class Crime {
     if (this.chaos) return; gavel(); await sleep(1800); if (this.chaos) return;
     this.ending(sen);
   }
-  // 법정에서 폭력 → 경위·특공대 진압 (GTA처럼 쓰러지면 병원에서 깨어남)
-  courtChaos() {
-    if (this.chaos) return; this.chaos = true;
-    const g = this.game; this.audio.stopSpeak?.();
-    const guard = this.courtPeople.find(c => c.role === 'guard' && !c.dead);
-    if (guard) g.say(guard, ['총 버려! 엎드려!', 'angry']);
-    for (const c of this.courtPeople) if (c.role === 'guard' && !c.dead) c.person.walk([this.yawObj.position.clone().setY(0)]);
-    setTimeout(() => {
-      this.firing = false; this.audio.play('rifle_in', { vol: 1.8 }); this.audio.play('rifle_in', { vol: 1.6, delay: 0.12 }); this.audio.play('punch', { vol: 1.5, rate: 0.7, delay: 0.2 });
-      setTimeout(() => { this.leaveCourt(); this.wasted(); }, 600);
-    }, 6000);
+  // 법정 탈출: 법정 밖으로 뛰쳐나가거나(도주) 폭력을 쓰면(난동) 재판이 멈추고 법정 경위가 쫓아옴 (닿으면 다시 체포, 공격했으면 총을 쏨)
+  courtChaos() { this.courtEscape(true); }
+  courtEscape(violent) {
+    if (this.chaos || !this.inCourt) return; this.chaos = true;
+    const g = this.game; this.audio.stopSpeak?.(); this.inCourt = false; document.body.classList.remove('court-mode'); g.running = true; this.mover.enabled = true;
+    const judge = this.courtPeople.find(c => c.type?.id === 'judge');
+    if (judge) g.say(judge, [violent ? '경위! 피고인을 제압하세요!' : '피고인이 도주합니다! 경위, 막으세요!', 'angry']);
+    for (const c of [...this.courtPeople]) if (c.role === 'guard' && !c.dead) { const o = c.person; o.ref = c; c.officer = o; o.speed = 3.7; o.chase = true; o.pause?.(false); this.officers.push(o); this.courtPeople.splice(this.courtPeople.indexOf(c), 1); }
+    if (violent) this.copAttacked = true;
+    this.panic(); this.wanted.add(violent ? 4 : 3, '법정 도주'); this.courtLeftAt = performance.now();
   }
   leaveCourt() { for (const c of this.courtPeople) c.person.dispose(); this.courtPeople = []; this.inCourt = false; this.chaos = false; document.body.classList.remove('court-mode'); this.game.running = true; }
   // 판결 뒤: 벌금이면 내고 바로 석방, 징역·무기·사형이면 교도소

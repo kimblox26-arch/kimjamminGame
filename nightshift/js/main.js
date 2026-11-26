@@ -33,7 +33,8 @@ import { buildArmory, buildTower, buildCafe, Animals, TOWER, ARMORY } from './wo
 import { buildPrison } from './prison.js';
 import { Physics, StreetProps } from './physics.js';
 import { Metro } from './metro.js';
-import { PRISON } from './places.js';
+import { PRISON, COURT } from './places.js';
+import { buildCourthouse } from './courthouse.js';
 import { buildUnderpass, UNDER } from './underpass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
@@ -134,9 +135,8 @@ function updateAim(dt) {
   }
   // 사람 (총이면 멀리까지)
   ray.far = crime.weapon === 'fist' ? 2.4 : 40;
-  const people = [...game.customers.filter(c => !c.dead).map(c => c.person.hitbox), ...(game.boss && !game.bossDead ? [game.boss.hitbox] : [])];
-  const ph = ray.intersectObjects(people, false)[0];
-  if (ph && ph.distance < hitD) { const pr = ph.object.userData.personRef, c = game.customers.find(x => x.person === pr) || (game.boss === pr ? game.bossC : null); if (c) aim = { type: 'person', c, label: `${c.type.name}` }; }
+  const TG = crime.targets(), ph = ray.intersectObjects(TG.map(t => t[0]), false)[0];   // 손님·사장님·행인·경찰·법정 사람 모두 조준됨
+  if (ph && ph.distance < hitD) { const c = TG.find(t => t[0] === ph.object)?.[1]; if (c) aim = { type: 'person', c, label: `${c.type?.name || ''}` }; }
   if (aim?.type === 'bed') { const sn = crime.sentenceNow; aim.label = !sn ? '침대' : sn.death ? '침대 · 사형수 (출소 없음)' : sn.life ? `침대 · 무기징역 (가석방까지 ${Math.max(0, 20 - (crime.served || 0))}년)` : `침대 · 남은 형기 ${Math.max(0, (sn.years || 0) - (crime.served || 0))}년`; }
   game.aim = aim;
   const dot = $('dot'); dot.className = aim ? 'on ' + aim.type : '';
@@ -178,7 +178,7 @@ const voice = new Voice({
 
 const _camW = new THREE.Vector3();
 let cityEnv = null, lampT = 0, lightMgr = null, features = null;
-let physics, streetProps, metro;
+let physics, streetProps, metro, courthouse;
 let store, hands, game, vehicles, city, traffic, storage, mover, crime, minimap, under, sky, hemi, ugLight, peds, crowd, driving, missions, armory, tower, cafe, prison, animals;
 paintIcons();
 async function boot() {
@@ -245,6 +245,7 @@ async function boot() {
   missions = new Missions({ scene, audio, game, crime, peds, yawObj, look, traffic, drive: driving, minimap, city, tower: TOWER, extra: crime.extra }); crime.money = (n, w) => missions.money(n, w); missions.money(0);
   features = new Features({ scene, camera, yawObj, audio, game, hands, missions, crime, renderer, drive: driving, productMesh, render: () => (composer ? composer.render() : renderer.render(scene, camera)) }); missions.features = features; features.skyMat = sky?.children[0]?.material; crime.features = features; peds.features = features;
   crime.onEscape = () => (features.stat('escapes'), toast('탈옥수가 됐어요. 경찰을 피해 도시로 숨어드세요! (휴대폰에서 미션·일자리)', 'bad', 4000));
+  courthouse = buildCourthouse(scene, colliders, COURT, courtB.court); crime.courthouse = courthouse;
   crime.courtGroup = courtB.court; crime.worldRoots = [store.root, city.root, storage.group, courtB.court, under.group, armory.group, tower.group, cafe.group, prison.group];
   crime.onExit = () => { crime.cleanup(); peds.clear(); toMenu(); }; crime.onRestart = () => { crime.cleanup(); peds.clear(); startShift(1); };
   game.crime = crime; game.onShop = () => openShop(); game.mover = mover; game.yawObjDist = () => Math.hypot(yawObj.position.x - SPOT.cam.x, yawObj.position.z - SPOT.cam.z);
@@ -258,7 +259,7 @@ async function boot() {
   { const C = store.C, keepSet = new Set([C.pos, C.drawer?.group, C.reader, store.mw, store.door, store.staffDoor, C.scanner?.stand, C.scanner?.gun, C.printer, C.paper, C.monitor, store.counterHit, ...(store.cigSlots || [])].filter(Boolean));
     const skipStore = o => keepSet.has(o) || (o.userData && Object.keys(o.userData).length > 0) || o.isInstancedMesh;
     console.log('perf: store merged', mergeStatic(store.root, skipStore)); }
-  let merged = 0; for (const [g, skip] of [[tower.group, o => o === tower.evCar], [cafe.group, () => false], [armory.group, () => false], [prison.group, o => o === prison.vent], [storage.group, () => false], [courtB.court, () => false]]) merged += mergeStatic(g, skip);
+  let merged = 0; for (const [g, skip] of [[tower.group, o => o === tower.evCar], [cafe.group, () => false], [armory.group, () => false], [prison.group, o => o === prison.vent], [storage.group, () => false], [courtB.court, () => false], [courthouse.group, () => false]]) merged += mergeStatic(g, skip);
   lightMgr = new LightManager(scene, [keyLight, ugLight, crime.fx.flashLight, prison.spot]); const nl = lightMgr.harvest(); console.log('perf: merged', merged, 'lights pooled', nl);
   window.__ns = { game, look, store, hands, camera, scene, yawObj, audio, THREE, Person, TYPES, billMesh, coinMesh, renderer, crime, mover, traffic, city, minimap, under, peds, driving, missions, tower, prison, crowd, elevatorRide, features, get physics() { return physics; }, get metro() { return metro; }, get streetProps() { return streetProps; } };
   store.mw.userData.aim = 'mw';
@@ -374,8 +375,8 @@ $('bMic').onclick = () => { audio.resume(); };
 $('b112').onclick = () => game.call112();
 $('bPause').onclick = () => pause();
 // 달리기 버튼 (누르고 있는 동안)
-{ const b = $('bRun'), on = v => { mover.runHold = v; b.classList.toggle('on', v); };
-  b.addEventListener('pointerdown', e => { e.preventDefault(); on(true); }); for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => on(false)); }
+{ const b = $('bRun'), on = v => { mover.runHold = v; b.classList.toggle('on', v); };   // 누를 때마다 달리기 켜기/끄기 (조이스틱 끝까지 밀어도 달림)
+  b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); on(!mover.runHold); }); }
 const atk = $('bAtk');
 atk.addEventListener('pointerdown', e => { e.preventDefault(); audio.resume(); crime.press(); });
 for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) atk.addEventListener(ev, () => crime.release());
@@ -402,7 +403,7 @@ function loop() {
   updateAim(dt); updateLiquids(dt);
   if (game?.running) minimap?.update(dt);
   if (game?.running) features?.update(dt, crime.indoor() || yawObj.position.y - 1.55 < -1);
-  prison?.tick?.(dt, yawObj.position); metro?.update(dt, yawObj.position);
+  prison?.tick?.(dt, yawObj.position); metro?.update(dt, yawObj.position); courthouse?.update(dt, yawObj.position);
   if (game?.running && !crime?.inCourt) { peds?.update(dt, !crime.inPrison); crowd?.update(dt); driving?.update(dt); physics?.update(dt, yawObj.position, crowd.people(), traffic.list); streetProps?.update(dt, yawObj.position); missions?.update(dt); animals?.update(dt, yawObj.position); store.merch.update(dt); const cw = camera.getWorldPosition(new THREE.Vector3()); for (const c of crime.extra) c.person.update(dt, cw); }
   if (game?.running) doors(dt);
   if (game?.running && (posT += dt) > 0.5) { posT = 0; game.renderPos(); }

@@ -2,10 +2,10 @@
 import { ROADS } from './city.js';
 import { STORAGE } from './places.js';
 import { UNDER } from './underpass.js';
-import { PRISON } from './places.js';
+import { PRISON, COURT } from './places.js';
 import { TOWER, CAFE } from './world2.js';
 import { nsLines, ewLines, zoneOf, planOf, roadW, isBridge, CORE, RIVER, CBDS, METRO } from './metro.js';
-const ZC = { cbd: '#2c2a40', apt: '#262d36', villa: '#23272d', shops: '#2b2924', park: '#1b3320', forest: '#15291a', school: '#302a1e', river: '#0d2236' };
+const ZC = { cbd: '#363445', apt: '#2f353d', villa: '#2b3036', shops: '#33312d', park: '#36603a', forest: '#2c4f30', school: '#4a4030', river: '#3f73a8' };
 
 const FONT = '"Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 const PLACES = [
@@ -13,6 +13,7 @@ const PLACES = [
   { name: '창고', x0: STORAGE.x0, x1: STORAGE.x1, z0: STORAGE.z0, z1: STORAGE.z1, col: '#c9a26b' },
   { name: '달빛타워', x0: TOWER.x0, x1: TOWER.x1, z0: TOWER.z0, z1: TOWER.z1, col: '#9b8cff' },
   { name: '달빛 커피', x0: CAFE.x0, x1: CAFE.x1, z0: CAFE.z0, z1: CAFE.z1, col: '#d89a5b' },
+  { name: '달빛지방법원', x0: COURT.x - 17, x1: COURT.x + 17, z0: COURT.z - 31, z1: COURT.z + 16, col: '#c9b27a' },
 ];
 const PR = { x0: PRISON.x - 37, x1: PRISON.x + 37, z0: PRISON.z - 44, z1: PRISON.z + 44 };
 export class MiniMap {
@@ -32,24 +33,24 @@ export class MiniMap {
   world(g, s, big) {
     const W = this.city.ROADW, { X0, X1, Z0, Z1, EW, NS } = ROADS;
     const vr = big ? this.view || 160 : 110, vcx = big ? this.cx : this.yawObj.position.x, vcz = big ? this.cz : this.yawObj.position.z, vx0 = Math.max(METRO.x0, vcx - vr), vx1 = Math.min(METRO.x1, vcx + vr), vz0 = Math.max(METRO.z0, vcz - vr), vz1 = Math.min(METRO.z1, vcz + vr);
-    g.fillStyle = '#05070a'; g.fillRect(vcx - vr * 1.5, vcz - vr * 1.5, vr * 3, vr * 3); g.fillStyle = '#0b0f14'; g.fillRect(vx0, vz0, vx1 - vx0, vz1 - vz0);
+    g.fillStyle = '#15191d'; g.fillRect(vcx - vr * 1.5, vcz - vr * 1.5, vr * 3, vr * 3); g.fillStyle = '#232a30'; g.fillRect(vx0, vz0, vx1 - vx0, vz1 - vz0);
     this.metroLayer(g, s, vx0, vx1, vz0, vz1);
-    g.fillStyle = '#10151c'; g.fillRect(X0, Z0, X1 - X0, Z1 - Z0);
+    g.fillStyle = '#262d34'; g.fillRect(X0, Z0, X1 - X0, Z1 - Z0);
     // 보도
-    g.fillStyle = '#262c34';
+    g.fillStyle = '#4a525b';
     for (const r of EW) g.fillRect(X0, r.z0 - 3.2, X1 - X0, r.z1 - r.z0 + 6.4);
     for (const cx of NS) g.fillRect(cx - W / 2 - 3.2, Z0, W + 6.4, Z1 - Z0);
     // 도로 + 중앙선
-    g.fillStyle = '#3b424c';
+    g.fillStyle = '#a7b0ba';
     for (const r of EW) g.fillRect(X0, r.z0, X1 - X0, r.z1 - r.z0);
     for (const cx of NS) g.fillRect(cx - W / 2, Z0, W, Z1 - Z0);
-    g.strokeStyle = '#d8b04a'; g.lineWidth = 0.35; g.setLineDash([3, 3]); g.beginPath();
+    g.strokeStyle = 'rgba(70,78,88,.7)'; g.lineWidth = 0.35; g.setLineDash([3, 3]); g.beginPath();
     for (const r of EW) { const z = (r.z0 + r.z1) / 2; g.moveTo(X0, z); g.lineTo(X1, z); }
     for (const cx of NS) { g.moveTo(cx, Z0); g.lineTo(cx, Z1); }
     g.stroke(); g.setLineDash([]);
     // 건물 (높을수록 밝게)
     const vw = big ? this.view || 160 : 60, mx = big ? this.cx : this.yawObj.position.x, mz = big ? this.cz : this.yawObj.position.z;
-    for (const b of this.city.blds) { if (b.x1 < mx - vw || b.x0 > mx + vw || b.z1 < mz - vw || b.z0 > mz + vw) continue; const l = 16 + Math.min(18, b.h * 0.4); g.fillStyle = `hsl(215,12%,${l}%)`; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 0.4 / s * 2; g.strokeRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); }
+    for (const b of this.city.blds) { if (b.x1 < mx - vw || b.x0 > mx + vw || b.z1 < mz - vw || b.z0 > mz + vw) continue; const l = 22 + Math.min(14, b.h * 0.3); g.fillStyle = `hsl(215,12%,${l}%)`; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); g.strokeStyle = 'rgba(0,0,0,.6)'; g.lineWidth = 0.4 / s * 2; g.strokeRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); }
     for (const p of PLACES) { g.fillStyle = p.col; g.globalAlpha = 0.85; g.fillRect(p.x0, p.z0, p.x1 - p.x0, p.z1 - p.z0); g.globalAlpha = 1; }
     // 달빛교도소: 외벽·운동장·수용동·감시탑
     g.fillStyle = '#2a2320'; g.fillRect(PR.x0, PR.z0, PR.x1 - PR.x0, PR.z1 - PR.z0);
@@ -57,7 +58,7 @@ export class MiniMap {
     g.strokeStyle = '#e0785a'; g.lineWidth = 1.1; g.strokeRect(PR.x0, PR.z0, PR.x1 - PR.x0, PR.z1 - PR.z0); g.fillStyle = '#e0785a'; for (const [x, z] of [[PR.x0 + 2.6, PR.z0 + 2.6], [PR.x1 - 2.6, PR.z0 + 2.6], [PR.x0 + 2.6, PR.z1 - 2.6], [PR.x1 - 2.6, PR.z1 - 2.6]]) { g.beginPath(); g.arc(x, z, 2.2, 0, 7); g.fill(); }
     g.fillStyle = '#c9c4b6'; g.fillRect(PRISON.x - 5.5, PR.z0 - 0.6, 11, 1.2);
     // 공원·학교 운동장
-    for (const p of this.city.parks || []) { g.fillStyle = '#1e3a22'; g.fillRect(p.x - 40, p.z - 33, 80, 66); g.fillStyle = '#0d2236'; g.beginPath(); g.arc(p.x + 18, p.z - 14, 9, 0, 7); g.fill(); }
+    for (const p of this.city.parks || []) { g.fillStyle = '#3a6b3f'; g.fillRect(p.x - 40, p.z - 33, 80, 66); g.fillStyle = '#4a7fb5'; g.beginPath(); g.arc(p.x + 18, p.z - 14, 9, 0, 7); g.fill(); }
     // 지하도 (점선 = 지하, 파란 칸 = 계단 입구)
     const H = UNDER.hall, ug = this.yawObj.position.y < -1;
     g.globalAlpha = ug ? 0.95 : 0.5; g.fillStyle = '#2b3f5c'; g.fillRect(H.x0, H.z0, H.x1 - H.x0, H.z1 - H.z0); g.globalAlpha = 1;
@@ -75,12 +76,20 @@ export class MiniMap {
       const zn = zoneOf(xa, xb, za, zb); g.fillStyle = ZC[zn]; g.fillRect(xa, za, xb - xa, zb - za);
       if (s > 0.6 && n < 500 && zn !== 'river') { const p = planOf(xa, xb, za, zb); for (const b of p.blds) { g.fillStyle = b.tower ? '#55657c' : b.apt ? '#6c665a' : `hsl(215,12%,${16 + Math.min(18, b.h * 0.4)}%)`; g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); } }
     }
-    g.fillStyle = '#0d2a44'; g.fillRect(vx0, RIVER.z0, vx1 - vx0, RIVER.z1 - RIVER.z0);
-    g.fillStyle = '#3b424c'; const mw = 1.3 / s;
+    g.fillStyle = '#3f73a8'; g.fillRect(vx0, RIVER.z0, vx1 - vx0, RIVER.z1 - RIVER.z0);
+    g.fillStyle = '#a7b0ba'; const mw = 1.3 / s;
     for (const x of xs) { if (x < vx0 - 20 || x > vx1 + 20) continue; const w = Math.max(roadW(x, 1), mw), inner = x > CORE.x0 && x < CORE.x1, br = isBridge(x);
       for (let [a, b] of inner ? [[vz0, ROADS.Z0], [ROADS.Z1, vz1]] : [[vz0, vz1]]) { if (b <= a) continue; if (!br && a < RIVER.sRoad && b > RIVER.nRoad) { if (a < RIVER.nRoad) g.fillRect(x - w / 2, a, w, RIVER.nRoad - a); if (b > RIVER.sRoad) g.fillRect(x - w / 2, RIVER.sRoad, w, b - RIVER.sRoad); } else g.fillRect(x - w / 2, a, w, b - a); } }
     for (const z of zs) { if (z < vz0 - 20 || z > vz1 + 20 || (z > RIVER.nRoad + 1 && z < RIVER.sRoad - 1)) continue; const w = Math.max(roadW(z, 0), mw), inner = z > CORE.z0 && z < CORE.z1;
       for (const [a, b] of inner ? [[vx0, ROADS.X0], [ROADS.X1, vx1]] : [[vx0, vx1]]) if (b > a) g.fillRect(a, z - w / 2, b - a, w); }
+  }
+  route(a, b) {
+    const near = (arr, v) => arr.reduce((p, q) => Math.abs(q - v) < Math.abs(p - v) ? q : p, arr[0]);
+    const cross = (a.z < RIVER.z0) !== (b.z < RIVER.z0), xsAll = nsLines(Math.min(a.x, b.x) - 2000, Math.max(a.x, b.x) + 2000);
+    const xs = cross ? xsAll.filter(isBridge) : xsAll, zs = ewLines(Math.min(a.z, b.z) - 400, Math.max(a.z, b.z) + 400);
+    if (!xs.length || !zs.length) return [a, b];
+    const nx = near(xs, cross ? (a.x + b.x) / 2 : a.x), ez = near(zs, b.z);
+    return [{ x: a.x, z: a.z }, { x: nx, z: a.z }, { x: nx, z: ez }, { x: b.x, z: ez }, { x: b.x, z: b.z }];
   }
   label(g, x, y, txt, col, size) { g.font = `800 ${size}px ${FONT}`; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(txt, x, y); g.fillStyle = col; g.fillText(txt, x, y); }
   draw(cv, big) {
@@ -92,6 +101,8 @@ export class MiniMap {
     if (big) { this.bigS = s; this.cx = cx; this.cz = cz; this.view = Math.max(w, h) / s / 2 + 20; }
     g.save(); g.clearRect(0, 0, w, h); g.translate(w / 2, h / 2); if (!big) g.rotate(yaw); g.scale(s, s); g.translate(-cx, -cz);
     this.world(g, s, big);
+    // 목적지까지 길 안내(보라색): 가까운 세로 도로 → 가로 도로 → 목적지 (한강은 다리로 건넘)
+    { const goal = (this.markers() || []).find(m => m.kind === 'goal'); if (goal) { const r = this.route(me, goal); g.strokeStyle = '#b25cff'; g.lineWidth = Math.max(2.2, 4 / s * dpr); g.lineJoin = 'round'; g.beginPath(); g.moveTo(r[0].x, r[0].z); for (const q of r) g.lineTo(q.x, q.z); g.stroke(); } }
     // 표시: 경찰차·경찰·사람·쓰러진 사람
     const blink = Math.floor(performance.now() / 250) % 2;
     for (const m of this.markers()) {

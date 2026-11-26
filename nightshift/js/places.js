@@ -52,7 +52,7 @@ export function buildStorage(scene, collide) {
 }
 
 // 법정 (멀리 떨어진 곳에 만들어 두고 체포되면 카메라를 옮긴다)
-export const COURT = new THREE.Vector3(20000, 0, 600),   // 법정·호송차는 도시(수도권) 바깥 먼 곳에 따로
+export const COURT = new THREE.Vector3(-187.5, 0, 214),   // 달빛지방법원: 교도소 옆 블록의 법원 건물 안 (courthouse.js)
   PRISON = new THREE.Vector3(-282.5, 0, 226);   // 달빛교도소: 도시 남서쪽 블록 (차로 갈 수 있음)
 export function buildCourt(scene) {
   const g = new THREE.Group(); g.position.copy(COURT); scene.add(g);
@@ -66,7 +66,7 @@ export function buildCourt(scene) {
   const gold = M({ color: 0xc9a227, metalness: 0.9, roughness: 0.25 });
   // 바닥·천장·벽
   box(g, M({ map: carpet, roughness: 0.95 }), W, 0.02, D, 0, 0, 0);
-  box(g, M({ map: plaster }), 0.1, H, D, -W / 2, H / 2, 0); box(g, M({ map: plaster }), 0.1, H, D, W / 2, H / 2, 0); box(g, M({ map: plaster }), W, H, 0.1, 0, H / 2, D / 2);
+  box(g, M({ map: plaster }), 0.1, H, D, -W / 2, H / 2, 0); box(g, M({ map: plaster }), 0.1, H, D, W / 2, H / 2, 0); box(g, M({ map: plaster }), W / 2 - 0.85, H, 0.1, -(W / 2 + 0.85) / 2, H / 2, D / 2); box(g, M({ map: plaster }), W / 2 - 0.85, H, 0.1, (W / 2 + 0.85) / 2, H / 2, D / 2); box(g, M({ map: plaster }), 1.7, H - 2.65, 0.1, 0, (H + 2.65) / 2, D / 2);
   box(g, wPanel, 0.12, 1.3, D, -W / 2 + 0.06, 0.65, 0); box(g, wPanel, 0.12, 1.3, D, W / 2 - 0.06, 0.65, 0);
   box(g, wSlat, W, H, 0.1, 0, H / 2, -D / 2);                                                  // 판사석 뒤 나무 루버 벽
   box(g, M({ color: 0xf2efe8, roughness: 0.9 }), W, 0.04, D, 0, H, 0);
@@ -99,7 +99,7 @@ export function buildCourt(scene) {
   // 시계 · 출입문
   const clock = new THREE.Mesh(new THREE.CircleGeometry(0.3, 32), M({ map: ctex(128, 128, (c, w, h) => { c.fillStyle = '#fff'; c.beginPath(); c.arc(64, 64, 62, 0, 7); c.fill(); c.strokeStyle = '#111'; c.lineWidth = 4; c.stroke(); for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; c.fillRect(64 + Math.cos(a) * 52 - 2, 64 + Math.sin(a) * 52 - 2, 4, 4); } c.lineWidth = 5; c.beginPath(); c.moveTo(64, 64); c.lineTo(64, 26); c.moveTo(64, 64); c.lineTo(92, 70); c.stroke(); }) }));
   clock.position.set(-W / 2 + 0.07, 3.6, -2); clock.rotation.y = Math.PI / 2; g.add(clock);
-  box(g, wood, 1.6, 2.6, 0.08, 0, 1.3, D / 2 - 0.06);
+  const doorP = new THREE.Group(); doorP.position.set(-0.8, 0, D / 2 - 0.06); g.add(doorP); const dm = box(doorP, wood, 1.6, 2.6, 0.08, 0.8, 1.3, 0); dm.userData.keep = true; box(doorP, gold, 0.04, 0.2, 0.06, 1.45, 1.1, 0.06).userData.keep = true; g.userData.door = doorP;   // 법정 문 (열림)
   g.userData.seats = { judges: [[-2.4, 0.9, -6.0], [0, 0.9, -6.0], [2.4, 0.9, -6.0]], prosecutor: [-4.2, 0, -0.9], lawyer: [4.9, 0, -0.9], clerk: [0.6, 0, -3.6], guards: [[-1.6, 0, 0.6], [6.6, 0, 1.0]], audience: [[-5.2, 0, 2.6], [-3.3, 0, 3.8], [-4.6, 0, 5.0], [3.2, 0, 2.6], [4.9, 0, 3.8], [3.9, 0, 5.0]] };
   // 교도소 감방
   const p = new THREE.Group(); p.position.copy(PRISON); scene.add(p);

@@ -36,7 +36,9 @@ export class Mover {
     if (k.KeyW || k.ArrowUp) y -= 1; if (k.KeyS || k.ArrowDown) y += 1; if (k.KeyA || k.ArrowLeft) x -= 1; if (k.KeyD || k.ArrowRight) x += 1;
     const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
     const run = this.runHold || k.ShiftLeft || k.ShiftRight || Math.hypot(this.vec.x, this.vec.y) > 0.95;
-    const speed = (run ? 3.6 : 2.0) * Math.min(1, Math.hypot(x, y));
+    const speed = (run ? 5.4 : 2.1) * Math.min(1, Math.hypot(x, y));
+    // 달리면 시야가 살짝 넓어짐
+    const tf = run && speed > 3 ? 75 : 68; if (this.camera && !this.camera.userData.fovLock && Math.abs(this.camera.fov - tf) > 0.05) { this.camera.fov += (tf - this.camera.fov) * Math.min(1, dt * 4); this.camera.updateProjectionMatrix(); }
     const p = this.yawObj.position, yaw = this.look.yaw;
     if (speed > 0.05) {
       // 화면 앞(-z)을 기준으로 회전
