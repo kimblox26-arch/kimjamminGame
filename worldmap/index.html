@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>세계 지도 편집기</title>
+<meta name="description" content="실제 세계 지도에서 국가·지방·도시·바다를 편집하고 국경을 다시 그리는 샌드박스 지도 편집기">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.min.js" } }</script>
+</head>
+<body data-view="2d">
+<div id="loading"><div class="spin"></div><p>불러오는 중…</p></div>
+
+<header id="top">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c3 3.2 3 15.8 0 19M12 2.5c-3 3.2-3 15.8 0 19"/></svg>
+    <div><b>세계 지도 편집기</b><small id="worldName">내 세계</small></div>
+  </div>
+  <div class="seg" id="viewSeg"><button data-view="2d" class="on">2D 지도</button><button data-view="3d">3D 지구본</button></div>
+  <div class="grow"></div>
+  <button class="ib" id="undo" title="실행 취소 (Ctrl+Z)" disabled><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+  <button class="ib" id="redo" title="다시 실행 (Ctrl+Y)" disabled><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+  <button class="ib" id="layersBtn" title="지도 표시"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5"/></svg></button>
+  <button class="ib" id="fileBtn" title="파일 (새 지도·저장·불러오기·내보내기)"><svg viewBox="0 0 24 24"><path d="M4 4h11l5 5v11H4zM8 4v5h7V4M8 20v-6h8v6"/></svg></button>
+  <button class="ib" id="panelBtn" title="국가 목록"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+</header>
+
+<nav id="tools"></nav>
+
+<main id="stage">
+  <canvas id="c2d"></canvas>
+  <canvas id="c3d"></canvas>
+  <canvas id="ov"></canvas>
+  <div id="tip" hidden></div>
+  <div id="brushbar">
+    <button id="brushCountry" class="chip"></button>
+    <label id="sizeWrap" hidden><span>크기</span><input type="range" id="size" min="1" max="60" value="10"><b id="sizeVal">10</b></label>
+    <span id="hint"></span>
+  </div>
+  <div id="zoomBtns"><button id="zin" title="확대">+</button><button id="zout" title="축소">−</button></div>
+</main>
+
+<aside id="panel">
+  <div class="tabs">
+    <button data-tab="list" class="on">국가 목록</button><button data-tab="info">선택 정보</button>
+    <button id="panelClose" class="ib" title="닫기">&times;</button>
+  </div>
+  <section id="tab-list">
+    <div class="row gap"><input id="search" placeholder="국가 검색"><button id="addCountry" class="btn pri">+ 새 국가</button></div>
+    <div class="row gap sortrow"><span id="count"></span><div class="grow"></div><label>정렬 <select id="sort"><option value="area">면적순</option><option value="name">이름순</option><option value="prov">지방 수</option></select></label></div>
+    <div id="clist"></div>
+  </section>
+  <section id="tab-info" hidden></section>
+</aside>
+
+<div id="pop" class="pop" hidden></div>
+<div id="modal" hidden><div class="dlg"></div></div>
+<div id="toast"></div>
+<input type="file" id="fileIn" hidden>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
