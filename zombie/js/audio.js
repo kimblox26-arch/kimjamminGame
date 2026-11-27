@@ -159,12 +159,15 @@ const S = {
     else { this.hit(t, this.white, 1700, 'bandpass', 1.5, v * 0.3, 0.05, oo); this.hit(t, this.brown, 200, 'lowpass', 1, v * 1.2, 0.08, oo); }
   },
   gunshot(t, o) {
-    const rifle = o.kind === 'rifle', v = o.vol ?? 1, oo = { ...o, rev: 1.2, ref: 6 };
+    const rifle = o.kind === 'rifle' || o.kind === 'shotgun', sg = o.kind === 'shotgun', v = (o.vol ?? 1) * (sg ? 1.3 : 1), oo = { ...o, rev: sg ? 1.5 : 1.2, ref: 6 };
     this.hit(t, this.white, 2500, 'highpass', 0.7, v * 1.0, rifle ? 0.07 : 0.05, oo);
     this.hit(t, this.pink, rifle ? 1800 : 2600, 'lowpass', 0.7, v * 1.1, rifle ? 0.25 : 0.16, oo);
-    const s = this.osc('sine', rifle ? 160 : 130, t, 0.3); s.frequency.exponentialRampToValueAtTime(35, t + 0.18); const e = this.env(t, 0.001, v * 1.3, 0.2); this.chain(s, e, this.out(oo));
+    const s = this.osc('sine', sg ? 110 : rifle ? 160 : 130, t, 0.4); s.frequency.exponentialRampToValueAtTime(sg ? 28 : 35, t + (sg ? 0.3 : 0.18)); const e = this.env(t, 0.001, v * 1.3, 0.2); this.chain(s, e, this.out(oo));
     if (!o.pos) { this.hit(t + 0.03, this.white, 6000, 'highpass', 1, 0.08, 0.3, { rev: 0.2 }); } // 귀 울림 성분
   },
+  headshot(t, o) { this.hit(t, this.white, 2200, 'bandpass', 2, 0.9, 0.06, o); this.hit(t, this.brown, 300, 'lowpass', 1, 1.2, 0.12, o); this.hit(t + 0.02, this.pink, 900, 'bandpass', 1.5, 0.6, 0.2, o); },
+  ricochet(t, o) { const s = this.osc('sine', 2400 + R() * 1200, t, 0.4); s.frequency.exponentialRampToValueAtTime(900, t + 0.35); const e = this.env(t, 0.002, 0.25, 0.35); this.chain(s, e, this.out(o)); this.hit(t, this.white, 5000, 'bandpass', 6, 0.4, 0.03, o); },
+  impact(t, o) { this.hit(t, this.white, 2600, 'bandpass', 1.5, 0.35, 0.05, o); this.hit(t, this.brown, 400, 'lowpass', 1, 0.3, 0.06, o); },
   dryfire(t, o) { this.hit(t, this.white, 4000, 'bandpass', 4, 0.4, 0.02, o); },
   reload(t, o) { [0, 0.35, 0.9, 1.15].forEach((d, i) => this.hit(t + d, this.white, 2500 + i * 600, 'bandpass', 5, 0.35, 0.03, o)); },
   swing(t, o) { const n = this.src(this.pink, t, 0.4), b = this.flt('bandpass', 600, 1.5), e = this.env(t, 0.08, 0.5, 0.18); b.frequency.linearRampToValueAtTime(2200, t + 0.2); this.chain(n, b, e, this.out(o)); },
@@ -216,5 +219,11 @@ const L = {
   alarm(out, N) { const s = this.losc('square', 780, N), l = this.losc('square', 2.2, N), lg = this.ctx.createGain(); lg.gain.value = 300; l.connect(lg).connect(s.frequency); const g = this.ctx.createGain(); g.gain.value = 0.15; this.chain(s, this.flt('lowpass', 2200), g, out); },
   engine(out, N) { const s = this.losc('sawtooth', 40, N), s2 = this.losc('square', 80, N), b = this.flt('lowpass', 500, 2), g = this.ctx.createGain(); g.gain.value = 0.4; s.connect(b); s2.connect(b); this.chain(b, g, out); const n = this.lsrc(this.brown, N), ng = this.ctx.createGain(); ng.gain.value = 0.3; n.connect(ng).connect(out); return { rpm: (r) => { s.frequency.setTargetAtTime(30 + r * 120, this.ctx.currentTime, 0.1); s2.frequency.setTargetAtTime(60 + r * 240, this.ctx.currentTime, 0.1); b.frequency.setTargetAtTime(400 + r * 1600, this.ctx.currentTime, 0.1); } }; },
   heli(out, N) { const n = this.lsrc(this.brown, N), l = this.losc('square', 12, N), am = this.ctx.createGain(); am.gain.value = 0.5; const lg = this.ctx.createGain(); lg.gain.value = 0.5; l.connect(lg).connect(am.gain); this.chain(n, this.flt('lowpass', 400), am, out); const w = this.losc('sawtooth', 1900, N), wg = this.ctx.createGain(); wg.gain.value = 0.02; this.chain(w, this.flt('bandpass', 2000, 4), wg, out); },
+  music(out, N) {
+    const ctx = this.ctx, notes = [220, 261.6, 293.7, 329.6, 392, 440, 523.3], pad = ctx.createGain(); pad.gain.value = 0.18; pad.connect(out);
+    for (const f of [55, 82.4, 110.2, 164.8]) { const o = this.losc('sawtooth', f, N), o2 = this.losc('sawtooth', f * 1.004, N), lp = this.flt('lowpass', 420, 0.7), l = this.losc('sine', 0.05 + R() * 0.05, N), lg = ctx.createGain(); lg.gain.value = 220; l.connect(lg).connect(lp.frequency); o.connect(lp); o2.connect(lp); const g = ctx.createGain(); g.gain.value = 0.12; lp.connect(g).connect(pad); }
+    let alive = true; const tick = () => { if (!alive) return; const t = ctx.currentTime + 0.05; for (let i = 0; i < (R() < 0.3 ? 2 : 1); i++) { const f = notes[(R() * notes.length) | 0] * (R() < 0.3 ? 0.5 : 1), tt = t + i * 0.35; for (const [h, a] of [[1, 1], [2, 0.3], [3, 0.12], [4.02, 0.06]]) { const s = this.osc('sine', f * h, tt, 4), e = this.env(tt, 0.005, 0.09 * a, 3.5); this.chain(s, e, out); } } setTimeout(tick, 2200 + R() * 3500); }; setTimeout(tick, 1500);
+    return { stopBirds: () => alive = false };
+  },
   hum(out, N) { const s = this.losc('sine', 60, N), g = this.ctx.createGain(); g.gain.value = 0.05; s.connect(g).connect(out); }
 };

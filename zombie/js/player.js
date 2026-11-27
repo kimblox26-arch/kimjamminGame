@@ -1,14 +1,20 @@
 // 플레이어: 1인칭 이동/계단/수영, 체력·기력·배고픔·갈증(굶어 죽지 않음), 감정(공포·스트레스·희망), 무기, 손전등, 차량
 import * as THREE from 'three';
 import { clamp, damp, lerp, MB } from './util.js';
-import { ITEMS } from './items.js';
+import { ITEMS, RARITY } from './items.js';
+import { buildFPArm, humanMat } from './human.js';
 import { terrainH } from './korea.js';
 
 export const WEAPONS = {
   fists: { name: '맨손', slot: 1, melee: true, dmg: 12, range: 1.3, rate: 0.5, stam: 5, arc: 0.7 },
   knife: { name: '식칼', slot: 2, melee: true, dmg: 30, range: 1.45, rate: 0.42, stam: 7, arc: 0.55 },
-  bat: { name: '야구방망이', slot: 3, melee: true, dmg: 44, range: 2.0, rate: 0.72, stam: 13, arc: 0.85 },
-  pipe: { name: '쇠파이프', slot: 3, melee: true, dmg: 50, range: 2.0, rate: 0.85, stam: 15, arc: 0.85 },
+  bat: { name: '야구방망이', slot: 3, melee: true, dmg: 44, range: 2.0, rate: 0.72, stam: 13, arc: 0.85, heavy: true },
+  pipe: { name: '쇠파이프', slot: 3, melee: true, dmg: 50, range: 2.0, rate: 0.85, stam: 15, arc: 0.85, heavy: true },
+  golf: { name: '골프채', slot: 3, melee: true, dmg: 36, range: 2.1, rate: 0.62, stam: 10, arc: 0.8 },
+  crowbar: { name: '빠루', slot: 3, melee: true, dmg: 52, range: 1.7, rate: 0.8, stam: 14, arc: 0.7, heavy: true },
+  baton: { name: '경찰봉', slot: 2, melee: true, dmg: 30, range: 1.6, rate: 0.45, stam: 7, arc: 0.7 },
+  axe: { name: '소방도끼', slot: 3, melee: true, dmg: 75, range: 1.9, rate: 1.0, stam: 19, arc: 0.75, heavy: true },
+  shotgun: { name: '산탄총', slot: 6, gun: true, dmg: 17, pellets: 9, mag: 6, rate: 0.85, spread: 0.075, recoil: 0.09, noise: 210, kind: 'shotgun', reload: 3.0 },
   pistol: { name: '권총', slot: 4, gun: true, dmg: 36, mag: 15, rate: 0.2, spread: 0.012, recoil: 0.035, noise: 130, kind: 'pistol', reload: 1.6 },
   rifle: { name: '소총', slot: 5, gun: true, dmg: 45, mag: 30, rate: 0.1, spread: 0.007, recoil: 0.02, noise: 190, kind: 'rifle', auto: true, reload: 2.2 }
 };
@@ -31,7 +37,7 @@ export class Player {
     this.c = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), r: 0.32, h: 1.75, step: 0.5, onGround: true };
     this.pos = this.c.pos; this.yaw = 0; this.pitch = 0; this.eyeY = 1.62; this.eyeSmooth = 0;
     this.hp = 100; this.st = 100; this.food = 82; this.water = 75; this.fear = 10; this.stress = 15; this.hope = 40;
-    this.inv = {}; this.owned = new Set(['fists']); this.ammo = { pistol: 0, rifle: 0 }; this.mag = { pistol: 0, rifle: 0 };
+    this.inv = {}; this.owned = new Set(['fists']); this.ammo = { pistol: 0, rifle: 0, shotgun: 0 }; this.mag = { pistol: 0, rifle: 0, shotgun: 0 }; this.bag = null; this.armor = { head: null, body: null }; this.batt = 100; this.stBoost = 0;
     this.weapon = 'fists'; this.hasFlash = false; this.flashOn = false; this.crouch = false; this.vehicle = null; this.dead = false;
     this.enabled = false; this.keys = {}; this.mouse = { l: false, r: false }; this.cool = 0; this.reloadT = 0; this.swingT = 0; this.switchT = 0;
     this.trauma = 0; this.bob = 0; this.stepAcc = 0; this.stRegenT = 0; this.monoT = 20; this.emo = '평온'; this.kills = 0; this.heartT = 0; this.breathT = 0;
@@ -45,9 +51,9 @@ export class Player {
   // ---------- 뷰모델 ----------
   makeView() {
     const v = this.view = new THREE.Group(); this.camera.add(v);
-    const skin = new THREE.MeshStandardMaterial({ color: 0xd8ae92, roughness: 0.6 }), sleeve = new THREE.MeshStandardMaterial({ color: 0x2b3038, roughness: 0.9 });
-    const arm = (s) => { const g = new THREE.Group(); const fa = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.32, 4, 10), sleeve); fa.rotation.x = Math.PI / 2; fa.position.z = 0.2; g.add(fa); const h = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.045, 0.09), skin); h.position.z = -0.02; g.add(h); const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.022, 0.05, 3, 8), skin); f.position.set(s * 0.035, 0.01, -0.06); f.rotation.x = Math.PI / 2; g.add(f); return g; };
-    this.armR = arm(-1); this.armL = arm(1); v.add(this.armR, this.armL);
+    const ag = buildFPArm(); ag.translate(0, 0, 0.6); const agL = ag.clone(); agL.scale(-1, 1, 1); const ix = agL.index.array; for (let k = 0; k < ix.length; k += 3) { const t = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = t; } agL.computeVertexNormals();
+    const arm = (g) => { const m = new THREE.Mesh(g, humanMat(false)); const gr = new THREE.Group(); gr.add(m); return gr; };
+    this.armR = arm(ag); this.armL = arm(agL); v.add(this.armR, this.armL);
     const M = (c, m = 0.3, r = 0.5) => new THREE.MeshStandardMaterial({ color: c, metalness: m, roughness: r });
     const W = this.wm = {};
     W.bat = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.016, 0.84, 12).translate(0, 0.42, 0), M(0x9a6a3a, 0, 0.45));
@@ -55,6 +61,11 @@ export class Player {
     W.knife = new THREE.Group(); W.knife.add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.12, 0.025).translate(0, 0.02, 0), M(0x222222, 0, 0.6))); W.knife.add(new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.2, 0.04).translate(0, 0.18, 0.005), M(0xdddddd, 0.9, 0.15)));
     const gun = (len, col) => { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.04, len).translate(0, 0.02, -len / 2), M(col, 0.7, 0.35))); g.add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.04).rotateX(-0.25).translate(0, -0.04, -0.02), M(0x1a1a1a, 0.2, 0.7))); return g; };
     W.pistol = gun(0.19, 0x202224); W.rifle = gun(0.75, 0x2a2c2a); W.rifle.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.12, 0.05).translate(0, -0.06, -0.3), M(0x111111))); W.rifle.add(new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.07, 0.25).translate(0, -0.01, 0.12), M(0x1d1f1d)));
+    W.golf = new THREE.Group(); W.golf.add(new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.012, 1.0, 8).translate(0, 0.5, 0), M(0xbbbbbb, 0.9, 0.2)), new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.11).translate(0, 1.0, 0.04), M(0x333333, 0.9, 0.25)), new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.25, 8).translate(0, 0.12, 0), M(0x111111, 0, 0.8)));
+    W.crowbar = new THREE.Group(); W.crowbar.add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.8, 8).translate(0, 0.4, 0), M(0x8a1a1a, 0.6, 0.4)), new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.1).translate(0, 0.8, 0.04), M(0x8a1a1a, 0.6, 0.4)));
+    W.baton = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.6, 10).translate(0, 0.3, 0), M(0x111111, 0.2, 0.5));
+    W.axe = new THREE.Group(); W.axe.add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.9, 8).translate(0, 0.45, 0), M(0x6a3a1a, 0, 0.6)), new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.22).translate(0, 0.84, 0.08), M(0xb81c1c, 0.5, 0.4)), new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.13, 0.06).translate(0, 0.84, 0.2), M(0xcccccc, 0.9, 0.2)));
+    W.shotgun = gun(0.72, 0x1e1e1e); W.shotgun.add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.6, 10).rotateX(Math.PI / 2).translate(0, 0.0, -0.45), M(0x202020, 0.8, 0.3)), new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.06, 0.18).translate(0, -0.02, -0.42), M(0x4a3020, 0, 0.6)), new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.08, 0.28).translate(0, -0.02, 0.14), M(0x5a3a22, 0, 0.6)));
     W.flash = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.028, 0.18, 10).rotateX(Math.PI / 2), M(0x222222, 0.6, 0.4));
     for (const k in W) { W[k].visible = false; v.add(W[k]); W[k].traverse(o => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } }); }
     v.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
@@ -81,38 +92,54 @@ export class Player {
       const gp = new THREE.Vector3(lerp(0.17, 0.0, ad) + sx * (1 - ad * 0.7), lerp(-0.2, -0.13, ad) + sy * (1 - ad * 0.7) + sw - rl * 0.15 + rec * 0.02, lerp(-0.42, -0.34, ad) + rec * 0.06);
       m.visible = true; m.position.copy(gp); m.rotation.set(rec * 0.25 + rl * 0.6, 0, rl * 0.5);
       aR.position.copy(gp).add(new THREE.Vector3(0.01, -0.07, 0.12)); aR.rotation.set(0.2, 0, 0);
-      aL.position.copy(gp).add(new THREE.Vector3(-0.05, -0.06, this.weapon === 'rifle' ? -0.3 : -0.02)); aL.rotation.set(0.1, 0.3, 0);
-      this.muzzle = gp.clone().add(new THREE.Vector3(0, 0.03, this.weapon === 'rifle' ? -0.78 : -0.22));
+      aL.position.copy(gp).add(new THREE.Vector3(-0.05, -0.06, this.weapon !== 'pistol' ? -0.3 : -0.02)); aL.rotation.set(0.1, 0.3, 0);
+      this.muzzle = gp.clone().add(new THREE.Vector3(0, 0.03, this.weapon !== 'pistol' ? -0.78 : -0.22));
     }
     this.recoil = damp(this.recoil, 0, 12, dt);
   }
   // ---------- 인벤토리 ----------
+  weight() {
+    let w = 0; for (const k in this.inv) w += (ITEMS[k]?.w || 0) * this.inv[k];
+    for (const k of this.owned) if (ITEMS[k]) w += ITEMS[k].w;
+    w += this.ammo.pistol * 0.0125 + this.ammo.rifle * 0.0133 + this.ammo.shotgun * 0.05;
+    for (const a of Object.values(this.armor)) if (a) w += ITEMS[a.type].w;
+    return w;
+  }
+  capacity() { return 15 + (this.bag ? ITEMS[this.bag].cap : 0); }
+  canCarry(type, n) { const d = ITEMS[type]; if (!d) return 0; if (d.kind === 'bag' || (d.kind === 'weapon' && this.owned.has(d.weapon) && !WEAPONS[d.weapon].gun)) return n; const w = d.kind === 'ammo' ? d.w : d.w; if (w <= 0) return n; return Math.max(0, Math.min(n, Math.floor((this.capacity() - this.weight()) / w + 1e-6))); }
   give(type, n = 1, silent) {
-    const d = ITEMS[type]; if (!d) return;
+    const d = ITEMS[type]; if (!d) return false;
+    if (!silent && this.canCarry(type, n) < n) { this.game.ui.notify('가방이 꽉 찼다 (무게 초과) — 가방을 비우거나 더 큰 가방을 찾자'); return false; }
     if (d.kind === 'weapon') {
       const had = this.owned.has(d.weapon); this.owned.add(d.weapon);
-      if (WEAPONS[d.weapon].gun && !had) { this.mag[d.weapon] = WEAPONS[d.weapon].mag; }
-      else if (WEAPONS[d.weapon].gun) this.ammo[d.weapon] += 10;
+      if (WEAPONS[d.weapon].gun && !had) this.mag[d.weapon] = WEAPONS[d.weapon].mag; else if (WEAPONS[d.weapon].gun) this.ammo[d.weapon] += Math.round(WEAPONS[d.weapon].mag * 0.6);
       if (!had) this.equip(d.weapon);
     } else if (d.kind === 'ammo') this.ammo[d.weapon] += d.count * n;
+    else if (d.kind === 'bag') { if (!this.bag || ITEMS[this.bag].cap < d.cap) { this.bag = type; this.game.ui.notify(`가방 교체: ${d.name}`); } }
+    else if (d.kind === 'armor') { const cur = this.armor[d.slot]; if (!cur || ITEMS[cur.type].def < d.def) { if (cur) this.inv[cur.type] = (this.inv[cur.type] || 0) + 1; this.armor[d.slot] = { type, dur: d.dur }; this.game.ui.notify(`착용: ${d.name}`); } else this.inv[type] = (this.inv[type] || 0) + n; }
     else if (type === 'flashlight') this.hasFlash = true;
     else this.inv[type] = (this.inv[type] || 0) + n;
-    if (!silent) { this.game.ui.notify(`획득: ${d.name}${n > 1 ? ' ×' + n : ''}`); this.hope = clamp(this.hope + 0.8, 0, 100); }
-    this.game.emit('give', type);
+    if (!silent) { this.game.ui.notify(`획득: ${d.name}${n > 1 ? ' ×' + n : ''}`, RARITY[d.r || 'c'][1]); this.hope = clamp(this.hope + (d.r === 'e' || d.r === 'l' ? 4 : 0.8), 0, 100); }
+    this.game.emit('give', type); return true;
   }
   use(type) {
     const d = ITEMS[type]; if (!d || !this.inv[type]) return false;
     const g = this.game;
     if (d.kind === 'food') { this.food = clamp(this.food + d.val, 0, 100); g.audio.play('eat'); this.stress -= 3; }
-    else if (d.kind === 'drink') { this.water = clamp(this.water + d.val, 0, 100); g.audio.play('drink'); }
+    else if (d.kind === 'drink') { this.water = clamp(this.water + d.val, 0, 100); g.audio.play('drink'); if (d.st) { this.st = Math.min(this.capSt(), this.st + d.st); this.stBoost = d.st >= 100 ? 40 : 0; } }
     else if (d.kind === 'heal') { if (this.hp >= 100 && !d.stress) return false; this.hp = clamp(this.hp + d.val, 0, 100); g.audio.play('rummage'); }
+    else if (d.kind === 'armor') { const cur = this.armor[d.slot]; this.armor[d.slot] = { type, dur: d.dur }; if (cur) this.inv[cur.type] = (this.inv[cur.type] || 0) + 1; g.ui.notify(`착용: ${d.name}`); }
+    else if (type === 'battery') { if (!this.hasFlash) return false; this.batt = Math.min(100, this.batt + 60); g.audio.play('click'); }
+    else if (d.use) g.audio.play('rummage');
     else return false;
     if (d.stress) this.stress = clamp(this.stress + d.stress, 0, 100); if (d.hope) this.hopeAdd(d.hope);
     this.inv[type]--; if (!this.inv[type]) delete this.inv[type];
     g.ui.notify(`사용: ${d.name}`); return true;
   }
+  drop(type) { if (!this.inv[type]) return; this.inv[type]--; if (!this.inv[type]) delete this.inv[type]; this.game.ui.notify(`버림: ${ITEMS[type].name}`); }
+  capSt() { return this.food < 15 || this.water < 15 ? 55 : 100; }
   quickUse(kind) {
-    const order = { heal: ['bandage', 'medkit', 'pills'], food: ['bar', 'kimbap', 'ramen', 'rice', 'can', 'choco'], drink: ['water', 'juice', 'soju'] }[kind];
+    const order = { heal: ['bandage', 'medkit', 'pills'], food: ['bar', 'kimbap', 'ramen', 'rice', 'can', 'choco', 'mre'], drink: ['water', 'juice', 'coffee', 'energy', 'soju'] }[kind];
     for (const t of order) if (this.inv[t] && this.use(t)) return;
     this.game.ui.notify(kind === 'heal' ? '치료 도구가 없다' : kind === 'food' ? '먹을 것이 없다' : '마실 것이 없다');
   }
@@ -141,18 +168,22 @@ export class Player {
       this.st -= w.stam; this.cool = w.rate; this.swingT = w.rate; this.punchL = !this.punchL; g.audio.play('swing'); g.zombies.noise(this.pos, 8);
       setTimeout(() => {
         const hits = g.zombies.melee(eye, dir, w.range, w.arc);
-        if (hits.length) { const h = hits[0]; h.z.hit(w.dmg * (0.85 + Math.random() * 0.3), h.part, new THREE.Vector3(dir.x, 0, dir.z).normalize(), 'melee'); this.shake(0.15); if (this.weapon === 'bat' || this.weapon === 'pipe') g.audio.play('click', { vol: 0.3 }); }
+        if (hits.length) { const h = hits[0]; const r = h.z.hit(w.dmg * (0.85 + Math.random() * 0.3), h.part, new THREE.Vector3(dir.x, 0, dir.z).normalize(), 'melee', !!w.heavy); this.shake(w.heavy ? 0.25 : 0.15); if (r) g.ui.hitmarker(r); if (w.heavy) g.audio.play('click', { vol: 0.3 }); }
       }, w.rate * 300);
       return;
     }
     if (this.mag[this.weapon] <= 0) { g.audio.play('dryfire'); this.cool = 0.3; if (this.ammo[this.weapon] > 0) this.reload(); return; }
     this.mag[this.weapon]--; this.cool = w.rate;
     const sp = w.spread * (1 - this.aimK * 0.75) * (1 + this.fear / 80) * (this.moveK > 0.3 ? 1.8 : 1);
-    dir.x += (Math.random() - 0.5) * sp; dir.y += (Math.random() - 0.5) * sp; dir.z += (Math.random() - 0.5) * sp; dir.normalize();
-    const wallT = g.col.ray(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, 250, b => !b.glass);
-    const hit = g.zombies.raycast(eye, dir, Math.min(250, wallT));
-    if (hit) hit.z.hit(w.dmg * (0.9 + Math.random() * 0.2), hit.part, dir, 'gun');
-    else if (wallT < 250) g.fx.blood(eye.clone().addScaledVector(dir, wallT - 0.05), new THREE.Vector3(0, 0.5, 0), 0);
+    const base = dir.clone(); let best = null;
+    for (let p = 0; p < (w.pellets || 1); p++) {
+      const d = base.clone(); d.x += (Math.random() - 0.5) * sp; d.y += (Math.random() - 0.5) * sp; d.z += (Math.random() - 0.5) * sp; d.normalize();
+      const wallT = g.col.ray(eye.x, eye.y, eye.z, d.x, d.y, d.z, 250, b => !b.glass);
+      const hit = g.zombies.raycast(eye, d, Math.min(250, wallT));
+      if (hit) { const r = hit.z.hit(w.dmg * (0.9 + Math.random() * 0.2) * (w.pellets && hit.t > 15 ? 0.5 : 1), hit.part, d, 'gun'); if (r && (!best || r.kill || r.head)) best = r; }
+      else if (wallT < 250) g.fx.impact(eye.clone().addScaledVector(d, wallT - 0.03));
+    }
+    if (best) g.ui.hitmarker(best);
     g.audio.play('gunshot', { kind: w.kind, vol: 1.2 });
     g.zombies.noise(this.pos, w.noise);
     this.recoil = 1; this.pitch += w.recoil * (1 - this.aimK * 0.4); this.yaw += (Math.random() - 0.5) * w.recoil * 0.4; this.shake(0.1);
@@ -163,6 +194,7 @@ export class Player {
   shake(a) { this.trauma = Math.min(1, this.trauma + a); }
   damage(d, src, from) {
     if (this.dead || this.game.godMode) return;
+    if (src === 'zombie') { let red = 0; for (const sl of ['body', 'head']) { const a = this.armor[sl]; if (!a) continue; const def = ITEMS[a.type].def * (sl === 'head' ? 0.6 : 1); red += def; a.dur -= d * 0.6; if (a.dur <= 0) { this.game.ui.notify(`${ITEMS[a.type].name} 파손!`); this.armor[sl] = null; } } d *= 1 - Math.min(0.6, red); }
     this.hp -= d; this.fear = clamp(this.fear + d * 1.6, 0, 100); this.stress = clamp(this.stress + d * 0.5, 0, 100); this.shake(0.5); this.lastHurt = this.game.time;
     this.game.audio.play('hurt'); this.game.ui.hurt(clamp(d / 25, 0.3, 1));
     if (from && from.pos) { const dx = this.pos.x - from.pos.x, dz = this.pos.z - from.pos.z, l = Math.hypot(dx, dz) || 1; this.c.vel.x += dx / l * 2.5; this.c.vel.z += dz / l * 2.5; }
@@ -214,7 +246,9 @@ export class Player {
     this.aimK = damp(this.aimK, ctl && this.mouse.r && WEAPONS[this.weapon].gun ? 1 : 0, 14, dt);
     if (ctl && this.mouse.l && (WEAPONS[this.weapon].auto || !this.fired)) { this.attack(); this.fired = true; }
     if (!this.mouse.l) this.fired = false;
-    this.flash.intensity = this.flashOn ? 55 : 0;
+    if (this.flashOn) { this.batt = Math.max(0, this.batt - dt * 0.25); if (this.batt <= 0) { this.flashOn = false; this.game.ui.notify('손전등 배터리가 다 됐다 (건전지 필요)'); } }
+    this.flash.intensity = this.flashOn ? 55 * (this.batt < 15 ? 0.3 + 0.7 * Math.random() * (this.batt / 15) : 1) : 0;
+    if (this.stBoost > 0) { this.stBoost -= dt; this.st = Math.min(this.capSt(), this.st + dt * 10); }
     this.needs(dt); this.emotions(dt); this.interact(dt);
     if (!this.game.intro.active) this.camUpdate(dt);
   }
@@ -295,15 +329,16 @@ export class Player {
     const E = this.keys.KeyE;
     if (E && !this.interDone) {
       this.interHold += dt;
-      if (o.hold > 0) { const k = clamp(this.interHold / o.hold, 0, 1); o.onHold && o.onHold(k); ui.prompt(label, k); if (k >= 1) { this.interDone = true; o.act(); } }
+      const hold = typeof o.hold === 'function' ? o.hold() : o.hold;
+      if (hold > 0) { const k = clamp(this.interHold / hold, 0, 1); o.onHold && o.onHold(k); ui.prompt(label, k); if (k >= 1) { this.interDone = true; o.act(); } }
       else { ui.prompt(label, clamp(this.interHold / 0.6, 0, 1) * 0); if (this.interHold > 0.6) { this.interDone = true; o.act(true); } }
     } else {
-      if (!E && this.interHold > 0 && !this.interDone) { if (o.hold > 0) { o.onRelease && o.onRelease(); } else o.act(false); }
+      if (!E && this.interHold > 0 && !this.interDone) { if ((typeof o.hold === 'function' ? o.hold() : o.hold) > 0) { o.onRelease && o.onRelease(); } else o.act(false); }
       if (!E) { this.interHold = 0; this.interDone = false; }
       ui.prompt(label, 0);
     }
   }
-  save() { return { pos: this.pos.toArray(), yaw: this.yaw, hp: this.hp, st: this.st, food: this.food, water: this.water, fear: this.fear, stress: this.stress, hope: this.hope, inv: this.inv, owned: [...this.owned], ammo: this.ammo, mag: this.mag, weapon: this.weapon, hasFlash: this.hasFlash, kills: this.kills }; }
-  load(s) { this.pos.fromArray(s.pos); this.yaw = s.yaw; Object.assign(this, { hp: s.hp, st: s.st, food: s.food, water: s.water, fear: s.fear, stress: s.stress, hope: s.hope, inv: s.inv, ammo: s.ammo, mag: s.mag, weapon: s.weapon, hasFlash: s.hasFlash, kills: s.kills || 0 }); this.owned = new Set(s.owned); this.c.vel.set(0, 0, 0); this.dead = false; }
+  save() { return { pos: this.pos.toArray(), yaw: this.yaw, hp: this.hp, st: this.st, food: this.food, water: this.water, fear: this.fear, stress: this.stress, hope: this.hope, inv: this.inv, owned: [...this.owned], ammo: this.ammo, mag: this.mag, weapon: this.weapon, hasFlash: this.hasFlash, kills: this.kills, bag: this.bag, armor: this.armor, batt: this.batt }; }
+  load(s) { this.pos.fromArray(s.pos); this.yaw = s.yaw; Object.assign(this, { hp: s.hp, st: s.st, food: s.food, water: s.water, fear: s.fear, stress: s.stress, hope: s.hope, inv: s.inv, ammo: s.ammo, mag: s.mag, weapon: s.weapon, hasFlash: s.hasFlash, kills: s.kills || 0, bag: s.bag || null, armor: s.armor || { head: null, body: null }, batt: s.batt ?? 100 }); this.ammo.shotgun ??= 0; this.mag.shotgun ??= 0; this.owned = new Set(s.owned); this.c.vel.set(0, 0, 0); this.dead = false; }
 }
 function g_noise(game, p, r) { game._vn = (game._vn || 0) + 1; if (game._vn % 20 === 0) game.zombies.noise(p, r); }

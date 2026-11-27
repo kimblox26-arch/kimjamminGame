@@ -111,7 +111,7 @@ export class Intro {
     this.active = true; g.player.enabled = false; g.zombies.ignorePlayer = true; ui.setMode('cine');
     this.cam = { pos: this.U(0.75, 0.72, 10.05), yaw: -Math.PI / 2, pitch: 1.45 }; this.lidV = 1; this.blur = 8;
     h.setCurtain(h.curtBed, false, true); h.setCurtain(h.curtLiv, false, true);
-    this.street();
+    if (!this.streetDone) this.street();
     this.amb = [g.audio.loop('birds', { amb: true, vol: 0.5 }), g.audio.loop('wind', { amb: true, vol: 0.25 })];
     ui.fade(1, 0); ui.fade(0, 2.5);
     await this.wait(1.0); if (this.aborted) return;

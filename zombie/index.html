@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>서울 감염 — 좀비 서바이벌</title>
 <meta name="description" content="서울에서 시작되는 좀비 아포칼립스. 긴급재난문자로 깨어나 살아남아라.">
-<link rel="stylesheet" href="./style.css?v=1">
+<link rel="stylesheet" href="./style.css?v=2">
 <script type="importmap">
 { "imports": { "three": "../vendor/three/three.module.min.js", "three/addons/": "../vendor/three/addons/" } }
 </script>
@@ -35,6 +35,9 @@
   </div>
   <div id="weapon"><div id="weapon-name">맨손</div><div id="weapon-ammo"></div><div id="quick">H 치료 · X 먹기 · Z 마시기 · F 손전등 · Tab 가방 · M 지도</div></div>
   <div id="crosshair"></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="headshot">HEADSHOT</div>
+  <div id="gear"></div>
   <div id="prompt"></div>
   <div id="hold"><i id="hold-bar"></i></div>
   <div id="notify"></div>
@@ -44,26 +47,33 @@
 <div id="subtitle"></div>
 <button id="menu-btn" class="hidden" title="메뉴 (Esc)">☰ 메뉴</button>
 
-<!-- 타이틀 -->
+<!-- 메인 화면 (뒤에 실시간 3D 서울이 보임) -->
 <div id="title-screen">
-  <div class="title-bg"></div>
+  <div class="title-shade"></div>
   <div class="title-box">
-    <div class="title-small">2026. 11. 26. 서울</div>
+    <div class="title-small">2026. 11. 26 · SEOUL</div>
     <h1>서울 감염</h1>
-    <div class="title-sub">DAY ZERO — 좀비 서바이벌</div>
-    <button id="btn-start" disabled>세계 생성 중…</button>
-    <button id="btn-continue" class="ghost hidden">이어하기</button>
+    <div class="title-sub">DAY ZERO</div>
+    <nav class="title-menu">
+      <button id="btn-start" disabled>세계 생성 중…</button>
+      <button id="btn-continue" class="hidden">이어하기</button>
+      <button id="btn-settings">설정</button>
+      <button id="btn-howto">조작법</button>
+      <button id="btn-credits">정보</button>
+    </nav>
     <label class="opt"><input type="checkbox" id="opt-optimize"> 최적화 모드 (저사양 PC · 노트북)</label>
-    <div class="title-note">헤드폰 권장 · 마우스로 시점 · WASD 이동 · E 상호작용</div>
     <div id="load-bar"><i></i></div>
+    <div id="title-info" class="hidden"></div>
   </div>
+  <div class="title-foot"><span id="title-hint">화면을 클릭하면 소리가 켜집니다</span><span>v2.0 · 헤드폰 권장</span></div>
 </div>
 
 <!-- 메뉴 -->
 <div id="menu" class="hidden">
   <div class="panel">
-    <h2>일시정지</h2>
+    <h2 id="menu-title">일시정지</h2>
     <button data-act="resume">계속하기</button>
+    <button data-act="title" class="title-only">돌아가기</button>
     <button data-act="skip" id="btn-skip">인트로 건너뛰기</button>
     <button data-act="map">지도 보기</button>
     <button data-act="save">저장하기</button>
@@ -83,16 +93,19 @@
       마우스 왼쪽 공격/사격 · 오른쪽 조준 · R 재장전<br>
       1~5 무기 · E 상호작용(길게 누르기) · F 손전등<br>
       H 치료 · X 먹기 · Z 물 마시기 · Tab 가방 · M 지도<br>
+      파밍: 진열대·차량·사물함·택배·시체 앞에서 E 길게 → 수색 창에서 클릭/E로 획득<br>
+      좀비는 머리를 파괴해야 확실히 죽습니다(몸통 공격은 쓰러뜨리기만)<br>
       차량: W/S 가속·후진, A/D 조향, Space 브레이크, E 하차
     </div>
   </div>
 </div>
 
 <div id="map-screen" class="hidden"><canvas id="map-canvas"></canvas><div id="map-info"></div><div class="map-help">휠: 확대/축소 · 드래그: 이동 · M/Esc: 닫기</div></div>
-<div id="inventory" class="hidden"><div class="panel"><h2>가방</h2><div id="inv-list"></div><div class="inv-help">항목을 클릭하면 사용합니다 · Tab 닫기</div></div></div>
+<div id="inventory" class="hidden"><div class="panel wide"><h2>가방 <small id="inv-weight"></small></h2><div id="inv-gear"></div><div id="inv-list"></div><div class="inv-help">클릭: 사용/장착 · 우클릭: 버리기 · Tab 닫기</div></div></div>
+<div id="loot" class="hidden"><div class="panel"><h2 id="loot-title">수색</h2><div id="loot-list"></div><div id="loot-weight"></div><div class="loot-btns"><button id="loot-all">모두 가져가기 (E)</button><button id="loot-close">닫기 (Esc)</button></div></div></div>
 <div id="death" class="hidden"><h1>당신은 감염되었습니다</h1><p id="death-info"></p><button id="btn-retry">마지막 저장 지점에서 다시</button></div>
 <div id="ending" class="hidden"><h1>생존</h1><p id="ending-info"></p><button id="btn-freeplay">계속 탐험하기</button></div>
 
-<script type="module" src="./js/main.js?v=1"></script>
+<script type="module" src="./js/main.js?v=2"></script>
 </body>
 </html>

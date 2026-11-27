@@ -6,6 +6,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { buildTextures, setAniso } from './textures.js';
 import { Bus, clamp, damp, lerp } from './util.js';
 import { CollisionWorld } from './physics.js';
@@ -13,30 +15,31 @@ import { World } from './world.js';
 import { Sky } from './sky.js';
 import { AudioEngine } from './audio.js';
 import { Voice } from './voice.js';
-import { ItemManager, Interactions } from './items.js';
+import { ItemManager, Interactions, LootManager } from './items.js';
 import { FX } from './fx.js';
 import { ZombieManager } from './zombies.js';
 import { Player } from './player.js';
 import { Home, registerShelter } from './apartment.js';
 import { Story, Intro } from './story.js';
 import { UI, Clock } from './ui.js';
-import { bakeCorpseGeo } from './human.js';
+import { bakeCorpseGeo, variantGeo } from './human.js';
 
 const QUALITY = {
   low: { pr: 0.6, shadow: 0, post: false, chunkR: 1, zombies: 14, trees: 0.35, far: 56, farCity: false, fog: 1.8, aniso: 2 },
   medium: { pr: 0.85, shadow: 1024, post: true, chunkR: 1, zombies: 22, trees: 0.7, far: 80, farCity: true, fog: 1.2, aniso: 4 },
-  high: { pr: 1, shadow: 2048, post: true, chunkR: 2, zombies: 32, trees: 1, far: 104, farCity: true, fog: 1, aniso: 8 },
-  ultra: { pr: Math.min(devicePixelRatio, 2), shadow: 4096, post: true, chunkR: 2, zombies: 45, trees: 1.3, far: 128, farCity: true, fog: 0.9, aniso: 16 }
+  high: { pr: 1, shadow: 2048, post: true, ao: true, smaa: true, chunkR: 2, zombies: 32, trees: 1, far: 104, farCity: true, fog: 1, aniso: 8, tex: 1 },
+  ultra: { pr: Math.min(devicePixelRatio, 2), shadow: 4096, post: true, ao: true, smaa: true, chunkR: 2, zombies: 45, trees: 1.3, far: 128, farCity: true, fog: 0.9, aniso: 16, tex: 2 }
 };
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uFear: { value: 0 }, uHurt: { value: 0 }, uSat: { value: 0.88 }, uVig: { value: 0.85 }, uGrain: { value: 1 } },
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uFear: { value: 0 }, uHurt: { value: 0 }, uSat: { value: 0.74 }, uVig: { value: 0.85 }, uGrain: { value: 1 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
   fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uFear, uHurt, uSat, uVig, uGrain; varying vec2 vUv;
   void main(){ vec2 d = vUv - 0.5; float ca = 0.0012 + uFear * 0.0025 + uHurt * 0.006;
     vec3 c = vec3(texture2D(tDiffuse, vUv + d * ca).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - d * ca).b);
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
     c = mix(vec3(l), c, clamp(uSat - uFear * 0.3 - uHurt * 0.3, 0.0, 1.5));
-    c *= mix(vec3(0.93, 1.0, 1.06), vec3(1.06, 1.0, 0.92), smoothstep(0.0, 0.8, l));
+    c *= mix(vec3(0.9, 1.0, 0.98), vec3(1.04, 1.0, 0.93), smoothstep(0.0, 0.8, l));
+    c = c * c * (3.0 - 2.0 * c) * 0.18 + c * 0.82; c *= 0.97;
     float v = smoothstep(0.95, 0.2, length(d) * (1.0 + uFear * 0.35 + uHurt * 0.3));
     c *= mix(1.0, v, uVig); c = mix(c, c * vec3(1.3, 0.25, 0.2), uHurt * 0.55 * (1.0 - v));
     float n = fract(sin(dot(vUv * vec2(12.9898, 78.233) + fract(uTime) * 17.0, vec2(1.0))) * 43758.5453) - 0.5;
@@ -65,13 +68,16 @@ class Game extends Bus {
   async init() {
     const bar = document.querySelector('#load-bar i'), step = async (p) => { bar.style.width = p + '%'; await new Promise(r => setTimeout(r, 16)); };
     const q = this.Q; setAniso(Math.min(q.aniso, this.renderer.capabilities.getMaxAnisotropy()));
-    await step(5); buildTextures(q.pr < 0.7 ? 0.5 : 1); await step(25);
+    await step(5); buildTextures(q.tex || (q.pr < 0.7 ? 0.5 : 1)); await step(20);
+    this.loot = new LootManager(this);
     this.sky = new Sky(this.renderer, this.scene);
     this.fx = new FX(this); this.zombies = new ZombieManager(this);
     this.world = new World(this); this.player = new Player(this); this.ui = new UI(this);
     this.home = new Home(this); this.nav = this.home.nav; registerShelter(this);
     this.story = new Story(this); this.intro = new Intro(this);
-    await step(35); this.world.corpseG = [bakeCorpseGeo(3), bakeCorpseGeo(11)];
+    await step(25); this.world.corpseG = [bakeCorpseGeo(3), bakeCorpseGeo(11)];
+    // 인체 변형 미리 생성(첫 등장 끊김 방지)
+    let vk = 0; for (const k of ['zombie', 'civ', 'zsoldier', 'zpolice', 'zbrute']) for (let i = 0; i < (k === 'zombie' ? 8 : 3); i++) { variantGeo(k, i, 0); variantGeo(k, i, 1); if (++vk % 4 === 0) await step(25 + vk * 0.5); }
     this.applySettings(true); await step(45);
     // 시작 지역 미리 생성
     const cx = 0, cz = 0; let n = 0;
@@ -82,7 +88,8 @@ class Game extends Bus {
     // 셰이더 미리 컴파일
     this.camera.position.copy(this.intro.U(2.2, 1.6, 11.3)); this.renderer.compile(this.scene, this.camera);
     await step(100);
-    const b = document.getElementById('btn-start'); b.disabled = false; b.textContent = '게임 시작';
+    this.titleMode();
+    const b = document.getElementById('btn-start'); b.disabled = false; b.textContent = '새 게임';
     b.onclick = () => this.start();
     const save = this.loadJSON('sz_save'); if (save) { const c = document.getElementById('btn-continue'); c.classList.remove('hidden'); c.onclick = () => this.start(save); }
     document.getElementById('opt-optimize').onchange = e => { this.settings.optimize = e.target.checked; this.applySettings(); };
@@ -94,10 +101,11 @@ class Game extends Bus {
     const q = this.Q, S = this.settings, R = this.renderer;
     R.setPixelRatio(q.pr); R.setSize(innerWidth, innerHeight, false);
     R.shadowMap.enabled = q.shadow > 0; this.sky.setShadow(q.shadow, q.shadow >= 4096 ? 80 : 60);
-    this.world.setQuality(q); this.zombies.max = q.zombies; this.sky.fogBase = 0.00042 * q.fog;
+    this.world.setQuality(q); this.zombies.max = q.zombies; this.sky.fogBase = 0.0008 * q.fog;
     this.audio.setVolume(S.volume); this.voice.enabled = S.voice; this.voice.subs = S.subs;
     if (q.post && !this.composer) this.makeComposer(); this.usePost = q.post;
-    if (this.composer) { this.composer.setPixelRatio(q.pr); this.composer.setSize(innerWidth, innerHeight); this.fxaa.uniforms.resolution.value.set(1 / (innerWidth * q.pr), 1 / (innerHeight * q.pr)); }
+    if (q.ao && this.composer && !this.gtao) this.makeAO(); if (this.gtao) this.gtao.enabled = !!q.ao;
+    if (this.composer) { this.composer.setPixelRatio(q.pr); this.composer.setSize(innerWidth, innerHeight); if (this.fxaa) this.fxaa.uniforms.resolution.value.set(1 / (innerWidth * q.pr), 1 / (innerHeight * q.pr)); }
     if (!first) { this.scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.needsUpdate = true); }); this.world.farCenter = null; }
     this.camera.fov = S.fov; this.camera.updateProjectionMatrix();
     this.saveJSON('sz_settings', S);
@@ -108,7 +116,17 @@ class Game extends Bus {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.32, 0.55, 0.9); c.addPass(this.bloom);
     this.grade = new ShaderPass(GradeShader); c.addPass(this.grade);
     c.addPass(new OutputPass());
-    this.fxaa = new ShaderPass(FXAAShader); c.addPass(this.fxaa);
+    if (this.Q.smaa) { this.smaa = new SMAAPass(innerWidth * this.Q.pr, innerHeight * this.Q.pr); c.addPass(this.smaa); }
+    else { this.fxaa = new ShaderPass(FXAAShader); c.addPass(this.fxaa); }
+  }
+  makeAO() {
+    const g = this.gtao = new GTAOPass(this.scene, this.camera, innerWidth, innerHeight);
+    for (const m of [g.gtaoMaterial, g.pdMaterial]) { m.defines.LOG_DEPTH = ''; m.uniforms.uLogNear.value = this.camera.near; m.uniforms.uLogFar.value = this.camera.far; m.needsUpdate = true; }
+    g.updateGtaoMaterial({ radius: 0.7, distanceExponent: 1.5, thickness: 1.2, scale: 1.25, samples: 12, distanceFallOff: 0.8 });
+    g.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 12 });
+    g.blendIntensity = 1;
+    const orig = g.renderOverride.bind(g); g.renderOverride = (...a) => { this.fx.hideForAO(true); this.world.hideForAO(true); orig(...a); this.fx.hideForAO(false); this.world.hideForAO(false); };
+    this.composer.insertPass(g, 1);
   }
   resize() { this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix(); this.applySettings(true); if (this.ui.mapOpen) { this.ui.resizeMap(); this.ui.drawMap(); } }
   bindInput() {
@@ -116,6 +134,7 @@ class Game extends Bus {
     addEventListener('keydown', e => {
       if (e.code === 'Tab') e.preventDefault();
       if (this.state === 'title') return;
+      if (this.loot.open) { if (e.code === 'Escape' || e.code === 'Tab') this.loot.close(); else if (e.code === 'KeyE' && !e.repeat) this.loot.takeAll(); return; }
       if (e.code === 'Escape') { if (this.ui.mapOpen) this.ui.openMap(false); else if (this.ui.invOpen) this.ui.openInv(false); else if (this.ui.menuOpen) this.ui.toggleMenu(false); else if (this.ui.mode === 'cine') this.ui.toggleMenu(true); return; }
       if (e.code === 'KeyM' && !e.repeat && this.state === 'play' && !this.ui.menuOpen) { this.ui.openMap(!this.ui.mapOpen); return; }
       if (e.code === 'Tab' && !e.repeat && this.state === 'play' && !this.ui.menuOpen && !this.ui.mapOpen) { this.ui.openInv(!this.ui.invOpen); return; }
@@ -134,8 +153,29 @@ class Game extends Bus {
     addEventListener('blur', () => { for (const k in P.keys) P.keys[k] = false; P.mouse.l = P.mouse.r = false; });
   }
   requestLock() { const cv = this.renderer.domElement; if (document.pointerLockElement !== cv) { try { const r = cv.requestPointerLock(); if (r && r.catch) r.catch(() => { }); } catch (e) { } } }
+  // 메인 화면: 해 질 녘 서울 골목을 천천히 훑는 실시간 카메라 + 음악
+  titleMode() {
+    this.state = 'title'; this.clock.min = 8 * 60 + 50; this.titleT = 0; this.sky.cloud = 0.85; this.sky.fogMul = 2.2;
+    this.intro.street(); this.intro.streetDone = true;
+    const y = this.home.Y0;
+    this.zombies.spawn(58, y, 79, { type: 'walker', state: 'wander', noDespawn: true }); this.zombies.spawn(36, y, 83, { type: 'crawler', state: 'idle', noDespawn: true }); this.zombies.spawn(75, y, 76, { type: 'police', state: 'idle', noDespawn: true });
+    this.titleCam = [[96, y + 1.7, 87.5, 48, y + 4, 68], [62, y + 1.4, 86, 30, y + 3.5, 72], [30, y + 2.4, 87, 64, y + 2.5, 74]];
+    const unlock = () => { if (this.state !== 'title') return; this.audio.init(); this.audio.ctx.resume(); if (!this.titleMusic) { this.titleMusic = this.audio.loop('music', { amb: true, vol: 0.7, fade: 3 }); this.titleAmb = this.audio.loop('wind', { amb: true, vol: 0.3 }); document.getElementById('title-hint').textContent = ''; } };
+    addEventListener('pointerdown', unlock);
+  }
+  titleUpdate(dt) {
+    this.titleT += dt; const C = this.titleCam, n = C.length, T = 26, k = (this.titleT / T) % n, i = Math.floor(k), f = k - i, a = C[i], b = C[(i + 1) % n], e = f * f * (3 - 2 * f);
+    const P = this.player; P.pos.set(lerp(a[0], b[0], e), lerp(a[1], b[1], e) - 1.6, lerp(a[2], b[2], e));
+    this.camera.position.set(P.pos.x, P.pos.y + 1.6 + Math.sin(this.titleT * 0.4) * 0.05, P.pos.z); this.camera.lookAt(lerp(a[3], b[3], e), lerp(a[4], b[4], e), lerp(a[5], b[5], e));
+    this.time += dt; this.zombies.ignorePlayer = true;
+    this.world.update(dt, P.pos, this.time); this.zombies.update(dt); this.fx.update(dt); this.home.update(dt, this.time); this.blinkers.forEach(f => f(this.time));
+    this.sky.update(this.clock.hours, dt, P.pos, 0); this.night = 1 - this.sky.dayF; this.world.setNight(this.night, 1);
+    this.audio.listen(this.camera);
+  }
   start(save) {
     this.audio.init(); this.audio.ctx.resume(); this.applySettings(true);
+    if (this.titleMusic) { this.titleMusic.stop(2); this.titleAmb.stop(2); this.titleMusic = null; }
+    this.clock.min = 0; this.zombies.ignorePlayer = false; this.ui.titleSettings(false); this.sky.fogMul = 1; this.sky.cloud = 0.65;
     document.getElementById('title-screen').classList.add('hidden');
     this.ambLoops = [this.audio.loop('wind', { amb: true, vol: 0.35 })];
     if (save) { this.loadGame(save); return; }
@@ -149,7 +189,7 @@ class Game extends Bus {
   loop() {
     const now = performance.now(); let dt = Math.min(0.05, (now - this.last) / 1000); this.last = now;
     this.frames++; this.fpsT += dt; if (this.fpsT > 0.5) { document.getElementById('fps').textContent = `${Math.round(this.frames / this.fpsT)} FPS · 좀비 ${this.zombies.list.filter(z => !z.dead).length} · 청크 ${this.world.chunks.size}`; this.frames = 0; this.fpsT = 0; }
-    if (this.state === 'title') { this.renderFrame(dt); return; }
+    if (this.state === 'title') { this.titleUpdate(dt); this.renderFrame(dt); return; }
     if (this.state === 'intro' && this.playing) this.state = 'play';
     if (!this.paused) for (let i = 0; i < (this.timeScale || 1); i++) this.step(dt);
     this.renderFrame(dt);
@@ -178,7 +218,7 @@ class Game extends Bus {
     const day = this.clock.day; if (day >= 2 || h >= 21) this.power = Math.max(0, this.power - dt * 0.2);
     this.world.setNight(this.night, 0.15 + this.power * 0.85);
     this.weatherT = (this.weatherT ?? 300) - dt;
-    if (this.weatherT < 0) { this.weatherT = 200 + Math.random() * 400; const rain = day >= 2 && Math.random() < 0.45; if (rain !== this.fx.rainOn) { this.fx.rainOn = rain; if (rain) this.rainSnd = this.audio.loop('rain', { amb: true, vol: 0.6, fade: 4 }); else if (this.rainSnd) { this.rainSnd.stop(4); this.rainSnd = null; } } this.sky.cloud = rain ? 0.9 : 0.35 + Math.random() * 0.4; }
+    if (this.weatherT < 0) { this.weatherT = 200 + Math.random() * 400; const rain = day >= 2 && Math.random() < 0.45; if (rain !== this.fx.rainOn) { this.fx.rainOn = rain; if (rain) this.rainSnd = this.audio.loop('rain', { amb: true, vol: 0.6, fade: 4 }); else if (this.rainSnd) { this.rainSnd.stop(4); this.rainSnd = null; } } this.sky.cloud = rain ? 0.92 : 0.55 + Math.random() * 0.3; }
     if (this.night > 0.6 && !this.crickets && P.indoor < 0.5) this.crickets = this.audio.loop('crickets', { amb: true, vol: 0.25 }); else if ((this.night < 0.4 || P.indoor > 0.5) && this.crickets) { this.crickets.stop(); this.crickets = null; }
     if (!this.nightSaid && this.night > 0.7 && this.playing) { this.nightSaid = true; P.mono('night', true); }
     this.audio.chaos = this.playing ? (P.indoor > 0.5 ? 0.6 : 1) : 0.8;
@@ -208,13 +248,13 @@ class Game extends Bus {
   saveGame(auto) {
     const P = this.player, h = this.home;
     const s = { v: 1, p: P.save(), clock: this.clock.min, story: this.story.save(), taken: [...this.taken], power: this.power,
-      home: { tub: h.tubFill, door: { locked: h.door.locked, barricade: h.door.barricade, broken: h.door.broken, hp: h.door.hp }, kn: h.knife.visible, fl: h.fl.visible, mk: h.mk.visible, rd: h.rd.visible, bat: h.bat.visible }, obj: this.objective ? { name: this.objective.name, pos: this.objective.pos.toArray() } : null };
+      home: { tub: h.tubFill, door: { locked: h.door.locked, barricade: h.door.barricade, broken: h.door.broken, hp: h.door.hp }, kn: h.knife.visible, fl: h.fl.visible, mk: h.mk.visible, rd: h.rd.visible, bat: h.bat.visible }, obj: this.objective ? { name: this.objective.name, pos: this.objective.pos.toArray() } : null, loot: this.loot.save() };
     this.saveJSON('sz_save', s); this.ui.notify(auto ? '자동 저장됨' : '저장되었습니다');
   }
   loadGame(s) {
     this._noMenu = true; this.zombies.clear(); this.zombies.ignorePlayer = false;
     this.intro.active = false; this.intro.done = true;
-    this.clock.min = s.clock; this.taken = new Set(s.taken); this.power = s.power ?? 1;
+    this.clock.min = s.clock; this.taken = new Set(s.taken); this.power = s.power ?? 1; this.loot.load(s.loot);
     const h = this.home; h.tubFill = s.home.tub; h.tubWater.visible = h.tubFill > 0; h.tubWater.position.y = 6 + 0.06 + h.tubFill * 0.4;
     Object.assign(h.door, s.home.door); if (h.door.broken) h.door.breakOpen(); h.door.box.on = !h.door.broken; h.cabMove = h.door.barricade ? 1 : 0;
     h.knife.visible = s.home.kn; h.fl.visible = s.home.fl; h.mk.visible = s.home.mk; h.rd.visible = s.home.rd; h.bat.visible = s.home.bat; h.phone.visible = false; h.setTV('off');

@@ -57,7 +57,7 @@ export class Sky {
     scene.add(this.sun, this.sun.target);
     this.hemi = new THREE.HemisphereLight(0xbfd4ee, 0x4a4036, 0.6); scene.add(this.hemi);
     scene.fog = new THREE.FogExp2(0xaab4bd, 0.00045);
-    this.fogBase = 0.00045; this.dayF = 1; this.cloud = 0.5;
+    this.fogBase = 0.0008; this.dayF = 1; this.cloud = 0.65;
   }
   setShadow(size, range = 60) {
     const s = this.sun.shadow; this.sun.castShadow = size > 0;
@@ -79,7 +79,7 @@ export class Sky {
     const warm = smooth(0.35, 0.02, sunDir.y);
     this.sun.color.setRGB(1, lerp(0.96, 0.62, warm), lerp(0.9, 0.38, warm));
     if (!sunUp) this.sun.color.setRGB(0.55, 0.65, 1);
-    this.sun.intensity = sunUp ? lerp(0.0, 3.4, smooth(-0.02, 0.25, sunDir.y)) * (1 - this.cloud * 0.35) : 0.12;
+    this.sun.intensity = sunUp ? lerp(0.0, 3.4, smooth(-0.02, 0.25, sunDir.y)) * (1 - this.cloud * 0.55) : 0.12;
     this.sun.position.set(focus.x + L.x * 150, focus.y + L.y * 150, focus.z + L.z * 150);
     this.sun.target.position.copy(focus);
     this.hemi.intensity = lerp(0.05, 0.75, day) * (1 - indoor * 0.35);
@@ -87,7 +87,7 @@ export class Sky {
     this.hemi.groundColor.setRGB(lerp(0.03, 0.32, day), lerp(0.03, 0.28, day), lerp(0.04, 0.24, day));
     const fc = new THREE.Color().setRGB(lerp(0.025, 0.6, day) + warm * 0.12 * day, lerp(0.03, 0.65, day) + warm * 0.03 * day, lerp(0.05, 0.7, day));
     this.scene.fog.color.copy(fc);
-    this.scene.fog.density = this.fogBase * (1 + (1 - day) * 0.8);
+    this.scene.fog.density = this.fogBase * (this.fogMul || 1) * (1 + (1 - day) * 0.8) * (1 + indoor * -0.4);
     this.dome.position.copy(focus);
     this.envTimer -= dt;
     if (this.envTimer <= 0 || Math.abs(day - (this.envDay ?? -1)) > 0.06) { this.envTimer = 8; this.envDay = day; this.updateEnv(); }

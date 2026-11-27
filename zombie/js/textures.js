@@ -46,7 +46,7 @@ function pair(n, str, fn) { const p = pixels(n, fn); return { map: tex(p.c), nor
 
 export const T = {};
 export function buildTextures(q = 1) {
-  const S = q < 0.7 ? 256 : 512;
+  const S = q < 0.7 ? 256 : q > 1.5 ? 1024 : 512;
   // 아스팔트
   T.asphalt = pair(S, 3, (u, v) => {
     const n = fbm(u * 64, v * 64, 64, 3, 1), m = fbm(u * 6, v * 6, 6, 4, 2), sp = hash2(u * 4096, v * 4096, 3);
@@ -104,6 +104,8 @@ export function buildTextures(q = 1) {
   // 나무 잎/수피용 노이즈
   T.leaf = pair(128, 2, (u, v) => { const n = fbm(u * 16, v * 16, 16, 3, 81); const k = 0.7 + n * 0.5; return [k, k, k, n]; });
   T.facadeApt = facadeApt(); T.facadeVilla = facadeVilla(); T.facadeOffice = facadeOffice(); T.storefront = storefront();
+  for (const k of ['facadeApt', 'facadeVilla', 'facadeOffice', 'storefront']) surfaceMaps(T[k]);
+  T.weed = weedTex(); T.leaves = leavesTex();
   T.signs = signAtlas(); T.aptNum = aptNumbers(); T.roadMinor = roadTex(false); T.roadMain = roadTex(true); T.crosswalk = crosswalkTex();
   T.curtain = pair(128, 1.5, (u, v) => { const f = Math.sin(u * Math.PI * 24) * 0.5 + 0.5; const k = 0.75 + f * 0.25; return [k * 0.78, k * 0.72, k * 0.6, f]; });
   return T;
@@ -181,13 +183,59 @@ function storefront() {
   }
   return { map: tex(c) };
 }
+// 알베도에서 높이/거칠기 추출: 어두운 유리=움푹+매끈, 밝은 벽=거침
+function surfaceMaps(t) {
+  const c = t.map.image, W = c.width, H = c.height, d = c.getContext('2d').getImageData(0, 0, W, H).data;
+  const hc = cv(W, H), hx = hc.getContext('2d'), img = hx.createImageData(W, H), Hm = new Float32Array(W * H);
+  const rc = cv(W, H), rx = rc.getContext('2d'), rim = rx.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) {
+    const r = d[i * 4] / 255, g = d[i * 4 + 1] / 255, b = d[i * 4 + 2] / 255, l = 0.3 * r + 0.59 * g + 0.11 * b;
+    const glass = b >= r - 0.02 && l < 0.42 ? 1 : 0, n = hash2(i % W, (i / W) | 0, 7);
+    Hm[i] = glass ? 0.0 : 0.55 + l * 0.4 + n * 0.05;
+    const ro = glass ? 0.08 + n * 0.06 : 0.75 + n * 0.2; rim.data[i * 4] = rim.data[i * 4 + 1] = rim.data[i * 4 + 2] = ro * 255; rim.data[i * 4 + 3] = 255;
+  }
+  // 경계 부드럽게(창틀 깊이감)
+  const H2 = new Float32Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let a = 0; for (let k = -1; k <= 1; k++) for (let q = -1; q <= 1; q++) a += Hm[((y + k + H) % H) * W + (x + q + W) % W]; H2[y * W + x] = a / 9; }
+  rx.putImageData(rim, 0, 0);
+  // normalFrom 은 정사각 가정 → 직접 계산
+  const nc = cv(W, H), nx = nc.getContext('2d'), ni = nx.createImageData(W, H), at = (x, y) => H2[((y + H) % H) * W + (x + W) % W];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const dx = (at(x + 1, y) - at(x - 1, y)) * 4, dy = (at(x, y + 1) - at(x, y - 1)) * 4, l = Math.hypot(dx, dy, 1), k = (y * W + x) * 4; ni.data[k] = (-dx / l * 0.5 + 0.5) * 255; ni.data[k + 1] = (dy / l * 0.5 + 0.5) * 255; ni.data[k + 2] = (1 / l * 0.5 + 0.5) * 255; ni.data[k + 3] = 255; }
+  nx.putImageData(ni, 0, 0);
+  t.normalMap = tex(nc, false); t.roughnessMap = tex(rc, false);
+}
+// 잎 아틀라스(2×2): 잎이 다닥다닥 붙은 가지 카드 / 좌하단 모서리는 불투명(나무껍질 UV)
+function leavesTex() {
+  const N = 512, c = cv(N), x = c.getContext('2d'), r = rng(57);
+  for (let q = 0; q < 4; q++) {
+    const ox = (q % 2) * 256, oy = Math.floor(q / 2) * 256;
+    x.strokeStyle = 'rgba(70,55,40,1)'; x.lineWidth = 3; x.beginPath(); x.moveTo(ox + 128, oy + 250); x.quadraticCurveTo(ox + 110 + r() * 40, oy + 128, ox + 128 + (r() - 0.5) * 60, oy + 20); x.stroke();
+    for (let i = 0; i < 46; i++) {
+      const px = ox + 128 + (r() - 0.5) * 210, py = oy + 20 + r() * 210, s = 9 + r() * 12, a = r() * 6.28, k = 0.7 + r() * 0.45;
+      x.save(); x.translate(px, py); x.rotate(a); x.fillStyle = `rgb(${235 * k | 0},${235 * k | 0},${225 * k | 0})`;
+      x.beginPath(); if (q % 2) { x.moveTo(0, 0); x.arc(0, 0, s, -0.9, 0.9); x.closePath(); } else { x.ellipse(0, 0, s, s * 0.45, 0, 0, 6.28); } x.fill();
+      x.strokeStyle = 'rgba(0,0,0,.15)'; x.lineWidth = 1; x.beginPath(); x.moveTo(-s, 0); x.lineTo(s, 0); x.stroke(); x.restore();
+    }
+  }
+  x.fillStyle = '#d8d0c8'; x.fillRect(0, N - 24, 24, 24);
+  const t = tex(c); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return { map: t };
+}
+function weedTex() {
+  const c = cv(256, 256), x = c.getContext('2d'), r = rng(31);
+  for (let i = 0; i < 70; i++) {
+    const bx = 128 + (r() - 0.5) * 200, h = 90 + r() * 160, lean = (r() - 0.5) * 90, w = 3 + r() * 6;
+    const g = x.createLinearGradient(0, 256, 0, 256 - h); const k = 0.6 + r() * 0.5, dry = r() < 0.45;
+    g.addColorStop(0, dry ? `rgb(${90 * k | 0},${80 * k | 0},${40 * k | 0})` : `rgb(${40 * k | 0},${70 * k | 0},${25 * k | 0})`); g.addColorStop(1, dry ? `rgb(${170 * k | 0},${150 * k | 0},${80 * k | 0})` : `rgb(${90 * k | 0},${130 * k | 0},${50 * k | 0})`);
+    x.fillStyle = g; x.beginPath(); x.moveTo(bx - w, 256); x.quadraticCurveTo(bx + lean * 0.3, 256 - h * 0.6, bx + lean, 256 - h); x.quadraticCurveTo(bx + lean * 0.3 + 1, 256 - h * 0.55, bx + w, 256); x.fill();
+  }
+  const t = tex(c); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return { map: t };
+}
 function stains(x, W, H, r, a) {
   for (let i = 0; i < 30; i++) {
     const X = r() * W, w = 2 + r() * 6, h = 20 + r() * 80, g = x.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, `rgba(40,35,30,${a})`); g.addColorStop(1, 'rgba(40,35,30,0)'); x.fillStyle = g; x.save(); x.translate(X, r() * H); x.fillRect(0, 0, w, h); x.restore();
   }
 }
-export const SIGN_WORDS = ['편의점', '약국', '치킨', 'PC방', '노래방', '부동산', '미용실', '분식', '정육점', '세탁소', '안경원', '내과의원', '치과', '마트', '카페', '호프'];
+export const SIGN_WORDS = ['편의점', '약국', '치킨', 'PC방', '노래방', '부동산', '미용실', '분식', '정육점', '세탁소', '안경원', '내과의원', '치과', '마트', '카페', '파출소'];
 function signAtlas() {
   const W = 1024, H = 1024, c = cv(W, H), x = c.getContext('2d'), r = rng(17);
   const cols = [['#d62828', '#fff'], ['#1d4e89', '#fff'], ['#f4d35e', '#222'], ['#2a9d8f', '#fff'], ['#fff', '#c1121f'], ['#222', '#ffd166'], ['#6a4c93', '#fff'], ['#ff7b00', '#fff']];

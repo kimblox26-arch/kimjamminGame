@@ -357,9 +357,7 @@ export function registerShelter(game) {
     for (let k = 0; k < 6; k++) { c.corpses.push([lerp(r.x0 + 5, r.x1 - 5, R()), lerp(r.z0 + 22, r.z1 - 6, R()), R() * 6]); }
     W.addCar(c, r.x1 - 8, r.z0 + 24, 0.3, R);
     c.items.push({ id: 'shelter_rifle', type: 'rifle', x: ox + r.x0 + 24, y: top + 0.05, z: oz + r.z0 + 35 });
-    for (let k = 0; k < 4; k++) c.items.push({ id: 'shelter_ra' + k, type: 'rifleAmmo', x: ox + r.x0 + 22 + k, y: top + 0.05, z: oz + r.z0 + 35.5 });
-    c.items.push({ id: 'shelter_med', type: 'medkit', x: ox + r.x0 + 17, y: top + 0.05, z: oz + r.z0 + 41 });
-    c.items.push({ id: 'shelter_w', type: 'water', x: ox + r.x0 + 18, y: top + 0.05, z: oz + r.z0 + 41 });
+    for (let k = 0; k < 4; k++) { const bx = r.x0 + 12 + k * 7, bz = r.z0 + 36; B('concrete').box(bx - 0.5, top, bz - 0.35, bx + 0.5, top + 0.55, bz + 0.35, { su: 1, col: [0.26, 0.3, 0.2] }); game.col.box(ox + bx - 0.5, top, oz + bz - 0.35, ox + bx + 0.5, top + 0.55, oz + bz + 0.35, c.owner); game.loot.add({ id: 'shelter_crate' + k, table: 'military', name: '대피소 보급 상자', pos: new THREE.Vector3(ox + bx, top + 0.8, oz + bz), owner: c.owner }); }
     game.fx.addFire(new THREE.Vector3(ox + r.x0 + 38, top, oz + r.z0 + 30), c.owner, true);
     game.shelterPos = new THREE.Vector3(ox + (r.x0 + r.x1) / 2, top, oz + r.z0 + 36);
   });

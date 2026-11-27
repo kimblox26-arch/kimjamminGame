@@ -1,7 +1,7 @@
 // HUD / 메뉴 / 지도 / 가방 / 시계
 import * as THREE from 'three';
 import { COAST, DMZ, CITIES, HIGHWAYS, RIVERS, ll, toLatLon } from './korea.js';
-import { ITEMS } from './items.js';
+import { ITEMS, RARITY } from './items.js';
 import { WEAPONS } from './player.js';
 import { fmt2, clamp } from './util.js';
 
@@ -26,9 +26,13 @@ export class UI {
   bind() {
     const g = this.g;
     $('menu-btn').onclick = () => this.toggleMenu(true);
+    $('btn-settings').onclick = () => { g.audio.play('ui'); this.titleSettings(true); };
+    $('btn-howto').onclick = () => { g.audio.play('ui'); this.titleInfo(`WASD 이동 · Shift 달리기 · C 앉기 · Space 점프<br>마우스 왼쪽 공격/사격 · 오른쪽 조준 · R 재장전 · 1~6 무기<br>E(길게) 상호작용·수색 · F 손전등 · Tab 가방 · M 지도<br>H 치료 · X 먹기 · Z 마시기<br><b>좀비는 머리를 파괴해야 확실히 죽습니다.</b> 몸통 공격은 잠시 쓰러뜨릴 뿐입니다.`); };
+    $('btn-credits').onclick = () => { g.audio.play('ui'); this.titleInfo(`서울 감염: DAY ZERO — 오리지널 웹 좀비 서바이벌<br>엔진: three.js (WebGL) · 모든 모델·텍스처·사운드는 코드로 실시간 생성<br>맵: 실제 위경도 기반 대한민국 1:1`); };
     document.querySelectorAll('#menu [data-act]').forEach(b => b.onclick = () => {
       const a = b.dataset.act; g.audio.play('ui');
       if (a === 'resume') this.toggleMenu(false);
+      if (a === 'title') this.titleSettings(false);
       if (a === 'skip') { this.toggleMenu(false); g.intro.skip(); }
       if (a === 'map') { this.toggleMenu(false, true); this.openMap(true); }
       if (a === 'save') { g.saveGame(); }
@@ -43,6 +47,8 @@ export class UI {
     cv.onmousemove = e => { const d = this.map.drag; if (!d) return; this.map.cx = d[2] - (e.clientX - d[0]) / this.map.zoom; this.map.cz = d[3] - (e.clientY - d[1]) / this.map.zoom; this.drawMap(); };
     $('btn-retry').onclick = () => g.retry(); $('btn-freeplay').onclick = () => { $('ending').classList.add('hidden'); g.paused = false; g.requestLock(); };
   }
+  titleInfo(html) { const e = $('title-info'); e.innerHTML = html; e.classList.toggle('hidden', e.dataset.h === html && !e.classList.contains('hidden')); e.dataset.h = html; }
+  titleSettings(on) { $('menu').classList.toggle('hidden', !on); $('menu').classList.toggle('from-title', on); $('menu-title').textContent = on ? '설정' : '일시정지'; }
   setMode(m) {
     this.mode = m;
     this.hud.classList.toggle('hidden', m !== 'play');
@@ -52,7 +58,7 @@ export class UI {
     $('subtitle').style.display = '';
   }
   toggleMenu(on, keepPause) {
-    const g = this.g; $('menu').classList.toggle('hidden', !on);
+    const g = this.g; $('menu').classList.toggle('hidden', !on); $('menu').classList.remove('from-title'); $('menu-title').textContent = '일시정지';
     g.paused = on || !!keepPause; if (on) { document.exitPointerLock?.(); if (g.voice) speechSynthesis?.pause?.(); } else { speechSynthesis?.resume?.(); if (!keepPause && this.mode === 'play') g.requestLock(); }
     if (g.audio.ctx) on ? g.audio.ctx.suspend() : g.audio.ctx.resume();
   }
@@ -65,12 +71,16 @@ export class UI {
   }
   get invOpen() { return !$('inventory').classList.contains('hidden'); }
   drawInv() {
-    const P = this.g.player, L = $('inv-list'); L.innerHTML = '';
-    const row = (name, sub, fn) => { const d = document.createElement('div'); d.className = 'it'; d.innerHTML = `<span>${name}</span><small>${sub}</small>`; if (fn) d.onclick = () => { fn(); this.drawInv(); }; L.appendChild(d); };
-    for (const w of P.owned) { const W = WEAPONS[w]; row('🗡 ' + W.name, W.gun ? `탄창 ${P.mag[w]}/${W.mag} · 예비 ${P.ammo[w]}` : '근접', () => P.equip(w)); }
-    if (P.hasFlash) row('손전등', P.flashOn ? '켜짐' : '꺼짐', () => P.flashOn = !P.flashOn);
-    const keys = Object.keys(P.inv); if (!keys.length) row('(비어 있음)', '');
-    for (const k of keys) { const d = ITEMS[k]; row(`${d.name} ×${P.inv[k]}`, { food: '먹기 · 배고픔 +' + d.val, drink: '마시기 · 갈증 +' + d.val, heal: '치료 · 체력 +' + d.val, tool: '도구', misc: '잡동사니' }[d.kind] || '', () => P.use(k)); }
+    const P = this.g.player, L = $('inv-list'), G = $('inv-gear'); L.innerHTML = ''; G.innerHTML = '';
+    $('inv-weight').textContent = `${P.weight().toFixed(1)} / ${P.capacity()} kg`;
+    const row = (par, name, sub, col, fn, rfn) => { const d = document.createElement('div'); d.className = 'it'; d.innerHTML = `<span style="color:${col || '#eee'}">${name}</span><small>${sub}</small>`; if (fn) d.onclick = () => { fn(); this.drawInv(); }; if (rfn) d.oncontextmenu = e => { e.preventDefault(); rfn(); this.drawInv(); }; par.appendChild(d); };
+    row(G, '🎒 ' + (P.bag ? ITEMS[P.bag].name : '가방 없음'), `수용량 ${P.capacity()}kg`, P.bag ? RARITY[ITEMS[P.bag].r][1] : '#999');
+    for (const sl of ['head', 'body']) { const a = P.armor[sl]; row(G, (sl === 'head' ? '⛑ ' : '🦺 ') + (a ? ITEMS[a.type].name : sl === 'head' ? '머리 방어구 없음' : '몸 방어구 없음'), a ? `방어 ${Math.round(ITEMS[a.type].def * 100)}% · 내구도 ${Math.max(0, a.dur | 0)}` : '-', a ? RARITY[ITEMS[a.type].r][1] : '#888'); }
+    if (P.hasFlash) row(G, '🔦 손전등', `배터리 ${P.batt | 0}% · ${P.flashOn ? '켜짐' : '꺼짐'}`, '#ddd', () => P.flashOn = !P.flashOn);
+    for (const w of P.owned) { const W = WEAPONS[w], d = ITEMS[w]; row(G, (P.weapon === w ? '▶ ' : '') + W.name, W.gun ? `탄창 ${P.mag[w]}/${W.mag} · 예비 ${P.ammo[w]}` : (W.heavy ? '중량 근접' : '근접'), d ? RARITY[d.r][1] : '#ccc', () => P.equip(w)); }
+    const keys = Object.keys(P.inv); if (!keys.length) row(L, '(비어 있음)', '');
+    const sub = d => ({ food: '먹기 · 배고픔 +' + d.val, drink: '마시기 · 갈증 +' + d.val + (d.st ? ' · 기력' : ''), heal: '치료 · 체력 +' + d.val, armor: '장착 · 방어 ' + Math.round(d.def * 100) + '%', tool: '도구', misc: d.use ? '사용' : '재료' }[d.kind] || '');
+    for (const k of keys) { const d = ITEMS[k]; row(L, `${d.name} ×${P.inv[k]}`, `${RARITY[d.r][0]} · ${sub(d)} · ${(d.w * P.inv[k]).toFixed(1)}kg`, RARITY[d.r][1], () => P.use(k), () => P.drop(k)); }
   }
   resizeMap() { const c = $('map-canvas'); c.width = innerWidth; c.height = innerHeight; }
   drawMap() {
@@ -112,12 +122,14 @@ export class UI {
     for (const s of E.strip.children) { let a = +s.dataset.a - head; a = ((a + 540) % 360) - 180; s.style.left = (Wd / 2 + a * ppd) + 'px'; s.style.opacity = Math.abs(a) > 90 ? 0 : 1; }
     if (g.objective) { const p = P.vehicle ? P.vehicle.pos : P.pos, o = g.objective.pos, ang = Math.atan2(o.x - p.x, -(o.z - p.z)) * 180 / Math.PI; let a = ((ang - head + 540) % 360) - 180; const dist = Math.hypot(o.x - p.x, o.z - p.z); E.obj.style.left = (Wd / 2 + clamp(a, -88, 88) * ppd) + 'px'; E.obj.textContent = `◆ ${g.objective.name} ${dist > 1000 ? (dist / 1000).toFixed(1) + 'km' : (dist | 0) + 'm'}`; E.obj.style.display = ''; } else E.obj.style.display = 'none';
     E.fps.style.display = g.settings.showFps ? '' : 'none';
+    this._gT = (this._gT || 0) - dt; if (this._gT < 0) { this._gT = 0.5; $('gear').innerHTML = `가방 ${P.weight().toFixed(1)}/${P.capacity()}kg${P.armor.body ? ' · ' + ITEMS[P.armor.body.type].name : ''}${P.armor.head ? ' · ' + ITEMS[P.armor.head.type].name : ''}${P.hasFlash ? ' · 손전등 ' + (P.batt | 0) + '%' : ''}`; }
   }
   prompt(label, k = 0) {
     const E = this.el; if (!label) { E.prompt.style.display = 'none'; E.hold.style.display = 'none'; return; }
     E.prompt.style.display = 'block'; E.prompt.innerHTML = `<b>E</b>${label}`; E.hold.style.display = k > 0 ? 'block' : 'none'; E.holdBar.style.width = (k * 100) + '%';
   }
-  notify(t) { const d = document.createElement('div'); d.textContent = t; this.el.notify.appendChild(d); setTimeout(() => d.remove(), 3600); while (this.el.notify.children.length > 5) this.el.notify.firstChild.remove(); }
+  hitmarker(r) { const e = $('hitmarker'); e.classList.toggle('kill', !!r.kill); e.style.transition = 'none'; e.style.opacity = 1; e.style.transform = `scale(${r.head ? 1.3 : 1})`; requestAnimationFrame(() => { e.style.transition = 'opacity .35s'; e.style.opacity = 0; }); if (r.head && r.kill) { const h = $('headshot'); h.style.transition = 'none'; h.style.opacity = 1; requestAnimationFrame(() => { h.style.transition = 'opacity 1s'; h.style.opacity = 0; }); } this.g.audio.play('click', { vol: r.kill ? 0.5 : 0.25 }); }
+  notify(t, col) { const d = document.createElement('div'); d.textContent = t; if (col) d.style.color = col; this.el.notify.appendChild(d); setTimeout(() => d.remove(), 3600); while (this.el.notify.children.length > 5) this.el.notify.firstChild.remove(); }
   tasks(title, steps) { const E = this.el.tasks; if (!title) { E.innerHTML = ''; return; } E.innerHTML = `<div class="t-title">${title}</div>` + steps.map(s => `<div class="t-step ${s.done ? 'done' : ''}">${s.txt}</div>`).join(''); }
   centerTask(label, title, desc, dur = 5) { const E = this.el.ct; E.innerHTML = `<div class="ct-label">${label}</div><div class="ct-title">${title}</div><div class="ct-desc">${desc}</div>`; E.classList.add('show'); clearTimeout(this._ct); this._ct = setTimeout(() => E.classList.remove('show'), dur * 1000); }
   hurt(k) { const e = $('fx-hurt'); e.style.transition = 'none'; e.style.opacity = k; requestAnimationFrame(() => { e.style.transition = 'opacity 1.2s'; e.style.opacity = 0; }); }

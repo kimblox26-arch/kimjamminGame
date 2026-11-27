@@ -5,8 +5,7 @@ import { MB, hash2, rng, pick, clamp, smooth, lerp } from './util.js';
 import { heightRaw, terrainH, gridH, urban, landDist, HIGHWAYS, DMZ, TG } from './korea.js';
 import { carGeo, carMaterials, CAR_COLORS, Vehicle } from './vehicle.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { LOOT_STORE, LOOT_CAR } from './items.js';
-import { bakeCorpseGeo } from './human.js';
+import { bakeCorpseGeo, humanMat } from './human.js';
 
 export const CH = 240, CN = CH / TG;
 const XB = [[0, 12, 'M'], [75, 85, 'm'], [155, 165, 'm'], [228, 240, 'M']];
@@ -60,31 +59,46 @@ export class World {
       wall: S({ map: T.wallpaper.map, normalMap: T.wallpaper.normalMap, vertexColors: true, roughness: 0.9 }),
       glass: new THREE.MeshStandardMaterial({ color: 0x223038, roughness: 0.04, metalness: 0.2, transparent: true, opacity: 0.32, depthWrite: false }),
       cooler: S({ color: 0xffffff, emissive: 0xe8f4ff, emissiveIntensity: 0.6, vertexColors: true }),
-      tree: S({ vertexColors: true, map: T.leaf.map, roughness: 0.85 }),
+      tree: S({ vertexColors: true, map: T.leaves.map, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.8 }),
+      litter: S({ vertexColors: true, map: T.leaves.map, alphaTest: 0.42, roughness: 0.9 }),
       blood: new THREE.MeshStandardMaterial({ color: 0x3a0303, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }),
       hay: S({ color: 0xf2f2ee, roughness: 0.4 }), vinyl: new THREE.MeshStandardMaterial({ color: 0xe8efe8, roughness: 0.3, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
-      corpse: S({ vertexColors: true, roughness: 0.7, normalMap: T.clothNormal })
+      corpse: humanMat(true)
     };
+    m.wire = new THREE.LineBasicMaterial({ color: 0x111111, transparent: true, opacity: 0.85 });
+    m.weed = new THREE.MeshStandardMaterial({ map: T.weed.map, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.9 });
+    this.windU = { value: 0 };
+    m.weed.onBeforeCompile = (sh) => { sh.uniforms.uWind = this.windU; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvec4 ip = instanceMatrix * vec4(0.0,0.0,0.0,1.0); float sw = sin(uWind * 1.7 + ip.x * 0.7 + ip.z * 0.5) * 0.08 * uv.y; transformed.x += sw; transformed.z += sw * 0.6;'); };
+    this.leafDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: T.leaves.map, alphaTest: 0.42 });
+    this.litterG = (() => { const b = new MB(); b.quad([-0.5, 0, 0.5], [0.5, 0, 0.5], [0.5, 0, -0.5], [-0.5, 0, -0.5], [0, 1, 0], [0.04, 0.54, 0.46, 0.96]); return b.build(); })();
+    this.weedG = (() => { const b = new MB(); for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3, cx = Math.cos(a) * 0.35, cz = Math.sin(a) * 0.35; b.quad([-cx, 0, -cz], [cx, 0, cz], [cx, 0.55, cz], [-cx, 0.55, -cz], [Math.sin(a), 0.3, -Math.cos(a)]); } return b.build(); })();
+    for (const k of ['apt', 'villa', 'office', 'store']) if (T[{ apt: 'facadeApt', villa: 'facadeVilla', office: 'facadeOffice', store: 'storefront' }[k]].normalMap) { const t = T[{ apt: 'facadeApt', villa: 'facadeVilla', office: 'facadeOffice', store: 'storefront' }[k]]; m[k].normalMap = t.normalMap; m[k].roughnessMap = t.roughnessMap; m[k].roughness = 1; m[k].normalScale = new THREE.Vector2(1.2, 1.2); }
     m.far = S({ vertexColors: true, roughness: 1 }); holeShader(m.far, this.hole);
     m.farCity = S({ color: 0xbfc2c4, roughness: 0.9, map: T.facadeApt.map, emissiveMap: T.facadeApt.emissiveMap, emissive: 0xffffff, emissiveIntensity: 0 }); holeShader(m.farCity, this.hole);
     return m;
   }
+  // 잎 카드 나무: 실제 잎 텍스처를 붙인 수십 장의 카드 + 가지 (11월: 은행 노랑·단풍·반쯤 앙상)
   makeTrees() {
-    const mk = (fn) => { const b = new MB(); fn(b); return b.build(); };
-    const trunk = (b, h, r, col) => { const g = new THREE.CylinderGeometry(r * 0.6, r, h, 6); g.translate(0, h / 2, 0); b.geo(g, col); };
-    const blob = (b, x, y, z, s, col, sy = 1) => {
-      for (let c = 0; c < 4; c++) { // 잎 덩어리 여러 개로 풍성하게
-        let g = new THREE.IcosahedronGeometry(s * (c ? 0.55 : 0.8), 1); g.deleteAttribute('normal'); g.deleteAttribute('uv'); g = mergeVertices(g);
-        const p = g.attributes.position, ox = c ? Math.cos(c * 2.1) * s * 0.55 : 0, oz = c ? Math.sin(c * 2.1) * s * 0.55 : 0, oy = c ? (c - 2) * s * 0.18 : s * 0.1;
-        for (let i = 0; i < p.count; i++) { const X = p.getX(i), Y = p.getY(i), Z = p.getZ(i), k = 1 + (Math.sin(X * 7.1 + Y * 3.3) * Math.cos(Z * 5.7 - Y * 2.9)) * 0.22; p.setXYZ(i, X * k + ox, (Y * k) * sy + oy, Z * k + oz); }
-        g.computeVertexNormals(); g.translate(x, y, z); const t = 0.88 + c * 0.05; b.geo(g, [col[0] * t, col[1] * t, col[2] * t]);
+    const R = rng(77), mk = (fn) => { const b = new MB(); fn(b); return b.build(); };
+    const bark = (g, col, b) => { const u = g.attributes.uv; for (let i = 0; i < u.count; i++) u.setXY(i, 0.03, 0.03); b.geo(g, col); };
+    const trunk = (b, h, r, col) => { const g = new THREE.CylinderGeometry(r * 0.55, r, h, 7); g.translate(0, h / 2, 0); bark(g, col, b); };
+    const branches = (b, y0, h, n, len, col, up = 0.6) => { for (let k = 0; k < n; k++) { const a = k / n * 6.28 + R(), g = new THREE.CylinderGeometry(0.025, 0.06, len, 5); g.translate(0, len / 2, 0); g.rotateZ(-(1.57 - up - R() * 0.4)); g.rotateY(a); g.translate(0, y0 + R() * h, 0); bark(g, col, b); } };
+    const cards = (b, cx, cy, cz, rx, ry, n, col, size, sparse = 0) => {
+      for (let k = 0; k < n; k++) {
+        const th = R() * 6.28, ph = Math.acos(2 * R() - 1), rr = Math.cbrt(0.35 + R() * 0.65);
+        const p = new THREE.Vector3(cx + Math.sin(ph) * Math.cos(th) * rx * rr, cy + Math.cos(ph) * ry * rr, cz + Math.sin(ph) * Math.sin(th) * rx * rr);
+        const yaw = R() * 6.28, pit = (R() - 0.5) * 1.4, s = size * (0.7 + R() * 0.6);
+        const r = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw)).multiplyScalar(s / 2), u = new THREE.Vector3(-Math.sin(yaw) * Math.sin(pit), Math.cos(pit), Math.cos(yaw) * Math.sin(pit)).multiplyScalar(s / 2);
+        const n0 = p.clone().sub(new THREE.Vector3(cx, cy - ry * 0.3, cz)).normalize(), t = 0.75 + R() * 0.4, c = [col[0] * t, col[1] * t, col[2] * t];
+        const uo = (R() * 2 | 0) * 0.5, vo = (R() * 2 | 0) * 0.5;
+        b.quad(p.clone().sub(r).sub(u).toArray(), p.clone().add(r).sub(u).toArray(), p.clone().add(r).add(u).toArray(), p.clone().sub(r).add(u).toArray(), n0.toArray(), [uo + 0.04, vo + 0.04, uo + 0.48, vo + 0.48], c);
       }
     };
     return {
-      ginkgo: mk(b => { trunk(b, 5, 0.18, [0.3, 0.24, 0.18]); blob(b, 0, 5.2, 0, 1.9, [0.92, 0.68, 0.1], 1.5); blob(b, -0.3, 6.6, -0.2, 1.1, [0.95, 0.74, 0.16]); }),
-      maple: mk(b => { trunk(b, 3.2, 0.16, [0.28, 0.2, 0.15]); blob(b, 0, 4, 0, 2.2, [0.72, 0.16, 0.06], 0.85); }),
-      pine: mk(b => { trunk(b, 7, 0.2, [0.32, 0.22, 0.16]); for (let i = 0; i < 4; i++) { const g = new THREE.ConeGeometry(2.2 - i * 0.45, 2.6, 7); g.translate(0, 4 + i * 1.5, 0); b.geo(g, [0.12 + i * 0.01, 0.24, 0.12]); } }),
-      oak: mk(b => { trunk(b, 3.5, 0.2, [0.3, 0.24, 0.18]); blob(b, 0, 4.5, 0, 2.5, [0.52, 0.4, 0.17], 0.9); })
+      ginkgo: mk(b => { trunk(b, 6.5, 0.17, [0.26, 0.22, 0.18]); branches(b, 2.5, 3.5, 7, 1.6, [0.24, 0.2, 0.16], 0.9); cards(b, 0, 5.2, 0, 1.6, 2.4, 70, [0.96, 0.72, 0.14], 0.9); }),
+      maple: mk(b => { trunk(b, 3.0, 0.15, [0.25, 0.18, 0.14]); branches(b, 2.0, 1.5, 6, 1.8, [0.23, 0.17, 0.13], 0.5); cards(b, 0, 3.9, 0, 2.2, 1.5, 70, [0.78, 0.2, 0.07], 0.85); cards(b, 0, 3.9, 0, 2.0, 1.3, 20, [0.85, 0.45, 0.1], 0.8); }),
+      pine: mk(b => { trunk(b, 8, 0.2, [0.3, 0.2, 0.15]); for (let i = 0; i < 6; i++) cards(b, 0, 3.2 + i * 1.0, 0, 2.0 - i * 0.28, 0.55, 22, [0.16, 0.27, 0.13], 1.1); }),
+      oak: mk(b => { trunk(b, 3.6, 0.2, [0.28, 0.23, 0.18]); branches(b, 2.2, 1.6, 8, 2.0, [0.26, 0.21, 0.16], 0.45); cards(b, 0, 4.6, 0, 2.4, 1.7, 55, [0.55, 0.42, 0.16], 0.9); cards(b, 0, 4.6, 0, 2.2, 1.5, 15, [0.38, 0.33, 0.14], 0.9); })
     };
   }
   makeWater() {
@@ -113,9 +127,11 @@ export class World {
     if (this.chunks.has(this.key(cx, cz))) this.hole.value.set((cx - r) * CH + 1, (cz - r) * CH + 1, (cx + r + 1) * CH - 1, (cz + r + 1) * CH - 1); else this.hole.value.set(0, 0, 0, 0);
     this.updateFar(pos);
     // 물
+    this.windU.value = t;
     this.water.position.x = Math.round(pos.x / 40) * 40; this.water.position.z = Math.round(pos.z / 40) * 40;
     this.waterN.offset.set((this.water.position.x / 40) % 1 + t * 0.004, (-this.water.position.z / 40) % 1 + t * 0.0025);
   }
+  hideForAO(on) { for (const c of this.chunks.values()) if (c.noAO) for (const m of c.noAO) m.visible = !on; if (this.far) this.far.visible = !on; this.water.visible = !on; }
   setNight(n, power) {
     this.night = n; const m = this.mats;
     m.apt.emissiveIntensity = n * 0.9 * power; m.office.emissiveIntensity = n * 0.7 * power; m.sign.emissiveIntensity = n * 0.6 * power;
@@ -132,7 +148,7 @@ export class World {
     const ox = cx * CH, oz = cz * CH, owner = 'c' + cx + ',' + cz;
     const R = rng((Math.imul(cx, 73856093) ^ Math.imul(cz, 19349663)) + 12345);
     const g = new THREE.Group(); g.position.set(ox, 0, oz);
-    const c = { cx, cz, ox, oz, owner, group: g, spawns: [], vehicles: [], R, mb: {}, inst: {}, items: [], cars: [], corpses: [] };
+    const c = { cx, cz, ox, oz, owner, group: g, spawns: [], vehicles: [], R, mb: {}, inst: {}, items: [], cars: [], corpses: [], weeds: [] };
     c.B = (k) => c.mb[k] ||= new MB();
     c.tree = (type, x, y, z, s = 1, rot = 0) => (c.inst[type] ||= []).push([x, y, z, s, rot]);
     this.chunks.set(this.key(cx, cz), c);
@@ -144,14 +160,20 @@ export class World {
     this.highways(c); this.dmz(c);
     // 메시 확정
     const shadowless = new Set(['cross', 'blood', 'glass', 'sign', 'aptNum', 'roadM', 'roadm', 'asphalt']);
-    for (const k in c.mb) { if (c.mb[k].empty) continue; const m = c.mb[k].mesh(this.mats[k], !shadowless.has(k)); if (k === 'glass' || k === 'blood') m.renderOrder = 2; g.add(m); }
+    c.noAO = [];
+    for (const k in c.mb) { if (c.mb[k].empty) continue; const m = c.mb[k].mesh(this.mats[k], !shadowless.has(k)); if (k === 'glass' || k === 'blood' || k === 'cross') { m.renderOrder = 2; c.noAO.push(m); } g.add(m); }
     for (const type in c.inst) {
       const L = c.inst[type], im = new THREE.InstancedMesh(this.treeG[type], this.mats.tree, L.length); im.userData.shared = true;
       const M = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
       L.forEach(([x, y, z, s, r], i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r); M.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(s, s * (0.85 + (i % 7) * 0.05), s)); im.setMatrixAt(i, M); const k = 0.8 + hash2(i, cx, cz) * 0.4; im.setColorAt(i, col.setRGB(k, k, k)); });
-      im.castShadow = true; im.receiveShadow = true; im.computeBoundingSphere(); g.add(im);
+      im.castShadow = true; im.receiveShadow = true; im.customDepthMaterial = this.leafDepth; im.computeBoundingSphere(); g.add(im); c.noAO.push(im);
     }
     this.buildCars(c); this.buildCorpses(c);
+    if (c.urban) { const n = 260, im = new THREE.InstancedMesh(this.litterG, this.mats.litter, n), M4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color(); im.userData.shared = true; let k = 0; const Rr = c.R;
+      while (k < n) { const x = Rr() * CH, z = Rr() * CH, h = this.col.groundAt(ox + x, oz + z, 1e4, 0, 0.1) + 0.03; q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Rr() * 6.28); const s = 0.5 + Rr() * 0.9; M4.compose(new THREE.Vector3(x, h - 0 * oz, z), q, new THREE.Vector3(s, 1, s)); im.setMatrixAt(k, M4); const t = Rr(); im.setColorAt(k, col.setRGB(t < 0.7 ? 0.95 : 0.6, t < 0.7 ? 0.72 : 0.42, t < 0.7 ? 0.15 : 0.18)); k++; }
+      im.computeBoundingSphere(); im.receiveShadow = true; g.add(im); c.noAO.push(im); }
+    if (c.weeds.length) { const L = c.weeds, im = new THREE.InstancedMesh(this.weedG, this.mats.weed, L.length), M4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color(); im.userData.shared = true; L.forEach(([x, y, z, s], i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hash2(i, cx, cz) * 6.28); M4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(s, s * (0.7 + hash2(i, cz, 3) * 0.7), s)); im.setMatrixAt(i, M4); const k = 0.7 + hash2(i, 5, cx) * 0.5; im.setColorAt(i, col.setRGB(k * (0.9 + hash2(i, 1, 1) * 0.3), k, k * 0.8)); }); im.computeBoundingSphere(); im.receiveShadow = true; g.add(im); c.noAO.push(im); }
+    if (c.wires && c.wires.length) { const P = []; for (const [ax, ay, az, bx, by, bz, sag] of c.wires) { let px = ax, py = ay, pz = az; for (let k = 1; k <= 8; k++) { const t = k / 8, x = lerp(ax, bx, t), z = lerp(az, bz, t), y = lerp(ay, by, t) - Math.sin(t * Math.PI) * sag; P.push(px, py, pz, x, y, z); px = x; py = y; pz = z; } } const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); const wl = new THREE.LineSegments(lg, this.mats.wire); g.add(wl); c.noAO.push(wl); }
     this.scene.add(g);
     g.updateMatrixWorld(true);
     if (c.items.length) this.game.items.spawn(c.items, owner);
@@ -246,6 +268,9 @@ export class World {
     if (R() < 0.12 || (c.cx === 0 && c.cz === 0)) this.addDrivable(c, R);
     // 블록
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) this.block(c, i, j);
+    this.poles(c);
+    for (let k = 0; k < 3; k++) if (R() < 0.35) { const s = pick(R, c.spawns); if (s) { const x = s[0] - ox + 3, z = s[1] - oz; this.barrier(c, x, z, R() * 3); if (R() < 0.5) this.barrier(c, x + 2, z + 0.5, R() * 3); } }
+    for (let k = 0; k < 40; k++) { const x = R() * CH, z = R() * CH, h = terrainH(ox + x, oz + z); if (h > 0.8) c.weeds.push([x, h + 0.06, z, 0.5 + R() * 0.7]); }
     if (c.fire) { const p = pick(R, c.spawns); if (p) this.game.fx.addFire(new THREE.Vector3(p[0], terrainH(p[0], p[1]), p[1]), c.owner, R() < 0.5); }
   }
   block(c, i, j) {
@@ -262,6 +287,8 @@ export class World {
     // 가로수 / 가로등 (블록 가장자리)
     for (let x = x0 + 4; x < x1 - 2; x += 11) { c.tree('ginkgo', x, top, z0 + 1.4, 0.8 + R() * 0.3, R() * 6); c.tree('ginkgo', x, top, z1 - 1.4, 0.8 + R() * 0.3, R() * 6); }
     for (let x = x0 + 8; x < x1; x += 30) { this.streetLight(c, x, top, z0 + 0.6, 1); this.streetLight(c, x, top, z1 - 0.6, -1); }
+    if (R() < 0.45) this.junk(c, x0 + 1.5 + R() * 3, z0 + 1.2, top, R() < 0.3);
+    for (let k = 0; k < 14; k++) { const e = R() * 4 | 0, t = R(); const wx = e < 2 ? lerp(x0, x1, t) : e === 2 ? x0 + 0.15 : x1 - 0.15, wz = e === 0 ? z0 + 0.15 : e === 1 ? z1 - 0.15 : lerp(z0, z1, t); c.weeds.push([wx, top, wz, 0.5 + R() * 0.6]); c.weeds.push([wx + (e < 2 ? 0 : (e === 2 ? -0.6 : 0.6)), terrainH(ox + wx, oz + wz) + 0.07, wz + (e === 0 ? -0.6 : e === 1 ? 0.6 : 0), 0.4 + R() * 0.5]); }
     const ix0 = x0 + 3, ix1 = x1 - 3, iz0 = z0 + 3, iz1 = z1 - 3;
     const sp = this.special.get(`${c.cx},${c.cz},${i},${j}`);
     if (sp) { sp(c, { x0: ix0, x1: ix1, z0: iz0, z1: iz1, top }); return; }
@@ -298,6 +325,7 @@ export class World {
       c.B('concrete').box(x0 + len * 0.4, y0 + H, z0 + 3, x0 + len * 0.6, y0 + H + 3, z1 - 3, { su: 4, col: [0.85, 0.83, 0.78] }); // 옥탑
       c.B('concrete').box(x0 + len / 2 - 2, y0, z1, x0 + len / 2 + 2, y0 + 3, z1 + 2.5, { su: 4, col: [0.5, 0.5, 0.52] }); // 출입구
       this.col.box(c.ox + x0 + len / 2 - 2, y0, c.oz + z1, c.ox + x0 + len / 2 + 2, y0 + 3, c.oz + z1 + 2.5, c.owner);
+      if (R() < 0.6) { const px = x0 + len / 2 + 2.6, pz = z1 + 1.5; for (let q = 0; q < 4; q++) c.B('concrete').box(px + (q % 2) * 0.5, y0 + Math.floor(q / 2) * 0.35, pz, px + (q % 2) * 0.5 + 0.45, y0 + Math.floor(q / 2) * 0.35 + 0.33, pz + 0.4, { su: 1, col: [0.62, 0.45, 0.28] }); this.game.loot.add({ id: `${c.owner}pc${k}${Math.round(x0)}`, table: 'parcel', pos: new THREE.Vector3(c.ox + px + 0.5, y0 + 0.6, c.oz + pz + 0.2), owner: c.owner }); }
       for (let x = x0; x < x1 - 4; x += 5.5) if (R() < 0.5) this.addCar(c, x + 2, z1 + 6 + (k ? -3 : 0), Math.PI / 2 * (R() < 0.5 ? 1 : -1) + Math.PI / 2, R);
     }
     for (let k = 0; k < 6 * this.treeDensity; k++) c.tree(R() < 0.5 ? 'maple' : 'ginkgo', lerp(r.x0, r.x1, R()), r.top, lerp(r.z0, r.z1, R()) > (r.z0 + r.z1) / 2 ? r.z1 - 1 : r.z0 + 1, 0.8 + R() * 0.3, R() * 6);
@@ -358,6 +386,7 @@ export class World {
         this.sign(c, x + 0.4, x + w - 0.4, y0 + 3.7, y0 + 4.9, sz, side ? 1 : -1, si);
         for (let k = 0; k < Math.min(f - 1, 3); k++) if (R() < 0.6) { const sx = x + 1 + R() * (w - 6); this.sign(c, sx, sx + 4, y0 + 5.5 + k * 3.2, y0 + 6.4 + k * 3.2, sz, side ? 1 : -1, Math.floor(R() * 16)); }
         if (R() < 0.08) this.cross(c, x + w / 2, y0 + H, (z0 + z1) / 2);
+        if (R() < 0.06) { const fx = x + 0.3, fzz = side ? z1 + 0.12 : z0 - 0.12; c.B('metal').box(fx, y0 + 0.6, Math.min(fzz, fzz - (side ? -0.25 : 0.25)), fx + 0.7, y0 + 1.6, Math.max(fzz, fzz - (side ? -0.25 : 0.25)), { col: [0.75, 0.08, 0.06] }); this.game.loot.add({ id: `${c.owner}fb${Math.round(x)}${side}`, table: 'fireBox', pos: new THREE.Vector3(c.ox + fx + 0.35, y0 + 1.1, c.oz + fzz), owner: c.owner }); }
         x += w + 0.3;
       }
     }
@@ -376,6 +405,7 @@ export class World {
   }
   // 진입 가능한 편의점 (dir: 정면이 +z(1) 또는 -z(-1))
   store(c, x0, z0, x1, z1, y0, dir) {
+    const kind = c.cx === 0 && c.cz === 0 ? 'conv' : (r => r < 0.6 ? 'conv' : r < 0.85 ? 'pharm' : 'police')(c.R());
     const { B, ox, oz, R } = c, H = 3.6, t = 0.25, fz = dir > 0 ? z1 : z0, bz = dir > 0 ? z0 : z1, sgn = dir;
     const wall = (ax, az, bx, bz2, yA = y0, yB = y0 + H) => {
       const X0 = Math.min(ax, bx), X1 = Math.max(ax, bx), Z0 = Math.min(az, bz2), Z1 = Math.max(az, bz2);
@@ -396,22 +426,59 @@ export class World {
     B('concrete').box(x0, y0 + H, z0, x1, y0 + H + 0.3, z1, { su: 4, col: [0.9, 0.9, 0.9] });
     for (let k = 0; k < 3; k++) B('cooler').box(x0 + 1.5 + k * 3, y0 + H - 0.03, z0 + 2, x0 + 2.7 + k * 3, y0 + H, z1 - 2, { faces: 8, col: [1, 1, 1] });
     // 간판
-    this.sign(c, x0 + 0.5, x1 - 0.5, y0 + H - 0.05, y0 + H + 1.1, fz + sgn * 0.2, sgn, 0);
+    this.sign(c, x0 + 0.5, x1 - 0.5, y0 + H - 0.05, y0 + H + 1.1, fz + sgn * 0.2, sgn, kind === 'conv' ? 0 : kind === 'pharm' ? 1 : 15);
+    const tb = kind === 'pharm' ? 'pharmacy' : kind === 'police' ? 'locker' : 'shelf', L = (id, table, x, y, z, name) => this.game.loot.add({ id: c.owner + id, table, name, pos: new THREE.Vector3(ox + x, y, oz + z), owner: c.owner });
     // 진열대 + 계산대 + 냉장고
     const items = [];
     for (let k = 0; k < 3; k++) {
       const sx0 = x0 + 1.4, sx1 = x1 - 4.2, sz = lerp(z0 + 2.6, z1 - 2.6, k / 2) - 0.35;
       B('metal').box(sx0, y0, sz, sx1, y0 + 1.5, sz + 0.7, { col: [0.85, 0.86, 0.88] });
       this.col.box(ox + sx0, y0, oz + sz, ox + sx1, y0 + 1.5, oz + sz + 0.7, c.owner);
-      for (let q = 0; q < 2; q++) if (R() < 0.75) items.push([lerp(sx0 + 0.5, sx1 - 0.5, R()), y0 + 1.5, sz + 0.35]);
+      L('sh' + k, tb, (sx0 + sx1) / 2, y0 + 1.1, sz + 0.35); this.shelfGoods(c, sx0, sx1, y0, sz, kind);
     }
     const cz0 = dir > 0 ? z1 - 3.2 : z0 + 2.2;
     B('metal').box(x1 - 3.4, y0, cz0, x1 - 1.2, y0 + 1.05, cz0 + 1, { col: [0.35, 0.3, 0.28] }); this.col.box(ox + x1 - 3.4, y0, oz + cz0, ox + x1 - 1.2, y0 + 1.05, oz + cz0 + 1, c.owner);
     const bz0 = dir > 0 ? z0 + t : z0 + (z1 - z0) - t - 0.8;
     B('cooler').box(x0 + 1, y0, bz0, x1 - 1, y0 + 2.1, bz0 + 0.8, { col: [0.8, 0.85, 0.9] }); this.col.box(ox + x0 + 1, y0, oz + bz0, ox + x1 - 1, y0 + 2.1, oz + bz0 + 0.8, c.owner);
-    for (let q = 0; q < 3; q++) if (R() < 0.7) items.push([lerp(x0 + 1.5, x1 - 1.5, R()), y0 + 0.9, dir > 0 ? bz0 + 1.0 : bz0 - 0.2]);
-    items.forEach((p, k) => c.items.push({ id: `${c.owner}s${k}`, type: pick(R, LOOT_STORE), x: ox + p[0], y: p[1], z: oz + p[2] }));
+    L('ct', kind === 'police' ? 'locker' : 'counter', x1 - 2.3, y0 + 1.0, cz0 + 0.5, kind === 'police' ? '책상 서랍' : null);
+    L('co', kind === 'conv' ? 'cooler' : tb, (x0 + x1) / 2, y0 + 1.1, dir > 0 ? bz0 + 0.8 : bz0, kind === 'police' ? '무기 보관함' : null);
     c.spawns.push([ox + (x0 + x1) / 2, oz + (z0 + z1) / 2]);
+  }
+  shelfGoods(c, x0, x1, y0, z, kind) {
+    const R = c.R, B = c.B('metal'), cols = kind === 'pharm' ? [[0.9, 0.9, 0.92], [0.3, 0.6, 0.85], [0.85, 0.3, 0.3]] : [[0.85, 0.2, 0.15], [0.95, 0.75, 0.2], [0.2, 0.45, 0.8], [0.9, 0.9, 0.85], [0.3, 0.65, 0.3]];
+    for (const h of [0.55, 1.0, 1.5]) for (let x = x0 + 0.1; x < x1 - 0.2; x += 0.16 + R() * 0.1) { if (R() < 0.35) continue; const w = 0.08 + R() * 0.08, hh = 0.1 + R() * 0.15; B.box(x, y0 + h, z + 0.05 + R() * 0.1, x + w, y0 + h + hh, z + 0.3, { col: pick(R, cols) }); }
+  }
+  // 전봇대 + 늘어진 전선(한국 골목 특유의 복잡한 전선)
+  poles(c) {
+    const { R, ox, oz } = c, pts = [];
+    for (const [x0, x1] of [[75, 85], [155, 165]]) { const px = x0 - 1.2 + (R() < 0.5 ? 0 : x1 - x0 + 2.4); for (let z = 20; z < 230; z += 32 + R() * 6) pts.push([px, z, 'z']); }
+    for (const [z0, z1] of [[75, 85], [155, 165]]) { const pz = z0 - 1.2; for (let x = 20; x < 230; x += 32 + R() * 6) pts.push([x, pz, 'x']); }
+    const W = c.wires ||= [];
+    let prev = null;
+    for (const [x, z, ax] of pts) {
+      const y = terrainH(ox + x, oz + z); if (y < 0.6) { prev = null; continue; }
+      c.B('concrete').box(x - 0.16, y, z - 0.16, x + 0.16, y + 10.5, z + 0.16, { su: 2, col: [0.6, 0.6, 0.58] });
+      const ca = ax === 'z' ? [x - 1, z - 0.06, x + 1, z + 0.06] : [x - 0.06, z - 1, x + 0.06, z + 1];
+      c.B('metal').box(ca[0], y + 9.4, ca[1], ca[2], y + 9.55, ca[3], { col: [0.3, 0.3, 0.3] });
+      if (R() < 0.4) { const g = new THREE.CylinderGeometry(0.28, 0.28, 0.9, 10); g.translate(x + 0.4, y + 8.3, z); c.B('metal').geo(g, [0.55, 0.57, 0.58]); }
+      this.col.box(ox + x - 0.18, y, oz + z - 0.18, ox + x + 0.18, y + 10.5, oz + z + 0.18, c.owner);
+      if (R() < 0.3) c.weeds.push([x + 0.3, y, z + 0.3, 1.2]);
+      if (prev && prev[3] === ax && Math.hypot(prev[0] - x, prev[1] - z) < 45) for (let k = 0; k < 4; k++) { const off = (k - 1.5) * 0.55, sag = 0.5 + R() * 0.8 + k * 0.15, hh = 9.5 - (k > 2 ? 1.2 : 0); W.push([prev[0] + (ax === 'z' ? off : 0), prev[2] + hh, prev[1] + (ax === 'x' ? off : 0), x + (ax === 'z' ? off : 0), y + hh, z + (ax === 'x' ? off : 0), sag]); }
+      prev = [x, z, y, ax];
+    }
+  }
+  junk(c, x, z, top, big) { // 쓰레기 봉투 더미 (수색 가능)
+    const R = c.R; for (let k = 0; k < (big ? 7 : 3); k++) { const g = new THREE.SphereGeometry(0.28 + R() * 0.15, 8, 6); g.scale(1, 0.8, 1); g.translate(x + (R() - 0.5) * 1.4, top + 0.22, z + (R() - 0.5) * 1.2); c.B('metal').geo(g, R() < 0.7 ? [0.05, 0.05, 0.06] : [0.85, 0.8, 0.6]); }
+    if (R() < 0.6) this.game.loot.add({ id: `${c.owner}tr${Math.round(x)}_${Math.round(z)}`, table: 'trash', pos: new THREE.Vector3(c.ox + x, top + 0.5, c.oz + z), owner: c.owner });
+    for (let k = 0; k < 4; k++) c.weeds.push([x + (R() - 0.5) * 3, top, z + (R() - 0.5) * 3, 0.8 + R() * 0.6]);
+  }
+  barrier(c, x, z, yaw) { const y = terrainH(c.ox + x, c.oz + z), m = new THREE.Matrix4().makeRotationY(yaw).setPosition(x, y, z), B = c.B('metal'); B.setMatrix(m); B.box(-0.9, 0, -0.25, 0.9, 0.8, 0.25, { col: c.R() < 0.5 ? [0.75, 0.12, 0.08] : [0.9, 0.9, 0.88] }); B.box(-0.6, 0.8, -0.15, 0.6, 1.0, 0.15, { col: [0.75, 0.12, 0.08] }); B.setMatrix(null); this.col.box(c.ox + x - 0.95, y, c.oz + z - 0.95, c.ox + x + 0.95, y + 1, c.oz + z + 0.95, c.owner, { low: true }); }
+  checkpoint(c, x, z, yaw) { // 군 검문소: 모래주머니, 바리케이드, 보급 상자
+    const R = c.R, y = terrainH(c.ox + x, c.oz + z);
+    for (let k = -3; k <= 3; k++) this.barrier(c, x + Math.cos(yaw) * k * 2.2, z - Math.sin(yaw) * k * 2.2, yaw);
+    for (let k = 0; k < 2; k++) { const bx = x + Math.sin(yaw) * (4 + k * 1.6), bz = z + Math.cos(yaw) * (4 + k * 1.6); c.B('concrete').box(bx - 0.5, y, bz - 0.35, bx + 0.5, y + 0.55, bz + 0.35, { su: 1, col: [0.26, 0.3, 0.2] }); this.col.box(c.ox + bx - 0.5, y, c.oz + bz - 0.35, c.ox + bx + 0.5, y + 0.55, c.oz + bz + 0.35, c.owner); this.game.loot.add({ id: `${c.owner}mil${k}_${Math.round(x)}`, table: 'military', pos: new THREE.Vector3(c.ox + bx, y + 0.8, c.oz + bz), owner: c.owner }); }
+    c.cars.push([x + Math.sin(yaw) * 9, y, z + Math.cos(yaw) * 9, yaw + 0.3, 0x3d4630, true]);
+    c.corpses.push([x + 2, z + 3, R() * 6]);
   }
   streetLight(c, x, y, z, dir) {
     const B = c.B('metal');
@@ -429,13 +496,9 @@ export class World {
     c.cars.push([x, h, z, yaw, col, van]);
     const cs = Math.abs(Math.cos(yaw)), sn = Math.abs(Math.sin(yaw)), hx = 0.9 * cs + 2.3 * sn, hz = 0.9 * sn + 2.3 * cs;
     this.col.box(c.ox + x - hx * 0.85, h + 0.25, c.oz + z - hz * 0.85, c.ox + x + hx * 0.85, h + (van ? 1.85 : 1.4), c.oz + z + hz * 0.85, c.owner);
-    if (R() < 0.12) { // 차량 수색
-      const id = `${c.owner}car${c.cars.length}`;
-      if (!this.game.taken.has(id)) {
-        const it = this.game.inter.add({ pos: new THREE.Vector3(c.ox + x, h + 1, c.oz + z), r: 2.8, label: '차량 수색', hold: 1.6, owner: c.owner,
-          act: () => { const t = pick(R, LOOT_CAR); this.game.player.give(t, 1); this.game.taken.add(id); this.game.inter.remove(it); this.game.audio.play('rummage'); } });
-      }
-    }
+    const police = !van && R() < 0.07;
+    if (police) { c.cars[c.cars.length - 1][4] = 0xf2f2f2; const B = c.B('metal'); B.setMatrix(new THREE.Matrix4().makeRotationY(yaw).setPosition(x, h, z)); B.box(-0.55, 1.42, -0.25, 0, 1.55, 0.05, { col: [0.9, 0.1, 0.1] }); B.box(0, 1.42, -0.25, 0.55, 1.55, 0.05, { col: [0.1, 0.25, 0.95] }); B.box(-0.92, 0.55, -1.2, -0.91, 0.75, 1.2, { col: [0.1, 0.2, 0.6] }); B.box(0.91, 0.55, -1.2, 0.92, 0.75, 1.2, { col: [0.1, 0.2, 0.6] }); B.setMatrix(null); }
+    if (police || R() < 0.3) this.game.loot.add({ id: `${c.owner}car${c.cars.length}`, table: police ? 'policecar' : 'car', name: police ? '경찰차' : van ? '승합차' : '차량', pos: new THREE.Vector3(c.ox + x, h + 1, c.oz + z), r: 2.8, owner: c.owner });
   }
   buildCars(c) {
     if (!c.cars.length) return;
@@ -509,6 +572,7 @@ export class World {
         const cur = ok ? [mb.vert(...lft, 0, 1, 0, 0, v), mb.vert(...cen, 0, 1, 0, 0.5, v), mb.vert(...rgt, 0, 1, 0, 1, v)] : null;
         if (cur && prev) mb.i.push(prev[0], cur[0], prev[1], prev[1], cur[0], cur[1], prev[1], cur[1], prev[2], prev[2], cur[1], cur[2]);
         prev = cur;
+        if (ok && k === (n >> 1) && !c.urban && !c.cp && c.R() < 0.12) { c.cp = true; this.checkpoint(c, x - ox, z - oz, Math.atan2(fx, fz) + Math.PI / 2); }
         if (ok && k % 9 === 4 && c.R() < (Math.hypot(x, z) < 40000 ? 0.7 : 0.15)) { // 피난 정체 차량
           const off = (c.R() - 0.5) * 16; this.addCar(c, x - ox + (-fz) * off, z - oz + fx * off, Math.atan2(fx, fz) + (c.R() - 0.5) * 0.4, c.R);
         }
