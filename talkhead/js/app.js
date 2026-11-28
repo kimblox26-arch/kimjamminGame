@@ -7,6 +7,13 @@
   const meters = [...document.querySelectorAll('.meter i')];
   let lastGs = '';
   const synth = 'speechSynthesis' in window ? window.speechSynthesis : null;
+  const NT = window.AndroidTTS || null; // 안드로이드 앱(APK)에서 주입하는 기기 음성 엔진
+  const ntH = {}; let ntSeq = 0;
+  window.__tts = (id, ev, a) => {
+    const h = ntH[id]; if (!h) return;
+    if (ev === 'start') h.start(); else if (ev === 'range') h.range(a);
+    else { delete ntH[id]; ev === 'done' ? h.end() : h.err(); }
+  };
 
   // 조음 상태(부드럽게 따라감) & 각 값의 반응 속도
   const S = { jaw: .03, lc: 1, lr: 0, ls: 0, ld: 0, tipA: 0, tipX: 289, tipY: 578, bodyX: 398, bodyY: 592, back: 0, vel: .9, voice: 0, fric: 0, glot: .8, cl: 0 };
@@ -114,7 +121,8 @@
   }
   function stop() {
     const was = play; play = null; lastF = null;
-    if (synth && (was || synth.speaking || synth.pending)) synth.cancel();
+    if (NT) { if (was) NT.stop(); for (const k in ntH) delete ntH[k]; }
+    else if (synth && (was || synth.speaking || synth.pending)) synth.cancel();
     if (was) was.items.forEach(it => clearTimeout(it.watch));
     endNote(); document.body.classList.remove('speaking');
     $('#phG').textContent = '·'; $('#phIpa').textContent = ''; $('#phCat').textContent = '대기 중'; $('#phDesc').textContent = '읽기를 누르면 실시간으로 분석해요';
@@ -129,6 +137,18 @@
     it.spu = it.sing || it.silent ? it.noteDur / it.units : (calib[vp.key] || .095) / rate;
     it.fi = 0; it.wi = -1;
     if (!pl.sing) showItem(it);
+    if (NT && !it.silent) {
+      const id = 'u' + (++ntSeq), g = VP[mode];
+      ntH[id] = {
+        start: () => { if (play === pl && !it.t0) begin(pl, it, false); },
+        range: ci => { if (play === pl && it.t0 && !it.sim) boundary(it, ci); },
+        end: () => { if (play !== pl || it.sim) return; if (!it.t0) begin(pl, it, true); else finish(it); },
+        err: () => { if (play === pl && !it.sim) { if (!it.t0) begin(pl, it, true); else finish(it); } },
+      };
+      NT.speak(id, it.text, it.lang, cl(g.pf * (it.pitchMul || 1), .1, 2), cl(rate, .3, 3));
+      it.watch = setTimeout(() => { if (play === pl && !it.t0) { delete ntH[id]; begin(pl, it, true); msg('기기 음성 엔진이 대답하지 않아 입 모양만 보여줘요.'); } }, 4000);
+      return;
+    }
     if (it.silent || !synth || !voices.length) { begin(pl, it, true); return; }
     const u = new SpeechSynthesisUtterance(it.text);
     u.lang = it.lang; if (vp.v) u.voice = vp.v;
@@ -215,7 +235,7 @@
 
   const NAMES = { boy: '어린 남자', girl: '어린 여자', man: '성인 남자', woman: '성인 여자' };
   const F0 = { boy: 260, girl: 290, man: 120, woman: 210 };
-  const SKIN = { skin: 1, xray: .3, section: 0 };
+  const SKIN = { skin: 1, xray: 1, section: 0 };
   let state = 'title', view = 'xray', skinA = 1, hudT = 0;
 
   function fit(c) {
@@ -249,7 +269,7 @@
     skinA += (tgt - skinA) * (1 - Math.exp(-dt * 6)); if (Math.abs(tgt - skinA) < .005) skinA = tgt;
 
     Head.frame(ctx, S, { active: !!(cur && cur.active) || !!force, p, sing: !!(play && play.sing), labels: opt.labels && state === 'game', air: opt.air, nerves: opt.nerves,
-      skin: skinA, bg: true, fx: true, scan: true, w: cv.width / DPR, h: cv.height / DPR, dpr: DPR }, dt);
+      skin: skinA, lens: state === 'game' && view === 'xray', bg: true, fx: true, w: cv.width / DPR, h: cv.height / DPR, dpr: DPR }, dt);
     if (state === 'game') {
       Head.glottis(gctx, S, gcv.width, gcv.height);
       const tng = cl(Math.max(S.tipA * .9, S.back, cl((618 - S.bodyY) / 45, 0, 1) * .8 + Math.abs(S.bodyX - 398) / 120), 0, 1);
@@ -292,10 +312,15 @@
   document.querySelectorAll('.tool').forEach(b => b.onclick = () => { opt[b.dataset.opt] = !opt[b.dataset.opt]; b.classList.toggle('on', opt[b.dataset.opt]); b.setAttribute('aria-pressed', opt[b.dataset.opt]); });
   if (window.innerWidth < 600) { opt.labels = false; const b = $('.tool[data-opt=labels]'); b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); }
   new ResizeObserver(resize).observe($('#stage'));
-  if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+  if (NT) $('#voice').innerHTML = '<option value="">기기 기본 음성</option>';
+  else if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
   else msg('이 브라우저는 음성 읽기를 지원하지 않아요. 입 모양만 보여줄게요.');
 
-  window.TalkHead = { S, start, stop, setState, setForce: k => { force = k ? Object.assign({}, P.PH[k]) : null; } }; // 테스트용
+  // 돋보기: 마우스를 움직이거나 손가락으로 끌어서 이동
+  const lensMove = e => { if (state === 'game' && view === 'xray' && (e.pointerType === 'mouse' || e.buttons)) Head.lensTo(e.offsetX, e.offsetY); };
+  cv.addEventListener('pointermove', lensMove); cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); Head.lensTo(e.offsetX, e.offsetY); });
+  const back = () => { if (state === 'game') { setState('title'); return true; } return false; };
+  window.TalkHead = { S, start, stop, setState, back, setForce: k => { force = k ? Object.assign({}, P.PH[k]) : null; } }; // 테스트용
   resize(); requestAnimationFrame(frame);
   requestAnimationFrame(() => requestAnimationFrame(thumbs));
   if (document.fonts) document.fonts.ready.then(resize);

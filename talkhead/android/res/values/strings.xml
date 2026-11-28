@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">보이스 엑스레이</string>
+    <color name="icon_bg">#0B1A26</color>
+</resources>
