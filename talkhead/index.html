@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>보이스 엑스레이 — 말하는 머리</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="app">
+  <section id="stage">
+    <canvas id="cv" aria-label="말할 때 머릿속 뼈, 근육, 혀, 치아, 뇌가 움직이는 단면 그림"></canvas>
+  </section>
+  <aside id="panel">
+    <h1>🗣️ 보이스 엑스레이</h1>
+    <p class="sub">글이나 노래 제목을 적으면 소리 내어 읽어주고, 말할 때 머릿속이 어떻게 움직이는지 실시간으로 보여줘요.</p>
+
+    <div class="modes" role="group" aria-label="목소리 모드">
+      <button data-mode="boy">👦 어린 남자</button>
+      <button data-mode="girl">👧 어린 여자</button>
+      <button data-mode="man" class="on">👨 성인 남자</button>
+      <button data-mode="woman">👩 성인 여자</button>
+    </div>
+
+    <label for="txt">📝 텍스트</label>
+    <textarea id="txt" rows="6">안녕하세요! 저는 말하는 머리예요. 혀와 입술이 어떻게 움직이는지 보세요. Hello, nice to meet you!</textarea>
+    <div class="row">
+      <button id="read" class="primary">▶ 읽어주기</button>
+      <button id="stop">■ 멈춤</button>
+    </div>
+
+    <label for="song">🎵 노래 제목</label>
+    <input id="song" type="text" placeholder="예: 반짝반짝 작은 별" value="반짝반짝 작은 별">
+    <div class="row">
+      <button id="songRead">🔊 제목 읽기</button>
+      <button id="songSing" class="primary">🎤 노래처럼 부르기</button>
+    </div>
+
+    <div id="now" aria-live="polite"></div>
+    <p id="msg" role="status"></p>
+
+    <details open>
+      <summary>설정</summary>
+      <label class="inline">속도 <input id="rate" type="range" min="0.5" max="1.6" step="0.1" value="1"> <span id="rateV">1.0×</span></label>
+      <label class="inline">목소리 <select id="voice"><option value="">자동 (모드에 맞게)</option></select></label>
+      <label class="inline"><input id="labels" type="checkbox" checked> 이름표 보기</label>
+      <label class="inline"><input id="air" type="checkbox" checked> 공기 흐름 보기</label>
+    </details>
+    <p class="tip">Ctrl+Enter 로도 읽을 수 있어요 · Chrome / Edge 권장</p>
+  </aside>
+</main>
+<script src="js/phonemes.js"></script>
+<script src="js/head.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
