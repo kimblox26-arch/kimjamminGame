@@ -235,8 +235,8 @@
 
   const NAMES = { boy: '어린 남자', girl: '어린 여자', man: '성인 남자', woman: '성인 여자' };
   const F0 = { boy: 260, girl: 290, man: 120, woman: 210 };
-  const SKIN = { skin: 1, xray: 1, section: 0 };
-  let state = 'title', view = 'xray', skinA = 1, hudT = 0;
+  const SKIN = { skin: 1, section: 0 };
+  let state = 'title', view = 'section', skinA = 1, hudT = 0;
 
   function fit(c) {
     const r = c.getBoundingClientRect(), w = Math.max(1, Math.round(r.width * DPR)), h = Math.max(1, Math.round(r.height * DPR));
@@ -269,7 +269,7 @@
     skinA += (tgt - skinA) * (1 - Math.exp(-dt * 6)); if (Math.abs(tgt - skinA) < .005) skinA = tgt;
 
     Head.frame(ctx, S, { active: !!(cur && cur.active) || !!force, p, sing: !!(play && play.sing), labels: opt.labels && state === 'game', air: opt.air, nerves: opt.nerves,
-      skin: skinA, lens: state === 'game' && view === 'xray', bg: true, fx: true, w: cv.width / DPR, h: cv.height / DPR, dpr: DPR }, dt);
+      skin: skinA, bg: true, fx: true, w: cv.width / DPR, h: cv.height / DPR, dpr: DPR }, dt);
     if (state === 'game') {
       Head.glottis(gctx, S, gcv.width, gcv.height);
       const tng = cl(Math.max(S.tipA * .9, S.back, cl((618 - S.bodyY) / 45, 0, 1) * .8 + Math.abs(S.bodyX - 398) / 120), 0, 1);
@@ -316,9 +316,6 @@
   else if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
   else msg('이 브라우저는 음성 읽기를 지원하지 않아요. 입 모양만 보여줄게요.');
 
-  // 돋보기: 마우스를 움직이거나 손가락으로 끌어서 이동
-  const lensMove = e => { if (state === 'game' && view === 'xray' && (e.pointerType === 'mouse' || e.buttons)) Head.lensTo(e.offsetX, e.offsetY); };
-  cv.addEventListener('pointermove', lensMove); cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); Head.lensTo(e.offsetX, e.offsetY); });
   const back = () => { if (state === 'game') { setState('title'); return true; } return false; };
   window.TalkHead = { S, start, stop, setState, back, setForce: k => { force = k ? Object.assign({}, P.PH[k]) : null; } }; // 테스트용
   resize(); requestAnimationFrame(frame);

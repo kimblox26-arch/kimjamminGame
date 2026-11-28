@@ -9,7 +9,7 @@ KS="${KEYSTORE:-$HOME/.android/voicexray.keystore}"; KP="${KEYPASS:-voicexray}"
 mkdir -p "$OUT" "$B/assets/www" "$B/gen" "$B/classes" "$(dirname "$KS")"
 cp -r "$ROOT/index.html" "$ROOT/style.css" "$ROOT/js" "$B/assets/www/"
 aapt package -f -M "$HERE/AndroidManifest.xml" -S "$HERE/res" -A "$B/assets" -I "$SDK_JAR" -J "$B/gen" \
-  --min-sdk-version 26 --target-sdk-version 34 --version-code "${VERSION_CODE:-3}" --version-name "${VERSION_NAME:-1.2}" -F "$B/unsigned.apk"
+  --min-sdk-version 26 --target-sdk-version 34 --version-code "${VERSION_CODE:-4}" --version-name "${VERSION_NAME:-1.3}" -F "$B/unsigned.apk"
 javac -nowarn -Xlint:-options -source 8 -target 8 -encoding UTF-8 -bootclasspath "$SDK_JAR" -d "$B/classes" \
   $(find "$B/gen" "$HERE/src" -name '*.java')
 dalvik-exchange --dex --min-sdk-version=26 --output="$B/classes.dex" "$B/classes"

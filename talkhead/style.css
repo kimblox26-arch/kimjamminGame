@@ -14,7 +14,7 @@ kbd { font-family: var(--hud); font-weight: 700; font-size: .85em; padding: 1px 
 #app { display: grid; grid-template-columns: 1fr 392px; height: 100vh; transition: grid-template-columns .5s ease; }
 body.state-title #app { grid-template-columns: 1fr min(600px, 46vw); }
 #stage { position: relative; min-height: 0; overflow: hidden; }
-#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
 /* 화면 모서리 장식 */
 .corners i { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(63,208,255,.55); pointer-events: none; }

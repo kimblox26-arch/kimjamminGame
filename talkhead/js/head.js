@@ -599,7 +599,7 @@ const Head = (() => {
     for (const r of rings) { X.beginPath(); X.arc(lm[0], lm[1], r.r, a0, a0 + Math.PI * .56); X.strokeStyle = `rgba(235,245,255,${r.a * .6})`; X.lineWidth = 1.2; X.stroke(); }
     for (const n of notes) noteGlyph(n.x, n.y, 1.2, n.a, n.c);
   }
-  function labels(L, TG, VL, k, maxY = 1e9, lens = null) {
+  function labels(L, TG, VL, k, maxY = 1e9) {
     const z = Math.max(12.5, 10.5 / k), items = [
       ['L', '대뇌', [380, 250]], ['L', '브로카 영역', [372, 392]], ['L', '비강 (콧속)', [300, 505]], ['L', '코선반', [400, 520]],
       ['L', '경구개', [360, 547]], ['L', '입술', L.ulF], ['L', '앞니', [262, 588]], ['L', '혀', TG.body], ['L', '아래턱뼈', [290, 735, 1]],
@@ -609,7 +609,7 @@ const Head = (() => {
       ['R', '성대', [505, 868]], ['R', '척수', [641, 760]], ['R', '척추뼈', [600, 800]], ['R', '목 근육', [720, 840]], ['R', '식도', [536, 1040]]];
     X.font = `600 ${z}px ${FONT}`; X.textBaseline = 'middle';
     for (const side of ['L', 'R']) {
-      const g = items.filter(i => ((i[0] === 'L') !== MIR ? 'L' : 'R') === side && (!lens || Math.hypot(T(i[2])[0] - lens.x, T(i[2])[1] - lens.y) < lens.R * M.s * .95)).map(i => ({ t: i[1], a: T(i[2]) })).sort((a, b) => a.a[1] - b.a[1]);
+      const g = items.filter(i => ((i[0] === 'L') !== MIR ? 'L' : 'R') === side).map(i => ({ t: i[1], a: T(i[2]) })).sort((a, b) => a.a[1] - b.a[1]);
       let y = -1e9;
       for (const it of g) {
         y = Math.max(it.a[1], y + z * 1.45); if (y > maxY) break;
@@ -788,38 +788,6 @@ const Head = (() => {
       X.fillStyle = `rgba(230,240,255,${.22 * d[2] * Math.sin(d[1] * Math.PI)})`; X.beginPath(); X.arc(d[0] * w, d[1] * h, 1.3 * d[2] * Math.max(1, w / 1400), 0, 7); X.fill();
     }
   }
-  // 투시 돋보기: 피부를 둥글게 걷어내 속을 보여줌
-  const LENS = { x: null, y: null, tx: null, ty: null, R: 185 };
-  function lensStep(dt) {
-    if (LENS.tx == null) { const d = W([440, 630]); LENS.tx = d[0]; LENS.ty = d[1]; }
-    if (LENS.x == null) { LENS.x = LENS.tx; LENS.y = LENS.ty; }
-    const k = 1 - Math.exp(-dt * 12); LENS.x += (LENS.tx - LENS.x) * k; LENS.y += (LENS.ty - LENS.y) * k;
-  }
-  function lensCut() {
-    const R = LENS.R * M.s, g = X.createRadialGradient(LENS.x, LENS.y, R * .84, LENS.x, LENS.y, R);
-    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    X.globalCompositeOperation = 'destination-out'; X.fillStyle = g; X.beginPath(); X.arc(LENS.x, LENS.y, R, 0, 7); X.fill(); X.globalCompositeOperation = 'source-over';
-  }
-  function lensRim() { // 실제 돋보기 모양 (금속 테 + 손잡이 + 유리 반사)
-    const x = LENS.x, y = LENS.y, R = LENS.R * M.s;
-    X.save(); X.translate(x, y); X.rotate(Math.PI * .25);
-    X.shadowColor = 'rgba(0,0,0,.5)'; X.shadowBlur = 18 * SC; X.shadowOffsetY = 8 * SC;
-    let g = X.createLinearGradient(0, -14, 0, 14); g.addColorStop(0, '#4a5057'); g.addColorStop(.35, '#1a1d20'); g.addColorStop(1, '#060708');
-    X.fillStyle = g; X.beginPath(); X.roundRect ? X.roundRect(R + 14, -13, 120, 26, 12) : X.rect(R + 14, -13, 120, 26); X.fill();
-    X.shadowColor = 'rgba(0,0,0,0)';
-    X.fillStyle = 'rgba(255,255,255,.12)'; X.beginPath(); X.roundRect ? X.roundRect(R + 22, -10, 104, 5, 3) : X.rect(R + 22, -10, 104, 5); X.fill();
-    g = X.createLinearGradient(0, -11, 0, 11); g.addColorStop(0, '#f2f5f7'); g.addColorStop(.5, '#9aa3ab'); g.addColorStop(1, '#4a5157');
-    X.fillStyle = g; X.fillRect(R + 4, -10, 16, 20);
-    X.restore();
-    X.save(); X.shadowColor = 'rgba(0,0,0,.55)'; X.shadowBlur = 16 * SC; X.shadowOffsetY = 6 * SC;
-    g = X.createLinearGradient(x - R, y - R, x + R, y + R); g.addColorStop(0, '#f4f7f9'); g.addColorStop(.35, '#a9b3bb'); g.addColorStop(.6, '#59626a'); g.addColorStop(1, '#1e2327');
-    X.lineWidth = 12; X.strokeStyle = g; X.beginPath(); X.arc(x, y, R + 4, 0, 7); X.stroke(); X.restore();
-    X.lineWidth = 1.4; X.strokeStyle = 'rgba(255,255,255,.75)'; X.beginPath(); X.arc(x, y, R + 8, Math.PI * 1.05, Math.PI * 1.55); X.stroke();
-    X.lineWidth = 1.2; X.strokeStyle = 'rgba(0,0,0,.6)'; X.beginPath(); X.arc(x, y, R - 1.5, 0, 7); X.stroke();
-    g = X.createLinearGradient(x - R, y - R, x, y); g.addColorStop(0, 'rgba(255,255,255,.2)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-    X.fillStyle = g; X.beginPath(); X.ellipse(x - R * .32, y - R * .45, R * .55, R * .2, -.6, 0, 7); X.fill();
-    X.fillStyle = 'rgba(170,215,255,.04)'; X.beginPath(); X.arc(x, y, R, 0, 7); X.fill();
-  }
   function noteGlyph(x, y, s, a, dbl) { // 금속 광택 음표
     X.save(); X.translate(x, y); X.scale(s, s); X.globalAlpha = a;
     const g = X.createLinearGradient(-6, -22, 20, 4); g.addColorStop(0, '#fff6d0'); g.addColorStop(.45, '#f0b440'); g.addColorStop(1, '#8a560c');
@@ -863,7 +831,7 @@ const Head = (() => {
       step(dt, S, I, L, TG);
       nextBlink -= dt; if (nextBlink < 0) { blink = 1; nextBlink = 2 + Math.random() * 4; } blink = Math.max(0, blink - dt * 7);
     }
-    if (skin < .99 || I.lens) { // 단면
+    if (skin < .99) { // 단면
       tissue(sil, 'fat', { deg: 15, s: .7, a: [300, 200], b: [700, 1000], la: .1, da: .2, ins: 0 });
       const tp = PS(sk.top, false), bp = PS(sk.bot, false);
       clipDo(sil, () => { strk(tp, '#c9876e', 11); strk(bp, '#c9876e', 11); strk(tp, '#e2a48a', 6); strk(bp, '#e2a48a', 6); });
@@ -885,22 +853,20 @@ const Head = (() => {
     if (skin > .01) { // 바깥 피부
       X = EX.getContext('2d'); id(); X.clearRect(0, 0, cw, ch); vm(); X.lineJoin = 'round'; X.lineCap = 'round';
       skinFill(sil); id(); X.drawImage(EXS, 0, 0); vm(); exteriorDyn(S, L, sil);
-      if (I.lens) { lensStep(dt); lensCut(); }
       X = ctx; id(); X.globalAlpha = skin; X.drawImage(EX, 0, 0); X.globalAlpha = 1; vm();
     }
     if (skin > .05 && skin < .95) clipDo(sil, () => { X.globalCompositeOperation = 'screen'; strk(sil, `rgba(70,200,255,${.35 * Math.sin(Math.PI * skin)})`, 12); X.globalCompositeOperation = 'source-over'; });
     if (I.fx) {
-      if (I.lens) { const lc = new Path2D(); lc.arc(LENS.x, LENS.y, LENS.R * M.s, 0, 7); clipDo(lc, () => { activity(); effects(I, 0, 'int'); }); }
-      else { if (skin < .9) activity(); effects(I, skin, 'int'); }
+      if (skin < .9) activity();
+      effects(I, skin, 'int');
       effects(I, skin, 'ext');
     }
-    if (I.lens) lensRim();
     if (I.bg) {
       const c = W([420, 300]), g = X.createRadialGradient(c[0], c[1], 80, c[0], c[1], 900);
       g.addColorStop(0, 'rgba(255,250,240,.04)'); g.addColorStop(.6, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.3)');
       X.fillStyle = g; X.fillRect(-300, -300, 1700, 1600);
     }
-    if (I.labels && (I.lens || skin < .6)) { X.globalAlpha = I.lens ? 1 : 1 - skin / .6; labels(L, TG, VL, mtx[0] / (I.dpr || 1), (ch - 90 * (I.dpr || 1) - mtx[5]) / mtx[3], I.lens ? LENS : null); X.globalAlpha = 1; }
+    if (I.labels && skin < .6) { X.globalAlpha = 1 - skin / .6; labels(L, TG, VL, mtx[0] / (I.dpr || 1), (ch - 90 * (I.dpr || 1) - mtx[5]) / mtx[3]); X.globalAlpha = 1; }
   }
   function morph(dt) {
     const ke = 1 - Math.exp(-dt * 5);
@@ -963,7 +929,6 @@ const Head = (() => {
 
   return {
     frame, glottis, snapshot,
-    lensTo(x, y) { if (!LAST) return; LENS.tx = (x * LAST.d - LAST.m[4]) / LAST.m[0]; LENS.ty = (y * LAST.d - LAST.m[5]) / LAST.m[3]; },
     setMode(k) { MT = MODES[k] || MODES.man; },
     word() { act.vis = .9; act.wern = .9; act.broca = .95; pulse('read'); },
     phone(p, prev) {
