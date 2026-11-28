@@ -4,47 +4,87 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>보이스 엑스레이 — 말하는 머리</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main id="app">
   <section id="stage">
-    <canvas id="cv" aria-label="말할 때 머릿속 뼈, 근육, 혀, 치아, 뇌가 움직이는 단면 그림"></canvas>
+    <canvas id="cv" aria-label="말할 때 머릿속 뼈, 근육, 혀, 치아, 뇌가 움직이는 정중 시상 단면"></canvas>
+    <div class="stage-bar">
+      <div class="chip"><span class="live-dot"></span>실시간 머리 단면 · <b id="modeName">성인 남자</b></div>
+      <div class="tools" role="group" aria-label="표시 옵션">
+        <button class="tool on" data-opt="labels" aria-pressed="true">이름표</button>
+        <button class="tool on" data-opt="air" aria-pressed="true">공기 흐름</button>
+        <button class="tool on" data-opt="nerves" aria-pressed="true">신경 신호</button>
+      </div>
+    </div>
   </section>
+
   <aside id="panel">
-    <h1>🗣️ 보이스 엑스레이</h1>
-    <p class="sub">글이나 노래 제목을 적으면 소리 내어 읽어주고, 말할 때 머릿속이 어떻게 움직이는지 실시간으로 보여줘요.</p>
+    <header class="brand">
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>보이스 엑스레이</h1>
+        <p>글을 읽어주며 머릿속 움직임을 보여줘요</p>
+      </div>
+    </header>
 
-    <div class="modes" role="group" aria-label="목소리 모드">
-      <button data-mode="boy">👦 어린 남자</button>
-      <button data-mode="girl">👧 어린 여자</button>
-      <button data-mode="man" class="on">👨 성인 남자</button>
-      <button data-mode="woman">👩 성인 여자</button>
-    </div>
+    <section class="card">
+      <h2>목소리 모드</h2>
+      <div class="modes" role="group" aria-label="목소리 모드">
+        <button data-mode="boy"><span>👦</span><b>어린 남자</b></button>
+        <button data-mode="girl"><span>👧</span><b>어린 여자</b></button>
+        <button data-mode="man" class="on"><span>👨</span><b>성인 남자</b></button>
+        <button data-mode="woman"><span>👩</span><b>성인 여자</b></button>
+      </div>
+    </section>
 
-    <label for="txt">📝 텍스트</label>
-    <textarea id="txt" rows="6">안녕하세요! 저는 말하는 머리예요. 혀와 입술이 어떻게 움직이는지 보세요. Hello, nice to meet you!</textarea>
-    <div class="row">
-      <button id="read" class="primary">▶ 읽어주기</button>
-      <button id="stop">■ 멈춤</button>
-    </div>
+    <section class="card">
+      <h2><label for="txt">텍스트</label></h2>
+      <textarea id="txt" rows="5">안녕하세요! 저는 말하는 머리예요. 혀와 입술이 어떻게 움직이는지 보세요. Hello, nice to meet you!</textarea>
+      <div class="row">
+        <button id="read" class="btn primary">▶ 읽어주기</button>
+        <button id="stop" class="btn">■ 멈춤</button>
+      </div>
+      <h2 class="sub"><label for="song">노래 제목</label></h2>
+      <input id="song" type="text" placeholder="예: 반짝반짝 작은 별" value="반짝반짝 작은 별">
+      <div class="row">
+        <button id="songRead" class="btn">제목 읽기</button>
+        <button id="songSing" class="btn accent">♪ 노래처럼 부르기</button>
+      </div>
+    </section>
 
-    <label for="song">🎵 노래 제목</label>
-    <input id="song" type="text" placeholder="예: 반짝반짝 작은 별" value="반짝반짝 작은 별">
-    <div class="row">
-      <button id="songRead">🔊 제목 읽기</button>
-      <button id="songSing" class="primary">🎤 노래처럼 부르기</button>
-    </div>
+    <section class="card live">
+      <h2>실시간 분석</h2>
+      <div class="phon">
+        <div class="g" id="phG">·</div>
+        <div class="info">
+          <div><span class="cat" id="phCat">대기 중</span> <span class="ipa" id="phIpa"></span></div>
+          <div class="desc" id="phDesc">읽기를 누르면 실시간으로 분석해요</div>
+        </div>
+      </div>
+      <div class="live-grid">
+        <figure>
+          <canvas id="glot" aria-label="위에서 본 성대"></canvas>
+          <figcaption>성대 <span id="glotState">활짝 열림 · 숨쉬기</span></figcaption>
+        </figure>
+        <div class="meters">
+          <div class="meter"><span>혀</span><div><i style="--c:#ff7b86"></i></div></div>
+          <div class="meter"><span>입술</span><div><i style="--c:#ffae5e"></i></div></div>
+          <div class="meter"><span>턱</span><div><i style="--c:#ffd75e"></i></div></div>
+          <div class="meter"><span>성대</span><div><i style="--c:#6fe39a"></i></div></div>
+          <div class="meter"><span>연구개</span><div><i style="--c:#69c3ff"></i></div></div>
+        </div>
+      </div>
+      <div id="now" aria-live="polite"></div>
+      <p id="msg" role="status"></p>
+    </section>
 
-    <div id="now" aria-live="polite"></div>
-    <p id="msg" role="status"></p>
-
-    <details open>
+    <details class="card">
       <summary>설정</summary>
-      <label class="inline">속도 <input id="rate" type="range" min="0.5" max="1.6" step="0.1" value="1"> <span id="rateV">1.0×</span></label>
-      <label class="inline">목소리 <select id="voice"><option value="">자동 (모드에 맞게)</option></select></label>
-      <label class="inline"><input id="labels" type="checkbox" checked> 이름표 보기</label>
-      <label class="inline"><input id="air" type="checkbox" checked> 공기 흐름 보기</label>
+      <label class="field">속도 <input id="rate" type="range" min="0.5" max="1.6" step="0.1" value="1"> <output id="rateV">1.0×</output></label>
+      <label class="field">목소리 <select id="voice"><option value="">자동 (모드에 맞게)</option></select></label>
     </details>
     <p class="tip">Ctrl+Enter 로도 읽을 수 있어요 · Chrome / Edge 권장</p>
   </aside>

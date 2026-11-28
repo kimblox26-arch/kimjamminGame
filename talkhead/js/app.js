@@ -3,7 +3,9 @@
 (() => {
   const $ = s => document.querySelector(s);
   const cl = (x, a, b) => x < a ? a : x > b ? b : x;
-  const cv = $('#cv'), ctx = cv.getContext('2d');
+  const cv = $('#cv'), ctx = cv.getContext('2d'), gcv = $('#glot'), gctx = gcv.getContext('2d');
+  const meters = [...document.querySelectorAll('.meter i')];
+  let lastGs = '';
   const synth = 'speechSynthesis' in window ? window.speechSynthesis : null;
 
   // 조음 상태(부드럽게 따라감) & 각 값의 반응 속도
@@ -16,7 +18,7 @@
     boy: { g: 'm', pm: 1.35, pf: 1.05, r: 1.05, f: 247 }, girl: { g: 'f', pm: 1.75, pf: 1.5, r: 1.05, f: 294 },
     man: { g: 'm', pm: .9, pf: .55, r: .97, f: 131 }, woman: { g: 'f', pm: 1.3, pf: 1.05, r: 1, f: 220 },
   };
-  const opt = { labels: true, air: true, rate: 1, voice: '' };
+  const opt = { labels: true, air: true, nerves: true, rate: 1, voice: '' };
   const calib = {};
   let mode = 'man', play = null, voices = [], lastF = null, AC = null, note = null, DPR = 1, force = null;
 
@@ -115,6 +117,7 @@
     if (synth && (was || synth.speaking || synth.pending)) synth.cancel();
     if (was) was.items.forEach(it => clearTimeout(it.watch));
     endNote(); document.body.classList.remove('speaking');
+    $('#phG').textContent = '·'; $('#phIpa').textContent = ''; $('#phCat').textContent = '대기 중'; $('#phDesc').textContent = '읽기를 누르면 실시간으로 분석해요';
   }
   function next() {
     const pl = play; if (!pl) return;
@@ -193,7 +196,8 @@
     if (prev && prev.p.stop) Head.burst(prev.p);
     Head.phone(f.p, prev && prev.p);
     const d = P.DESC[f.q.k] || ['', ''];
-    Head.hud({ g: f.q.g || '', ipa: f.q.k === '_' ? '' : `/${f.q.k}/`, cat: d[0], desc: d[1] });
+    $('#phG').textContent = f.q.g || '·'; $('#phIpa').textContent = f.q.k === '_' ? '' : `/${f.q.k}/`;
+    $('#phCat').textContent = d[0]; $('#phDesc').textContent = d[1];
   }
 
   // ---------- 화면 ----------
@@ -212,6 +216,7 @@
   function resize() {
     const r = cv.getBoundingClientRect(); DPR = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.max(1, Math.round(r.width * DPR)); cv.height = Math.max(1, Math.round(r.height * DPR));
+    const g = gcv.getBoundingClientRect(); gcv.width = Math.max(1, Math.round(g.width * DPR)); gcv.height = Math.max(1, Math.round(g.height * DPR));
   }
   let last = performance.now();
   function frame(now) {
@@ -222,17 +227,12 @@
     const p = force || (cur ? cur.p : IDLE), T = target(p);
     for (const k in SPD) S[k] += (T[k] - S[k]) * (1 - Math.exp(-SPD[k] * dt));
 
-    const w = cv.width / DPR, h = cv.height / DPR;
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    const bg = ctx.createRadialGradient(w * .45, h * .45, 50, w * .5, h * .5, Math.max(w, h) * .8);
-    bg.addColorStop(0, '#0c1d33'); bg.addColorStop(1, '#050c17'); ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = 'rgba(90,150,210,.05)'; ctx.lineWidth = 1; ctx.beginPath();
-    for (let x = 0; x < w; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
-    for (let y = 0; y < h; y += 40) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
-    ctx.stroke();
-    const k = Math.min(w / 920, h / 1040), ox = (w - 920 * k) / 2 - 40 * k, oy = (h - 1040 * k) / 2 - 70 * k;
-    ctx.setTransform(DPR * k, 0, 0, DPR * k, DPR * ox, DPR * oy);
-    Head.frame(ctx, S, { active: !!(cur && cur.active) || !!force, p, sing: !!(play && play.sing), labels: opt.labels, air: opt.air, k }, dt);
+    Head.frame(ctx, S, { active: !!(cur && cur.active) || !!force, p, sing: !!(play && play.sing), labels: opt.labels, air: opt.air, nerves: opt.nerves, w: cv.width / DPR, h: cv.height / DPR, dpr: DPR }, dt);
+    Head.glottis(gctx, S, gcv.width, gcv.height);
+    const tng = cl(Math.max(S.tipA * .9, S.back, cl((618 - S.bodyY) / 45, 0, 1) * .8 + Math.abs(S.bodyX - 398) / 120), 0, 1);
+    [tng, Math.max(S.lc, S.lr, S.ls * .7, S.ld), S.jaw, S.voice, 1 - S.vel].forEach((v, i) => { meters[i].style.transform = `scaleX(${cl(v, 0, 1).toFixed(3)})`; });
+    const gs = S.voice > .5 ? '떨림 · 유성음' : S.glot > .65 ? '활짝 열림 · 숨쉬기' : '열림 · 무성음';
+    if (gs !== lastGs) { lastGs = gs; $('#glotState').textContent = gs; }
     requestAnimationFrame(frame);
   }
 
@@ -245,13 +245,13 @@
   $('#txt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); readText(); } });
   $('#song').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#songSing').click(); } });
   document.querySelectorAll('.modes button').forEach(b => b.onclick = () => {
-    mode = b.dataset.mode; Head.setMode(mode);
+    mode = b.dataset.mode; Head.setMode(mode); $('#modeName').textContent = b.querySelector('b').textContent;
     document.querySelectorAll('.modes button').forEach(x => x.classList.toggle('on', x === b));
   });
   $('#rate').oninput = e => { opt.rate = +e.target.value; $('#rateV').textContent = opt.rate.toFixed(1) + '×'; };
   $('#voice').onchange = e => { opt.voice = e.target.value; };
-  $('#labels').onchange = e => { opt.labels = e.target.checked; };
-  $('#air').onchange = e => { opt.air = e.target.checked; };
+  document.querySelectorAll('.tool').forEach(b => b.onclick = () => { opt[b.dataset.opt] = !opt[b.dataset.opt]; b.classList.toggle('on', opt[b.dataset.opt]); b.setAttribute('aria-pressed', opt[b.dataset.opt]); });
+  if (window.innerWidth < 600) { opt.labels = false; const b = $('.tool[data-opt=labels]'); b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); }
   window.addEventListener('resize', resize);
   if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
   else msg('이 브라우저는 음성 읽기를 지원하지 않아요. 입 모양만 보여줄게요.');
