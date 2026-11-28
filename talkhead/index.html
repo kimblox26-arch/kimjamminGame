@@ -3,60 +3,112 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>보이스 엑스레이 — 말하는 머리</title>
+<title>VOICE X-RAY — 보이스 엑스레이</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="state-title">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18.5a3 3 0 1 1-2-2.83V5.2l12-2.4v12.7a3 3 0 1 1-2-2.83V6.6L9 8.2z"/></symbol>
+  <symbol id="i-speak" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3 2 11.5h3V21h5.5v-6h3v6H19v-9.5h3z"/></symbol>
+</svg>
+
 <main id="app">
   <section id="stage">
-    <canvas id="cv" aria-label="말할 때 머릿속 뼈, 근육, 혀, 치아, 뇌가 움직이는 정중 시상 단면"></canvas>
-    <div class="stage-bar">
-      <div class="chip"><span class="live-dot"></span>실시간 머리 단면 · <b id="modeName">성인 남자</b></div>
-      <div class="tools" role="group" aria-label="표시 옵션">
+    <canvas id="cv" aria-label="말할 때 머릿속 뼈, 근육, 혀, 치아, 뇌가 움직이는 머리 옆모습"></canvas>
+    <div class="corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+    <div class="hud hud-top">
+      <div class="hud-l">
+        <button id="homeBtn" class="icon-btn" aria-label="메인 화면으로"><svg><use href="#i-home"/></svg></button>
+        <div class="subject"><small>SUBJECT</small><b id="modeName">성인 남자</b></div>
+      </div>
+      <div class="seg" role="group" aria-label="보기 모드">
+        <button data-view="skin" aria-pressed="false">피부</button>
+        <button data-view="xray" class="on" aria-pressed="true">투시</button>
+        <button data-view="section" aria-pressed="false">단면</button>
+      </div>
+      <div class="seg tools-seg" role="group" aria-label="표시 옵션">
         <button class="tool on" data-opt="labels" aria-pressed="true">이름표</button>
-        <button class="tool on" data-opt="air" aria-pressed="true">공기 흐름</button>
-        <button class="tool on" data-opt="nerves" aria-pressed="true">신경 신호</button>
+        <button class="tool on" data-opt="air" aria-pressed="true">공기</button>
+        <button class="tool on" data-opt="nerves" aria-pressed="true">신경</button>
+      </div>
+    </div>
+    <div class="hud hud-bottom">
+      <div class="readouts">
+        <div class="ro"><small>F0</small><b id="hudF0">---</b><em>Hz</em></div>
+        <div class="ro"><small>PHONEME</small><b id="hudPh">---</b></div>
+        <div class="ro"><small>STATUS</small><b id="hudSt">STANDBY</b></div>
+      </div>
+      <div class="mini-chars" role="group" aria-label="캐릭터 바꾸기">
+        <button class="char mini" data-mode="boy" aria-label="어린 남자"><canvas class="thumb"></canvas></button>
+        <button class="char mini" data-mode="girl" aria-label="어린 여자"><canvas class="thumb"></canvas></button>
+        <button class="char mini on" data-mode="man" aria-label="성인 남자"><canvas class="thumb"></canvas></button>
+        <button class="char mini" data-mode="woman" aria-label="성인 여자"><canvas class="thumb"></canvas></button>
       </div>
     </div>
   </section>
 
-  <aside id="panel">
-    <header class="brand">
-      <div class="logo" aria-hidden="true"></div>
-      <div>
-        <h1>보이스 엑스레이</h1>
-        <p>글을 읽어주며 머릿속 움직임을 보여줘요</p>
+  <aside id="menu">
+    <div class="menu-inner">
+      <div class="kicker"><i></i>ANATOMY VOICE SIMULATOR<i></i></div>
+      <h1 class="logo"><span>VOICE</span><b>X-RAY</b></h1>
+      <p class="ko-title">보이스 엑스레이</p>
+      <p class="tag">글자를 읽는 순간, 머릿속 뼈와 근육이 어떻게 움직이는지 실시간으로 들여다보세요.</p>
+
+      <div class="sec-title"><small>SELECT SUBJECT</small>캐릭터 선택</div>
+      <div class="char-grid">
+        <button class="char" data-mode="boy" aria-pressed="false"><canvas class="thumb"></canvas><b>어린 남자</b><small>밝고 높은 목소리</small></button>
+        <button class="char" data-mode="girl" aria-pressed="false"><canvas class="thumb"></canvas><b>어린 여자</b><small>맑고 가장 높은 목소리</small></button>
+        <button class="char on" data-mode="man" aria-pressed="true"><canvas class="thumb"></canvas><b>성인 남자</b><small>낮고 굵은 목소리</small></button>
+        <button class="char" data-mode="woman" aria-pressed="false"><canvas class="thumb"></canvas><b>성인 여자</b><small>부드러운 중간 목소리</small></button>
       </div>
-    </header>
+
+      <div class="menu-btns">
+        <button id="startBtn" class="gbtn primary big"><svg><use href="#i-play"/></svg>게임 시작</button>
+        <button id="helpBtn" class="gbtn" aria-expanded="false">조작 방법</button>
+      </div>
+      <div id="help" class="help" hidden>
+        <ol>
+          <li>오른쪽 <b>텍스트</b> 칸에 글을 쓰고 <b>읽어주기</b>를 누르세요.</li>
+          <li><b>노래 제목</b>을 쓰고 <b>노래 부르기</b>를 누르면 멜로디를 붙여 불러요.</li>
+          <li>위쪽 <b>피부 / 투시 / 단면</b>으로 머릿속을 들여다보세요.</li>
+          <li><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 읽기 · <kbd>Esc</kbd> 메인 화면</li>
+        </ol>
+      </div>
+      <p class="press"><kbd>ENTER</kbd> 를 눌러 시작</p>
+    </div>
+  </aside>
+
+  <aside id="panel">
+    <div class="console-head"><small>CONTROL CONSOLE</small><b>음성 제어</b></div>
 
     <section class="card">
-      <h2>목소리 모드</h2>
-      <div class="modes" role="group" aria-label="목소리 모드">
-        <button data-mode="boy"><span>👦</span><b>어린 남자</b></button>
-        <button data-mode="girl"><span>👧</span><b>어린 여자</b></button>
-        <button data-mode="man" class="on"><span>👨</span><b>성인 남자</b></button>
-        <button data-mode="woman"><span>👩</span><b>성인 여자</b></button>
+      <header><small>TEXT</small><label for="txt">텍스트</label></header>
+      <textarea id="txt" rows="4">안녕하세요! 저는 말하는 머리예요. 혀와 입술이 어떻게 움직이는지 보세요. Hello, nice to meet you!</textarea>
+      <div class="row">
+        <button id="read" class="gbtn primary"><svg><use href="#i-play"/></svg>읽어주기</button>
+        <button id="stop" class="gbtn"><svg><use href="#i-stop"/></svg>멈춤</button>
       </div>
     </section>
 
     <section class="card">
-      <h2><label for="txt">텍스트</label></h2>
-      <textarea id="txt" rows="5">안녕하세요! 저는 말하는 머리예요. 혀와 입술이 어떻게 움직이는지 보세요. Hello, nice to meet you!</textarea>
-      <div class="row">
-        <button id="read" class="btn primary">▶ 읽어주기</button>
-        <button id="stop" class="btn">■ 멈춤</button>
-      </div>
-      <h2 class="sub"><label for="song">노래 제목</label></h2>
+      <header><small>SONG</small><label for="song">노래 제목</label></header>
       <input id="song" type="text" placeholder="예: 반짝반짝 작은 별" value="반짝반짝 작은 별">
       <div class="row">
-        <button id="songRead" class="btn">제목 읽기</button>
-        <button id="songSing" class="btn accent">♪ 노래처럼 부르기</button>
+        <button id="songRead" class="gbtn"><svg><use href="#i-speak"/></svg>제목 읽기</button>
+        <button id="songSing" class="gbtn warm"><svg><use href="#i-note"/></svg>노래 부르기</button>
       </div>
     </section>
 
     <section class="card live">
-      <h2>실시간 분석</h2>
+      <header><small>LIVE ANALYSIS</small>실시간 분석</header>
       <div class="phon">
         <div class="g" id="phG">·</div>
         <div class="info">
@@ -70,11 +122,11 @@
           <figcaption>성대 <span id="glotState">활짝 열림 · 숨쉬기</span></figcaption>
         </figure>
         <div class="meters">
-          <div class="meter"><span>혀</span><div><i style="--c:#ff7b86"></i></div></div>
-          <div class="meter"><span>입술</span><div><i style="--c:#ffae5e"></i></div></div>
-          <div class="meter"><span>턱</span><div><i style="--c:#ffd75e"></i></div></div>
-          <div class="meter"><span>성대</span><div><i style="--c:#6fe39a"></i></div></div>
-          <div class="meter"><span>연구개</span><div><i style="--c:#69c3ff"></i></div></div>
+          <div class="meter"><span>혀</span><div><i style="--c:#ff6b7d"></i></div></div>
+          <div class="meter"><span>입술</span><div><i style="--c:#ffa24d"></i></div></div>
+          <div class="meter"><span>턱</span><div><i style="--c:#ffd84d"></i></div></div>
+          <div class="meter"><span>성대</span><div><i style="--c:#4dffa0"></i></div></div>
+          <div class="meter"><span>연구개</span><div><i style="--c:#4dc8ff"></i></div></div>
         </div>
       </div>
       <div id="now" aria-live="polite"></div>
@@ -82,11 +134,10 @@
     </section>
 
     <details class="card">
-      <summary>설정</summary>
-      <label class="field">속도 <input id="rate" type="range" min="0.5" max="1.6" step="0.1" value="1"> <output id="rateV">1.0×</output></label>
-      <label class="field">목소리 <select id="voice"><option value="">자동 (모드에 맞게)</option></select></label>
+      <summary><small>SYSTEM</small>설정</summary>
+      <label class="field">속도 <input id="rate" type="range" min="0.5" max="1.6" step="0.1" value="1"> <output id="rateV">1.0x</output></label>
+      <label class="field">목소리 <select id="voice"><option value="">자동 (캐릭터에 맞게)</option></select></label>
     </details>
-    <p class="tip">Ctrl+Enter 로도 읽을 수 있어요 · Chrome / Edge 권장</p>
   </aside>
 </main>
 <script src="js/phonemes.js"></script>

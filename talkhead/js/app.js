@@ -213,11 +213,30 @@
   let msgT = 0;
   function msg(t) { const m = $('#msg'); m.textContent = t; clearTimeout(msgT); msgT = setTimeout(() => { m.textContent = ''; }, 6000); }
 
-  function resize() {
-    const r = cv.getBoundingClientRect(); DPR = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = Math.max(1, Math.round(r.width * DPR)); cv.height = Math.max(1, Math.round(r.height * DPR));
-    const g = gcv.getBoundingClientRect(); gcv.width = Math.max(1, Math.round(g.width * DPR)); gcv.height = Math.max(1, Math.round(g.height * DPR));
+  const NAMES = { boy: '어린 남자', girl: '어린 여자', man: '성인 남자', woman: '성인 여자' };
+  const F0 = { boy: 260, girl: 290, man: 120, woman: 210 };
+  const SKIN = { skin: 1, xray: .3, section: 0 };
+  let state = 'title', view = 'xray', skinA = 1, hudT = 0;
+
+  function fit(c) {
+    const r = c.getBoundingClientRect(), w = Math.max(1, Math.round(r.width * DPR)), h = Math.max(1, Math.round(r.height * DPR));
+    if (c.width === w && c.height === h) return false; c.width = w; c.height = h; return true;
   }
+  function resize() { DPR = Math.min(2, window.devicePixelRatio || 1); fit(cv); fit(gcv); }
+  function thumbs() {
+    const rest = Object.assign({}, S, { jaw: .03, lc: 1, lr: 0, ls: 0, ld: 0, tipA: 0, back: 0, bodyX: 398, bodyY: 592 });
+    document.querySelectorAll('canvas.thumb').forEach(c => { if (c.getBoundingClientRect().width < 2) return; fit(c); Head.snapshot(c.closest('[data-mode]').dataset.mode, c, rest); c.dataset.done = 1; });
+  }
+  function setState(s) {
+    state = s; document.body.classList.toggle('state-title', s === 'title'); document.body.classList.toggle('state-game', s === 'game');
+    if (s === 'title') { stop(); $('#now').textContent = ''; }
+    requestAnimationFrame(() => { resize(); document.querySelectorAll('canvas.thumb:not([data-done])').length && thumbs(); });
+  }
+  function setMode(k) {
+    mode = k; Head.setMode(k); $('#modeName').textContent = NAMES[k];
+    document.querySelectorAll('.char').forEach(x => { const on = x.dataset.mode === k; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
+  }
+
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(.05, (now - last) / 1000); last = now;
@@ -226,13 +245,25 @@
     if (!cur) lastF = null;
     const p = force || (cur ? cur.p : IDLE), T = target(p);
     for (const k in SPD) S[k] += (T[k] - S[k]) * (1 - Math.exp(-SPD[k] * dt));
+    const tgt = state === 'title' ? 1 : SKIN[view];
+    skinA += (tgt - skinA) * (1 - Math.exp(-dt * 6)); if (Math.abs(tgt - skinA) < .005) skinA = tgt;
 
-    Head.frame(ctx, S, { active: !!(cur && cur.active) || !!force, p, sing: !!(play && play.sing), labels: opt.labels, air: opt.air, nerves: opt.nerves, w: cv.width / DPR, h: cv.height / DPR, dpr: DPR }, dt);
-    Head.glottis(gctx, S, gcv.width, gcv.height);
-    const tng = cl(Math.max(S.tipA * .9, S.back, cl((618 - S.bodyY) / 45, 0, 1) * .8 + Math.abs(S.bodyX - 398) / 120), 0, 1);
-    [tng, Math.max(S.lc, S.lr, S.ls * .7, S.ld), S.jaw, S.voice, 1 - S.vel].forEach((v, i) => { meters[i].style.transform = `scaleX(${cl(v, 0, 1).toFixed(3)})`; });
-    const gs = S.voice > .5 ? '떨림 · 유성음' : S.glot > .65 ? '활짝 열림 · 숨쉬기' : '열림 · 무성음';
-    if (gs !== lastGs) { lastGs = gs; $('#glotState').textContent = gs; }
+    Head.frame(ctx, S, { active: !!(cur && cur.active) || !!force, p, sing: !!(play && play.sing), labels: opt.labels && state === 'game', air: opt.air, nerves: opt.nerves,
+      skin: skinA, bg: true, fx: true, scan: true, w: cv.width / DPR, h: cv.height / DPR, dpr: DPR }, dt);
+    if (state === 'game') {
+      Head.glottis(gctx, S, gcv.width, gcv.height);
+      const tng = cl(Math.max(S.tipA * .9, S.back, cl((618 - S.bodyY) / 45, 0, 1) * .8 + Math.abs(S.bodyX - 398) / 120), 0, 1);
+      [tng, Math.max(S.lc, S.lr, S.ls * .7, S.ld), S.jaw, S.voice, 1 - S.vel].forEach((v, i) => { meters[i].style.transform = `scaleX(${cl(v, 0, 1).toFixed(3)})`; });
+      const gs = S.voice > .5 ? '떨림 · 유성음' : S.glot > .65 ? '활짝 열림 · 숨쉬기' : '열림 · 무성음';
+      if (gs !== lastGs) { lastGs = gs; $('#glotState').textContent = gs; }
+      if (now - hudT > 120) {
+        hudT = now;
+        const it = play && play.items[play.i], semi = it && it.semi ? it.semi : 0;
+        $('#hudF0').textContent = S.voice > .5 ? Math.round(F0[mode] * Math.pow(2, semi / 12) * (.97 + .06 * Math.sin(now / 90))) : '---';
+        $('#hudPh').textContent = lastF && lastF.q.k !== '_' ? `/${lastF.q.k}/` : '---';
+        $('#hudSt').textContent = play ? (play.sing ? 'SINGING' : 'SPEAKING') : 'STANDBY';
+      }
+    }
     requestAnimationFrame(frame);
   }
 
@@ -244,18 +275,28 @@
   $('#songSing').onclick = () => { const t = $('#song').value.trim(); if (!t) return msg('노래 제목을 적어 주세요.'); start(song(t), true); };
   $('#txt').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); readText(); } });
   $('#song').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#songSing').click(); } });
-  document.querySelectorAll('.modes button').forEach(b => b.onclick = () => {
-    mode = b.dataset.mode; Head.setMode(mode); $('#modeName').textContent = b.querySelector('b').textContent;
-    document.querySelectorAll('.modes button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.char').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+  document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
+    view = b.dataset.view; document.querySelectorAll('[data-view]').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); });
   });
-  $('#rate').oninput = e => { opt.rate = +e.target.value; $('#rateV').textContent = opt.rate.toFixed(1) + '×'; };
+  $('#startBtn').onclick = () => setState('game');
+  $('#homeBtn').onclick = () => setState('title');
+  $('#helpBtn').onclick = () => { const h = $('#help'); h.hidden = !h.hidden; $('#helpBtn').setAttribute('aria-expanded', !h.hidden); };
+  document.addEventListener('keydown', e => {
+    const typing = /^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement.tagName);
+    if (state === 'title' && e.key === 'Enter' && !typing && !/BUTTON/.test(document.activeElement.tagName)) { e.preventDefault(); setState('game'); }
+    else if (state === 'game' && e.key === 'Escape') setState('title');
+  });
+  $('#rate').oninput = e => { opt.rate = +e.target.value; $('#rateV').textContent = opt.rate.toFixed(1) + 'x'; };
   $('#voice').onchange = e => { opt.voice = e.target.value; };
   document.querySelectorAll('.tool').forEach(b => b.onclick = () => { opt[b.dataset.opt] = !opt[b.dataset.opt]; b.classList.toggle('on', opt[b.dataset.opt]); b.setAttribute('aria-pressed', opt[b.dataset.opt]); });
   if (window.innerWidth < 600) { opt.labels = false; const b = $('.tool[data-opt=labels]'); b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); }
-  window.addEventListener('resize', resize);
+  new ResizeObserver(resize).observe($('#stage'));
   if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
   else msg('이 브라우저는 음성 읽기를 지원하지 않아요. 입 모양만 보여줄게요.');
 
-  window.TalkHead = { S, start, stop, setForce: k => { force = k ? Object.assign({}, P.PH[k]) : null; } }; // 테스트용
+  window.TalkHead = { S, start, stop, setState, setForce: k => { force = k ? Object.assign({}, P.PH[k]) : null; } }; // 테스트용
   resize(); requestAnimationFrame(frame);
+  requestAnimationFrame(() => requestAnimationFrame(thumbs));
+  if (document.fonts) document.fonts.ready.then(resize);
 })();
